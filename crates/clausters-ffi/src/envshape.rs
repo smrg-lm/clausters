@@ -1,4 +1,13 @@
-//! The axis a break-point curve is drawn against.
+//! The axis a break-point curve is drawn against, and a segment's level.
+
+/// One envelope segment's level: shape `shape` (SuperCollider's numbers),
+/// curvature `c`, from `a` to `b`, at the position `t` in `[0, 1)` --
+/// `clausters_core::envshape::shape_value`, what `EnvGen` plays and what a
+/// pattern following a curve (`pseg`) reads.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
+    clausters_core::envshape::shape_value(shape, c, a, b, t)
+}
 
 /// The value axis for the `n` curve values at `values`, written to `out[0]`
 /// (low) and `out[1]` (high). With `hold` non-zero, `out` is read **first** as

@@ -365,3 +365,66 @@ def test_a_function_computes_values_when_asked():
         [1, 10], [1, 20], [2, 10], [2, 20]]
     assert [e["octave"] for e in pbind(degree=pseq([1, 2]),
                                        octave=pfunc(lambda e: e["degree"] + 4))] == [5, 6]
+
+
+# ---- event and time patterns ----
+
+def test_a_key_reads_the_event_being_built():
+    from clausters.seq import pevent, pkey
+
+    phrase = pbind(degree=pseq([0, 7, 14]), octave=pkey("degree") // 7 + 4)
+    assert [e["octave"] for e in phrase] == [4, 5, 6]
+    assert [e["k"] for e in pevent(pbind(x=pseq([1, 2])), {"k": "v"})] == ["v", "v"]
+
+
+def test_a_chain_lets_a_later_pattern_give_the_defaults():
+    from clausters.seq import pchain
+
+    chained = pchain(pbind(a=pseq([1, 2])), pbind(b=10, a=0))
+    assert [(e["a"], e["b"]) for e in chained] == [(1, 10), (2, 10)]
+
+
+def test_patterns_played_together_merge_in_time():
+    from clausters.seq import ppar
+
+    p = ppar([pbind(degree=pseq([0, 1]), dur=1), pbind(degree=pseq([4, 5, 6]), dur=0.5)])
+    events = list(p)
+    assert [e.get("degree") for e in events] == [0, 4, 5, 1, 6, None]
+    assert [e.delta() for e in events] == [0, 0.5, 0.5, 0, 0.5, 0.5]
+    assert events[-1]["type"] == "rest"
+
+
+def test_a_voice_joins_its_notes_by_legato():
+    from clausters.seq import pvoice
+
+    voice = pvoice("lead", midinote=pseq([60, 62, 64, 64, 67]), dur=0.5,
+                   legato=pseq([1.0, 1.0, 1.0, 0.6, 0.8]), artic=True, voice=2)
+    events = list(voice)
+    assert [e.get("held", False) for e in events] == [True, True, True, False, False]
+    assert {e["voice"] for e in events} == {2}
+    # without artic every note goes on into the next
+    always = list(pvoice("lead", midinote=pseq([60, 62, 64]), legato=0.5))
+    assert [e.get("held", False) for e in always] == [True, True, False]
+
+
+def test_a_rendered_voice_writes_its_ties_and_slurs():
+    from clausters.seq import pvoice
+
+    voice = pvoice("lead", midinote=pseq([60, 62, 64, 64, 67]), dur=0.5,
+                   legato=pseq([1.0, 1.0, 1.0, 0.6, 0.8]), artic=True)
+    data = voice.render_events().data()
+    assert [e["data"].get("tie", False) for e in data["events"]] == [
+        False, False, True, False, False]
+    assert data["notation"]["spanners"] == [{"kind": "slur", "from": 1, "to": 4}]
+    assert not any("held" in e["data"] or "continues" in e["data"] for e in data["events"])
+    # a pbind is no voice: nothing is joined, whatever its legato
+    assert "notation" not in pbind(midinote=pseq([60, 62]), legato=1.5).render_events().data()
+
+
+def test_the_time_patterns_read_the_clock():
+    from clausters.seq import pseg, pstep
+
+    stepped = pbind(dur=0.5, x=pstep([1, 2], 1)).render_events().data()
+    assert [e["data"]["x"] for e in stepped["events"]] == [1, 1, 2, 2]
+    ramp = pbind(dur=0.25, x=pseg([0, 1], 1)).render_events().data()
+    assert [round(e["data"]["x"], 6) for e in ramp["events"]] == [0, 0.25, 0.5, 0.75]

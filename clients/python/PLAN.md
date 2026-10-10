@@ -2374,7 +2374,7 @@ by the loop (`islice`, a `break`), never read whole.
   `clausters_rng_sputter` and `JsRng.sputter`, and both random contexts draw
   it. All are list functions, and refuse a pattern. The clock parity vectors
   call each function and draw `sputter` from the same stream in both clients.
-- ⬜ **C73 — The pattern library.** sc3's patterns, phased by family, each one
+- ✅ **C73 — The pattern library** *(done 2026-10-10)*. sc3's patterns, phased by family, each one
   a `@pattern` function in both clients with its parity vector, its brief
   description and its kind (value, event, or resolved when built), in its
   family's module. The lists below cite sclang's names; each is written
@@ -2419,12 +2419,22 @@ by the loop (`islice`, a `break`), never read whole.
     themselves), and `pfunc` now passes the incoming value to a function that
     takes one, as sclang's `Pfunc` does. sc3's `@pattern` decorator shipped
     with `C70`, where every pattern became one. The parity vectors walk each.
-  - ⬜ **C73e — event and time patterns**: `Pkey`, `Pchain` (sclang's `<>`),
-    `Pevent`, `pvoice` (below), `Ppar`, `Ptime`, `Pstep`, `Pseg`.
-    `Ppar`/`Pmono` were already named as a pattern-side question in Future
-    directions ("The mapping exists and is private to the `Editor`"); this is
-    where they land.
-
+  - ✅ **C73e — event and time patterns** *(done 2026-10-10)*: `pkey`,
+    `pchain` (sclang's `<>`), `pevent`, `pvoice` (below), `ppar`, `ptime`,
+    `pstep`, `pseg`. `ppar` merges in time with a stable order for events
+    that fall together, and sets `delta` on the event in place so what a
+    source keeps of it survives; `pseg` reads each segment with the core's
+    `shape_value`, behind a new door (`clausters_core_shape_value`,
+    `shapeValue`). The time patterns read the routine's logical beat, so a
+    plain loop holds their first value. `pvoice` shipped as designed below:
+    the server realization is two event keys the core's synth render reads
+    (`held`, `continues`), the render's ties and slurs come from
+    `clausters_core::event::notation::articulation` behind
+    `clausters_core_articulation`, and the voice reads one note ahead
+    (`docs/decisions.md`, "A voice is notes and their joins, realized by each
+    destination"). What a later edit does to the two shapes is open: "An
+    edit to a voice's legato or slur does not rewrite the other" in Found by
+    use.
     **`pvoice` is sclang's `Pmono` and `PmonoArtic`, as one voice** (the user,
     2026-10-10). sc3 already merged the two into `Pmono(instrument, mapping,
     articulate=False)`: `_mono_on` starts a node, `_mono_set` sets it, and
@@ -2530,6 +2540,18 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **An edit to a voice's legato or slur does not rewrite the other**
+  *(found 2026-10-10, closing `C73e`)*. A rendered `pvoice` writes both
+  shapes of its articulation -- each note's `legato`, and the `tie` keys and
+  slur spanners derived from it -- as the user asked. They agree when they are
+  written; after that nothing keeps them so: a notes editor changing a
+  `legato` leaves the slur, and a score editor drawing a slur leaves the
+  `legato`. The rule that derives one from the other exists
+  (`clausters_core::event::notation::articulation`), but the document no
+  longer has the joins it ran on -- the render's links between notes are not
+  stored -- so a rewrite needs the line a note belongs to (its `voice` and
+  `staff`, which the score editor separates by) and a decision on which shape
+  wins when both changed.
 - ✅ **The API reference leaves out 26 public-named modules, and nothing says
   which of them are meant to be out** *(found 2026-09-21, splitting the
   reference into one page per package; fixed the same day)*. The module list in

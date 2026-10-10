@@ -55,6 +55,23 @@ Each value is computed by the `builtins` function of the operator's name — the
 
 **A builtin given a pattern answers what the method does**: `builtins.midicps(seq.pseq([60, 72]))` is `seq.pseq([60, 72]).midicps()`, `builtins.add(2, p)` puts `p` on the right, and a function that is not an operator (`cbrt`, `degkey`) composes by name, value by value, over its first argument. A signal takes the same calls as far as a UGen has the operator; a value function no UGen computes (`cbrt`, `moddif`) is refused by name.
 
+## Events, voices and time
+
+Inside a `pbind` each key's pattern receives the event being built: `seq.pkey("degree")` reads a key chosen before it. `seq.pchain(a, b)` (sclang's `a <> b`) builds `a`'s events on `b`'s, `seq.pevent(p, keys)` starts every event from the same keys, and `seq.ppar([melody, bass])` plays event patterns together, merged in time. `seq.ptime`, `seq.pstep` and `seq.pseg` read the beat the walk is at — time, a step function, a curve — and need a clock that moves.
+
+**Articulation and inflection** are two different things. An articulation is how distinct notes relate — legato, detached, a tie, a slur; an inflection is a variation inside one note — its bend, its pressure — and belongs to the note as its `expression`. A change of note is an articulation even in MPE, where a note keeps its note-on and is inflected by its bend.
+
+`seq.pvoice(instrument, bindings, { artic })` is the pattern of articulation: notes of one voice, each note's `legato` saying how it goes on to the next (with `artic`, it joins while `legato >= 1`; without, always; a rest breaks the line). The join is one datum that each destination realizes: on the server one node held across the joined notes and set by each, on MIDI overlapping notes, and rendered into an `EventSequence` a `tie` where a joined note keeps its pitch and a slur over each run that moves — the sequence keeps both the `legato` and the page's marks.
+
+```js
+const line = seq.pvoice(
+  "lead",
+  { midinote: seq.pseq([60, 62, 64, 64, 67]), dur: 0.5, legato: seq.pseq([1, 1, 1, 0.6, 0.8]) },
+  { artic: true },
+);
+const data = (await line.renderEvents()).data(); // a tie on the first 64, a slur from 1 to 4
+```
+
 ## Writing a pattern
 
 A pattern is written as a **generator function** under `seq.pattern`; the result is the function that builds it:
@@ -82,7 +99,8 @@ One module per family under `seq/patterns/`, all re-exported from `seq`, each pa
 | `listpatterns` | values read from a list | `pseq`, `pser`, `prand`, `pxrand`, `pwrand`, `pshuffle`, `pslide`, `pwalk`, `place`, `placep`, `ptuple`, `pswitch`, `pswitch1`, `pfsm`, `pdfsm` |
 | `filterpatterns` | another pattern, transformed | `pn`, `pgate`, `pcollect`, `pselect`, `preject`, `pdrop`, `plen`, `pstutter`, `platch`, `pwhile`, `pwrap`, `pclump`, `pflatten`, `pdiff`, `pprorate`, `pavaroh`, `pdelta`, `pdur`, `ptrace` |
 | `funcpatterns` | values a function computes when asked | `pfunc`, `pfuncn`, `prout`, `plazy`, `pif`, `pproduct` |
-| `eventpatterns` | events | `pbind` |
+| `eventpatterns` | events | `pbind`, `pkey`, `pchain`, `pevent`, `pvoice`, `ppar` |
+| `timepatterns` | values of the beat the walk is at | `ptime`, `pstep`, `pseg` |
 | `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
 
 A list is read in many ways: `pseq`/`pser` in order from an offset, `prand`/`pxrand`/`pwrand` at random (never twice in a row, by weights), `pshuffle` in one kept random order, `pslide` as a sliding window, `pwalk` stepping across it, `place`/`placep` lacing, `ptuple` side by side, `pswitch`/`pswitch1` by an index pattern, and `pfsm`/`pdfsm` by a state machine; each is an event pattern when its items are.

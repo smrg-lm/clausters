@@ -461,6 +461,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # Range maps (ABI v22): the `linlin`/`linexp`/... family, a whole sequence
     # per crossing. The map's own numbers are scalars -- one range for the
     # sequence, not a range per element.
+    lib.clausters_core_shape_value.restype = ctypes.c_float
+    lib.clausters_core_shape_value.argtypes = [ctypes.c_int32] + [ctypes.c_float] * 4
     lib.clausters_core_list_len.restype = ctypes.c_ssize_t
     lib.clausters_core_list_len.argtypes = [ctypes.c_uint32, ctypes.c_size_t, ctypes.c_double]
     lib.clausters_core_list.restype = ctypes.c_int32
@@ -559,7 +561,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_event_sustain.restype = ctypes.c_double
     lib.clausters_core_event_sustain.argtypes = [ctypes.c_double] * 4
     # Rendering an event (ABI v72): JSON in, size-then-fill out.
-    for name in ("event_synth", "event_midi", "event_of_midi"):
+    for name in ("event_synth", "event_midi", "event_of_midi", "articulation"):
         fn = getattr(lib, f"clausters_core_{name}")
         fn.restype = ctypes.c_size_t
         fn.argtypes = [ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
@@ -3552,6 +3554,24 @@ def event_synth(keys: dict, node: int) -> dict:
     is not a note."""
     return _json_call(lib().clausters_core_event_synth, {"event": keys, "node": int(node)},
                       "event synth")
+
+
+def shape_value(shape: int, curve: float, a: float, b: float, t: float) -> float:
+    """One envelope segment's level at ``t`` in ``[0, 1)``, from ``a`` to ``b``
+    by SuperCollider's ``shape`` number and ``curve`` (what ``EnvGen`` plays)."""
+    return lib().clausters_core_shape_value(int(shape), float(curve), float(a), float(b), float(t))
+
+
+def articulation(pitches, joins) -> tuple:
+    """What a voice's joins write on a page: ``(ties, slurs)``, the indices of
+    the notes tied into the next and each slur's ``(first, last)``, for notes
+    sounding ``pitches`` (MIDI note numbers) and ``joins`` of ``(from, to)``
+    indices (``clausters_core::event::notation::articulation``)."""
+    answer = _json_call(lib().clausters_core_articulation,
+                        {"pitches": [float(p) for p in pitches],
+                         "joins": [[int(a), int(b)] for a, b in joins]},
+                        "articulation")
+    return list(answer["ties"]), [tuple(s) for s in answer["slurs"]]
 
 
 def event_midi(keys: dict, channel: int = 0) -> list:

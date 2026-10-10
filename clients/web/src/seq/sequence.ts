@@ -13,7 +13,11 @@
 // this object is a handle to it, so every client edits the same structure and
 // a notes editor opened on it edits it in place, with no copy to write back.
 
-import { JsEventSequence, event_of_midi as coreEventOfMidi } from "../core/clausters_core_web.js";
+import {
+    JsEventSequence,
+    articulation as coreArticulation,
+    event_of_midi as coreEventOfMidi,
+} from "../core/clausters_core_web.js";
 import { midiReadClip, midiReadSmf, midiWriteClipUmp, midiWriteSmfTempo, requireCore } from "../base/core.ts";
 import { Moment } from "../base/moment.ts";
 import type { TempoClock } from "../base/clock.ts";
@@ -855,6 +859,16 @@ class Recorder {
     readonly events: [number, Record<string, unknown>, Record<string, unknown>[]][] = [];
     /** The channels' curves that played, as the sequence's own. */
     readonly curves: Record<string, unknown>[] = [];
+    /**
+     * `[from, to]` indices into `events`: the notes of a voice that went on
+     * into the next (`pvoice`).
+     */
+    readonly joins: [number, number][] = [];
+    /**
+     * The node each recorded note was given, so the next note of its voice can
+     * say it continues it: an index into `events`, as a node.
+     */
+    private readonly nodes = new Map<number, number>();
 
     /**
      * The beat it is, in the rendered structure's beats, and the function that
@@ -876,6 +890,8 @@ class Recorder {
         const keys = event.keysData();
         delete keys.node;
         delete keys.server;
+        delete keys.held;
+        delete keys.continues;
         if ((keys.type ?? "note") === "note") {
             // How long it sounds, in the root's beats as well.
             keys.sustain = toRoot(local + event.sustain()) - at;
@@ -886,8 +902,16 @@ class Recorder {
         const curves = given === undefined || given === null
             ? []
             : Array.isArray(given) ? given : [given];
+        const index = this.events.length;
         this.events.push([at, keys, curves.map((c) => moved(c, local, toRoot, at))]);
-        return null;
+        const continued = event.get("continues");
+        if (typeof continued === "number" && this.nodes.has(continued)) {
+            this.joins.push([this.nodes.get(continued)!, index]);
+        }
+        // Its index, as the node a note of its voice continues.
+        const node = index + 1;
+        this.nodes.set(node, index);
+        return node;
     }
 
     /** A channel's curve, played: one of the sequence's curves, its beats the root's. */
@@ -973,8 +997,32 @@ async function rendered(
             curves.length > 0 ? { at, data: keys, automation: curves } : { at, data: keys }),
     };
     if (recorder.curves.length > 0) data.automation = recorder.curves;
+    if (recorder.joins.length > 0) articulate(data, recorder.joins);
     if (tempoMap) data.tempo_map = JSON.parse(tempoMap.dump());
     return EventSequence.fromData(data);
+}
+
+/**
+ * **A voice's legato, written on the page.** The notes that went on into the
+ * next are joins; the core says which are ties (one pitch held) and which runs
+ * are slurs (legato that moves), and both are written: `tie` on the tied note,
+ * a slur spanner over each run's event ids. The events get their ids here, in
+ * order, so the spanners can name them.
+ */
+function articulate(data: Record<string, unknown>, joins: readonly [number, number][]): void {
+    const events = data.events as { id?: number; data: Record<string, unknown> }[];
+    const pitches = Float64Array.from(events, (e) => Number(e.data.midinote ?? Number.NaN));
+    const { ties, slurs } = JSON.parse(coreArticulation(pitches, Uint32Array.from(joins.flat()))) as {
+        ties: number[];
+        slurs: [number, number][];
+    };
+    events.forEach((entry, i) => {
+        entry.id = i + 1;
+    });
+    for (const i of ties) events[i]!.data.tie = true;
+    if (slurs.length > 0) {
+        data.notation = { spanners: slurs.map(([a, b]) => ({ kind: "slur", from: a + 1, to: b + 1 })) };
+    }
 }
 
 /** What `renderTimeline` needs of a `Timeline`. @internal */

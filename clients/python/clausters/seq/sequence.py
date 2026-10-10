@@ -693,6 +693,12 @@ class _Recorder:
         self.events = []
         #: The channels' curves that played, as the sequence's own.
         self.curves = []
+        #: ``(from, to)`` indices into `events`: the notes of a voice that went
+        #: on into the next (`clausters.seq.patterns.eventpatterns.pvoice`).
+        self.joins = []
+        #: The node each recorded note was given, so the next note of its voice
+        #: can say it continues it: an index into `events`, as a node.
+        self._nodes = {}
 
     @staticmethod
     def _now(delay: float = 0.0):
@@ -708,7 +714,8 @@ class _Recorder:
 
     def play_event(self, event):
         at, local, to_root = self._now()
-        keys = {k: v for k, v in event.keys_data().items() if k not in ("node", "server")}
+        keys = {k: v for k, v in event.keys_data().items()
+                if k not in ("node", "server", "held", "continues")}
         if keys.get("type", "note") == "note":
             # How long it sounds, in the root's beats as well.
             keys["sustain"] = to_root(local + event.sustain()) - at
@@ -717,8 +724,15 @@ class _Recorder:
         curves = event.get("automation") or ()
         if not isinstance(curves, (list, tuple)):
             curves = (curves,)
+        index = len(self.events)
         self.events.append((at, keys, [_moved(c, local, to_root, at) for c in curves]))
-        return None
+        continued = event.get("continues")
+        if continued in self._nodes:
+            self.joins.append((self._nodes[continued], index))
+        # Its index, as the node a note of its voice continues.
+        node = index + 1
+        self._nodes[node] = index
+        return node
 
     def play_automation(self, curve):
         """A channel's curve, played: one of the sequence's curves, its beats
@@ -778,11 +792,31 @@ def _rendered(start, until, tempo_map) -> EventSequence:
         if curves:
             entry["automation"] = curves
         data["events"].append(entry)
+    if recorder.joins:
+        _articulate(data, recorder.joins)
     if recorder.curves:
         data["automation"] = recorder.curves
     if tempo_map is not None:
         data["tempo_map"] = json.loads(tempo_map.dump())
     return EventSequence.from_data(data)
+
+
+def _articulate(data: dict, joins) -> None:
+    """**A voice's legato, written on the page.** The notes that went on into
+    the next are joins; the core says which are ties (one pitch held) and
+    which runs are slurs (legato that moves), and both are written: ``tie`` on
+    the tied note, a slur spanner over each run's event ids. The events get
+    their ids here, in order, so the spanners can name them."""
+    events = data["events"]
+    pitches = [float(e["data"].get("midinote", float("nan"))) for e in events]
+    ties, slurs = _native.articulation(pitches, joins)
+    for i, entry in enumerate(events):
+        entry["id"] = i + 1
+    for i in ties:
+        events[i]["data"]["tie"] = True
+    if slurs:
+        data["notation"] = {"spanners": [{"kind": "slur", "from": a + 1, "to": b + 1}
+                                         for a, b in slurs]}
 
 
 def render_timeline(timeline, until=None) -> EventSequence:

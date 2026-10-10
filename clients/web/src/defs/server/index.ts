@@ -1042,7 +1042,10 @@ export class Server {
                 "a midi event plays on a MIDI destination (a MidiServer), not on one that carries OSC",
             );
         }
-        const node = this.nodes.alloc();
+        // A note of a voice that `continues` a node sets it rather than starting
+        // one (`seq/patterns/eventpatterns.ts`, `pvoice`).
+        const continued = event.get("continues");
+        const node = typeof continued === "number" ? continued : this.nodes.alloc();
         // The messages are the core's render of the event, so every client
         // starts and ends a note with the same ones.
         const synth = synthRender(event.keysData(), node);
@@ -1057,7 +1060,10 @@ export class Server {
         const start = taggedMessage(synth.start);
         log.debug("-> note at beat %s: %s", when.beat, start.slice(0, 3));
         this.sendAt(when, [start, ...first], { pin });
-        this.sendAt(when.at(synth.sustain), [taggedMessage(synth.release)], { pin });
+        // A `held` note has no release: the next note of its voice continues it.
+        if (synth.release.length > 0) {
+            this.sendAt(when.at(synth.sustain), [taggedMessage(synth.release)], { pin });
+        }
         this.curves.follow(node);
         return node;
     }

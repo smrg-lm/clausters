@@ -18,6 +18,11 @@ import { loadCore } from "../src/base/core.ts";
 import { seed } from "../src/base/rand.ts";
 import * as b from "../src/base/builtins.ts";
 import {
+    pchain,
+    pevent,
+    pkey,
+    ppar,
+    pvoice,
     pfuncn,
     pif,
     plazy,
@@ -174,6 +179,26 @@ const CASES: Record<string, () => Pattern<unknown>> = {
         plen(pbind({ n: pn(pseq([0, 1]), INF, "g"), x: pgate(pseries(0, 1), INF, "g") }), 6),
     ),
     ptrace_passes: () => ptrace(pseq([1, 2]), "| "),
+    pkey: () => pcollect(
+        (e: Event) => e.get("octave"),
+        pbind({ degree: pseq([0, 7, 14]), octave: pkey("degree").idiv(7).add(4) }),
+    ),
+    pchain: () => pcollect(
+        (e: Event) => (e.get("a") as number) * 100 + (e.get("b") as number),
+        pchain(pbind({ a: pseq([1, 2]) }), pbind({ b: pseq([3, 4, 5]), a: 0 })),
+    ),
+    pevent: () => pcollect(
+        (e: Event) => (e.get("k") as number) + (e.get("x") as number),
+        pevent(pbind({ x: pseq([1, 2]) }), { k: 10 }),
+    ),
+    ppar: () => pcollect(
+        (e: Event) => e.delta(),
+        ppar([pbind({ degree: pseq([0, 1]), dur: 1 }), pbind({ degree: pseq([4, 5, 6]), dur: 0.5 })]),
+    ),
+    pvoice: () => pcollect(
+        (e: Event) => (e.get("held") ? 1 : 0),
+        pvoice("lead", { midinote: pseq([60, 62, 64, 64, 67]), dur: 0.5, legato: pseq([1, 1, 1, 0.6, 0.8]) }, { artic: true }),
+    ),
     prout: () => prout(function* (inval?: unknown) {
         for (let i = 0; i < 3; i++) inval = yield i * 10;
     }),

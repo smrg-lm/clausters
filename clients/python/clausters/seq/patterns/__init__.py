@@ -22,13 +22,17 @@ holds is):
 - `funcpatterns` -- values a function computes when the walk asks: one per
   step, a routine's yields, a pattern decided late, a choice between two, the
   product of several.
-- `eventpatterns` -- the patterns whose stream yields events: `pbind`.
+- `eventpatterns` -- the patterns whose stream yields events: `pbind`,
+  `pchain`, `pevent`, `pvoice` (a voice, by its articulation) and `ppar`
+  (patterns together), and `pkey`, a key read from the event being built.
+- `timepatterns` -- values of the beat a walk is at: the time itself, a step
+  function, a curve.
 - `oppatterns` -- what an operator composes: `punop`, `pbinop`, `pnarop`.
 
 What a pattern is, and how one is written, is `clausters.seq.pattern`.
 """
 
-from .eventpatterns import pbind
+from .eventpatterns import pbind, pchain, pevent, pkey, ppar, pvoice
 from .filterpatterns import (pavaroh, pclump, pcollect, pdelta, pdiff, pdrop,
                              pdur, pflatten, pgate, platch, plen, pn,
                              pprorate, preject, pselect, pstutter, ptrace,
@@ -41,6 +45,7 @@ from .oppatterns import pbinop, pnarop, punop
 from .randompatterns import (pbeta, pbrown, pcauchy, pexprand, pgauss,
                              pgbrown, phprand, plprand, pmeanrand, ppoisson,
                              pprob, pwhite)
+from .timepatterns import pseg, pstep, ptime
 from .valuepatterns import pconst, pgeom, pseries, pvalue
 
 __all__ = [
@@ -48,6 +53,7 @@ __all__ = [
     "pflatten", "pgate", "platch", "plen", "pprorate", "preject", "pselect",
     "pstutter", "ptrace", "pwhile", "pwrap",
     "pfuncn", "pif", "plazy", "pproduct", "prout",
+    "pchain", "pevent", "pkey", "ppar", "pvoice", "pseg", "pstep", "ptime",
     "pbeta", "pbind", "pbinop", "pbrown", "pcauchy", "pconst", "pdfsm",
     "pexprand", "pfsm", "pfunc", "pgauss", "pgbrown", "pgeom", "phprand",
     "place", "placep", "plprand", "pmeanrand", "pn", "pnarop", "ppoisson",

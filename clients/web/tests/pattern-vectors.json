@@ -779,6 +779,49 @@
    2.0
   ]
  },
+ "pkey": {
+  "seed": null,
+  "values": [
+   4.0,
+   5.0,
+   6.0
+  ]
+ },
+ "pchain": {
+  "seed": null,
+  "values": [
+   103.0,
+   204.0
+  ]
+ },
+ "pevent": {
+  "seed": null,
+  "values": [
+   11.0,
+   12.0
+  ]
+ },
+ "ppar": {
+  "seed": null,
+  "values": [
+   0.0,
+   0.5,
+   0.5,
+   0.0,
+   0.5,
+   0.5
+  ]
+ },
+ "pvoice": {
+  "seed": null,
+  "values": [
+   1.0,
+   1.0,
+   1.0,
+   0.0,
+   0.0
+  ]
+ },
  "prout": {
   "seed": null,
   "values": [

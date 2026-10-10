@@ -250,6 +250,59 @@ pub fn transposed(pitches: &Value, semitones: i32, flats: bool) -> Value {
     Value::Array(moved.collect())
 }
 
+/// What a voice's joins write on a page: the notes a **tie** holds into the
+/// next (`tie` on the first of two that share a pitch) and the **slurs** over
+/// each run of joined notes that moves, first to last.
+///
+/// A join is an **articulation**: how one note goes on to the next, a pair of
+/// indices into the voice's notes. Notes of one pitch joined are one sound,
+/// which a page writes as a tie; notes of different pitches joined are
+/// legato, which it writes as a slur over the run, ending on the note that
+/// articulates. A run of ties alone is held, not slurred. What varies inside
+/// one note -- its bend, its pressure -- is an inflection, and is the note's
+/// own expression, not this.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Articulation {
+    /// The notes tied into the next, in order.
+    pub ties: Vec<usize>,
+    /// Each slur's first and last note.
+    pub slurs: Vec<(usize, usize)>,
+}
+
+/// The [`Articulation`] of notes sounding `pitches` (MIDI note numbers) whose
+/// `joins` say which note goes on into which. A note joins at most one next
+/// and is joined from at most one; a join out of range is ignored.
+#[must_use]
+pub fn articulation(pitches: &[f64], joins: &[(usize, usize)]) -> Articulation {
+    let n = pitches.len();
+    let mut next = vec![None; n];
+    let mut joined = vec![false; n];
+    for &(a, b) in joins {
+        if a < n && b < n && a != b {
+            next[a] = Some(b);
+            joined[b] = true;
+        }
+    }
+    let mut out = Articulation::default();
+    for start in (0..n).filter(|&i| next[i].is_some() && !joined[i]) {
+        let (mut at, mut moves, mut last) = (start, false, start);
+        while let Some(b) = next[at] {
+            if pitches[at] == pitches[b] {
+                out.ties.push(at);
+            } else {
+                moves = true;
+            }
+            last = b;
+            at = b;
+        }
+        if moves {
+            out.slurs.push((start, last));
+        }
+    }
+    out.ties.sort_unstable();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -301,5 +354,22 @@ mod tests {
         assert_eq!(written_midinote(&json!([])), None);
         assert_eq!(written_midinote(&json!(60)), None);
         assert_eq!(written_midinote(&json!([{"step": "h", "octave": 4}])), None);
+    }
+
+    #[test]
+    fn a_voices_joins_are_ties_and_slurs() {
+        // 60 62 64 64 | 67: joined through the second 64, which articulates
+        let a = articulation(&[60.0, 62.0, 64.0, 64.0, 67.0], &[(0, 1), (1, 2), (2, 3)]);
+        assert_eq!(a.ties, [2]);
+        assert_eq!(a.slurs, [(0, 3)]);
+        // a run of one pitch is held, not slurred
+        let held = articulation(&[60.0, 60.0, 60.0], &[(0, 1), (1, 2)]);
+        assert_eq!(held.ties, [0, 1]);
+        assert!(held.slurs.is_empty());
+        // two runs, and joins out of order or out of range
+        let two = articulation(&[1.0, 2.0, 3.0, 4.0, 5.0], &[(3, 4), (0, 1), (2, 9)]);
+        assert!(two.ties.is_empty());
+        assert_eq!(two.slurs, [(0, 1), (3, 4)]);
+        assert_eq!(articulation(&[], &[(0, 1)]), Articulation::default());
     }
 }

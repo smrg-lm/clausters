@@ -293,6 +293,48 @@ pub unsafe extern "C" fn clausters_core_event_synth(
     }
 }
 
+/// What a voice's joins write on a page: `{"pitches": [midinote, ...],
+/// "joins": [[from, to], ...]}` in, `{"ties": [i, ...], "slurs": [[from, to],
+/// ...]}` out (`clausters_core::event::notation::articulation`).
+///
+/// # Safety
+/// `request` must be readable for `len` bytes, `out` null or writable for
+/// `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_articulation(
+    request: *const u8,
+    len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from the caller.
+    unsafe { json_door(request, len, out, out_cap, articulation_answer) }
+}
+
+fn articulation_answer(req: &Map<String, Value>) -> Value {
+    let pitches: Vec<f64> = req
+        .get("pitches")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().map(|v| v.as_f64().unwrap_or(f64::NAN)).collect())
+        .unwrap_or_default();
+    let joins: Vec<(usize, usize)> = req
+        .get("joins")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|pair| {
+                    Some((
+                        pair.get(0)?.as_u64()? as usize,
+                        pair.get(1)?.as_u64()? as usize,
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let a = clausters_core::event::notation::articulation(&pitches, &joins);
+    json!({"ties": a.ties, "slurs": a.slurs.iter().map(|&(x, y)| json!([x, y])).collect::<Vec<_>>()})
+}
+
 /// An event as the MIDI messages it plays: `{"event": {...}, "channel": c}` in,
 /// `{"messages": [[at, [bytes]], ...]}` out (`render::midi`).
 ///

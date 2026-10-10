@@ -522,7 +522,10 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         if kind == "midi":
             raise ValueError("a midi event plays on a MIDI destination (a MidiServer), "
                              "not on one that carries OSC")
-        node_id = self._node_id()
+        # A note of a voice that `continues` a node sets it rather than starting
+        # one (`clausters.seq.patterns.eventpatterns.pvoice`).
+        continued = event.get("continues")
+        node_id = int(continued) if continued is not None else self._node_id()
         # The messages are the core's render of the event, so every client
         # starts and ends a note with the same ones.
         synth = _native.event_synth(event.keys_data(), node_id)
@@ -537,8 +540,10 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         start = _native.tagged_message(synth["start"])
         log.debug("-> note at beat %s: %s", when.beat, start[:3])
         self._send_at(when, (start, *first), pin=pin)
-        self._send_at(when.at(synth["sustain"]),
-                      (_native.tagged_message(synth["release"]),), pin=pin)
+        # A `held` note has no release: the next note of its voice continues it.
+        if synth["release"]:
+            self._send_at(when.at(synth["sustain"]),
+                          (_native.tagged_message(synth["release"]),), pin=pin)
         self.curves.follow(node_id)
         return node_id
 

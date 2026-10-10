@@ -1152,6 +1152,13 @@ export class WidgetIds {
 export function amp_of_velocity(velocity: number): number;
 
 /**
+ * JS face: what a voice's joins write on a page -- `pitches` (MIDI note
+ * numbers) and `joins` (flat `[from, to, from, to, ...]`) in, `{"ties": [..],
+ * "slurs": [[from, to], ..]}` out as JSON.
+ */
+export function articulation(pitches: Float64Array, joins: Uint32Array): string;
+
+/**
  * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
  */
 export function bar(beats: number, quant: number): number;
@@ -1809,6 +1816,12 @@ export function sessionFormat(): number;
 export function sessionMigrate(session: string): string;
 
 /**
+ * JS face: one envelope segment's level -- shape `shape` (SuperCollider's
+ * numbers), curvature `c`, from `a` to `b`, at the position `t` in `[0, 1)`.
+ */
+export function shapeValue(shape: number, c: number, a: number, b: number, t: number): number;
+
+/**
  * The `[base, span]` of share `index` of `of` within `span` ids at `base`.
  */
 export function shareOf(base: number, span: number, index: number, of: number): Float64Array;
@@ -2018,6 +2031,7 @@ export interface InitOutput {
     readonly __wbg_steprunner_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly __wbg_widgetids_free: (a: number, b: number) => void;
+    readonly articulation: (a: number, b: number, c: number, d: number) => [number, number];
     readonly audioeditorplayback_call: (a: number, b: number, c: number, d: number) => [number, number];
     readonly audioeditorplayback_new: (a: number, b: number) => number;
     readonly bar: (a: number, b: number) => number;
@@ -2229,6 +2243,7 @@ export interface InitOutput {
     readonly secs_to_samples: (a: number, b: number) => number;
     readonly sessionFormat: () => number;
     readonly sessionMigrate: (a: number, b: number) => [number, number];
+    readonly shapeValue: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly shareOf: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetApply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetOps: () => [number, number, number, number];

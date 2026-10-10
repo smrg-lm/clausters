@@ -143,4 +143,5 @@
       - [listpatterns](api/clausters.seq.patterns.listpatterns.md)
       - [oppatterns](api/clausters.seq.patterns.oppatterns.md)
       - [randompatterns](api/clausters.seq.patterns.randompatterns.md)
+      - [timepatterns](api/clausters.seq.patterns.timepatterns.md)
       - [valuepatterns](api/clausters.seq.patterns.valuepatterns.md)

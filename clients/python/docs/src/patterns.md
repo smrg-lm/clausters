@@ -85,6 +85,51 @@ A **stream** composes the same way: `pseq([1, 2]).stream() + 1` is a stream of 2
 
 **A builtin given a pattern answers what the method does.** `midicps(pseq([60, 72]))` is `pseq([60, 72]).midicps()`, `add(2, p)` is `2 + p`, and a function of `clausters.base.builtins` that is not an operator — `cbrt`, `degkey`, `snap` — composes by name, value by value: `degkey(pseq([0, 2, 4]), major)` is a pattern of keys. It composes over its first argument, as a method does. The same holds for a signal, as far as a signal has the operator: `midicps(sine(1))` is a `UnaryOpUGen`, `sine(1).degrad()` a product, and a value function no UGen computes (`cbrt`, `moddif`) is refused by name rather than missing.
 
+## Events: keys from keys, patterns together, and time
+
+Inside a `pbind` each key's pattern receives the event being built, so **a key can be read by a later one**: `pkey("degree")` is the degree this event already chose, and `pbind(degree=pseq([0, 7, 14]), octave=pkey("degree") // 7 + 4)` computes one from the other. `pchain(a, b)` — sclang's `a <> b` — runs `b` first and hands each of its events to `a` as the event to build on, so `b` gives defaults that `a` overrides; `pevent(p, {"amp": 0.1})` starts every event of `p` from the same keys.
+
+`ppar([melody, bass])` plays event patterns **together**: their events merged in time, each one's `delta` the time to the next event of any of them. A pattern can also read **the time itself**: `ptime()` is the beats since it started, `pstep([60, 67], [2, 1])` holds each value for its duration on a grid of its own, and `pseg([0.1, 0.5, 0.1], [4, 4], "exp")` follows a curve, read at the beat each event falls on. They need a clock that moves — as keys of a pattern that plays or renders; a plain loop does not advance the beat.
+
+## A voice: articulation and inflection
+
+Two things shape how a line of notes sounds, and they are different in kind.
+
+- An **articulation** is how *distinct notes relate*: a legato that carries one note into the next, a detached note, a tie that holds one pitch across two, a slur over a phrase. It is a relation between notes.
+- An **inflection** is a variation *inside one note*: its pitch bending, its pressure swelling, any control moving while it sounds. It belongs to the note — it is its `expression`, the curves an `Event` carries from its start.
+
+It is the difference in a spoken voice between how syllables are joined and how one syllable is inflected. In MPE, too, a note keeps the note-on it started with and is inflected by its bend; a change of note is a new note — an articulation — whatever the bend does.
+
+`pvoice` is the pattern of articulation. It binds keys as `pbind` does, but its events are **notes of one voice**, and each note's `legato` says how it goes on to the next:
+
+```python
+from clausters.seq import pseq, pvoice
+
+line = pvoice("lead",
+              midinote=pseq([60, 62, 64, 64, 67]),
+              dur=0.5,
+              legato=pseq([1.0, 1.0, 1.0, 0.6, 0.8]),
+              artic=True)
+```
+
+With `artic`, a note joins the next while `legato >= 1` and the next one re-attacks when it is less — sclang's `PmonoArtic`; without it every note goes on into the next, sclang's `Pmono`. A rest always breaks the line. So the line above is joined from 60 through the second 64, which articulates, and 67 starts afresh.
+
+**The articulation is one datum, and each destination realizes it in its own terms.** The data is the notes and their `legato`; what a join *becomes* is the instrument's:
+
+- **on the server**, the voice holds one node: the first note starts a synth, each joined note sets that synth's controls instead of starting another, and only the last releases it — so a control with a lag glides, and nothing re-attacks;
+- **on MIDI**, joined notes overlap, which a synthesizer in mono mode plays legato;
+- **on a page**, rendered into an `EventSequence`, a joined note that keeps its pitch is a **tie** and a run of joined notes that moves is a **slur**, from its first note to the one that articulates.
+
+```python
+data = line.render_events().data()
+[e["data"].get("tie", False) for e in data["events"]]   # [False, False, True, False, False]
+data["notation"]["spanners"]                            # [{"kind": "slur", "from": 1, "to": 4}]
+```
+
+The rendered sequence keeps **both shapes**: each note's `legato`, and the tie and slur — the slur in the sequence's notation, where a score reads it. Neither is lost on the way.
+
+What varies inside one of those notes is not the voice's business: give the note an `expression` and it is inflected however it is articulated. `voice=` writes which voice of the staff the line is, so two voices played together (`ppar([upper, lower])`) stay apart on the page.
+
 ## Writing a pattern
 
 A pattern is written as a **generator function** under `pattern`, as a UGen is a function returning a graph node. The name becomes a function that builds the pattern; the generator runs once per walk:
@@ -121,7 +166,8 @@ The patterns live in `clausters.seq.patterns`, one module per family, and are al
 | `listpatterns` | values read from a list | `pseq`, `pser`, `prand`, `pxrand`, `pwrand`, `pshuffle`, `pslide`, `pwalk`, `place`, `placep`, `ptuple`, `pswitch`, `pswitch1`, `pfsm`, `pdfsm` |
 | `filterpatterns` | another pattern, transformed | `pn`, `pgate`, `pcollect`, `pselect`, `preject`, `pdrop`, `plen`, `pstutter`, `platch`, `pwhile`, `pwrap`, `pclump`, `pflatten`, `pdiff`, `pprorate`, `pavaroh`, `pdelta`, `pdur`, `ptrace` |
 | `funcpatterns` | values a function computes when asked | `pfunc`, `pfuncn`, `prout`, `plazy`, `pif`, `pproduct` |
-| `eventpatterns` | events | `pbind` |
+| `eventpatterns` | events | `pbind`, `pkey`, `pchain`, `pevent`, `pvoice`, `ppar` |
+| `timepatterns` | values of the beat the walk is at | `ptime`, `pstep`, `pseg` |
 | `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
 
 **An argument may itself be a pattern.** A bound, a step or a parameter is read one value per step, as sclang reads it: `pwhite(pseq([0, 12]), pseq([7, 19]))` draws from two ranges in turn, and `pseries(0, pseq([2, 2, 1]))` steps by a pattern and ends when the steps do.

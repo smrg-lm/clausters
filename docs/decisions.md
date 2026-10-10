@@ -10031,3 +10031,34 @@ a stream may not end — and is applied to the list before it becomes a pattern,
 as in sclang, where it belongs to `ArrayedCollection` and not to
 `AbstractFunction`.
 
+## A voice is notes and their joins, realized by each destination
+
+*Decided with the user, 2026-10-10.* sclang has `Pmono` and `PmonoArtic`, and
+sc3 merged them into one pattern with a flag; its events carried `server` and
+`node_id`, the state of a sounding server, and no curves. `pvoice` keeps the
+merge (the flag is `artic`) and changes what the events are: **every event is
+a note**, and what the voice adds is the **articulation** between consecutive
+notes, which the note's `legato` says. The framing is the user's, from the
+spoken voice: an articulation is how distinct notes relate (legato, a tie, a
+slur), an inflection a variation inside one note (its `expression`). A change
+of note is an articulation in every abstraction, MPE included, where a note
+keeps its note-on and only its bend moves.
+
+So the datum is one and each destination realizes it. On the server the core's
+event render reads two keys a voice writes as it plays: a note that `continues`
+a node sets that node instead of starting a synth, and a `held` note schedules
+no release -- one synth across the joined notes, as `Pmono` has it, by one rule
+for both clients (`clausters_core::event::render::synth`). On MIDI the joined
+notes simply overlap. Rendered into an `EventSequence`, the recorder hands each
+note an index as its node, so the next note's `continues` names it; those joins
+go to `clausters_core::event::notation::articulation`, which says which are
+ties (one pitch held) and which runs are slurs, and the render writes both: the
+`tie` key and a slur spanner over event ids in the sequence's notation. The
+sequence keeps the `legato` too -- both shapes, as the user asked.
+
+A voice reads **one note ahead**, to know whether the note it is about to
+yield goes on into the next. The cost is that the next note's keys are read
+with the incoming value of this one, so a `pkey` inside a voice sees the event
+before; no pattern of the library depends on that, and knowing the join at the
+moment a note starts is what lets the server never re-attack a joined note.
+

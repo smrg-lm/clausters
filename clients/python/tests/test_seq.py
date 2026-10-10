@@ -248,3 +248,26 @@ if __name__ == "__main__":
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
                 if not skip:
                     traceback.print_exc()
+
+
+def test_a_voice_holds_one_node_across_its_joined_notes():
+    """`pvoice` on the server: one `/synth_new` per line, a `/node_set` of the
+    same node for every note joined to it, and one release, after the last."""
+    _embed_or_skip()
+    from clausters.seq import pvoice
+
+    server = Server(interface=OscNrtInterface())
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
+    pvoice("default", midinote=pseq([60, 62, 64, 65]), dur=0.5,
+           legato=pseq([1.0, 1.0, 0.5, 0.8]), artic=True).play(clock, server)
+    clock.render()
+    flat = sorted((when, addr, args) for when, raw in server.interface.score.bundles
+                  for addr, args, _ in osc.decode_packet(raw))
+    news = [(w, a) for w, addr, a in flat if addr == "/synth_new"]
+    sets = [(w, a) for w, addr, a in flat if addr == "/node_set" and "freq" in a]
+    releases = [w for w, addr, a in flat if addr == "/node_set" and "gate" in a]
+    # 60 starts the line, 62 and 64 continue it, 64 articulates, 65 re-attacks
+    assert [w for w, _ in news] == [0.0, 1.5]
+    assert [w for w, _ in sets] == [0.5, 1.0]
+    assert all(a[0] == news[0][1][1] for _, a in sets)        # the first line's node
+    assert len(releases) == 2 and min(releases) > 1.0

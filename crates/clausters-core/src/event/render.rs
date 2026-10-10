@@ -39,6 +39,9 @@ pub const RESERVED: &[&str] = &[
     "root",
     "scale",
     "node",
+    // How a voice holds one node across its notes ([`synth`]).
+    "held",
+    "continues",
     "velocity",
     "db",
     // What the note says on a page ([`super::notation::KEYS`]).
@@ -299,7 +302,8 @@ pub struct Synth {
     /// `/synth_new instrument node add_action target freq f amp a ...`.
     pub start: Vec<Arg>,
     /// `/node_set node gate 0` when the note releases by its gate, else
-    /// `/node_free node`.
+    /// `/node_free node`; empty when the note is `held`, so nothing releases
+    /// it -- the next note of its voice continues it.
     pub release: Vec<Arg>,
     /// Beats from the start to the release.
     pub sustain: f64,
@@ -343,23 +347,38 @@ fn instrument(keys: &Map<String, Value>) -> &str {
 /// `None` for anything that is not a note. The controls are `freq` and `amp`
 /// (the ones a synth takes by convention), `out` when stated, then every other
 /// number the event holds and does not reserve ([`RESERVED`]), by name.
+///
+/// **A voice holds one node across its notes** -- sclang's `Pmono` -- by two
+/// keys. A note that `continues` a node sets that node's controls
+/// (`/node_set continues ...`) instead of starting a synth, so the sound goes
+/// on and only what changed moves; and a `held` note does not release, since
+/// the next note of its voice continues it. The note that ends the voice is
+/// neither held nor, if it continues, anything but a set followed by the
+/// release of that node.
 #[must_use]
 pub fn synth(keys: &Map<String, Value>, node: i32) -> Option<Synth> {
     if Type::of(keys) != Type::Note {
         return None;
     }
     let scale = scale_of(keys);
-    let mut start = vec![
-        Arg::Str("/synth_new".into()),
-        Arg::Str(instrument(keys).into()),
-        Arg::Int(node),
-        Arg::Int(number_or(keys, "add_action", 1.0) as i32),
-        Arg::Int(number_or(keys, "target", 0.0) as i32),
+    let continued = number(keys, "continues").map(|n| n as i32);
+    let node = continued.unwrap_or(node);
+    let mut start = match continued {
+        Some(_) => vec![Arg::Str("/node_set".into()), Arg::Int(node)],
+        None => vec![
+            Arg::Str("/synth_new".into()),
+            Arg::Str(instrument(keys).into()),
+            Arg::Int(node),
+            Arg::Int(number_or(keys, "add_action", 1.0) as i32),
+            Arg::Int(number_or(keys, "target", 0.0) as i32),
+        ],
+    };
+    start.extend([
         Arg::Str("freq".into()),
         Arg::Float(pitch_of(keys).freq(&scale) as f32),
         Arg::Str("amp".into()),
         Arg::Float(level_of(keys).amp() as f32),
-    ];
+    ]);
     if let Some(out) = number(keys, "out") {
         start.push(Arg::Str("out".into()));
         start.push(Arg::Float(out as f32));
@@ -379,7 +398,10 @@ pub fn synth(keys: &Map<String, Value>, node: i32) -> Option<Synth> {
         start.push(Arg::Str(name.clone()));
         start.push(Arg::Float(value as f32));
     }
-    let release = if releases_by_gate(keys) {
+    let held = matches!(keys.get("held"), Some(Value::Bool(true)));
+    let release = if held {
+        Vec::new()
+    } else if releases_by_gate(keys) {
         vec![
             Arg::Str("/node_set".into()),
             Arg::Int(node),
@@ -632,6 +654,48 @@ mod tests {
         let gated = synth(&keys(json!({"instrument": "default"})), 1).unwrap();
         assert_eq!(gated.release[0], Arg::Str("/node_set".into()));
         assert!(synth(&keys(json!({"type": "rest"})), 1).is_none());
+    }
+
+    #[test]
+    fn a_voice_holds_one_node_across_its_notes() {
+        // the first note starts the synth and holds it: nothing releases it
+        let first = synth(
+            &keys(json!({"instrument": "lead", "midinote": 60, "held": true})),
+            7,
+        )
+        .unwrap();
+        assert_eq!(first.start[0], Arg::Str("/synth_new".into()));
+        assert!(first.release.is_empty());
+        // the next sets the same node's controls, and still holds it
+        let next = synth(
+            &keys(json!({"instrument": "lead", "midinote": 62, "continues": 7, "held": true, "cutoff": 900})),
+            99,
+        )
+        .unwrap();
+        assert_eq!(
+            next.start[..3],
+            [
+                Arg::Str("/node_set".into()),
+                Arg::Int(7),
+                Arg::Str("freq".into())
+            ]
+        );
+        assert!(next.start.contains(&Arg::Str("cutoff".into())));
+        assert!(next.release.is_empty());
+        // the last one sets it and releases it, by the instrument's own gesture
+        let last = synth(
+            &keys(json!({"instrument": "lead", "midinote": 64, "continues": 7})),
+            99,
+        )
+        .unwrap();
+        assert_eq!(last.start[1], Arg::Int(7));
+        assert_eq!(
+            last.release,
+            vec![Arg::Str("/node_free".into()), Arg::Int(7)]
+        );
+        // and neither key reaches the synth as a control
+        assert!(!next.start.contains(&Arg::Str("held".into())));
+        assert!(!next.start.contains(&Arg::Str("continues".into())));
     }
 
     #[test]

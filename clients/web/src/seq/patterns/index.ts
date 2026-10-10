@@ -22,13 +22,18 @@
 // - `funcpatterns` -- values a function computes when the walk asks: one per
 //   step, a routine's yields, a pattern decided late, a choice between two, the
 //   product of several.
-// - `eventpatterns` -- the patterns whose stream yields events: `pbind`.
+// - `eventpatterns` -- the patterns whose stream yields events: `pbind`,
+//   `pchain`, `pevent`, `pvoice` (a voice, by its articulation) and `ppar`
+//   (patterns together), and `pkey`, a key read from the event being built.
+// - `timepatterns` -- values of the beat a walk is at: the time itself, a step
+//   function, a curve.
 // - `oppatterns` -- what an operator composes: `punop`, `pbinop`, `pnarop`.
 //
 // What a pattern is, and how one is written, is `seq/pattern.ts`.
 
-export { pbind } from "./eventpatterns.ts";
-export type { Bindings } from "./eventpatterns.ts";
+export { pbind, pchain, pevent, pkey, ppar, pvoice } from "./eventpatterns.ts";
+export type { Bindings, VoiceOptions } from "./eventpatterns.ts";
+export { pseg, pstep, ptime } from "./timepatterns.ts";
 export {
     pavaroh, pclump, pcollect, pdelta, pdiff, pdrop, pdur, pflatten, pgate, platch, plen, pn,
     pprorate, preject, pselect, pstutter, ptrace, pwhile, pwrap,

@@ -88,6 +88,7 @@ In wasm neither applies: a call returns the bytes or the string.
 | `clausters_core_loudness` | `loudness` | `idiom` — the **loudness** of an interleaved buffer as ITU-R BS.1770 and EBU R 128 measure it: integrated, range, and the maximum momentary and short-term readings. C writes the four through an out pointer and takes the weights as a nullable pointer; wasm returns them as an array and takes the weights as an optional one — the split `clausters_core_stats` makes. The streaming `LoudnessMeter` has no door on either side: a live meter runs in the host, a Rust caller of the core |
 | `clausters_core_stats` | `channel_stats` | `idiom` — the peak and RMS of one channel of an interleaved buffer; C writes the pair through an out pointer, wasm returns it as a two-element array |
 | `clausters_core_correlation` | `correlation` | |
+| `clausters_core_shape_value` | `shape_value` | `idiom` — one envelope segment's level at a position, SuperCollider's shape numbers, what `EnvGen` plays and `pseg` reads; the same five scalars on both sides |
 | `clausters_core_curve_axis` | `curve_axis` | `idiom` — the axis a break-point curve is *drawn* against: its range with a tenth of headroom, held and only widened once a view has one. C reads the kept axis out of the same `out` pointer it writes (a flag says whether to), wasm takes it as two optional arguments and returns the pair — the same split `clausters_core_stats` makes, and for the same reason. It is a **drawing** rule in the core because it was already written twice, and a range recomputed per redraw makes an edit rescale the picture |
 | `clausters_core_lissajous` | `lissajous` | |
 | `clausters_core_hz_to_mel` | `hz_to_mel` | the perceptual axes a spectrogram labels. Both clients spell the pair `cpsmel`/`melcps`, following SuperCollider's `<from><to>` conversions (`midicps`, `cpsoct`) — the core keeps the `hz_to_*` names because that is what the GUI host's ruler calls |
@@ -125,6 +126,7 @@ In wasm neither applies: a call returns the bytes or the string.
 | `clausters_core_velocity_of_amp` | `velocity_of_amp` | |
 | `clausters_core_event_delta` | `event_delta` | |
 | `clausters_core_event_sustain` | `event_sustain` | |
+| `clausters_core_articulation` | `articulation` | `idiom` — what a voice's joins write on a page (ties and slurs): C reads `{"pitches", "joins"}` as one JSON request and fills a buffer; wasm takes the pitches and the joins flat, as typed arrays, and returns the JSON |
 | `clausters_core_event_synth` | `event_synth` | `idiom` — C reads `{"event", "node"}` as one JSON request and fills a buffer; wasm takes the event's JSON and the node as two arguments and returns the string |
 | `clausters_core_event_midi` | `event_midi` | `idiom` — the same request/argument split, with the channel |
 | `clausters_core_event_of_midi` | `event_of_midi` | `idiom` — C reads `{"bytes"}` as JSON; wasm takes the bytes as a `Uint8Array` |

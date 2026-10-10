@@ -12,6 +12,13 @@ import { Ugen, sine } from "../src/defs/ugens/index.ts";
 import { seed } from "../src/base/rand.ts";
 import { Routine, StopStream } from "../src/base/stream.ts";
 import {
+    pchain,
+    pevent,
+    pkey,
+    ppar,
+    pseg,
+    pstep,
+    pvoice,
     pfunc,
     pfuncn,
     pif,
@@ -378,4 +385,65 @@ test("a function computes values when asked", () => {
     assert.deepEqual([...pproduct(null, [pseq([1, 2]), pseq([10, 20])])], [[1, 10], [1, 20], [2, 10], [2, 20]]);
     const phrase = pbind({ degree: pseq([1, 2]), octave: pfunc((e?: unknown) => (e as { degree: number }).degree + 4) });
     assert.deepEqual([...phrase].map((e) => e.get("octave")), [5, 6]);
+});
+
+// ---- event and time patterns ----
+
+test("a key reads the event being built", () => {
+    const phrase = pbind({ degree: pseq([0, 7, 14]), octave: pkey("degree").idiv(7).add(4) });
+    assert.deepEqual([...phrase].map((e) => e.get("octave")), [4, 5, 6]);
+    assert.deepEqual([...pevent(pbind({ x: pseq([1, 2]) }), { k: "v" })].map((e) => e.get("k")), ["v", "v"]);
+});
+
+test("a chain lets a later pattern give the defaults", () => {
+    const chained = pchain(pbind({ a: pseq([1, 2]) }), pbind({ b: 10, a: 0 }));
+    assert.deepEqual([...chained].map((e) => [e.get("a"), e.get("b")]), [[1, 10], [2, 10]]);
+});
+
+test("patterns played together merge in time", () => {
+    const events = [...ppar([pbind({ degree: pseq([0, 1]), dur: 1 }), pbind({ degree: pseq([4, 5, 6]), dur: 0.5 })])];
+    assert.deepEqual(events.map((e) => e.get("degree") ?? null), [0, 4, 5, 1, 6, null]);
+    assert.deepEqual(events.map((e) => e.delta()), [0, 0.5, 0.5, 0, 0.5, 0.5]);
+    assert.equal(events.at(-1)!.get("type"), "rest");
+});
+
+test("a voice joins its notes by legato", () => {
+    const voice = pvoice(
+        "lead",
+        { midinote: pseq([60, 62, 64, 64, 67]), dur: 0.5, legato: pseq([1, 1, 1, 0.6, 0.8]) },
+        { artic: true, voice: 2 },
+    );
+    const events = [...voice];
+    assert.deepEqual(events.map((e) => e.get("held") ?? false), [true, true, true, false, false]);
+    assert.deepEqual(new Set(events.map((e) => e.get("voice"))), new Set([2]));
+    const always = [...pvoice("lead", { midinote: pseq([60, 62, 64]), legato: 0.5 })];
+    assert.deepEqual(always.map((e) => e.get("held") ?? false), [true, true, false]);
+});
+
+test("a rendered voice writes its ties and slurs", async () => {
+    const voice = pvoice(
+        "lead",
+        { midinote: pseq([60, 62, 64, 64, 67]), dur: 0.5, legato: pseq([1, 1, 1, 0.6, 0.8]) },
+        { artic: true },
+    );
+    const data = (await voice.renderEvents()).data() as {
+        events: { data: Record<string, unknown> }[];
+        notation?: { spanners: unknown[] };
+    };
+    assert.deepEqual(data.events.map((e) => e.data.tie ?? false), [false, false, true, false, false]);
+    assert.deepEqual(data.notation!.spanners, [{ kind: "slur", from: 1, to: 4 }]);
+    assert.ok(data.events.every((e) => !("held" in e.data) && !("continues" in e.data)));
+    const plain = (await pbind({ midinote: pseq([60, 62]), legato: 1.5 }).renderEvents()).data() as object;
+    assert.ok(!("notation" in plain));
+});
+
+test("the time patterns read the clock", async () => {
+    const stepped = (await pbind({ dur: 0.5, x: pstep([1, 2], 1) }).renderEvents()).data() as {
+        events: { data: { x: number } }[];
+    };
+    assert.deepEqual(stepped.events.map((e) => e.data.x), [1, 1, 2, 2]);
+    const ramp = (await pbind({ dur: 0.25, x: pseg([0, 1], 1) }).renderEvents()).data() as {
+        events: { data: { x: number } }[];
+    };
+    assert.deepEqual(ramp.events.map((e) => Math.round(e.data.x * 1e6) / 1e6), [0, 0.25, 0.5, 0.75]);
 });

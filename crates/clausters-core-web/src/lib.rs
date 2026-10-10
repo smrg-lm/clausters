@@ -1392,6 +1392,24 @@ pub fn event_synth(event: &str, node: i32) -> String {
     }
 }
 
+/// JS face: what a voice's joins write on a page -- `pitches` (MIDI note
+/// numbers) and `joins` (flat `[from, to, from, to, ...]`) in, `{"ties": [..],
+/// "slurs": [[from, to], ..]}` out as JSON.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn articulation(pitches: &[f64], joins: &[u32]) -> String {
+    let pairs: Vec<(usize, usize)> = joins
+        .chunks_exact(2)
+        .map(|p| (p[0] as usize, p[1] as usize))
+        .collect();
+    let a = clausters_core::event::notation::articulation(pitches, &pairs);
+    serde_json::json!({
+        "ties": a.ties,
+        "slurs": a.slurs.iter().map(|&(x, y)| [x, y]).collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
 /// JS face: an event as its MIDI messages, `{"messages": [[at, [bytes]]]}` or
 /// `{"error"}`.
 #[cfg(target_arch = "wasm32")]
@@ -1646,6 +1664,14 @@ pub fn curve_axis(values: &[f64], kept_lo: Option<f64>, kept_hi: Option<f64>) ->
     };
     let (lo, hi) = envshape::curve_axis(values, kept);
     vec![lo, hi]
+}
+
+/// JS face: one envelope segment's level -- shape `shape` (SuperCollider's
+/// numbers), curvature `c`, from `a` to `b`, at the position `t` in `[0, 1)`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = shapeValue)]
+pub fn shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
+    envshape::shape_value(shape, c, a, b, t)
 }
 
 /// JS face: **the props a break-point curve is drawn with**, as a JSON string --

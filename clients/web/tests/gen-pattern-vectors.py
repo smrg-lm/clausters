@@ -33,6 +33,7 @@ from clausters.seq import (pavaroh, pbind, pclump, pcollect,  # noqa: E402
                            pstutter, ptrace, pwhile, pwrap)
 from clausters.seq import (pfuncn, pif, plazy, pproduct,  # noqa: E402
                            prout)
+from clausters.seq import pchain, pevent, pkey, ppar, pvoice  # noqa: E402
 from clausters.seq import (pdfsm, pfsm, place, placep, pshuffle,  # noqa: E402
                            pslide, pswitch, pswitch1, ptuple, pwalk, pwrand,
                            pxrand)
@@ -143,6 +144,17 @@ CASES = {
         n=pn(pseq([0, 1]), float("inf"), "g"),
         x=pgate(pseries(0, 1), float("inf"), "g")), 6))),
     "ptrace_passes": (None, lambda: ptrace(pseq([1, 2]), "| ")),
+    "pkey": (None, lambda: pcollect(lambda e: e["octave"], pbind(
+        degree=pseq([0, 7, 14]), octave=pkey("degree") // 7 + 4))),
+    "pchain": (None, lambda: pcollect(lambda e: e["a"] * 100 + e["b"], pchain(
+        pbind(a=pseq([1, 2])), pbind(b=pseq([3, 4, 5]), a=0)))),
+    "pevent": (None, lambda: pcollect(lambda e: e["k"] + e["x"], pevent(
+        pbind(x=pseq([1, 2])), {"k": 10}))),
+    "ppar": (None, lambda: pcollect(lambda e: e.delta(), ppar([
+        pbind(degree=pseq([0, 1]), dur=1), pbind(degree=pseq([4, 5, 6]), dur=0.5)]))),
+    "pvoice": (None, lambda: pcollect(lambda e: 1 if e.get("held") else 0, pvoice(
+        "lead", midinote=pseq([60, 62, 64, 64, 67]), dur=0.5,
+        legato=pseq([1.0, 1.0, 1.0, 0.6, 0.8]), artic=True))),
     "prout": (None, lambda: prout(_counted)),
     "pfuncn": (None, lambda: pfuncn(lambda: pseq([1, 2]), 2)),
     "plazy": (None, lambda: plazy(lambda: pseq([5, 6]))),
