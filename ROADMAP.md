@@ -210,6 +210,14 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **Patterns: SuperCollider's operators and library, `C70`-`C74`**
+  *(`clients/python/PLAN.md`, "Patterns: SuperCollider's operators and
+  library"; the port's shape in `clients/web/PLAN.md`, "Parity gaps carried
+  from the Python client")*. **Taken first**, opened 2026-10-10 by the user:
+  `C70` makes a pattern compose by operators, so it comes before the rest.
+  **Related:** `C73e` is where `Ppar` and `pvoice` (sclang's `Pmono`) land, the pattern-side question
+  of "The mapping exists and is private to the `Editor`" below.
+
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
   sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening

@@ -2151,6 +2151,24 @@ went, what stayed and why no case was left for it.
   carries the area registry and `watch`, the environment list arms areas by
   name, and `gui/editing/trace.ts` is the `gui.editing` area.
 
+- ⬜ **Patterns compose by operators, and the library is sc3's** *(opened
+  2026-10-10; the arc is `clients/python/PLAN.md`, "Patterns: SuperCollider's
+  operators and library", `C70`-`C74`)*. Neither client has it today, so it is
+  ported milestone by milestone rather than after the arc. The shape this port
+  follows: a pattern is a lowercase function written as `pattern(function*)`
+  over one generic `Pattern` (`pseq([1, 2, 3]).add(60)`), the generator
+  receiving the incoming event as `const inval = yield value`; `Pattern` and
+  `Stream` extend `AbstractObject` through the same
+  `unop`/`binop` hooks a graph uses, so composition is by method
+  (`pseq([74, 60, 46]).add(2)`, `.linlin(...)`, `.blend(b, frac)`), each step
+  calls the `base/builtins` function of that selector, and a list function
+  (`normalize` and its table) refuses a pattern exactly as Python's does. The
+  classes, their names and their argument order are Python's; sc3's
+  `@pattern` decorator is `pattern(function*)` here. The modules are the same
+  families, each class carries the same brief description and kind (value or
+  event pattern) in TSDoc, and every pattern stays iterable through
+  `[Symbol.iterator]` (`for (const x of pat)`), as Python's `for x in pat`.
+
 ## Future directions
 
 Every entry carries a checkbox, like the plan's "Found by use" below: an

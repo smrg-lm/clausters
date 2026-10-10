@@ -2221,6 +2221,239 @@ Out of the arc: the special functions sclang takes from Boost and no
 established Rust crate carries (elliptic integrals, Legendre and Laguerre
 polynomials, zeta…).
 
+### Patterns: SuperCollider's operators and library (client arc, phased)
+
+*Opened 2026-10-10 by the user, from a survey of sc3 against both clients.* In
+sc3 a `Pattern` is an `AbstractObject`: `Pseq([74, 60, 46]) + 2` is a
+`Pbinop`, `pat.linlin(...)` a `Pnarop`, and a `Stream` composes the same way
+(`UnopStream`, `BinopStream`, `NaropStream`). Here `Pattern` is a bare class
+in both clients, so that line raises `TypeError` in Python and has no method
+in TypeScript; the library has 10 pattern classes against sc3's 73; and
+`AbstractObject` itself carries less than sc3's.
+
+**The contract**: a pattern composes with **the same vocabulary a graph
+does** — the same selectors, the same `AbstractObject` methods — and the
+value each step yields is computed by the **`clausters.builtins` function of
+that name**, so a pattern, a list and a signal answer one operator with one
+function in the shared core. The arc adds no numeric rule of its own: a value
+a pattern needs that the core does not have (a distribution, a list function)
+goes into the core first, under the numeric builtins arc's contract.
+
+**An operator on a pattern is per value; a list function is not an
+operator.** `blend`, `linlin`, `clip` and every operator apply to each value a
+stream yields, so a pattern has them. `normalize`, `normalizesum`,
+`integrate`, `differentiate`, `resamp0`/`resamp1` and `asrandomtable` read a
+whole list — a minimum and a maximum, a sum — and a stream may never end, so a
+pattern does **not** have them, as in sclang (they are `ArrayedCollection`'s,
+not `AbstractFunction`'s). The idiom is `Pseq(normalize([...]))`.
+
+**The defect it closes on the way**: `builtins._is_seq` takes anything with
+`__iter__` for a list, and a pattern has one — so `midicps(Pseq([69, 81]))`
+reads the pattern whole into a list (and hangs on an endless one), and
+`normalize(Pseq(...))` fails inside `_native.list_op` with `object of type
+'Pseq' has no len()`.
+
+**"pyramid" already names something else here.** The 750-odd occurrences
+across the tree are the **peak pyramid** (`clausters_core::peaks::Pyramid`,
+`MultiPyramid`, `JsPyramid`), the min/max/mean-square cache behind every
+waveform view; sclang's list function `pyramid` exists nowhere, and sc3 left
+it, with its neighbours, as a comment (`sc3/base/builtins.py`: `mirror`,
+`mirror1`, `mirror2`, `stutter`, `rotate`, `pyramid`, `pyramidg`, `sputter`).
+The prose says "the list function `pyramid`" wherever the peak pyramid is a
+possible reading.
+
+**A pattern is a function, as a UGen is** (the user, 2026-10-10): `sine(freq)`
+returns the generic `Ugen("Sine", [freq])`, and `pseq([1, 2, 3]) + 60` returns
+the generic `Pattern` the same way — lowercase names, the arc's break with
+sclang's `Pseq`, which the UGens already made (`sine`, not `SinOsc`); the
+decision goes into `docs/decisions.md`. Each pattern is **written as a
+generator function under sc3's `@pattern` decorator**, which keeps the
+function and its arguments and starts a fresh generator on every iteration: a
+call is a reusable description, never a one-shot generator. One `Pattern`
+class (with `EventPattern` beside it, chosen by the decorator) replaces one
+class per pattern; `Punop`/`Pbinop`/`Pnarop` are generators like the rest; in
+TypeScript it is `pattern(function*)`. Nothing outside the tests asks
+`isinstance` of a concrete pattern class, so nothing depends on the classes.
+**This is possible because no pattern holds state** (surveyed 2026-10-10 over
+sc3's 73 classes and both clients' 10: none assigns to itself after it is
+built, and both clients copy their items): a walk's position, a state
+machine's state, `Pseed`'s seed are each stream's, in the generator's frame,
+and a `Pfunc`'s state is its closure's. What an event pattern adds is not
+state but the **incoming event**: `Pkey` reads it, `Pchain` composes it,
+`Pbind` fills it — sc3's `inval = yield value` — so the decorator passes it
+from `C70` on, though `C73e` is its first reader. The proxies (`Pdef`, `Pdefn`,
+`Pbindef`, `PatternProxy`) are **out, decided by the user on 2026-10-10**:
+they are JITLib's, not the pattern library's, and sc3 never carried them; a
+source that changes makes them the one stateful kind, which a `@pattern`
+could not be anyway.
+
+**Value pattern and event pattern are the distinction the library is read
+by** (the user, 2026-10-10): they differ in what their stream yields — a value
+pattern yields values (numbers, lists, anything a key takes), an event pattern
+yields `Event`s, and only an event pattern plays. Every class says which it
+is, and the ones that can be either (a list or filter pattern over event
+patterns, a composition over one) say how they resolve it, which is the rule
+`Pseq`/`Prand`/`Pn` already follow: decided when the pattern is built. The
+books teach the two kinds before any class.
+
+**The library is organized by family, and each family is a module** (the
+user, 2026-10-10), the way the UGens are (`defs/ugens/osc.py`, `filter.py`,
+...) and the way sc3 was (`seq/patterns/`): value patterns, random patterns,
+list patterns, filter patterns, function patterns, event patterns, time
+patterns — `C73`'s phases. A module's header says what its family does and
+how it differs from its neighbours, and **every pattern class carries a brief
+description of what it yields**, one or two lines in its docstring (TSDoc in
+the web client), as every UGen function does (`sine`: "Sine by f64 phase
+accumulation, starting at phase 0."). The ten classes that exist today get
+theirs in `C70`, and the module split happens there too, before the library
+grows into it.
+
+**A pattern is an iterable, in both languages** (the user, 2026-10-10):
+`for x in Pseq([1, 2, 3])` in Python, `for (const x of new Pseq([1, 2, 3]))`
+in TypeScript (`Pattern` implements `[Symbol.iterator]`), each loop over a
+fresh stream; `list(pat)` / `[...pat]` read a finite one whole. Every pattern
+the arc adds keeps this, a composed one included, and the books show the loop
+as the first way to see what a pattern yields — with an endless one bounded
+by the loop (`islice`, a `break`), never read whole.
+
+- ⬜ **C70 — A pattern is a function, and composes by operators.** First the
+  form: `@pattern` (and `pattern(function*)`) carrying the incoming event, the
+  ten existing patterns rewritten as lowercase generator functions
+  (`pseq`, `pser`, `prand`, `pwhite`, `pseries`, `pgeom`, `pfunc`, `pn`,
+  `pconst`, `pbind`) in both clients, and every example, test and book page
+  moved to them in the same commit. Then the operators: `Pattern` and
+  `Stream` implement the four `AbstractObject` hooks with `punop`, `pbinop`
+  and `pnarop` (sc3's `Punop`/`Pbinop`/`Pnarop`, sclang's `Pnaryop`),
+  generators like the rest, in both clients: each step pulls one value from every operand
+  stream and calls the builtin by the selector (`builtins.UNARY`, `BINARY`,
+  `BOUND` and the calc tables), and the composed pattern ends when any operand
+  ends. A composition over an `EventPattern` is an `EventPattern` (sc3's
+  `is_event_pattern` propagation), so `pbind(...) * 2`-style composition plays.
+  The reflected forms (`2 + pseq(...)`) and a pattern operand on either side of
+  a pattern are covered. In TypeScript composition is by method, as it already
+  is for a graph (`pseq([74, 60, 46]).add(2)`), through the same `binop`/`unop`
+  hooks. A composed pattern iterates like any other (`for x in pseq(...) + 2`).
+  The ten existing classes move into family modules and get their brief
+  descriptions, each saying whether it is a value or an event pattern.
+- ⬜ **C71 — `AbstractObject` carries sc3's whole surface, and the builtins
+  take a pattern.** The methods sc3's `AbstractObject` has and this one does
+  not move into the base, so a pattern gets them without a graph: the range
+  maps (`linlin`, `linexp`, `explin`, `expexp`, `lincurve`, `curvelin`),
+  `clip`/`wrap`/`fold` and the eight random operators (`rand`, `rand2`,
+  `linrand`, `bilinrand`, `sum3rand`, `coin`, `rrand`, `exprand`), today only on
+  the UGen graph; and `blend`, `bilin`, `biexp`, `moddif`, `degrad`, `raddeg`,
+  `not_`, `//` (`idiv`), `~` (`bitnot`) and the named `bitand`/`bitor`/
+  `bitxor`/`lshift`/`rshift`, which no class has. Each subclass that cannot
+  compose one (a Faust `Signal`, a `PvExpr`) refuses it by name rather than by
+  a missing attribute. **Equality stays out of the operators**: sc3 composes
+  `==`/`!=`, which breaks hashing and `in` for every subclass; the composed form
+  is the named `eq`/`ne`, on every subclass. **The builtins**: an element-wise
+  builtin given a pattern returns the composed pattern (the method's own
+  answer) instead of reading it, and a list function given one refuses it with
+  the idiom in the message; `_is_seq` stops taking every iterable for a list.
+- ⬜ **C72 — sclang's list functions left out of `C68`**, in the core's
+  `ListOp` table and both clients' `builtins`: `pyramid` and `pyramidg` (with
+  sclang's ten `patternType`s), `mirror`, `mirror1`, `mirror2`, `stutter`,
+  `rotate`, and `sputter` (a draw, in `clausters_core::rng`, reproduced by the
+  seed). Each is measured against sclang's own output over the same lists.
+  They change a list's length, which `ListOp` does not do today; the door's
+  shape is the milestone's to settle.
+- ⬜ **C73 — The pattern library.** sc3's patterns, phased by family, each one
+  a `@pattern` function in both clients with its parity vector, its brief
+  description and its kind (value, event, or resolved when built), in its
+  family's module. The lists below cite sclang's names; each is written
+  lowercase (`Pexprand` is `pexprand`):
+  - ⬜ **C73a — value and random patterns**: `Pexprand`, `Pbrown`, `Pgbrown`,
+    `Plprand`, `Phprand`, `Pmeanrand`, `Pbeta`, `Pcauchy`, `Pgauss`,
+    `Ppoisson`, `Pprob`, `Pvalue`. A distribution the core's `Draw` table
+    lacks (beta, Cauchy, Poisson, the low/high/mean pairs) is added there.
+  - ⬜ **C73b — list patterns**: `Pxrand`, `Pwrand`, `Pshuffle`, `Pslide`,
+    `Pwalk`, `Place`, `Placep`, `Ptuple`, `Pswitch`, `Pswitch1`, `Pfsm`,
+    `Pdfsm`.
+  - ⬜ **C73c — filter patterns**: `Pcollect`, `Pselect`, `Preject`, `Pdrop`,
+    `Plen`, `Pstutter`, `Platch`, `Pwhile`, `Pwrap`, `Pclump`, `Pflatten`,
+    `Pdiff`, `Pdelta`, `Pdur`, `Pgate`, `Pprorate`, `Pavaroh`, `Pseed`,
+    `Ptrace` (and `Pattern.trace`).
+  - ⬜ **C73d — function patterns**: `Prout`, `Pfuncn`, `Plazy`, `Pif`,
+    `Pproduct`, and sc3's `@pattern` decorator (a generator function becomes a
+    pattern class), which is `pattern(function*)` in TypeScript.
+  - ⬜ **C73e — event and time patterns**: `Pkey`, `Pchain` (sclang's `<>`),
+    `Pevent`, `pvoice` (below), `Ppar`, `Ptime`, `Pstep`, `Pseg`.
+    `Ppar`/`Pmono` were already named as a pattern-side question in Future
+    directions ("The mapping exists and is private to the `Editor`"); this is
+    where they land.
+
+    **`pvoice` is sclang's `Pmono` and `PmonoArtic`, as one voice** (the user,
+    2026-10-10). sc3 already merged the two into `Pmono(instrument, mapping,
+    articulate=False)`: `_mono_on` starts a node, `_mono_set` sets it, and
+    with the flag an event whose `sustain < delta` (or a rest) releases it
+    so the next one starts again. **The flag is `artic`** (the user,
+    2026-10-10, renaming sc3's `articulate`): shorter, and in the patterns'
+    own abbreviated style. Its events carry `server` and `node_id`,
+    state of a sounding server, and no curves. The name is the exception to
+    the lists' sclang spelling because what it yields is **a voice** in the
+    sense notation, MIDI and MPE share — a line of notes, the voice of the
+    `voice` key — and not the graph slot `crates/clausters-apps/PLAN.md` calls
+    a note's voice.
+
+    **Articulation and inflection are the two concepts it is designed by**
+    (the user's framing, 2026-10-10, taken from the spoken voice). An
+    **articulation** is how distinct notes relate: legato, detached, a slur, a
+    tie, the attack marks of `articulations`. An **inflection** is a variation
+    inside one note: what `Event.expression` holds (bend, pressure, timbre,
+    any control), from the note's start. A change of note is an articulation
+    in every abstraction, MPE included: an MPE note keeps the note-on it
+    started with and is inflected by its bend, and the next pitch is a new
+    note-on. So **every event a `pvoice` yields is a note**, `type: note` like
+    any other, and what `pvoice` adds is the **articulation between
+    consecutive notes** — legato, or detached when `artic` finds
+    `sustain < delta` — written as document data, never as a `node_id`; each
+    note's inflections stay its own expression. That makes a `pvoice` render
+    into an `EventSequence` like any event pattern, and editable there.
+
+    **Legato is realized by the instrumental abstraction, not written as
+    curves.** The same two notes slurred are a slur in a symbolic score;
+    overlapping note-ons in a MIDI channel in mono mode; on MPE a new note
+    slightly overlapping the last, or a very fast glissando that is the
+    previous note's bend; on the server a `set` of the one node the voice
+    holds (sclang's `Pmono`, with a control's lag as the glide). Which one is
+    the destination's, as X3.11 already makes the per-note curves the
+    destination's (`crates/clausters-apps/PLAN.md`), and the rule is one,
+    in the core.
+
+    **The key is `legato`, and the document keeps both shapes** (the user,
+    2026-10-10). A pattern yields events without ids — the document mints
+    them when the events enter an `EventSequence` — so what a `pvoice` writes
+    is the key every event already has: `legato >= 1` joins a note to the
+    next in the voice, `legato < 1` makes the next re-attack (exactly
+    `PmonoArtic`'s `sustain < delta`; in a `pbind`, where each event is its
+    own node, the same value only overlaps). The render then writes the
+    second shape over the ids it minted: a `tie` where the joined notes share
+    a pitch (the notation key that exists) and a slur spanner over each joined
+    run's ids, ending on the note that articulates. Each shape is derived from
+    the other, so an edit to one recomputes the other and they cannot drift.
+
+    ```python
+    v = pvoice("lead", {
+        "midinote": pseq([60, 62, 64, 64, 67]),
+        "dur": 0.5,
+        "legato": pseq([1.0, 1.0, 1.0, 0.6, 0.8]),
+    }, artic=True)
+    # stream: five notes, no ids; 60-62-64 joined, 64-64 a tie, 67 re-attacks
+    v.render_events().data()
+    # events 1..5 with their legato, event 3 with "tie": true,
+    # and a slur over [1, 2, 3, 4]
+    ```
+
+    Where the spanner lives in the document (the apps plan names the
+    sequence's list of spanners over event ids for the symbolic score) and its
+    shape are the milestone's; the example's spelling is illustrative.
+- ⬜ **C74 — Documentation and the manual check.** The patterns pages of both
+  books open with the two kinds and the loop over a pattern, then name the
+  operators and the families; the manual check is one example
+  in two languages, a phrase built by composing patterns with operators and
+  the new library, with a list function's output (`pyramid`) fed to a `Pseq`.
+
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
 Shipped 2026-08-03/04 and taken off `main` on 2026-08-05. The package worked,
