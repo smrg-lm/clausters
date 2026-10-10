@@ -495,6 +495,19 @@ class OscNrtInterface(OscInterface):
         packets = [_osclib.message(*m) for m in messages]
         self.score.add(when, _osclib.score_bundle(when, *packets))
 
+    def close_score(self, tail: float) -> None:
+        """**End the score ``tail`` seconds after its last bundle**, so what
+        the last event set going -- a note's release, an echo -- is rendered to
+        its end. A render ends a score on its last bundle, and an empty one is
+        how a length is said without doing anything; ``0`` leaves the score
+        ending where it does. What both `clausters.render` and
+        `clausters.Session.render` end a take with."""
+        if tail < 0:
+            raise ValueError(f"tail is a duration, and {tail} is negative")
+        end = self.score.end
+        if end is not None and tail > 0:
+            self.send_bundle(None, end + float(tail))
+
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
                workers: int = 0, path=None, seed: int | None = None,
                sample_format: str = "float"):
@@ -504,9 +517,10 @@ class OscNrtInterface(OscInterface):
         and `clausters.Session.render` are the surfaces, this is the one
         implementation, because the score is this interface's own.
 
-        Schedule a closing bundle (e.g. ``/node_free 0``) at the end so the render
-        has a defined duration -- scsynth semantics (its commands do not sound).
-        ``workers`` adds DSP threads for the score's parallel groups.
+        The render ends on the score's last bundle -- scsynth semantics (its
+        commands do not sound); `close_score` is how a caller gives what the
+        last event set going the time to ring out. ``workers`` adds DSP threads
+        for the score's parallel groups.
 
         Returns a `clausters.render.RenderStats` either way. ``path`` chooses
         **where the audio goes, not whether there is a result**: without it the

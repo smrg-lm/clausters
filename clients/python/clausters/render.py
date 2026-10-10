@@ -191,7 +191,7 @@ def _measure(samples, chans: int):
 def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
            ports=None, dur: float = 1.0, controls=None, defs=(),
            until: float | None = None, count: int | None = None,
-           tail: float = 1.0, sample_rate: float = 48_000.0, channels: int = 2,
+           tail: float = 0.0, sample_rate: float = 48_000.0, channels: int = 2,
            workers: int = 0, path=None, seed: int | None = None,
            sample_format: str = "float"):
     """Render ``obj`` -- offline to a `RenderStats`, or onto a live
@@ -230,13 +230,13 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             endless one, which otherwise raises after `MAX_BOUNCED_EVENTS`.
         tail: seconds the offline bounce goes on **after its last event**, so
             what that event set going is heard to its end -- the last note's
-            release, an echo. A bounce otherwise stops on the last event, which
-            for a pattern is the gate closing on its final note: the release
-            is never rendered and the take ends on a step. The server cannot
-            know how long a tail should be, so it is yours to say; ``0`` ends
-            on the last event. A def or expression is not affected (``dur``
-            is its length), nor is a binary score, which says its own length
-            with its last bundle.
+            release, an echo. With none, the take ends on the last event,
+            which for a pattern is the gate closing on its final note: the
+            release is not rendered. How long a tail should be is the
+            caller's to say -- the server cannot know -- so there is no
+            default length. A def or expression is not affected (``dur`` is
+            its length), nor is a binary score, which says its own length with
+            its last bundle.
         sample_rate: offline render rate, in Hz.
         channels: interleaved output channel count of the offline render --
             the outputs the offline server has, not a property of what is
@@ -453,11 +453,7 @@ def _bounce(start, clock, until, tail, sample_rate, channels, path, seed,
                 f"render: the {guard} did not end after {MAX_BOUNCED_EVENTS} "
                 f"events -- pass until= to bound it"
             ) from exc
-    if tail < 0:
-        raise ValueError(f"tail is a duration, and {tail} is negative")
-    end = session.server.interface.score.end
-    if end is not None and tail > 0:
-        session.server.interface.send_bundle(session.server.target, end + float(tail))
+    session.server.interface.close_score(tail)
     return session.server.render(sample_rate=sample_rate, channels=channels,
                                  path=path, seed=seed, sample_format=sample_format)
 

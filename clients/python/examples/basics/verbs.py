@@ -152,7 +152,7 @@ transport.wait()                # back when the last note ends
 print("rendering a phrase to a WAV (offline, no audio device)")
 wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
 render(pbind(instrument="default", degree=pseq([0, 4, 7, 12]), dur=0.25),
-       path=wav)
+       tail=1.0, path=wav)
 
 # %% A session can be offline, too. The `render` above bounces *one* playable
 # through a server nobody holds; `Session.nrt()` is the same change of state as

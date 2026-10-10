@@ -524,12 +524,14 @@ class Session(Environment):
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
                until: float | None = None, workers: int = 0, path=None,
-               seed: int | None = None, sample_format: str = "float"):
+               seed: int | None = None, sample_format: str = "float",
+               tail: float = 0.0):
         """Drain the clock and render the accumulated score (offline only).
 
         Advances the clock logically with no real-time waiting, so every
         scheduled event lands in the score, then renders that score through the
-        embedded renderer.
+        embedded renderer -- going on ``tail`` seconds after the last event, as
+        `clausters.render` does.
 
         Args:
             sample_rate: render sample rate, in Hz.
@@ -550,16 +552,25 @@ class Session(Environment):
                 it back replays that take.
             sample_format: ``"float"``, ``"int24"`` or ``"int16"`` -- only
                 meaningful with ``path``, since only the file has a format.
+            tail: seconds the take goes on **after its last event**, so what
+                that event set going is heard to its end -- the last note's
+                release, an echo. A score otherwise ends on its last bundle,
+                which for a pattern is the gate closing on its final note,
+                and with none that is where the take ends. How long is the
+                caller's to say, as with `clausters.render`.
 
         Returns:
             A `clausters.render.RenderStats`: ``frames``, ``channels``,
             ``sample_rate``, ``events``, per-channel ``peak`` and ``rms``,
             ``seed``, ``path``, and ``samples`` when the render kept them.
-            Schedule a closing event (e.g. freeing the root group) so the
-            render has a defined duration.
         """
         with self._active():
             self.clock.render(until)
+        # Only a score has an end to move; a live server refuses the render
+        # below, with its own reason.
+        close = getattr(self.server.interface, "close_score", None)
+        if close is not None:
+            close(tail)
         return self.server.render(sample_rate=sample_rate, channels=channels,
                                   workers=workers, path=path, seed=seed,
                                   sample_format=sample_format)

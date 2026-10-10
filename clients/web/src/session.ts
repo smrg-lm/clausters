@@ -527,19 +527,24 @@ export class Session extends Environment {
      * only).
      *
      * Advances the clock logically, with no real-time waiting, so everything
-     * scheduled lands in the score, and then renders that score. Schedule a
-     * closing event -- freeing the root group, or whatever ends the take -- so
-     * the render has a defined length: the renderer stops when the score does,
-     * and commands do not sound.
+     * scheduled lands in the score, and then renders that score -- going on
+     * `tail` seconds after the last event, as `render` does.
      *
      * `until` bounds the drain in beats, which an endless source needs (an
-     * infinite pattern never drains on its own).
+     * infinite pattern never drains on its own). `tail` is how long the take
+     * goes on **after its last event**, so what that event set going is heard
+     * to its end -- the last note's release, an echo; with none the take ends
+     * on the last event. How long is the caller's to say, as with `render`.
      */
-    async render(options: RenderOptions & { until?: number } = {}): Promise<RenderStats> {
-        const { until, ...rest } = options;
+    async render(options: RenderOptions & { until?: number; tail?: number } = {}): Promise<RenderStats> {
+        const { until, tail = 0, ...rest } = options;
         this.use(() => {
             this.clock.render(until);
         });
+        // Only a score has an end to move; a live server refuses the render
+        // below, with its own reason.
+        const connection = this.server.connection;
+        if (connection instanceof OscNrtInterface) connection.closeScore(tail);
         return this.server.render(rest);
     }
 

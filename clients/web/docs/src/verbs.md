@@ -127,7 +127,7 @@ const stats = await session.render({ channels: 2 });
 
 Nothing above the carrier changes: the same patterns, defs and routines play into it, because only the connection under the `Server` is different. That is what makes a session written for a live take renderable without editing a line of it — and the score it writes is **byte-identical** to the one the Python client writes for the same session, which the package asserts against committed vectors.
 
-Schedule a closing event — freeing the root group, or whatever ends the take — so the render has a defined length: it stops when the score does, and commands do not sound. `until` bounds the drain in beats, which an endless source needs (an infinite pattern never drains on its own); with none, `render` refuses an event pattern after a million events rather than rendering it forever.
+A take ends on the score's last event — commands do not sound — so a note whose gate closes there loses its release. `tail` goes on that many seconds past it (`session.render({ tail: 0.5 })`, and the same option on the `render` verb); there is no default length, because how long is only yours to know. `until` bounds the drain in beats, which an endless source needs (an infinite pattern never drains on its own); with none, `render` refuses an event pattern after a million events rather than rendering it forever.
 
 ## What a render gives back
 

@@ -294,12 +294,12 @@ export interface RenderVerbOptions extends RenderOptions {
     /**
      * Seconds the offline bounce goes on **after its last event**, so what that
      * event set going is heard to its end -- the last note's release, an echo.
-     * A bounce otherwise stops on the last event, which for a pattern is the
-     * gate closing on its final note: the release is never rendered and the
-     * take ends on a step. The server cannot know how long a tail should be,
-     * so it is yours to say; `0` ends on the last event. Default `1.0`. A def
-     * or expression is not affected (`dur` is its length), nor is a binary
-     * score, which says its own length with its last bundle.
+     * With none, the take ends on the last event, which for a pattern is the
+     * gate closing on its final note: the release is not rendered. How long a
+     * tail should be is the caller's to say -- the server cannot know -- so
+     * there is no default length. A def or expression is not affected (`dur`
+     * is its length), nor is a binary score, which says its own length with
+     * its last bundle.
      */
     tail?: number;
 }
@@ -332,7 +332,7 @@ export async function render(
     options: RenderVerbOptions = {},
 ): Promise<RenderStats | unknown[]> {
     const {
-        dur = 1.0, controls, defs = [], until, count, tail = 1.0, clock, ...cfg
+        dur = 1.0, controls, defs = [], until, count, tail = 0, clock, ...cfg
     } = options;
 
     if (obj instanceof Uint8Array) return renderScore(obj, cfg);
@@ -449,7 +449,7 @@ export async function bounceDef(
  */
 async function bounce(
     start: (session: import("./session.ts").Session, clock: TempoClock) => unknown,
-    { clock, until, tail = 1.0, defs = [], guard, ...cfg }: RenderOptions & {
+    { clock, until, tail = 0, defs = [], guard, ...cfg }: RenderOptions & {
         clock?: TempoClock;
         until?: number;
         tail?: number;
@@ -489,10 +489,7 @@ async function bounce(
             );
         }
     });
-    if (tail < 0) throw new RangeError(`tail is a duration, and ${tail} is negative`);
-    const connection = session.server.connection as OscNrtInterface;
-    const end = connection.score.end;
-    if (end !== null && tail > 0) connection.addBundle(end + tail, []);
+    (session.server.connection as OscNrtInterface).closeScore(tail);
     return session.server.render(cfg);
 }
 

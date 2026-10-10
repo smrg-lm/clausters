@@ -380,6 +380,19 @@ export class OscNrtInterface implements Connection {
         this.score.add(secs, encodeScoreBundle(secs, messages));
     }
 
+    /**
+     * **Ends the score `tail` seconds after its last bundle**, so what the last
+     * event set going -- a note's release, an echo -- is rendered to its end.
+     * A render ends a score on its last bundle, and an empty one is how a
+     * length is said without doing anything; `0` leaves the score ending
+     * where it does. What both `render` and `Session.render` end a take with.
+     */
+    closeScore(tail: number): void {
+        if (tail < 0) throw new RangeError(`tail is a duration, and ${tail} is negative`);
+        const end = this.score.end;
+        if (end !== null && tail > 0) this.addBundle(end + tail, []);
+    }
+
     /** A message alone has no time, so it lands at the top of the score. */
     sendMsg(addr: string, args: readonly MsgArg[] = []): void {
         this.addBundle(0, [{ addr, args: args.map(oscArg) as OscArg[] }]);

@@ -10062,3 +10062,18 @@ with the incoming value of this one, so a `pkey` inside a voice sees the event
 before; no pattern of the library depends on that, and knowing the join at the
 moment a note starts is what lets the server never re-attack a joined note.
 
+## A take's tail is the caller's, and there is none by default
+
+*Decided with the user, 2026-10-10.* The `render` verb grew a `tail` on
+2026-09-27 -- seconds a bounce goes on past its last event, so the last note's
+release is rendered -- with a default of one second, and `Session.render` was
+left without one, on the reading that a session's score is "written" and says
+its own length. That reading did not hold: a session's score is what was played
+into it, a pattern's gates included, and the same cut release reached the
+patterns example through the method the verb had been fixed for. So both have
+the same `tail`, closed by one rule (`close_score` on the offline interface of
+each client), and **its default is 0**: how long a take should ring is not
+something the client can know, so an unstated length is clearer than a second
+nobody asked for. A take ends on its last event unless the caller says
+otherwise; the examples that want a release heard ask for one.
+

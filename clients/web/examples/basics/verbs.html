@@ -170,7 +170,7 @@ change. The tour ends on all three.
           instrument: "default",
           degree: seq.pseq([0, 4, 7, 12]),
           dur: 0.25,
-        }), { path: wav });
+        }), { tail: 1.0, path: wav });
 
         log("a session that never sounds: the same verbs, rendered");
         const offline = await Session.nrt();

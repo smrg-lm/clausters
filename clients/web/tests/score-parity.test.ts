@@ -193,7 +193,7 @@ test("a pattern bounces offline, and `until` is what bounds an endless one", asy
     // caller's responsibility rather than a guess the verb makes.
     const endless = await render(
         pbind({ instrument: "default", degree: pseq([0, 2], Infinity), dur: 0.25 }),
-        { channels: 1, until: 2.0 },
+        { channels: 1, until: 2.0, tail: 1.0 },
     );
     assert.ok(endless.frames > 0);
     // Two beats of quarter notes, plus the last note's own sustain and the
@@ -206,17 +206,37 @@ test("a pattern bounces offline, and `until` is what bounds an endless one", asy
 
 test("a bounce renders the last note's release", async () => {
     const pattern = () => pbind({ instrument: "default", degree: pseq([0, 4, 7]), dur: 0.25 });
-    const cut = await render(pattern(), { tail: 0 });
-    // With no tail the take stops on the gate closing on the last note, mid
+    const cut = await render(pattern());
+    // With no tail -- the default -- the take stops on the gate closing on the last note, mid
     // release: the take ends sounding, not in silence.
     assert.ok(Math.abs(cut.frames - 0.7 * 48_000) <= 1, `${cut.frames} frames`);
     const last = cut.samples!.slice(-128);
     assert.ok(Math.max(...Array.from(last, Math.abs)) > 0.01, "the cut take ends sounding");
-    const whole = await render(pattern());
-    // The default tail is a second past that gate, and the release is over.
+    const whole = await render(pattern(), { tail: 1.0 });
+    // A tail of a second past that gate, and the release is over.
     assert.ok(Math.abs(whole.frames - 1.7 * 48_000) <= 1, `${whole.frames} frames`);
     const end = whole.samples!.slice(-Math.round(0.05 * 48_000) * 2);
     assert.equal(Math.max(...Array.from(end, Math.abs)), 0);
+});
+
+test("a session renders the last note's release as the verb does", async () => {
+    const take = async (options: { tail?: number }) => {
+        const session = await Session.nrt();
+        pbind({ instrument: "default", degree: pseq([0, 4, 7]), dur: 0.25 }).play(
+            session.server as never,
+            { clock: session.clock },
+        );
+        return session.render(options);
+    };
+    const cut = await take({});
+    assert.ok(Math.abs(cut.frames - 0.7 * 48_000) <= 1, `${cut.frames} frames`);
+    const last = cut.samples!.slice(-128);
+    assert.ok(Math.max(...Array.from(last, Math.abs)) > 0.01, "the cut take ends sounding");
+    const whole = await take({ tail: 1.0 });
+    assert.ok(Math.abs(whole.frames - 1.7 * 48_000) <= 1, `${whole.frames} frames`);
+    const end = whole.samples!.slice(-Math.round(0.05 * 48_000) * 2);
+    assert.equal(Math.max(...Array.from(end, Math.abs)), 0);
+    await assert.rejects(take({ tail: -1 }), /negative/);
 });
 
 test("a tail is a duration", async () => {
@@ -260,7 +280,7 @@ test("a render plays on the clock it is given", async () => {
     session.clock.setTempo(2.0); // two beats a second
     const stats = await render(
         pbind({ instrument: "default", degree: pseq([0, 2, 4]), dur: 1.0 }),
-        { clock: session.clock },
+        { clock: session.clock, tail: 1.0 },
     );
     // The last note starts at beat 2 (second 1.0) and its gate closes 0.8 beats
     // later; the tail is seconds, whatever the tempo.

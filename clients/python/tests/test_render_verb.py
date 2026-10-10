@@ -88,10 +88,10 @@ def test_render_bounces_a_channel_list_on_its_own_channels():
 def test_render_bounces_an_event_pattern():
     _embed_or_skip()
     # Three notes, dur 0.5 at tempo 1 (beats == seconds): the last gate closes
-    # at 1.0 + 0.5 * 0.8 = 1.4 s, and the default tail runs one second past it.
+    # at 1.0 + 0.5 * 0.8 = 1.4 s, and a tail of a second runs past it.
     _st1 = render(
         pbind(instrument="default", degree=pseq([0, 2, 4]), dur=0.5),
-        sample_rate=SR)
+        tail=1.0, sample_rate=SR)
     samples, frames = _st1.samples, _st1.frames
     assert abs(frames - 2.4 * SR) <= 4096
     assert len(samples) == frames * 2
@@ -100,15 +100,35 @@ def test_render_bounces_an_event_pattern():
 def test_a_bounce_renders_the_last_notes_release():
     _embed_or_skip()
     pattern = pbind(instrument="default", degree=pseq([0, 4, 7]), dur=0.25)
-    cut = render(pattern, tail=0, sample_rate=SR)
-    # With no tail the take stops on the gate closing on the last note, mid
+    cut = render(pattern, sample_rate=SR)
+    # With no tail -- the default -- the take stops on the gate closing on the last note, mid
     # release: the take ends sounding, not in silence.
     assert abs(cut.frames - 0.7 * SR) <= 1
     assert max(abs(s) for s in cut.samples[-128:]) > 0.01
-    whole = render(pattern, sample_rate=SR)
-    # The default tail is a second past that gate, and the release is over.
+    whole = render(pattern, tail=1.0, sample_rate=SR)
+    # A tail of a second past that gate, and the release is over.
     assert abs(whole.frames - 1.7 * SR) <= 1
     assert max(abs(v) for v in whole.samples[-int(0.05 * SR) * 2:]) == 0.0
+
+
+def test_a_session_renders_the_last_notes_release_as_the_verb_does():
+    _embed_or_skip()
+    from clausters import Session
+
+    def take(**kwargs):
+        session = Session.nrt()
+        pbind(instrument="default", degree=pseq([0, 4, 7]), dur=0.25).play(
+            session.clock, session.server)
+        return session.render(sample_rate=SR, **kwargs)
+
+    cut = take()
+    assert abs(cut.frames - 0.7 * SR) <= 1
+    assert max(abs(s) for s in cut.samples[-128:]) > 0.01
+    whole = take(tail=1.0)
+    assert abs(whole.frames - 1.7 * SR) <= 1
+    assert max(abs(v) for v in whole.samples[-int(0.05 * SR) * 2:]) == 0.0
+    with pytest.raises(ValueError, match="negative"):
+        take(tail=-1)
 
 
 def test_a_tail_is_a_duration():
@@ -120,7 +140,7 @@ def test_render_needs_until_for_an_endless_pattern():
     _embed_or_skip()
     _st2 = render(
         pbind(instrument="default", freq=pwhite(200.0, 800.0), dur=0.25),
-        until=2.0, sample_rate=SR)
+        until=2.0, tail=1.0, sample_rate=SR)
     samples, frames = _st2.samples, _st2.frames
     # Drained at beat 2.0: the last event starts by then, and the take ends a
     # tail after the gate that closes it.
@@ -136,7 +156,7 @@ def test_render_plays_on_the_clock_it_is_given():
     session = Session.nrt()
     session.clock.set_tempo(2.0)                 # two beats a second
     stats = render(pbind(instrument="default", degree=pseq([0, 2, 4]), dur=1.0),
-                   clock=session.clock, sample_rate=SR)
+                   clock=session.clock, tail=1.0, sample_rate=SR)
     # The last note starts at beat 2 (second 1.0) and its gate closes 0.8 beats
     # later; the tail is seconds, whatever the tempo.
     assert abs(stats.frames - 2.4 * SR) <= 4096
@@ -181,7 +201,7 @@ def test_render_bounces_a_timeline():
     tl = Timeline()
     tl.add(0.0, Event(degree=0, dur=0.5))
     tl.add(1.0, Event(degree=4, dur=0.5))
-    _st3 = render(tl, sample_rate=SR)
+    _st3 = render(tl, tail=1.0, sample_rate=SR)
     samples, frames = _st3.samples, _st3.frames
     assert abs(frames - 2.4 * SR) <= 4096
 
@@ -203,7 +223,7 @@ def test_render_bounces_a_generator():
         yield 0.5
         Event(degree=4, dur=0.5).play()
 
-    _st5 = render(gen, sample_rate=SR)
+    _st5 = render(gen, tail=1.0, sample_rate=SR)
     samples, frames = _st5.samples, _st5.frames
     assert abs(frames - 1.9 * SR) <= 4096   # second gate at 0.5 + 0.4, and the tail
 
