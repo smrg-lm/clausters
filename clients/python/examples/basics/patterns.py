@@ -25,7 +25,8 @@ and slurs, printed below.
 never repeating a note, ``pstutter`` doubling its durations, ``pmeanrand``
 keeping its level near the middle -- runs beside the voice under ``ppar``,
 merged in time. The session is seeded, so the draws are the same on every run
-and in both clients.
+and in both clients. The take is the ``render`` verb's, which goes on for a
+``tail`` after the last event so the last note's release is not cut.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
 Change a legato or a pyramid type and re-render in the next cell.
@@ -35,7 +36,7 @@ Change a legato or a pyramid type and re-render in the next cell.
 import pathlib
 import sys
 
-from clausters import Session
+from clausters import Session, render
 from clausters.base.builtins import pyramid
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
 from clausters.seq import (INF, pbind, pmeanrand, ppar, pseq, pstutter, pvoice,
@@ -103,20 +104,21 @@ print("slurs", written.get("notation", {}).get("spanners", []))
 
 # %% [markdown]
 # ## The score
-# Both lines together, rendered offline.
+# Both lines together, rendered offline. The render goes on half a second
+# after the last event, so the last note's release is heard to its end.
 
 # %%
 session = Session.nrt().activate()
 session.clock.set_tempo(2.0)
 session.seed(70)
-glider().send()
-ppar([melody, counter]).play()
+phrase = ppar([melody, counter])
 
 
 # %%
 def run(path: str = str(OUT / "patterns.wav")):
-    """Render the score to ``path``."""
-    stats = session.render(sample_rate=SR, channels=2, path=path)
+    """Render the phrase to ``path``."""
+    stats = render(phrase, clock=session.clock, defs=[glider()], tail=0.5,
+                   sample_rate=SR, channels=2, path=path)
     peak = max(stats.peak, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
     print(f"wrote {path} - listen with: pw-play {path}")

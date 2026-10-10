@@ -42,7 +42,9 @@ sequence, the same joins are a page's ties and slurs, printed below.
 <code>pxrand</code> never repeating a note, <code>pstutter</code> doubling its
 durations, <code>pmeanrand</code> keeping its level near the middle -- runs
 beside the voice under <code>ppar</code>, merged in time. The session is
-seeded, so the draws are the same on every run and in both clients.</div>
+seeded, so the draws are the same on every run and in both clients. The take
+is the <code>render</code> verb's, which goes on for a <code>tail</code> after
+the last event so the last note's release is not cut.</div>
 
       <div class="row">
         <button id="render">render the phrase</button>
@@ -74,7 +76,7 @@ seeded, so the draws are the same on every run and in both clients.</div>
       /examples/basics/patterns.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Buffer, Server, Session, SynthDef, builtins, play, seq }
+      import { Buffer, Server, Session, SynthDef, builtins, play, render, seq }
         from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, sine }
         from "../../dist/defs/index.js";
@@ -130,14 +132,18 @@ seeded, so the draws are the same on every run and in both clients.</div>
         log(`ties on notes ${JSON.stringify(ties)}`);
         log(`slurs ${JSON.stringify(written.notation?.spanners ?? [])}`);
 
-        // ---- the score: both lines together, rendered offline ----
+        // ---- the score: both lines together, rendered offline. The render
+        // goes on half a second after the last event, so the last note's
+        // release is heard to its end ----
         const session = (await Session.nrt()).activate();
         session.clock.setTempo(2.0);
         session.seed(70);
-        await glider().send();
-        ppar([melody, counter]).play();
+        const phrase = ppar([melody, counter]);
 
-        const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/patterns.wav" });
+        const stats = await render(phrase, {
+          clock: session.clock, defs: [glider()], tail: 0.5,
+          sampleRate: SR, channels: 2, path: "out/patterns.wav",
+        });
 
         log(`wrote ${stats.path}`);
         session.deactivate();

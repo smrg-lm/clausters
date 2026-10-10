@@ -2513,7 +2513,7 @@ by the loop (`islice`, a `break`), never read whole.
   a `pbind` counter-line of `pxrand`, `pstutter` and `pmeanrand` beside it
   under `ppar`, seeded. The audit reads the pair as one (the page's ending
   declared as every offline pair declares it); the Python render was run
-  (3.9 s, peak 0.22) and the page's patterns, ties and slurs were run under
+  (4.4 s with a half-second tail, peak 0.22) and the page's patterns, ties and slurs were run under
   node and are the script's. **Waiting on the ear**: the user listens to both.
 
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
