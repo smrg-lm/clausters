@@ -2399,10 +2399,20 @@ by the loop (`islice`, a `break`), never read whole.
     `pdfsm` state is a mapping from a signal (or `"default"`) to the next
     state and the item, a dict in Python and an object in TypeScript. The
     parity vectors walk every one, seeded where it draws.
-  - ⬜ **C73c — filter patterns**: `Pcollect`, `Pselect`, `Preject`, `Pdrop`,
-    `Plen`, `Pstutter`, `Platch`, `Pwhile`, `Pwrap`, `Pclump`, `Pflatten`,
-    `Pdiff`, `Pdelta`, `Pdur`, `Pgate`, `Pprorate`, `Pavaroh`, `Pseed`,
-    `Ptrace` (and `Pattern.trace`).
+  - ✅ **C73c — filter patterns** *(done 2026-10-10)*: `pcollect`,
+    `pselect`, `preject`, `pdrop`, `plen`, `pstutter`, `platch`, `pwhile`,
+    `pwrap`, `pclump`, `pflatten`, `pdiff`, `pdelta`, `pdur`, `pgate`,
+    `pprorate`, `pavaroh`, `ptrace` and `Pattern.trace`, with `pn`'s `key`.
+    The `key` marks the event in place, as sclang's does, so a `pn` that is
+    a key of a `pbind` marks the event being built and a `pgate` after it
+    reads the mark. A function filter calls `func(value, inval)` when the
+    function takes two arguments (`inspect` in Python, `length` in
+    TypeScript). `pavaroh` reads with `degkey`. **`Pseed` is left out**,
+    decided here: it gives a pattern a seed of its own, which is exactly what
+    the random context declines ("no per-pattern seeds",
+    `routines-and-clocks.md`); a pattern that must replay its own draws plays
+    in its own routine. The parity vectors walk every filter, events
+    included through their deltas.
   - ⬜ **C73d — function patterns**: `Prout`, `Pfuncn`, `Plazy`, `Pif`,
     `Pproduct`, and sc3's `@pattern` decorator (a generator function becomes a
     pattern class), which is `pattern(function*)` in TypeScript.

@@ -614,6 +614,171 @@
    2.0
   ]
  },
+ "pcollect": {
+  "seed": null,
+  "values": [
+   1.0,
+   4.0,
+   9.0
+  ]
+ },
+ "pselect": {
+  "seed": null,
+  "values": [
+   0.0,
+   3.0,
+   6.0,
+   9.0
+  ]
+ },
+ "preject": {
+  "seed": null,
+  "values": [
+   1.0,
+   2.0,
+   4.0,
+   5.0,
+   7.0,
+   8.0
+  ]
+ },
+ "pdrop": {
+  "seed": null,
+  "values": [
+   2.0,
+   3.0,
+   4.0,
+   5.0
+  ]
+ },
+ "plen": {
+  "seed": null,
+  "values": [
+   5.0,
+   10.0,
+   15.0,
+   20.0
+  ]
+ },
+ "pstutter": {
+  "seed": null,
+  "values": [
+   1.0,
+   1.0,
+   3.0,
+   3.0,
+   3.0
+  ]
+ },
+ "platch": {
+  "seed": null,
+  "values": [
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   1.0,
+   2.0
+  ]
+ },
+ "pwhile": {
+  "seed": null,
+  "values": [
+   7.0,
+   8.0,
+   7.0,
+   8.0
+  ]
+ },
+ "pwrap": {
+  "seed": null,
+  "values": [
+   3.0,
+   1.0,
+   2.5
+  ]
+ },
+ "pclump": {
+  "seed": null,
+  "values": [
+   0.0,
+   1.0,
+   2.0,
+   3.0,
+   4.0
+  ]
+ },
+ "pflatten": {
+  "seed": null,
+  "values": [
+   1.0,
+   2.0,
+   3.0,
+   4.0
+  ]
+ },
+ "pdiff": {
+  "seed": null,
+  "values": [
+   3.0,
+   5.0,
+   7.0
+  ]
+ },
+ "pprorate": {
+  "seed": null,
+  "values": [
+   0.25,
+   0.75,
+   1.0,
+   0.5,
+   0.5
+  ]
+ },
+ "pavaroh": {
+  "seed": null,
+  "values": [
+   0.0,
+   4.0,
+   7.0,
+   3.0,
+   0.0
+  ]
+ },
+ "pdur": {
+  "seed": null,
+  "values": [
+   1.0,
+   1.0,
+   0.5
+  ]
+ },
+ "pdelta": {
+  "seed": null,
+  "values": [
+   1.5,
+   0.5,
+   0.5
+  ]
+ },
+ "pgate": {
+  "seed": null,
+  "values": [
+   0.0,
+   0.0,
+   1.0,
+   1.0,
+   2.0,
+   2.0
+  ]
+ },
+ "ptrace_passes": {
+  "seed": null,
+  "values": [
+   1.0,
+   2.0
+  ]
+ },
  "pdfsm": {
   "seed": null,
   "values": [

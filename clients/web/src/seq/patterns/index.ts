@@ -15,7 +15,10 @@
 // - `listpatterns` -- values read from a list: in order, cycled, chosen at
 //   random (never twice in a row, or weighted), shuffled, a sliding window, a
 //   walk, laced, switched by an index, or driven by a state machine.
-// - `filterpatterns` -- a pattern made of another: repeated.
+// - `filterpatterns` -- a pattern made of another: repeated, gated, mapped,
+//   filtered, cut, stuttered, latched, clumped or flattened, differenced,
+//   prorated, read through a raga's two scales, delayed, cut to a duration,
+//   traced.
 // - `funcpatterns` -- values a function computes when the walk asks.
 // - `eventpatterns` -- the patterns whose stream yields events: `pbind`.
 // - `oppatterns` -- what an operator composes: `punop`, `pbinop`, `pnarop`.
@@ -24,7 +27,10 @@
 
 export { pbind } from "./eventpatterns.ts";
 export type { Bindings } from "./eventpatterns.ts";
-export { pn } from "./filterpatterns.ts";
+export {
+    pavaroh, pclump, pcollect, pdelta, pdiff, pdrop, pdur, pflatten, pgate, platch, plen, pn,
+    pprorate, preject, pselect, pstutter, ptrace, pwhile, pwrap,
+} from "./filterpatterns.ts";
 export type { FilterPattern } from "./filterpatterns.ts";
 export { pfunc } from "./funcpatterns.ts";
 export {

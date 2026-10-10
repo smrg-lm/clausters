@@ -26,7 +26,8 @@ export const pbind = pattern(
         const streams = Object.entries(bindings).map(([key, value]) => [key, asStream(value)] as const);
         for (;;) {
             const props: Record<string, unknown> =
-                inval !== null && typeof inval === "object" ? { ...(inval as object) } : {};
+                inval instanceof Event ? { ...inval.props }
+                    : inval !== null && typeof inval === "object" ? { ...(inval as object) } : {};
             try {
                 for (const [key, stream] of streams) props[key] = stream.next(props);
             } catch (error) {

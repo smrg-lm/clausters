@@ -6,7 +6,7 @@ import itertools
 import pytest
 
 from clausters.base.stream import Routine, StopStream
-from clausters.seq import (EventPattern, Pattern, embed, pattern, pbind,
+from clausters.seq import (INF, EventPattern, Pattern, embed, pattern, pbind,
                            pbinop, pn, pnarop, pseq, pseries, punop, pwhite)
 
 
@@ -303,3 +303,44 @@ def test_a_list_of_event_patterns_plays():
     for p in (pxrand([phrase, phrase]), pshuffle([phrase]), pslide([phrase]),
               pwalk([phrase])):
         assert isinstance(p, EventPattern)
+
+
+# ---- filter patterns ----
+
+def test_the_filters_change_what_comes_out():
+    _core_or_skip()
+    from clausters.seq import (pclump, pcollect, pdiff, pdrop, pflatten,
+                               platch, plen, pprorate, preject, pselect,
+                               pstutter, pwrap)
+
+    assert list(pcollect(lambda x: x * x, pseq([1, 2, 3]))) == [1, 4, 9]
+    assert list(pselect(lambda x: x % 2, pseq([1, 2, 3]))) == [1, 3]
+    assert list(preject(lambda x: x % 2, pseq([1, 2, 3]))) == [2]
+    assert list(pcollect(lambda x, e: e, pseq([1]))) == [None]  # the incoming value
+    assert list(pdrop(pseq([1, 2, 3]), 1)) == [2, 3]
+    assert list(plen(pseries(0, 1), 3)) == [0, 1, 2]
+    assert list(pstutter(pseq([1, 2]), pseq([2, 3]))) == [1, 1, 2, 2, 2]
+    assert list(platch(pseries(0, 1), pseq([True, False, True]))) == [0, 0, 1]
+    assert list(pwrap(pseq([-1, 5]), 0, 4)) == [3, 1]
+    assert list(pclump(pseq([1, 2, 3]), 2)) == [[1, 2], [3]]
+    assert list(pflatten(pseq([[1, [2, 3]], 4]), 2)) == [1, 2, 3, 4]
+    assert list(pdiff(pseq([1, 4, 9]))) == [3, 5]
+    assert list(pprorate(pseq([2]), pseq([0.25]))) == [0.5, 1.5]
+    assert list(pseq([1, 2]).trace()) == [1, 2]
+
+
+def test_a_gate_takes_a_value_when_a_repeat_starts():
+    from clausters.seq import pgate, plen
+
+    phrase = pbind(n=pn(pseq([0, 1]), INF, "g"), x=pgate(pseries(0, 1), INF, "g"))
+    assert [e["x"] for e in plen(phrase, 6)] == [0, 0, 1, 1, 2, 2]
+
+
+def test_the_time_filters_cut_and_delay_events():
+    from clausters.seq import pdelta, pdur
+
+    cut = list(pdur(2.5, pbind(dur=1, degree=pseq([0, 1, 2, 3]))))
+    assert [e.delta() for e in cut] == [1, 1, 0.5]
+    late = list(pdelta(1.5, pbind(dur=0.5, degree=pseq([0, 1]))))
+    assert [e["type"] for e in late] == ["rest", "note", "note"]
+    assert isinstance(pdur(1, pbind(degree=0)), EventPattern)

@@ -27,6 +27,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
 from clausters.base import builtins as b  # noqa: E402
 from clausters.base.main import main  # noqa: E402
+from clausters.seq import (pavaroh, pbind, pclump, pcollect,  # noqa: E402
+                           pdelta, pdiff, pdrop, pdur, pflatten, pgate,
+                           platch, plen, pprorate, preject, pselect,
+                           pstutter, ptrace, pwhile, pwrap)
 from clausters.seq import (pdfsm, pfsm, place, placep, pshuffle,  # noqa: E402
                            pslide, pswitch, pswitch1, ptuple, pwalk, pwrand,
                            pxrand)
@@ -37,6 +41,16 @@ from clausters.seq import (pbeta, pbrown, pcauchy, pconst,  # noqa: E402
 
 #: How many values an endless case is read for.
 TAKE = 8
+
+def _twice():
+    """A condition true twice, then false: `pwhile`'s test."""
+    count = [0]
+
+    def test():
+        count[0] += 1
+        return count[0] <= 2
+    return test
+
 
 #: name -> (seed or None, the pattern). Mirrored by name in the TS test.
 CASES = {
@@ -101,6 +115,26 @@ CASES = {
     "pswitch": (None, lambda: pswitch([pseq([1, 2]), 9], pseq([0, 1, 0]))),
     "pswitch1": (None, lambda: pswitch1([pseq([1, 2, 3]), pseq([10, 20])], pseq([0, 1, 0, 1]))),
     "pfsm": (19, lambda: pfsm([[0], 1, [1], 2, [0, 2], 3, [1, 3], None, None], 2)),
+    "pcollect": (None, lambda: pcollect(lambda x: x * x, pseq([1, 2, 3]))),
+    "pselect": (None, lambda: pselect(lambda x: x % 3 == 0, pseries(0, 1, 12))),
+    "preject": (None, lambda: preject(lambda x: x % 3 == 0, pseries(0, 1, 9))),
+    "pdrop": (None, lambda: pdrop(pseries(0, 1, 6), 2)),
+    "plen": (None, lambda: plen(pseries(5, 5), 4)),
+    "pstutter": (None, lambda: pstutter(pseq([1, 2, 3]), pseq([2, 0, 3]))),
+    "platch": (None, lambda: platch(pseries(0, 1), pseq([True, False, False, True, False, True]))),
+    "pwhile": (None, lambda: pwhile(_twice(), pseq([7, 8]))),
+    "pwrap": (None, lambda: pwrap(pseq([-1, 5, 2.5]), 0, 4)),
+    "pclump": (None, lambda: pclump(pseries(0, 1, 5), 2)),
+    "pflatten": (None, lambda: pflatten(pseq([[1, [2, 3]], 4]), 1)),
+    "pdiff": (None, lambda: pdiff(pseq([1, 4, 9, 16]))),
+    "pprorate": (None, lambda: pprorate(pseq([1, 2]), pseq([0.25, [0.5, 0.25, 0.25]]))),
+    "pavaroh": (None, lambda: pavaroh(pseq([0, 2, 4, 2, 0]), [0, 2, 4, 5, 7, 9, 11], [0, 1, 3, 5, 7, 8, 10])),
+    "pdur": (None, lambda: pcollect(lambda e: e.delta(), pdur(2.5, pbind(dur=1, degree=pseq([0, 1, 2, 3]))))),
+    "pdelta": (None, lambda: pcollect(lambda e: e.delta(), pdelta(1.5, pbind(dur=0.5, degree=pseq([0, 1]))))),
+    "pgate": (None, lambda: pcollect(lambda e: e["x"], plen(pbind(
+        n=pn(pseq([0, 1]), float("inf"), "g"),
+        x=pgate(pseries(0, 1), float("inf"), "g")), 6))),
+    "ptrace_passes": (None, lambda: ptrace(pseq([1, 2]), "| ")),
     "pdfsm": (None, lambda: pdfsm([pseq([0, 1, 1, 0]),
                                    {0: (0, 1), 1: (1, 2), "default": (0, 3)},
                                    {0: (0, 4), "default": (1, 5)}])),

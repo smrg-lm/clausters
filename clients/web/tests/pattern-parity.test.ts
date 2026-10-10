@@ -18,6 +18,25 @@ import { loadCore } from "../src/base/core.ts";
 import { seed } from "../src/base/rand.ts";
 import * as b from "../src/base/builtins.ts";
 import {
+    pavaroh,
+    pbind,
+    pclump,
+    pcollect,
+    pdelta,
+    pdiff,
+    pdrop,
+    pdur,
+    pflatten,
+    pgate,
+    platch,
+    plen,
+    pprorate,
+    preject,
+    pselect,
+    pstutter,
+    ptrace,
+    pwhile,
+    pwrap,
     pdfsm,
     pfsm,
     place,
@@ -54,11 +73,17 @@ import {
     pseries,
     pwhite,
 } from "../src/seq/index.ts";
-import type { Pattern } from "../src/seq/index.ts";
+import type { Event, Pattern } from "../src/seq/index.ts";
 
 await loadCore();
 
 const TAKE = 8;
+
+/** A condition true twice, then false: `pwhile`'s test. */
+const twice = (): (() => boolean) => {
+    let count = 0;
+    return () => ++count <= 2;
+};
 
 /** name -> the pattern; the names are `gen-pattern-vectors.py`'s. */
 const CASES: Record<string, () => Pattern<unknown>> = {
@@ -123,6 +148,27 @@ const CASES: Record<string, () => Pattern<unknown>> = {
     pswitch: () => pswitch<number>([pseq([1, 2]), 9], pseq([0, 1, 0])),
     pswitch1: () => pswitch1<number>([pseq([1, 2, 3]), pseq([10, 20])], pseq([0, 1, 0, 1])),
     pfsm: () => pfsm([[0], 1, [1], 2, [0, 2], 3, [1, 3], null, null], 2),
+    pcollect: () => pcollect((x: number) => x * x, pseq([1, 2, 3])),
+    pselect: () => pselect((x: number) => x % 3 === 0, pseries(0, 1, 12)),
+    preject: () => preject((x: number) => x % 3 === 0, pseries(0, 1, 9)),
+    pdrop: () => pdrop(pseries(0, 1, 6), 2),
+    plen: () => plen(pseries(5, 5), 4),
+    pstutter: () => pstutter(pseq([1, 2, 3]), pseq([2, 0, 3])),
+    platch: () => platch(pseries(0, 1), pseq([true, false, false, true, false, true])),
+    pwhile: () => pwhile(twice(), pseq([7, 8])),
+    pwrap: () => pwrap(pseq([-1, 5, 2.5]), 0, 4),
+    pclump: () => pclump(pseries(0, 1, 5), 2),
+    pflatten: () => pflatten(pseq<unknown>([[1, [2, 3]], 4]), 1),
+    pdiff: () => pdiff(pseq([1, 4, 9, 16])),
+    pprorate: () => pprorate(pseq([1, 2]), pseq<number | number[]>([0.25, [0.5, 0.25, 0.25]])),
+    pavaroh: () => pavaroh(pseq([0, 2, 4, 2, 0]), [0, 2, 4, 5, 7, 9, 11], [0, 1, 3, 5, 7, 8, 10]),
+    pdur: () => pcollect((e: Event) => e.delta(), pdur(2.5, pbind({ dur: 1, degree: pseq([0, 1, 2, 3]) }))),
+    pdelta: () => pcollect((e: Event) => e.delta(), pdelta(1.5, pbind({ dur: 0.5, degree: pseq([0, 1]) }))),
+    pgate: () => pcollect(
+        (e: Event) => e.get("x"),
+        plen(pbind({ n: pn(pseq([0, 1]), INF, "g"), x: pgate(pseries(0, 1), INF, "g") }), 6),
+    ),
+    ptrace_passes: () => ptrace(pseq([1, 2]), "| "),
     pdfsm: () => pdfsm([
         pseq([0, 1, 1, 0]),
         { 0: [0, 1], 1: [1, 2], default: [0, 3] },

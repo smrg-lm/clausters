@@ -214,6 +214,12 @@ export class Pattern<T = unknown> extends AbstractObject<Pattern<number>, unknow
         return `${this.label}(${this.args.map(described).join(", ")})`;
     }
 
+    /** This pattern with each value printed as it passes (`ptrace`). */
+    trace(prefix = "", keys: readonly string[] | null = null): Pattern<T> {
+        const Kind = this instanceof EventPattern ? EventPattern : Pattern;
+        return new Kind(traceValues as never, [this, prefix, keys], "ptrace") as Pattern<T>;
+    }
+
     // ---- AbstractObject: an operator composes a pattern ----
 
     protected binop<U>(selector: string, other: U): Composed<Pattern<number>, U, Fan<never, never>> {
@@ -235,6 +241,36 @@ export class Pattern<T = unknown> extends AbstractObject<Pattern<number>, unknow
         refuseEvents(this, ...args);
         return opPattern("pnarop", selector, [this, ...args, ...(TRIMMED.has(selector) ? [clip] : [])]);
     }
+}
+
+/**
+ * The generator behind `ptrace` and {@link Pattern.trace}: `source` unchanged,
+ * each value printed after `prefix`, only `keys` of an event when given.
+ * @internal
+ */
+export function* traceValues(
+    inval: unknown,
+    source: unknown,
+    prefix: string = "",
+    keys: readonly string[] | null = null,
+): PatternGenerator<unknown> {
+    const stream = asStream(source);
+    try {
+        for (;;) {
+            const value = stream.next(inval);
+            // An event, read by its keys (`seq/event.ts` is not imported here).
+            const props = value !== null && typeof value === "object" && "props" in value
+                ? (value as { props: Record<string, unknown> }).props
+                : null;
+            const shown = props === null ? value
+                : keys === null ? props : Object.fromEntries(keys.map((k) => [k, props[k]]));
+            console.log(`${prefix}${typeof shown === "object" ? JSON.stringify(shown) : String(shown)}`);
+            inval = yield value;
+        }
+    } catch (error) {
+        if (!(error instanceof StopStream)) throw error;
+    }
+    return inval;
 }
 
 /**

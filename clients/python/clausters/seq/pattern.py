@@ -172,6 +172,12 @@ class Pattern(AbstractObject):
         """A fresh `PatternStream` over this pattern."""
         return PatternStream(self)
 
+    def trace(self, prefix="", keys=None) -> "Pattern":
+        """This pattern with each value printed as it passes (`ptrace`)."""
+        from .patterns.filterpatterns import ptrace
+
+        return ptrace(self, prefix, keys)
+
     def __repr__(self):
         parts = [repr(a) for a in self._args]
         parts += [f"{k}={v!r}" for k, v in self._kwargs.items()]

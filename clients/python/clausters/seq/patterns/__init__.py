@@ -15,7 +15,10 @@ holds is):
 - `listpatterns` -- values read from a list: in order, cycled, chosen at
   random (never twice in a row, or weighted), shuffled, a sliding window, a
   walk, laced, switched by an index, or driven by a state machine.
-- `filterpatterns` -- a pattern made of another: repeated.
+- `filterpatterns` -- a pattern made of another: repeated, gated, mapped,
+  filtered, cut, stuttered, latched, clumped or flattened, differenced,
+  prorated, read through a raga's two scales, delayed, cut to a duration,
+  traced.
 - `funcpatterns` -- values a function computes when the walk asks.
 - `eventpatterns` -- the patterns whose stream yields events: `pbind`.
 - `oppatterns` -- what an operator composes: `punop`, `pbinop`, `pnarop`.
@@ -24,7 +27,10 @@ What a pattern is, and how one is written, is `clausters.seq.pattern`.
 """
 
 from .eventpatterns import pbind
-from .filterpatterns import pn
+from .filterpatterns import (pavaroh, pclump, pcollect, pdelta, pdiff, pdrop,
+                             pdur, pflatten, pgate, platch, plen, pn,
+                             pprorate, preject, pselect, pstutter, ptrace,
+                             pwhile, pwrap)
 from .funcpatterns import pfunc
 from .listpatterns import (pdfsm, pfsm, place, placep, prand, pseq, pser,
                            pshuffle, pslide, pswitch, pswitch1, ptuple, pwalk,
@@ -36,6 +42,9 @@ from .randompatterns import (pbeta, pbrown, pcauchy, pexprand, pgauss,
 from .valuepatterns import pconst, pgeom, pseries, pvalue
 
 __all__ = [
+    "pavaroh", "pclump", "pcollect", "pdelta", "pdiff", "pdrop", "pdur",
+    "pflatten", "pgate", "platch", "plen", "pprorate", "preject", "pselect",
+    "pstutter", "ptrace", "pwhile", "pwrap",
     "pbeta", "pbind", "pbinop", "pbrown", "pcauchy", "pconst", "pdfsm",
     "pexprand", "pfsm", "pfunc", "pgauss", "pgbrown", "pgeom", "phprand",
     "place", "placep", "plprand", "pmeanrand", "pn", "pnarop", "ppoisson",
