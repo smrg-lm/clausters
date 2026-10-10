@@ -779,6 +779,63 @@
    2.0
   ]
  },
+ "prout": {
+  "seed": null,
+  "values": [
+   0.0,
+   10.0,
+   20.0
+  ]
+ },
+ "pfuncn": {
+  "seed": null,
+  "values": [
+   1.0,
+   2.0,
+   1.0,
+   2.0
+  ]
+ },
+ "plazy": {
+  "seed": null,
+  "values": [
+   5.0,
+   6.0
+  ]
+ },
+ "pif": {
+  "seed": null,
+  "values": [
+   0.0,
+   100.0,
+   1.0,
+   2.0
+  ]
+ },
+ "pproduct": {
+  "seed": null,
+  "values": [
+   11.0,
+   21.0,
+   31.0,
+   12.0,
+   22.0,
+   32.0
+  ]
+ },
+ "pproduct_lists": {
+  "seed": null,
+  "values": [
+   1.0,
+   10.0,
+   1.0,
+   20.0,
+   2.0,
+   10.0,
+   2.0,
+   20.0
+  ]
+ },
  "pdfsm": {
   "seed": null,
   "values": [

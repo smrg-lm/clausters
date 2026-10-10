@@ -31,6 +31,8 @@ from clausters.seq import (pavaroh, pbind, pclump, pcollect,  # noqa: E402
                            pdelta, pdiff, pdrop, pdur, pflatten, pgate,
                            platch, plen, pprorate, preject, pselect,
                            pstutter, ptrace, pwhile, pwrap)
+from clausters.seq import (pfuncn, pif, plazy, pproduct,  # noqa: E402
+                           prout)
 from clausters.seq import (pdfsm, pfsm, place, placep, pshuffle,  # noqa: E402
                            pslide, pswitch, pswitch1, ptuple, pwalk, pwrand,
                            pxrand)
@@ -41,6 +43,12 @@ from clausters.seq import (pbeta, pbrown, pcauchy, pconst,  # noqa: E402
 
 #: How many values an endless case is read for.
 TAKE = 8
+
+def _counted(inval):
+    """`prout`'s body: three tens."""
+    for i in range(3):
+        inval = yield i * 10
+
 
 def _twice():
     """A condition true twice, then false: `pwhile`'s test."""
@@ -135,6 +143,12 @@ CASES = {
         n=pn(pseq([0, 1]), float("inf"), "g"),
         x=pgate(pseries(0, 1), float("inf"), "g")), 6))),
     "ptrace_passes": (None, lambda: ptrace(pseq([1, 2]), "| ")),
+    "prout": (None, lambda: prout(_counted)),
+    "pfuncn": (None, lambda: pfuncn(lambda: pseq([1, 2]), 2)),
+    "plazy": (None, lambda: plazy(lambda: pseq([5, 6]))),
+    "pif": (None, lambda: pif(pseq([True, False, True, True]), pseries(0, 1), pseries(100, 1))),
+    "pproduct": (None, lambda: pproduct(sum, [pseq([1, 2]), pseq([10, 20, 30])])),
+    "pproduct_lists": (None, lambda: pproduct(None, [pseq([1, 2]), pseq([10, 20])])),
     "pdfsm": (None, lambda: pdfsm([pseq([0, 1, 1, 0]),
                                    {0: (0, 1), 1: (1, 2), "default": (0, 3)},
                                    {0: (0, 4), "default": (1, 5)}])),

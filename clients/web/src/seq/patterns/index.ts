@@ -19,7 +19,9 @@
 //   filtered, cut, stuttered, latched, clumped or flattened, differenced,
 //   prorated, read through a raga's two scales, delayed, cut to a duration,
 //   traced.
-// - `funcpatterns` -- values a function computes when the walk asks.
+// - `funcpatterns` -- values a function computes when the walk asks: one per
+//   step, a routine's yields, a pattern decided late, a choice between two, the
+//   product of several.
 // - `eventpatterns` -- the patterns whose stream yields events: `pbind`.
 // - `oppatterns` -- what an operator composes: `punop`, `pbinop`, `pnarop`.
 //
@@ -32,7 +34,8 @@ export {
     pprorate, preject, pselect, pstutter, ptrace, pwhile, pwrap,
 } from "./filterpatterns.ts";
 export type { FilterPattern } from "./filterpatterns.ts";
-export { pfunc } from "./funcpatterns.ts";
+export { pfunc, pfuncn, pif, plazy, pproduct, prout } from "./funcpatterns.ts";
+export type { ValueFunc } from "./funcpatterns.ts";
 export {
     pdfsm, pfsm, place, placep, prand, pseq, pser, pshuffle, pslide, pswitch, pswitch1, ptuple,
     pwalk, pwrand, pxrand,

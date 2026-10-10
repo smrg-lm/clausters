@@ -18,6 +18,11 @@ import { loadCore } from "../src/base/core.ts";
 import { seed } from "../src/base/rand.ts";
 import * as b from "../src/base/builtins.ts";
 import {
+    pfuncn,
+    pif,
+    plazy,
+    pproduct,
+    prout,
     pavaroh,
     pbind,
     pclump,
@@ -169,6 +174,14 @@ const CASES: Record<string, () => Pattern<unknown>> = {
         plen(pbind({ n: pn(pseq([0, 1]), INF, "g"), x: pgate(pseries(0, 1), INF, "g") }), 6),
     ),
     ptrace_passes: () => ptrace(pseq([1, 2]), "| "),
+    prout: () => prout(function* (inval?: unknown) {
+        for (let i = 0; i < 3; i++) inval = yield i * 10;
+    }),
+    pfuncn: () => pfuncn(() => pseq([1, 2]), 2),
+    plazy: () => plazy(() => pseq([5, 6])),
+    pif: () => pif(pseq([true, false, true, true]), pseries(0, 1), pseries(100, 1)),
+    pproduct: () => pproduct((v: number[]) => v.reduce((a, b) => a + b, 0), [pseq([1, 2]), pseq([10, 20, 30])]),
+    pproduct_lists: () => pproduct(null, [pseq([1, 2]), pseq([10, 20])]),
     pdfsm: () => pdfsm([
         pseq([0, 1, 1, 0]),
         { 0: [0, 1], 1: [1, 2], default: [0, 3] },

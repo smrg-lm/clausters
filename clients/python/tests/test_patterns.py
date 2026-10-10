@@ -344,3 +344,24 @@ def test_the_time_filters_cut_and_delay_events():
     late = list(pdelta(1.5, pbind(dur=0.5, degree=pseq([0, 1]))))
     assert [e["type"] for e in late] == ["rest", "note", "note"]
     assert isinstance(pdur(1, pbind(degree=0)), EventPattern)
+
+
+# ---- function patterns ----
+
+def test_a_function_computes_values_when_asked():
+    from clausters.seq import pfunc, pfuncn, pif, plazy, pproduct, prout
+
+    def body(inval):
+        for i in range(3):
+            inval = yield i * 10
+
+    assert list(prout(body)) == [0, 10, 20] and list(prout(body)) == [0, 10, 20]
+    assert list(pfuncn(lambda: pseq([1, 2]), 2)) == [1, 2, 1, 2]
+    built = []
+    lazy = plazy(lambda: built.append(1) or pseq([5, 6]))
+    assert built == [] and list(lazy) == [5, 6] and built == [1]
+    assert list(pif(pseq([True, False, True]), pseries(0, 1), pseries(100, 1))) == [0, 100, 1]
+    assert list(pproduct(None, [pseq([1, 2]), pseq([10, 20])])) == [
+        [1, 10], [1, 20], [2, 10], [2, 20]]
+    assert [e["octave"] for e in pbind(degree=pseq([1, 2]),
+                                       octave=pfunc(lambda e: e["degree"] + 4))] == [5, 6]

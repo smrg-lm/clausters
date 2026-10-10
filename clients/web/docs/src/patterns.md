@@ -81,13 +81,15 @@ One module per family under `seq/patterns/`, all re-exported from `seq`, each pa
 | `randompatterns` | random values, from the random context | `pwhite`, `pexprand`, `plprand`, `phprand`, `pmeanrand`, `pbeta`, `pcauchy`, `pgauss`, `ppoisson`, `pbrown`, `pgbrown`, `pprob` |
 | `listpatterns` | values read from a list | `pseq`, `pser`, `prand`, `pxrand`, `pwrand`, `pshuffle`, `pslide`, `pwalk`, `place`, `placep`, `ptuple`, `pswitch`, `pswitch1`, `pfsm`, `pdfsm` |
 | `filterpatterns` | another pattern, transformed | `pn`, `pgate`, `pcollect`, `pselect`, `preject`, `pdrop`, `plen`, `pstutter`, `platch`, `pwhile`, `pwrap`, `pclump`, `pflatten`, `pdiff`, `pprorate`, `pavaroh`, `pdelta`, `pdur`, `ptrace` |
-| `funcpatterns` | values a function computes when asked | `pfunc` |
+| `funcpatterns` | values a function computes when asked | `pfunc`, `pfuncn`, `prout`, `plazy`, `pif`, `pproduct` |
 | `eventpatterns` | events | `pbind` |
 | `oppatterns` | an operator over patterns | `punop`, `pbinop`, `pnarop` |
 
 A list is read in many ways: `pseq`/`pser` in order from an offset, `prand`/`pxrand`/`pwrand` at random (never twice in a row, by weights), `pshuffle` in one kept random order, `pslide` as a sliding window, `pwalk` stepping across it, `place`/`placep` lacing, `ptuple` side by side, `pswitch`/`pswitch1` by an index pattern, and `pfsm`/`pdfsm` by a state machine; each is an event pattern when its items are.
 
 A filter pattern is made of another: `pcollect`/`pselect`/`preject` map and filter by a function, `pdrop`/`plen` cut, `pstutter` repeats, `platch` holds, `pclump`/`pflatten` group and open, `pdiff` steps, `pprorate` splits a duration, `pavaroh` reads a raga's two scales, `pdur`/`pdelta` cut and delay a phrase of events, `pn` with a `key` marks where each repeat starts so a `pgate` takes a new value there, and `ptrace` (or `.trace()`) prints what passes.
+
+A function stands in for a list: `pfunc` computes a value per step (with the event being built, when it declares an argument), `pfuncn` embeds what it returns, `prout` walks a generator function, `plazy` builds its pattern when the walk starts, `pif` chooses between two patterns by a pattern of conditions, and `pproduct` runs nested loops over several.
 
 An argument may itself be a pattern, read one value per step: `seq.pwhite(seq.pseq([0, 12]), seq.pseq([7, 19]))` draws from two ranges in turn. The distributions say where values gather: `pwhite` evenly, `pexprand` evenly per octave, `plprand`/`phprand`/`pmeanrand` toward an end or the middle, `pgauss`/`pcauchy` around a centre, `pbeta` by two weights, `ppoisson` counting events, `pbrown`/`pgbrown` as a walk from the last value, and `pprob` by a shape you draw as a list of chances.
 

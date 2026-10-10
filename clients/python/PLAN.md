@@ -2413,9 +2413,12 @@ by the loop (`islice`, a `break`), never read whole.
     `routines-and-clocks.md`); a pattern that must replay its own draws plays
     in its own routine. The parity vectors walk every filter, events
     included through their deltas.
-  - ⬜ **C73d — function patterns**: `Prout`, `Pfuncn`, `Plazy`, `Pif`,
-    `Pproduct`, and sc3's `@pattern` decorator (a generator function becomes a
-    pattern class), which is `pattern(function*)` in TypeScript.
+  - ✅ **C73d — function patterns** *(done 2026-10-10)*: `prout` (a generator
+    function walked as a pattern), `pfuncn`, `plazy`, `pif`, `pproduct` (its
+    function first, as its family has it, `None`/`null` for the lists
+    themselves), and `pfunc` now passes the incoming value to a function that
+    takes one, as sclang's `Pfunc` does. sc3's `@pattern` decorator shipped
+    with `C70`, where every pattern became one. The parity vectors walk each.
   - ⬜ **C73e — event and time patterns**: `Pkey`, `Pchain` (sclang's `<>`),
     `Pevent`, `pvoice` (below), `Ppar`, `Ptime`, `Pstep`, `Pseg`.
     `Ppar`/`Pmono` were already named as a pattern-side question in Future

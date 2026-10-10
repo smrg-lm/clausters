@@ -12,6 +12,12 @@ import { Ugen, sine } from "../src/defs/ugens/index.ts";
 import { seed } from "../src/base/rand.ts";
 import { Routine, StopStream } from "../src/base/stream.ts";
 import {
+    pfunc,
+    pfuncn,
+    pif,
+    plazy,
+    pproduct,
+    prout,
     pclump,
     pcollect,
     pdelta,
@@ -349,4 +355,27 @@ test("the time filters cut and delay events", () => {
     const late = [...pdelta(1.5, pbind({ dur: 0.5, degree: pseq([0, 1]) }))];
     assert.deepEqual(late.map((e) => e.get("type")), ["rest", "note", "note"]);
     assert.ok(pdur(1, pbind({ degree: 0 })) instanceof EventPattern);
+});
+
+// ---- function patterns ----
+
+test("a function computes values when asked", () => {
+    const body = function* (inval?: unknown) {
+        for (let i = 0; i < 3; i++) inval = yield i * 10;
+    };
+    assert.deepEqual([...prout(body)], [0, 10, 20]);
+    assert.deepEqual([...prout(body)], [0, 10, 20]);
+    assert.deepEqual([...pfuncn(() => pseq([1, 2]), 2)], [1, 2, 1, 2]);
+    const built: number[] = [];
+    const lazy = plazy(() => {
+        built.push(1);
+        return pseq([5, 6]);
+    });
+    assert.deepEqual(built, []);
+    assert.deepEqual([...lazy], [5, 6]);
+    assert.deepEqual(built, [1]);
+    assert.deepEqual([...pif(pseq([true, false, true]), pseries(0, 1), pseries(100, 1))], [0, 100, 1]);
+    assert.deepEqual([...pproduct(null, [pseq([1, 2]), pseq([10, 20])])], [[1, 10], [1, 20], [2, 10], [2, 20]]);
+    const phrase = pbind({ degree: pseq([1, 2]), octave: pfunc((e?: unknown) => (e as { degree: number }).degree + 4) });
+    assert.deepEqual([...phrase].map((e) => e.get("octave")), [5, 6]);
 });

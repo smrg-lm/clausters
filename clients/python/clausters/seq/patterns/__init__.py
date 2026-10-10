@@ -19,7 +19,9 @@ holds is):
   filtered, cut, stuttered, latched, clumped or flattened, differenced,
   prorated, read through a raga's two scales, delayed, cut to a duration,
   traced.
-- `funcpatterns` -- values a function computes when the walk asks.
+- `funcpatterns` -- values a function computes when the walk asks: one per
+  step, a routine's yields, a pattern decided late, a choice between two, the
+  product of several.
 - `eventpatterns` -- the patterns whose stream yields events: `pbind`.
 - `oppatterns` -- what an operator composes: `punop`, `pbinop`, `pnarop`.
 
@@ -31,7 +33,7 @@ from .filterpatterns import (pavaroh, pclump, pcollect, pdelta, pdiff, pdrop,
                              pdur, pflatten, pgate, platch, plen, pn,
                              pprorate, preject, pselect, pstutter, ptrace,
                              pwhile, pwrap)
-from .funcpatterns import pfunc
+from .funcpatterns import pfunc, pfuncn, pif, plazy, pproduct, prout
 from .listpatterns import (pdfsm, pfsm, place, placep, prand, pseq, pser,
                            pshuffle, pslide, pswitch, pswitch1, ptuple, pwalk,
                            pwrand, pxrand)
@@ -45,6 +47,7 @@ __all__ = [
     "pavaroh", "pclump", "pcollect", "pdelta", "pdiff", "pdrop", "pdur",
     "pflatten", "pgate", "platch", "plen", "pprorate", "preject", "pselect",
     "pstutter", "ptrace", "pwhile", "pwrap",
+    "pfuncn", "pif", "plazy", "pproduct", "prout",
     "pbeta", "pbind", "pbinop", "pbrown", "pcauchy", "pconst", "pdfsm",
     "pexprand", "pfsm", "pfunc", "pgauss", "pgbrown", "pgeom", "phprand",
     "place", "placep", "plprand", "pmeanrand", "pn", "pnarop", "ppoisson",
