@@ -80,6 +80,7 @@ melody = pvoice("glider",
                 dur=0.5,
                 legato=pseq([1.0, 1.0, 0.6], INF),
                 amp=0.12,
+                has_gate=True,
                 artic=True)
 
 counter = pbind(instrument="glider",

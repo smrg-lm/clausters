@@ -146,7 +146,10 @@ export interface VoiceOptions {
  *
  * How a join sounds is the destination's, by one rule: on the server the voice
  * holds **one node** and each joined note sets its controls (with a control's
- * lag, a glide); on MIDI, notes that overlap; rendered into an `EventSequence`,
+ * lag, a glide), and the note that ends a line releases it -- by its gate when
+ * the events say `has_gate: true`, which an instrument with a gated envelope
+ * wants as it does under `pbind`, else by freeing the node, which cuts the
+ * sound; on MIDI, notes that overlap; rendered into an `EventSequence`,
  * a `tie` where a joined note keeps its pitch and a slur over each run that
  * moves. What varies inside one note is an inflection, and is the note's own
  * expression, not this.
