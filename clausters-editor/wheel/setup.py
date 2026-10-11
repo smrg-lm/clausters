@@ -84,6 +84,11 @@ class _BuildPy(build_py):
 
     def run(self):
         stage()
+        # `build_lib` outlives a build and copying only adds to it: a file
+        # removed from the app (a page of its docs) would stay there and go
+        # into the next wheel. The package is staged fresh above, so its copy
+        # is started fresh too.
+        shutil.rmtree(os.path.join(self.build_lib, "clausters_editor"), ignore_errors=True)
         super().run()
 
 
