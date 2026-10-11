@@ -17,6 +17,11 @@ evaluate stays alive in the session, and its output appears in the *post* window
 | `Ctrl+Shift+F` | Searches every document for a text (the selection, if there is one); the find bar's *Page* / *All documents* switches between the two |
 | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` | New / open / save (`Ctrl+Shift+S`: save as) |
 | `Ctrl+W` | Close tab |
+| `Ctrl+Shift+P` | Clears the post window |
+| `Tab` / `Shift+Tab` | `Tab` inserts one indentation level at the cursor, or indents the selected lines; `Shift+Tab` unindents. What a level is -- a tab, 2 or 4 spaces (the default) -- is in File → Preferences |
+
+File → Open Recent reopens the files last opened or saved, and File → Preferences
+can open the last session's files at startup.
 
 ## Try it
 
@@ -64,6 +69,10 @@ brought in, an object's attributes after its `.`, what a call returns
 it is installed with the editor's package and in every environment the editor
 creates; in another environment, `pip install jedi` turns it on.
 
+When `Ctrl+D` finds no `.md` with the name it looks for, it shows the `pydoc`
+help taken from the live session, so it also works with your own functions and
+imported modules.
+
 The documentation is hidden with the x on its bar (or View → Documentation) and
 comes back with `F1` or `Ctrl+D`.
 
@@ -77,4 +86,4 @@ to, and keeps its own height when it enters a column that had one panel.
 A tab with unsaved changes shows a dot; closing it, or closing the window, asks
 before those changes are lost. Undoing back to the saved text clears the dot.
 
-More: [how the session works](session.md) · [help on `print`](python/print.md)
+More: [how the session works](session.md)

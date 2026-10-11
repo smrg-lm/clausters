@@ -20,8 +20,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Compartment, EditorState } from "@codemirror/state";
-  import { EditorView, keymap } from "@codemirror/view";
-  import { indentWithTab } from "@codemirror/commands";
+  import { EditorView } from "@codemirror/view";
   import { basicSetup } from "codemirror";
   import { pythonLanguage } from "@codemirror/lang-python";
   import { LanguageSupport } from "@codemirror/language";
@@ -35,7 +34,8 @@
   import type { HelpSubject } from "./Docs.svelte";
   import { sessionCompletions } from "./completion";
   import { pythonHints } from "./hints";
-  import { settings } from "./settings.svelte";
+  import { addRecent, removeRecent, settings, type OpenFiles } from "./settings.svelte";
+  import { indentation, tabKeymap } from "./indent";
   import X from "@lucide/svelte/icons/x";
   import Grip from "./Grip.svelte";
 
@@ -45,6 +45,7 @@
     onFocus,
     onDragStart,
     openElsewhere,
+    onFilesChange,
   }: {
     /** The group the menu and the shortcuts act on; its active tab is marked. */
     current?: boolean;
@@ -54,6 +55,8 @@
     onDragStart: (e: PointerEvent) => void;
     /** Shows `path` if another group has it open; a file is open in one group at a time. */
     openElsewhere: (path: string) => boolean;
+    /** The files open in this group changed: which, in tab order, and the one on screen. */
+    onFilesChange?: (files: OpenFiles) => void;
   } = $props();
 
   interface Tab {
@@ -99,6 +102,20 @@
     document.fonts.load(spec).finally(() => view?.requestMeasure());
   });
 
+  // The indentation preference, the same way: a tab's state holds its own copy.
+  const indentSlot = new Compartment();
+  const indentConfig = () => indentation(settings.indent);
+  const applyIndent = () => view?.dispatch({ effects: indentSlot.reconfigure(indentConfig()) });
+  $effect(() => {
+    settings.indent;
+    applyIndent();
+  });
+
+  $effect(() => {
+    const paths = tabs.flatMap((t) => (t.path ? [t.path] : []));
+    onFilesChange?.({ paths, active: tabs[active]?.path ?? null });
+  });
+
   const handlers: EvalHandlers = {
     evaluate: (code, line) => {
       const t = tabs[active];
@@ -114,7 +131,8 @@
 
   const extensions = () => [
     basicSetup,
-    keymap.of([indentWithTab]),
+    tabKeymap,
+    indentSlot.of(indentConfig()),
     // Python without its own completions: the session's (Jedi) cover the file's names too.
     new LanguageSupport(pythonLanguage),
     themeSlot.of([]),
@@ -134,6 +152,7 @@
     view.setState(tabs[i].state);
     applyTheme();
     applyFont();
+    applyIndent();
     view.focus();
   }
 
@@ -203,21 +222,36 @@
     }
   }
 
+  /** Opens again the files of an earlier session, showing the one that was on
+   *  screen. The recent files keep their order. */
+  export async function restore(files: OpenFiles) {
+    for (const path of files.paths) await openPath(path, false);
+    if (files.active) showPath(files.active);
+  }
+
   export function newFile() {
     addTab(null, `untitled ${++untitled}`, "");
   }
 
   export async function openFile() {
     const path = await open({ multiple: false, filters });
-    if (typeof path !== "string") return;
-    if (showPath(path) || openElsewhere(path)) return;
+    if (typeof path === "string") await openPath(path);
+  }
+
+  /** Opens `path` in a new tab, or shows the tab that already has it, and puts it
+   *  first in the recent files (unless `remember` is off). A file that can no
+   *  longer be read leaves the recent files. */
+  export async function openPath(path: string, remember = true) {
+    if (showPath(path) || openElsewhere(path)) return remember && addRecent(path);
     try {
       const text = await invoke<string>("read_file", { path });
       const previous = active;
       const replace = isBlank(previous);
       addTab(path, basename(path), text);
       if (replace) closeAt(previous);
+      if (remember) addRecent(path);
     } catch (e) {
+      removeRecent(path);
       info(`${e}\n`);
     }
   }
@@ -238,6 +272,7 @@
       t.name = basename(path);
       t.saved = written;
       t.dirty = !(t === tabs[active] ? view.state : t.state).doc.eq(written);
+      addRecent(path);
     } catch (e) {
       info(`${e}\n`);
     }

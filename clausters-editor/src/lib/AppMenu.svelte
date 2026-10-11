@@ -2,9 +2,11 @@
   // The in-app menu bar (shadcn's Menubar), themed like everything else.
   // Shortcuts are handled in App.svelte; here they are only shown.
   import { onMount } from "svelte";
+  import { homeDir } from "@tauri-apps/api/path";
   import * as Menubar from "$lib/components/ui/menubar";
   import {
     THEMES,
+    clearRecent,
     fontOptions,
     setEvalParagraph,
     setFont,
@@ -18,6 +20,7 @@
   export interface MenuActions {
     newFile(): void;
     openFile(): void;
+    openRecent(path: string): void;
     saveFile(saveAs?: boolean): void;
     closeTab(): void;
     quit(): void;
@@ -41,6 +44,22 @@
 
   let fonts = $state<[string, string][]>([]);
   onMount(async () => (fonts = await fontOptions()));
+
+  // A recent file is listed by its name, with its folder beside it -- under the
+  // home folder written from `~`, so that what tells two files apart is not cut.
+  let home = $state("");
+  onMount(async () => {
+    try {
+      home = (await homeDir()).replace(/[\\/]$/, "");
+    } catch {} // outside Tauri
+  });
+  const folderOf = (path: string) => {
+    const dir = path.replace(/[\\/][^\\/]*$/, "");
+    return home && (dir === home || dir.startsWith(home + "/") || dir.startsWith(home + "\\"))
+      ? "~" + dir.slice(home.length)
+      : dir;
+  };
+  const nameOf = (path: string) => path.split(/[\\/]/).pop() ?? path;
 </script>
 
 {#snippet item(label: string, action: () => void, shortcut?: string)}
@@ -56,6 +75,21 @@
     <Menubar.Content>
       {@render item("New", a.newFile, "Ctrl+N")}
       {@render item("Open...", a.openFile, "Ctrl+O")}
+      <Menubar.Sub>
+        <Menubar.SubTrigger>Open Recent</Menubar.SubTrigger>
+        <Menubar.SubContent class="max-w-[36rem]">
+          {#each settings.recent as path (path)}
+            <Menubar.Item onSelect={() => a.openRecent(path)} title={path}>
+              <span class="shrink-0">{nameOf(path)}</span>
+              <span class="ml-4 truncate text-xs text-muted-foreground">{folderOf(path)}</span>
+            </Menubar.Item>
+          {:else}
+            <Menubar.Item disabled>No Recent Files</Menubar.Item>
+          {/each}
+          <Menubar.Separator />
+          <Menubar.Item disabled={settings.recent.length === 0} onSelect={clearRecent}>Clear Recent Files</Menubar.Item>
+        </Menubar.SubContent>
+      </Menubar.Sub>
       <Menubar.Separator />
       {@render item("Save", () => a.saveFile(), "Ctrl+S")}
       {@render item("Save As...", () => a.saveFile(true), "Ctrl+Shift+S")}
@@ -81,7 +115,7 @@
       {@render item("Restart Session", a.restart)}
       {@render item("Python Environments...", a.environments)}
       <Menubar.Separator />
-      {@render item("Clear Post Window", a.clearPost)}
+      {@render item("Clear Post Window", a.clearPost, "Ctrl+Shift+P")}
     </Menubar.Content>
   </Menubar.Menu>
 

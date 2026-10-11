@@ -123,7 +123,17 @@ paths. The menu entry does not show up in the applications menu, because
   clausters client stops every session's sound this way). A package that is not
   imported is never imported by it.
 - **Startup code** (File → Preferences): runs at the start of every session.
-- Everything is kept in `~/.config/io.github.smrg-lm.clausters.editor/config.json`.
+- **Indentation** (File → Preferences): what `Tab` inserts -- a tab character,
+  2 spaces or 4 (the default).
+- **Reopening the last session's files** (File → Preferences, off by default):
+  at startup each editor opens again the files it had open, and shows the one
+  that was on screen.
+- The environment, the documentation folder and the startup code are kept in
+  `~/.config/io.github.smrg-lm.clausters.editor/config.json`; the appearance,
+  the indentation, the panels, the open files and File → Open Recent's list are
+  kept by the window itself, between sessions. The window's
+  size and place on the screen come back as they were left
+  (`.window-state.json`, in the same folder).
 - `CLAUSTERS_EDITOR_PYTHON=/path/python` forces an interpreter (it takes precedence over
   the environment).
 - **Completions, signatures and hover help** come from
@@ -148,6 +158,7 @@ src/
   lib/Grip.svelte          the handle every panel is dragged by
   lib/editorTheme.ts       editor theme: shadcn variables + VS Code syntax colors
   lib/evaluation.ts        what each shortcut evaluates (line, selection, block, cell)
+  lib/indent.ts            the indentation unit and what Tab does
   lib/hints.ts             documentation tooltips and parameter help (Jedi, from the session)
   lib/completion.ts        completions (Jedi, from the session)
   lib/code.ts              the editor's text and a position, as the session reads them
@@ -157,7 +168,7 @@ src/
   lib/Post.svelte          output window
   lib/Docs.svelte          documentation viewer, history, help (Ctrl+D)
   lib/markdown.ts          markdown-it + DOMPurify + highlighting
-  lib/settings.svelte.ts   theme, font, size, panel layout and grid sizes (remembered)
+  lib/settings.svelte.ts   theme, font, size, indentation, recent files, panel layout and grid sizes (remembered)
   lib/session.svelte.ts    communication with the Python session
   lib/EnvironmentsDialog.svelte, lib/PreferencesDialog.svelte   configuration dialogs
 src-tauri/

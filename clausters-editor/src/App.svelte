@@ -17,6 +17,7 @@
     gridSizes,
     setGridSize,
     setLayout,
+    setOpenFiles,
     setShowDocs,
     settings,
     zoom,
@@ -41,6 +42,9 @@
     (["editor-1", "editor-2"] as PanelId[]).filter((id) => [...settings.layout.left, ...settings.layout.right].includes(id)),
   );
   let activeEditor = $state<PanelId>("editor-1");
+  // What the editors had open when the app was last closed, read before they
+  // mount: each one records its own files from its first tab on.
+  const lastFiles = $state.snapshot(settings.openFiles);
   const editor = () => editors[activeEditor] ?? editors["editor-1"]!;
 
   /** Shows `path` in another group than `from`, if one has it open. */
@@ -293,6 +297,7 @@
   const actions: MenuActions = {
     newFile: () => editor().newFile(),
     openFile: () => editor().openFile(),
+    openRecent: (path) => editor().openPath(path),
     saveFile: (saveAs) => editor().saveFile(saveAs),
     closeTab: () => editor().closeTab(),
     quit: () => getCurrentWindow().close(),
@@ -342,6 +347,7 @@
     const inDocs = !!(e.target as HTMLElement).closest?.("[data-panel='docs']");
     if (e.shiftKey && e.key.toLowerCase() === "f") keys.f = actions.searchDocs;
     else if (inDocs) keys.f = () => docs.find();
+    if (e.shiftKey) keys.p = actions.clearPost;
     const action = keys[e.key.toLowerCase()];
     if (!action) return;
     e.preventDefault();
@@ -396,6 +402,13 @@
   });
 
   onMount(async () => {
+    if (settings.reopenFiles) {
+      for (const id of editorIds) {
+        const files = lastFiles[id];
+        if (files) await editors[id]?.restore(files);
+      }
+      editors[activeEditor]?.focus();
+    }
     await initSession();
     await startSession();
   });
@@ -514,6 +527,7 @@
         onFocus={() => (activeEditor = id)}
         onDragStart={(e) => startDrag(id, e)}
         openElsewhere={(path) => openElsewhere(id, path)}
+        onFilesChange={(files) => setOpenFiles(id, files)}
         onHelp={(subject) => {
           showDocs();
           docs.help(subject);

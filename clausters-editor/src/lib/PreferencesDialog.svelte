@@ -5,7 +5,9 @@
   import { Button } from "$lib/components/ui/button";
   import { Label } from "$lib/components/ui/label";
   import { Textarea } from "$lib/components/ui/textarea";
+  import * as Select from "$lib/components/ui/select";
   import { info, restart } from "./session.svelte";
+  import { INDENTS, setIndent, setReopenFiles, settings, type IndentPref } from "./settings.svelte";
 
   interface Config {
     docsDir: string | null;
@@ -67,6 +69,34 @@
     <Dialog.Header>
       <Dialog.Title>Preferences</Dialog.Title>
     </Dialog.Header>
+
+    <div class="flex items-center gap-2">
+      <input
+        id="reopen-files"
+        type="checkbox"
+        class="size-4 accent-primary"
+        checked={settings.reopenFiles}
+        onchange={(e) => setReopenFiles(e.currentTarget.checked)}
+      />
+      <Label for="reopen-files" class="font-normal">Open the last session's files at startup</Label>
+    </div>
+
+    <div class="grid gap-2">
+      <Label>Indentation</Label>
+      <Select.Root type="single" value={settings.indent} onValueChange={(v) => v && setIndent(v as IndentPref)}>
+        <Select.Trigger class="w-44" aria-label="Indentation">
+          {INDENTS.find(([i]) => i === settings.indent)?.[1]}
+        </Select.Trigger>
+        <Select.Content>
+          {#each INDENTS as [value, label] (value)}
+            <Select.Item {value} {label} />
+          {/each}
+        </Select.Content>
+      </Select.Root>
+      <p class="text-xs text-muted-foreground">
+        What Tab inserts at the cursor, and one level of indentation for the selected lines.
+      </p>
+    </div>
 
     <div class="grid gap-2">
       <Label>Documentation folder (.md files)</Label>

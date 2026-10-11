@@ -15,6 +15,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // The window comes back where it was left: its size, its place on the
+        // screen, maximized or not. The panels inside it are the page's own
+        // settings (settings.svelte.ts).
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(Session::default())
         .setup(|app| {
             let config = config::load(app.handle());

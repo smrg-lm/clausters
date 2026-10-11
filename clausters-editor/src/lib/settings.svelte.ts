@@ -1,4 +1,5 @@
-// Appearance preferences (theme, font, size), remembered between sessions.
+// Preferences (theme, font, size, indentation) and the recent files, remembered
+// between sessions.
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -28,6 +29,16 @@ export async function fontOptions(): Promise<[string, string][]> {
 }
 
 export const DEFAULT_SIZE = 14;
+
+/** What Tab inserts: a tab character, or two or four spaces. */
+export type IndentPref = "tab" | "2" | "4";
+export const INDENTS: [IndentPref, string][] = [
+  ["tab", "Tab character"],
+  ["2", "2 spaces"],
+  ["4", "4 spaces"],
+];
+/** How many recent files File > Open Recent keeps. */
+const MAX_RECENT = 10;
 const MIN_SIZE = 9;
 const MAX_SIZE = 32;
 const KEY = "clausters-editor.settings";
@@ -44,6 +55,34 @@ interface Stored {
   evalParagraph: boolean;
   /** Where each panel is: two columns, each holding up to two panels, top first. */
   layout: Layout;
+  /** One indentation level: what Tab, Enter and the indent commands insert. */
+  indent: IndentPref;
+  /** The files last opened or saved, most recent first. */
+  recent: string[];
+  /** At startup, each editor opens again the files it had open when the app was
+   *  closed. */
+  reopenFiles: boolean;
+  /** The files each editor has open now (those with a path), kept whether or not
+   *  `reopenFiles` is on so that turning it on finds them. */
+  openFiles: Partial<Record<PanelId, OpenFiles>>;
+}
+
+/** An editor's open files, in tab order, and the one on screen. */
+export interface OpenFiles {
+  paths: string[];
+  active: string | null;
+}
+
+function validOpenFiles(v: unknown): Partial<Record<PanelId, OpenFiles>> {
+  const out: Partial<Record<PanelId, OpenFiles>> = {};
+  if (!v || typeof v !== "object") return out;
+  for (const id of ["editor-1", "editor-2"] as PanelId[]) {
+    const f = (v as Record<string, OpenFiles>)[id];
+    if (!f || !Array.isArray(f.paths)) continue;
+    const paths = f.paths.filter((p): p is string => typeof p === "string" && p !== "");
+    out[id] = { paths, active: typeof f.active === "string" && paths.includes(f.active) ? f.active : null };
+  }
+  return out;
 }
 
 /** The panels: one or two code editors, the documentation and the post window. */
@@ -78,6 +117,10 @@ function load(): Stored {
     showDocs: true,
     evalParagraph: false,
     layout: DEFAULT_LAYOUT,
+    indent: "4",
+    recent: [],
+    reopenFiles: false,
+    openFiles: {},
   };
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "{}");
@@ -92,6 +135,12 @@ function load(): Stored {
       layout:
         validLayout(v.layout) ??
         (v.postPosition === "bottom" ? { left: ["editor-1", "post"], right: ["docs"] } : { ...DEFAULT_LAYOUT }),
+      indent: INDENTS.some(([i]) => i === v.indent) ? v.indent : defaults.indent,
+      recent: Array.isArray(v.recent)
+        ? v.recent.filter((p: unknown): p is string => typeof p === "string" && p !== "").slice(0, MAX_RECENT)
+        : defaults.recent,
+      reopenFiles: typeof v.reopenFiles === "boolean" ? v.reopenFiles : defaults.reopenFiles,
+      openFiles: validOpenFiles(v.openFiles),
     };
   } catch {
     return defaults;
@@ -123,8 +172,24 @@ function apply() {
   root.style.setProperty("--mono", `"${settings.font.replace(/["\\]/g, "")}", "${BUNDLED_FONT}", monospace`);
   root.style.setProperty("--code-size", `${settings.size}px`);
   try {
-    const { theme, font, size, autoscroll, showDocs, evalParagraph, layout } = settings;
-    localStorage.setItem(KEY, JSON.stringify({ theme, font, size, autoscroll, showDocs, evalParagraph, layout }));
+    const { theme, font, size, autoscroll, showDocs, evalParagraph, layout, indent, recent, reopenFiles, openFiles } =
+      settings;
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        theme,
+        font,
+        size,
+        autoscroll,
+        showDocs,
+        evalParagraph,
+        layout,
+        indent,
+        recent,
+        reopenFiles,
+        openFiles,
+      }),
+    );
   } catch {}
 }
 
@@ -155,6 +220,41 @@ export function setLayout(layout: Layout) {
 
 export function setAutoscroll(on: boolean) {
   settings.autoscroll = on;
+  apply();
+}
+
+export function setIndent(indent: IndentPref) {
+  settings.indent = indent;
+  apply();
+}
+
+/** Puts `path` first in the recent files (opened or saved just now). */
+export function addRecent(path: string) {
+  settings.recent = [path, ...settings.recent.filter((p) => p !== path)].slice(0, MAX_RECENT);
+  apply();
+}
+
+/** Takes `path` out of the recent files (it could not be opened). */
+export function removeRecent(path: string) {
+  settings.recent = settings.recent.filter((p) => p !== path);
+  apply();
+}
+
+export function setReopenFiles(on: boolean) {
+  settings.reopenFiles = on;
+  apply();
+}
+
+/** Records what editor `id` has open, if it changed. */
+export function setOpenFiles(id: PanelId, files: OpenFiles) {
+  const old = settings.openFiles[id];
+  if (old && old.active === files.active && old.paths.join("\n") === files.paths.join("\n")) return;
+  settings.openFiles = { ...settings.openFiles, [id]: files };
+  apply();
+}
+
+export function clearRecent() {
+  settings.recent = [];
   apply();
 }
 
