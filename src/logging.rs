@@ -49,6 +49,7 @@ pub fn directive_for(verbosity: i8) -> String {
 /// global subscriber, is ignored). The initial filter is `$RUST_LOG` if set,
 /// otherwise the level derived from `verbosity`.
 pub fn init(verbosity: i8) {
+    use std::io::IsTerminal;
     use tracing_subscriber::{fmt, prelude::*, reload};
 
     let base = match std::env::var("RUST_LOG") {
@@ -64,6 +65,9 @@ pub fn init(verbosity: i8) {
         .with(
             fmt::layer()
                 .with_writer(std::io::stderr)
+                // Colors only on a terminal: a pipe (a launcher, an editor's
+                // console, a log file) gets the escape codes as text.
+                .with_ansi(std::io::stderr().is_terminal())
                 .with_target(verbosity >= 2),
         )
         .try_init()
