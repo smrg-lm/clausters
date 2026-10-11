@@ -152,7 +152,7 @@ Audited: `tests/capacity.rs` overflows each structure on purpose and pins the be
 
 | Structure | Capacity (default) | Boot flag | When full |
 |---|---|---|---|
-| Command FIFO | 1024 | — | reply `/fail … command FIFO full` (render mode: abort with the event time) |
+| Command FIFO | 1024, scaled to `max_nodes` at boot | (follows `--max-nodes`) | reply `/fail … command FIFO full` (render mode: abort with the event time) |
 | Garbage FIFO | 1024, scaled to `2 × max_nodes` at boot | (follows `--max-nodes`) | spills into a 64-slot holding list retried next block; if that also fills, the memory is **leaked** (`mem::forget`) — leaking is the only RT-safe option left |
 | Event FIFO (`/node_start`/`/node_end`) | 2048, scaled to `2 × max_nodes` at boot | (follows `--max-nodes`) | events are POD and best-effort: dropped silently — the scaling keeps a full-tree mass-free deliverable, since the id registries recycle off `/node_end` |
 | Reply FIFO (`SendReply`/`SendTrig`/`Poll`) | 2048 | — | POD reply messages, best-effort: dropped silently (plus a per-block per-UGen buffer of 8) |

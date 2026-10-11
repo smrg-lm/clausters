@@ -147,6 +147,25 @@ fn full_node_slab_rejects_gracefully() {
     tick(&mut engine, 2); // still processing
 }
 
+/// The command FIFO follows `--max-nodes`: a whole tree's worth of
+/// `/synth_new` sent inside one block fits in front of the engine, so what
+/// bounds a burst is the node slab, never the queue.
+#[test]
+fn command_fifo_holds_a_full_tree() {
+    let (mut engine, mut handle) = engine_with_limits(Limits {
+        max_nodes: 4096,
+        ..Limits::default()
+    });
+    for i in 0..4095 {
+        assert!(
+            handle.send(add(1000 + i, ROOT_NODE_ID)).is_ok(),
+            "add {i} found the command FIFO full"
+        );
+    }
+    tick(&mut engine, 1);
+    assert_eq!(synth_count(&handle), 4095, "slab capacity, root included");
+}
+
 /// Non-root groups pre-reserve their child slots (configured here at 256):
 /// the 257th add is rejected, never grown (growing would allocate on the
 /// audio thread).

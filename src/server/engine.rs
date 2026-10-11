@@ -33,6 +33,9 @@ use crate::server::ipc::Segment;
 use crate::server::meters::{Meters, Role};
 use crate::server::workers::WorkerPool;
 
+/// Floor for the command FIFO; scaled to `max_nodes` at boot so a burst that
+/// builds a whole tree -- one `/synth_new` per node, all arriving inside one
+/// block -- is bounded by the node slab and never by the queue in front of it.
 const CMD_FIFO_CAPACITY: usize = 1024;
 /// Floor for the garbage FIFO; scaled to `2 * max_nodes` at boot so a
 /// mass-free of a full tree never spills into the leak path.
@@ -991,7 +994,7 @@ pub fn engine_pair_full(
     // measures both). The floor is the hardware channels, which are buses.
     let audio_buses = audio_buses.max(channels.max(1));
     assert!(channels > 0 && channels <= audio_buses);
-    let (cmd_tx, cmd_rx) = RingBuffer::new(CMD_FIFO_CAPACITY);
+    let (cmd_tx, cmd_rx) = RingBuffer::new(CMD_FIFO_CAPACITY.max(limits.max_nodes));
     let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_FIFO_CAPACITY.max(2 * limits.max_nodes));
     let (events_tx, events_rx) = RingBuffer::new(EVENT_FIFO_CAPACITY.max(2 * limits.max_nodes));
     let (reply_tx, reply_rx) = RingBuffer::new(REPLY_FIFO_CAPACITY);
