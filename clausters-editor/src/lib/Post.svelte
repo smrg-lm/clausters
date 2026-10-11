@@ -17,10 +17,22 @@
 
   let el: HTMLPreElement;
   let last: HTMLSpanElement | null = null;
+  // Kept beside `last` so that appending never reads its text back: reading
+  // textContent builds the whole chunk as a string, on every message.
+  let lastLen = 0;
+  let lastEndsLine = true;
+  // Messages arrive one event each, and a burst can be thousands of them. They
+  // are written once per frame: touching the DOM and scrolling per message
+  // makes the browser lay out the whole window again for every one, which is
+  // what froze the editor under a flood of output.
+  let queue: Msg[] = [];
+  let frame = 0;
 
   export function clear() {
     el.textContent = "";
     last = null;
+    lastLen = 0;
+    lastEndsLine = true;
   }
 
   /** The text as DOM nodes, with every web address a link the browser opens. */
@@ -47,26 +59,47 @@
   }
 
   // Written straight into the DOM: the output only grows and can be large.
-  function append(m: Msg) {
+  function write(m: Msg) {
     let text = m.type === "result" ? `-> ${m.text}\n` : m.text;
+    if (!text) return;
     // Our own notices always start on a new line.
-    if (m.type === "info" && last && !last.textContent!.endsWith("\n")) text = "\n" + text;
-    const merge =
-      last && last.dataset.type === m.type && m.type !== "result" && last.textContent!.length < MAX_CHUNK_LEN;
+    if (m.type === "info" && last && !lastEndsLine) text = "\n" + text;
+    const merge = last && last.dataset.type === m.type && m.type !== "result" && lastLen < MAX_CHUNK_LEN;
     if (merge) {
       last!.append(linked(text));
+      lastLen += text.length;
     } else {
       last = document.createElement("span");
       last.className = m.type;
       last.dataset.type = m.type;
       last.append(linked(text));
       el.appendChild(last);
-      while (el.childElementCount > MAX_CHUNKS) el.firstElementChild!.remove();
+      lastLen = text.length;
     }
+    lastEndsLine = text.endsWith("\n");
+  }
+
+  function flush() {
+    frame = 0;
+    const batch = queue;
+    queue = [];
+    for (const m of batch) write(m);
+    while (el.childElementCount > MAX_CHUNKS) el.firstElementChild!.remove();
     if (settings.autoscroll) el.scrollTop = el.scrollHeight;
   }
 
-  onMount(() => onMessage(append));
+  function append(m: Msg) {
+    queue.push(m);
+    if (!frame) frame = requestAnimationFrame(flush);
+  }
+
+  onMount(() => {
+    const off = onMessage(append);
+    return () => {
+      off();
+      cancelAnimationFrame(frame);
+    };
+  });
 </script>
 
 <div class="flex h-full flex-col">
