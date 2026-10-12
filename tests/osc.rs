@@ -2255,7 +2255,11 @@ fn a_transport_command_the_engine_never_got_fails() {
             break;
         }
         sent += 1;
-        assert!(sent <= 4096, "the command FIFO never filled");
+        // The FIFO is sized max(1024, max_nodes) at boot.
+        assert!(
+            sent <= Limits::default().max_nodes.max(1024),
+            "the command FIFO never filled"
+        );
     }
     server.send(
         "/transport_loop",
