@@ -1001,7 +1001,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 Used by:
-  dompurify 3.4.15 ((MPL-2.0 OR Apache-2.0))
+  dompurify 3.4.17 ((MPL-2.0 OR Apache-2.0))
 
 Apache License
                            Version 2.0, January 2004
