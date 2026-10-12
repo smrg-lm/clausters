@@ -101,8 +101,9 @@ A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
 - ⬜ **The `worklet` smoke timed out once in CI** *(`clients/web/PLAN.md`,
-  Found by use)*. Intermittent, passes locally and on a rerun; what is open is
-  making the case report where it stopped, then the diagnosis.
+  Found by use)*. Intermittent, passes locally and on a rerun. The case now
+  reports the step it stopped at and the page's console; what is open is the
+  diagnosis, from the next timeout's output.
 
 
 ## 2. Tests and reviews pending

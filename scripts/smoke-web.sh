@@ -143,13 +143,17 @@ fi
 failures=()
 
 run_case() {   # $1 = case name, $2 = page under clients/web
-    local name="$1" page="$2" mark verdict decoded profile gone=""
+    local name="$1" page="$2" mark verdict decoded profile browser_log last gone=""
     mark=$(wc -c <"$LOG")
     profile=$(mktemp -d)
+    browser_log=$(mktemp)
     # --enable-unsafe-swiftshader: the pages that mount a GUI host need a WebGL2
     # adapter and headless has no GPU; SwiftShader is the software one, and it
     # is harmless for the pages that only make sound. `setsid` gives the browser
     # a session of its own so reap_chrome can take the whole tree down.
+    # --enable-logging=stderr puts the page's console -- its console.error, an
+    # uncaught error, a worklet's failure to load -- in the browser's log, kept
+    # and printed only when the case fails.
     setsid "$CHROME" --headless=new --disable-gpu --no-sandbox \
         --enable-unsafe-swiftshader \
         --window-size=1280,1600 \
@@ -159,8 +163,9 @@ run_case() {   # $1 = case name, $2 = page under clients/web
         --disable-breakpad \
         --no-first-run \
         --renderer-process-limit=2 \
+        --enable-logging=stderr --v=0 \
         --user-data-dir="$profile" \
-        "http://127.0.0.1:$PORT/$page" >/dev/null 2>&1 &
+        "http://127.0.0.1:$PORT/$page" >"$browser_log" 2>&1 &
     CHROME_PID=$!
     CHROME_PGID=$(ps -o pgid= -p "$CHROME_PID" 2>/dev/null | tr -d ' ')
     [ -n "$CHROME_PGID" ] || CHROME_PGID="$CHROME_PID"
@@ -184,9 +189,29 @@ run_case() {   # $1 = case name, $2 = page under clients/web
         else
             echo "$name FAILED: no verdict within 90 s" >&2
         fi
+        # Where it stood: a page that beacons /smoke-step-<stage> as each stage
+        # starts names the one it never left. Then the browser's own account.
+        last=$(tail -c "+$((mark + 1))" "$LOG" \
+            | grep -o 'smoke-step-[^ "]*' | tail -1 || true)
+        if [ -n "$last" ]; then
+            echo "  last step reached: ${last#smoke-step-}" >&2
+        else
+            echo "  the page reported no step" >&2
+        fi
+        # The page's console first and whole: the browser's own chatter (sync,
+        # policy, GCM) keeps writing for the full 90 s and would push it out
+        # of any tail. Then the tail of the rest, for a crash or a GPU error.
+        echo "  page console:" >&2
+        { grep ':CONSOLE' "$browser_log" || echo "(nothing)"; } \
+            | head -n 40 | sed 's/^/    /' >&2
+        echo "  browser log, last 15 other lines:" >&2
+        { grep -v ':CONSOLE' "$browser_log" || true; } \
+            | tail -n 15 | sed 's/^/    /' >&2
+        rm -f "$browser_log"
         failures+=("$name")
         return 0
     fi
+    rm -f "$browser_log"
     decoded=$(printf '%s' "${verdict#smoke-verdict-}" | python3 -c \
         'import sys,urllib.parse; print(urllib.parse.unquote(sys.stdin.read()))')
     echo "$name: $decoded"

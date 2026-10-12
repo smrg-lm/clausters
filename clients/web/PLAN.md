@@ -5017,3 +5017,12 @@ sound.
   open is the diagnosis, and before it what lets one be made: the case should
   say where it stood when the 90 s ran out (the last step reached), so the
   next timeout is a fact rather than another rerun.
+
+  **Instrumented 2026-10-12; the diagnosis is still open.** The page beacons
+  `/smoke-step-<stage>` as each stage starts (`core`, `boot`, `resume`,
+  `status`, `clock`, `sine`), and the resume and every clock read now have a
+  deadline of their own, so a hang there becomes a `FAIL` that names it. On a
+  timeout `scripts/smoke-web.sh` prints the last step reached, the page's
+  console from the browser's log (`--enable-logging=stderr`) and the tail of
+  the rest of that log. Checked by forcing a hang at `status` and at `clock`.
+  What is left: read the next CI timeout and fix what it names.
