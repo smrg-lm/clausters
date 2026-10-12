@@ -5005,3 +5005,15 @@ sound.
   is how the stale one hid; it now refuses a block written twice, and that
   found a second pair written twice (`faust/boxes_library`), merged into one.
 
+
+- ⬜ **The `worklet` smoke timed out once in CI** *(found 2026-10-12, run
+  `38281229363`, `web smokes` job)*. `scripts/smoke-web.sh` reported `worklet
+  FAILED: no verdict within 90 s` while the four other cases passed in the same
+  job; a rerun of the job passed, and the case passes locally three times out
+  of three on the same tree. So it is intermittent and unexplained:
+  `tests/smoke.html` never reached a verdict, and the log says nothing about
+  where it stopped -- whether the AudioWorklet never started on the runner's
+  headless Chrome, the engine never ticked, or the page hung after. What is
+  open is the diagnosis, and before it what lets one be made: the case should
+  say where it stood when the 90 s ran out (the last step reached), so the
+  next timeout is a fact rather than another rerun.
