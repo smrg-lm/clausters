@@ -1,0 +1,61 @@
+# Dependency audit: every lockfile of the project against the public advisory
+# databases -- RustSec for the two Cargo workspaces, the npm registry's for the
+# web client. The Python client declares no runtime dependencies, so it has
+# nothing to audit; clausters-editor audits its own lockfiles in
+# clausters-editor.yml.
+#
+# A workflow of its own rather than a job in ci.yml for the schedule: an
+# advisory is published against a lockfile nobody touched, so a check that runs
+# only on a push says nothing about the weeks between pushes. It runs weekly,
+# on demand, and on any push or pull request that moves a lockfile.
+#
+# Only vulnerabilities fail a job. cargo audit prints unmaintained, unsound and
+# yanked crates as warnings and passes; read them in the log. npm audit skips
+# devDependencies (--omit=dev): the gate is what a user installs, and a build
+# tool's advisory is not one of those.
+
+name: audit
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.lock"
+      - "clients/gui/Cargo.lock"
+      - "clients/web/package-lock.json"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    paths:
+      - "Cargo.lock"
+      - "clients/gui/Cargo.lock"
+      - "clients/web/package-lock.json"
+      - ".github/workflows/audit.yml"
+
+jobs:
+  cargo:
+    name: cargo audit (${{ matrix.lockfile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lockfile: [Cargo.lock, clients/gui/Cargo.lock]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit --file ${{ matrix.lockfile }}
+
+  npm:
+    name: npm audit (clients/web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - run: npm audit --omit=dev
+        working-directory: clients/web

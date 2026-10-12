@@ -8,6 +8,10 @@
 # `npm run build` is the frontend's compile check, as svelte-check is its type
 # check. The cargo steps are debug builds, which point Tauri at the dev server
 # instead of embedding `dist/`, so they do not depend on it.
+#
+# The weekly schedule runs the `audit` job alone: an advisory is published
+# against a lockfile nobody touched, so it is checked between changes too, the
+# way audit.yml checks the rest of the project's lockfiles.
 
 name: clausters-editor
 
@@ -21,6 +25,9 @@ on:
     paths:
       - "clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -28,6 +35,7 @@ env:
 jobs:
   check:
     name: frontend + fmt + clippy + test
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -73,6 +81,7 @@ jobs:
   # a release step.
   wheel:
     name: Python wheel (manylinux_2_35)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -101,3 +110,24 @@ jobs:
         with:
           name: clausters-editor-wheel
           path: clausters-editor/wheel/dist/*.whl
+
+  # Both lockfiles against the advisory databases. Only vulnerabilities fail:
+  # cargo audit passes on unmaintained, unsound and yanked crates and prints
+  # them, and npm audit skips devDependencies, which build the app and are not
+  # shipped in it.
+  audit:
+    name: cargo audit + npm audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clausters-editor
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit --file src-tauri/Cargo.lock
+      - run: npm audit --omit=dev

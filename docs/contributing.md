@@ -128,6 +128,16 @@ is reproducible with the same line:
   `cargo run --release --example bench -- --json` and the same script. A change
   that knowingly trades speed for something else says `[no-bench]` in its head
   commit message and the gate steps aside.
+- **audit** — a workflow of its own (`audit.yml`): `cargo audit --file` over
+  the server's and the GUI host's `Cargo.lock`, and `npm audit --omit=dev` in
+  `clients/web`. It runs weekly as well as on any change to a lockfile, since
+  an advisory is published against code nobody touched. Only a vulnerability
+  fails it — unmaintained, unsound and yanked crates are printed and pass —
+  and devDependencies are left out because they are not what a user installs.
+  The fix is usually a semver-compatible `cargo update -p <crate>`; run the
+  same command locally (`cargo install --locked cargo-audit`) to check before
+  pushing. The Python client has no runtime dependencies; clausters-editor
+  audits its own lockfiles in its own workflow.
 - **example pairs** — *not a CI job*: `scripts/audit-example-pairs.py`, which
   reads a Python example and its page twin and compares the **ordered sequence
   of calls** each makes on the client surface. The non-divergence rule says the
