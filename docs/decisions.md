@@ -10091,3 +10091,23 @@ The bridge carries indexed jobs with generations, sample-offset events and trans
 The trade-off is measured buffering latency, reported along with intrinsic plugin latency through `SynthNode::latency()`, and per-instance process/CPU overhead. **Server delay compensation is part of the agreed delivery**, including statically analyzable paths across nested automatic groups, mixed writers and sidechains; manual/dynamic/feedback boundaries remain explicit. Native editors open on the server's machine. A web client controlling that native server has the same surface as Python; only the in-page wasm engine cannot load a native binary. A WAM-based implementation is an open question, not an adopted replacement.
 
 Offline rendering uses the same protocol and declared bridge delay, but may wait outside RT. Equality with RT is tested only for a deterministic fixture with identical rate, state, events and transport, no GUI edits and no missed deadlines. Hosting is still planned work; its milestones and the feasibility acceptance live in the server plan.
+
+*Bridge choice measured 2026-10-13.* A local isolated CLAP fixture experiment compared 50 us helper polling with a non-RT polling
+notifier/futex design, at depths 1/2/4/8/16, up to eight instances and four
+producer workers. Select **50 us helper polling and a configurable four-block
+default** for the initial production bridge. Both designs missed some
+one/two-block deadlines; depth four had no bridge misses without full CPU
+saturation. Notification saved some CPU at multiple instances but added another
+scheduler-dependent thread and wake protocol, and cost more at one instance.
+The first reference favors the simpler mechanism. This is not a universal
+minimum or a guarantee for a device callback with a different job cadence.
+
+The consequence is 256 bridge samples at 48 kHz/64 frames, plus intrinsic
+latency, with a fixed ownership protocol: late output is discarded, accepted
+input and releases are still consumed in order, and overflow or eight consecutive
+misses latch a failed/silent instance. Full CPU saturation produced controller
+lateness and failures even at larger depths, so it is outside the validated
+envelope; no RT syscall exception or invisible event loss is adopted to make
+that case pass. The capacities, memory ordering, generations, restart boundary
+and measurement summary are in
+[the developer architecture](architecture.md#isolated-plugin-processing-contract).

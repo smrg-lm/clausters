@@ -1689,4 +1689,190 @@ scsynth grew a binary plugin API (`UnitCmd`/interface tables) whose ABI broke wi
 - The *runtime*-extensible path for users is deliberately not Rust: send a **Faust def** (`/def_send faust`, JIT-compiled, sandboxed by the same `SynthNode` boundary). Most "I need a custom UGen" cases are a Faust one-liner.
 - If dynamic plugins ever become necessary, the lesson from scsynth applies: the boundary must be a **versioned C ABI** (or a wasm interface), checked at load time — the same policy already planned for the shared-memory layout and embed cdylib. Do not expose Rust types across it.
 
-Third-party **CLAP and VST3 hosting is planned, not implemented.** CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The planned host runs one plugin instance per helper process, with lifecycle and windows on its main thread and processing on a separate thread. The server exchanges bounded, indexed audio/event jobs through versioned shared memory; its callback makes no syscalls, allocates nothing and never waits on the helper. The wake mechanism and buffering depth must be measured before the bridge is implemented, including split blocks, missed deadlines and recovery generations. `tests/rt_safety.rs` checks allocation/freeing; that alone does not check syscalls, locks or deadlines. Instruments, transport and engine delay compensation are part of the planned scope. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+Third-party **CLAP and VST3 hosting is planned, not implemented.** CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The planned host runs one plugin instance per helper process, with lifecycle and windows on its main thread and processing on a separate thread. The server exchanges bounded, indexed audio/event jobs through versioned shared memory; its callback makes no syscalls, allocates nothing and never waits on the helper. The isolated bridge experiment and the processing contract below precede that implementation. `tests/rt_safety.rs` checks allocation/freeing; that alone does not check syscalls, locks or deadlines. Instruments, transport and engine delay compensation are part of the planned scope. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+
+### Isolated plugin processing contract
+
+The contract was selected from a local Linux C11 feasibility experiment.
+The temporary measurement programs and raw logs are not repository artifacts;
+the observed operating envelope is summarized below.
+
+**One completed engine block is one job.** The producer stages all slices in
+preallocated local storage before publishing. Each job identifies its generation
+and monotonically increasing sequence, with ordered spans (offset, frame count,
+active/frozen status, playing status and transport position) and sample-offset
+events. In the experiment the three spans are 17 active frames, 22 frozen
+frames, then 25 active frames at a new position. Each active span becomes a CLAP
+process call in the helper, with rebased event offsets and its transport snapshot;
+an inactive span produces zero samples and does not advance plugin DSP.
+Device time still advances. This tests transmission, not the future policy for
+classifying governed versus live event sources.
+
+**Capacity and ownership are established before processing starts.** The tested
+configuration is 64 frames, one mono input/output (the instrument has no input),
+32 cache-line-aligned slots, 16 input events per job and 8 spans per job.
+There is also a 16-event helper-owned deferred-event buffer for frozen spans.
+Slots contain no owned heap allocations. A production segment must negotiate
+port/channel counts, event representation and all capacities outside RT and
+reject incompatible layouts before activation. Neither multiplying channels nor
+raising these capacities inherits the measured copying-cost envelope: remeasure
+the negotiated production payload. CLAP cookies/pointers do not cross the
+segment; the production wire uses value records converted in the helper.
+
+The slot state machine is `FREE -> READY -> BUSY -> DONE -> FREE`:
+
+| State | Owner and permitted access |
+|---|---|
+| `FREE` | Only the instance's producer may fill this slot. |
+| `READY` | Published immutable input; only the helper may claim it. |
+| `BUSY` | Only the helper may read input/write output; the producer cannot reclaim it. |
+| `DONE` | Immutable result; only the producer may copy or discard it and publish `FREE`. |
+
+The callback is the sole producer for an instance, even when nodes run on
+parallel workers. It owns the sequence counter and staging buffer. The helper
+consumes jobs in sequence order; it never skips an input because its output is
+late. Producer payload writes precede a release store of `READY`; the helper's
+acquire load observes them. Helper output writes precede a release store of
+`DONE`; the producer's acquire load observes them. Reclamation publishes `FREE`
+with release, acquired before reuse. `BUSY` needs no publication beyond the
+atomic state itself. Failure/stop/publication counters use release/acquire.
+Integer atomics must be lock-free and aligned on the host architecture; the
+Rust target must provide native 32-bit and 64-bit atomics. The callback scans at
+most 32 slots per call and never allocates, frees, locks, waits or wakes anyone.
+
+**Output keeps its authored sample index.** With depth `D`, job `k` can be used
+only at engine block `k + D`, with matching generation and sequence. The first
+`D` blocks are silence. A missing result is silence for that whole scheduled
+block and increments the deadline counter; it is not held for later playback.
+Completed results that missed their slot in time are reclaimed without being
+played. A `READY`/`BUSY` slot is never overwritten, even after a deadline miss.
+Reported node latency will be `D * block_frames + intrinsic_plugin_latency`;
+the delay fixture declares seven additional samples. Compensation remains
+separate engine work.
+
+**Backlog is bounded without losing releases.** After a miss, input samples,
+note-offs, automation and transport continue to enter the same ordered queue
+while space remains. The helper processes every accepted job, advancing DSP
+through its active spans and discarding only the expired audio result.
+Events in frozen spans are retained in order, applied at offset zero of the
+next active span before that span's events; transport resumes with that span's
+snapshot. A deferred-event overflow fails the instance rather than dropping a
+release. Accepted note releases must still be consumed after their audio deadline.
+The shared-plane tests check that late audio and output events are discarded
+while the accepted input release remains in sequence.
+
+Failure is explicit and latched: a non-free slot on submission, an event/span
+capacity overflow, deferred-event overflow, CLAP process error, or eight
+consecutive missing output blocks puts the instance in a failed/silent state.
+The eight-miss watchdog bounds a crash/hang without an RT process-liveness
+syscall; its duration is in device blocks, not wall-clock seconds while an
+engine is idle. Failed callbacks publish no further jobs and output silence.
+The production non-RT monitor must report the failure reason and deadline
+counters, including when the engine stops ticking. No automatic reset or queue
+flush races a helper that may still be writing.
+
+**Restart is prepared off RT.** Kill/reap an unresponsive helper outside the
+callback. Allocate a new segment with a new immutable generation, restore the
+last saved state/current writable parameters, clear note ownership and prepare
+a fresh helper. Swap the prepared instance only at a block boundary and retire
+the old mapping through non-RT reclamation after its producer and helper no
+longer access it. The new segment uses a fresh relative sequence with a device
+sample origin; old-generation output cannot match it. The fresh generation cannot inherit accepted jobs or held notes from the
+retired segment. State restoration and the block-boundary swap are checked by
+the server integration tests.
+
+Synchronous/offline driving may wait outside the callback, but uses the same
+publication, generation, event order and depth. The deterministic signal tests
+compare the resulting delayed samples with independent gain, delay and note
+expectations, including split/frozen spans and jumps. Arbitrary third-party
+plugins are not asserted deterministic. Plugin output-event queues, multi-port
+payloads and server RT/NRT equality remain acceptance work for the production
+host; output event rejection in this fixture host is explicit via CLAP's
+`try_push` result, and the fixtures emit no output events.
+
+**Safety is checked separately from timing.** Rust acceptance tests exercise
+the actual shared-plane producer with allocation/free guards and, on x86-64
+Linux, seccomp allowing only process exit. The syscall audit covers publication,
+on-time delivery, deadline misses, late discard and latched failure. Shared-plane
+tests check slot ownership and accepted releases without relying on helper
+scheduling. The host tests cover split/frozen spans, output events, port order,
+thread separation and process failure. These checks establish functional and
+callback-safety properties, not performance thresholds for arbitrary plugins.
+
+### Plugin bridge measurements and selected defaults
+
+Measured 2026-10-13 on an Intel Core i7-12700H, Linux
+`7.0.0-38-generic`, GCC `15.2.0`, CPU affinity `{0,1,2,3}`, ordinary scheduling,
+48 kHz/64 frames. This is a historical feasibility measurement, not a CI
+performance gate. The summarized matrix contains 240
+runs: two repeats of 750 blocks, both wake designs, five depths, four
+instance/worker configurations and three contention levels. Work is 20,000
+volatile multiply/add iterations per helper job plus the mono gain fixture.
+
+The following aggregates include all instance/worker configurations and both
+repeats. A failed instance stops publishing, so its subsequent silent blocks are
+represented by the failure count, not additional deadline misses.
+
+| Added CPU load | Wake design | Depth | Missing output blocks | Failed instances | Controller late blocks |
+|---|---|---:|---:|---:|---:|
+| None | Poll | 1 | 5 | 0 | 0 |
+| None | Notify | 1 | 22 | 0 | 0 |
+| None | Poll | 2 | 0 | 0 | 0 |
+| None | Notify | 2 | 1 | 0 | 1 |
+| One runnable process | Poll | 1 | 6 | 0 | 1 |
+| One runnable process | Notify | 1 | 26 | 0 | 1 |
+| One runnable process | Poll | 2 | 0 | 0 | 0 |
+| One runnable process | Notify | 2 | 1 | 0 | 0 |
+| None / one runnable process | Poll | 4 | 0 | 0 | 5 |
+| None / one runnable process | Notify | 4 | 0 | 0 | 0 |
+| Four runnable processes | Poll | 4 | 9 | 1 | 1223 |
+| Four runnable processes | Notify | 4 | 0 | 0 | 3239 |
+| Four runnable processes | Poll | 16 | 8 | 1 | 1430 |
+| Four runnable processes | Notify | 16 | 20 | 0 | 1875 |
+
+**Select helper polling at 50 us, with a configurable default depth of four
+engine blocks.** At the tested rate this adds 256 samples (5.333 ms), before
+intrinsic plugin latency. This is an operating choice with margin over the
+observed one/two-block misses, not a universal minimum. The depth is selected
+off RT before activation; changing it prepares a new bridge rather than moving
+in-flight output to a new timeline. The tested configurable range is 1–16.
+
+In the 750-block matrix at depth four, without full CPU saturation, the largest run-level callback p99
+was 2.540 us and the largest callback observation was 63.078 us; both include
+timing/preemption noise. The maximum observed completed-job latency was
+3.278 ms for polling and 3.423 ms for notification. Helper plus notifier CPU,
+averaged across the no-load/one-process repeats, was:
+
+| Instances / producer workers | Poll, percent of one CPU | Notify, percent of one CPU |
+|---|---:|---:|
+| 1 / 1 | 12.51 | 13.83 |
+| 4 / 1 | 38.60 | 39.13 |
+| 4 / 4 | 37.32 | 35.77 |
+| 8 / 4 | 59.35 | 54.65 |
+
+Notification saves some CPU with several helpers, but adds a notifier thread,
+a second polling schedule and futex wake/wait coordination; it did not remove
+the shallow-depth misses. Polling is the simpler initial reference mechanism
+and used less total CPU for a single instance. The alternative remains measured
+and reproducible, rather than forbidden or assumed slower everywhere.
+
+The tested bridge envelope is this payload/workload with 1–8 helpers, 1–4
+producer workers and no load or one competing runnable process in the same four
+CPUs. **This is not a glitch-free device guarantee.** Even the unloaded
+controller occasionally started late. Full CPU saturation falls outside that
+envelope: scheduler lateness is substantial, misses and latched failure occur,
+and increasing depth to 16 did not establish reliability. No callback syscall,
+wait or queue overwrite is permitted to rescue that case. Ten-second follow-up
+runs at depth four checked the same workload: all six runs (poll and
+notify, one/eight instances, without/with one competing process) had zero
+bridge misses and failures. One poll run had one late controller block. The
+largest callback observations there were 99.004 us for poll and 100.921 us for
+notify, again including preemption noise.
+
+The job cadence is one paced 64-frame engine block. An actual device callback
+that requests several engine blocks in a burst, a different rate, larger
+channel/event payloads, more instances, GUI activity and arbitrary third-party
+DSP need their own production measurements before inheriting an operating
+envelope. Pre-touch segment/staging/output pages outside RT; arm the production
+processing thread's denormal policy before calling plugins. The prototype's
+negative saturation results remain evidence of a limit, not a relaxed RT rule.

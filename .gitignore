@@ -29,3 +29,10 @@ uv.lock
 /.superpowers/
 # Playwright MCP session output (console logs, page snapshots).
 /.playwright-mcp/
+
+# Downloaded plugin test dependencies. Recipes and pins are versioned.
+/third_party/clap/
+/third_party/vst3-fixture/
+
+# Local development experiments are not repository artifacts.
+/tools/
