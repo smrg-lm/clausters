@@ -35,6 +35,68 @@ import type { Server } from "./index.ts";
 /** The introspection queries. Composed into `Server`; never used alone. */
 export class ServerQueries {
     /**
+     * Scan CLAP plugins on the native server, returning JSON metadata/error
+     * rows. With no directories, use the server's CLAP search roots. A disposable
+     * helper inspects each binary with a timeout; metadata identifies the binary,
+     * native plugin id, ports and plain-value parameters. Persistence caches it
+     * in the server data directory. Choose a timeout for the whole catalogue
+     * and TCP for large replies. An in-page engine or a server without native
+     * CLAP support replies with a capability error.
+     */
+    async scanPlugins(this: Server, dirs: string[] = [], timeout?: number): Promise<Record<string, unknown>[]> {
+        const messages = await this.requestBatch("/plugin_scan", dirs, {
+            reply: "/plugin_scan.reply", timeout,
+        });
+        try {
+            const rows = messages.map((message) => message.args);
+            const manifest = rows.filter((row) => row.length === 5 && row[0] === -1);
+            if (manifest.length !== 1 || manifest[0][2] !== 0 || manifest[0][3] !== 0
+                || !(manifest[0][4] instanceof Uint8Array) || manifest[0][4].length !== 0) {
+                throw new Error("missing or invalid manifest");
+            }
+            const count = manifest[0][1];
+            if (typeof count !== "number" || !Number.isInteger(count) || count < 0 || count > 16512) throw new Error("invalid entry count");
+            const pieces = new Map<number, Map<number, Uint8Array>>();
+            const totals = new Map<number, number>();
+            for (const row of rows) {
+                if (row.length !== 5) throw new Error("invalid fragment");
+                const [index, entries, chunk, chunks, payload] = row;
+                if (index === -1) continue;
+                if (typeof index !== "number" || typeof entries !== "number"
+                    || typeof chunk !== "number" || typeof chunks !== "number"
+                    || ![index, entries, chunk, chunks].every(Number.isInteger)) throw new Error("invalid fragment indices");
+                if (index < 0 || index >= count || entries !== count || chunk < 0 || chunk >= chunks || chunks > 4096) {
+                    throw new Error("invalid fragment bounds");
+                }
+                if (totals.has(index) && totals.get(index) !== chunks) throw new Error("inconsistent fragment count");
+                totals.set(index, chunks);
+                const fragments = pieces.get(index) ?? new Map<number, Uint8Array>();
+                if (fragments.has(chunk) || !(payload instanceof Uint8Array)) throw new Error("duplicate or invalid fragment");
+                fragments.set(chunk, payload); pieces.set(index, fragments);
+            }
+            if (pieces.size !== count || [...pieces].some(([index, fragments]) => fragments.size !== totals.get(index))) {
+                throw new Error("incomplete catalogue");
+            }
+            const output: Record<string, unknown>[] = [];
+            for (let index = 0; index < count; ++index) {
+                const fragments = pieces.get(index)!;
+                const bytes = new Uint8Array([...fragments.values()].reduce((n, value) => n + value.length, 0));
+                let offset = 0;
+                for (let chunk = 0; chunk < totals.get(index)!; ++chunk) {
+                    const value = fragments.get(chunk)!; bytes.set(value, offset); offset += value.length;
+                }
+                const row = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+                if (!row || typeof row !== "object" || Array.isArray(row) || !["plugin", "error"].includes(row.kind)) {
+                    throw new Error("invalid catalogue row");
+                }
+                output.push(row);
+            }
+            return output;
+        } catch (error) {
+            throw new CommandError(`invalid /plugin_scan.reply: ${error}`);
+        }
+    }
+    /**
      * The defs the server holds, each with its control surface (`/def_query`,
      * answered by one `/def_query.reply` per def). With `names`, details exactly
      * those -- an unknown one comes back with an empty `family` rather than

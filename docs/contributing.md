@@ -98,6 +98,12 @@ is reproducible with the same line:
 - **test** — `cargo test --workspace` across the def-family feature matrix:
   default, `--no-default-features`, `--no-default-features --features synth`,
   and default plus `embed`.
+- **plugin-host** — native Rust shared-plane, helper and server tests on Linux.
+  Prepare checksum-pinned external test sources first; the project-owned CLAP
+  fixtures live under `crates/clausters-plugin-host/tests/fixtures`.
+  CI runs the CLAP host and server discovery suite.
+  The repository file `third_party/BUILD-PLUGINS.md` describes preparation
+  and the local test commands.
 - **gui** — `cargo test` in `clients/gui` plus the two wasm build gates: the
   GUI host's (`clients/gui/check-wasm.sh`) and the engine's
   (`scripts/check-wasm.sh`, which also covers the shared core's codec crate).

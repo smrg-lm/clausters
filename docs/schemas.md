@@ -6,7 +6,7 @@ User-facing reference: wire formats and OSC commands. For the server's internals
 
 Every command in this reference is spelled by one rule, and knowing it means most of the surface can be guessed rather than looked up:
 
-**`/<resource>_<action>`** — the resource is the *kind of thing the command addresses*, spelled in full (`node`, `synth`, `group`, `bus`, `buffer`, `def`, `ugen`, `graph`, `server`, `midi`, `transport`, `sched`, `clock`); the action is a verb in camelCase (`set`, `free`, `query`, `allocRead`, `tapStream`).
+**`/<resource>_<action>`** — the resource is the *kind of thing the command addresses*, spelled in full (`node`, `synth`, `group`, `bus`, `buffer`, `def`, `ugen`, `graph`, `server`, `midi`, `transport`, `sched`, `clock`, `plugin`); the action is a verb in camelCase (`set`, `free`, `query`, `allocRead`, `tapStream`).
 
 Three corollaries carry most of the vocabulary:
 
@@ -29,9 +29,61 @@ The two families are independent build features and combine freely; a server bui
 
 Both reply asynchronously: `/done "/def_send" <family>` — a Faust compile, which finishes later on its own thread, appends the def name — or `/fail "/def_send" <reason>` with a human-readable error. Once loaded, defs of either kind are instantiated, controlled and freed the same way:
 
+### Native plugin discovery
+
+`/plugin_scan [string dir ...]` asynchronously discovers CLAP plugins on a Linux
+server built with `plugin-clap`. The server uses the matching
+`clausters-plugin-host` executable (adjacent to the server, or selected by
+`CLAUSTERS_PLUGIN_HOST`). Without directories it searches `CLAP_PATH`, `~/.clap`,
+`/usr/lib/clap` and `/usr/local/lib/clap`, ignoring absent default roots. Explicit
+missing paths yield diagnostics. Paths name the server's filesystem.
+
+Discovery never loads a plugin into the server: each binary is inspected in a
+disposable helper, with a two-second timeout per administrative request.
+Compatibility is checked again when an instance is loaded. A failed binary
+returns an error row and other binaries continue. Traversal/catalogue capacity
+errors, an unavailable helper, a full scan queue or a cache-write failure reply
+`/fail "/plugin_scan" <reason>`. Builds without native CLAP support and an in-page
+engine return a capability error. Scanning does not create nodes or send defs.
+
+Each `/plugin_scan.reply` has five arguments:
+`<int entry_index> <int entry_count> <int chunk_index> <int chunk_count> <blob utf8_json>`.
+One manifest has `entry_index = -1`, the total entry count, zero chunk indices
+and an empty blob. Each subsequent entry is serialized as JSON, split into
+chunks of at most 6144 bytes. Entry and chunk indices start at zero; clients
+reassemble by indices and reject inconsistent, duplicated or missing fragments,
+including a wholly missing entry. `/done "/plugin_scan"` ends the batch. TCP or
+WebSocket is recommended for large catalogues; UDP/shared-ring delivery can
+lose a burst, which clients report as incomplete rather than return a partial
+catalogue. `/server_sync` waits for the scan and its cache write.
+
+The reconstructed rows use these schemas:
+
+```json
+{"kind":"plugin","plugin":{"format":"clap","path":"/plugins/gain.clap","id":"org.vendor.gain","name":"Gain","vendor":"Vendor","version":"1","inputs":[{"id":10,"name":"Input","channels":2,"flags":1}],"outputs":[{"id":20,"name":"Output","channels":2,"flags":1}],"note_inputs":[],"note_outputs":[],"parameters":[{"id":19,"name":"Gain","module":"","flags":32,"min":0.0,"max":1.0,"default":0.5}],"latency":0,"state":true,"editor":false}}
+{"kind":"error","path":"/plugins/broken.clap","error":"plugin helper timeout/protocol error"}
+```
+
+Identity is `(format, canonical binary path, native plugin id)`; a binary may
+hold several plugins. Native port and parameter ids survive discovery order;
+names are display strings. Port arrays follow processing-port order. Note ports
+carry `id`, `name` and native `dialects` flags. Parameter values and bounds use
+native plain units; `flags` retain CLAP's native flags. `latency` is the intrinsic
+frame count queried after activation at 48 kHz, independent of the bridge delay.
+`state` reports opaque save/load support; `editor` reports floating X11 editor
+support, without opening a window.
+
+Limits are 32 roots, 128 binaries, 128 plugins per binary, 16 ports and 32 audio
+channels per direction, 1024 parameters per plugin and a 16 MiB catalogue.
+With persistence enabled the server atomically writes
+`<data_dir>/plugins.json` as `{"version":1,"entries":[...]}`, including diagnostics.
+With persistence disabled there is no cache write. `Server.scan_plugins(*dirs,
+timeout=...)` and `await server.scanPlugins(dirs, timeout)` return these JSON
+rows; choose a timeout for the whole catalogue rather than one binary.
+
 ### The async barrier (`/server_sync`)
 
-`/server_sync <int id>` is the general way to wait for asynchronous work: the server replies `/server_sync.reply <id>` once **every async command received before this `/server_sync`** has completed — Faust compiles (`/def_send faust`), SynthDef sends (`/def_send synth`) and buffer jobs (`/buffer_*`), each of which runs on its own FIFO worker thread. Use it instead of matching individual `/done`s when you fire several async commands and just want to know they have all landed (e.g. after sending a def without waiting, before the `/synth_new` that needs it). It is a real barrier, not a round-trip of `/server_status`: a `/server_sync.reply` guarantees the prior compiles/jobs are installed.
+`/server_sync <int id>` is the general way to wait for asynchronous work: the server replies `/server_sync.reply <id>` once **every async command received before this `/server_sync`** has completed — Faust compiles (`/def_send faust`), SynthDef sends (`/def_send synth`), buffer jobs (`/buffer_*`) and plugin discovery (`/plugin_scan`), each of which runs on its own FIFO worker thread. Use it instead of matching individual `/done`s when you fire several async commands and just want to know they have all landed (e.g. after sending a def without waiting, before the `/synth_new` that needs it). It is a real barrier, not a round-trip of `/server_status`: a `/server_sync.reply` guarantees the prior compiles/jobs are installed.
 
 ```text
 /synth_new  name id addAction targetID [ctlName value]...   # ctl args: s f pairs

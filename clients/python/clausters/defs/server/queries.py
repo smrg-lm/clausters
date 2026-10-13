@@ -7,6 +7,8 @@ survives restarts, and another client's nodes are in the same tree -- which is
 why asking beats assuming.
 """
 
+import json
+
 from ...errors import CommandError
 from ..info import (
     BufferInfo,
@@ -32,6 +34,56 @@ class ServerQueries:
     """The introspection half of `Server`; never instantiated on its own."""
 
     # ---- server introspection: what a running server actually holds ----
+
+    def scan_plugins(self, *dirs: str, timeout: "float | None" = None) -> "list[dict]":
+        """Scan CLAP plugins on a native server, returning JSON metadata/error rows.
+
+        With no directories, use the server's CLAP search roots. Every binary
+        is inspected in a disposable helper with a bounded timeout. Compatible
+        rows identify the binary path, native plugin id, ports and plain-value
+        parameters; error rows retain per-binary crash/timeout diagnostics.
+        Metadata is cached in the server data directory when persistence is on.
+
+        Blocking, never call from a routine. Choose a timeout for the whole
+        catalogue, and TCP for large replies. An in-page engine or a server
+        without native CLAP support replies with a capability error.
+        """
+        rows = self._request_batch("/plugin_scan", *dirs,
+                                   reply="/plugin_scan.reply", timeout=timeout)
+        try:
+            manifest = [row for row in rows if len(row) == 5 and row[0] == -1]
+            if len(manifest) != 1 or manifest[0][2:4] != [0, 0] or manifest[0][4] != b"":
+                raise ValueError("missing or invalid manifest")
+            count = manifest[0][1]
+            if not isinstance(count, int) or not 0 <= count <= 16512:
+                raise ValueError("invalid entry count")
+            pieces = {}
+            totals = {}
+            for row in rows:
+                if len(row) != 5:
+                    raise ValueError("invalid fragment")
+                index, entries, chunk, chunks, payload = row
+                if index == -1:
+                    continue
+                if not all(isinstance(value, int) for value in (index, entries, chunk, chunks)):
+                    raise ValueError("invalid fragment indices")
+                if not 0 <= index < count or entries != count or not 0 <= chunk < chunks <= 4096:
+                    raise ValueError("invalid fragment bounds")
+                if totals.setdefault(index, chunks) != chunks:
+                    raise ValueError("inconsistent fragment count")
+                fragments = pieces.setdefault(index, {})
+                if chunk in fragments or not isinstance(payload, bytes):
+                    raise ValueError("duplicate or invalid fragment")
+                fragments[chunk] = payload
+            if len(pieces) != count or any(len(pieces[index]) != totals[index] for index in pieces):
+                raise ValueError("incomplete catalogue")
+            output = [json.loads(b"".join(pieces[index][chunk] for chunk in range(totals[index])))
+                      for index in range(count)]
+            if any(not isinstance(row, dict) or row.get("kind") not in ("plugin", "error") for row in output):
+                raise ValueError("invalid catalogue row")
+            return output
+        except (ValueError, TypeError, KeyError) as error:
+            raise CommandError(f"invalid /plugin_scan.reply: {error}") from error
 
     def query_defs(self, *names, timeout: "float | None" = None) -> "list[DefInfo]":
         """The defs the server holds, each with its control surface

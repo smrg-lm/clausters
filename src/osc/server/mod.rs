@@ -287,6 +287,10 @@ pub struct OscServer {
     nrt_drained: u64,
     faust_submitted: u64,
     faust_drained: u64,
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    plugin_scanner: commands::plugin::ScanWorker,
+    plugin_submitted: u64,
+    plugin_drained: u64,
     pending_syncs: Vec<PendingSync>,
     /// Each transport's network-side state -- its grid, its rolling state, its
     /// bindings -- indexed by transport id and sized at boot (`--transports`).
@@ -457,6 +461,7 @@ struct PendingSync {
     id: i32,
     nrt_target: u64,
     faust_target: u64,
+    plugin_target: u64,
 }
 
 /// Where the server reads time from. `Wall` is the native default: streams

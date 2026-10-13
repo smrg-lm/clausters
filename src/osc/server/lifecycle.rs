@@ -75,9 +75,11 @@ impl OscServer {
         handle: EngineHandle,
         nrt: NrtRunner,
         clock: TimeSource,
-        #[cfg_attr(not(feature = "faust"), allow(unused_variables))] waker: Option<
-            crate::osc::wake::Waker,
-        >,
+        #[cfg_attr(
+            not(any(feature = "faust", all(feature = "plugin-clap", target_os = "linux"))),
+            allow(unused_variables)
+        )]
+        waker: Option<crate::osc::wake::Waker>,
     ) -> Self {
         let meters = Arc::clone(handle.meters());
         let mut translator = CmdTranslator::with_limits(
@@ -89,6 +91,17 @@ impl OscServer {
         // The disk threads of the synths it builds are this server's workers.
         translator.set_meters(Arc::clone(&meters));
         let transports = vec![Transport::default(); handle.limits.transports];
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        let plugin_scanner = commands::plugin::ScanWorker::spawn({
+            #[cfg(feature = "faust")]
+            {
+                waker.clone()
+            }
+            #[cfg(not(feature = "faust"))]
+            {
+                waker
+            }
+        });
         Self {
             socket: None,
             info,
@@ -121,6 +134,10 @@ impl OscServer {
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
             faust_compiler: CompilerThread::spawn(waker, meters),
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            plugin_scanner,
+            plugin_submitted: 0,
+            plugin_drained: 0,
             nrt_submitted: 0,
             nrt_in_flight: Default::default(),
             nrt_drained: 0,
@@ -484,6 +501,8 @@ impl OscServer {
         self.collect_nrt_results();
         #[cfg(feature = "faust")]
         self.collect_faust_results();
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        self.collect_plugin_results();
     }
 
     /// Drops what the audio thread discarded, keeps the def mirror in sync

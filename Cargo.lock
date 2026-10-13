@@ -205,6 +205,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "clack-common"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ca905d78f46117492bce49e64a765f8b3f5c71794486a1369242721860e2640"
+dependencies = [
+ "bitflags 2.13.0",
+ "clap-sys",
+]
+
+[[package]]
+name = "clack-extensions"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "733d43b7ebd76a65931e8de2aa077200add4902514f4bda941c99326c14937dd"
+dependencies = [
+ "bitflags 2.13.0",
+ "clack-common",
+ "clack-host",
+ "clap-sys",
+]
+
+[[package]]
+name = "clack-host"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "103a00f784a6477d82dc4580ea125e875074729c2703ccb29e5e9fb40bea5308"
+dependencies = [
+ "clack-common",
+ "clap-sys",
+ "libloading 0.8.9",
+ "objc2-foundation",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -216,6 +250,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a76abbdb2907f6fd97fb6bc0b7be96b77d328f2dd9669d1075cc03369ed22154"
+
+[[package]]
 name = "clausters"
 version = "0.11.0"
 dependencies = [
@@ -225,6 +265,7 @@ dependencies = [
  "clausters-editing",
  "clausters-midi",
  "clausters-net",
+ "clausters-plugin-host",
  "cpal",
  "hound",
  "libc",
@@ -346,6 +387,20 @@ version = "0.11.0"
 dependencies = [
  "clausters",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "clausters-plugin-host"
+version = "0.11.0"
+dependencies = [
+ "assert_no_alloc",
+ "clack-common",
+ "clack-extensions",
+ "clack-host",
+ "clausters-core",
+ "libc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

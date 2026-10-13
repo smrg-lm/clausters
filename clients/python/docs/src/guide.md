@@ -69,6 +69,17 @@ That is the whole rule for the top level, and it holds for every layer: **what y
 
 See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-building vocabulary — every `signals` / `ugens` callable, how the two def kinds differ, and how a def is sent behind the `/server_sync` barrier.
 
+### Native plugin discovery
+
+`server.scan_plugins("/plugins", timeout=30.0)` scans directories on the native
+server and returns JSON metadata and per-binary error rows. With no directories,
+it uses the server's CLAP search roots. A Linux server built with `plugin-clap`
+and its matching helper are required; ordinary builds reply with a capability
+error. Scanning is blocking, so keep it outside clock routines. Use TCP for a
+large catalogue and choose a timeout for all binaries. Stable identities, plain
+parameter units, capacities and the persistence cache are specified in the
+[server reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-discovery).
+
 ## `clausters.Session` — ergonomic defaults, no globals
 
 `Session` bundles a `Server` and a clock, with `Session.nrt()` / `Session.live()` factories and `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist — an offline NRT one for plots next to a live RT one — in the same script. See [Sessions](sessions.md) for the full picture.

@@ -3,6 +3,7 @@ Server round-trip (over a fake connection), and the end-to-end vertical slice
 (build a graph -> /def_send faust -> /synth_new -> control -> render)."""
 
 import struct
+import json
 import pytest
 
 from clausters.base.timebase import LogicalTimebase
@@ -22,6 +23,25 @@ from clausters.defs import (
     format_load,
 )
 from clausters.defs import signals as S
+
+
+def test_plugin_scan_reassembles_chunks_and_rejects_missing_metadata():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    row = {"kind": "plugin", "plugin": {"id": "org.test.gain", "parameters": [{"id": 19}]}}
+    payload = json.dumps(row).encode()
+    iface._replies = [osc.message("/plugin_scan.reply", -1, 1, 0, 0, b""),
+                     osc.message("/plugin_scan.reply", 0, 1, 1, 2, payload[17:]),
+                     osc.message("/plugin_scan.reply", 0, 1, 0, 2, payload[:17]),
+                     osc.message("/done", "/plugin_scan")]
+    assert srv.scan_plugins("/plugins") == [row]
+    assert iface.sent[-1] == ("/plugin_scan", ["/plugins"])
+    iface._replies = [osc.message("/plugin_scan.reply", -1, 1, 0, 0, b""),
+                     osc.message("/plugin_scan.reply", 0, 1, 0, 2, payload[:17]),
+                     osc.message("/done", "/plugin_scan")]
+    from clausters.errors import CommandError
+    with pytest.raises(CommandError, match="incomplete catalogue"):
+        srv.scan_plugins()
 
 
 def _ffi_or_skip():

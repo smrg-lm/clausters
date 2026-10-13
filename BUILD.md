@@ -47,6 +47,8 @@ Feature matrix (see `Cargo.toml`):
 | `rtprio` | yes | real-time scheduling for the audio callback thread (SCHED_FIFO/RR via RTKit over DBus — the standard path for Linux audio clients; needs `libdbus-1-dev`), plus the `--pin` CPU-affinity flag and a SIGXCPU guard: if RTKit's `RLIMIT_RTTIME` watchdog fires under sustained overload, the audio thread is demoted back to SCHED_OTHER (the audio degrades, the server survives). Without the feature the callback runs as SCHED_OTHER and scheduling jitter breaks the audio at roughly half capacity — drop it only for minimal builds (no DBus dep; Linux-specific code isolated in `server::rt`) |
 | `faust` | yes | the **FaustDef family**: libfaust embedding (Signal/Box API + LLVM JIT, `/def_send faust`) — needs libfaust built with the LLVM backend (below) |
 | `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (for PipeWire-native MIDI routing) — needs `libjack-jackd2-dev`, run under `pw-jack` |
+| `plugin` | no | native helper infrastructure on Linux; no plugin def family yet |
+| `plugin-clap` | no | `plugin` plus isolated CLAP discovery (`/plugin_scan`); build the matching helper with `cargo build -p clausters-plugin-host` and install it beside the server, or set `CLAUSTERS_PLUGIN_HOST` |
 | `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |
 
 `synth` and `faust` are the two **def families**, and **both are on by default**:
@@ -454,3 +456,6 @@ clients/python/docs/build.sh                   # writes src/api/, then mdbook bu
 
 Details and the reasons for the 3.12 pin are in
 [`clients/python/README.md`](clients/python/README.md#documentation).
+
+Native plugin tests require the pinned external fixtures described in
+[third_party/BUILD-PLUGINS.md](third_party/BUILD-PLUGINS.md).

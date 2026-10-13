@@ -8,5 +8,6 @@ mod bus;
 mod def;
 mod midi;
 mod node;
+pub(super) mod plugin;
 mod server;
 mod transport;

@@ -25,6 +25,12 @@ That is what the table below records, and what `tests/bindings.rs` enforces:
 every symbol either appears in a row, or the test fails. Adding a function to
 one binding and not the other is allowed; adding it and *not saying why* is not.
 
+The `plugin_shm` audio plane is native host infrastructure, with no C/wasm client
+exports. Both clients discover plugins through the same OSC command:
+`Server.scan_plugins(*dirs, timeout=...)` / `server.scanPlugins(dirs, timeout)`.
+The variadic Python directories versus a TypeScript array are `idiom`; both
+return the JSON rows specified in [native plugin discovery](schemas.md#native-plugin-discovery).
+
 ## How to read a row
 
 The note column carries one of three verdicts, and they mean different things:

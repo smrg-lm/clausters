@@ -299,3 +299,14 @@ Above that sit `Event` and `rest`, the value patterns (`pseq`, `pser`, `prand`, 
 ## Errors
 
 `ClaustersError` is the root: `CommandError` for a `/fail` from the server, `ReplyTimeout` for a reply that never came, `AllocationError` for an exhausted or double-released id pool. They are ordinary exceptions from ordinary async calls.
+
+## Native plugin discovery
+
+`await server.scanPlugins(["/plugins"], 30.0)` returns the same metadata/error
+rows as Python's `server.scan_plugins`. Directories belong to the server. Over
+WebSocket a tab can scan a Linux native server built with `plugin-clap` and its
+matching helper; an in-page engine replies with a capability error because it
+cannot load native binaries or create helper processes. With no directories,
+the server uses its CLAP search roots. Choose a timeout for the whole catalogue.
+See the [server reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-discovery)
+for stable identities, parameter units, capacities and caching.

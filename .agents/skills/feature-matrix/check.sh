@@ -97,6 +97,15 @@ clippy "clippy: neither def family" --all-targets --no-default-features
 clippy "clippy: synth alone" --all-targets --no-default-features --features synth
 clippy "clippy: faust alone" --all-targets --no-default-features --features faust
 
+# Native discovery is opt-in, independent of either def family. The base
+# infrastructure also builds without a format adapter.
+clippy "clippy: plugin infrastructure, no adapter" --all-targets --no-default-features --features plugin
+clippy "clippy: plugin host, no adapter" -p clausters-plugin-host --all-targets --no-default-features
+clippy "clippy: CLAP, neither def family" --all-targets --no-default-features --features plugin-clap
+clippy "clippy: CLAP with synth" --all-targets --no-default-features --features synth,plugin-clap
+clippy "clippy: CLAP with faust" --all-targets --no-default-features --features faust,plugin-clap
+clippy "clippy: CLAP with both def families" --all-targets --no-default-features --features synth,faust,plugin-clap
+
 # `verovio` is off by default, so CI's `--workspace --all-targets` never enables
 # it and the whole notation layer it pulls in goes unlinted -- the same gap as
 # the def families, for the same reason. It needs no libverovio on the machine:
@@ -153,6 +162,10 @@ doc "rustdoc: synth alone" \
     cargo doc --no-deps --workspace --no-default-features --features synth
 doc "rustdoc: faust alone" \
     cargo doc --no-deps --workspace --no-default-features --features faust
+doc "rustdoc: CLAP infrastructure" \
+    cargo doc --no-deps --no-default-features --features plugin-clap
+doc "rustdoc: plugin host, no adapter" \
+    cargo doc --no-deps -p clausters-plugin-host --no-default-features
 
 # --- Covered by CI, run unless --fast ----------------------------------------
 

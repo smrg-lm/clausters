@@ -1,0 +1,22 @@
+[package]
+name = "clausters-plugin-host"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Isolated native plugin discovery and per-instance processing host."
+
+[features]
+default = ["clap"]
+clap = ["dep:clack-host", "dep:clack-extensions", "dep:clack-common"]
+
+[dependencies]
+clausters-core = { path = "../clausters-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+clack-host = { version = "0.2", optional = true }
+clack-common = { version = "0.2", optional = true }
+clack-extensions = { version = "0.2", optional = true, features = ["clack-host", "audio-ports", "note-ports", "params", "state", "latency", "gui", "thread-check"] }
+
+[dev-dependencies]
+assert_no_alloc = "1"

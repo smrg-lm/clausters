@@ -1689,13 +1689,86 @@ scsynth grew a binary plugin API (`UnitCmd`/interface tables) whose ABI broke wi
 - The *runtime*-extensible path for users is deliberately not Rust: send a **Faust def** (`/def_send faust`, JIT-compiled, sandboxed by the same `SynthNode` boundary). Most "I need a custom UGen" cases are a Faust one-liner.
 - If dynamic plugins ever become necessary, the lesson from scsynth applies: the boundary must be a **versioned C ABI** (or a wasm interface), checked at load time — the same policy already planned for the shared-memory layout and embed cdylib. Do not expose Rust types across it.
 
-Third-party **CLAP and VST3 hosting is planned, not implemented.** CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The planned host runs one plugin instance per helper process, with lifecycle and windows on its main thread and processing on a separate thread. The server exchanges bounded, indexed audio/event jobs through versioned shared memory; its callback makes no syscalls, allocates nothing and never waits on the helper. The isolated bridge experiment and the processing contract below precede that implementation. `tests/rt_safety.rs` checks allocation/freeing; that alone does not check syscalls, locks or deadlines. Instruments, transport and engine delay compensation are part of the planned scope. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+Native **CLAP discovery and the isolated processing host are implemented on Linux**. VST3, plugin nodes in the engine, editors and delay compensation remain planned. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+
+### Native host and versioned segment
+
+`clausters_core::plugin_shm` owns the pointer-free audio layout and its bounded
+producer/consumer protocol. `crates/clausters-plugin-host` owns Linux mappings,
+process supervision and the common `FormatInstance`/`FormatProcessor` interface;
+its first adapter uses `clack-host`. External libraries are loaded exclusively
+inside helpers, including during discovery. This is crash isolation, not a
+security sandbox for hostile code.
+
+Each live instance has one helper, one prefaulted shared file (mode `0600`) and
+one dedicated inherited Unix socket for administrative requests. Stdout/stderr
+cannot carry the control protocol. The main thread loads, activates, handles
+callbacks, reads metadata/state and deactivates; a separate persistent audio
+thread starts, processes and stops. State operations pause that thread, retain
+the deferred-event queue and resume after metadata validation. A restart request
+fails the current segment rather than changing its negotiated layout in place.
+The parent kills and reaps a hung helper before unmapping/unlinking its segment;
+instance retirement is an administrative operation, never an audio operation.
+
+The control handshake (version `1`) requires an exact match of the audio ABI,
+frames, slots, event and span capacities. The independent
+`PLUGIN_ABI_VERSION = 1` identifies the new segment boundary; it changes neither
+the existing embed IPC ABI nor the core C ABI. An attach checks magic, version,
+byte length, structure sizes, alignment, configuration and generation before
+payload access. The shared header and slots are `repr(C)` and aligned to 64
+bytes. Their exact sizes are part of the checked layout. Configuration is
+immutable: a replacement requires a new mapping and generation.
+
+| Capacity | Bound |
+|---|---|
+| Engine job | 64 frames; 32 slots; depth 1–16, default 4 |
+| Audio | At most 16 ports and 32 channels per direction; channel-major `f32` |
+| Events | 16 input events, 16 output events and 16 deferred events; sorted sample offsets |
+| Spans | 8, covering the block exactly; active/playing, position and tempo |
+| Metadata/state | 1024 parameters; opaque state at most 1 MiB |
+| Control | Length-prefixed JSON, at most 8 MiB per frame |
+
+Only the borrowed `Producer` is suitable for the future engine callback. It
+copies the result due for that sequence, discards late `DONE` results and
+publishes into a `FREE` slot, with the ownership and release/acquire rules below.
+It neither waits nor touches the control socket. Missing output is silence at
+its original time, and eight consecutive misses latch failure. Capacity,
+processing and protocol failures also latch; accepted jobs are not overwritten.
+The helper polls every 50 microseconds and arms the same
+`clausters_core::denormals::flush_to_zero` policy as the server's processing threads. Active spans retain DSP state across slices; frozen spans output zeros
+and defer events in order to offset zero of the first resumed span. Overflow
+fails explicitly. Input notes, releases, choke, expression, plain parameter
+values and three-byte MIDI are adapted to CLAP. Output notes, note-end,
+expression, parameter value/modulation/gesture and MIDI share the bounded result
+list. Unsupported dialects/events are errors, never silent drops.
+
+Discovery runs on a server worker, with at most four outstanding scans. It
+walks at most 32 roots, depth 8, 8192 visited paths and 4096 pending paths;
+it skips directory-entry symlinks and inspects at most 128 binaries, each in a
+disposable helper. Each binary may expose at most 128 plugin ids. Administrative
+requests have a two-second timeout; crashes, incompatible versions and capacity
+failures become per-binary diagnostics. Successful scans, including diagnostic
+rows, atomically replace `<data_dir>/plugins.json` before their completion and
+`/server_sync` barrier. The catalogue is capped at 16 MiB. The [wire reference](schemas.md#native-plugin-discovery)
+defines fragments and stable identities; Python and TypeScript decode that same
+wire format and add no discovery logic of their own.
+
+Repository fixtures verify handshake/layout mismatches, compatibility during
+scan and load, channel order, split samples, state/main-thread and
+process/audio-thread separation, output events, crashes, hangs and cleanup.
+The producer is guarded against allocation/freeing, and an x86-64 Linux test
+runs it under seccomp allowing only process exit. These checks do not extend the
+prototype's measured CPU envelope to arbitrary plugins or the larger payloads.
+Engine node integration and RT/NRT render equality remain future acceptance.
 
 ### Isolated plugin processing contract
 
 The contract was selected from a local Linux C11 feasibility experiment.
 The temporary measurement programs and raw logs are not repository artifacts;
-the observed operating envelope is summarized below.
+the observed operating envelope is summarized below. The Rust implementation
+is `clausters_core::plugin_shm` and `crates/clausters-plugin-host`; its acceptance
+checks live beside those crates, with deterministic CLAP fixtures under the
+host's `tests/fixtures` directory.
 
 **One completed engine block is one job.** The producer stages all slices in
 preallocated local storage before publishing. Each job identifies its generation
@@ -1785,9 +1858,8 @@ Synchronous/offline driving may wait outside the callback, but uses the same
 publication, generation, event order and depth. The deterministic signal tests
 compare the resulting delayed samples with independent gain, delay and note
 expectations, including split/frozen spans and jumps. Arbitrary third-party
-plugins are not asserted deterministic. Plugin output-event queues, multi-port
-payloads and server RT/NRT equality remain acceptance work for the production
-host; output event rejection in this fixture host is explicit via CLAP's
+plugins are not asserted deterministic. The Rust host above adds output-event queues and multi-port payloads;
+server RT/NRT equality remains acceptance work for engine integration; output event rejection in this fixture host is explicit via CLAP's
 `try_push` result, and the fixtures emit no output events.
 
 **Safety is checked separately from timing.** Rust acceptance tests exercise

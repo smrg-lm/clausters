@@ -10111,3 +10111,13 @@ envelope; no RT syscall exception or invisible event loss is adopted to make
 that case pass. The capacities, memory ordering, generations, restart boundary
 and measurement summary are in
 [the developer architecture](architecture.md#isolated-plugin-processing-contract).
+
+*Native host boundary, 2026-10-13.* The plugin audio segment has its own
+`PLUGIN_ABI_VERSION`, and the dedicated administrative protocol its own version.
+The helper checks both plus the negotiated layout capacities before accepting a
+load or scan. Reusing the embed IPC or core C ABI counter would couple a helper's
+private segment to unrelated client binaries, even though neither existing
+boundary changed. New instances use fresh generations/mappings, and a helper
+mismatch is rejected and reaped. The opt-in `plugin`/`plugin-clap` Cargo features
+start with infrastructure and discovery; the plugin def family still belongs to
+the engine integration that follows.

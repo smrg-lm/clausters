@@ -11,6 +11,7 @@ members = [
     "crates/clausters-midi",
     "crates/clausters-net",
     "crates/clausters-notation",
+    "crates/clausters-plugin-host",
     "crates/clausters-nrt-web",
     "crates/clausters-web",
 ]
@@ -79,6 +80,10 @@ midi-jack = ["midi", "midir/jack"]
 faust = []
 # M14: the C ABI for embedding the server in-process (clausters_* exports).
 embed = []
+# Isolated native hosting infrastructure; the def family is added separately.
+plugin = ["dep:clausters-plugin-host"]
+# Independently selectable first native adapter. Native plugins are Linux-only.
+plugin-clap = ["plugin", "clausters-plugin-host/clap"]
 # Native PipeWire audio backend (Linux/BSD) via cpal's pipewire host. Default,
 # since the target systems always ship PipeWire: `cpal::default_host()` prefers
 # PipeWire, falling back to ALSA at runtime if it is unavailable, so no code
@@ -120,6 +125,10 @@ required-features = ["synth"]
 name = "measure_turn"
 required-features = ["synth", "embed"]
 
+[[example]]
+name = "plugin_scan"
+required-features = ["plugin-clap"]
+
 [dependencies]
 # Shared native core: the single source of truth for the numeric builtins,
 # the seeded RNG and the timing/OSC math that both the server and every
@@ -159,6 +168,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Only for mmap-ing the M14 shared-memory segment (already in the tree via
 # cpal, so this adds no new download).
 libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+clausters-plugin-host = { path = "crates/clausters-plugin-host", optional = true, default-features = false }
 
 [dev-dependencies]
 assert_no_alloc = "1"

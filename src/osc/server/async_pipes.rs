@@ -1,8 +1,8 @@
 //! The work that does not finish inside one turn of the loop.
 //!
-//! Buffer commands go to the NRT thread and Faust defs to the compiler thread;
-//! both reply `/done` or `/fail` whenever they are done, out of order with
-//! everything else. `/server_sync` is the barrier over both: it records the
+//! Buffer commands go to the NRT thread, Faust defs to the compiler thread and
+//! plugin scans to their worker. They reply `/done` or `/fail` when finished,
+//! out of order with everything else. `/server_sync` is the barrier over all: it records the
 //! submitted counts as its targets and answers once the drained counts have
 //! caught up, which is what makes "wait until my defs are loaded" expressible
 //! without blocking the network thread.
@@ -139,8 +139,8 @@ impl OscServer {
     }
 
     /// `/server_sync id`: the async barrier (scsynth semantics). Records the current
-    /// submitted counts as targets and is answered with `/server_sync.reply id` once both
-    /// async pipelines (NRT buffers, Faust compiles) have drained up to them --
+    /// submitted counts as targets and is answered with `/server_sync.reply id` once all
+    /// async pipelines (NRT buffers, Faust compiles, plugin scans) have drained up to them --
     /// i.e. every async command received before this `/server_sync` has finished.
     /// Each pipeline completes FIFO, so the counters are a sufficient barrier.
     pub(in crate::osc::server) fn handle_server_sync(
@@ -154,6 +154,7 @@ impl OscServer {
             id,
             nrt_target: self.nrt_submitted,
             faust_target: self.faust_submitted,
+            plugin_target: self.plugin_submitted,
         });
         self.resolve_syncs(); // answer at once if nothing is outstanding
         Ok(())
@@ -161,14 +162,16 @@ impl OscServer {
 
     /// Answers every pending `/server_sync` whose target counts have been reached.
     /// Called after each async drain (and from [`Self::handle_server_sync`]).
-    fn resolve_syncs(&mut self) {
+    pub(in crate::osc::server) fn resolve_syncs(&mut self) {
         if self.pending_syncs.is_empty() {
             return;
         }
         let (nrt, faust) = (self.nrt_drained, self.faust_drained);
         let mut ready = Vec::new();
         self.pending_syncs.retain(|p| {
-            let done = nrt >= p.nrt_target && faust >= p.faust_target;
+            let done = nrt >= p.nrt_target
+                && faust >= p.faust_target
+                && self.plugin_drained >= p.plugin_target;
             if done {
                 ready.push((p.client, p.id));
             }
