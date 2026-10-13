@@ -1,11 +1,11 @@
 //! Administrative plane: framed JSON on a dedicated inherited Unix socket.
-use crate::format::PluginInfo;
+use crate::format::{PluginInfo, ScanEntry};
 use clausters_core::plugin_shm::{EVENTS, FRAMES, PLUGIN_ABI_VERSION, SLOTS, SPANS};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
-pub(crate) const CONTROL_VERSION: u32 = 1;
+pub(crate) const CONTROL_VERSION: u32 = 2;
 pub(crate) const MAX_FRAME: usize = 8 * 1024 * 1024;
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Handshake {
@@ -30,8 +30,13 @@ impl Handshake {
 }
 #[derive(Serialize, Deserialize)]
 pub(crate) enum Request {
+    Probe {
+        path: String,
+        id: String,
+    },
     Scan {
         path: String,
+        offset: usize,
     },
     Load {
         path: String,
@@ -47,7 +52,7 @@ pub(crate) enum Request {
 }
 #[derive(Serialize, Deserialize)]
 pub(crate) enum Response {
-    Scan(Vec<PluginInfo>),
+    Scan(Vec<ScanEntry>),
     Metadata(Box<PluginInfo>),
     State(Vec<u8>),
     Parameter(f64),

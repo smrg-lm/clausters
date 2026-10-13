@@ -310,3 +310,16 @@ cannot load native binaries or create helper processes. With no directories,
 the server uses its CLAP search roots. Choose a timeout for the whole catalogue.
 See the [server reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-discovery)
 for stable identities, parameter units, capacities and caching.
+
+### Native plugin definitions
+
+`PluginDef(name, reference)` sends a native binary reference with native IDs,
+port routing and optional initial state. A plugin def builds a `Synth` like
+any other def; its controls use `param:<id>`, `in:<id>` and `out:<id>`.
+Query the loaded def to obtain its `ControlInfo` entries. A native Linux
+server and matching helper process CLAP plugins outside the audio callback.
+Latency includes the bounded block pipeline; native editors and automatic
+path compensation are not available yet. See the
+[protocol reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-definitions-and-recovery).
+
+`await node.restartPlugin()` waits for recovery preparation. A browser client can control plugins on a native server; its in-page engine reports a capability error.

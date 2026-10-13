@@ -79,7 +79,7 @@ class ControlInfo:
 @dataclass
 class DefInfo:
     """A def the server holds: its name, its ``family`` (``"synth"``,
-    ``"faust"`` or ``"graph"``) and its control surface.
+    ``"faust"``, ``"graph"`` or ``"plugin"``) and its control surface.
 
     A def the server does not hold comes back with ``exists`` false, an empty
     family and no controls, rather than raising -- one unknown name never fails
@@ -316,7 +316,7 @@ def parse_def_info(args) -> DefInfo:
         c = ControlInfo(name=str(args[i]), default=float(args[i + 1]),
                         rate=str(args[i + 2]))
         i += 3
-        if family == "faust":
+        if family in ("faust", "plugin"):
             c.min, c.max, c.step = (float(args[i]), float(args[i + 1]),
                                     float(args[i + 2]))
             i += 3

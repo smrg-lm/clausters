@@ -73,7 +73,7 @@ frame count queried after activation at 48 kHz, independent of the bridge delay.
 `state` reports opaque save/load support; `editor` reports floating X11 editor
 support, without opening a window.
 
-Limits are 32 roots, 128 binaries, 128 plugins per binary, 16 ports and 32 audio
+Limits are 32 roots, 128 binaries, 512 plugins per binary, 16 ports and 32 audio
 channels per direction, 1024 parameters per plugin and a 16 MiB catalogue.
 With persistence enabled the server atomically writes
 `<data_dir>/plugins.json` as `{"version":1,"entries":[...]}`, including diagnostics.
@@ -81,7 +81,61 @@ With persistence disabled there is no cache write. `Server.scan_plugins(*dirs,
 timeout=...)` and `await server.scanPlugins(dirs, timeout)` return these JSON
 rows; choose a timeout for the whole catalogue rather than one binary.
 
-### The async barrier (`/server_sync`)
+### Native plugin definitions and recovery
+
+`/def_send "plugin" <name:string> <reference:JSON-string-or-blob>` probes and
+validates a native recipe asynchronously. Success is `/done "/def_send"
+"plugin" <name>`; failure is `/fail "/def_send" <reason>`. `/server_sync`
+waits for earlier plugin submissions, scans and restart preparation. A
+superseded submission fails rather than replacing a newer name claim.
+
+```json
+{"format":"clap","path":"/plugins/gain.clap","id":"org.vendor.gain","inputs":[{"id":10,"channels":2,"bus":4}],"outputs":[{"id":20,"channels":2,"bus":0}],"state":[],"depth":4}
+```
+
+The path names the binary on the server filesystem; `id` selects one native
+plugin in that binary. Every audio port must occur exactly once in its
+respective direction, with its native `id` and matching `channels`. Rows may
+be in any order. `bus` defaults to zero; the port reads or sums its consecutive
+channels there. This includes sidechains and additional outputs, without a
+separate addressing rule. Unknown fields and incompatible layouts fail. The
+optional `state` is an opaque snapshot as JSON byte integers (at most 1 MiB).
+`depth` is a pipeline delay of 1–16 engine blocks, default four.
+
+Instantiate with `/synth_new` and control with `/node_set`, `/node_map` and
+`/node_mapAudio`. Parameter names are `param:<native-id>`, in **native plain
+units**, represented at the server's ordinary float control precision. Bus
+names are `in:<native-port-id>` and `out:<native-port-id>`. Native IDs, never
+display labels, identify controls. Numeric control indices refer to the
+reported control order: parameters sorted by native ID, then input ports,
+then output ports. `/def_query.reply` uses family `plugin`; each control has
+`name, default, "kr", min, max, step`, like a Faust control. A parameter's
+step is one if stepped, otherwise zero. Bus controls have integer steps.
+Read-only parameters cannot be written. Out-of-range parameters or exceeded
+block capacities produce silence and a per-node fault, rather than clipping
+or losing automation without a report.
+
+Records in `defs/plugindefs` contain the original `name` and `reference`, including initial state. Binaries do not.
+Unavailable records remain on disk unless `--prune-defs` is requested. A live
+node retains its recipe after `/def_free` or replacement. GraphDef members
+can name plugin defs and wire their bus controls like other single-node defs.
+
+`/plugin_restart <node-id:int>` prepares a fresh helper asynchronously; `/done
+"/plugin_restart" <node-id>` acknowledges preparation and queuing the swap,
+or `/fail` reports a non-plugin/missing node, full queue or load error. The
+swap occurs at a block boundary, keeps tree identity, restores the recipe's
+initial state plus the actual current controls and maps, and clears held
+notes and unsaved DSP history. A generation check prevents a freed/reused ID
+from receiving an old restart. Faults use `/node_fault <id> "Plugin" <code>
+<reason>` for notification subscribers: 1 capacity, 2 starved helper, 3
+processing, 4 protocol. Recovery is explicit; nodes never restart by themselves.
+
+Latency is `depth * 64 + native latency` samples; parallel paths are not yet
+compensated. Native hosting requires a Linux server built with `plugin-clap`
+and its matching `clausters-plugin-host` binary. The in-page engine reports a
+capability error.
+
+## The async barrier (`/server_sync`)
 
 `/server_sync <int id>` is the general way to wait for asynchronous work: the server replies `/server_sync.reply <id>` once **every async command received before this `/server_sync`** has completed — Faust compiles (`/def_send faust`), SynthDef sends (`/def_send synth`), buffer jobs (`/buffer_*`) and plugin discovery (`/plugin_scan`), each of which runs on its own FIFO worker thread. Use it instead of matching individual `/done`s when you fire several async commands and just want to know they have all landed (e.g. after sending a def without waiting, before the `/synth_new` that needs it). It is a real barrier, not a round-trip of `/server_status`: a `/server_sync.reply` guarantees the prior compiles/jobs are installed.
 

@@ -100,6 +100,7 @@ pub enum DefKind {
     Synth,
     Faust,
     Graph,
+    Plugin,
 }
 
 /// The on-disk def directories and config files, created on open.
@@ -107,6 +108,7 @@ pub struct DefStore {
     synthdefs_dir: PathBuf,
     faustdefs_dir: PathBuf,
     graphdefs_dir: PathBuf,
+    plugindefs_dir: PathBuf,
     /// `<data_dir>/midi.json` -- persisted MIDI bindings.
     bindings_path: PathBuf,
     /// `<data_dir>/boot.json` -- the boot preset of standalone graphs.
@@ -122,6 +124,8 @@ impl DefStore {
         let synthdefs_dir = defs_dir.join("synthdefs");
         let faustdefs_dir = defs_dir.join("faustdefs");
         let graphdefs_dir = defs_dir.join("graphdefs");
+        let plugindefs_dir = defs_dir.join("plugindefs");
+        std::fs::create_dir_all(&plugindefs_dir)?;
         std::fs::create_dir_all(&synthdefs_dir)?;
         std::fs::create_dir_all(&faustdefs_dir)?;
         std::fs::create_dir_all(&graphdefs_dir)?;
@@ -129,9 +133,34 @@ impl DefStore {
             synthdefs_dir,
             faustdefs_dir,
             graphdefs_dir,
+            plugindefs_dir,
             bindings_path: data_dir.join("midi.json"),
             boot_path: data_dir.join("boot.json"),
         })
+    }
+
+    /// Persistent native references, retained when binaries are unavailable.
+    pub fn plugindefs_dir(&self) -> &Path {
+        &self.plugindefs_dir
+    }
+    pub fn save_plugindef(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        let reference: serde_json::Value = serde_json::from_slice(bytes)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let record =
+            serde_json::to_vec(&serde_json::json!({ "name": name, "reference": reference }))
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        atomic_write(
+            &self
+                .plugindefs_dir
+                .join(format!("{}.json", sanitize_name(name))),
+            &record,
+        )
+    }
+    pub fn remove_plugindef(&self, name: &str) {
+        let _ = std::fs::remove_file(
+            self.plugindefs_dir
+                .join(format!("{}.json", sanitize_name(name))),
+        );
     }
 
     /// The Faust def directory, where `faust::cache` reads/writes records and
@@ -202,6 +231,9 @@ impl DefStore {
     /// answers -- which is how a stale mono SynthDef came to shadow a stereo
     /// FaustDef of the same name and report the wrong bus usage.
     pub fn remove_other_kinds(&self, name: &str, keep: DefKind) {
+        if keep != DefKind::Plugin {
+            self.remove_plugindef(name);
+        }
         if keep != DefKind::Synth {
             self.remove_synthdef(name);
         }

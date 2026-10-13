@@ -31,6 +31,7 @@ from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator, Part
 from .expr import Expr, FaustExpr, SynthExpr
 from .faustdef import FaustDef
+from .plugindef import PluginDef
 from .graphdef import GraphDef
 from .patch import DefPatch, GraphPatch, synthdef_ports
 from .node import AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth

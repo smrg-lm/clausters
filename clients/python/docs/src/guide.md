@@ -102,3 +102,16 @@ the resource in full (`node`, `synth`, `group`, `bus`, `buffer`, `def`, `ugen`,
 `Range` — so the addresses this client builds can be read without a lookup. The
 rule and its three corollaries open the server's OSC reference.
 
+
+### Native plugin definitions
+
+`PluginDef(name, reference)` sends a native binary reference with native IDs,
+port routing and optional initial state. A plugin def builds a `Synth` like
+any other def; its controls use `param:<id>`, `in:<id>` and `out:<id>`.
+Query the loaded def to obtain its `ControlInfo` entries. A native Linux
+server and matching helper process CLAP plugins outside the audio callback.
+Latency includes the bounded block pipeline; native editors and automatic
+path compensation are not available yet. See the
+[protocol reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-definitions-and-recovery).
+
+`node.restart_plugin()` prepares recovery asynchronously and waits for its acknowledgement.

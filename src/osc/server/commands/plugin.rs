@@ -9,15 +9,50 @@ pub(in crate::osc::server) struct ScanWorker {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
-struct ScanJob {
+struct ScanRequest {
     dirs: Vec<std::path::PathBuf>,
     cache: Option<std::path::PathBuf>,
     client: ClientId,
 }
 #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
-struct ScanResult {
+struct ScanReply {
     client: ClientId,
     result: Result<Vec<clausters_plugin_host::format::ScanEntry>, String>,
+}
+#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+enum ScanJob {
+    Scan(ScanRequest),
+    Def {
+        name: String,
+        reference: crate::plugin::PluginReference,
+        sample_rate: f32,
+        client: ClientId,
+        ticket: u64,
+    },
+    Restart {
+        id: i32,
+        expected: u64,
+        def: Arc<crate::plugin::PluginDef>,
+        sample_rate: f32,
+        client: ClientId,
+    },
+}
+#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+enum ScanResult {
+    Scan(ScanReply),
+    Def {
+        name: String,
+        result: Result<Box<crate::plugin::PluginDef>, String>,
+        client: ClientId,
+        ticket: u64,
+    },
+    Restart {
+        id: i32,
+        expected: u64,
+        def: Arc<crate::plugin::PluginDef>,
+        result: Result<Box<crate::plugin::PluginSynth>, String>,
+        client: ClientId,
+    },
 }
 #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
 impl ScanWorker {
@@ -37,26 +72,59 @@ impl ScanWorker {
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                     };
-                    let result = (|| {
-                        let helper = clausters_plugin_host::runtime::helper_path()?;
-                        let entries = clausters_plugin_host::runtime::scan_cancellable(
-                            &helper,
-                            &job.dirs,
-                            clausters_plugin_host::runtime::DEFAULT_TIMEOUT,
-                            &stop,
-                        )?;
-                        if let Some(dir) = &job.cache {
-                            clausters_plugin_host::runtime::cache(dir, &entries)?;
+                    let result = match job {
+                        ScanJob::Scan(job) => {
+                            let result = (|| {
+                                let helper = clausters_plugin_host::runtime::helper_path()?;
+                                let entries = clausters_plugin_host::runtime::scan_cancellable(
+                                    &helper,
+                                    &job.dirs,
+                                    clausters_plugin_host::runtime::DEFAULT_TIMEOUT,
+                                    &stop,
+                                )?;
+                                if let Some(dir) = &job.cache {
+                                    clausters_plugin_host::runtime::cache(dir, &entries)?;
+                                }
+                                Ok(entries)
+                            })();
+                            ScanResult::Scan(ScanReply {
+                                client: job.client,
+                                result,
+                            })
                         }
-                        Ok(entries)
-                    })();
-                    if outgoing
-                        .try_send(ScanResult {
-                            client: job.client,
-                            result,
-                        })
-                        .is_err()
-                    {
+                        ScanJob::Def {
+                            name,
+                            reference,
+                            sample_rate,
+                            client,
+                            ticket,
+                        } => ScanResult::Def {
+                            name,
+                            result: crate::plugin::PluginDef::probe(reference, sample_rate)
+                                .map(Box::new),
+                            client,
+                            ticket,
+                        },
+                        ScanJob::Restart {
+                            id,
+                            expected,
+                            def,
+                            sample_rate,
+                            client,
+                        } => {
+                            let result =
+                                crate::plugin::PluginSynth::new(Arc::clone(&def), sample_rate)
+                                    .map(Box::new);
+                            ScanResult::Restart {
+                                id,
+                                expected,
+                                def,
+                                result,
+                                client,
+                            }
+                        }
+                    };
+                    if outgoing.try_send(result).is_err() {
                         break;
                     }
                     if let Some(waker) = &waker {
@@ -113,11 +181,11 @@ impl OscServer {
                 .map(std::path::Path::to_path_buf);
             self.plugin_scanner
                 .sender
-                .try_send(ScanJob {
+                .try_send(ScanJob::Scan(ScanRequest {
                     dirs,
                     cache,
                     client: from,
-                })
+                }))
                 .map_err(|_| "plugin scan worker unavailable")?;
             self.plugin_submitted += 1;
             Ok(())
@@ -136,10 +204,161 @@ impl OscServer {
             Err("server built without native CLAP support".into())
         }
     }
+    pub(in crate::osc::server) fn handle_def_send_plugin(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+    ) -> Answer {
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        {
+            let Some(OscType::String(name)) = args.first() else {
+                return Err("expected plugin name and reference JSON".into());
+            };
+            let reference = serde_json::from_slice(crate::osc::args::json_payload(&args[1..])?)
+                .map_err(|e| format!("invalid plugin reference: {e}"))?;
+            if self.plugin_submitted - self.plugin_drained >= 4 {
+                return Err("plugin worker queue full".into());
+            }
+            let ticket = self.plugin_submitted + 1;
+            self.plugin_scanner
+                .sender
+                .try_send(ScanJob::Def {
+                    name: name.clone(),
+                    reference,
+                    sample_rate: self.handle.sample_rate,
+                    client: from,
+                    ticket,
+                })
+                .map_err(|_| "plugin worker unavailable")?;
+            self.claim_def_name(name, DefKind::Plugin);
+            self.plugin_claims.insert(name.clone(), ticket);
+            self.plugin_submitted += 1;
+            Ok(())
+        }
+        #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+        {
+            let _ = (args, from);
+            Err("server built without native CLAP support".into())
+        }
+    }
+    pub(in crate::osc::server) fn handle_plugin_restart(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let id = args.int()?;
+        if !args.is_empty() {
+            return Err("expected one plugin node id".into());
+        }
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        {
+            let Some(crate::osc::translate::NodeDef::Plugin(def, expected)) =
+                self.translator.node_defs.get(&id)
+            else {
+                return Err("not a plugin node".into());
+            };
+            if self.plugin_submitted - self.plugin_drained >= 4 {
+                return Err("plugin worker queue full".into());
+            }
+            self.plugin_scanner
+                .sender
+                .try_send(ScanJob::Restart {
+                    id,
+                    expected: *expected,
+                    def: Arc::clone(def),
+                    sample_rate: self.handle.sample_rate,
+                    client: from,
+                })
+                .map_err(|_| "plugin worker unavailable")?;
+            self.plugin_submitted += 1;
+            Ok(())
+        }
+        #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+        {
+            let _ = (id, from);
+            Err("server built without native CLAP support".into())
+        }
+    }
     #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
     pub(in crate::osc::server) fn collect_plugin_results(&mut self) {
         while let Ok(result) = self.plugin_scanner.receiver.try_recv() {
             self.plugin_drained += 1;
+            let result = match result {
+                ScanResult::Scan(result) => result,
+                ScanResult::Def {
+                    name,
+                    result,
+                    client,
+                    ticket,
+                } => {
+                    if self.plugin_claims.get(&name) != Some(&ticket) {
+                        self.fail(client, "/def_send", "plugin def request superseded");
+                        continue;
+                    }
+                    match result {
+                        Ok(def) => {
+                            if let Some(store) = &self.store
+                                && !defstore::is_ephemeral(&name)
+                                && let Err(error) = store.save_plugindef(
+                                    &name,
+                                    &serde_json::to_vec(&def.reference)
+                                        .expect("plugin reference JSON"),
+                                )
+                            {
+                                self.fail(client, "/def_send", error.to_string());
+                                continue;
+                            }
+                            self.translator
+                                .plugin_defs
+                                .insert(name.clone(), Arc::from(def));
+                            self.done_with(
+                                client,
+                                "/def_send",
+                                vec![OscType::String("plugin".into()), OscType::String(name)],
+                            );
+                        }
+                        Err(error) => self.fail(client, "/def_send", error),
+                    }
+                    continue;
+                }
+                ScanResult::Restart {
+                    id,
+                    expected,
+                    def,
+                    result,
+                    client,
+                } => {
+                    let current = matches!(self.translator.node_defs.get(&id), Some(crate::osc::translate::NodeDef::Plugin(current, generation)) if *generation == expected && Arc::ptr_eq(current, &def));
+                    if !current {
+                        self.fail(client, "/plugin_restart", "plugin node no longer exists");
+                        continue;
+                    }
+                    match result {
+                        Ok(synth) => {
+                            let generation = crate::node::SynthNode::incarnation(synth.as_ref());
+                            if self
+                                .handle
+                                .send(Cmd::RestartSynth {
+                                    id,
+                                    expected,
+                                    synth,
+                                })
+                                .is_err()
+                            {
+                                self.fail(client, "/plugin_restart", "command FIFO full");
+                            } else {
+                                self.translator.node_defs.insert(
+                                    id,
+                                    crate::osc::translate::NodeDef::Plugin(def, generation),
+                                );
+                                self.done_with(client, "/plugin_restart", vec![OscType::Int(id)]);
+                            }
+                        }
+                        Err(error) => self.fail(client, "/plugin_restart", error),
+                    }
+                    continue;
+                }
+            };
             match result.result {
                 Err(error) => self.fail(result.client, "/plugin_scan", error),
                 Ok(entries) => {

@@ -57,3 +57,6 @@ pub mod synthdef;
 // with the exact same version the server uses.
 pub use clausters_core;
 pub use rosc;
+
+#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+pub mod plugin;

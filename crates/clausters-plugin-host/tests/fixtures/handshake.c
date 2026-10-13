@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
     if (!file) return 1;
     fprintf(file, "%ld", (long)getpid());
     fclose(file);
-    const char *json = "{\"control\":2,\"audio\":1,\"frames\":64,\"slots\":32,\"events\":16,\"spans\":8}";
+    const char *json = "{\"control\":4294967295,\"audio\":1,\"frames\":64,\"slots\":32,\"events\":16,\"spans\":8}";
     uint32_t n = (uint32_t)strlen(json);
     uint8_t length[4] = {n, n >> 8, n >> 16, n >> 24};
     int fd = atoi(argv[2]);

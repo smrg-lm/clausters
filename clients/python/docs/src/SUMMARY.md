@@ -77,6 +77,7 @@
     - [info](api/clausters.defs.info.md)
     - [node](api/clausters.defs.node.md)
     - [patch](api/clausters.defs.patch.md)
+    - [plugindef](api/clausters.defs.plugindef.md)
     - [pv_expr](api/clausters.defs.pv_expr.md)
     - [signals](api/clausters.defs.signals.md)
     - [synthdef](api/clausters.defs.synthdef.md)

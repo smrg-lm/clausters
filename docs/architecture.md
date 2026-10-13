@@ -1689,7 +1689,7 @@ scsynth grew a binary plugin API (`UnitCmd`/interface tables) whose ABI broke wi
 - The *runtime*-extensible path for users is deliberately not Rust: send a **Faust def** (`/def_send faust`, JIT-compiled, sandboxed by the same `SynthNode` boundary). Most "I need a custom UGen" cases are a Faust one-liner.
 - If dynamic plugins ever become necessary, the lesson from scsynth applies: the boundary must be a **versioned C ABI** (or a wasm interface), checked at load time — the same policy already planned for the shared-memory layout and embed cdylib. Do not expose Rust types across it.
 
-Native **CLAP discovery and the isolated processing host are implemented on Linux**. VST3, plugin nodes in the engine, editors and delay compensation remain planned. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+Native **CLAP discovery and the isolated processing host are implemented on Linux**. CLAP nodes participate in the engine node tree. VST3, editors and delay compensation remain planned. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
 
 ### Native host and versioned segment
 
@@ -1745,9 +1745,9 @@ list. Unsupported dialects/events are errors, never silent drops.
 Discovery runs on a server worker, with at most four outstanding scans. It
 walks at most 32 roots, depth 8, 8192 visited paths and 4096 pending paths;
 it skips directory-entry symlinks and inspects at most 128 binaries, each in a
-disposable helper. Each binary may expose at most 128 plugin ids. Administrative
+disposable helper. Each binary may expose at most 512 plugin ids. Administrative
 requests have a two-second timeout; crashes, incompatible versions and capacity
-failures become per-binary diagnostics. Successful scans, including diagnostic
+failures become diagnostics. Catalogue pages hold at most four rows; a plugin whose metadata exceeds capacity contributes its own diagnostic without hiding compatible peers. Successful scans, including diagnostic
 rows, atomically replace `<data_dir>/plugins.json` before their completion and
 `/server_sync` barrier. The catalogue is capped at 16 MiB. The [wire reference](schemas.md#native-plugin-discovery)
 defines fragments and stable identities; Python and TypeScript decode that same
@@ -1948,3 +1948,24 @@ DSP need their own production measurements before inheriting an operating
 envelope. Pre-touch segment/staging/output pages outside RT; arm the production
 processing thread's denormal policy before calling plugins. The prototype's
 negative saturation results remain evidence of a limit, not a relaxed RT rule.
+
+### Native plugin nodes
+
+`PluginDef` holds an immutable native reference and the probed surface. A
+`PluginSynth` retains that def, one helper owner and one private SPSC endpoint.
+Freeing/replacing a def leaves live instances intact. The helper, socket and
+mapping travel back through the ordinary garbage FIFO before being dropped.
+`AudioInstance` privately couples the producer lifetime to the stable mmap;
+no producer can escape it, and no administration runs in a callback.
+
+Before each slice, the tree prepares plugin endpoints including paused
+subtrees. Each endpoint receives only the result due for the current device
+block, records active/frozen spans, and stages its input during ordinary DSP
+traversal. After every worker has joined, the tree publishes one complete job.
+More than eight spans or sixteen changed parameters/events in a block latch a
+capacity fault; the node emits silence and reports one `/node_fault` through
+the existing reply FIFO. Administrative requests share a four-job worker and
+participate in `/server_sync`. A restart builds a fresh mapping and helper,
+then swaps only a matching instance generation at the block boundary. The
+actual old processor supplies its current controls and mappings at that
+boundary; old queued audio and notes cannot reach the replacement.

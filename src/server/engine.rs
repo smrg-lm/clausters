@@ -63,6 +63,12 @@ pub const LANE_CAPACITY: usize = 1024;
 /// synths and pre-reserved group child lists); applying them on the audio
 /// thread never allocates.
 pub enum Cmd {
+    /// Swap a prepared plugin generation at a block boundary.
+    RestartSynth {
+        id: i32,
+        expected: u64,
+        synth: Box<dyn SynthNode>,
+    },
     AddSynth {
         id: i32,
         target: i32,
@@ -269,6 +275,8 @@ pub(crate) fn report_rejected(id: i32, why: Reject, who: &str) {
 
 /// Heap memory leaving the audio thread to be dropped on the network side.
 pub enum Garbage {
+    /// A replaced endpoint, without a node death or id release.
+    RetiredSynth(Box<dyn SynthNode>),
     FreedSynth {
         id: i32,
         synth: Box<dyn SynthNode>,
@@ -656,6 +664,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::FreeAllInGroup { id }
         | Cmd::DeepFreeGroup { id }
         | Cmd::RunNode { id, .. }
+        | Cmd::RestartSynth { id, .. }
         | Cmd::SetControl { id, .. }
         | Cmd::MapControl { id, .. }
         | Cmd::SetUsage { id, .. }
@@ -1285,6 +1294,8 @@ impl Engine {
             }
         }
 
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        self.tree.finish_block();
         // Buses 0..channels are the hardware outputs.
         for (f, frame) in out.chunks_exact_mut(self.channels).enumerate() {
             for (ch, s) in frame.iter_mut().enumerate() {
@@ -1735,6 +1746,8 @@ impl Engine {
             frames,
             transport: self.tree.transport_view(0),
         };
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        self.tree.prepare_slice(&ctx);
         self.tree.process(&ctx, &self.pool);
     }
 
@@ -2027,7 +2040,8 @@ impl Engine {
                 // refuses a `Cmd` variant that neither this match nor
                 // `apply_to_tree` handles -- a wildcard here would turn that
                 // omission into a panic on the audio thread.
-                Cmd::AddSynth { .. }
+                Cmd::RestartSynth { .. }
+                | Cmd::AddSynth { .. }
                 | Cmd::AddGroup { .. }
                 | Cmd::FreeNode { .. }
                 | Cmd::FreeAllInGroup { .. }
@@ -2106,6 +2120,15 @@ fn take_releases(
 #[inline]
 fn apply_to_tree(tree: &mut NodeTree, sink: &mut GarbageSink, cmd: Cmd) -> Option<Cmd> {
     match cmd {
+        Cmd::RestartSynth {
+            id,
+            expected,
+            synth,
+        } => {
+            sink.push(Garbage::RetiredSynth(
+                tree.replace_synth(id, expected, synth),
+            ));
+        }
         Cmd::AddSynth {
             id,
             target,

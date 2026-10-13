@@ -121,6 +121,29 @@ impl Drop for Helper {
     }
 }
 
+/// Probe one stable identity without enumerating unrelated plugins in its binary.
+pub fn probe(
+    executable: &Path,
+    path: &Path,
+    id: &str,
+    timeout: Duration,
+) -> Result<PluginInfo, String> {
+    let path = path.canonicalize().map_err(|e| e.to_string())?;
+    let mut helper = Helper::spawn(executable, timeout)?;
+    let Response::Metadata(info) = helper.request(Request::Probe {
+        path: path.to_string_lossy().into_owned(),
+        id: id.into(),
+    })?
+    else {
+        return Err("invalid plugin probe response".into());
+    };
+    info.validate()?;
+    if info.id != id || info.path != path.to_string_lossy() {
+        return Err("plugin probe identity mismatch".into());
+    }
+    Ok(*info)
+}
+
 /// Parent-side per-instance owner. Retire/drop it only off the audio thread.
 pub struct Instance {
     helper: Helper,
@@ -241,6 +264,54 @@ impl Drop for Instance {
     }
 }
 
+/// Owning audio endpoint. All construction and dropping must be non-RT.
+/// The producer has no destructor; its mapping is retained by the private owner.
+pub struct AudioInstance {
+    producer: Producer<'static>,
+    _owner: Instance,
+}
+impl AudioInstance {
+    /// Transfer the sole producer together with the mapping and helper owner.
+    pub fn new(mut owner: Instance) -> Result<Self, String> {
+        // SAFETY: mmap has a stable address independent of its owner's moves.
+        // No producer escapes this struct and it is dropped before the owner.
+        let producer =
+            unsafe { std::mem::transmute::<Producer<'_>, Producer<'static>>(owner.producer()?) };
+        Ok(Self {
+            producer,
+            _owner: owner,
+        })
+    }
+    /// Exclusive RT endpoint, valid while this owner is alive.
+    pub fn receive(
+        &mut self,
+        output: &mut [f32],
+        events: &mut clausters_core::plugin_shm::EventList,
+    ) -> bool {
+        self.producer.receive(output, events)
+    }
+    /// Publish one complete staged block without allocating.
+    pub fn publish(&mut self, job: &clausters_core::plugin_shm::Job, input: &[f32]) {
+        self.producer.publish(job, input);
+    }
+    /// Identity of this mapping incarnation.
+    pub fn generation(&self) -> u64 {
+        self.producer.view().config().generation
+    }
+    /// Latched audio-plane failure.
+    pub fn failure(&self) -> u32 {
+        self.producer.view().failure()
+    }
+    /// Stop submissions on a capacity or protocol failure.
+    pub fn fail(&self, failure: Failure) {
+        self.producer.view().fail(failure);
+    }
+    /// Administrative metadata, immutable during processing.
+    pub fn metadata(&self) -> &PluginInfo {
+        self._owner.metadata()
+    }
+}
+
 /// CLAP default search roots. Absent default directories are simply empty.
 pub fn default_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<_> = std::env::var_os("CLAP_PATH")
@@ -354,28 +425,46 @@ pub fn scan_cancellable(
         }
         let outcome = (|| {
             let mut child = Helper::spawn(executable, timeout)?;
-            let Response::Scan(plugins) = child.request(Request::Scan {
-                path: path.to_string_lossy().into_owned(),
-            })?
-            else {
-                return Err("invalid plugin scan response".into());
-            };
-            if plugins.len() > MAX_PLUGINS {
-                return Err("plugin binary catalogue capacity exceeded".into());
+            let mut plugins = Vec::new();
+            loop {
+                if cancelled.load(Ordering::Acquire) {
+                    return Err("plugin scan cancelled".into());
+                }
+                let Response::Scan(page) = child.request(Request::Scan {
+                    path: path.to_string_lossy().into_owned(),
+                    offset: plugins.len(),
+                })?
+                else {
+                    return Err("invalid plugin scan response".into());
+                };
+                let count = page.len();
+                if count > 4 || plugins.len() + count > MAX_PLUGINS {
+                    return Err("plugin binary catalogue capacity exceeded".into());
+                }
+                plugins.extend(page);
+                if count < 4 {
+                    break;
+                }
             }
             let mut ids = HashSet::new();
-            for p in &plugins {
-                p.validate()?;
-                if p.path != path.to_string_lossy() || !ids.insert(p.id.clone()) {
-                    return Err("invalid plugin scan identity".into());
+            for row in &plugins {
+                match row {
+                    ScanEntry::Plugin { plugin: p } => {
+                        p.validate()?;
+                        if p.path != path.to_string_lossy() || !ids.insert(p.id.clone()) {
+                            return Err("invalid plugin scan identity".into());
+                        }
+                    }
+                    ScanEntry::Error {
+                        path: candidate, ..
+                    } if *candidate == path.to_string_lossy() => {}
+                    _ => return Err("invalid plugin scan diagnostic".into()),
                 }
             }
             Ok(plugins)
         })();
         match outcome {
-            Ok(plugins) => result.extend(plugins.into_iter().map(|plugin| ScanEntry::Plugin {
-                plugin: Box::new(plugin),
-            })),
+            Ok(plugins) => result.extend(plugins),
             Err(error) => result.push(ScanEntry::Error {
                 path: path.to_string_lossy().into_owned(),
                 error,
@@ -676,17 +765,30 @@ pub unsafe fn helper_main(fd: i32) -> Result<(), String> {
 }
 fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, String> {
     match request {
-        Request::Scan { path } => {
+        Request::Probe { path, id } => {
+            #[cfg(feature = "clap")]
+            {
+                Ok(Response::Metadata(Box::new(
+                    crate::clap::load(Path::new(&path), &id)?.metadata()?,
+                )))
+            }
+            #[cfg(not(feature = "clap"))]
+            {
+                let _ = (path, id);
+                Err("plugin helper built without CLAP support".into())
+            }
+        }
+        Request::Scan { path, offset } => {
             if loaded.is_some() {
                 return Err("scan helper already owns an instance".into());
             }
             #[cfg(feature = "clap")]
             {
-                Ok(Response::Scan(crate::clap::scan(Path::new(&path))?))
+                Ok(Response::Scan(crate::clap::scan(Path::new(&path), offset)?))
             }
             #[cfg(not(feature = "clap"))]
             {
-                let _ = path;
+                let _ = (path, offset);
                 Err("plugin helper built without CLAP support".into())
             }
         }

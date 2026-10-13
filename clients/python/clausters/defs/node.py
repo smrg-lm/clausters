@@ -163,6 +163,20 @@ class Node:
         reported id (a responder, the GUI, the arrangement) carries none."""
         return _resolve(self.server)
 
+    def restart_plugin(self, *, timeout: float = 10.0):
+        """Restart this plugin node with a fresh helper and cleared held notes.
+
+        Restore its initial state and current controls. The server swaps the
+        prepared generation at a block boundary; unsaved DSP history is lost.
+        """
+        server = _resolve(self.server)
+        reply, args = server.request("/plugin_restart", self.id, timeout=timeout,
+                                     expect=("/done", "/fail"))
+        if reply == "/fail":
+            from ..errors import CommandError
+            raise CommandError(f"/plugin_restart failed: {args}")
+        return self
+
     def set(self, controls):
         """Set controls by name (``/node_set``). On a GraphDef instance the names
         resolve against the graph's surface, not its private members."""

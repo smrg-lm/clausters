@@ -1024,3 +1024,21 @@ def test_midi_query_reads_channels_and_zones_by_channel():
     assert zone.kind == "zone" and zone.members == 15
     assert zone.controls["timbre"] == "timbre" and zone.timbre_cc == 74
     assert str(zone).startswith("zone on 0 (15 members): mpe_voice")
+
+
+def test_plugin_reference_control_info_and_restart_wire():
+    from clausters import PluginDef, Synth
+    from clausters.defs.info import parse_def_info
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    reference = {"format": "clap", "path": "/plugins/test.clap", "id": "test",
+                 "inputs": [], "outputs": [{"id": 0, "channels": 1, "bus": 0}]}
+    recipe = PluginDef("test", reference)
+    recipe.send(srv, wait=False)
+    assert iface.sent[-1] == ("/def_send", ["plugin", "test", json.dumps(reference)])
+    info = parse_def_info(["test", "plugin", 1, "param:17", 0.5, "kr", 0.0, 1.0, 0.0])
+    assert info.controls[0].range == (0.0, 1.0)
+    iface._replies = [osc.message("/done", "/plugin_restart", 42)]
+    node = Synth.from_id(42, "test", server=srv)
+    assert node.restart_plugin() is node
+    assert iface.sent[-1] == ("/plugin_restart", [42])

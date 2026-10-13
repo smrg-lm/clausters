@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 
 /// Largest metadata catalogue from one binary.
-pub const MAX_PLUGINS: usize = 128;
+pub const MAX_PLUGINS: usize = 512;
 /// Port rows per direction.
 pub const MAX_PORTS: usize = 16;
 /// Stable native parameters per instance.

@@ -136,6 +136,8 @@ impl OscServer {
             faust_compiler: CompilerThread::spawn(waker, meters),
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
             plugin_scanner,
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            plugin_claims: std::collections::HashMap::new(),
             plugin_submitted: 0,
             plugin_drained: 0,
             nrt_submitted: 0,
@@ -219,6 +221,41 @@ impl OscServer {
             warn!(
                 "persisted Faust defs found but this build lacks the `faust` feature; skipping them"
             );
+        }
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        for entry in std::fs::read_dir(store.plugindefs_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let path = entry.path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            let loaded = std::fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    serde_json::from_slice::<crate::plugin::PluginRecord>(&bytes)
+                        .map_err(|e| e.to_string())
+                })
+                .and_then(|record| {
+                    crate::plugin::PluginDef::probe(record.reference, self.handle.sample_rate)
+                        .map(|def| (record.name, def))
+                });
+            match loaded {
+                Ok((name, def)) => {
+                    self.translator.plugin_defs.insert(name, Arc::new(def));
+                }
+                Err(error) => {
+                    warn!(
+                        "persisted plugin def '{}' unavailable: {error}; retained unless --prune-defs is requested",
+                        path.display()
+                    );
+                    if self.prune_dead_defs {
+                        dead.push(path);
+                    }
+                }
+            }
         }
         // GraphDefs load after the synth/faust defs (their members may
         // reference those names); validation is structural, so any still-
@@ -568,7 +605,7 @@ impl OscServer {
                         self.broadcast_transport(k);
                     }
                 }
-                Garbage::FreedBuffer(_) => {}
+                Garbage::FreedBuffer(_) | Garbage::RetiredSynth(_) => {}
                 Garbage::TransportEnded { transport } => self.on_transport_ended(transport),
                 Garbage::SpentBundle(cmds) => {
                     // The executed shell of a timed bundle (empty), or one a

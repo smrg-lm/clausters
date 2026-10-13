@@ -60,7 +60,7 @@ export interface ControlInfo {
  */
 export interface DefInfo {
     name: string;
-    /** `"synth"`, `"faust"` or `"graph"` -- empty when the name is unknown. */
+    /** `"synth"`, `"faust"`, `"graph"` or `"plugin"` -- empty when the name is unknown. */
     family: string;
     controls: ControlInfo[];
     exists: boolean;
@@ -505,7 +505,7 @@ export function parseDefInfo(args: ReplyArgs): DefInfo {
             rate: String(args[i + 2]),
         };
         i += 3;
-        if (family === "faust") {
+        if ((family === "faust" || family === "plugin")) {
             info.min = Number(args[i]);
             info.max = Number(args[i + 1]);
             info.step = Number(args[i + 2]);

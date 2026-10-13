@@ -71,7 +71,7 @@ fn entry(path: &Path) -> Result<PluginEntry, String> {
     // SAFETY: external code is intentionally loaded only in the isolated helper.
     unsafe { PluginEntry::load(path) }.map_err(error)
 }
-pub(crate) fn scan(path: &Path) -> Result<Vec<PluginInfo>, String> {
+pub(crate) fn scan(path: &Path, offset: usize) -> Result<Vec<ScanEntry>, String> {
     let entry = entry(path)?;
     let factory = entry.get_plugin_factory().ok_or("missing CLAP factory")?;
     let ids: Vec<_> = factory
@@ -83,21 +83,33 @@ pub(crate) fn scan(path: &Path) -> Result<Vec<PluginInfo>, String> {
         return Err("plugin binary catalogue capacity exceeded".into());
     }
     let mut output = Vec::new();
-    for id in ids {
-        let mut plugin = load(path, id.to_str().map_err(error)?)?;
-        let info = plugin.metadata()?;
-        let config = Config {
-            generation: 1,
-            sample_rate: 48000.0,
-            sample_origin: 0,
-            inputs: info.inputs.iter().map(|p| p.channels).sum(),
-            outputs: info.outputs.iter().map(|p| p.channels).sum(),
-            depth: 4,
-            reserved: 0,
-        };
-        let processor = plugin.activate(config)?;
-        output.push(plugin.metadata()?);
-        plugin.deactivate(processor.stop())?;
+    for id in ids.into_iter().skip(offset).take(4) {
+        let result = (|| {
+            let mut plugin = load(path, id.to_str().map_err(error)?)?;
+            let info = plugin.metadata()?;
+            let config = Config {
+                generation: 1,
+                sample_rate: 48000.0,
+                sample_origin: 0,
+                inputs: info.inputs.iter().map(|p| p.channels).sum(),
+                outputs: info.outputs.iter().map(|p| p.channels).sum(),
+                depth: 4,
+                reserved: 0,
+            };
+            let processor = plugin.activate(config)?;
+            let metadata = plugin.metadata()?;
+            plugin.deactivate(processor.stop())?;
+            Ok::<_, String>(metadata)
+        })();
+        output.push(match result {
+            Ok(plugin) => ScanEntry::Plugin {
+                plugin: Box::new(plugin),
+            },
+            Err(error) => ScanEntry::Error {
+                path: path.to_string_lossy().into_owned(),
+                error: format!("{}: {error}", id.to_string_lossy()),
+            },
+        });
     }
     Ok(output)
 }

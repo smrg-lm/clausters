@@ -294,3 +294,6 @@ export type {
  * window and this one in a tab, and the call is the same call either way.
  */
 export * as opfs from "./engine/opfs.ts";
+
+export { PluginDef } from "./defs/plugindef.ts";
+export type { PluginReference, PluginPortReference } from "./defs/plugindef.ts";

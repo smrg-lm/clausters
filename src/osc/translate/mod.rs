@@ -72,13 +72,19 @@ pub enum NodeDef {
     UGen(Arc<SynthDef>),
     #[cfg(feature = "faust")]
     Faust(Arc<FaustDef>),
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    Plugin(Arc<crate::plugin::PluginDef>, u64),
 }
 
 // With neither def family compiled in, `NodeDef` is an empty enum: no node is
 // ever built and each match reduces to the diverging `match *self {}` arm.
 impl NodeDef {
     #[cfg_attr(
-        not(any(feature = "synth", feature = "faust")),
+        not(any(
+            feature = "synth",
+            feature = "faust",
+            all(feature = "plugin-clap", target_os = "linux")
+        )),
         allow(unused_variables)
     )]
     pub fn control_index(&self, name: &str) -> Option<u32> {
@@ -87,20 +93,32 @@ impl NodeDef {
             NodeDef::UGen(def) => def.control_index(name),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => def.control_index(name),
-            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            NodeDef::Plugin(def, _) => def.control_index(name),
+            #[cfg(not(any(
+                feature = "synth",
+                feature = "faust",
+                all(feature = "plugin-clap", target_os = "linux")
+            )))]
             _ => match *self {},
         }
     }
 
     /// Control name by index, for `/group_queryTree.reply`.
     #[cfg_attr(
-        not(any(feature = "synth", feature = "faust")),
+        not(any(
+            feature = "synth",
+            feature = "faust",
+            all(feature = "plugin-clap", target_os = "linux")
+        )),
         allow(unused_variables)
     )]
     pub fn control_name(&self, index: usize) -> Option<&str> {
         match self {
             #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_names.get(index).map(String::as_str),
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            NodeDef::Plugin(def, _) => def.names.get(index).map(String::as_str),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => match index.checked_sub(def.params.len()) {
                 None => def.params.get(index).map(|p| p.name.as_str()),
@@ -108,7 +126,11 @@ impl NodeDef {
                 Some(1) => Some("in"),
                 Some(_) => None,
             },
-            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            #[cfg(not(any(
+                feature = "synth",
+                feature = "faust",
+                all(feature = "plugin-clap", target_os = "linux")
+            )))]
             _ => match *self {},
         }
     }
@@ -121,7 +143,13 @@ impl NodeDef {
             NodeDef::UGen(def) => Some(def.ugens.len()),
             #[cfg(feature = "faust")]
             NodeDef::Faust(_) => None,
-            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            NodeDef::Plugin(..) => None,
+            #[cfg(not(any(
+                feature = "synth",
+                feature = "faust",
+                all(feature = "plugin-clap", target_os = "linux")
+            )))]
             _ => match *self {},
         }
     }
@@ -131,6 +159,8 @@ impl NodeDef {
         match self {
             #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_defaults.clone(),
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            NodeDef::Plugin(def, _) => def.defaults.clone(),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => {
                 // UI params at their inits, then the reserved out/in buses.
@@ -138,14 +168,22 @@ impl NodeDef {
                 v.extend([0.0, 0.0]);
                 v
             }
-            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            #[cfg(not(any(
+                feature = "synth",
+                feature = "faust",
+                all(feature = "plugin-clap", target_os = "linux")
+            )))]
             _ => match *self {},
         }
     }
 
     /// Bus usage of an instance with these control values.
     #[cfg_attr(
-        not(any(feature = "synth", feature = "faust")),
+        not(any(
+            feature = "synth",
+            feature = "faust",
+            all(feature = "plugin-clap", target_os = "linux")
+        )),
         allow(unused_variables)
     )]
     fn usage(&self, controls: &[f32]) -> (BusUsage, Vec<u32>) {
@@ -154,7 +192,13 @@ impl NodeDef {
             NodeDef::UGen(def) => ugen_usage(def, controls),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => faust_usage(def, controls),
-            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            NodeDef::Plugin(def, _) => def.usage(controls),
+            #[cfg(not(any(
+                feature = "synth",
+                feature = "faust",
+                all(feature = "plugin-clap", target_os = "linux")
+            )))]
             _ => match *self {},
         }
     }
@@ -162,7 +206,10 @@ impl NodeDef {
 
 pub struct CmdTranslator {
     /// Faust instances bake the sample rate in at `/synth_new` time.
-    #[cfg_attr(not(feature = "faust"), allow(dead_code))]
+    #[cfg_attr(
+        not(any(feature = "faust", all(feature = "plugin-clap", target_os = "linux"))),
+        allow(dead_code)
+    )]
     sample_rate: f32,
     /// Start of the next instance's run of stochastic-UGen seeds. It belongs
     /// to the translator -- one per server or per offline render -- rather than
@@ -195,6 +242,8 @@ pub struct CmdTranslator {
     /// Compiled Faust defs by name, refcounted (every instance holds a clone).
     #[cfg(feature = "faust")]
     pub faust_defs: HashMap<String, Arc<FaustDef>>,
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    pub plugin_defs: HashMap<String, Arc<crate::plugin::PluginDef>>,
     /// Network-side tree mirror: topology, per-node controls and bus usage,
     /// auto-sorted groups. Fed by the same commands the engine gets.
     pub mirror: TreeMirror,
@@ -241,6 +290,10 @@ impl CmdTranslator {
     /// it with the seed it resolved (see
     /// [`crate::server::render::RenderConfig::seed`]); left alone, the
     /// sequence starts from entropy.
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
     pub fn set_seed(&mut self, seed: u64) {
         self.next_seed.set(seed);
     }
@@ -290,6 +343,8 @@ impl CmdTranslator {
             auto_ids: Registry::new(partition.auto_base, partition.auto_capacity),
             #[cfg(feature = "faust")]
             faust_defs: HashMap::new(),
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            plugin_defs: HashMap::new(),
             mirror: TreeMirror::new(),
             buffers: empty_pool_with(limits.max_buffers),
             midi: MidiBindings::new(partition.midi_base, partition.midi_capacity),
@@ -324,6 +379,10 @@ impl CmdTranslator {
         {
             n += self.faust_defs.len();
         }
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        {
+            n += self.plugin_defs.len();
+        }
         n
     }
 
@@ -348,6 +407,15 @@ impl CmdTranslator {
         if let Some(def) = self.faust_defs.get(name) {
             let synth = FaustSynth::new(Arc::clone(def), self.sample_rate, &self.buffers)?;
             return Ok((Box::new(synth), NodeDef::Faust(Arc::clone(def))));
+        }
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        if let Some(def) = self.plugin_defs.get(name) {
+            let synth = crate::plugin::PluginSynth::new(Arc::clone(def), self.sample_rate)?;
+            let generation = synth.incarnation();
+            return Ok((
+                Box::new(synth),
+                NodeDef::Plugin(Arc::clone(def), generation),
+            ));
         }
         Err(format!("SynthDef not found: {name}"))
     }
@@ -931,6 +999,8 @@ impl CmdTranslator {
             self.synth_defs.remove(name);
             #[cfg(feature = "faust")]
             self.faust_defs.remove(name);
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            self.plugin_defs.remove(name);
             self.graph_defs.remove(name);
         }
         Ok(())

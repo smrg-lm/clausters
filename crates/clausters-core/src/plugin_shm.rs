@@ -493,15 +493,22 @@ impl Producer<'_> {
             *value = 0.0;
         }
         events.count = 0;
+        let delivered = self.receive(output, events);
+        self.publish(job, input);
+        delivered
+    }
+
+    /// Copy the exact result due for the current block before its slices run.
+    /// Called once, followed by `publish` when the block is complete.
+    pub fn receive(&mut self, output: &mut [f32], events: &mut EventList) -> bool {
+        output.fill(0.0);
+        events.count = 0;
         let seq = self.sequence;
-        self.sequence = self.sequence.saturating_add(1);
         let c = self.view.config;
         if self.view.failure() != 0 {
             return false;
         }
-        if input.len() != c.inputs as usize * FRAMES
-            || output.len() != c.outputs as usize * FRAMES
-            || !job.valid()
+        if output.len() != c.outputs as usize * FRAMES
             || seq > (i64::MAX as u64 - c.sample_origin) / FRAMES as u64
         {
             self.view.fail(Failure::Capacity);
@@ -518,7 +525,7 @@ impl Producer<'_> {
                     // SAFETY: output follows input and fits the validated slot payload.
                     let audio = unsafe {
                         std::slice::from_raw_parts(
-                            self.view.audio(due).add(input.len()),
+                            self.view.audio(due).add(c.inputs as usize * FRAMES),
                             output.len(),
                         )
                     };
@@ -558,12 +565,25 @@ impl Producer<'_> {
                 }
             }
         }
+        delivered
+    }
+
+    /// Publish the completed slices once; advances the device block sequence.
+    pub fn publish(&mut self, job: &Job, input: &[f32]) {
+        let seq = self.sequence;
+        self.sequence = self.sequence.saturating_add(1);
+        let c = self.view.config;
+        if self.view.failure() != 0 {
+            return;
+        }
+        if input.len() != c.inputs as usize * FRAMES || !job.valid() {
+            self.view.fail(Failure::Capacity);
+            return;
+        }
         let slot = self.view.slot(seq);
         if slot.state.load(Ordering::Acquire) != FREE {
             self.view.fail(Failure::Capacity);
-            output.fill(0.0);
-            events.count = 0;
-            return false;
+            return;
         }
         let mut job = *job;
         job.sequence = seq;
@@ -575,7 +595,6 @@ impl Producer<'_> {
                 .copy_from_slice(input);
         }
         slot.state.store(READY, Ordering::Release);
-        delivered
     }
 }
 /// Sole helper endpoint; consumes all accepted jobs, including late ones.

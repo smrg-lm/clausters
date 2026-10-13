@@ -603,6 +603,7 @@ impl Renderer {
                 }
                 // A score has no lanes: nothing here sends one an entry.
                 Garbage::FreedGroup { .. }
+                | Garbage::RetiredSynth(_)
                 | Garbage::FreedBuffer(_)
                 | Garbage::EventLaneSpent { .. }
                 | Garbage::TransportEnded { .. } => {}

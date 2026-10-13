@@ -432,6 +432,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_node_trace(Args::new(m))
     }),
     ("/node_ugenCmd", OscServer::handle_via_translate),
+    ("/plugin_restart", |s, _, m, f| {
+        s.handle_plugin_restart(Args::new(m), f)
+    }),
     ("/plugin_scan", |s, _, m, f| {
         s.handle_plugin_scan(Args::new(m), f)
     }),

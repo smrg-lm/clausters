@@ -109,10 +109,15 @@ export class Node {
         return resolveServer(this.server);
     }
 
-    /**
-     * Sets controls by name (`/node_set`). On a GraphDef instance the names
-     * resolve against the graph's surface, not its private members.
+    /** Restart this plugin with a fresh helper, initial state and current controls.
+     * Held notes and unsaved DSP history are cleared at the block-boundary swap.
      */
+    async restartPlugin({ timeout = 10.0 }: { timeout?: number } = {}): Promise<this> {
+        await resolveServer(this.server).command("/plugin_restart", [this.id], timeout);
+        return this;
+    }
+
+    /** Sets controls by name, or GraphDef surface ports. */
     set(controls: Controls): void {
         this.srv().sendMsg("/node_set", ["i", this.id], ...flattenControls(controls));
     }

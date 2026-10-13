@@ -30,6 +30,13 @@ impl OscServer {
         if kind != DefKind::Faust {
             self.translator.faust_defs.remove(name);
         }
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        {
+            self.plugin_claims.remove(name);
+            if kind != DefKind::Plugin {
+                self.translator.plugin_defs.remove(name);
+            }
+        }
         if kind != DefKind::Graph {
             self.translator.graph_defs.remove(name);
         }
@@ -57,6 +64,7 @@ impl OscServer {
         match family.as_str() {
             "synth" => self.handle_def_send_json(rest, from, DefKind::Synth, "synth"),
             "faust" => self.handle_def_send_faust(rest, from),
+            "plugin" => self.handle_def_send_plugin(rest, from),
             "graph" => self.handle_def_send_json(rest, from, DefKind::Graph, "graph"),
             other => Err(format!("unknown def family '{other}'")),
         }
@@ -109,11 +117,18 @@ impl OscServer {
         _from: ClientId,
     ) -> Answer {
         self.translator.d_free(args.rest())?;
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        for arg in args.rest() {
+            if let OscType::String(name) = arg {
+                self.plugin_claims.remove(name);
+            }
+        }
         if let Some(store) = &self.store {
             for arg in args.rest() {
                 if let OscType::String(name) = arg {
                     store.remove_synthdef(name);
                     store.remove_graphdef(name);
+                    store.remove_plugindef(name);
                     #[cfg(all(feature = "faust", not(target_arch = "wasm32")))]
                     crate::faust::cache::remove(store.faustdefs_dir(), name);
                 }

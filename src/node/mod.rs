@@ -25,6 +25,20 @@ pub trait SynthNode: Send {
     /// buses in `ctx`. Runs on the audio thread: must not allocate, lock or
     /// do I/O.
     fn process(&mut self, ctx: &mut ProcessCtx);
+    /// Prepare a slice, including a frozen slice, without writing shared buses.
+    fn prepare_slice(&mut self, _ctx: &ProcessCtx, _active: bool) {}
+    /// Publish completed block staging after all DSP workers have joined.
+    fn finish_block(&mut self) {}
+    /// Isolated processor generation, zero for ordinary synths.
+    fn incarnation(&self) -> u64 {
+        0
+    }
+    /// Current writable controls and mappings, without allocation.
+    fn control_state(&self, _index: usize) -> Option<(f32, ControlMap)> {
+        None
+    }
+    /// Restore controls from the actual processor at the replacement boundary.
+    fn restore_controls_from(&mut self, _prior: &dyn SynthNode) {}
     /// Unknown indices must be ignored, like scsynth.
     fn set_control(&mut self, index: u32, value: f32);
     /// Maps control `index` to a bus read at the start of every block:
@@ -1085,6 +1099,27 @@ impl NodeTree {
         }
     }
 
+    /// Swap a prepared processor without changing the node's tree identity.
+    pub fn replace_synth(
+        &mut self,
+        id: i32,
+        expected: u64,
+        mut synth: Box<dyn SynthNode>,
+    ) -> Box<dyn SynthNode> {
+        if let Some(idx) = self.find(id)
+            && let Some(NodeSlot {
+                kind: NodeKind::Synth { node, .. },
+                ..
+            }) = self.slot_mut(idx)
+            && node.incarnation() == expected
+        {
+            synth.set_node_id(id);
+            synth.restore_controls_from(node.as_ref());
+            std::mem::swap(node, &mut synth);
+        }
+        synth
+    }
+
     /// `/node_before` / `/node_after` / `/group_head` / `/group_tail`: moves a node, possibly
     /// under a different parent. For `Before`/`After`, `target` is a sibling;
     /// for `Head`/`Tail`, `target` is the destination group and the node lands
@@ -1194,6 +1229,57 @@ impl NodeTree {
         // SAFETY: entry point -- this thread owns the whole tree; the pool
         // only ever receives disjoint subtrees.
         unsafe { self.process_index(ROOT_SLOT, ctx, pool) }
+    }
+
+    /// Prepare isolated endpoints, including nodes under paused groups.
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    pub fn prepare_slice(&mut self, ctx: &ProcessCtx) {
+        // SAFETY: called before worker dispatch, with exclusive tree ownership.
+        unsafe {
+            self.prepare_index(ROOT_SLOT, ctx, true);
+        }
+    }
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    unsafe fn prepare_index(&self, idx: usize, ctx: &ProcessCtx, active: bool) {
+        // SAFETY: no workers are dispatched during preparation.
+        let Some(slot) = (unsafe { &mut *self.slots[idx].get() }).as_mut() else {
+            return;
+        };
+        let active = active && !slot.paused;
+        let ctx = if slot.transport == NO_TRANSPORT {
+            *ctx
+        } else {
+            ProcessCtx {
+                transport: self.transport_view(slot.transport as usize),
+                ..*ctx
+            }
+        };
+        match &mut slot.kind {
+            NodeKind::Synth { node, .. } => node.prepare_slice(&ctx, active),
+            NodeKind::Group(group) => {
+                for &child in &group.children {
+                    unsafe {
+                        self.prepare_index(child, &ctx, active);
+                    }
+                }
+            }
+        }
+    }
+    /// Publish isolated jobs once and queue endpoint failures, even while frozen.
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    pub fn finish_block(&mut self) {
+        for idx in 0..self.slots.len() {
+            if let Some(NodeSlot {
+                kind: NodeKind::Synth { node, .. },
+                ..
+            }) = self.slot_mut(idx)
+            {
+                node.finish_block();
+                if node.has_replies() {
+                    self.enqueue_reply(idx);
+                }
+            }
+        }
     }
 
     /// Processes the subtree rooted at slot `idx`, dispatching parallel
