@@ -10077,3 +10077,17 @@ something the client can know, so an unstated length is clearer than a second
 nobody asked for. A take ends on its last event unless the caller says
 otherwise; the examples that want a release heard ask for one.
 
+
+## Third-party plugins run out of process
+
+*Decided with the user, 2026-10-13.* The restriction on **UGen plugins written in Rust** remains: Rust has no stable ABI and scsynth's binary boundary showed the maintenance cost. Hosting third-party DAW plugins is a separate capability. CLAP defines a C ABI; VST3 defines COM-style binary interfaces. Compatibility is checked at load and no Rust types cross the boundary. CLAP is MIT-licensed, and the VST3 SDK has been MIT since 3.8; that SDK license is not a claim about third-party plugin licenses.
+
+**Plugin code runs outside the server, in one helper process per instance.** The helper's main thread owns lifecycle and native windows; its processing thread runs the plugin. A def is a recipe, not a shared live process. The per-instance boundary isolates crashes and preserves one producer per shared-memory queue when the server processes nodes on parallel workers. A polyphonic instrument remains one persistent plugin instance receiving events; notes do not each create another helper.
+
+The server's callback only accesses preallocated buffers and atomics. It never allocates, frees, locks, waits or makes syscalls, including a futex wake. `tests/rt_safety.rs` guards allocation/freeing, not the whole real-time contract: syscall/lock inspection and deadline measurements are additional checks. The wake mechanism and buffering depth remain **feasibility questions to measure** under a declared workload before implementing the bridge; no one-block or four-block latency is promised. Polling and non-RT notification may be compared without weakening the callback rule.
+
+The bridge carries indexed jobs with generations, sample-offset events and transport snapshots. Engine slices are staged into complete jobs rather than published as separate blocks. An output that misses its scheduled interval becomes silence and is counted; late output never moves to a later interval. Bounded backlog/overflow rules must preserve explicit event ownership or fail the instance visibly, including note releases. Restart names the running node, prepares a fresh helper outside RT, restores saved state/current parameters and swaps generations at a block boundary; it clears outstanding notes and does not recover unsaved DSP history. Sending a def again affects future instances, not the live nodes holding the failed bridge.
+
+The trade-off is measured buffering latency, reported along with intrinsic plugin latency through `SynthNode::latency()`, and per-instance process/CPU overhead. **Server delay compensation is part of the agreed delivery**, including statically analyzable paths across nested automatic groups, mixed writers and sidechains; manual/dynamic/feedback boundaries remain explicit. Native editors open on the server's machine. A web client controlling that native server has the same surface as Python; only the in-page wasm engine cannot load a native binary. A WAM-based implementation is an open question, not an adopted replacement.
+
+Offline rendering uses the same protocol and declared bridge delay, but may wait outside RT. Equality with RT is tested only for a deterministic fixture with identical rate, state, events and transport, no GUI edits and no missed deadlines. Hosting is still planned work; its milestones and the feasibility acceptance live in the server plan.

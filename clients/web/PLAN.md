@@ -3230,6 +3230,8 @@ which is the difference already recorded — every value export in it either has
 Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 `startPage`, the bundle and component doors).
 
+- ⬜ **Native plugins and the in-page engine** *(named 2026-10-13 with the server plan's J track)*. Port `PluginDef`, discovery, parameters, state, events, recovery and editor control alongside the Python client as each server capability lands, with the same calls and examples. A page connected to a native server controls its CLAP/VST3 instances; a native editor opens on that server's machine. The in-page wasm engine cannot load native plugin binaries and must report that capability explicitly while keeping the same builder surface. A possible WAM2 integration is an open design question: a different plugin binary/runtime is not automatically the same capability, and no independent DSP, mapping or drawing implementation is authorized by this entry. The native-server client port closes with the J track; any remaining in-page design stays pending here.
+
 ## Found by use: the running list of fixes
 
 - ✅ **A formatter rounds an exact tie differently in the two clients** *(found

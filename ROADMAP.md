@@ -64,7 +64,7 @@ Where the work lives:
 | `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx`, `Vx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, the score model, the host seen and driven by a script |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
-| `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
+| `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux`, `Jx` | `PLAN.md` (root) | the server, its engine in the browser (`Bx`), and third-party plugins (`Jx`) |
 | `APx` | `clients/gui/PLAN.md` (AP track) | the application scope: the window set, the derived widget id, the reconcile, one undo order |
 
 Entries that carry no label are **plan entries, not milestones** — they are named
@@ -284,6 +284,10 @@ its plan; the plan is where its acceptance is read.
   plays itself and seeks — and one thing stands: the roll's notes → timeline
   conversion is private to the notes editor (`ppar` and `pvoice`, the
   pattern-side question, shipped with `C73e`).
+
+- ⬜ **The J track — third-party plugins, out of process**, `J1`-`J9`
+  *(root `PLAN.md`, "J track — third-party plugins: a `plugin` def family, out
+  of process")*. **J1 — Bridge feasibility and the processing contract** comes first because the host and the family depend on a measured, bounded bridge. The track includes persistent instruments/transport and **J8 — Server delay compensation, anticipated by M12 and M28**; their decisions and acceptance live in the root plan.
 
 - ⬜ **The V track — the host seen and driven by a script**, `V1`-`V5`
   *(`clients/gui/PLAN.md`, "V track — development: the host seen and driven
