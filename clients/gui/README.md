@@ -39,7 +39,7 @@ and launches the host for you (`Session.gui()`).
 > Testing through the Python launcher? The editable package's **bundled**
 > binary in `clients/python/clausters/_bin/` wins over this workspace build —
 > refresh it (or set `CLAUSTERS_GUI_BIN`) after rebuilding. See the repo
-> `CLAUDE.md` / `clients/python/README.md`.
+> `AGENTS.md` / `clients/python/README.md`.
 
 **Watching what the host says to itself** is the other opt-in. The window's
 status bar shows what the hand did and what was refused in every build; the

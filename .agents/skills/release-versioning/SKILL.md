@@ -102,7 +102,7 @@ its own commit first, then release.
    writes its own number instead of inheriting. (Before that: `clients/gui` had
    drifted, and `package-lock.json` was found two minors behind.)
 2. **Both ABI counters and the SemVer tier against the last tag** —
-   `.claude/skills/release-versioning/versions.sh`, which prints all three and
+   `.agents/skills/release-versioning/versions.sh`, which prints all three and
    exits non-zero if it cannot find one. Read all three by rule 5: what is
    checked is that each one **differs** from the last tag's — by how much is not
    a question and a gap is not a defect, for the version as much as for the

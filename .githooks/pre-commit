@@ -2,7 +2,7 @@
 # No commit touching Rust without fmt + clippy clean, and none touching a book's
 # sources without that book building.
 #
-# CLAUDE.md's commit workflow: "Before generating any commit that touches Rust,
+# AGENTS.md's commit workflow: "Before generating any commit that touches Rust,
 # run `cargo fmt` ... the tree must be `cargo fmt --check`-clean" and "Clippy
 # must come back clean, always -- zero warnings, not 'no new ones'".
 #
@@ -82,7 +82,7 @@ fi
 # --- Which workspaces does the working tree touch? ---------------------------
 #
 # The *working tree*, not the index: cargo reads the filesystem, so the tree is
-# what would actually be linted either way, and CLAUDE.md's rule is about the
+# what would actually be linted either way, and AGENTS.md's rule is about the
 # tree ("the tree must be `cargo fmt --check`-clean"). A dirty experiment left
 # beside a clean staged change therefore blocks the commit -- which is the rule
 # working, not the hook overreaching.
@@ -216,7 +216,7 @@ matrix_note() {
     {
         echo
         echo "This diff touches feature-gated code, and CI never builds the"
-        echo "def-family matrix -- run .claude/skills/feature-matrix/check.sh"
+        echo "def-family matrix -- run .agents/skills/feature-matrix/check.sh"
         echo "(or its --fast form) before committing."
     } >&2
 }
@@ -227,7 +227,7 @@ if [ -n "$failed" ]; then
         case "$failed" in
             *fmt* | *clippy*)
                 echo
-                echo "CLAUDE.md: the tree must be \`cargo fmt --check\`-clean and clippy"
+                echo "AGENTS.md: the tree must be \`cargo fmt --check\`-clean and clippy"
                 echo "must come back clean, always (zero warnings, not \"no new ones\" --"
                 echo "fix the ones this change did not introduce too, in their own commit"
                 echo "so the feature's diff stays readable). A warning that is genuinely"

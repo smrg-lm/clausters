@@ -2256,7 +2256,7 @@ near.
     green is the alternative, and is weaker — it depends on CI having run at
     all on that exact commit.
   - **The nine configurations nobody automates.** Of the fourteen in
-    `.claude/skills/feature-matrix/check.sh`, CI covers five (the two `fmt`s
+    `.agents/skills/feature-matrix/check.sh`, CI covers five (the two `fmt`s
     and the workspace/gui/default `clippy` runs). The other nine — `clippy`
     under neither def family, `synth` alone, `faust` alone, `clausters-ffi`
     with `verovio`, and all five `rustdoc` builds — are covered by a human
@@ -2376,14 +2376,14 @@ Further formats/platforms are checkbox entries under Future directions. Document
 
 ## Project skills
 
-- `.claude/skills/realtime-audio` — RT thread rules, lock-free patterns, cpal.
-- `.claude/skills/scsynth-osc` — reference for scsynth's OSC protocol and node-tree
+- `.agents/skills/realtime-audio` — RT thread rules, lock-free patterns, cpal.
+- `.agents/skills/scsynth-osc` — reference for scsynth's OSC protocol and node-tree
   semantics.
-- `.claude/skills/ugen-dsp` — the UGens' DSP algorithms (oscillators, filters,
+- `.agents/skills/ugen-dsp` — the UGens' DSP algorithms (oscillators, filters,
   envelopes) with their formulas.
-- `.claude/skills/audio-testing` — how to test audio without ears: NRT, golden files,
+- `.agents/skills/audio-testing` — how to test audio without ears: NRT, golden files,
   signal asserts, no-alloc.
-- `.claude/skills/faust-embedding` — embedding libfaust: C API (box/signal/LLVM),
+- `.agents/skills/faust-embedding` — embedding libfaust: C API (box/signal/LLVM),
   factory/instance lifecycle, RT boundaries, JSON→Box API mapping.
 
 ## Project notes

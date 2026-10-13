@@ -135,7 +135,7 @@ jobs:
       # exits non-zero if any did -- so one run reports the whole picture
       # instead of stopping at the first break.
       - name: The fmt + clippy + rustdoc matrix
-        run: .claude/skills/feature-matrix/check.sh
+        run: .agents/skills/feature-matrix/check.sh
       # Mirrors ci.yml's test-default invocation, including --test-threads=1 and
       # the coredump capture: this is the run that has historically produced the
       # Faust SIGILL, and a release failing here is exactly when the dump is

@@ -214,7 +214,7 @@ cargo build            # faust is a default feature
 cargo test
 ```
 
-Notes (see also `BUILD.md` and the `faust` sections of `CLAUDE.md`):
+Notes (see also `BUILD.md` and the `faust` sections of `AGENTS.md`):
 
 - `build.rs` locates the prefix via `FAUST_PREFIX` → `~/.local` →
   `/usr/local`; with the `~/.local` install nothing needs to be exported.

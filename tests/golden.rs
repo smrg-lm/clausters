@@ -192,7 +192,7 @@ fn render_is_sample_accurate_mid_block() {
 fn score_file_round_trips_through_disk() {
     // Same scene as above, but encoded as a binary score file. The def blob
     // is padded to a multiple of 4 bytes to exercise the rosc blob-decoding
-    // workaround (see CLAUDE.md).
+    // workaround (see AGENTS.md).
     let mut def = DC_DEF.as_bytes().to_vec();
     while !def.len().is_multiple_of(4) {
         def.push(b' ');

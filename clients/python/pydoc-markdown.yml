@@ -24,7 +24,7 @@ processors:
   - type: smart
 # No `crossref` processor, deliberately. It rewrites `#name` into a cross
 # reference, and these docstrings are plain Markdown with no cross-reference
-# syntax at all (see CLAUDE.md), so it had nothing to resolve -- while it did
+# syntax at all (see AGENTS.md), so it had nothing to resolve -- while it did
 # corrupt every hex color literal: `"#rrggbb[aa]"` came out as ``"`rrggbb`[aa]"``,
 # dropping the `#` and injecting backticks inside an existing code span, which
 # left the published reference documenting the wrong color format. There is no

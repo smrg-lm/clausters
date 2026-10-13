@@ -2,7 +2,7 @@
 # The GUI host's feature matrix: fmt + clippy + rustdoc + the wasm gate + the
 # suite, over the configurations the features exist to make possible.
 #
-# It is the sibling of `.claude/skills/feature-matrix/check.sh`, which does the
+# It is the sibling of `.agents/skills/feature-matrix/check.sh`, which does the
 # same job for the server's def families, and it exists for the same reason: CI
 # lints this crate exactly once, with its **default** features, so a break that
 # only appears with a feature off passes CI and every local habit alike. That is
@@ -163,7 +163,7 @@ if [ "$failed" = 0 ]; then
 else
     printf '\n\033[31mMatrix not clean.\033[0m Zero warnings is the bar, including\n'
     printf 'ones this change did not introduce; clear pre-existing warnings in\n'
-    printf 'their own commit (CLAUDE.md, "Commit workflow").\n'
+    printf 'their own commit (AGENTS.md, "Commit workflow").\n'
 fi
 
 exit "$failed"

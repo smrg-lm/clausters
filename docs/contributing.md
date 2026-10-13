@@ -184,7 +184,7 @@ is reproducible with the same line:
   wheel's `pyproject.toml` is held to the same number by hand. The binary ABI
   counters are *not* SemVer and move
   independently — the rules, including which of them forces a breaking-tier
-  bump, are in the repo-root `CLAUDE.md`.
+  bump, are in the repo-root `AGENTS.md`.
 - **Tagged releases** (`.github/workflows/release.yml`): pushing a `v*` tag
   builds the self-contained Python wheel (client + embedded server +
   standalone server binary + the GUI host as a standalone application; Linux
@@ -215,7 +215,7 @@ is reproducible with the same line:
   before tagging (the `release-versioning` skill's procedure) and run on
   request otherwise.
 - **Nothing publishes before the tag is verified.** The `verify` job runs the
-  fmt + clippy + rustdoc feature matrix (`.claude/skills/feature-matrix/check.sh`
+  fmt + clippy + rustdoc feature matrix (`.agents/skills/feature-matrix/check.sh`
   — nine of its fourteen configurations are covered by no other automation) and
   `cargo test` on the default set and on `+embed`, against the exact commit the
   tag points at; every other job hangs off it. A tag is not a proof: it can sit
@@ -251,7 +251,7 @@ is reproducible with the same line:
 
 ## Project skills
 
-Domain knowledge lives in `.claude/skills/`: `realtime-audio` (RT thread rules, lock-free patterns, cpal), `scsynth-osc` (the OSC protocol and node-tree model), `ugen-dsp` (UGen DSP algorithms), `audio-testing` (testing audio without ears: NRT, golden files, signal asserts, no-alloc), `faust-embedding` (the libfaust C API and lifecycles), and `faust-language` (writing Faust and transposing it to the Signal/Box APIs — sample-level feedback, physical modeling). Process skills: `clausters-python` (idiomatic client use), `clausters-gui` (the GUI host and GuiDefs) and `documentation` (how to write and place docs — the Diataxis split, the generated API references, and the dev/decision docs).
+Domain knowledge lives in `.agents/skills/`: `realtime-audio` (RT thread rules, lock-free patterns, cpal), `scsynth-osc` (the OSC protocol and node-tree model), `ugen-dsp` (UGen DSP algorithms), `audio-testing` (testing audio without ears: NRT, golden files, signal asserts, no-alloc), `faust-embedding` (the libfaust C API and lifecycles), and `faust-language` (writing Faust and transposing it to the Signal/Box APIs — sample-level feedback, physical modeling). Process skills: `clausters-python` (idiomatic client use), `clausters-gui` (the GUI host and GuiDefs) and `documentation` (how to write and place docs — the Diataxis split, the generated API references, and the dev/decision docs).
 
 One skill is a workflow rather than knowledge: `feature-matrix` runs the fmt + clippy configurations of the commit workflow, including the three the CI never builds (`--no-default-features`, and each def family alone). Run it whenever a change touches feature-gated code.
 
@@ -269,21 +269,33 @@ It is versioned in the repo but git only looks at it once you point git at it, s
 git config core.hooksPath .githooks
 ```
 
-**It does not enforce anything, and cannot.** `git commit --no-verify` skips it without running it; so does unsetting `core.hooksPath`, or editing the file, which sits in the working tree of the person it is checking. A client-side hook is a convenience, never a gate. What it saves is time: the same failure in two seconds instead of five minutes into a CI run. **CI is the gate** — it runs fmt, clippy, the test matrix and the Python suite, and the person committing cannot skip it. So `--no-verify` is not a licence to land a warning; it just moves the discovery to CI, and the rule in CLAUDE.md ("zero warnings, always") is unchanged either way.
+**It does not enforce anything, and cannot.** `git commit --no-verify` skips it without running it; so does unsetting `core.hooksPath`, or editing the file, which sits in the working tree of the person it is checking. A client-side hook is a convenience, never a gate. What it saves is time: the same failure in two seconds instead of five minutes into a CI run. **CI is the gate** — it runs fmt, clippy, the test matrix and the Python suite, and the person committing cannot skip it. So `--no-verify` is not a licence to land a warning; it just moves the discovery to CI, and the rule in AGENTS.md ("zero warnings, always") is unchanged either way.
 
 A *git* hook rather than an editor's or an agent's, because git is the one thing that knows with certainty that a commit is happening: anything upstream has to guess it from the text of a command line, and a guess that errs permissive is a check that silently is not there. It also covers every commit — from any terminal, editor or script.
 
-It checks the **working tree**, not the index: cargo reads the filesystem, so the tree is what gets linted either way, and the rule in CLAUDE.md is about the tree. A dirty experiment left beside a clean staged change therefore blocks the commit; that is the rule working, not the hook overreaching.
+It checks the **working tree**, not the index: cargo reads the filesystem, so the tree is what gets linted either way, and the rule in AGENTS.md is about the tree. A dirty experiment left beside a clean staged change therefore blocks the commit; that is the rule working, not the hook overreaching.
 
-## Claude Code hooks and settings
+## Coding-agent instructions, skills, hooks and settings
 
-`.claude/hooks/` holds one hook, versioned so a clone gets it and containing no absolute paths: **`fmt-rust.sh`** runs `rustfmt` on every `.rs` file as it is written, so the tree cannot drift out of `cargo fmt --check`. It only formats files inside this checkout — "every crate is edition 2024 with no `rustfmt.toml`" is a fact about *this* tree, not about someone else's.
+The repository is worked on by more than one coding agent (Claude Code and Codex), and they read **one set of files**, so a rule is written once:
 
-**Versioned vs. local.** `.claude/settings.json` (the hook wiring, plus the permissions any contributor would grant: `cargo build`/`test`/`fmt`/`clippy` and the venv's Python) is checked in. `.claude/settings.local.json` is git-ignored and is where machine-specific permissions belong — absolute paths, one-off commands, anything naming your home directory. So is `.claude/projects/`, the assistant's per-session memory.
+- **`AGENTS.md`** is the instructions file. `CLAUDE.md` is a single line, `@AGENTS.md`, which Claude Code expands in place; Codex reads `AGENTS.md` directly. Edit `AGENTS.md`, never `CLAUDE.md`.
+- **`.agents/skills/`** holds the skills, one directory per skill with its `SKILL.md`. Codex reads that directory; `.claude/skills` is a symlink to it.
+- **`.agents/hooks/`** holds the hooks, wired twice: by `.claude/settings.json` and by `.codex/hooks.json`. Each script reads either agent's payload.
+
+`.agents/hooks/` holds one hook, versioned so a clone gets it and containing no absolute paths: **`fmt-rust.sh`** runs `rustfmt` on the Rust files named by an edit (Claude Code's `Edit`/`Write` give it a path; Codex's `apply_patch` gives it the patch, whose file headers it reads). It resolves paths before limiting formatting to this checkout, and selects edition 2021 for `clausters-editor`, 2024 for the other workspaces. Formatting errors are reported as hook feedback; the edit remains applied. This is a convenience, not proof that the whole tree passes `cargo fmt --check`: edits through shell commands are not covered, and the standing pre-commit checks still apply.
+
+**Codex hook trust is local.** Project hooks must be reviewed and trusted before Codex runs them, and a changed hook definition requires a new review. Inspect them with `/hooks` in the CLI. A checked-in hook and a successful manual invocation of its script do not establish that the running agent dispatched it; validation of automatic dispatch must use that agent's actual editing tool. See the [official hook documentation](https://learn.chatgpt.com/docs/hooks).
+
+**Versioned vs. local.** Only the shared hook wiring is checked in. Agent permissions, hook trust and personal preferences belong in local user configuration. `.claude/settings.local.json` and `.claude/projects/` are git-ignored.
+
+**Continue from the repository.** Either agent can finish work the other started. The shared rules, plans, decisions, working-tree changes and git history carry the information needed to continue; neither agent's private memory is a prerequisite. Read the relevant plans and inspect staged and unstaged changes before resuming, preserve unfinished edits, and verify outstanding checks. No formal handoff is required. If both agents are active, coordinate changes to the same files and serialize staging and commits.
+
 
 **What the hooks need on a fresh clone**, beyond the build dependencies above:
 
 - **`jq`** (`sudo apt install jq`), which `fmt-rust.sh` uses to read its input, and a `find` with `-mmin` (GNU or BSD, not POSIX) for the once-every-twelve-hours throttle on its warning. The git hook needs neither — git hands it the event directly.
+- **`realpath` with `-e` support** (GNU coreutils on Linux), which keeps formatting inside the checkout even when a path contains `..` or follows a symlink.
 - **`cargo` on the PATH of a *non-interactive* shell, with the `rustfmt` and `clippy` components installed.** The PATH is the one that bites: rustup adds `~/.cargo/bin` from a shell profile, and hooks do not necessarily run under one. The components are a separate question — rustup leaves a `cargo-clippy` proxy in `~/.cargo/bin` whether or not the component is there, so finding the binary proves nothing; ask cargo instead. If in doubt, `bash -c 'cargo fmt --version && cargo clippy --version'`, and `rustup component add rustfmt clippy` if either fails.
 
 A hook whose dependencies are missing says so on stderr (once every twelve hours) and then stands down. It never blocks the work — but read the warning, because until it is fixed the check is simply not running.

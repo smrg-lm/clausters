@@ -2,7 +2,7 @@
 
 Most Clausters examples exist twice: a script under `clients/python/examples`
 and a page under `clients/web/examples`. The non-divergence rule in the
-repository's `CLAUDE.md` says the two are **one example in two languages** —
+repository's `AGENTS.md` says the two are **one example in two languages** —
 same material, same names, *the same calls to the same API in the same order* —
 and until this file existed the only thing enforcing that was somebody reading
 both files. Every divergence ever found was found by accident.

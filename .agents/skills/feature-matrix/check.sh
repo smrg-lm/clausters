@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The fmt + clippy + rustdoc matrix from CLAUDE.md's commit workflow, in one
+# The fmt + clippy + rustdoc matrix from AGENTS.md's commit workflow, in one
 # command.
 #
 # CI lints the default build set and the GUI host, but never the def-family
@@ -117,7 +117,7 @@ clippy "clippy: ffi with verovio" -p clausters-ffi --features verovio --all-targ
 # and turned the family back into `-lfaust`. Green here, red on a runner that
 # has no libfaust, for three days.
 #
-# So this row builds what CLAUDE.md and BUILD.md actually promise -- the root
+# So this row builds what AGENTS.md and BUILD.md actually promise -- the root
 # crate, no features -- with FAUST_PREFIX aimed at nothing, which is the runner.
 # It is a build rather than a check because only the link can fail this way --
 # and it links into a target directory of its own, so the script keeps its
@@ -195,7 +195,7 @@ if [ "$failed" = 0 ]; then
 else
     printf '\n\033[31mMatrix not clean.\033[0m Zero warnings is the bar, including\n'
     printf 'ones this change did not introduce; clear pre-existing warnings in\n'
-    printf 'their own commit (CLAUDE.md, "Commit workflow").\n'
+    printf 'their own commit (AGENTS.md, "Commit workflow").\n'
 fi
 
 exit "$failed"

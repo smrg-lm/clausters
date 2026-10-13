@@ -222,7 +222,7 @@ gate the workflow passes through.
 
 1. **One release, one version.** `package.json`'s `version` tracks the
    workspace crate's — the checker refuses a mismatch. The binary ABI counters
-   are separate and are not SemVer; see the repo-root `CLAUDE.md`.
+   are separate and are not SemVer; see the repo-root `AGENTS.md`.
 2. **Rehearse locally before tagging.** A tarball with the modules but without
    the staged wasm bundles installs and does nothing, and the workflow builds
    the same way this does:

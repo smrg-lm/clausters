@@ -1,13 +1,4 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(cargo build *)",
-      "Bash(cargo test *)",
-      "Bash(cargo fmt *)",
-      "Bash(cargo clippy *)",
-      "Bash(.venv/bin/python *)"
-    ]
-  },
   "hooks": {
     "PostToolUse": [
       {
@@ -15,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/fmt-rust.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.agents/hooks/fmt-rust.sh"
           }
         ]
       }

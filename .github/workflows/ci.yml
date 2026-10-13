@@ -1,4 +1,4 @@
-# Continuous integration: the checks CLAUDE.md / docs/contributing.md require
+# Continuous integration: the checks AGENTS.md / docs/contributing.md require
 # by hand, automated. Jobs mirror the local commands one-to-one so a red job
 # is reproducible locally with the same line.
 #
@@ -87,7 +87,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The libfaust-free half of the def-family matrix from CLAUDE.md: the
+        # The libfaust-free half of the def-family matrix from AGENTS.md: the
         # core must compile and test with `synth` alone and with neither def
         # family. These need no libfaust, so they carry no `needs: libfaust`
         # and stay fast. The faust-linking combos (the full default set, and
@@ -100,7 +100,7 @@ jobs:
         # cargo unifies features across the workspace, so building them for the
         # *host* turns the family back into `-lfaust` and the libfaust-free run
         # fails to link on a runner that deliberately has no libfaust. What
-        # CLAUDE.md and BUILD.md promise is the root crate's featureless build,
+        # AGENTS.md and BUILD.md promise is the root crate's featureless build,
         # and that is what these rows check. The wasm crates are proved where
         # they are meant to run: `scripts/check-wasm.sh` checks all three
         # against wasm32 in the `gui` job.
@@ -352,7 +352,7 @@ jobs:
           analyze: "true"
           name: test-default
 
-  # The cost gate. CLAUDE.md's R-track invariant says a refactor closes with a
+  # The cost gate. AGENTS.md's R-track invariant says a refactor closes with a
   # before/after bench; this is that step, done by the machine.
   #
   # It only runs on a pull request, because it is an A/B against the merge base

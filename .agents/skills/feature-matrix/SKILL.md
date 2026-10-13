@@ -20,7 +20,7 @@ own lint pass — clippy says nothing about a `[`link`]` to an item that was
 renamed, moved or made private — so those warnings accumulated unwatched until
 the doc build was added here.
 
-Two standing rules from CLAUDE.md apply to whatever this reports:
+Two standing rules from AGENTS.md apply to whatever this reports:
 
 - **Zero warnings, not "no new ones."** Fix warnings the change did not
   introduce too. CI pins no toolchain (`dtolnay/rust-toolchain@stable`, no
@@ -37,7 +37,7 @@ saying why** — never a silent pass.
 Three things cover parts of this automatically, none of them the part this skill
 is for:
 
-- `.claude/hooks/fmt-rust.sh` formats every `.rs` file as it is written.
+- `.agents/hooks/fmt-rust.sh` formats edited Rust files when the agent has loaded and enabled the shared hook. Verify dispatch locally; the script alone does not prove it runs.
 - `.githooks/pre-commit` blocks a commit whose fmt or clippy is dirty — but only
   for the **default** feature set of the workspaces the working tree touches,
   because five extra builds at commit time is not a cost worth paying on every
@@ -59,7 +59,7 @@ doc comment** — before committing, not before releasing.
 ## Running it
 
 ```sh
-.claude/skills/feature-matrix/check.sh
+.agents/skills/feature-matrix/check.sh
 ```
 
 It runs every configuration even when an earlier one fails, then prints a
@@ -71,7 +71,8 @@ configurations (the ones CI already covers), leaving what CI never sees — the
 def-family matrix, the `verovio` build and both doc builds. Use when you have
 just run the ordinary clippy by hand.
 
-**The script only reads.** It never writes to the working tree — it is the gate
+**The checks only read tracked source.** Dependency preparation may write
+ignored third-party trees; the checks never edit tracked files — it is the gate
 that decides whether the code is committable, and a gate that edits what it is
 judging cannot be trusted to report on it. `cargo clippy --fix` (rustfix applying
 the suggestions marked machine-applicable) is a genuinely useful tool, but run it
@@ -114,7 +115,7 @@ installed at all** — the core has to compile and test with no LLVM-backed
 libfaust on the machine — and **configuration 7b is what actually proves it**.
 Every other row type-checks; 7b is the only one that *links*, and a development
 machine has libfaust installed anyway, so that promise (BUILD.md's, and
-CLAUDE.md's) was the one claim this script could not make.
+AGENTS.md's) was the one claim this script could not make.
 
 It is also the claim that broke. `crates/clausters-web` and
 `crates/clausters-nrt-web` depend on `clausters` with `features = ["faust"]`,
@@ -156,7 +157,7 @@ the one that catches a link to something that does not exist at all, stays on.
 
 ## What it does not cover
 
-- **`fuzz/`** — a separate workspace, outside both CI and CLAUDE.md's list. Lint
+- **`fuzz/`** — a separate workspace, outside both CI and AGENTS.md's list. Lint
   it by hand, from inside it (`cd fuzz && cargo clippy --all-targets`), when you
   touch a fuzz target. It lints on stable — only *running* the fuzzer needs
   nightly. The commit hook does lint it when a commit touches `fuzz/`, so this
@@ -203,7 +204,7 @@ and `cargo build` (and `cargo run`) write it. Which means the script in this
 skill is safe to run at any point — the hazard is the by-hand test sweep beside
 it, not the gate.
 
-The Python client has its own version of this trap, one layer up, and CLAUDE.md
+The Python client has its own version of this trap, one layer up, and AGENTS.md
 covers it: the package prefers the binaries **bundled** in
 `clients/python/clausters/_bin`, `_libs` over the workspace `target/`, so those
 go stale on any rebuild — `scripts/refresh-bin.sh` re-stages them.
