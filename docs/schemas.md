@@ -316,7 +316,18 @@ Both stream transports share a few **edge guards**, sized like everything else f
 
 ## NRT mode (offline rendering)
 
-The same engine renders scores to WAV without an audio device:
+The same engine renders OSC scores to WAV without an audio device.
+Native Linux builds with `plugin-clap` and their matching helper also accept
+`/def_send plugin`, `/synth_new` and `/plugin_event` in an OSC score. References
+are loaded synchronously before time advances. All audio ports and the same
+sample-offset event/transport spans are processed by the isolated helper.
+The configured bridge depth and intrinsic latency remain in the output; the
+renderer waits outside RT rather than dropping results against a deadline.
+An error, helper exit or processing timeout aborts with the node id and
+processing time. Arbitrary plugins need not be deterministic, even with a
+fixed engine seed. An in-page engine cannot load native libraries.
+
+The command is:
 
 ```sh
 clausters --nrt score.osc out.wav [--rate 48000] [--channels 2] \

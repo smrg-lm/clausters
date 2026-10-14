@@ -294,6 +294,21 @@ impl AudioInstance {
     pub fn publish(&mut self, job: &clausters_core::plugin_shm::Job, input: &[f32]) {
         self.producer.publish(job, input);
     }
+    /// Publish and wait for completion outside RT, retaining the normal due time.
+    /// A hang or process exit latches failure instead of leaving a silent render.
+    pub fn publish_offline(&mut self, job: &clausters_core::plugin_shm::Job, input: &[f32]) {
+        self.producer.publish(job, input);
+        let start = std::time::Instant::now();
+        while self.failure() == 0 && !self.producer.last_completed() {
+            if !matches!(self._owner.helper.child.try_wait(), Ok(None)) {
+                self.fail(Failure::Process);
+            } else if start.elapsed() >= DEFAULT_TIMEOUT {
+                self.fail(Failure::Starved);
+            } else {
+                std::thread::sleep(Duration::from_micros(50));
+            }
+        }
+    }
     /// Identity of this mapping incarnation.
     pub fn generation(&self) -> u64 {
         self.producer.view().config().generation

@@ -568,6 +568,18 @@ impl Producer<'_> {
         delivered
     }
 
+    /// Whether the last published job has completed. This only reads ownership
+    /// atomics; the producer still receives that result at its configured due time.
+    pub fn last_completed(&self) -> bool {
+        self.sequence == 0
+            || self
+                .view
+                .slot(self.sequence - 1)
+                .state
+                .load(Ordering::Acquire)
+                == DONE
+    }
+
     /// Publish the completed slices once; advances the device block sequence.
     pub fn publish(&mut self, job: &Job, input: &[f32]) {
         let seq = self.sequence;

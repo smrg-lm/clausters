@@ -208,6 +208,7 @@ pub struct PluginSynth {
     output: Vec<f32>,
     job: Job,
     open: bool,
+    offline: bool,
     fault: u32,
     reported: bool,
     pending: EventList,
@@ -222,6 +223,13 @@ pub struct PluginSynth {
 }
 impl PluginSynth {
     pub fn new(def: Arc<PluginDef>, sample_rate: f32) -> Result<Self, String> {
+        Self::with_mode(def, sample_rate, false)
+    }
+    /// Build a synchronous helper endpoint exclusively for the offline renderer.
+    pub(crate) fn offline(def: Arc<PluginDef>, sample_rate: f32) -> Result<Self, String> {
+        Self::with_mode(def, sample_rate, true)
+    }
+    fn with_mode(def: Arc<PluginDef>, sample_rate: f32, offline: bool) -> Result<Self, String> {
         let audio = AudioInstance::new(def.instance(sample_rate)?)?;
         let note_ports = def
             .info
@@ -268,6 +276,7 @@ impl PluginSynth {
             output: vec![0.0; outputs * FRAMES],
             job: Job::default(),
             open: false,
+            offline,
             fault: 0,
             reported: false,
             pending: EventList::default(),
@@ -610,7 +619,11 @@ impl SynthNode for PluginSynth {
     }
     fn finish_block(&mut self) {
         if self.open {
-            self.audio.publish(&self.job, &self.input);
+            if self.offline {
+                self.audio.publish_offline(&self.job, &self.input);
+            } else {
+                self.audio.publish(&self.job, &self.input);
+            }
             self.open = false;
         }
         self.fault = self.audio.failure();
@@ -805,5 +818,111 @@ impl SynthNode for PluginSynth {
             sink(msg);
             self.reported = true;
         }
+    }
+}
+
+#[cfg(test)]
+mod offline_tests {
+    use super::*;
+    use crate::dsp::{Buses, ControlBuses, TransportCtx};
+
+    #[test]
+    fn offline_and_live_helpers_agree_on_frozen_spans_and_transport_jumps() {
+        let directory =
+            std::env::temp_dir().join(format!("clausters-plugin-slices-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("fixture.clap");
+        assert!(
+            std::process::Command::new("cc")
+                .args([
+                    "-std=c11",
+                    "-O2",
+                    "-fPIC",
+                    "-shared",
+                    "-Itools/plugin-bridge/vendor",
+                    "tools/plugin-bridge/fixture.c",
+                    "-o"
+                ])
+                .arg(&path)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let reference = serde_json::from_value(serde_json::json!({"format":"clap", "path":path, "id":"org.clausters.fixture.instrument", "inputs":[], "outputs":[{"id":0,"channels":1,"bus":0}]})).unwrap();
+        let def = Arc::new(PluginDef::probe(reference, 48000.0).unwrap());
+        let mut live = PluginSynth::new(Arc::clone(&def), 48000.0).unwrap();
+        let mut offline = PluginSynth::offline(def, 48000.0).unwrap();
+        let buses = Buses::new(ControlBuses::new(16), 16);
+        let mut position = 0;
+        let mut heard = false;
+        for block in 0..20 {
+            if block == 7 {
+                position = 48000;
+            }
+            for (offset, frames) in [(0, 13), (13, 18), (31, 33)] {
+                let active = !(3..6).contains(&block) && !(block == 2 && offset == 13);
+                let ctx = ProcessCtx {
+                    sample_rate: 48000.0,
+                    full_sample_rate: 48000.0,
+                    buses: &buses,
+                    buffers: &[],
+                    offset,
+                    frames,
+                    transport: TransportCtx {
+                        position,
+                        rolling: active,
+                        ..Default::default()
+                    },
+                };
+                for synth in [&mut live, &mut offline] {
+                    synth.plugin_tempo(if block < 7 { 90.0 } else { 150.0 });
+                    synth.prepare_slice(&ctx, active);
+                    if block == 0 && offset == 13 {
+                        synth.plugin_event(
+                            1,
+                            Event {
+                                offset: 13,
+                                kind: EventKind::NoteOn as u32,
+                                port: 0,
+                                channel: 0,
+                                key: 60,
+                                note_id: 1,
+                                value: 0.5,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                    if block == 3 && offset == 0 {
+                        synth.release_plugin_notes(None, 0);
+                    }
+                    if block == 5 && offset == 31 {
+                        synth.plugin_event(
+                            2,
+                            Event {
+                                offset: 31,
+                                kind: EventKind::NoteOn as u32,
+                                port: 0,
+                                channel: 0,
+                                key: 64,
+                                note_id: 2,
+                                value: 0.5,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                }
+                if active {
+                    position += frames as u64;
+                }
+            }
+            live.finish_block();
+            offline.finish_block();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            assert_eq!(live.fault, 0);
+            assert_eq!(offline.fault, 0);
+            assert_eq!(live.output, offline.output);
+            heard |= offline.output.iter().any(|value| *value > 1.0);
+        }
+        assert!(heard, "the resumed note must reflect the transport jump");
     }
 }

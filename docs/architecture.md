@@ -1859,7 +1859,7 @@ publication, generation, event order and depth. The deterministic signal tests
 compare the resulting delayed samples with independent gain, delay and note
 expectations, including split/frozen spans and jumps. Arbitrary third-party
 plugins are not asserted deterministic. The Rust host above adds output-event queues and multi-port payloads;
-server RT/NRT equality remains acceptance work for engine integration; output event rejection in this fixture host is explicit via CLAP's
+server RT/NRT equality is tested with deterministic fixtures; output event rejection in this fixture host is explicit via CLAP's
 `try_push` result, and the fixtures emit no output events.
 
 **Safety is checked separately from timing.** Rust acceptance tests exercise
@@ -2005,3 +2005,28 @@ transport, with its first block as origin. Every active/frozen span carries the
 nearest bound transport's position, playing flag and BPM; the CLAP adapter
 supplies matching seconds and beat positions. A followed group keeps the
 transport clock running without becoming a governed, frozen subtree.
+
+### Offline native plugin processing
+
+The offline renderer loads `plugin` references synchronously before scheduling
+nodes. Its translator builds an exclusively offline `PluginSynth`; live
+translators always build nonblocking endpoints. Both modes stage identical
+input ports, events and transport spans and use the same producer, helper and
+configured bridge depth. Offline publication waits for the submitted slot to
+reach `DONE`, without consuming it early: output is still received at its
+normal due block. This keeps bridge and intrinsic latency in the rendered audio.
+No layout or helper handshake change is required.
+
+The wait is outside RT and bounded to the helper's two-second processing
+timeout per block. A process exit latches a processing fault; a hang latches
+starvation. Processing errors and capacity failures use the existing fault
+channel. The renderer aborts before handing that block to its sink, reporting
+the responsible node and the block's processing time. Helper retirement still
+happens outside RT, including when rendering exits on error.
+
+Deterministic fixtures compare live and offline samples exactly at multiple
+bridge depths, including parameter changes, multi-port audio, intrinsic delay,
+notes and expression within split blocks. Frozen spans, deferred events, tempo
+changes and transport jumps are compared through the same slice contract.
+Third-party plugins can use entropy, wall time or external resources; neither
+this processing mode nor the engine's random seed makes them deterministic.

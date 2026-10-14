@@ -116,6 +116,14 @@ path compensation are not available yet. See the
 
 `node.restart_plugin()` prepares recovery asynchronously and waits for its acknowledgement.
 
+Offline OSC scores can also carry plugin definitions and persistent events
+when rendered by a native Linux build with `plugin-clap` and its matching
+helper. The bridge latency stays in the samples; processing waits outside RT,
+and a failed or hung helper aborts with the node id and processing time.
+Plugins are deterministic only when their own implementation and inputs are;
+the engine's random seed does not control a plugin's randomness.
+See the [offline reference](https://clausters.readthedocs.io/en/latest/schemas.html#nrt-mode-offline-rendering).
+
 ### Persistent native instruments
 
 `node.plugin_event(event)` sends notes, MIDI or native per-note expression to the

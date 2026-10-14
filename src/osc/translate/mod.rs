@@ -247,6 +247,8 @@ pub struct CmdTranslator {
     #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
     pub plugin_defs: HashMap<String, Arc<crate::plugin::PluginDef>>,
     #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    pub(crate) offline_plugins: bool,
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
     plugin_note_queues: HashMap<plugin::MidiAddress, std::collections::VecDeque<i32>>,
     #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
     plugin_note_counts: HashMap<i32, usize>,
@@ -354,6 +356,8 @@ impl CmdTranslator {
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
             plugin_defs: HashMap::new(),
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            offline_plugins: false,
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
             plugin_note_queues: HashMap::new(),
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
             plugin_note_counts: HashMap::new(),
@@ -424,7 +428,11 @@ impl CmdTranslator {
         }
         #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
         if let Some(def) = self.plugin_defs.get(name) {
-            let synth = crate::plugin::PluginSynth::new(Arc::clone(def), self.sample_rate)?;
+            let synth = if self.offline_plugins {
+                crate::plugin::PluginSynth::offline(Arc::clone(def), self.sample_rate)?
+            } else {
+                crate::plugin::PluginSynth::new(Arc::clone(def), self.sample_rate)?
+            };
             let generation = synth.incarnation();
             return Ok((
                 Box::new(synth),

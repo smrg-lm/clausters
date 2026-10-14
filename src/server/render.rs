@@ -313,6 +313,10 @@ fn render_logged(
                 cfg.limits,
             );
             t.set_seed(seed);
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            {
+                t.offline_plugins = true;
+            }
             t
         },
         block: vec![0.0; BLOCK_SIZE * cfg.channels],
@@ -496,7 +500,8 @@ impl Renderer {
             "/def_send" => {
                 let Some(OscType::String(family)) = msg.args.first() else {
                     return Err(
-                        "expected a family string (\"synth\", \"faust\" or \"graph\")".into(),
+                        "expected a family string (\"synth\", \"faust\", \"graph\" or \"plugin\")"
+                            .into(),
                     );
                 };
                 let rest = &msg.args[1..];
@@ -504,6 +509,7 @@ impl Renderer {
                     "synth" => self.translator.d_recv(rest).map(|_| ()),
                     "faust" => self.d_faust(rest),
                     "graph" => self.translator.d_graph(rest).map(|_| ()),
+                    "plugin" => self.d_plugin(rest),
                     other => Err(format!("unknown def family '{other}'")),
                 }
             }
@@ -549,6 +555,26 @@ impl Renderer {
             }
             _ => self.translator.translate(msg, cmds),
         }
+    }
+
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    fn d_plugin(&mut self, args: &[OscType]) -> Result<(), String> {
+        let Some(OscType::String(name)) = args.first() else {
+            return Err("expected plugin name and reference JSON".into());
+        };
+        let reference = serde_json::from_slice(crate::osc::args::json_payload(&args[1..])?)
+            .map_err(|e| format!("invalid plugin reference: {e}"))?;
+        let def = crate::plugin::PluginDef::probe(reference, self.sample_rate as f32)?;
+        self.translator.d_free(&[OscType::String(name.clone())])?;
+        self.translator
+            .plugin_defs
+            .insert(name.clone(), Arc::new(def));
+        Ok(())
+    }
+
+    #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+    fn d_plugin(&mut self, _args: &[OscType]) -> Result<(), String> {
+        Err("server built without native CLAP support".into())
     }
 
     #[cfg(all(feature = "faust", not(target_arch = "wasm32")))]
