@@ -127,7 +127,7 @@ jobs:
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev libx11-dev xvfb xauth clang
       - uses: Swatinem/rust-cache@v2
         with:
           key: verify
@@ -139,9 +139,9 @@ jobs:
       - run: cargo fetch --locked --manifest-path crates/clausters-plugin-host/tests/fixtures/vst3/Cargo.toml
       - name: The fmt + clippy + rustdoc matrix
         run: .agents/skills/feature-matrix/check.sh
-      - run: cargo test -p clausters-plugin-host --no-default-features --features clap,vst3
+      - run: xvfb-run -a cargo test -p clausters-plugin-host --no-default-features --features clap,vst3
       - run: cargo build -p clausters-plugin-host --no-default-features --features clap,vst3
-      - run: cargo test --no-default-features --features plugin-clap,plugin-vst3 --test plugin_events --test plugin_family --test plugin_offline --test plugin_scan --test plugin_state --test plugin_vst3
+      - run: xvfb-run -a cargo test --no-default-features --features plugin-clap,plugin-vst3 --test plugin_events --test plugin_family --test plugin_offline --test plugin_scan --test plugin_state --test plugin_vst3 --test plugin_editor
       # Mirrors ci.yml's test-default invocation, including --test-threads=1 and
       # the coredump capture: this is the run that has historically produced the
       # Faust SIGILL, and a release failing here is exactly when the dump is
@@ -185,7 +185,7 @@ jobs:
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang patchelf
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev libx11-dev xvfb xauth clang patchelf
       - uses: Swatinem/rust-cache@v2
       - name: Build the wheel (release profile; wheel-only, see note)
         # No sdist: the package builds cdylibs from the Rust workspace, which
@@ -199,9 +199,10 @@ jobs:
           python -m build --wheel
       - name: Package the standalone server binary
         run: |
-          cargo build --release
+          cargo build --release --features plugin-clap,plugin-vst3
+          cargo build --release -p clausters-plugin-host --no-default-features --features clap,vst3
           VERSION="${GITHUB_REF_NAME#v}"
-          tar -C target/release -czf "clausters-server-${VERSION}-linux-x86_64.tar.gz" clausters
+          tar -C target/release -czf "clausters-server-${VERSION}-linux-x86_64.tar.gz" clausters clausters-plugin-host
       # What the package actually weighs and what it actually carries, in the
       # log, every time one is built. Both numbers move with the pinned LLVM
       # (its Support library is most of libfaust), and the bundled list is how a

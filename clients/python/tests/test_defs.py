@@ -1094,3 +1094,28 @@ def test_live_plugin_state_rejects_osc_scores():
         node.save_plugin_state()
     with pytest.raises(CommandError, match="OSC score"):
         node.load_plugin_state(b"state")
+
+
+def test_native_plugin_editor_wire_state_and_score_rejection():
+    from clausters.defs import Node
+    from clausters.errors import CommandError
+    iface = _FakeInterface()
+    server = Server(interface=iface)
+    node = Node(42, server)
+    for command, operation, payload in [
+        ("/plugin_openEditor", node.open_plugin_editor, []),
+        ("/plugin_resizeEditor", lambda: node.resize_plugin_editor(480, 280), [480, 280]),
+        ("/plugin_closeEditor", node.close_plugin_editor, []),
+    ]:
+        iface._replies = [osc.message("/done", command, 42, '{}')]
+        assert operation() is node
+        assert iface.sent[-1] == (command, [42, *payload])
+    state = {"open": True, "width": 480, "height": 280}
+    iface._replies = [osc.message("/done", "/plugin_queryEditor", 42, json.dumps(state))]
+    assert node.query_plugin_editor() == state
+    with pytest.raises(ValueError):
+        node.resize_plugin_editor(0, 100)
+    for operation in (node.open_plugin_editor, node.close_plugin_editor, node.query_plugin_editor):
+        node.server = Server(interface=OscNrtInterface())
+        with pytest.raises(CommandError, match="OSC score"):
+            operation()

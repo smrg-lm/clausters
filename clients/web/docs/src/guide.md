@@ -324,11 +324,20 @@ Latency includes the bounded block pipeline. General server delay compensation
 aligns statically admitted automatic bus paths across all def families, including
 convolution; use the group's `autoOrder()`.
 Nested automatic groups share the plan; manual/dynamic/feedback boundaries are
-reported by `/group_dumpGraph`. Musical delays are unchanged. Native editors
-remain planned. See the
+reported by `/group_dumpGraph`. Musical delays are unchanged. Native X11/XWayland editors open on the server's machine. See the
 [protocol reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-definitions-and-recovery).
 
 `await node.restartPlugin()` waits for recovery preparation. A browser client can control plugins on a native server; its in-page engine reports a capability error.
+
+`await node.openPluginEditor()` opens or raises the plugin's native editor;
+`await node.closePluginEditor()` closes it without stopping audio. A resizable
+editor accepts `await node.resizePluginEditor(width, height)` in physical
+pixels. `await node.queryPluginEditor()` returns `open`, `width` and `height`.
+A browser connected to a native server opens that window on the server's
+machine. The in-page engine reports a capability error. Parameter changes
+update `/synth_get` queries and subscribed `/plugin_edit` notifications through the
+same bridge; a mapped bus remains authoritative. State capture/load and
+restart replace the helper and close its editor; reopen it afterward.
 
 `const state = await node.savePluginState()` captures that live node's opaque
 `Uint8Array`; `await node.loadPluginState(state)` loads it into a live node.

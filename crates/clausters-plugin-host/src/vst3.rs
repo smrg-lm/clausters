@@ -7,7 +7,9 @@
 
 #[path = "vst3/message.rs"]
 mod message;
+use crate::editor::{self, Timer, Window, WindowEvent};
 use crate::format::*;
+use ::vst3::Steinberg::Linux::*;
 use ::vst3::{Class, ComPtr, ComWrapper, Interface, Steinberg::Vst::*, Steinberg::*};
 use clausters_core::plugin_shm::{
     Config, EVENTS, Event as WireEvent, EventKind, EventList, FRAMES, Span,
@@ -17,6 +19,7 @@ use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::ptr;
+use std::rc::Rc;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -170,9 +173,10 @@ struct Shared {
 struct Host {
     shared: Arc<Shared>,
     edits: RefCell<rtrb::Producer<WireEvent>>,
+    windows: Rc<RefCell<Windows>>,
 }
 impl Class for Host {
-    type Interfaces = (IHostApplication, IComponentHandler, IPlugFrame);
+    type Interfaces = (IHostApplication, IComponentHandler, IPlugFrame, IRunLoop);
 }
 impl IHostApplicationTrait for Host {
     unsafe fn getName(&self, name: *mut String128) -> tresult {
@@ -196,11 +200,102 @@ impl IHostApplicationTrait for Host {
         unsafe { message::create(cid, iid, obj) }
     }
 }
+#[derive(Default)]
+struct Windows {
+    window: Option<Window>,
+    view: Option<ComPtr<IPlugView>>,
+    timers: Vec<Timer<ComPtr<ITimerHandler>>>,
+    fds: Vec<(i32, ComPtr<IEventHandler>)>,
+}
 impl IPlugFrameTrait for Host {
-    unsafe fn resizeView(&self, _: *mut IPlugView, _: *mut ViewRect) -> tresult {
-        // No window is attached during discovery; floating editor ownership is
-        // provided by the native window layer, not the audio adapter.
-        kNotImplemented
+    unsafe fn resizeView(&self, view: *mut IPlugView, rect: *mut ViewRect) -> tresult {
+        if rect.is_null() || view.is_null() {
+            return kInvalidArgument;
+        }
+        // SAFETY: VST3 owns both call arguments for the duration of this callback.
+        let (width, height) =
+            unsafe { ((*rect).right - (*rect).left, (*rect).bottom - (*rect).top) };
+        let owned = {
+            let mut windows = self.windows.borrow_mut();
+            if windows.view.as_ref().is_none_or(|v| v.as_ptr() != view) {
+                return kInvalidArgument;
+            }
+            if let Some(w) = &mut windows.window {
+                w.resize(width as u32, height as u32).is_ok()
+            } else {
+                false
+            }
+        };
+        if !owned {
+            return kInvalidArgument;
+        }
+        // Release the RefCell before onSize: a plugin may reenter its frame.
+        unsafe {
+            let v = ComPtr::from_raw(view).unwrap();
+            let result = v.onSize(rect);
+            std::mem::forget(v);
+            result
+        }
+    }
+}
+impl IRunLoopTrait for Host {
+    unsafe fn registerEventHandler(&self, handler: *mut IEventHandler, fd: i32) -> tresult {
+        if handler.is_null() || fd < 0 {
+            return kInvalidArgument;
+        }
+        let mut windows = self.windows.borrow_mut();
+        if windows.fds.len() >= editor::CALLBACKS || windows.fds.iter().any(|p| p.0 == fd) {
+            return kInvalidArgument;
+        }
+        // SAFETY: plugin provides a live COM object; retain our own reference.
+        unsafe {
+            let h = ComPtr::from_raw(handler).unwrap();
+            windows.fds.push((fd, h.clone()));
+            std::mem::forget(h);
+        }
+        kResultOk
+    }
+    unsafe fn unregisterEventHandler(&self, handler: *mut IEventHandler) -> tresult {
+        let mut windows = self.windows.borrow_mut();
+        let n = windows.fds.len();
+        windows.fds.retain(|p| p.1.as_ptr() != handler);
+        if windows.fds.len() == n {
+            kInvalidArgument
+        } else {
+            kResultOk
+        }
+    }
+    unsafe fn registerTimer(&self, handler: *mut ITimerHandler, milliseconds: u64) -> tresult {
+        if handler.is_null() {
+            return kInvalidArgument;
+        }
+        let mut windows = self.windows.borrow_mut();
+        if windows.timers.len() >= editor::CALLBACKS
+            || windows.timers.iter().any(|p| p.id.as_ptr() == handler)
+        {
+            return kInvalidArgument;
+        }
+        // SAFETY: plugin provides a live COM object; retain our own reference.
+        let h = unsafe { ComPtr::from_raw(handler).unwrap() };
+        let timer = Timer::new(h.clone(), milliseconds);
+        std::mem::forget(h);
+        match timer {
+            Ok(t) => {
+                windows.timers.push(t);
+                kResultOk
+            }
+            Err(_) => kInvalidArgument,
+        }
+    }
+    unsafe fn unregisterTimer(&self, handler: *mut ITimerHandler) -> tresult {
+        let mut windows = self.windows.borrow_mut();
+        let n = windows.timers.len();
+        windows.timers.retain(|p| p.id.as_ptr() != handler);
+        if windows.timers.len() == n {
+            kInvalidArgument
+        } else {
+            kResultOk
+        }
     }
 }
 impl IComponentHandlerTrait for Host {
@@ -365,12 +460,16 @@ struct Instance {
     active: bool,
     info: PluginInfo,
     shared: Arc<Shared>,
+    windows: Rc<RefCell<Windows>>,
     _host: ComWrapper<Host>,
     handler: Option<ComWrapper<Host>>,
     _module: Module,
 }
 impl Drop for Instance {
     fn drop(&mut self) {
+        let _ = self.editor(EditorCommand::Close);
+        self.windows.borrow_mut().timers.clear();
+        self.windows.borrow_mut().fds.clear();
         // SAFETY: helper returns the stopped processor before releasing main ownership.
         unsafe {
             if self.active {
@@ -405,9 +504,11 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
                 .collect(),
         });
         let (tx, rx) = rtrb::RingBuffer::new(EVENTS);
+        let windows = Rc::new(RefCell::new(Windows::default()));
         let host = ComWrapper::new(Host {
             shared: Arc::clone(&shared),
             edits: RefCell::new(tx),
+            windows: Rc::clone(&windows),
         });
         let context = host.to_com_ptr::<IHostApplication>().unwrap();
         ok(component.initialize(context.as_ptr().cast()))?;
@@ -476,6 +577,7 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
             active: false,
             info,
             shared,
+            windows,
             _host: host,
             handler: None,
             _module: module,
@@ -498,6 +600,7 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         let host = ComWrapper::new(Host {
             shared: Arc::clone(&shared),
             edits: RefCell::new(tx),
+            windows: Rc::clone(&instance.windows),
         });
         ok(instance
             .controller
@@ -715,6 +818,7 @@ impl FormatInstance for Instance {
         }
         Ok(Box::new(Processor {
             edits: self.edits.take().ok_or("VST3 already activated")?,
+            editor_parameters: EventList::default(),
             midi,
             note_inputs: info.note_inputs.len(),
             note_outputs: info.note_outputs.len(),
@@ -809,7 +913,159 @@ impl FormatInstance for Instance {
             .map(|p| f64::from_bits(p.1.load(Ordering::Acquire)))
             .ok_or("unknown VST3 parameter".into())
     }
+    fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String> {
+        if matches!(command, EditorCommand::Close) {
+            let view = self.windows.borrow_mut().view.take();
+            if let Some(view) = view {
+                // SAFETY: view is attached to our retained parent on this main thread.
+                unsafe {
+                    let _ = view.removed();
+                    let _ = view.setFrame(ptr::null_mut());
+                }
+            }
+            self.windows.borrow_mut().window = None;
+            return Ok(EditorState::default());
+        }
+        if matches!(command, EditorCommand::Open) && self.windows.borrow().view.is_none() {
+            // SAFETY: controller and editor lifecycle remain on main.
+            unsafe {
+                let view = ComPtr::from_raw(self.controller.createView(c"editor".as_ptr()))
+                    .ok_or("plugin has no native editor")?;
+                ok(view.isPlatformTypeSupported(c"X11EmbedWindowID".as_ptr()))?;
+                let mut rect: ViewRect = zero();
+                ok(view.getSize(&mut rect))?;
+                let mut window = Window::new(
+                    &self.info.name,
+                    (rect.right - rect.left) as u32,
+                    (rect.bottom - rect.top) as u32,
+                )?;
+                let resizable = view.canResize() == kResultOk;
+                window.resize_hints(resizable, resizable);
+                let id = window.id;
+                {
+                    let mut w = self.windows.borrow_mut();
+                    w.window = Some(window);
+                    w.view = Some(view.clone());
+                }
+                let result = (|| {
+                    ok(view.setFrame(
+                        self.handler
+                            .as_ref()
+                            .unwrap()
+                            .to_com_ptr::<IPlugFrame>()
+                            .unwrap()
+                            .as_ptr(),
+                    ))?;
+                    ok(view.attached(id as usize as *mut c_void, c"X11EmbedWindowID".as_ptr()))?;
+                    ok(view.onSize(&mut rect))?;
+                    Ok::<_, String>(())
+                })();
+                if let Err(error) = result {
+                    let _ = self.editor(EditorCommand::Close);
+                    return Err(error);
+                }
+            }
+        }
+        if matches!(command, EditorCommand::Open)
+            && let Some(w) = &self.windows.borrow().window
+        {
+            w.show();
+        }
+        if let EditorCommand::Resize { width, height } = command {
+            if !EditorState::valid_size(width, height) {
+                return Err("invalid plugin editor size".into());
+            }
+            let view = self
+                .windows
+                .borrow()
+                .view
+                .clone()
+                .ok_or("plugin editor is closed")?;
+            // SAFETY: main-thread view, stack rect remains live throughout these calls.
+            unsafe {
+                ok(view.canResize()).map_err(|_| "plugin editor does not support host resizing")?;
+                let mut rect = ViewRect {
+                    left: 0,
+                    top: 0,
+                    right: width as i32,
+                    bottom: height as i32,
+                };
+                ok(view.checkSizeConstraint(&mut rect))?;
+                self.windows
+                    .borrow_mut()
+                    .window
+                    .as_mut()
+                    .ok_or("plugin editor is closed")?
+                    .resize(
+                        (rect.right - rect.left) as u32,
+                        (rect.bottom - rect.top) as u32,
+                    )?;
+                ok(view.onSize(&mut rect))?;
+            }
+        }
+        Ok(self
+            .windows
+            .borrow()
+            .window
+            .as_ref()
+            .map(|w| w.state())
+            .unwrap_or_default())
+    }
     fn main_callback(&mut self) {
+        let timers: Vec<_> = self
+            .windows
+            .borrow_mut()
+            .timers
+            .iter_mut()
+            .filter_map(|t| t.due().then(|| t.id.clone()))
+            .collect();
+        for h in timers {
+            if self
+                .windows
+                .borrow()
+                .timers
+                .iter()
+                .any(|t| t.id.as_ptr() == h.as_ptr())
+            {
+                // SAFETY: retained COM timer, called on main without reactor borrows.
+                unsafe {
+                    h.onTimer();
+                }
+            }
+        }
+        let fds = self.windows.borrow().fds.clone();
+        for (fd, h) in fds {
+            if editor::fd_ready(fd, libc::POLLIN) != 0
+                && self
+                    .windows
+                    .borrow()
+                    .fds
+                    .iter()
+                    .any(|p| p.0 == fd && p.1.as_ptr() == h.as_ptr())
+            {
+                // SAFETY: retained COM handler, called on main without reactor borrows.
+                unsafe {
+                    h.onFDIsSet(fd);
+                }
+            }
+        }
+        let events = self
+            .windows
+            .borrow_mut()
+            .window
+            .as_mut()
+            .map(|w| w.events())
+            .unwrap_or_default();
+        for event in events {
+            match event {
+                WindowEvent::Close => {
+                    let _ = self.editor(EditorCommand::Close);
+                }
+                WindowEvent::Resize(width, height) => {
+                    let _ = self.editor(EditorCommand::Resize { width, height });
+                }
+            }
+        }
         for (id, value) in &self.shared.values {
             unsafe {
                 let _ = self
@@ -1039,6 +1295,7 @@ impl IEventListTrait for Events {
 }
 struct Processor {
     edits: rtrb::Consumer<WireEvent>,
+    editor_parameters: EventList,
     midi: Vec<u32>,
     note_inputs: usize,
     note_outputs: usize,
@@ -1078,6 +1335,28 @@ impl FormatProcessor for Processor {
         self.pause();
         self
     }
+    fn editor_events(&mut self, result: &mut EventList) -> Result<(), String> {
+        for _ in 0..EVENTS {
+            let Ok(event) = self.edits.pop() else {
+                break;
+            };
+            if !result.push(event) {
+                return Err("VST3 callback capacity exceeded".into());
+            }
+            if event.kind == EventKind::Parameter as u32 {
+                if let Some(current) = self.editor_parameters.values
+                    [..self.editor_parameters.count as usize]
+                    .iter_mut()
+                    .find(|e| e.id == event.id)
+                {
+                    *current = event;
+                } else if !self.editor_parameters.push(event) {
+                    return Err("VST3 editor parameter capacity exceeded".into());
+                }
+            }
+        }
+        Ok(())
+    }
     fn process(
         &mut self,
         span: Span,
@@ -1093,25 +1372,16 @@ impl FormatProcessor for Processor {
         self.output_params.clear();
         self.input_events.clear();
         self.output_events.clear();
-        let mut callback_events = EventList::default();
-        for _ in 0..EVENTS {
-            let Ok(mut event) = self.edits.pop() else {
-                break;
-            };
-            event.offset = span.offset;
-            if !callback_events.push(event) {
-                return Err("VST3 callback capacity exceeded".into());
-            }
-            if event.kind == EventKind::Parameter as u32 {
-                let q = self
-                    .input_params
-                    .queue(event.id)
-                    .ok_or("VST3 callback capacity exceeded")?;
-                unsafe {
-                    let _ = q.addPoint(0, event.value, ptr::null_mut());
-                }
+        for event in &self.editor_parameters.values[..self.editor_parameters.count as usize] {
+            let queue = self
+                .input_params
+                .queue(event.id)
+                .ok_or("VST3 callback capacity exceeded")?;
+            unsafe {
+                ok(queue.addPoint(0, event.value, ptr::null_mut()))?;
             }
         }
+        self.editor_parameters.count = 0;
         for event in &events.values[..events.count as usize] {
             if event.offset >= span.frames {
                 return Err("invalid VST3 input offset".into());
@@ -1339,7 +1609,7 @@ impl FormatProcessor for Processor {
         {
             return Err("VST3 output event capacity exceeded".into());
         }
-        let mut collected = callback_events;
+        let mut collected = EventList::default();
         for q in &self.output_params.queues[..self.output_params.count.get()] {
             for &(sample, value) in q.points.borrow().iter() {
                 if sample < 0 || sample >= frames as i32 {

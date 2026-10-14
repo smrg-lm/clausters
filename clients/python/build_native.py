@@ -15,6 +15,9 @@ core through artifacts built by cargo, not pip:
 - the ``clausters`` binary (default features) -> the **standalone server**
   shipped as the wheel's ``clausters`` command (a separate, networked or
   shared-memory server process; the embedded one above runs in-process).
+- ``clausters-plugin-host`` (Linux) -> the isolated CLAP/VST3 helper, staged
+  beside the server and resolved by the embedded library too. Its package
+  and protocol versions are checked before loading any plugin.
 - the ``clausters-gui`` binary (from the **independent** ``clients/gui`` cargo
   workspace) -> the **visual server** the launcher runs (`clausters.launch` /
   `clausters.Session.gui`). Bundled here too, stripped, so the one package is
@@ -103,7 +106,7 @@ _CRATES = {
     # a shell over it rather than a second implementation. Dropped when the
     # machine has no libverovio to link -- see `_ffi_features`.
     "clausters_ffi": ("clausters-ffi", "verovio"),
-    "clausters": ("clausters", "embed,realtime"),  # overridable below
+    "clausters": ("clausters", "embed,realtime,plugin-clap,plugin-vst3"),  # overridable below
     # `live` is not this crate's default -- the file writers (SMF, MIDI 2.0
     # clip) need no system MIDI -- but the wheel always ships it, because
     # `MidiFunc`/`MidiReceiver` open a virtual port and without the feature a
@@ -398,7 +401,8 @@ def stage_faust_libs(profile: str) -> list[str]:
     # exactly as the server does -- in that mode it is the server, with a
     # window over it -- and a closure that skipped it would vendor whatever the
     # server happens to need and miss anything only the host asks for.
-    artifacts = [p for p in (staged_bin(), staged_gui_bin(), *staged_libs()) if p]
+    helper = os.path.join(BIN_DIR, "clausters-plugin-host")
+    artifacts = [p for p in (staged_bin(), staged_gui_bin(), *staged_libs(), helper if os.path.isfile(helper) else None) if p]
     # The one library we deliberately vendor (the Faust JIT compiler), keyed by
     # the exact soname the loader asks for and its resolved build-host path. We
     # scope the closure to *this* root, not to the whole binary, so we never drag
@@ -719,6 +723,8 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
         elif features:
             feat = features  # an explicit list is yours to get right
         else:
+            if platform.system() != "Linux":
+                default_feat = default_feat.replace(",plugin-clap,plugin-vst3", "")
             feat, no_default = _server_features(default_feat, dropped)
         _cargo_build(workspace, crate, feat, profile, no_default)
     copied = stage(workspace, profile)
@@ -726,10 +732,18 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
         raise SystemExit("clausters: cargo produced no cdylibs to stage")
     # The standalone server binary (default features), bundled so the wheel's
     # `clausters` command can run a separate (networked / shared-memory) server.
-    _cargo_build_bin(workspace, profile, *_server_features("", dropped))
+    _cargo_build_bin(workspace, profile, *_server_features("plugin-clap,plugin-vst3" if platform.system() == "Linux" else "", dropped))
     binname = stage_binary(workspace, profile)
     if binname:
         copied.append(binname)
+    # The isolated native plugin helper is a matching artifact of server/embed.
+    if platform.system() == "Linux":
+        _cargo_build(workspace, "clausters-plugin-host", "clap,vst3", profile, True)
+        os.makedirs(BIN_DIR, exist_ok=True)
+        _stage(os.path.join(workspace, "target", profile, "clausters-plugin-host"),
+               os.path.join(BIN_DIR, "clausters-plugin-host"))
+        _strip(os.path.join(BIN_DIR, "clausters-plugin-host"))
+        copied.append("clausters-plugin-host")
     # The visual server (clausters-gui), from its own workspace, bundled so the
     # one package is self-contained. Skippable for a light, server-only wheel.
     if not os.environ.get("CLAUSTERS_SKIP_GUI_BUILD"):

@@ -16,3 +16,6 @@ pub mod runtime;
 
 #[cfg(all(target_os = "linux", feature = "vst3"))]
 mod vst3;
+
+#[cfg(all(target_os = "linux", any(feature = "clap", feature = "vst3")))]
+mod editor;

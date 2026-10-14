@@ -2142,3 +2142,44 @@ latency replacement, history retention and mismatching future plans under
 `assert_no_alloc`. A SynthDef convolver supplies the same graph in the live
 engine and offline renderer, with identical samples. The runnable example is
 `examples/delay_compensation.rs`.
+
+
+## Native plugin editors and distribution
+
+The helper main loop owns native editor lifetime and pumps X11 events, CLAP
+GUI requests, timer-support and POSIX-fd callbacks, and VST3 `IPlugFrame` /
+Linux `IRunLoop` handlers. Embedded editors attach to a floating X11 parent;
+CLAP's plugin-managed floating mode is a fallback. Parents outlive attachment
+and are freed after detach/editor resource release. Audio keeps running on its
+own worker; the server callback never enters any GUI operation.
+
+Each callback class admits at most 64 registrations. The main loop snapshots
+ready handlers, releases reactor borrows and rechecks registration before
+calling them, allowing callbacks to unregister themselves or other handlers.
+Missed timer ticks coalesce rather than starving administrative requests.
+The loop handles at most 256 parent-window events per turn and polls at 10 ms;
+plugins use their own registered fds/timers to dispatch their child events.
+Parent geometry is read once per turn. An accepted host resize keeps its
+requested size for up to 500 ms while the window manager applies it, so stale
+configure events cannot replay an older size into the editor.
+
+The existing four-job plugin worker sends editor requests through a node's
+administrative lease. Replies check the incarnation and live mirror entry;
+free/reuse cannot acknowledge an editor belonging to the wrong node.
+Editor changes travel as bounded parameter/gesture events through the audio
+plane. `PluginSynth` updates unmapped controls and buffers feedback without
+allocation. CLAP flushes requested edits on the helper audio thread without
+advancing DSP; VST3 retains processor parameter changes for the next active
+span while reporting controller edits immediately. Frozen nodes therefore
+keep their editor and parameter queries responsive. Inline reply messages carry the generation in four exactly
+represented 16-bit values; the network thread checks it before updating query
+values and sending `/plugin_edit`. A bus map remains authoritative. Reply FIFO
+notifications retain their existing best-effort capacity behavior.
+
+Administrative handshake version 5 includes the package version as well as
+plane versions and capacities; the public C ABIs and audio segment are unchanged.
+The release server archive ships both native adapters and its helper. Linux
+Python staging builds both adapters for server/embed and stages the helper in
+`_bin`. Embedded lookup uses the loaded library's location, so installed wheels
+and relocated prefix installs do not depend on the Python executable's path or
+the build machine's source checkout. An explicit override still wins.

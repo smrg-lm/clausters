@@ -1,5 +1,6 @@
 //! CLAP adapter. Loaded only inside disposable/instance helper processes.
 
+use crate::editor::{self, Timer, Window as NativeWindow, WindowEvent};
 use crate::format::*;
 use clack_common::events::event_types::*;
 use clack_common::events::io::{EventBuffer, OutputEventBuffer, OutputEvents, TryPushError};
@@ -7,18 +8,27 @@ use clack_common::events::spaces::CoreEventSpace;
 use clack_common::events::{EventFlags, EventHeader, Match, Pckn, UnknownEvent};
 use clack_common::utils::{BeatTime, ClapId, SecondsTime};
 use clack_extensions::audio_ports::{AudioPortInfoBuffer, PluginAudioPorts};
-use clack_extensions::gui::{GuiApiType, GuiConfiguration, PluginGui};
+use clack_extensions::gui::{
+    GuiApiType, GuiConfiguration, GuiSize, HostGui, HostGuiImpl, PluginGui, Window,
+};
 use clack_extensions::latency::PluginLatency;
 use clack_extensions::note_ports::{NotePortInfoBuffer, PluginNotePorts};
-use clack_extensions::params::{ParamInfoBuffer, PluginParams};
+use clack_extensions::params::{
+    HostParams, HostParamsImplMainThread, HostParamsImplShared, ParamClearFlags, ParamInfoBuffer,
+    ParamRescanFlags, PluginParams,
+};
+use clack_extensions::posix_fd::{FdFlags, HostPosixFd, HostPosixFdImpl, PluginPosixFd};
 use clack_extensions::state::PluginState;
 use clack_extensions::thread_check::{HostThreadCheck, HostThreadCheckImpl};
+use clack_extensions::timer::{HostTimer, HostTimerImpl, PluginTimer, TimerId};
 use clack_host::prelude::*;
 use clack_host::process::PluginAudioProcessor;
 use clausters_core::plugin_shm::{Config, Event as WireEvent, EventKind, EventList, FRAMES, Span};
 use std::any::Any;
+use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, ThreadId};
@@ -28,6 +38,10 @@ struct Signals {
     audio: OnceLock<ThreadId>,
     callback: AtomicBool,
     restart: AtomicBool,
+    gui: std::sync::atomic::AtomicU32,
+    resize: std::sync::atomic::AtomicU64,
+    flush: AtomicBool,
+    hints: AtomicBool,
 }
 struct Shared(Arc<Signals>);
 impl SharedHandler<'_> for Shared {
@@ -47,13 +61,130 @@ impl HostThreadCheckImpl for Shared {
         self.0.audio.get() == Some(&thread::current().id())
     }
 }
+impl HostGuiImpl for Shared {
+    fn resize_hints_changed(&self) {
+        self.0.hints.store(true, Ordering::Release);
+    }
+    fn request_resize(&self, size: GuiSize) -> Result<(), HostError> {
+        if !EditorState::valid_size(size.width, size.height) {
+            return Err(HostError::Message("invalid plugin editor size"));
+        }
+        self.0.resize.store(
+            (size.width as u64) << 32 | size.height as u64,
+            Ordering::Release,
+        );
+        Ok(())
+    }
+    fn request_show(&self) -> Result<(), HostError> {
+        self.0.gui.store(1, Ordering::Release);
+        Ok(())
+    }
+    fn request_hide(&self) -> Result<(), HostError> {
+        self.0.gui.store(2, Ordering::Release);
+        Ok(())
+    }
+    fn closed(&self, _: bool) {
+        self.0.gui.store(2, Ordering::Release);
+    }
+}
+impl HostParamsImplShared for Shared {
+    // The active processor runs process() for parameter flushes, including editor edits.
+    fn request_flush(&self) {
+        self.0.flush.store(true, Ordering::Release);
+    }
+}
+#[derive(Default)]
+struct Callbacks {
+    timers: Vec<Timer<TimerId>>,
+    fds: Vec<(i32, FdFlags)>,
+    next: u32,
+}
+struct Main {
+    callbacks: Rc<RefCell<Callbacks>>,
+    signals: Arc<Signals>,
+}
+impl MainThreadHandler<'_> for Main {}
+impl HostTimerImpl for Main {
+    fn register_timer(&self, period: u32) -> Result<TimerId, HostError> {
+        let mut c = self.callbacks.borrow_mut();
+        if c.timers.len() >= editor::CALLBACKS || c.next == u32::MAX {
+            return Err(HostError::Message("plugin timer capacity exceeded"));
+        }
+        let id = TimerId(c.next);
+        c.next += 1;
+        c.timers.push(
+            Timer::new(id, period as u64)
+                .map_err(|_| HostError::Message("invalid plugin timer period"))?,
+        );
+        Ok(id)
+    }
+    fn unregister_timer(&self, id: TimerId) -> Result<(), HostError> {
+        let mut c = self.callbacks.borrow_mut();
+        let n = c.timers.len();
+        c.timers.retain(|t| t.id != id);
+        if n == c.timers.len() {
+            Err(HostError::Message("unknown plugin timer"))
+        } else {
+            Ok(())
+        }
+    }
+}
+impl HostPosixFdImpl for Main {
+    fn register_fd(&self, fd: i32, flags: FdFlags) -> Result<(), HostError> {
+        let mut c = self.callbacks.borrow_mut();
+        if fd < 0
+            || flags.is_empty()
+            || c.fds.len() >= editor::CALLBACKS
+            || c.fds.iter().any(|p| p.0 == fd)
+        {
+            return Err(HostError::Message("invalid plugin fd registration"));
+        }
+        c.fds.push((fd, flags));
+        Ok(())
+    }
+    fn modify_fd(&self, fd: i32, flags: FdFlags) -> Result<(), HostError> {
+        let mut c = self.callbacks.borrow_mut();
+        let item = c
+            .fds
+            .iter_mut()
+            .find(|p| p.0 == fd)
+            .ok_or(HostError::Message("unknown plugin fd"))?;
+        item.1 = flags;
+        Ok(())
+    }
+    fn unregister_fd(&self, fd: i32) -> Result<(), HostError> {
+        let mut c = self.callbacks.borrow_mut();
+        let n = c.fds.len();
+        c.fds.retain(|p| p.0 != fd);
+        if n == c.fds.len() {
+            Err(HostError::Message("unknown plugin fd"))
+        } else {
+            Ok(())
+        }
+    }
+}
+impl HostParamsImplMainThread for Main {
+    fn rescan(&self, flags: ParamRescanFlags) {
+        // Structural metadata changes require explicit recovery; values already return through events.
+        if flags.bits() & !1 != 0 {
+            self.signals.restart.store(true, Ordering::Release);
+        }
+    }
+    fn clear(&self, _: ClapId, _: ParamClearFlags) {
+        self.signals.restart.store(true, Ordering::Release);
+    }
+}
 struct Host;
 impl HostHandlers for Host {
     type Shared<'a> = Shared;
-    type MainThread<'a> = ();
+    type MainThread<'a> = Main;
     type AudioProcessor<'a> = ();
     fn declare_extensions(builder: &mut HostExtensions<Self>, _: &Self::Shared<'_>) {
         builder.register::<HostThreadCheck>();
+        builder.register::<HostGui>();
+        builder.register::<HostTimer>();
+        builder.register::<HostPosixFd>();
+        builder.register::<HostParams>();
     }
 }
 fn text(bytes: &[u8]) -> String {
@@ -132,6 +263,10 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         audio: OnceLock::new(),
         callback: AtomicBool::new(false),
         restart: AtomicBool::new(false),
+        gui: 0.into(),
+        resize: 0.into(),
+        flush: AtomicBool::new(false),
+        hints: AtomicBool::new(false),
     });
     let host = HostInfo::new(
         "Clausters",
@@ -140,9 +275,18 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         env!("CARGO_PKG_VERSION"),
     )
     .map_err(error)?;
-    let instance =
-        PluginInstance::<Host>::new(|_| Shared(Arc::clone(&signals)), |_| (), &entry, &id, &host)
-            .map_err(error)?;
+    let callbacks = Rc::new(RefCell::new(Callbacks::default()));
+    let instance = PluginInstance::<Host>::new(
+        |_| Shared(Arc::clone(&signals)),
+        |_| Main {
+            callbacks: Rc::clone(&callbacks),
+            signals: Arc::clone(&signals),
+        },
+        &entry,
+        &id,
+        &host,
+    )
+    .map_err(error)?;
     let plugin = Clap {
         instance,
         path: path.to_string_lossy().into_owned(),
@@ -151,6 +295,10 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         vendor: ctext(descriptor.vendor()),
         version: ctext(descriptor.version()),
         signals,
+        callbacks,
+        window: None,
+        floating: false,
+        created: false,
     };
     let mut plugin = Box::new(plugin);
     plugin.main_callback();
@@ -165,6 +313,15 @@ struct Clap {
     vendor: String,
     version: String,
     signals: Arc<Signals>,
+    callbacks: Rc<RefCell<Callbacks>>,
+    window: Option<NativeWindow>,
+    floating: bool,
+    created: bool,
+}
+impl Drop for Clap {
+    fn drop(&mut self) {
+        let _ = self.editor(EditorCommand::Close);
+    }
 }
 impl FormatInstance for Clap {
     fn metadata(&mut self) -> Result<PluginInfo, String> {
@@ -252,13 +409,15 @@ impl FormatInstance for Clap {
         };
         let state = handle.get_extension::<PluginState>().is_some();
         let editor = handle.get_extension::<PluginGui>().is_some_and(|e| {
-            e.is_api_supported(
-                &handle,
-                GuiConfiguration {
-                    api_type: GuiApiType::X11,
-                    is_floating: true,
-                },
-            )
+            [false, true].into_iter().any(|is_floating| {
+                e.is_api_supported(
+                    &handle,
+                    GuiConfiguration {
+                        api_type: GuiApiType::X11,
+                        is_floating,
+                    },
+                )
+            })
         });
         let info = PluginInfo {
             format: "clap".into(),
@@ -365,7 +524,200 @@ impl FormatInstance for Clap {
             )
             .ok_or("unknown plugin parameter".into())
     }
+    fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String> {
+        let handle = self.instance.plugin_handle();
+        let gui = handle
+            .get_extension::<PluginGui>()
+            .ok_or("plugin has no native editor")?;
+        if matches!(command, EditorCommand::Close) {
+            if self.created {
+                let _ = gui.hide(&handle);
+                gui.destroy(&handle);
+                self.created = false;
+            }
+            self.window = None;
+            return Ok(EditorState::default());
+        }
+        if matches!(command, EditorCommand::Open) {
+            if self.created {
+                gui.show(&handle).map_err(error)?;
+                if let Some(w) = &self.window {
+                    w.show();
+                }
+            } else {
+                self.floating = !gui.is_api_supported(
+                    &handle,
+                    GuiConfiguration {
+                        api_type: GuiApiType::X11,
+                        is_floating: false,
+                    },
+                );
+                gui.create(
+                    &handle,
+                    GuiConfiguration {
+                        api_type: GuiApiType::X11,
+                        is_floating: self.floating,
+                    },
+                )
+                .map_err(error)?;
+                self.created = true;
+                let result = (|| {
+                    if self.floating {
+                        gui.suggest_title(
+                            &handle,
+                            &CString::new(self.name.as_str()).map_err(error)?,
+                        );
+                    } else {
+                        let size = gui
+                            .get_size(&handle)
+                            .ok_or("plugin did not provide an editor size")?;
+                        let mut w = NativeWindow::new(&self.name, size.width, size.height)?;
+                        let can = gui.can_resize(&handle);
+                        let hints = gui.get_resize_hints(&handle);
+                        w.resize_hints(
+                            can && hints.is_none_or(|h| h.can_resize_horizontally),
+                            can && hints.is_none_or(|h| h.can_resize_vertically),
+                        );
+                        // SAFETY: retained parent is released only after gui.destroy().
+                        unsafe {
+                            gui.set_parent(&handle, Window::from_x11_handle(w.id))
+                                .map_err(error)?;
+                        }
+                        self.window = Some(w);
+                    }
+                    gui.show(&handle).map_err(error)?;
+                    if let Some(w) = &self.window {
+                        w.show();
+                    }
+                    Ok::<_, String>(())
+                })();
+                if let Err(e) = result {
+                    gui.destroy(&handle);
+                    self.created = false;
+                    self.window = None;
+                    return Err(e);
+                }
+            }
+        }
+        if let EditorCommand::Resize { width, height } = command {
+            if !self.created {
+                return Err("plugin editor is closed".into());
+            }
+            if self.floating || !gui.can_resize(&handle) {
+                return Err("plugin editor does not support host resizing".into());
+            }
+            if !EditorState::valid_size(width, height) {
+                return Err("invalid plugin editor size".into());
+            }
+            let size = gui
+                .adjust_size(&handle, GuiSize { width, height })
+                .ok_or("plugin rejected editor size")?;
+            gui.set_size(&handle, size).map_err(error)?;
+            self.window
+                .as_mut()
+                .ok_or("plugin editor is closed")?
+                .resize(size.width, size.height)?;
+        }
+        if !self.created {
+            return Ok(EditorState::default());
+        }
+        if let Some(w) = &self.window {
+            return Ok(w.state());
+        }
+        let size = gui.get_size(&handle).unwrap_or(GuiSize {
+            width: 0,
+            height: 0,
+        });
+        Ok(EditorState {
+            open: true,
+            width: size.width,
+            height: size.height,
+        })
+    }
     fn main_callback(&mut self) {
+        if self.signals.hints.swap(false, Ordering::AcqRel)
+            && let Some(w) = &mut self.window
+        {
+            let handle = self.instance.plugin_handle();
+            if let Some(gui) = handle.get_extension::<PluginGui>() {
+                let can = gui.can_resize(&handle);
+                let hints = gui.get_resize_hints(&handle);
+                w.resize_hints(
+                    can && hints.is_none_or(|h| h.can_resize_horizontally),
+                    can && hints.is_none_or(|h| h.can_resize_vertically),
+                );
+            }
+        }
+        let timers: Vec<_> = self
+            .callbacks
+            .borrow_mut()
+            .timers
+            .iter_mut()
+            .filter_map(|t| t.due().then_some(t.id))
+            .collect();
+        for id in timers {
+            if self.callbacks.borrow().timers.iter().any(|t| t.id == id) {
+                let handle = self.instance.plugin_handle();
+                if let Some(ext) = handle.get_extension::<PluginTimer>() {
+                    ext.on_timer(&handle, id);
+                }
+            }
+        }
+        let fds = self.callbacks.borrow().fds.clone();
+        for (fd, flags) in fds {
+            let events = (if flags.contains(FdFlags::READ) {
+                libc::POLLIN
+            } else {
+                0
+            }) | (if flags.contains(FdFlags::WRITE) {
+                libc::POLLOUT
+            } else {
+                0
+            });
+            let ready = editor::fd_ready(fd, events);
+            if ready != 0 && self.callbacks.borrow().fds.contains(&(fd, flags)) {
+                let mut delivered = FdFlags::empty();
+                if ready & libc::POLLIN != 0 {
+                    delivered |= FdFlags::READ;
+                }
+                if ready & libc::POLLOUT != 0 {
+                    delivered |= FdFlags::WRITE;
+                }
+                if ready & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
+                    delivered |= FdFlags::ERROR;
+                }
+                let handle = self.instance.plugin_handle();
+                if let Some(ext) = handle.get_extension::<PluginPosixFd>() {
+                    ext.on_fd(&handle, fd, delivered);
+                }
+            }
+        }
+        match self.signals.gui.swap(0, Ordering::AcqRel) {
+            1 => {
+                let _ = self.editor(EditorCommand::Open);
+            }
+            2 => {
+                let _ = self.editor(EditorCommand::Close);
+            }
+            _ => {}
+        }
+        let size = self.signals.resize.swap(0, Ordering::AcqRel);
+        if size != 0
+            && let Some(w) = &mut self.window
+        {
+            let _ = w.resize((size >> 32) as u32, size as u32);
+        }
+        let events = self.window.as_mut().map(|w| w.events()).unwrap_or_default();
+        for event in events {
+            match event {
+                WindowEvent::Close => {
+                    let _ = self.editor(EditorCommand::Close);
+                }
+                WindowEvent::Resize(width, height) => {
+                    let _ = self.editor(EditorCommand::Resize { width, height });
+                }
+            }
+        }
         if self.signals.callback.swap(false, Ordering::AcqRel) {
             self.instance.call_on_main_thread_callback();
         }
@@ -422,6 +774,29 @@ impl FormatProcessor for Audio {
     fn stop(mut self: Box<Self>) -> Box<dyn Any + Send> {
         self.pause();
         Box::new(self.processor.into_stopped())
+    }
+    fn editor_events(&mut self, result: &mut EventList) -> Result<(), String> {
+        if !self.signals.flush.swap(false, Ordering::AcqRel) {
+            return Ok(());
+        }
+        let mut handle = self.processor.plugin_handle();
+        if let Some(params) = handle.get_extension::<PluginParams>() {
+            let mut collector = Collector {
+                result,
+                offset: 0,
+                frames: FRAMES as u32,
+                failed: false,
+            };
+            params.flush_active(
+                &mut handle,
+                &clack_common::events::io::InputEvents::empty(),
+                &mut OutputEvents::from_buffer(&mut collector),
+            );
+            if collector.failed {
+                return Err("plugin editor event capacity exceeded".into());
+            }
+        }
+        Ok(())
     }
     fn process(
         &mut self,

@@ -228,6 +228,19 @@ impl PluginAdmin {
         }
         Ok(())
     }
+    /// Operate the editor off RT without reserving or silencing the audio plane.
+    pub fn editor(
+        &self,
+        command: clausters_plugin_host::format::EditorCommand,
+    ) -> Result<clausters_plugin_host::format::EditorState, String> {
+        if self.pending() {
+            return Err("plugin state operation already pending".into());
+        }
+        self.control
+            .lock()
+            .map_err(|_| "plugin control poisoned")?
+            .editor(command)
+    }
     /// Capture after quiescence and after the helper drains accepted jobs.
     pub fn capture(&self) -> Result<Vec<u8>, String> {
         self.wait_boundary()?;
@@ -283,6 +296,7 @@ pub struct PluginSynth {
     tempo: f64,
     ended: [i32; clausters_core::plugin_shm::EVENTS],
     ended_count: usize,
+    control_events: EventList,
 }
 impl PluginSynth {
     pub fn new(def: Arc<PluginDef>, sample_rate: f32) -> Result<Self, String> {
@@ -358,6 +372,7 @@ impl PluginSynth {
             tempo: 120.0,
             ended: [0; clausters_core::plugin_shm::EVENTS],
             ended_count: 0,
+            control_events: EventList::default(),
         })
     }
     /// Administrative handle for this live generation, never shared by a def.
@@ -651,6 +666,42 @@ impl SynthNode for PluginSynth {
             let mut events = EventList::default();
             self.audio.receive(&mut self.output, &mut events);
             for event in events.values.iter().take(events.count as usize) {
+                if matches!(event.kind, 4 | 8 | 9 | 10)
+                    && event.note_id == -1
+                    && event.port == -1
+                    && event.channel == -1
+                    && event.key == -1
+                {
+                    let Some(index) = self
+                        .def
+                        .info
+                        .parameters
+                        .iter()
+                        .position(|p| p.id == event.id)
+                    else {
+                        self.fail(Failure::Protocol);
+                        break;
+                    };
+                    let parameter = &self.def.info.parameters[index];
+                    if !event.value.is_finite()
+                        || (event.kind == 4
+                            && !(parameter.min..=parameter.max).contains(&event.value))
+                    {
+                        self.fail(Failure::Protocol);
+                        break;
+                    }
+                    if event.kind == 4 && self.maps[index].bus < 0 {
+                        self.values[index] = event.value as f32;
+                        self.sent[index] = event.value as f32;
+                    } else if event.kind == 4 {
+                        // A bus map remains authoritative after an editor edit.
+                        self.sent[index] = f32::NAN;
+                    }
+                    if !self.control_events.push(*event) {
+                        self.fail(Failure::Capacity);
+                        break;
+                    }
+                }
                 if event.kind == EventKind::NoteEnd as u32 {
                     for index in 0..self.notes.len() {
                         if let Some(note) = self.notes[index]
@@ -898,6 +949,23 @@ impl SynthNode for PluginSynth {
         true
     }
     fn drain_replies(&mut self, node_id: i32, sink: &mut dyn FnMut(ReplyMsg)) {
+        for event in self
+            .control_events
+            .values
+            .iter()
+            .take(self.control_events.count as usize)
+        {
+            let mut msg = ReplyMsg::new(ReplyKind::PluginControl, event.id as i32, "");
+            msg.node_id = node_id;
+            msg.push_value(event.value as f32);
+            msg.push_value(event.kind as f32);
+            let generation = self.audio.generation();
+            for shift in [0, 16, 32, 48] {
+                msg.push_value(((generation >> shift) & 65535) as f32);
+            }
+            sink(msg);
+        }
+        self.control_events.count = 0;
         for &token in &self.ended[..self.ended_count] {
             let mut msg = ReplyMsg::new(ReplyKind::PluginNoteEnd, token, "");
             msg.node_id = node_id;

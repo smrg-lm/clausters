@@ -134,6 +134,47 @@ Unavailable records remain on disk unless `--prune-defs` is requested. A live
 node retains its recipe after `/def_free` or replacement. GraphDef members
 can name plugin defs and wire their bus controls like other single-node defs.
 
+Native editors are controlled asynchronously on the helper's main thread:
+
+| Command | Arguments | Effect |
+|---|---|---|
+| `/plugin_openEditor` | `<node:int>` | Open or raise the native editor. |
+| `/plugin_closeEditor` | `<node:int>` | Close it and release its resources. Repeated close succeeds. |
+| `/plugin_resizeEditor` | `<node:int> <width:int> <height:int>` | Resize the client area in physical pixels, subject to the plugin's constraints. Dimensions must be 1–16384. |
+| `/plugin_queryEditor` | `<node:int>` | Query its current state. |
+
+Each success is `/done <command:string> <node:int> <state:JSON-string>`, where
+state is `{"open":true,"width":480,"height":280}` (closed: false and zero
+sizes). Failure is `/fail <command> <reason>`. These operations participate in
+`/server_sync`, use the bounded four-job plugin worker, and do not suspend
+processing. They are live-native operations, unavailable in an OSC score or
+in-page engine. A browser connected to a native server opens the editor on the
+**server's machine**; it does not embed a plugin in the page.
+
+The Linux helper provides a floating X11/XWayland parent for an embedded editor;
+a CLAP plugin may instead manage its own floating window. Fixed-size editors
+and plugin-managed floating windows reject host resizing. Missing displays,
+missing native editors and plugins rejecting attachment report errors. Closing
+the window releases the editor without freeing the node. Free, helper failure,
+restart and state-generation replacement close it; a replacement starts closed.
+
+Editor/output changes produce `/plugin_edit <node:int> <native-param-id:int>
+<action:string> <value:float>` for `/server_notify` subscribers. Actions are
+`parameter`, `modulation`, `begin` and `end`; gesture values are zero. Native
+parameter IDs use their 32-bit bit pattern in the OSC int. Parameter values use
+the adapter-native domain and the server's ordinary float precision. Global
+parameter edits update `/synth_get` and `/synth_getRange` queries and current
+controls used by recovery. Per-note changes are not global control edits. A
+bus map stays authoritative and is reasserted after an editor edit. Feedback
+from a retired helper generation cannot update a reused node ID.
+
+The helper must match both the server package version and its administrative
+and audio protocols. The Linux server archive and Python wheel include it.
+Standalone lookup checks beside the executable; an embedded library checks
+beside itself, the Python `_libs`/`_bin` pair and a prefix's `lib`/`bin` pair.
+`CLAUSTERS_PLUGIN_HOST` is the explicit development override. A missing or
+incompatible helper reports an error before loading third-party code.
+
 `/plugin_restart <node-id:int>` prepares a fresh helper asynchronously; `/done
 "/plugin_restart" <node-id>` acknowledges preparation and queuing the swap,
 or `/fail` reports a non-plugin/missing node, full queue or load error. The
@@ -186,7 +227,7 @@ capability error.
 
 ## The async barrier (`/server_sync`)
 
-`/server_sync <int id>` is the general way to wait for asynchronous work: the server replies `/server_sync.reply <id>` once **every async command received before this `/server_sync`** has completed — Faust compiles (`/def_send faust`), SynthDef sends (`/def_send synth`), buffer jobs (`/buffer_*`) and plugin discovery (`/plugin_scan`), plugin defs, recovery and live state operations, each of which runs on its own FIFO worker thread. Use it instead of matching individual `/done`s when you fire several async commands and just want to know they have all landed (e.g. after sending a def without waiting, before the `/synth_new` that needs it). It is a real barrier, not a round-trip of `/server_status`: a `/server_sync.reply` guarantees the prior compiles/jobs are installed.
+`/server_sync <int id>` is the general way to wait for asynchronous work: the server replies `/server_sync.reply <id>` once **every async command received before this `/server_sync`** has completed — Faust compiles (`/def_send faust`), SynthDef sends (`/def_send synth`), buffer jobs (`/buffer_*`) and plugin discovery (`/plugin_scan`), plugin defs, recovery, native editor and live state operations, each of which runs on its own FIFO worker thread. Use it instead of matching individual `/done`s when you fire several async commands and just want to know they have all landed (e.g. after sending a def without waiting, before the `/synth_new` that needs it). It is a real barrier, not a round-trip of `/server_status`: a `/server_sync.reply` guarantees the prior compiles/jobs are installed.
 
 ```text
 /synth_new  name id addAction targetID [ctlName value]...   # ctl args: s f pairs

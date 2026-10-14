@@ -575,3 +575,105 @@ fn producer_hot_path_can_run_with_all_syscalls_trapped() {
     // SAFETY: the child is reaped and no endpoint is used after this point.
     unsafe { std::alloc::dealloc(memory, layout) };
 }
+
+#[test]
+fn native_editor_reopens_resizes_and_emits_edits_while_audio_runs() {
+    use clausters_plugin_host::format::EditorCommand;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = fixtures().join("editor.clap");
+    let compiled = Command::new("cc")
+        .args([
+            "-std=c11", "-O2", "-fPIC", "-shared", "-Wall", "-Wextra", "-Werror", "-I",
+        ])
+        .arg(root.join("../../third_party/clap/include"))
+        .arg(root.join("tests/fixtures/editor.c"))
+        .arg("-o")
+        .arg(&path)
+        .arg("-lX11")
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let mut instance = Instance::load(
+        helper(),
+        &path,
+        "org.clausters.fixture.gain",
+        config(false),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    assert!(instance.metadata().editor);
+    assert!(!instance.editor(EditorCommand::Query).unwrap().open);
+    if std::env::var_os("DISPLAY").is_none() {
+        assert!(instance.editor(EditorCommand::Open).is_err());
+        return;
+    }
+    let mut admin = instance.administration().unwrap();
+    let pid = instance.pid();
+    let segment = instance.segment_path().to_owned();
+    let mut producer = instance.producer().unwrap();
+    let mut output = [0.0; FRAMES];
+    let mut result = EventList::default();
+    let mut edits = Vec::new();
+    for sequence in 0..40 {
+        if sequence == 0 || sequence == 20 {
+            assert!(admin.editor(EditorCommand::Open).unwrap().open);
+        }
+        if sequence == 10 {
+            let state = admin
+                .editor(EditorCommand::Resize {
+                    width: 480,
+                    height: 280,
+                })
+                .unwrap();
+            assert_eq!((state.width, state.height), (480, 280));
+        }
+        if sequence == 19 {
+            assert!(!admin.editor(EditorCommand::Close).unwrap().open);
+        }
+        let job = Job::full(sequence * FRAMES as i64);
+        assert_no_alloc(|| {
+            producer.receive(&mut output, &mut result);
+            producer.publish(&job, &[1.0; FRAMES]);
+        });
+        edits.extend(
+            result.values[..result.count as usize]
+                .iter()
+                .map(|e| (e.kind, e.value)),
+        );
+        let until = Instant::now() + Duration::from_secs(2);
+        while !producer.last_completed() {
+            assert!(Instant::now() < until);
+            std::thread::sleep(Duration::from_micros(50));
+        }
+        assert_eq!(producer.view().failure(), 0);
+        std::thread::sleep(Duration::from_millis(3));
+    }
+    assert!(output.iter().all(|v| *v == 0.75));
+    assert!(edits.contains(&(EventKind::Parameter as u32, 0.75)));
+    assert!(edits.contains(&(EventKind::GestureBegin as u32, 0.0)));
+    assert!(edits.contains(&(EventKind::GestureEnd as u32, 0.0)));
+    assert!(admin.editor(EditorCommand::Query).unwrap().open);
+    // A helper crash with its window open closes only this instance and leaves
+    // its scheduled audio silent once the already completed pipeline drains.
+    // SAFETY: pid belongs to the child loaded and still owned by this test.
+    assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGKILL) }, 0);
+    assert!(admin.editor(EditorCommand::Query).is_err());
+    for sequence in 40..60 {
+        let job = Job::full(sequence * FRAMES as i64);
+        assert_no_alloc(|| {
+            producer.receive(&mut output, &mut result);
+            producer.publish(&job, &[1.0; FRAMES]);
+        });
+        std::thread::sleep(Duration::from_millis(3));
+    }
+    assert!(output.iter().all(|v| *v == 0.0));
+    assert_ne!(producer.view().failure(), 0);
+    drop(instance);
+    assert!(!segment.exists());
+    assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    assert!(admin.editor(EditorCommand::Query).is_err());
+}

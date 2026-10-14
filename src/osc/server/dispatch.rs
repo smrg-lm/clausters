@@ -436,9 +436,21 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_node_trace(Args::new(m))
     }),
     ("/node_ugenCmd", OscServer::handle_via_translate),
+    ("/plugin_closeEditor", |s, _, m, f| {
+        s.handle_plugin_editor(Args::new(m), f, "/plugin_closeEditor")
+    }),
     ("/plugin_event", OscServer::handle_via_translate),
     ("/plugin_loadState", |s, _, m, f| {
         s.handle_plugin_state(Args::new(m), f, true)
+    }),
+    ("/plugin_openEditor", |s, _, m, f| {
+        s.handle_plugin_editor(Args::new(m), f, "/plugin_openEditor")
+    }),
+    ("/plugin_queryEditor", |s, _, m, f| {
+        s.handle_plugin_editor(Args::new(m), f, "/plugin_queryEditor")
+    }),
+    ("/plugin_resizeEditor", |s, _, m, f| {
+        s.handle_plugin_editor(Args::new(m), f, "/plugin_resizeEditor")
     }),
     ("/plugin_restart", |s, _, m, f| {
         s.handle_plugin_restart(Args::new(m), f)

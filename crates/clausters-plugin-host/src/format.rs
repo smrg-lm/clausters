@@ -85,7 +85,7 @@ pub struct PluginInfo {
     pub latency: u32,
     /// Whether the plugin exposes opaque state save/load.
     pub state: bool,
-    /// Whether a native X11 editor is supported (opening it is separate work).
+    /// Whether a native X11 editor is supported.
     pub editor: bool,
 }
 impl PluginInfo {
@@ -170,6 +170,35 @@ pub enum ScanEntry {
     },
 }
 
+/// Native editor operation, executed on the helper main thread.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum EditorCommand {
+    /// Open or raise the editor.
+    Open,
+    /// Close and release its resources.
+    Close,
+    /// Request an embedded editor size, in physical pixels.
+    Resize { width: u32, height: u32 },
+    /// Return the current window state.
+    Query,
+}
+/// Current native editor state, independent of the requesting client's platform.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct EditorState {
+    /// Whether a visible editor exists.
+    pub open: bool,
+    /// Client area width; zero when closed.
+    pub width: u32,
+    /// Client area height; zero when closed.
+    pub height: u32,
+}
+impl EditorState {
+    /// Reject zero or unreasonable window dimensions before entering an adapter.
+    pub fn valid_size(width: u32, height: u32) -> bool {
+        (1..=16384).contains(&width) && (1..=16384).contains(&height)
+    }
+}
+
 /// Main-thread format instance, never sent to the server audio thread.
 pub trait FormatInstance {
     /// Re-read metadata on the helper main thread.
@@ -184,6 +213,8 @@ pub trait FormatInstance {
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String>;
     /// Parameter query in adapter-native units on the main thread.
     fn parameter(&mut self, id: u32) -> Result<f64, String>;
+    /// Operate the native editor without stopping audio processing.
+    fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String>;
     /// Serve requested main-thread callbacks.
     fn main_callback(&mut self);
     /// A restart/rescan request cannot silently change the negotiated layout.
@@ -195,6 +226,10 @@ pub trait FormatProcessor: Send {
     fn start(&mut self) -> Result<(), String>;
     /// Pause processing on audio, retaining DSP and deferred-event state.
     fn pause(&mut self);
+    /// Flush editor feedback without advancing DSP, including frozen spans.
+    fn editor_events(&mut self, _result: &mut EventList) -> Result<(), String> {
+        Ok(())
+    }
     /// Process one active span; input/output are channel-major engine blocks.
     fn process(
         &mut self,

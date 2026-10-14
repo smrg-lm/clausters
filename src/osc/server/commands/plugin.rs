@@ -33,6 +33,14 @@ struct ScanReply {
     target_os = "linux"
 ))]
 enum ScanJob {
+    Editor {
+        id: i32,
+        expected: u64,
+        admin: Arc<crate::plugin::PluginAdmin>,
+        command: clausters_plugin_host::format::EditorCommand,
+        address: &'static str,
+        client: ClientId,
+    },
     Scan(ScanRequest),
     Def {
         name: String,
@@ -72,6 +80,13 @@ struct PreparedState {
     target_os = "linux"
 ))]
 enum ScanResult {
+    Editor {
+        id: i32,
+        expected: u64,
+        result: Result<clausters_plugin_host::format::EditorState, String>,
+        address: &'static str,
+        client: ClientId,
+    },
     Scan(ScanReply),
     Def {
         name: String,
@@ -118,6 +133,20 @@ impl ScanWorker {
                         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                     };
                     let result = match job {
+                        ScanJob::Editor {
+                            id,
+                            expected,
+                            admin,
+                            command,
+                            address,
+                            client,
+                        } => ScanResult::Editor {
+                            id,
+                            expected,
+                            result: admin.editor(command),
+                            address,
+                            client,
+                        },
                         ScanJob::Scan(job) => {
                             let result = (|| {
                                 let helper = clausters_plugin_host::runtime::helper_path()?;
@@ -352,6 +381,81 @@ impl OscServer {
             Err("server built without native plugin support".into())
         }
     }
+    pub(in crate::osc::server) fn handle_plugin_editor(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+        address: &'static str,
+    ) -> Answer {
+        let id = args.int()?;
+        let size = if address == "/plugin_resizeEditor" {
+            let width = args.int()?;
+            let height = args.int()?;
+            if !(1..=16384).contains(&width) || !(1..=16384).contains(&height) {
+                return Err("invalid plugin editor size".into());
+            }
+            Some((width as u32, height as u32))
+        } else {
+            None
+        };
+        if !args.is_empty() {
+            return Err("unexpected plugin editor arguments".into());
+        }
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
+        {
+            use clausters_plugin_host::format::EditorCommand;
+            if self.translator.mirror.get(id).is_none() {
+                return Err("not a plugin node".into());
+            }
+            let Some(crate::osc::translate::NodeDef::Plugin(def, expected, admin)) =
+                self.translator.node_defs.get(&id)
+            else {
+                return Err("not a plugin node".into());
+            };
+            if !def.info.editor {
+                return Err("plugin has no native editor".into());
+            }
+            if admin.pending() {
+                return Err("plugin state operation already pending".into());
+            }
+            if self.plugin_submitted - self.plugin_drained >= 4 {
+                return Err("plugin worker queue full".into());
+            }
+            let command = match address {
+                "/plugin_openEditor" => EditorCommand::Open,
+                "/plugin_closeEditor" => EditorCommand::Close,
+                "/plugin_resizeEditor" => {
+                    let (width, height) = size.unwrap();
+                    EditorCommand::Resize { width, height }
+                }
+                _ => EditorCommand::Query,
+            };
+            self.plugin_scanner
+                .sender
+                .try_send(ScanJob::Editor {
+                    id,
+                    expected: *expected,
+                    admin: Arc::clone(admin),
+                    command,
+                    address,
+                    client: from,
+                })
+                .map_err(|_| "plugin worker unavailable")?;
+            self.plugin_submitted += 1;
+            Ok(())
+        }
+        #[cfg(not(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        )))]
+        {
+            let _ = (id, size, from);
+            Err("server built without native plugin support".into())
+        }
+    }
     pub(in crate::osc::server) fn handle_plugin_restart(
         &mut self,
         mut args: Args,
@@ -477,6 +581,34 @@ impl OscServer {
         while let Ok(result) = self.plugin_scanner.receiver.try_recv() {
             self.plugin_drained += 1;
             let result = match result {
+                ScanResult::Editor {
+                    id,
+                    expected,
+                    result,
+                    address,
+                    client,
+                } => {
+                    if self.translator.mirror.get(id).is_none()
+                        || !matches!(self.translator.node_defs.get(&id), Some(crate::osc::translate::NodeDef::Plugin(_, generation, _)) if *generation == expected)
+                    {
+                        self.fail(client, address, "plugin node no longer exists");
+                    } else {
+                        match result {
+                            Ok(state) => self.done_with(
+                                client,
+                                address,
+                                vec![
+                                    OscType::Int(id),
+                                    OscType::String(
+                                        serde_json::to_string(&state).expect("editor state JSON"),
+                                    ),
+                                ],
+                            ),
+                            Err(error) => self.fail(client, address, error),
+                        }
+                    }
+                    continue;
+                }
                 ScanResult::Scan(result) => result,
                 ScanResult::Def {
                     name,

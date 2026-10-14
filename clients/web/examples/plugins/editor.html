@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Native effect editor</title>
+<!--
+Same calls, names and tones as clients/python/examples/plugins/editor.py.
+Build the web package and serve this tree. Start a native server with
+--ws 57112 and plugin-clap,plugin-vst3, with its matching helper beside it.
+Python boots that process; a page attaches to one started separately.
+Choose a mono/stereo effect with an audible preset and an X11 editor.
+The repository CLAP gain and VST3 fixtures also work. Edit the native window
+on the server's machine while the quiet tones play; Finish closes the session.
+-->
+<label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
+<label>Binary on server <input id="binary" placeholder="/path/effect.clap"></label><br>
+<label>Native plugin ID <input id="plugin"></label><br>
+<button id="open">Open editor</button><button id="finish" disabled>Finish</button>
+<pre id="log"></pre>
+<script type="module">
+import { PluginDef, Session, Synth, SynthDef, defs } from "../../dist/index.js";
+const { out, sine } = defs;
+const $ = (id) => document.getElementById(id);
+$("open").onclick = async () => {
+    let session, source, voice;
+    try {
+        $("open").disabled = true;
+        session = (await Session.live($("url").value)).activate();
+        const server = session.server;
+        const rows = await server.scanPlugins([$("binary").value], 60.0);
+        const info = rows.find((row) => row.kind === "plugin" && row.plugin.id === $("plugin").value)?.plugin;
+        if (!info?.editor || !info.inputs.length) throw new Error("choose an effect with a native X11 editor");
+        const reference = { format: info.format, path: info.path, id: info.id, inputs: [], outputs: [] };
+        let bus = 4;
+        for (const item of info.inputs) { reference.inputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
+        bus = 0;
+        for (const item of info.outputs) { reference.outputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
+        await new PluginDef("editor_effect", reference).send(server);
+        await new SynthDef("editor_tone", out(4.0, sine(220.0).mul(0.08)), out(5.0, sine(330.0).mul(0.08))).send(server);
+        source = new Synth("editor_tone", {}, { server });
+        voice = new Synth("editor_effect", {}, { server });
+        await server.sync();
+        await voice.openPluginEditor();
+        $("log").textContent = JSON.stringify(await voice.queryPluginEditor());
+        await voice.closePluginEditor();
+        await voice.openPluginEditor();
+        $("finish").disabled = false;
+        await new Promise((resolve) => { $("finish").onclick = resolve; });
+        await voice.closePluginEditor();
+        voice.free(); source.free(); await session.close(); session = null;
+        $("log").textContent = "Native editor closed; session finished.";
+        if (new URLSearchParams(location.search).has("smoke")) await fetch("/smoke-verdict-PASS-plugin-editor");
+    } catch (error) {
+        $("log").textContent = String(error);
+        if (new URLSearchParams(location.search).has("smoke")) await fetch(`/smoke-verdict-FAIL-${encodeURIComponent(String(error))}`);
+    } finally { if (session) await session.close(); $("open").disabled = false; $("finish").disabled = true; }
+};
+const params = new URLSearchParams(location.search);
+if (params.has("smoke")) {
+    $("url").value = params.get("url") ?? $("url").value;
+    $("binary").value = params.get("binary") ?? "";
+    $("plugin").value = params.get("plugin") ?? "";
+    $("open").click();
+}
+</script></html>

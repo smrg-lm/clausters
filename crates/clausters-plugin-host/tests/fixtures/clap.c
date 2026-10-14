@@ -12,11 +12,12 @@
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
+#include <stdatomic.h>
 
 typedef struct {
     clap_plugin_t api;
     unsigned kind, cursor;
-    double gain;
+    _Atomic double gain;
     bool held;
     float delay[7];
 } Fixture;

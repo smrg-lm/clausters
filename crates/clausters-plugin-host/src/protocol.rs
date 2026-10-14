@@ -1,14 +1,15 @@
 //! Administrative plane: framed JSON on a dedicated inherited Unix socket.
-use crate::format::{PluginInfo, ScanEntry};
+use crate::format::{EditorCommand, EditorState, PluginInfo, ScanEntry};
 use clausters_core::plugin_shm::{EVENTS, FRAMES, PLUGIN_ABI_VERSION, SLOTS, SPANS};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
-pub(crate) const CONTROL_VERSION: u32 = 4;
+pub(crate) const CONTROL_VERSION: u32 = 5;
 pub(crate) const MAX_FRAME: usize = 8 * 1024 * 1024;
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Handshake {
+    package: String,
     control: u32,
     audio: u32,
     frames: usize,
@@ -19,6 +20,7 @@ pub(crate) struct Handshake {
 impl Handshake {
     pub(crate) fn current() -> Self {
         Self {
+            package: env!("CARGO_PKG_VERSION").into(),
             control: CONTROL_VERSION,
             audio: PLUGIN_ABI_VERSION,
             frames: FRAMES,
@@ -49,6 +51,7 @@ pub(crate) enum Request {
     SaveState,
     LoadState(Vec<u8>),
     Parameter(u32),
+    Editor(EditorCommand),
     Shutdown,
 }
 #[derive(Serialize, Deserialize)]
@@ -57,6 +60,7 @@ pub(crate) enum Response {
     Metadata(Box<PluginInfo>),
     State(Vec<u8>),
     Parameter(f64),
+    Editor(EditorState),
     Ok,
     Error(String),
 }
@@ -87,6 +91,12 @@ pub(crate) fn receive<T: serde::de::DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn helper_package_version_is_checked_even_when_planes_match() {
+        let mut changed = Handshake::current();
+        changed.package.push_str("-old");
+        assert_ne!(changed, Handshake::current());
+    }
     #[test]
     fn every_handshake_dimension_is_required() {
         for key in ["control", "audio", "frames", "slots", "events", "spans"] {

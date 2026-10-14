@@ -120,6 +120,42 @@ export class Node {
         return this;
     }
 
+    private async pluginEditor(command: string, payload: number[] = [], timeout = 10.0) {
+        const server = this.srv();
+        if (server.scoring) throw new CommandError("native plugin editor unavailable in an OSC score");
+        return await server.command(command, [this.id, ...payload], timeout);
+    }
+
+    /** Open or raise the native editor on the server's machine. Audio continues. */
+    async openPluginEditor({ timeout = 10.0 }: { timeout?: number } = {}): Promise<this> {
+        await this.pluginEditor("/plugin_openEditor", [], timeout);
+        return this;
+    }
+
+    /** Close the native editor and release its resources; audio continues. */
+    async closePluginEditor({ timeout = 10.0 }: { timeout?: number } = {}): Promise<this> {
+        await this.pluginEditor("/plugin_closeEditor", [], timeout);
+        return this;
+    }
+
+    /** Resize the client area in physical pixels, subject to plugin constraints.
+     * Fixed-size and plugin-managed floating editors reject host resizing.
+     */
+    async resizePluginEditor(width: number, height: number, { timeout = 10.0 }: { timeout?: number } = {}): Promise<this> {
+        if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384)
+            throw new RangeError("invalid plugin editor size");
+        await this.pluginEditor("/plugin_resizeEditor", [width, height], timeout);
+        return this;
+    }
+
+    /** Return the editor's state on the native server, even from a browser client. */
+    async queryPluginEditor({ timeout = 10.0 }: { timeout?: number } = {}): Promise<{ open: boolean; width: number; height: number }> {
+        const response = await this.pluginEditor("/plugin_queryEditor", [], timeout);
+        if (response.args.length !== 3 || response.args[1] !== this.id || typeof response.args[2] !== "string")
+            throw new CommandError("invalid /plugin_queryEditor reply");
+        return JSON.parse(response.args[2]);
+    }
+
     /** Capture this live plugin's opaque state, independent of its def.
      * The node is silent during preparation; a new helper clears held notes.
      * Missing/duplicate state chunks are errors. Live servers only.

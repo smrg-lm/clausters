@@ -735,6 +735,62 @@ impl OscServer {
         // set, also sends `/node_trigger`.
         while let Some(msg) = self.handle.pop_reply() {
             match msg.kind {
+                ReplyKind::PluginControl => {
+                    #[cfg(all(
+                        any(feature = "plugin-clap", feature = "plugin-vst3"),
+                        target_os = "linux"
+                    ))]
+                    {
+                        let values = msg.values();
+                        if values.len() != 6 {
+                            continue;
+                        }
+                        let generation = values[2..]
+                            .iter()
+                            .enumerate()
+                            .fold(0u64, |n, (i, part)| n | (*part as u64) << (16 * i));
+                        let Some(crate::osc::translate::NodeDef::Plugin(def, current, _)) =
+                            self.translator.node_defs.get(&msg.node_id)
+                        else {
+                            continue;
+                        };
+                        if *current != generation
+                            || self.translator.mirror.get(msg.node_id).is_none()
+                        {
+                            continue;
+                        }
+                        let native = msg.id as u32;
+                        let Some(index) = def.info.parameters.iter().position(|p| p.id == native)
+                        else {
+                            continue;
+                        };
+                        let kind = values[1] as u32;
+                        let mapped = matches!(self.translator.mirror.get(msg.node_id).map(|node| &node.body), Some(crate::osc::graph::MirrorBody::Synth { maps, .. }) if maps.iter().any(|(control, ..)| *control == index as u32));
+                        if kind == 4 && !mapped {
+                            self.translator.mirror.set_control(
+                                msg.node_id,
+                                index as u32,
+                                values[0],
+                            );
+                        }
+                        let action = match kind {
+                            4 => "parameter",
+                            8 => "modulation",
+                            9 => "begin",
+                            10 => "end",
+                            _ => continue,
+                        };
+                        self.notify(
+                            "/plugin_edit",
+                            vec![
+                                OscType::Int(msg.node_id),
+                                OscType::Int(native as i32),
+                                OscType::String(action.into()),
+                                OscType::Float(values[0]),
+                            ],
+                        );
+                    }
+                }
                 ReplyKind::PluginNoteEnd => {
                     #[cfg(all(
                         any(feature = "plugin-clap", feature = "plugin-vst3"),

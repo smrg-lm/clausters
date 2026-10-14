@@ -176,6 +176,52 @@ class Node:
         self._server().send_msg("/plugin_event", self.id, json.dumps(event))
         return self
 
+    def _plugin_editor(self, command, *payload, timeout=10.0):
+        from ..errors import CommandError
+        server = self._server()
+        if getattr(server.interface, "time_mode", None) == "score":
+            raise CommandError("native plugin editor unavailable in an OSC score")
+        reply, args = server.request(command, self.id, *payload, timeout=timeout,
+                                     expect=("/done", "/fail"))
+        if reply == "/fail":
+            raise CommandError(f"{command} failed: {args}")
+        return args
+
+    def open_plugin_editor(self, *, timeout: float = 10.0):
+        """Open or raise the plugin's native editor on the server's machine.
+
+        Blocking, live native servers only; audio keeps processing. The helper
+        owns the window, including when a browser client opens it.
+        """
+        self._plugin_editor("/plugin_openEditor", timeout=timeout)
+        return self
+
+    def close_plugin_editor(self, *, timeout: float = 10.0):
+        """Close the native editor and release its resources; audio continues."""
+        self._plugin_editor("/plugin_closeEditor", timeout=timeout)
+        return self
+
+    def resize_plugin_editor(self, width: int, height: int, *, timeout: float = 10.0):
+        """Resize the editor's client area in physical pixels.
+
+        The plugin applies its size constraints. Fixed-size and plugin-managed
+        floating editors reject host resizing. Dimensions must be 1-16384.
+        """
+        if (not isinstance(width, int) or not isinstance(height, int)
+                or not 1 <= width <= 16384 or not 1 <= height <= 16384):
+            raise ValueError("invalid plugin editor size")
+        self._plugin_editor("/plugin_resizeEditor", width, height, timeout=timeout)
+        return self
+
+    def query_plugin_editor(self, *, timeout: float = 10.0) -> dict:
+        """Return the editor's `open`, `width` and `height` on the native server."""
+        import json
+        from ..errors import CommandError
+        args = self._plugin_editor("/plugin_queryEditor", timeout=timeout)
+        if len(args) != 3 or args[1] != self.id or not isinstance(args[2], str):
+            raise CommandError("invalid /plugin_queryEditor reply")
+        return json.loads(args[2])
+
     def save_plugin_state(self, *, timeout: float = 10.0) -> bytes:
         """Capture this live plugin's opaque state for loading or recovery.
 

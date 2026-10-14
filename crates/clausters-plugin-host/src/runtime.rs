@@ -39,6 +39,32 @@ pub fn helper_path() -> Result<PathBuf, String> {
     if adjacent.is_file() {
         return Ok(adjacent);
     }
+    // An embedded server runs inside another executable. Resolve beside the
+    // loaded library, including the Python wheel's _libs/ and _bin/ pair.
+    // SAFETY: dladdr inspects this live function address and returns borrowed paths.
+    unsafe {
+        let mut info: libc::Dl_info = std::mem::zeroed();
+        if libc::dladdr(helper_path as *const () as *const libc::c_void, &mut info) != 0
+            && !info.dli_fname.is_null()
+        {
+            let library = PathBuf::from(
+                std::ffi::CStr::from_ptr(info.dli_fname)
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+            if let Some(directory) = library.parent() {
+                for candidate in [
+                    directory.join("clausters-plugin-host"),
+                    directory.join("../_bin/clausters-plugin-host"),
+                    directory.join("../bin/clausters-plugin-host"),
+                ] {
+                    if candidate.is_file() {
+                        return Ok(candidate);
+                    }
+                }
+            }
+        }
+    }
     let workspace =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/clausters-plugin-host");
     if workspace.is_file() {
@@ -86,7 +112,9 @@ impl Helper {
             socket: parent,
             timeout,
         };
-        let handshake: Handshake = helper.read()?;
+        let handshake: Handshake = helper
+            .read()
+            .map_err(|e| format!("incompatible plugin helper handshake: {e}"))?;
         if handshake != Handshake::current() {
             return Err("incompatible plugin helper handshake".into());
         }
@@ -251,6 +279,13 @@ impl Instance {
         self.helper.request(Request::LoadState(bytes.to_vec()))?;
         self.refresh()
     }
+    /// Operate a native editor on the helper main thread.
+    pub fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String> {
+        match self.helper.request(Request::Editor(command))? {
+            Response::Editor(state) => Ok(state),
+            _ => Err("invalid plugin editor response".into()),
+        }
+    }
     /// Query a parameter using its stable native identity and plain units.
     pub fn parameter(&mut self, id: u32) -> Result<f64, String> {
         match self.helper.request(Request::Parameter(id))? {
@@ -298,6 +333,15 @@ pub struct Administration {
     socket: UnixStream,
 }
 impl Administration {
+    /// Operate the native editor on main while the audio worker keeps processing.
+    pub fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String> {
+        protocol::send(&mut self.socket, &Request::Editor(command))?;
+        match protocol::receive(&mut self.socket)? {
+            Response::Editor(state) => Ok(state),
+            Response::Error(error) => Err(error),
+            _ => Err("invalid plugin editor response".into()),
+        }
+    }
     /// Capture a quiesced instance, on the helper's main thread.
     pub fn save_state(&mut self) -> Result<Vec<u8>, String> {
         protocol::send(&mut self.socket, &Request::SaveState)?;
@@ -669,7 +713,10 @@ fn audio_worker(
                     let (input, output) = slot.audio();
                     output.fill(0.0);
                     let mut result = EventList::default();
-                    let mut failed = None;
+                    let mut failed = processor
+                        .editor_events(&mut result)
+                        .err()
+                        .map(|_| Failure::Process);
                     for span in job.spans.iter().take(job.span_count as usize).copied() {
                         let mut events = EventList::default();
                         if span.active != 0 {
@@ -845,6 +892,13 @@ pub unsafe fn helper_main(fd: i32) -> Result<(), String> {
 }
 fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, String> {
     match request {
+        Request::Editor(command) => Ok(Response::Editor(
+            loaded
+                .as_mut()
+                .ok_or("plugin not loaded")?
+                .instance
+                .editor(command)?,
+        )),
         Request::Probe { path, id } => Ok(Response::Metadata(Box::new(
             load_format(Path::new(&path), &id)?.metadata()?,
         ))),

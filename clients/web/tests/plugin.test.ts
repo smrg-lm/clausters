@@ -68,3 +68,28 @@ test("live plugin state refuses an OSC score rather than waiting or scoring it",
     await assert.rejects(node.savePluginState(), /OSC score/);
     await assert.rejects(node.loadPluginState(new Uint8Array()), /OSC score/);
 });
+
+test("native plugin editor wire, state and OSC score rejection match Python", async () => {
+    const calls: unknown[][] = [];
+    const state = { open: true, width: 480, height: 280 };
+    const server = { command: async (command: string, ...payload: unknown[]) => {
+        calls.push([command, ...payload]);
+        return { addr: "/done", args: [command, 42, JSON.stringify(state)] };
+    } } as unknown as Server;
+    const node = new Node(42, server);
+    assert.equal(await node.openPluginEditor(), node);
+    assert.equal(await node.resizePluginEditor(480, 280), node);
+    assert.equal(await node.closePluginEditor(), node);
+    assert.deepEqual(await node.queryPluginEditor(), state);
+    assert.deepEqual(calls, [
+        ["/plugin_openEditor", [42], 10],
+        ["/plugin_resizeEditor", [42, 480, 280], 10],
+        ["/plugin_closeEditor", [42], 10],
+        ["/plugin_queryEditor", [42], 10],
+    ]);
+    await assert.rejects(node.resizePluginEditor(0, 100));
+    const offline = new Node(42, { scoring: true } as Server);
+    await assert.rejects(offline.openPluginEditor(), /OSC score/);
+    await assert.rejects(offline.closePluginEditor(), /OSC score/);
+    await assert.rejects(offline.queryPluginEditor(), /OSC score/);
+});

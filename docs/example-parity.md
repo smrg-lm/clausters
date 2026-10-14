@@ -479,3 +479,23 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `set` | a key of an event, written while it plays: the script assigns it (`notes.events[1]["degree"] = 4`), which is no call; TypeScript has no `__setitem__`, so the page writes `.set("degree", 4)`, which the audit reads as a node's `set` |
+
+
+### `plugins/editor`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `embed` | audit false positive: the global `Session.live`/`Session.embed` idiom normalizes the script's live call; this pair explicitly attaches the page to a native server, so both actually call `Session.live` |
+| web | `live` | the other half of the row above: the page explicitly names the native server WebSocket URL |
+| web | `find` | `Array.find` selects the scanned native identity; the script's `next` over the same rows performs the same selection |
+| web | `push` ×2 | `Array.push` appends native input/output port rows; the script's `list.append` performs the same two operations |
+
+
+### `plugins/persistent`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `embed` | audit false positive: the global `Session.live`/`Session.embed` idiom normalizes the script's live call; this pair explicitly attaches the page to a native server, so both actually call `Session.live` |
+| web | `live` | the other half of the row above: the page explicitly names the native server WebSocket URL |
+| web | `find` | `Array.find` selects the scanned native identity; the script's `next` over the same rows performs the same selection |
+| web | `push` ×2 | `Array.push` appends native input/output port rows; the script's `list.append` performs the same two operations |

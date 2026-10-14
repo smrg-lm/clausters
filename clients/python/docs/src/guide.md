@@ -116,11 +116,20 @@ Latency includes the bounded block pipeline. General server delay compensation
 aligns statically admitted automatic bus paths across all def families, including
 convolution; use the group's `auto_order()`.
 Nested automatic groups share the plan; manual/dynamic/feedback boundaries are
-reported by `/group_dumpGraph`. Musical delays are unchanged. Native editors
-remain planned. See the
+reported by `/group_dumpGraph`. Musical delays are unchanged. Native X11/XWayland editors open on the server's machine. See the
 [protocol reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-definitions-and-recovery).
 
 `node.restart_plugin()` prepares recovery asynchronously and waits for its acknowledgement.
+
+`node.open_plugin_editor()` opens or raises the plugin's native editor;
+`node.close_plugin_editor()` closes it without stopping audio. A resizable
+editor accepts `node.resize_plugin_editor(width, height)` in physical pixels.
+`node.query_plugin_editor()` returns `open`, `width` and `height`. These calls
+wait for the helper's main-thread acknowledgement. Editor parameter changes
+update `/synth_get` queries and subscribed `/plugin_edit` notifications through the
+same audio bridge. A mapped bus remains authoritative. State capture/load
+and restart replace the helper, so they close its editor; reopen it afterward.
+The installed Linux wheel includes the matching helper beside its server.
 
 `state = node.save_plugin_state()` captures that live node's opaque bytes;
 `node.load_plugin_state(state)` loads them into a live node. These calls wait

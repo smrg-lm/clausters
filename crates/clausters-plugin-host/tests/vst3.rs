@@ -279,3 +279,83 @@ fn midi_notes_and_mapped_controllers_keep_offsets_and_queries() {
     assert_eq!(producer.view().failure(), 0);
     assert_eq!(instance.parameter(0).unwrap(), 1.0);
 }
+
+#[path = "../src/editor.rs"]
+mod editor;
+
+#[test]
+fn native_editor_runs_linux_timer_and_fd_callbacks_while_processing() {
+    use clausters_plugin_host::format::EditorCommand;
+    let mut instance =
+        Instance::load(helper(), fixture(), ID, config(707), Duration::from_secs(2)).unwrap();
+    assert!(!instance.editor(EditorCommand::Query).unwrap().open);
+    if std::env::var_os("DISPLAY").is_none() {
+        assert!(instance.editor(EditorCommand::Open).is_err());
+        return;
+    }
+    let mut admin = instance.administration().unwrap();
+    let pid = instance.pid();
+    let segment = instance.segment_path().to_owned();
+    let mut producer = instance.producer().unwrap();
+    let mut output = [0.0; FRAMES * 2];
+    let mut result = EventList::default();
+    let mut edits = Vec::new();
+    for sequence in 0..40 {
+        if sequence == 0 || sequence == 20 {
+            assert!(admin.editor(EditorCommand::Open).unwrap().open);
+        }
+        if sequence == 10 {
+            let state = admin
+                .editor(EditorCommand::Resize {
+                    width: 480,
+                    height: 280,
+                })
+                .unwrap();
+            assert_eq!((state.width, state.height), (480, 280));
+        }
+        if sequence == 19 {
+            assert!(!admin.editor(EditorCommand::Close).unwrap().open);
+        }
+        let job = Job::full(sequence * FRAMES as i64);
+        assert_no_alloc(|| {
+            producer.receive(&mut output, &mut result);
+            producer.publish(&job, &[1.0; FRAMES * 2]);
+        });
+        edits.extend(
+            result.values[..result.count as usize]
+                .iter()
+                .map(|e| (e.kind, e.value)),
+        );
+        let until = std::time::Instant::now() + Duration::from_secs(2);
+        while !producer.last_completed() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(Duration::from_micros(50));
+        }
+        assert_eq!(producer.view().failure(), 0);
+        std::thread::sleep(Duration::from_millis(3));
+    }
+    assert!(output.iter().all(|v| *v == 0.75));
+    assert!(edits.contains(&(EventKind::Parameter as u32, 0.75)));
+    assert!(edits.contains(&(EventKind::GestureBegin as u32, 0.0)));
+    assert!(edits.contains(&(EventKind::GestureEnd as u32, 0.0)));
+    assert!(admin.editor(EditorCommand::Query).unwrap().open);
+    // A helper crash with its window open closes only this instance and leaves
+    // its scheduled audio silent once the already completed pipeline drains.
+    // SAFETY: pid belongs to the child loaded and still owned by this test.
+    assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGKILL) }, 0);
+    assert!(admin.editor(EditorCommand::Query).is_err());
+    for sequence in 40..60 {
+        let job = Job::full(sequence * FRAMES as i64);
+        assert_no_alloc(|| {
+            producer.receive(&mut output, &mut result);
+            producer.publish(&job, &[1.0; FRAMES * 2]);
+        });
+        std::thread::sleep(Duration::from_millis(3));
+    }
+    assert!(output.iter().all(|v| *v == 0.0));
+    assert_ne!(producer.view().failure(), 0);
+    drop(instance);
+    assert!(!segment.exists());
+    assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    assert!(admin.editor(EditorCommand::Query).is_err());
+}
