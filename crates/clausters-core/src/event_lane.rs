@@ -37,6 +37,8 @@ pub enum Release {
 /// What a lane's note is made as.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventLaneVoice {
+    /// A note of one persistent native plugin node, never a new synth.
+    Plugin { node: i32, port: Option<u32> },
     /// A synth of this def (`/synth_new`), its controls the def's.
     Def(String),
     /// One more of `slot` in the graph instance `graph` (`/graph_addSlot`),
@@ -105,6 +107,7 @@ impl EventLaneData {
                     Release::Free => "free",
                 };
                 let voice = match &note.voice {
+                    EventLaneVoice::Plugin { node, port } => json!({"plugin": node, "port": port}),
                     EventLaneVoice::Def(def) => json!(def),
                     EventLaneVoice::Slot { graph, slot } => json!({"graph": graph, "slot": slot}),
                 };
@@ -165,6 +168,23 @@ impl EventLaneData {
             };
             let voice = match voice {
                 Value::String(def) => EventLaneVoice::Def(def.clone()),
+                Value::Object(slot) if slot.contains_key("plugin") => EventLaneVoice::Plugin {
+                    node: slot
+                        .get("plugin")
+                        .and_then(Value::as_i64)
+                        .and_then(|n| i32::try_from(n).ok())
+                        .filter(|n| *n > 0)
+                        .ok_or("a plugin voice needs a positive node id")?,
+                    port: match slot.get("port") {
+                        None | Some(Value::Null) => None,
+                        Some(value) => Some(
+                            value
+                                .as_u64()
+                                .and_then(|p| u32::try_from(p).ok())
+                                .ok_or("a plugin port is a native unsigned id")?,
+                        ),
+                    },
+                },
                 Value::Object(slot) => EventLaneVoice::Slot {
                     graph: slot
                         .get("graph")
@@ -179,6 +199,34 @@ impl EventLaneData {
                 },
                 _ => return Err("a note's voice is a def's name or a graph's slot".into()),
             };
+            if matches!(voice, EventLaneVoice::Plugin { .. }) {
+                let values = controls
+                    .as_object()
+                    .ok_or("plugin note controls must be an object")?;
+                for (name, value) in values {
+                    if !matches!(name.as_str(), "key" | "velocity" | "channel")
+                        || value.as_f64().is_none_or(|v| !v.is_finite())
+                    {
+                        return Err(
+                            "plugin note controls are numeric key, velocity and channel".into()
+                        );
+                    }
+                }
+                for (name, maximum) in [("key", 127.0), ("channel", 15.0)] {
+                    if let Some(value) = values.get(name).and_then(Value::as_f64)
+                        && (value.fract() != 0.0 || !(0.0..=maximum).contains(&value))
+                    {
+                        return Err(format!("invalid plugin note {name}"));
+                    }
+                }
+                if values
+                    .get("velocity")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|v| !(0.0..=1.0).contains(&v))
+                {
+                    return Err("invalid plugin note velocity".into());
+                }
+            }
             let controls = controls
                 .as_object()
                 .into_iter()
@@ -327,5 +375,26 @@ mod tests {
     fn a_byte_out_of_range_is_refused() {
         assert!(EventLaneData::from_json(br#"{"midi": [[0, 300]]}"#).is_err());
         assert!(EventLaneData::from_json(br#"{"midi": [[-1, 144, 60, 1]]}"#).is_err());
+    }
+}
+
+#[cfg(test)]
+mod plugin_tests {
+    use super::*;
+    #[test]
+    fn persistent_plugin_voice_round_trips_native_port_identity() {
+        let json=br#"{"notes":[[10,20,{"plugin":42,"port":4000000000},{"key":60,"velocity":0.5},"free"]]}"#;
+        let data = EventLaneData::from_json(json).unwrap();
+        assert_eq!(
+            data.notes[0].voice,
+            EventLaneVoice::Plugin {
+                node: 42,
+                port: Some(4_000_000_000)
+            }
+        );
+        assert_eq!(
+            EventLaneData::from_json(&serde_json::to_vec(&data.to_json()).unwrap()).unwrap(),
+            data
+        );
     }
 }

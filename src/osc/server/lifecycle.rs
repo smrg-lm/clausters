@@ -699,6 +699,10 @@ impl OscServer {
         // set, also sends `/node_trigger`.
         while let Some(msg) = self.handle.pop_reply() {
             match msg.kind {
+                ReplyKind::PluginNoteEnd => {
+                    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                    self.translator.retire_plugin_note(msg.node_id, msg.id);
+                }
                 ReplyKind::Trig => {
                     let value = msg.values().first().copied().unwrap_or(0.0);
                     self.notify_trigger(msg.node_id, msg.id, value);

@@ -232,7 +232,7 @@ class ServerTransport:
         [[position, *bytes], ...], "ump": [[position, *words], ...]}``,
         every position a sample of the
         transport's position and every list optional. A note's ``voice`` is a
-        def's name, or ``{"graph": id, "slot": name}`` for one more of a slot
+        def's name, or ``{"graph": id, "slot": name}``, or ``{"plugin": id, "port": native_id}`` for one more of a slot
         of a running graph instance, the controls its ports -- how a note
         carries the curves that shape it. A note is released at ``end`` by
         ``gate 0`` or by a free; a message is a command the server
@@ -243,7 +243,11 @@ class ServerTransport:
         reaching the note on their channel and key. What sounds
         keeps its release, and the new data is heard from where the position
         is. The notes editor's playback writes it from a
-        `clausters.seq.EventSequence`."""
+        `clausters.seq.EventSequence`. A voice may also be
+        `{"plugin": node_id, "port": native_id}` (port optional), with key,
+        velocity and channel controls. It releases its note and keeps the
+        persistent instance. Replacing data releases that lane's plugin notes.
+        """
         import json
 
         addr, args = self.request("/lane_set", int(lane), json.dumps(data),

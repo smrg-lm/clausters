@@ -2550,6 +2550,8 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **The root lacked `Node`, already exported by the web client.** The base resource handle now imports from `clausters` as well as `clausters.defs`, matching both clients while adding persistent plugin event verbs.
+
 - ⬜ **An edit to a voice's legato or slur does not rewrite the other**
   *(found 2026-10-10, closing `C73e`)*. A rendered `pvoice` writes both
   shapes of its articulation -- each note's `legato`, and the `tie` keys and

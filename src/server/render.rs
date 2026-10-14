@@ -452,6 +452,7 @@ impl Renderer {
         // server does; the replies meant for clients have no one to reach.
         while let Some(msg) = self.handle.pop_reply() {
             match msg.kind {
+                ReplyKind::PluginNoteEnd => {}
                 ReplyKind::Fault => {
                     return Err(format!(
                         "at {:.6}s, node {}: {}",

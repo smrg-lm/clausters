@@ -277,7 +277,7 @@ It also keeps **shared transports** — each a beat grid for phase-aligning seve
 
 **Two quantities, and confusing them is the easy mistake.** `transportSample` is the transport **clock** — samples *elapsed* under the transport, held while it is stopped and **monotonic**, which is what `/sched_atTransport`'s queue needs, since "due" only means anything on an axis that cannot jump. `positionSample` is where the transport **stands**: it jumps wherever a locate puts it and wraps at a loop's end. A playhead reads the position; anything scheduling reads the clock. Both are published in the shared-memory segment ([`ipc.md`](ipc.md)), and `positionSample` is answered from the engine as of its **last completed block** — the same rule `/buffer_query` states for the buffer mirror — **except right after a locate**: until a block has applied it, the server answers with the place it located to, so a reply in the same breath as a locate (its own broadcast above all) never reports the place the transport is leaving. A client re-cueing from a broadcast depends on that.
 
-**The transport has two intensities, and `/transport_group` is the switch.** With **no group bound** it is what the paragraph above describes: an in-memory registry the server stores, serves and broadcasts but never schedules audio from — clients read it to start their routines and playheads on the same beat, and obey it by choice. **`/transport_group <int32 transport> <int32 group>`** binds the group the transport *governs* (a negative id unbinds, replying `/done`; an unknown id, a non-group, or a group another transport governs `/fail`s — a group has one transport), and from then on the **engine enforces it**: `/transport_stop` freezes that subtree and the server's own transport clock at the exact sample it lands on, and `/transport_play` thaws them. Freeing the governed group unbinds the transport, and unbinding thaws whatever it governed, so no frozen subtree is ever left with nobody to resume it. **A node reads its own transport**: the one bound to the nearest bound group above it, or transport 0 when none is — so a `TransportPos` inside a group bound to transport 1 follows transport 1 with nothing in the def saying so.
+**The transport has two intensities, and `/transport_group` is the switch.** With **neither a governed nor a followed group bound** it is what the paragraph above describes: an in-memory registry the server stores, serves and broadcasts but never schedules audio from — clients read it to start their routines and playheads on the same beat, and obey it by choice. **`/transport_group <int32 transport> <int32 group>`** binds the group the transport *governs* (a negative id unbinds, replying `/done`; an unknown id, a non-group, or a group another transport governs `/fail`s — a group has one transport), and from then on the **engine enforces it**: `/transport_stop` freezes that subtree and the server's own transport clock at the exact sample it lands on, and `/transport_play` thaws them. Freeing the governed group unbinds the transport, and unbinding thaws whatever it governed, so no frozen subtree is ever left with nobody to resume it. **A node reads its own transport**: the one bound to the nearest bound group above it, or transport 0 when none is — so a `TransportPos` inside a group bound to transport 1 follows transport 1 with nothing in the def saying so.
 
 **`/transport_follow <int32 transport> <int32 group>`** binds a group that **follows** the transport without being governed by it (a negative id unbinds; replies `/done`, fails like `/transport_group`). Its nodes read the transport — its position, whether it rolls — and nothing freezes them, and their timed bundles stay on the device queue. It is for the part of an application that must go on running while its transport is stopped and still has to know that transport: an output with its meter and its declick, beside the governed group or around it. A transport has one following group as it has one governed group, and a group is bound to one transport either way.
 
@@ -304,7 +304,7 @@ What rides which clock is decided by **where a scheduled bundle's messages point
 How it plays: the server keeps the stretch of each lane just ahead of the position (half a second) **built** on the transport's lane queue, and an entry fires on the exact sample the position reaches it — a note's release then goes onto the transport's clock queue, its length later. Keyed by position, nothing is re-stamped when the transport jumps. **A jump or a stop releases what the lanes are sounding** — a locate, a `/transport_stop`, and a pass that stops on its end mark — as a DAW's stop sends its note-offs; a play does not bring a released note back, and a wrap releases nothing, so a note rings across the seam. Node ids are the server's, minted per pass from the auto range, since a lane plays again and again. A lane's releases are left standing by a client's `/sched_clear`, which would otherwise leave its notes sounding for good; a lane is emptied by a new `/lane_set` or by `/lane_free`. An NRT score has no lanes.
 
 
-With no group bound, `group` reports `-1` and the transport is the advisory registry it has always been: `/transport_play` and `/transport_stop` are broadcast for the clients to obey by choice, and nothing in the tree freezes. See [`sample-clock.md`](sample-clock.md).
+With no group bound, `group` reports `-1` and the transport is the advisory registry it has always been: `/transport_play` and `/transport_stop` are broadcast for the clients to obey by choice, and nothing in the tree freezes. A followed group also drives the engine clock, without being frozen by it. See [`sample-clock.md`](sample-clock.md).
 
 UDP is not the only transport: local clients can speak the same OSC through **shared memory** (`clausters --shm <path>`) or run the whole server **in-process** through the embed C ABI, with the sample clock and the control buses readable and writable directly in mapped memory. See [`ipc.md`](ipc.md) and `clients/python/clausters/ipc.py`.
 
@@ -1251,3 +1251,74 @@ Reloading is **incremental**: the socket starts serving immediately and the libr
 ## Generating defs programmatically
 
 `examples/json_client.py` (Python, stdlib only) builds all three formats with a few helper functions and drives the whole lifecycle over OSC — use it as a reference client. The equivalence of the families is pinned down by the golden tests in `tests/faust_parity.rs`: a UGen graph, the box translation and the signal translation render side by side in one engine and must agree (bit-exactly for stateless arithmetic on shared input, within float tolerance for oscillators, since `Sine` accumulates phase in f64 and Faust in f32).
+
+## Persistent plugin events
+
+`/plugin_event <node:int> <event:JSON-string-or-blob>` is schedulable in OSC
+bundles and on both sample axes. It targets the existing instance, never
+creates a synth per note. The same events can be entries of an event lane's
+`messages` list. Unsupported ports, kinds, expression IDs or dialects reply
+`/fail`; runtime capacity failures latch a per-node fault and silence.
+
+```json
+{"kind":"note_on","source":0,"note_id":7,"port":0,"channel":0,"key":60,"value":0.8}
+{"kind":"expression","source":0,"note_id":7,"port":0,"channel":0,"key":60,"id":6,"value":0.5}
+{"kind":"note_off","source":0,"note_id":7,"port":0,"channel":0,"key":60,"value":0.0}
+{"kind":"midi","source":0,"port":0,"bytes":[176,64,127]}
+```
+
+`port` is a stable native note-port ID; omitting it selects the first input
+note port. `source` is a client-chosen unsigned 32-bit origin, default zero;
+clients sharing an instance allocate distinct origins. `note_id` is a
+nonnegative identity within that origin and port, default -1. Without an
+identity, note-offs release the oldest matching attack by channel/key.
+Explicit IDs may overlap on the same key, but an ID cannot be attacked twice
+before release; retain distinct IDs while any older commands for those notes
+remain queued. The server assigns unique native note IDs across origins.
+`channel` is 0–15 for attacks, default zero; `key` is 0–127. `value` is velocity
+0–1 for attacks/releases, or a native expression value. An expression's `id`
+is CLAP's 0 volume, 1 pan, 2 tuning (semitones), 3 vibrato, 4 expression,
+5 brightness or 6 pressure. Expressions and `choke` can use -1 for note ID,
+channel or key, applying only to matching notes of their own origin.
+`midi` carries exactly one three-byte MIDI 1 channel-voice message; its running
+status, SysEx and MIDI 2 native dialect are not supported by this command.
+
+Native expression requires a CLAP note port. MIDI-only ports receive converted
+note attacks/releases but cannot distinguish overlapping attacks of the same
+channel/key: the node reports a protocol fault rather than merging ownership.
+MIDI notes, sustain, pressure, pitch bend and standard volume/pan/expression/
+brightness controllers can be translated to CLAP note events when no MIDI
+dialect is offered. Other unsupported controllers report an error.
+
+`/midi_bind` on a plugin def builds **one persistent instance at binding time**.
+Subsequent MIDI/UMP input uses the existing shared decoder and that instance;
+MPE requires a CLAP expression port and preserves the decoder's note IDs.
+`/midi_unbind` frees the instance. Mapped parameter controls still use
+`/midi_map` on plain-channel bindings (CC, pressure, poly pressure or bend);
+otherwise native controllers reach the plugin. Note/velocity/gate/def-program
+selector maps and MPE parameter remapping report unsupported routing. Native
+program-change messages remain available on MIDI-capable ports. Note velocities
+and native expressions preserve the decoded precision; MIDI-only controllers
+use the plugin's MIDI 1 resolution.
+
+A lane note's voice may be `{"plugin": <node-id>, "port": <native-port-id>}`
+(`port` optional), with controls `key`, `velocity` and `channel`. Both `gate`
+and `free` release that **note**, leaving its instance alive. Lane MIDI/UMP
+and plugin messages carry separate lane/generation origins; clearing, replacing
+or freeing a lane releases its notes without releasing live notes on that
+instance. A transport stop, locate or loop wrap releases plugin notes in its
+governed subtree. Freeing a plugin node ends its helper and all owned notes.
+A frozen subtree emits silence and freezes plugin DSP; releases are delivered
+before new attacks when processing resumes. Ungoverned live nodes keep
+processing while transport is stopped. Each helper sees monotonic device time
+relative to its instance's first block, including frozen blocks, and the
+nearest bound transport's position, playing state and BPM at each slice
+(default 120 BPM before a grid is declared).
+Position/playing discontinuities are carried at their original sample offsets;
+seconds and beat positions agree at the supplied tempo.
+
+One instance owns at most 256 notes and 64 sustain-origin/channel records.
+Every block still has at most 16 input events and eight spans. Overflow is
+explicit failure, including a release burst that cannot fit, followed by
+silence and explicit restart. Held notes are cleared on restart; old-generation
+events cannot actuate the replacement.

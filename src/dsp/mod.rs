@@ -989,6 +989,8 @@ pub const REPLY_NAME_MAX: usize = 31;
 /// thread turns it into an OSC reply or console line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReplyKind {
+    /// Internal release of a translated persistent MIDI note identity.
+    PluginNoteEnd,
     /// `SendTrig` -- a `/node_trigger nodeID trigID value` message.
     Trig,
     /// `SendReply` -- a `cmdName nodeID replyID value...` message.

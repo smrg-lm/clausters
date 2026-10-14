@@ -347,6 +347,7 @@ impl OscServer {
                             {
                                 self.fail(client, "/plugin_restart", "command FIFO full");
                             } else {
+                                self.translator.retire_plugin_generation(id, expected);
                                 self.translator.node_defs.insert(
                                     id,
                                     crate::osc::translate::NodeDef::Plugin(def, generation),

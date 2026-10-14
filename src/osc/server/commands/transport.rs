@@ -174,16 +174,20 @@ impl OscServer {
     ) -> Answer {
         let k = self.transport_arg(&mut args)?;
         let (origin, tempo) = (args.long()?, args.double()?);
-        if origin < 0 || tempo.is_nan() || tempo <= 0.0 {
+        if origin < 0 || !(tempo * 60.0).is_finite() || tempo <= 0.0 {
             return Err("originSample must be >= 0 and tempo > 0".into());
         }
+        self.send_engine(Cmd::PluginTempo {
+            transport: k,
+            bpm: tempo * 60.0,
+        })?;
         let previous = self.transports[k];
         // Redefining the grid puts the transport back at its start, which is what
         // "stopped at position 0" has always meant -- it just had nowhere to
         // say it before.
         self.locate_engine(k, 0)?;
         // Redefining the grid stops the transport, so a bound group freezes.
-        if previous.group.is_some() {
+        if previous.group.is_some() || previous.follow.is_some() {
             self.send_engine(Cmd::TransportRun {
                 transport: k,
                 rolling: false,
@@ -243,7 +247,7 @@ impl OscServer {
         }
         // With a group bound this is no longer an advisory: it thaws the
         // subtree and restarts the transport clock.
-        if self.transports[k].group.is_some() {
+        if self.transports[k].group.is_some() || self.transports[k].follow.is_some() {
             self.send_engine(Cmd::TransportRun {
                 transport: k,
                 rolling: true,
@@ -262,7 +266,7 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let k = self.transport_arg(&mut args)?;
-        if self.transports[k].group.is_some() {
+        if self.transports[k].group.is_some() || self.transports[k].follow.is_some() {
             self.send_engine(Cmd::TransportRun {
                 transport: k,
                 rolling: false,

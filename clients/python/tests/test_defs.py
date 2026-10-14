@@ -1042,3 +1042,16 @@ def test_plugin_reference_control_info_and_restart_wire():
     node = Synth.from_id(42, "test", server=srv)
     assert node.restart_plugin() is node
     assert iface.sent[-1] == ("/plugin_restart", [42])
+
+
+def test_persistent_plugin_events_are_addressed_to_one_node():
+    from clausters.defs import Node
+    iface = _FakeInterface()
+    server = Server(interface=iface)
+    node = Node(42, server)
+    events = [{"kind": "note_on", "source": 1, "note_id": 1, "key": 60, "value": 0.5},
+              {"kind": "expression", "source": 1, "note_id": 1, "id": 6, "value": 0.3},
+              {"kind": "note_off", "source": 1, "note_id": 1, "key": 60, "value": 0.0}]
+    for event in events:
+        assert node.plugin_event(event) is node
+    assert iface.sent == [("/plugin_event", [42, json.dumps(event)]) for event in events]

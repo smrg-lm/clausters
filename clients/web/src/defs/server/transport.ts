@@ -326,6 +326,9 @@ export class ServerTransport {
      * keeps its release, and
      * the new data is heard from where the position is.
      * The notes editor's playback writes it from an `EventSequence`.
+     * A voice may also be `{plugin: nodeId, port: nativeId}` (port optional),
+     * with key, velocity and channel controls. It releases its note while
+     * keeping the instance. Replacing data releases that lane's plugin notes.
      */
     async laneSet(
         this: Server,

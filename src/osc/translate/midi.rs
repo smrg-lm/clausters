@@ -41,7 +41,17 @@ impl CmdTranslator {
         }
         let mut binding = MidiBinding::new(instrument.clone(), target, action, gate);
         binding.graph_instance = self.bind_graph_instance(instrument, target, action, cmds)?;
-        self.midi.channels.insert(channel, binding);
+        if let Some(old) = self.midi.channels.insert(channel, binding) {
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            if let Some(id) = old.graph_instance
+                && matches!(self.node_defs.get(&id), Some(NodeDef::Plugin(..)))
+            {
+                cmds.push(Cmd::FreeNode { id });
+                self.mirror.remove(id);
+            }
+            #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+            let _ = old;
+        }
         self.midi.refresh_allowed();
         Ok(())
     }
@@ -98,6 +108,20 @@ impl CmdTranslator {
         zone: &mut ZoneBinding,
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        if self
+            .plugin_defs
+            .get(&zone.binding.instrument)
+            .is_some_and(|def| {
+                def.info
+                    .note_inputs
+                    .first()
+                    .is_none_or(|p| p.dialects & 1 == 0)
+            })
+        {
+            return Err("MPE bindings require a CLAP note-expression port".into());
+        }
+
         let reach: Vec<u8> = std::iter::once(side.master())
             .chain(side.members(zone.config.members))
             .collect();
@@ -165,6 +189,24 @@ impl CmdTranslator {
         action: i32,
         cmds: &mut Vec<Cmd>,
     ) -> Result<Option<i32>, String> {
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        if self.plugin_defs.contains_key(instrument) {
+            let instance = self.midi.alloc_id().ok_or("out of MIDI instance ids")?;
+            let msg = midi_message(
+                "/synth_new",
+                vec![
+                    OscType::String(instrument.into()),
+                    OscType::Int(instance),
+                    OscType::Int(action),
+                    OscType::Int(target),
+                ],
+            );
+            if let Err(error) = self.translate(&msg, cmds) {
+                self.midi.release_id(instance as i64);
+                return Err(error);
+            }
+            return Ok(Some(instance));
+        }
         if !self.graph_defs.contains_key(instrument) {
             return Ok(None);
         }
@@ -277,6 +319,29 @@ impl CmdTranslator {
             return Err("expected: channel, selector, name".into());
         };
         let channel = midi_channel(*channel)?;
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        {
+            let zone = self.midi.zones.get(&channel);
+            let binding = zone
+                .map(|z| &z.binding)
+                .or_else(|| self.midi.channels.get(&channel));
+            if let Some(node) = binding.and_then(|b| b.graph_instance)
+                && matches!(self.node_defs.get(&node), Some(NodeDef::Plugin(..)))
+            {
+                if zone.is_some()
+                    || selector.starts_with("prog")
+                    || matches!(
+                        selector.as_str(),
+                        "note" | "vel" | "velocity" | "gate" | "lift"
+                    )
+                {
+                    return Err("plugin notes and MPE use native routing; def selector maps are unsupported".into());
+                }
+                if self.node_defs[&node].control_index(name).is_none() {
+                    return Err("unknown plugin control in MIDI map".into());
+                }
+            }
+        }
         if let Some(zone) = self.midi.zones.get_mut(&channel) {
             if selector == "timbre" {
                 zone.binding.timbre_control = Some(name.clone());
@@ -335,6 +400,34 @@ impl CmdTranslator {
         bytes: &[u8],
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        for bytes in bytes.as_chunks::<3>().0 {
+            if bytes[0] & 0xf0 == 0xb0
+                && bytes[1] == 64
+                && let Some(side) = self.midi.decoder.zone_of(bytes[0] & 15)
+                && let Some(node) = self
+                    .midi
+                    .zones
+                    .get(&side.master())
+                    .and_then(|z| z.binding.graph_instance)
+                && matches!(self.node_defs.get(&node), Some(NodeDef::Plugin(..)))
+            {
+                self.plugin_event_cmd(
+                    node,
+                    super::plugin::MIDI_SOURCE | 256 | side.master() as u128,
+                    None,
+                    clausters_core::plugin_shm::Event {
+                        kind: 5,
+                        channel: -1,
+                        key: -1,
+                        note_id: -1,
+                        id: bytes[0] as u32 | ((bytes[1] as u32) << 8) | ((bytes[2] as u32) << 16),
+                        ..Default::default()
+                    },
+                    cmds,
+                )?;
+            }
+        }
         self.midi.decoder.feed(bytes);
         let mut result = Ok(());
         while let Some(event) = self.midi.decoder.poll() {
@@ -359,6 +452,10 @@ impl CmdTranslator {
     /// semitones, when one is mapped); pressure, timbre and a mapped
     /// controller set theirs; a note-off releases it, its lift first.
     fn translate_mpe(&mut self, event: MpeEvent, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        if self.plugin_mpe(event, cmds)? {
+            return Ok(());
+        }
         match event {
             MpeEvent::NoteOn {
                 note,
@@ -550,6 +647,47 @@ impl CmdTranslator {
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
         use ChannelVoiceMessage::*;
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        {
+            let channel = match msg {
+                NoteOn { channel, .. }
+                | NoteOff { channel, .. }
+                | PolyAftertouch { channel, .. }
+                | ChannelAftertouch { channel, .. }
+                | ControlChange { channel, .. }
+                | ProgramChange { channel, .. }
+                | PitchBend { channel, .. } => channel,
+            };
+            if let Some(node) = self
+                .midi
+                .channels
+                .get(&channel)
+                .and_then(|b| b.graph_instance)
+                && matches!(self.node_defs.get(&node), Some(NodeDef::Plugin(..)))
+            {
+                if let Some((control, value)) = self.midi_expression(msg)
+                    && self.node_defs[&node].control_index(&control).is_some()
+                {
+                    return self.translate(
+                        &midi_message(
+                            "/node_set",
+                            vec![
+                                OscType::Int(node),
+                                OscType::String(control),
+                                OscType::Float(value),
+                            ],
+                        ),
+                        cmds,
+                    );
+                }
+                return self.plugin_midi(
+                    node,
+                    super::plugin::MIDI_SOURCE | channel as u128,
+                    msg,
+                    cmds,
+                );
+            }
+        }
         match msg {
             NoteOn {
                 channel,
@@ -887,6 +1025,24 @@ impl CmdTranslator {
                     note,
                     message,
                 } => {
+                    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                    if let Some(node) = self
+                        .midi
+                        .channels
+                        .get(&channel)
+                        .and_then(|b| b.graph_instance)
+                        && matches!(self.node_defs.get(&node), Some(NodeDef::Plugin(..)))
+                    {
+                        self.plugin_per_note(
+                            node,
+                            super::plugin::MIDI_SOURCE | channel as u128,
+                            channel,
+                            note,
+                            message,
+                            cmds,
+                        )?;
+                        continue;
+                    }
                     if let Some(&id) = self.midi.voices.get(&(channel, note)) {
                         self.per_note(id, channel, note, message, cmds);
                     }

@@ -30,6 +30,14 @@ pub trait SynthNode: Send {
     /// Publish completed block staging after all DSP workers have joined.
     fn finish_block(&mut self) {}
     /// Isolated processor generation, zero for ordinary synths.
+    /// A native event arriving at the engine's exact current sample offset.
+    fn plugin_event(&mut self, _source: u128, _event: clausters_core::plugin_shm::Event) {}
+    /// Release notes owned by this lane (or all notes for a transport gesture).
+    fn release_plugin_notes(&mut self, _lane: Option<i32>, _offset: usize) {}
+    /// Release the lane origins belonging to one transport, including live subtrees.
+    fn release_plugin_transport(&mut self, _transport: usize, _offset: usize) {}
+    /// Governing transport tempo, kept separate from the UGen transport surface.
+    fn plugin_tempo(&mut self, _bpm: f64) {}
     fn incarnation(&self) -> u64 {
         0
     }
@@ -350,6 +358,8 @@ pub struct NodeTree {
     /// engine before every slice ([`Self::set_transport_view`]); the walk hands
     /// a governed subtree its own row.
     transport_views: Vec<TransportCtx>,
+    plugin_tempos: Vec<f64>,
+    plugin_nodes: Vec<usize>,
 }
 
 impl NodeTree {
@@ -393,6 +403,8 @@ impl NodeTree {
             reply_slots: (0..max_nodes).map(|_| AtomicUsize::new(0)).collect(),
             reply_count: AtomicUsize::new(0),
             transport_views: vec![TransportCtx::default(); 1],
+            plugin_tempos: vec![120.0; 1],
+            plugin_nodes: Vec::with_capacity(max_nodes),
         }
     }
 
@@ -400,8 +412,45 @@ impl NodeTree {
     /// audio thread: it allocates.
     pub fn set_transports(&mut self, count: usize) {
         self.transport_views = vec![TransportCtx::default(); count.max(1)];
+        self.plugin_tempos = vec![120.0; count.max(1)];
     }
 
+    /// Set a transport's plugin tempo without allocation.
+    pub fn set_plugin_tempo(&mut self, transport: usize, bpm: f64) {
+        if let Some(row) = self.plugin_tempos.get_mut(transport) {
+            *row = bpm;
+        }
+    }
+    /// Release plugin notes under a group, or a lane's origins across the tree.
+    pub fn release_plugin_notes(&mut self, group: Option<i32>, lane: Option<i32>, offset: usize) {
+        for position in 0..self.plugin_nodes.len() {
+            let idx = self.plugin_nodes[position];
+            let id = self.id_of(idx);
+            if group.is_some_and(|group| !self.is_descendant_of(id, group)) {
+                continue;
+            }
+            if let Some(NodeSlot {
+                kind: NodeKind::Synth { node, .. },
+                ..
+            }) = self.slot_mut(idx)
+            {
+                node.release_plugin_notes(lane, offset);
+            }
+        }
+    }
+    /// Release lane-owned plugin notes, even on ungoverned persistent instances.
+    pub fn release_plugin_transport(&mut self, transport: usize, offset: usize) {
+        for position in 0..self.plugin_nodes.len() {
+            let idx = self.plugin_nodes[position];
+            if let Some(NodeSlot {
+                kind: NodeKind::Synth { node, .. },
+                ..
+            }) = self.slot_mut(idx)
+            {
+                node.release_plugin_transport(transport, offset);
+            }
+        }
+    }
     /// What transport `transport` looks like in the next slice. RT-safe: one
     /// store into the pre-sized table; out of range is ignored.
     #[inline]
@@ -579,6 +628,11 @@ impl NodeTree {
     fn take_slot(&mut self, idx: usize) -> Option<NodeSlot> {
         let slot = self.slots[idx].get_mut().take()?;
         self.index.remove(slot.id);
+        if matches!(&slot.kind, NodeKind::Synth { node, .. } if node.incarnation() != 0)
+            && let Some(position) = self.plugin_nodes.iter().position(|node| *node == idx)
+        {
+            self.plugin_nodes.swap_remove(position);
+        }
         Some(slot)
     }
 
@@ -745,6 +799,9 @@ impl NodeTree {
             NodeKind::Synth { node, .. } => {
                 self.synth_count += 1;
                 self.ugen_count += node.ugen_count();
+                if node.incarnation() != 0 {
+                    self.plugin_nodes.push(free);
+                }
             }
             NodeKind::Group(_) => self.group_count += 1,
         }
@@ -1111,6 +1168,8 @@ impl NodeTree {
                 kind: NodeKind::Synth { node, .. },
                 ..
             }) = self.slot_mut(idx)
+            && expected != 0
+            && synth.incarnation() != 0
             && node.incarnation() == expected
         {
             synth.set_node_id(id);
@@ -1231,44 +1290,45 @@ impl NodeTree {
         unsafe { self.process_index(ROOT_SLOT, ctx, pool) }
     }
 
-    /// Prepare isolated endpoints, including nodes under paused groups.
+    /// Prepare only isolated endpoints, including those under paused groups.
     #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
     pub fn prepare_slice(&mut self, ctx: &ProcessCtx) {
-        // SAFETY: called before worker dispatch, with exclusive tree ownership.
-        unsafe {
-            self.prepare_index(ROOT_SLOT, ctx, true);
-        }
-    }
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
-    unsafe fn prepare_index(&self, idx: usize, ctx: &ProcessCtx, active: bool) {
-        // SAFETY: no workers are dispatched during preparation.
-        let Some(slot) = (unsafe { &mut *self.slots[idx].get() }).as_mut() else {
-            return;
-        };
-        let active = active && !slot.paused;
-        let ctx = if slot.transport == NO_TRANSPORT {
-            *ctx
-        } else {
-            ProcessCtx {
-                transport: self.transport_view(slot.transport as usize),
-                ..*ctx
-            }
-        };
-        match &mut slot.kind {
-            NodeKind::Synth { node, .. } => node.prepare_slice(&ctx, active),
-            NodeKind::Group(group) => {
-                for &child in &group.children {
-                    unsafe {
-                        self.prepare_index(child, &ctx, active);
-                    }
+        for position in 0..self.plugin_nodes.len() {
+            let idx = self.plugin_nodes[position];
+            let mut ancestor = idx;
+            let mut active = true;
+            let mut transport = None;
+            while let Some(slot) = self.slot(ancestor) {
+                active &= !slot.paused;
+                if transport.is_none() && slot.transport != NO_TRANSPORT {
+                    transport = Some(slot.transport as usize);
                 }
+                if slot.parent == NO_PARENT {
+                    break;
+                }
+                ancestor = slot.parent;
+            }
+            let transport = transport.unwrap_or(0);
+            let ctx = ProcessCtx {
+                transport: self.transport_view(transport),
+                ..*ctx
+            };
+            let tempo = self.plugin_tempos[transport];
+            if let Some(NodeSlot {
+                kind: NodeKind::Synth { node, .. },
+                ..
+            }) = self.slot_mut(idx)
+            {
+                node.plugin_tempo(tempo);
+                node.prepare_slice(&ctx, active);
             }
         }
     }
-    /// Publish isolated jobs once and queue endpoint failures, even while frozen.
+    /// Publish isolated jobs once and queue failures, even while frozen.
     #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
     pub fn finish_block(&mut self) {
-        for idx in 0..self.slots.len() {
+        for position in 0..self.plugin_nodes.len() {
+            let idx = self.plugin_nodes[position];
             if let Some(NodeSlot {
                 kind: NodeKind::Synth { node, .. },
                 ..

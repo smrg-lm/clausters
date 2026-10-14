@@ -1959,7 +1959,9 @@ mapping travel back through the ordinary garbage FIFO before being dropped.
 no producer can escape it, and no administration runs in a callback.
 
 Before each slice, the tree prepares plugin endpoints including paused
-subtrees. Each endpoint receives only the result due for the current device
+subtrees. A preallocated index holds only isolated node slots, so preparation,
+publication and releases skip the unused slab and ordinary synths; insert/free
+maintain it without allocation. Its capacity is the node slab capacity. Each endpoint receives only the result due for the current device
 block, records active/frozen spans, and stages its input during ordinary DSP
 traversal. After every worker has joined, the tree publishes one complete job.
 More than eight spans or sixteen changed parameters/events in a block latch a
@@ -1969,3 +1971,37 @@ participate in `/server_sync`. A restart builds a fresh mapping and helper,
 then swaps only a matching instance generation at the block boundary. The
 actual old processor supplies its current controls and mappings at that
 boundary; old queued audio and notes cannot reach the replacement.
+
+### Persistent instrument events
+
+Native events are validated against the immutable note-port metadata on the
+network thread and sent as scalar `Cmd::PluginEvent` values, with the instance
+generation and the engine's sample offset. No plugin call enters the callback.
+Each instance has a preallocated 256-note ownership table and 64 sustain rows.
+Client origins, live MIDI origins and lane origins are disjoint. A lane origin
+includes its transport, lane id and data generation; even negative lane ids
+retain their full identity. Clearing a lane releases only its origins. Stop,
+locate and wrap release lane origins even on ungoverned live nodes, as well as
+all notes in a governed subtree. Free ends the helper; restart has no held notes.
+
+MIDI key-only releases resolve on the network side through bounded FIFO note
+identities (256 outstanding attacks per instance), preserving repeated keys
+and stale releases across a stop. Native note-port IDs resolve to each instance's actual enumeration order; changed
+IDs or dialects fail loading rather than reaching a different port.
+The internal negative identities are disjoint
+from explicit nonnegative client IDs; the audio endpoint assigns positive native
+IDs across all origins. A plugin's note-end results retire the corresponding
+translated identities through the existing reply FIFO. Node free and restart
+retire the old ledger. A full ledger is rejected before submission; a full
+input list, note table, sustain table or span list latches a node fault and
+silence. Release bursts obey the same capacity contract.
+
+Both MIDI and lane inputs retain the existing shared decoder. Native CLAP
+expression preserves decoded precision; MIDI-only ports receive MIDI 1 events
+and reject unsupported per-note expression and same-channel/key overlaps.
+MPE zone bindings require a native CLAP expression port and instantiate once.
+The helper's device clock advances through frozen blocks independently of the
+transport, with its first block as origin. Every active/frozen span carries the
+nearest bound transport's position, playing flag and BPM; the CLAP adapter
+supplies matching seconds and beat positions. A followed group keeps the
+transport clock running without becoming a governed, frozen subtree.

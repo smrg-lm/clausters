@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Persistent native instrument</title>
+<!--
+Same calls and event sequence as clients/python/examples/plugins/persistent.py.
+Build the server with plugin-clap and its matching helper. Start a native server
+with --ws 57112, build the web package and serve this tree over HTTP. This page
+attaches to that server; a page cannot boot a native process (Python can).
+Choose a CLAP instrument with a native note-expression port and an audible
+initial preset, such as Surge XT. Samplers need samples in their initial state.
+-->
+<label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
+<label>Binary on server <input id="binary" placeholder="/path/instrument.clap"></label><br>
+<label>Native plugin ID <input id="plugin"></label><br>
+<button id="play">Play</button><pre id="log"></pre>
+<script type="module">
+import { Group, PluginDef, Routine, Session, Synth } from "../../dist/index.js";
+const $ = (id) => document.getElementById(id);
+$("play").onclick = async () => {
+    let session, voice, governed;
+    try {
+        $("play").disabled = true;
+        session = (await Session.live($("url").value)).activate();
+        session.clock.setTempo(2.0);
+        const server = session.server;
+        const rows = await server.scanPlugins([$("binary").value], 60.0);
+        const info = rows.find((row) => row.kind === "plugin" && row.plugin.id === $("plugin").value)?.plugin;
+        if (!info?.note_inputs.length || !(info.note_inputs[0].dialects & 1)) throw new Error("choose an instrument with a CLAP note-expression port");
+        const port = info.note_inputs[0].id;
+        const reference = { format: info.format, path: info.path, id: info.id, inputs: [], outputs: [] };
+        let bus = 4;
+        for (const item of info.inputs) { reference.inputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
+        bus = 0;
+        for (const item of info.outputs) { reference.outputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
+        await new PluginDef("persistent_keys", reference).send(server);
+        governed = new Group({ server });
+        voice = new Synth("persistent_keys", {}, { target: 0, server });
+        await server.setTransport(0, 2.0);
+        await server.transportGroup(governed);
+        await server.laneNew(3100, governed);
+        await server.laneSet(3100, { notes: [
+            [12000, 48000, { plugin: voice.id, port }, { key: 64, velocity: 0.15 }, "gate"],
+            [60000, 108000, { plugin: voice.id, port }, { key: 69, velocity: 0.15 }, "gate"],
+        ] });
+        await server.transportPlay();
+        function* phrase() {
+            voice.pluginEvent({ kind: "note_on", source: 1, note_id: 1, port, channel: 0, key: 60, value: 0.15 });
+            voice.pluginEvent({ kind: "note_on", source: 1, note_id: 2, port, channel: 0, key: 67, value: 0.15 });
+            yield 0.5;
+            voice.pluginEvent({ kind: "expression", source: 1, note_id: 1, port, channel: 0, key: 60, id: 6, value: 0.4 });
+            yield 0.5;
+            voice.pluginEvent({ kind: "note_off", source: 1, note_id: 1, port, channel: 0, key: 60, value: 0.0 });
+            yield 1.0;
+            voice.pluginEvent({ kind: "note_off", source: 1, note_id: 2, port, channel: 0, key: 67, value: 0.0 });
+        }
+        new Routine(phrase).play();
+        await session.run(3.0);
+        if ((await server.status()).synths !== 1) throw new Error("notes must share one persistent instance");
+        await server.transportStop();
+        await server.laneFree(3100);
+        voice.free(); governed.free(); await session.close(); session = null;
+        $("log").textContent = "Played live notes and lane notes on one persistent instance.";
+        if (new URLSearchParams(location.search).has("smoke")) await fetch("/smoke-verdict-PASS-persistent-plugin");
+    } catch (error) { $("log").textContent = String(error); if (new URLSearchParams(location.search).has("smoke")) await fetch(`/smoke-verdict-FAIL-${encodeURIComponent(String(error))}`); }
+    finally { if (session) await session.close(); $("play").disabled = false; }
+};
+const params = new URLSearchParams(location.search);
+if (params.has("smoke")) {
+    $("url").value = params.get("url") ?? $("url").value;
+    $("binary").value = params.get("binary") ?? "";
+    $("plugin").value = params.get("plugin") ?? "";
+    $("play").click();
+}
+</script></html>

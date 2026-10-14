@@ -501,7 +501,9 @@ impl FormatProcessor for Audio {
         for b in self.output.iter_mut().flatten() {
             b[..n].fill(0.0);
         }
-        let mut flags = TransportFlags::HAS_SECONDS_TIMELINE | TransportFlags::HAS_TEMPO;
+        let mut flags = TransportFlags::HAS_SECONDS_TIMELINE
+            | TransportFlags::HAS_BEATS_TIMELINE
+            | TransportFlags::HAS_TEMPO;
         if span.playing != 0 {
             flags |= TransportFlags::IS_PLAYING;
         }
@@ -510,7 +512,9 @@ impl FormatProcessor for Audio {
             flags,
             song_pos_seconds: SecondsTime::from_float(span.position as f64 / self.rate),
             tempo: span.tempo,
-            song_pos_beats: BeatTime::from_bits(0),
+            song_pos_beats: BeatTime::from_float(
+                span.position as f64 / self.rate * span.tempo / 60.0,
+            ),
             tempo_inc: 0.0,
             loop_start_beats: BeatTime::from_bits(0),
             loop_end_beats: BeatTime::from_bits(0),

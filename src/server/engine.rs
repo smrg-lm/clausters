@@ -63,6 +63,18 @@ pub const LANE_CAPACITY: usize = 1024;
 /// synths and pre-reserved group child lists); applying them on the audio
 /// thread never allocates.
 pub enum Cmd {
+    /// A fully validated event for an existing native instance generation.
+    PluginEvent {
+        id: i32,
+        generation: u64,
+        source: u128,
+        event: clausters_core::plugin_shm::Event,
+    },
+    /// The shared beat grid's tempo, converted to BPM off RT.
+    PluginTempo {
+        transport: usize,
+        bpm: f64,
+    },
     /// Swap a prepared plugin generation at a block boundary.
     RestartSynth {
         id: i32,
@@ -386,6 +398,7 @@ struct TransportState {
     /// Whether it rolls. Stopped, `frozen_total` accumulates and its clock
     /// holds.
     rolling: bool,
+    bpm: f64,
     /// Total samples it has spent stopped since boot. The whole of the
     /// device -> transport conversion (see `server::clock_axis`).
     frozen_total: u64,
@@ -525,6 +538,7 @@ impl TransportState {
     fn new() -> Self {
         Self {
             rolling: false,
+            bpm: 120.0,
             frozen_total: 0,
             group: None,
             follow: None,
@@ -664,6 +678,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::FreeAllInGroup { id }
         | Cmd::DeepFreeGroup { id }
         | Cmd::RunNode { id, .. }
+        | Cmd::PluginEvent { id, .. }
         | Cmd::RestartSynth { id, .. }
         | Cmd::SetControl { id, .. }
         | Cmd::MapControl { id, .. }
@@ -673,7 +688,8 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         // No node target: a bus write, a buffer swap, a tap route, the
         // transport's own controls, or a queue-wide operation. These carry no
         // opinion about which axis the bundle belongs to.
-        Cmd::TransportRun { .. }
+        Cmd::PluginTempo { .. }
+        | Cmd::TransportRun { .. }
         | Cmd::TransportGroup { .. }
         | Cmd::TransportFollow { .. }
         | Cmd::TransportLocate { .. }
@@ -1436,6 +1452,10 @@ impl Engine {
         // end mark caused it, and where the pass goes back to.
         let froze = match edge {
             Edge::Wrap => {
+                self.tree.release_plugin_transport(k, offset);
+                if let Some(group) = t.group {
+                    self.tree.release_plugin_notes(Some(group), None, offset);
+                }
                 // Back to the loop's start, re-anchored here so the
                 // position goes on advancing by one per sample from
                 // the seam. The span is half-open, so the end sample
@@ -1480,6 +1500,7 @@ impl Engine {
             }
         };
         if let Some((back, ended)) = froze {
+            self.tree.release_plugin_transport(k, offset);
             // The governed group and the transport's clock freeze on
             // this sample, and the level is zero. An end then locates
             // to where the pass goes back to; the locate is anchored
@@ -1487,6 +1508,7 @@ impl Engine {
             t.rolling = false;
             t.fade = Ramp::level(0.0);
             if let Some(group) = t.group {
+                self.tree.release_plugin_notes(Some(group), None, offset);
                 self.tree.set_paused(group, true);
             }
             if t.frozen_from.is_none() {
@@ -1725,6 +1747,7 @@ impl Engine {
         // its own transport's row; everything else reads transport 0's.
         let device = self.now + offset as u64;
         for (i, t) in self.transports.iter().enumerate() {
+            self.tree.set_plugin_tempo(i, t.bpm);
             self.tree.set_transport_view(
                 i,
                 TransportCtx {
@@ -1775,10 +1798,18 @@ impl Engine {
         let here = self.device_here();
         {
             let mut sink = garbage_sink!(self);
-            let Some(cmd) = apply_to_tree(&mut self.tree, &mut sink, cmd) else {
+            let Some(cmd) = apply_to_tree(&mut self.tree, &mut sink, cmd, self.cursor) else {
                 return;
             };
             match cmd {
+                Cmd::PluginTempo { transport, bpm } => {
+                    if let Some(t) = self.transports.get_mut(transport)
+                        && bpm.is_finite()
+                        && bpm > 0.0
+                    {
+                        t.bpm = bpm;
+                    }
+                }
                 Cmd::TransportRun { transport, rolling } => {
                     let Some(t) = self.transports.get_mut(transport) else {
                         return;
@@ -1793,6 +1824,11 @@ impl Engine {
                     // live where the transport does not freeze them, so their
                     // releases ring out.
                     if !rolling && t.rolling && t.stopping.is_none() {
+                        self.tree.release_plugin_transport(transport, self.cursor);
+                        if let Some(group) = t.group {
+                            self.tree
+                                .release_plugin_notes(Some(group), None, self.cursor);
+                        }
                         take_releases(&mut t.sched, &mut self.released, None);
                     }
                     let flipped = if rolling { t.play(here) } else { t.stop(here) };
@@ -1856,6 +1892,11 @@ impl Engine {
                                     t.at(here),
                                 )
                             }
+                        }
+                        self.tree.release_plugin_transport(transport, self.cursor);
+                        if let Some(group) = t.group {
+                            self.tree
+                                .release_plugin_notes(Some(group), None, self.cursor);
                         }
                         // **A jump releases what the lanes were sounding**, as
                         // a DAW does: those notes belong where the position was.
@@ -2016,6 +2057,8 @@ impl Engine {
                     lane,
                     release,
                 } => {
+                    self.tree
+                        .release_plugin_notes(None, Some(lane), self.cursor);
                     if let Some(t) = self.transports.get_mut(transport) {
                         let mut j = 0;
                         while j < t.lanes.len() {
@@ -2040,7 +2083,8 @@ impl Engine {
                 // refuses a `Cmd` variant that neither this match nor
                 // `apply_to_tree` handles -- a wildcard here would turn that
                 // omission into a panic on the audio thread.
-                Cmd::RestartSynth { .. }
+                Cmd::PluginEvent { .. }
+                | Cmd::RestartSynth { .. }
                 | Cmd::AddSynth { .. }
                 | Cmd::AddGroup { .. }
                 | Cmd::FreeNode { .. }
@@ -2118,8 +2162,26 @@ fn take_releases(
 /// it is not one of these, so the caller matches the remaining seven and no
 /// command is classified twice.
 #[inline]
-fn apply_to_tree(tree: &mut NodeTree, sink: &mut GarbageSink, cmd: Cmd) -> Option<Cmd> {
+fn apply_to_tree(
+    tree: &mut NodeTree,
+    sink: &mut GarbageSink,
+    cmd: Cmd,
+    offset: usize,
+) -> Option<Cmd> {
     match cmd {
+        Cmd::PluginEvent {
+            id,
+            generation,
+            source,
+            mut event,
+        } => {
+            if let Some(node) = tree.synth_mut(id)
+                && node.incarnation() == generation
+            {
+                event.offset = offset as u32;
+                node.plugin_event(source, event);
+            }
+        }
         Cmd::RestartSynth {
             id,
             expected,

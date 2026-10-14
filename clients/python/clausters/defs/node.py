@@ -163,6 +163,19 @@ class Node:
         reported id (a responder, the GUI, the arrangement) carries none."""
         return _resolve(self.server)
 
+    def plugin_event(self, event: dict):
+        """Send an event to this persistent plugin instance, without a new node.
+
+        Kinds are `note_on`, `note_off`, `choke`, `expression` and `midi`.
+        `source` separates note ownership; `port` is the native input port ID.
+        `note_id` identifies a note within that source and port. Native note
+        expressions use IDs 0-6 and `value` in native units. MIDI uses `bytes`.
+        The message participates in the current scheduled OSC bundle.
+        """
+        import json
+        self._server().send_msg("/plugin_event", self.id, json.dumps(event))
+        return self
+
     def restart_plugin(self, *, timeout: float = 10.0):
         """Restart this plugin node with a fresh helper and cleared held notes.
 

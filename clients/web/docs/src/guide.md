@@ -323,3 +323,16 @@ path compensation are not available yet. See the
 [protocol reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-definitions-and-recovery).
 
 `await node.restartPlugin()` waits for recovery preparation. A browser client can control plugins on a native server; its in-page engine reports a capability error.
+
+### Persistent native instruments
+
+`node.pluginEvent(event)` sends notes, MIDI or native per-note expression to the
+existing instance. Use distinct `source` origins for independent players and
+note IDs for overlapping keys. A lane voice `{"plugin": node_id, "port":
+native_port_id}` holds notes on that same instance; replacing or freeing the
+lane releases only its notes. MIDI bindings of a plugin def likewise create
+one persistent instance, using the shared MIDI decoder. MPE requires a CLAP
+note-expression port; unsupported dialects report errors. Bind a governed or
+followed transport for its playing state and position; an ungoverned live
+instance continues processing while stopped. See the
+[persistent-event reference](https://clausters.readthedocs.io/en/latest/schemas.html#persistent-plugin-events).

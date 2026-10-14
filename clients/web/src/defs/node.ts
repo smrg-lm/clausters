@@ -109,6 +109,17 @@ export class Node {
         return resolveServer(this.server);
     }
 
+    /** Send one native event to this persistent plugin, without a new node.
+     * Kinds are note_on, note_off, choke, expression and midi. The source
+     * separates ownership, port is a native input ID and note_id identifies
+     * a note there. Expressions use IDs 0-6 and native values; MIDI uses bytes.
+     * This participates in the current scheduled OSC bundle.
+     */
+    pluginEvent(event: Record<string, unknown>): this {
+        this.srv().sendMsg("/plugin_event", ["i", this.id], JSON.stringify(event));
+        return this;
+    }
+
     /** Restart this plugin with a fresh helper, initial state and current controls.
      * Held notes and unsaved DSP history are cleared at the block-boundary swap.
      */

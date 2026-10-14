@@ -59,6 +59,8 @@ use crate::osc::graph::faust_usage;
 mod buffers;
 mod graph;
 mod midi;
+#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+pub(crate) mod plugin;
 mod queries;
 
 pub use buffers::{BUFFER_JOBS, parse_buffer_gen, parse_buffer_msg};
@@ -94,7 +96,7 @@ impl NodeDef {
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => def.control_index(name),
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
-            NodeDef::Plugin(def, _) => def.control_index(name),
+            NodeDef::Plugin(def, ..) => def.control_index(name),
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
@@ -118,7 +120,7 @@ impl NodeDef {
             #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_names.get(index).map(String::as_str),
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
-            NodeDef::Plugin(def, _) => def.names.get(index).map(String::as_str),
+            NodeDef::Plugin(def, ..) => def.names.get(index).map(String::as_str),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => match index.checked_sub(def.params.len()) {
                 None => def.params.get(index).map(|p| p.name.as_str()),
@@ -160,7 +162,7 @@ impl NodeDef {
             #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_defaults.clone(),
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
-            NodeDef::Plugin(def, _) => def.defaults.clone(),
+            NodeDef::Plugin(def, ..) => def.defaults.clone(),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => {
                 // UI params at their inits, then the reserved out/in buses.
@@ -193,7 +195,7 @@ impl NodeDef {
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => faust_usage(def, controls),
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
-            NodeDef::Plugin(def, _) => def.usage(controls),
+            NodeDef::Plugin(def, ..) => def.usage(controls),
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
@@ -244,6 +246,12 @@ pub struct CmdTranslator {
     pub faust_defs: HashMap<String, Arc<FaustDef>>,
     #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
     pub plugin_defs: HashMap<String, Arc<crate::plugin::PluginDef>>,
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    plugin_note_queues: HashMap<plugin::MidiAddress, std::collections::VecDeque<i32>>,
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    plugin_note_counts: HashMap<i32, usize>,
+    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    next_plugin_note: i32,
     /// Network-side tree mirror: topology, per-node controls and bus usage,
     /// auto-sorted groups. Fed by the same commands the engine gets.
     pub mirror: TreeMirror,
@@ -345,6 +353,12 @@ impl CmdTranslator {
             faust_defs: HashMap::new(),
             #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
             plugin_defs: HashMap::new(),
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            plugin_note_queues: HashMap::new(),
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            plugin_note_counts: HashMap::new(),
+            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            next_plugin_note: -2,
             mirror: TreeMirror::new(),
             buffers: empty_pool_with(limits.max_buffers),
             midi: MidiBindings::new(partition.midi_base, partition.midi_capacity),
@@ -441,6 +455,12 @@ impl CmdTranslator {
     /// for a GraphDef's slot or instance, what `/node_free` would have dropped:
     /// its translator state and its private buses.
     pub fn forget_node(&mut self, id: i32) {
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        {
+            self.plugin_note_queues.retain(|(node, ..), _| *node != id);
+            self.plugin_note_counts.remove(&id);
+        }
+
         let parent = self.mirror.parent(id);
         self.node_defs.remove(&id);
         self.mirror.remove(id);
@@ -1085,6 +1105,16 @@ impl CmdTranslator {
     /// nothing reaches the engine until the caller ships the batch.
     pub fn translate(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         match msg.addr.as_str() {
+            "/plugin_event" => {
+                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                {
+                    self.plugin_event(msg, cmds)
+                }
+                #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+                {
+                    Err("native plugin events unavailable in this engine".into())
+                }
+            }
             "/synth_new" => {
                 let [
                     OscType::String(name),

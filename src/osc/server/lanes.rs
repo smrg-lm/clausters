@@ -574,6 +574,8 @@ impl OscServer {
         let Some(lane) = self.lanes.get_mut(&id) else {
             return Ok(());
         };
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        self.translator.clear_plugin_lane(id);
         lane.generation = lane.generation.wrapping_add(1);
         lane.queued.clear();
         lane.voices.clear();
@@ -697,9 +699,80 @@ impl OscServer {
                 length: held,
                 release: how,
             } => {
+                if let EventLaneVoice::Plugin { node, port } = voice {
+                    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                    {
+                        let source = crate::osc::translate::plugin::lane_source(
+                            id,
+                            tag.generation,
+                            transport,
+                        );
+                        let value = |name: &str, fallback: f64| {
+                            controls
+                                .as_chunks::<2>()
+                                .0
+                                .iter()
+                                .find_map(|pair| match &pair[0] {
+                                    OscType::String(key) if key == name => {
+                                        crate::osc::args::float_value(&pair[1]).map(f64::from)
+                                    }
+                                    _ => None,
+                                })
+                                .unwrap_or(fallback)
+                        };
+                        for pair in controls.as_chunks::<2>().0.iter() {
+                            if !matches!(&pair[0], OscType::String(key) if matches!(key.as_str(), "key"|"velocity"|"channel"))
+                            {
+                                return Err(
+                                    "plugin lane notes accept key, velocity and channel".into()
+                                );
+                            }
+                        }
+                        let key = value("key", 60.0);
+                        let channel = value("channel", 0.0);
+                        if key.fract() != 0.0 || channel.fract() != 0.0 {
+                            return Err("plugin key and channel must be integers".into());
+                        }
+                        let event = clausters_core::plugin_shm::Event {
+                            kind: 1,
+                            note_id: i as i32,
+                            key: key as i16,
+                            channel: channel as i16,
+                            value: value("velocity", 1.0),
+                            ..Default::default()
+                        };
+                        self.translator
+                            .plugin_event_cmd(node, source, port, event, &mut start)?;
+                        self.translator.plugin_event_cmd(
+                            node,
+                            source,
+                            port,
+                            clausters_core::plugin_shm::Event {
+                                kind: 2,
+                                value: 0.0,
+                                ..event
+                            },
+                            &mut release,
+                        )?;
+                        return Ok(Some(Cmd::EventLaneEntry {
+                            transport,
+                            tag,
+                            position,
+                            length: held,
+                            start,
+                            release,
+                        }));
+                    }
+                    #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+                    {
+                        let _ = (node, port);
+                        return Err("native plugin notes unavailable in this engine".into());
+                    }
+                }
                 // A synth, or one more of a graph's slot -- whose group is the
                 // note, released through the slot's `gate` port or freed whole.
                 let message = match voice {
+                    EventLaneVoice::Plugin { .. } => unreachable!("handled above"),
                     EventLaneVoice::Def(def) => {
                         let mut args = vec![
                             OscType::String(def),
@@ -751,6 +824,21 @@ impl OscServer {
                 length = held;
             }
             EventLaneEvent::Message(message) => {
+                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                if message.addr == "/plugin_event" {
+                    self.translator.plugin_event_scoped(
+                        &message,
+                        Some(crate::osc::translate::plugin::lane_source(
+                            id,
+                            tag.generation,
+                            transport,
+                        )),
+                        &mut start,
+                    )?;
+                } else {
+                    self.translator.translate(&message, &mut start)?;
+                }
+                #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
                 self.translator.translate(&message, &mut start)?;
             }
             EventLaneEvent::MidiNote {
@@ -761,6 +849,61 @@ impl OscServer {
                 program,
                 voice,
             } => {
+                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                if let Some(node) = self
+                    .translator
+                    .midi
+                    .channels
+                    .get(&channel)
+                    .and_then(|b| b.graph_instance)
+                    && matches!(
+                        self.translator.node_defs.get(&node),
+                        Some(crate::osc::translate::NodeDef::Plugin(..))
+                    )
+                {
+                    let source =
+                        crate::osc::translate::plugin::lane_source(id, tag.generation, transport);
+                    if let Some(program) = program {
+                        self.translator.plugin_midi(
+                            node,
+                            source,
+                            ChannelVoiceMessage::ProgramChange { channel, program },
+                            &mut start,
+                        )?;
+                    }
+                    let event = clausters_core::plugin_shm::Event {
+                        kind: 1,
+                        note_id: voice as i32,
+                        channel: channel as i16,
+                        key: note as i16,
+                        value: velocity as f64 / 65535.0,
+                        ..Default::default()
+                    };
+                    self.translator
+                        .plugin_event_cmd(node, source, None, event, &mut start)?;
+                    self.translator.plugin_event_cmd(
+                        node,
+                        source,
+                        None,
+                        clausters_core::plugin_shm::Event {
+                            kind: 2,
+                            value: 0.0,
+                            ..event
+                        },
+                        &mut release,
+                    )?;
+                    if let Some(lane) = self.lanes.get_mut(&id) {
+                        lane.voices.insert(voice, node);
+                    }
+                    return Ok(Some(Cmd::EventLaneEntry {
+                        transport,
+                        tag,
+                        position,
+                        length: held,
+                        start,
+                        release,
+                    }));
+                }
                 let Some(node) = self.translator.lane_midi_note(
                     channel,
                     note,
@@ -787,6 +930,75 @@ impl OscServer {
                 length: held,
                 voice,
             } => {
+                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                if let Some(node) = self
+                    .translator
+                    .midi
+                    .zones
+                    .get(&master)
+                    .and_then(|z| z.binding.graph_instance)
+                    && matches!(self.translator.node_defs.get(&node), Some(crate::osc::translate::NodeDef::Plugin(def, ..)) if def.info.note_inputs.first().is_some_and(|p| p.dialects & 1 != 0))
+                {
+                    let source =
+                        crate::osc::translate::plugin::lane_source(id, tag.generation, transport);
+                    let address = clausters_core::plugin_shm::Event {
+                        note_id: voice as i32,
+                        channel: 0,
+                        key: key as i16,
+                        ..Default::default()
+                    };
+                    self.translator.plugin_event_cmd(
+                        node,
+                        source,
+                        None,
+                        clausters_core::plugin_shm::Event {
+                            kind: 1,
+                            value: velocity as f64 / 65535.0,
+                            ..address
+                        },
+                        &mut start,
+                    )?;
+                    for (id, value) in [
+                        (2, bend as f64),
+                        (6, pressure as f64 / u32::MAX as f64),
+                        (5, timbre as f64 / u32::MAX as f64),
+                    ] {
+                        self.translator.plugin_event_cmd(
+                            node,
+                            source,
+                            None,
+                            clausters_core::plugin_shm::Event {
+                                kind: 6,
+                                id,
+                                value,
+                                ..address
+                            },
+                            &mut start,
+                        )?;
+                    }
+                    self.translator.plugin_event_cmd(
+                        node,
+                        source,
+                        None,
+                        clausters_core::plugin_shm::Event {
+                            kind: 2,
+                            value: 0.0,
+                            ..address
+                        },
+                        &mut release,
+                    )?;
+                    if let Some(lane) = self.lanes.get_mut(&id) {
+                        lane.voices.insert(voice, node);
+                    }
+                    return Ok(Some(Cmd::EventLaneEntry {
+                        transport,
+                        tag,
+                        position,
+                        length: held,
+                        start,
+                        release,
+                    }));
+                }
                 let Some(node) = self.translator.lane_zone_note(
                     master,
                     key,
@@ -818,6 +1030,51 @@ impl OscServer {
                 else {
                     return Ok(None);
                 };
+                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                if matches!(
+                    self.translator.node_defs.get(&node),
+                    Some(crate::osc::translate::NodeDef::Plugin(..))
+                ) {
+                    let (kind, expression, value) = match event {
+                        MpeEvent::Bend { semitones, .. } => (6, 2, semitones as f64),
+                        MpeEvent::Pressure { value, .. } => (6, 6, value as f64 / u32::MAX as f64),
+                        MpeEvent::Timbre { value, .. }
+                        | MpeEvent::Controller {
+                            controller: 74,
+                            value,
+                            ..
+                        } => (6, 5, value as f64 / u32::MAX as f64),
+                        MpeEvent::Controller {
+                            controller: 64,
+                            value,
+                            ..
+                        } => (5, 0xb0 | (64 << 8) | ((value >> 25) << 16), 0.0),
+                        _ => return Err("unsupported native MPE controller/dialect".into()),
+                    };
+                    self.translator.plugin_event_cmd(
+                        node,
+                        crate::osc::translate::plugin::lane_source(id, tag.generation, transport),
+                        None,
+                        clausters_core::plugin_shm::Event {
+                            kind,
+                            id: expression,
+                            note_id: if kind == 5 { -1 } else { voice as i32 },
+                            channel: -1,
+                            key: if kind == 5 { -1 } else { key as i16 },
+                            value,
+                            ..Default::default()
+                        },
+                        &mut start,
+                    )?;
+                    return Ok(Some(Cmd::EventLaneEntry {
+                        transport,
+                        tag,
+                        position,
+                        length: 0,
+                        start,
+                        release,
+                    }));
+                }
                 self.translator
                     .lane_zone_set(master, key, node, event, &mut start);
                 if start.is_empty() {
@@ -825,6 +1082,49 @@ impl OscServer {
                 }
             }
             EventLaneEvent::MidiSet { message, voices } => {
+                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                {
+                    let channel = match message {
+                        ChannelVoiceMessage::NoteOn { channel, .. }
+                        | ChannelVoiceMessage::NoteOff { channel, .. }
+                        | ChannelVoiceMessage::PolyAftertouch { channel, .. }
+                        | ChannelVoiceMessage::ChannelAftertouch { channel, .. }
+                        | ChannelVoiceMessage::ControlChange { channel, .. }
+                        | ChannelVoiceMessage::ProgramChange { channel, .. }
+                        | ChannelVoiceMessage::PitchBend { channel, .. } => channel,
+                    };
+                    if let Some(node) = self
+                        .translator
+                        .midi
+                        .channels
+                        .get(&channel)
+                        .and_then(|b| b.graph_instance)
+                        && matches!(
+                            self.translator.node_defs.get(&node),
+                            Some(crate::osc::translate::NodeDef::Plugin(..))
+                        )
+                    {
+                        self.translator.plugin_midi(
+                            node,
+                            crate::osc::translate::plugin::lane_source(
+                                id,
+                                tag.generation,
+                                transport,
+                            ),
+                            message,
+                            &mut start,
+                        )?;
+                        return Ok(Some(Cmd::EventLaneEntry {
+                            transport,
+                            tag,
+                            position,
+                            length: 0,
+                            start,
+                            release,
+                        }));
+                    }
+                }
+
                 let nodes: Vec<i32> = voices
                     .iter()
                     .filter_map(|v| self.lanes.get(&id)?.voices.get(v).copied())
@@ -847,6 +1147,28 @@ impl OscServer {
                 else {
                     return Ok(None);
                 };
+                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                if matches!(
+                    self.translator.node_defs.get(&node),
+                    Some(crate::osc::translate::NodeDef::Plugin(..))
+                ) {
+                    self.translator.plugin_per_note(
+                        node,
+                        crate::osc::translate::plugin::lane_source(id, tag.generation, transport),
+                        channel,
+                        note,
+                        message,
+                        &mut start,
+                    )?;
+                    return Ok(Some(Cmd::EventLaneEntry {
+                        transport,
+                        tag,
+                        position,
+                        length: 0,
+                        start,
+                        release,
+                    }));
+                }
                 self.translator
                     .lane_per_note(node, channel, note, message, &mut start);
                 if start.is_empty() {
