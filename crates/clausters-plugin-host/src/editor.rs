@@ -5,6 +5,17 @@ use std::time::{Duration, Instant};
 use x11_dl::xlib;
 
 pub(crate) const CALLBACKS: usize = 64;
+/// The fastest timer a plugin gets; a shorter request, including zero, is raised to it.
+const MIN_TIMER_MS: u64 = 10;
+/// The default handler exits the process. A plugin's own X request failing must
+/// fail that request, not the helper -- every caller here checks its results.
+extern "C" fn x_error(_: *mut xlib::Display, event: *mut xlib::XErrorEvent) -> i32 {
+    // SAFETY: Xlib passes a valid event for the duration of this call.
+    let code = unsafe { (*event).error_code };
+    eprintln!("clausters-plugin-host: X11 error {code} ignored");
+    0
+}
+static X_ERRORS: std::sync::Once = std::sync::Once::new();
 pub(crate) struct Window {
     x: xlib::Xlib,
     display: *mut xlib::Display,
@@ -27,6 +38,9 @@ impl Window {
         let x = xlib::Xlib::open().map_err(|e| e.to_string())?;
         // SAFETY: all Xlib objects below belong to this helper main thread.
         unsafe {
+            X_ERRORS.call_once(|| {
+                (x.XSetErrorHandler)(Some(x_error));
+            });
             let display = (x.XOpenDisplay)(std::ptr::null());
             if display.is_null() {
                 return Err("native plugin editor requires an X11/XWayland display".into());
@@ -37,6 +51,9 @@ impl Window {
             (x.XSelectInput)(display, id, xlib::StructureNotifyMask);
             let delete = (x.XInternAtom)(display, c"WM_DELETE_WINDOW".as_ptr(), 0);
             (x.XSetWMProtocols)(display, id, &delete as *const _ as *mut _, 1);
+            // The plugin attaches over its own connection: the parent must
+            // exist on the server before its id is handed over.
+            (x.XSync)(display, 0);
             Ok(Self {
                 x,
                 display,
@@ -168,10 +185,7 @@ pub(crate) struct Timer<T> {
 }
 impl<T> Timer<T> {
     pub fn new(id: T, milliseconds: u64) -> Result<Self, String> {
-        if milliseconds == 0 {
-            return Err("invalid plugin timer period".into());
-        }
-        let period = Duration::from_millis(milliseconds);
+        let period = Duration::from_millis(milliseconds.max(MIN_TIMER_MS));
         let next = Instant::now()
             .checked_add(period)
             .ok_or("invalid plugin timer period")?;

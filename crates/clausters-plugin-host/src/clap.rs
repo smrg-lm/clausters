@@ -33,6 +33,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, ThreadId};
 
+/// The parent's size while an editor that reports none yet attaches to it.
+const PROVISIONAL_EDITOR: (u32, u32) = (640, 480);
 struct Signals {
     main: ThreadId,
     audio: OnceLock<ThreadId>,
@@ -568,21 +570,31 @@ impl FormatInstance for Clap {
                             &CString::new(self.name.as_str()).map_err(error)?,
                         );
                     } else {
-                        let size = gui
+                        // Some editors know their size only once they have a
+                        // parent: open at a provisional size, ask again after.
+                        let known = gui
                             .get_size(&handle)
-                            .ok_or("plugin did not provide an editor size")?;
-                        let mut w = NativeWindow::new(&self.name, size.width, size.height)?;
+                            .filter(|s| EditorState::valid_size(s.width, s.height));
+                        let (width, height) =
+                            known.map_or(PROVISIONAL_EDITOR, |s| (s.width, s.height));
+                        let mut w = NativeWindow::new(&self.name, width, height)?;
+                        // SAFETY: retained parent is released only after gui.destroy().
+                        unsafe {
+                            gui.set_parent(&handle, Window::from_x11_handle(w.id))
+                                .map_err(error)?;
+                        }
+                        if known.is_none()
+                            && let Some(size) = gui.get_size(&handle)
+                            && EditorState::valid_size(size.width, size.height)
+                        {
+                            w.resize(size.width, size.height)?;
+                        }
                         let can = gui.can_resize(&handle);
                         let hints = gui.get_resize_hints(&handle);
                         w.resize_hints(
                             can && hints.is_none_or(|h| h.can_resize_horizontally),
                             can && hints.is_none_or(|h| h.can_resize_vertically),
                         );
-                        // SAFETY: retained parent is released only after gui.destroy().
-                        unsafe {
-                            gui.set_parent(&handle, Window::from_x11_handle(w.id))
-                                .map_err(error)?;
-                        }
                         self.window = Some(w);
                     }
                     gui.show(&handle).map_err(error)?;

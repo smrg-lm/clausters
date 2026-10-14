@@ -1,4 +1,6 @@
-/* A real X11 CLAP editor: timers, fd readiness and editor-to-audio edits. */
+/* A real X11 CLAP editor: timers, fd readiness and editor-to-audio edits.
+ * Like several shipping editors, it knows its size only once it has a parent,
+ * and it inspects that parent over its own X connection. */
 #include <clap/plugin.h>
 #include <clap/factory/plugin-factory.h>
 #define clap_entry base_entry
@@ -59,7 +61,10 @@ static void gui_free(const clap_plugin_t *p) {
     if (editor.display) { XCloseDisplay(editor.display); editor.display = NULL; }
 }
 static bool scale(const clap_plugin_t *p, double value) { (void)p; return value > 0; }
-static bool size(const clap_plugin_t *p, uint32_t *w, uint32_t *h) { (void)p; *w = editor.width; *h = editor.height; return true; }
+static bool size(const clap_plugin_t *p, uint32_t *w, uint32_t *h) {
+    (void)p; if (!editor.child) return false;
+    *w = editor.width; *h = editor.height; return true;
+}
 static bool resizable(const clap_plugin_t *p) { (void)p; return true; }
 static bool hints(const clap_plugin_t *p, clap_gui_resize_hints_t *h) {
     (void)p; *h = (clap_gui_resize_hints_t){.can_resize_horizontally=true, .can_resize_vertically=true}; return true;
@@ -73,6 +78,9 @@ static bool set_size(const clap_plugin_t *p, uint32_t w, uint32_t h) {
 static bool parent(const clap_plugin_t *p, const clap_window_t *window) {
     (void)p; main_only();
     if (strcmp(window->api, CLAP_WINDOW_API_X11)) return false;
+    /* Fails unless the host made the parent visible to other connections. */
+    XWindowAttributes attributes;
+    if (!XGetWindowAttributes(editor.display, window->x11, &attributes)) return false;
     editor.child = XCreateSimpleWindow(editor.display, window->x11, 0, 0, editor.width, editor.height, 0, 0, 0x224466);
     XSelectInput(editor.display, editor.child, ExposureMask | ButtonPressMask);
     assert(pipe(editor.pipefd) == 0);
