@@ -75,7 +75,11 @@ pub enum NodeDef {
     #[cfg(feature = "faust")]
     Faust(Arc<FaustDef>),
     #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
-    Plugin(Arc<crate::plugin::PluginDef>, u64),
+    Plugin(
+        Arc<crate::plugin::PluginDef>,
+        u64,
+        Arc<crate::plugin::PluginAdmin>,
+    ),
 }
 
 // With neither def family compiled in, `NodeDef` is an empty enum: no node is
@@ -434,9 +438,10 @@ impl CmdTranslator {
                 crate::plugin::PluginSynth::new(Arc::clone(def), self.sample_rate)?
             };
             let generation = synth.incarnation();
+            let admin = synth.administration();
             return Ok((
                 Box::new(synth),
-                NodeDef::Plugin(Arc::clone(def), generation),
+                NodeDef::Plugin(Arc::clone(def), generation, admin),
             ));
         }
         Err(format!("SynthDef not found: {name}"))
@@ -457,6 +462,19 @@ impl CmdTranslator {
             .take_epitaph(id)
             .map(String::from)
             .unwrap_or_default()
+    }
+
+    /// Forget a freed processor only if its isolated generation still matches.
+    /// A node ID can already have been reused before garbage is collected.
+    pub(crate) fn forget_freed_synth(&mut self, id: i32, incarnation: u64) {
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        if matches!(self.node_defs.get(&id), Some(NodeDef::Plugin(_, current, ..)) if *current != incarnation)
+        {
+            return;
+        }
+        #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+        let _ = incarnation;
+        self.forget_node(id);
     }
 
     /// Drops the mirror entries of a node the engine freed or rejected -- and,

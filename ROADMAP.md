@@ -285,9 +285,9 @@ its plan; the plan is where its acceptance is read.
   conversion is private to the notes editor (`ppar` and `pvoice`, the
   pattern-side question, shipped with `C73e`).
 
-- ⬜ **The J track — third-party plugins, out of process**, `J6`-`J9`
+- ⬜ **The J track — third-party plugins, out of process**, `J7`-`J9`
   *(root `PLAN.md`, "J track — third-party plugins: a `plugin` def family, out
-  of process")*. **J6 — State** comes first to capture and restore a live instance. The remaining track includes VST3, **J8 — Server delay compensation, anticipated by M12 and M28**, and the plugin editor/packaging; their decisions and acceptance live in the root plan.
+  of process")*. **J7 — VST3** comes first to bind the second format to the existing hosting contract. It is followed by **J8 — Server delay compensation, anticipated by M12 and M28**, and the plugin editor/packaging; their decisions and acceptance live in the root plan.
 
 - ⬜ **The V track — the host seen and driven by a script**, `V1`-`V5`
   *(`clients/gui/PLAN.md`, "V track — development: the host seen and driven

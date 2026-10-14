@@ -20,7 +20,7 @@
 // imports it. The name is the one the protocol and every other client use, so
 // it stays; reach for `globalThis.Node` in the rare page that needs both.)
 
-import { AllocationError } from "../errors.ts";
+import { AllocationError, CommandError } from "../errors.ts";
 import { IdSpaces, requireCore } from "../base/core.ts";
 import { busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
@@ -120,7 +120,59 @@ export class Node {
         return this;
     }
 
-    /** Restart this plugin with a fresh helper, initial state and current controls.
+    /** Capture this live plugin's opaque state, independent of its def.
+     * The node is silent during preparation; a new helper clears held notes.
+     * Missing/duplicate state chunks are errors. Live servers only.
+     */
+    async savePluginState({ timeout = 10.0 }: { timeout?: number } = {}): Promise<Uint8Array> {
+        const server = this.srv();
+        if (server.scoring) throw new CommandError("live plugin state unavailable in an OSC score");
+        const rows = await server.requestBatch("/plugin_saveState", [this.id], {
+            reply: "/plugin_saveState.reply", timeout,
+        });
+        const chunks = new Map<number, Uint8Array>();
+        let count: number | undefined;
+        for (const row of rows) {
+            const [id, index, total, payload] = row.args;
+            if (row.args.length !== 4 || id !== this.id || typeof index !== "number"
+                || typeof total !== "number" || !Number.isInteger(index) || !Number.isInteger(total)
+                || total < 1 || total > 171 || index < 0 || index >= total || chunks.has(index)
+                || (count !== undefined && count !== total)
+                || !(payload instanceof Uint8Array) || payload.length > 6144) {
+                throw new CommandError("invalid /plugin_saveState.reply");
+            }
+            count = total;
+            chunks.set(index, payload);
+        }
+        if (count === undefined || chunks.size !== count) {
+            throw new CommandError("incomplete /plugin_saveState.reply");
+        }
+        const size = [...chunks.values()].reduce((sum, chunk) => sum + chunk.length, 0);
+        if (size > 1024 * 1024) throw new CommandError("plugin state capacity exceeded");
+        const state = new Uint8Array(size);
+        let offset = 0;
+        for (let index = 0; index < count; index++) {
+            const chunk = chunks.get(index)!;
+            state.set(chunk, offset);
+            offset += chunk.length;
+        }
+        return state;
+    }
+
+    /** Load opaque state into this live node, retaining routes and maps.
+     * Unmapped parameters take the loaded values. Preparation is silent and
+     * the new helper clears held notes. Failure requires `restartPlugin()`.
+     */
+    async loadPluginState(state: Uint8Array, { timeout = 10.0 }: { timeout?: number } = {}): Promise<this> {
+        if (!(state instanceof Uint8Array)) throw new TypeError("plugin state must be Uint8Array");
+        if (state.length > 1024 * 1024) throw new RangeError("plugin state capacity exceeded");
+        const server = this.srv();
+        if (server.scoring) throw new CommandError("live plugin state unavailable in an OSC score");
+        await server.command("/plugin_loadState", [this.id, state], timeout);
+        return this;
+    }
+
+    /** Restart this plugin with a fresh helper, last captured/loaded state and current controls.
      * Held notes and unsaved DSP history are cleared at the block-boundary swap.
      */
     async restartPlugin({ timeout = 10.0 }: { timeout?: number } = {}): Promise<this> {

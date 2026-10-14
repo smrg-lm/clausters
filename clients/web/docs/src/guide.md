@@ -324,6 +324,18 @@ path compensation are not available yet. See the
 
 `await node.restartPlugin()` waits for recovery preparation. A browser client can control plugins on a native server; its in-page engine reports a capability error.
 
+`const state = await node.savePluginState()` captures that live node's opaque
+`Uint8Array`; `await node.loadPluginState(state)` loads it into a live node.
+The image belongs to that node, independently of its def and other instances,
+and becomes its recovery image for `await node.restartPlugin()`. Keep the
+bytes yourself for use after a server boot. Capture/load are silent during
+preparation and clear held notes; routing and maps survive, and load takes the
+loaded values for unmapped parameters. Metadata is refreshed safely;
+incompatible port/control identities fail. Use a stream carrier for large
+images and issue one capture at a time per connection. Offline renders carry
+initial bytes in the `PluginDef` reference instead. These native operations
+require a connection to a native server; an in-page engine cannot host them.
+
 Offline OSC scores can also carry plugin definitions and persistent events
 when rendered by a native Linux build with `plugin-clap` and its matching
 helper. The bridge latency stays in the samples; processing waits outside RT,

@@ -370,7 +370,7 @@ impl FormatInstance for Clap {
         }
     }
     fn restart_requested(&self) -> bool {
-        self.signals.restart.load(Ordering::Acquire)
+        self.signals.restart.swap(false, Ordering::AcqRel)
     }
 }
 struct Audio {

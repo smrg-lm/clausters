@@ -10121,3 +10121,25 @@ boundary changed. New instances use fresh generations/mappings, and a helper
 mismatch is rejected and reaped. The opt-in `plugin`/`plugin-clap` Cargo features
 start with infrastructure and discovery; the plugin def family still belongs to
 the engine integration that follows.
+
+
+## Live plugin state uses a fresh processing generation (2026-10-14)
+
+A state load can change parameter metadata and intrinsic latency, and a plugin
+may require reactivation. Pausing just its helper while the server continues
+publishing fills the bounded bridge; stopping the server producer and later
+resuming its old sequence shifts queued audio past its due time. Neither is a
+valid live timeline.
+
+State operations therefore quiesce the node at a block boundary and install a
+fresh helper generation, loading the captured or supplied image before
+activation. Capture drains accepted helper jobs first. Preparation is silent,
+held notes and pending events are cleared, and routing/maps survive. Capture
+and recovery keep current controls; load takes the loaded parameter values.
+Compatible metadata is refreshed per node. A port/control identity change is
+rejected rather than changing the running graph's ownership. The def remains
+a recipe for other instances, and a node keeps its last successful image for
+recovery without changing that recipe on disk. An accepted failed transaction
+stays silent until explicit restart. This makes save/load disruptive operations
+with an explicit contract, rather than pretending to offer continuous capture
+of an arbitrary third-party processor.

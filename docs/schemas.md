@@ -100,6 +100,8 @@ be in any order. `bus` defaults to zero; the port reads or sums its consecutive
 channels there. This includes sidechains and additional outputs, without a
 separate addressing rule. Unknown fields and incompatible layouts fail. The
 optional `state` is an opaque snapshot as JSON byte integers (at most 1 MiB).
+An omitted or empty initial `state` uses the plugin defaults; live state commands
+can still round-trip a valid empty image.
 `depth` is a pipeline delay of 1–16 engine blocks, default four.
 
 Instantiate with `/synth_new` and control with `/node_set`, `/node_map` and
@@ -123,12 +125,46 @@ can name plugin defs and wire their bus controls like other single-node defs.
 `/plugin_restart <node-id:int>` prepares a fresh helper asynchronously; `/done
 "/plugin_restart" <node-id>` acknowledges preparation and queuing the swap,
 or `/fail` reports a non-plugin/missing node, full queue or load error. The
-swap occurs at a block boundary, keeps tree identity, restores the recipe's
-initial state plus the actual current controls and maps, and clears held
+swap occurs at a block boundary, keeps tree identity, restores the node's last successfully captured or loaded state
+(or the recipe's initial state before its first state operation) plus the actual current controls and maps, and clears held
 notes and unsaved DSP history. A generation check prevents a freed/reused ID
 from receiving an old restart. Faults use `/node_fault <id> "Plugin" <code>
 <reason>` for notification subscribers: 1 capacity, 2 starved helper, 3
 processing, 4 protocol. Recovery is explicit; nodes never restart by themselves.
+
+`/plugin_saveState <node-id:int>` asynchronously captures opaque state from a
+live node. Replies are `/plugin_saveState.reply <node:int> <chunk:int>
+<chunks:int> <blob>` followed by `/done "/plugin_saveState" <node>`. Fragments
+are zero-based, at most 6144 bytes each; an empty image has one empty fragment.
+The image limit is 1 MiB. Clients must reject missing, repeated, inconsistent
+or out-of-range fragments. Use one outstanding state capture per connection,
+and TCP or IPC for loading images larger than a UDP datagram.
+
+`/plugin_loadState <node-id:int> <blob>` asynchronously installs an opaque image;
+`/done "/plugin_loadState" <node>` acknowledges preparation and queuing the
+swap. Both state commands participate in `/server_sync`. They are live
+operations; offline renders use the reference's initial `state` bytes instead.
+A live node's image is independent of its def and every other instance; it is
+kept for explicit recovery, without modifying the persisted def. Save the
+returned bytes yourself to retain a live image across server boots.
+
+State operations suspend the node at a block boundary, drain accepted helper
+jobs for capture, and prepare a fresh helper with state loaded **before
+activation**. The node is silent during preparation; the new bridge clears
+held notes, queued events and unsaved DSP history. Routing, maps and tree
+identity survive. A load replaces unmapped parameter values; existing maps
+continue to drive the loaded parameters. A capture keeps current controls.
+Parameter ranges, flags, display names, port labels and intrinsic latency are
+refreshed per node. Audio port IDs/order/channel counts and control IDs must
+remain compatible with the live routing; an incompatible image fails rather
+than changing a running graph's bus ownership. The shared def stays unchanged.
+
+`/fail` names the state command and reports a missing/non-plugin node, absent
+state extension, invalid arguments, the state size limit, a full worker queue,
+an overlapping operation, timeout, plugin rejection or incompatible surface.
+An accepted transaction that fails leaves the old generation silent until
+`/plugin_restart`; recovery uses the last successful image and current
+controls. A freed/reused node ID cannot receive an old operation's result.
 
 Latency is `depth * 64 + native latency` samples; parallel paths are not yet
 compensated. Native hosting requires a Linux server built with `plugin-clap`
@@ -137,7 +173,7 @@ capability error.
 
 ## The async barrier (`/server_sync`)
 
-`/server_sync <int id>` is the general way to wait for asynchronous work: the server replies `/server_sync.reply <id>` once **every async command received before this `/server_sync`** has completed — Faust compiles (`/def_send faust`), SynthDef sends (`/def_send synth`), buffer jobs (`/buffer_*`) and plugin discovery (`/plugin_scan`), each of which runs on its own FIFO worker thread. Use it instead of matching individual `/done`s when you fire several async commands and just want to know they have all landed (e.g. after sending a def without waiting, before the `/synth_new` that needs it). It is a real barrier, not a round-trip of `/server_status`: a `/server_sync.reply` guarantees the prior compiles/jobs are installed.
+`/server_sync <int id>` is the general way to wait for asynchronous work: the server replies `/server_sync.reply <id>` once **every async command received before this `/server_sync`** has completed — Faust compiles (`/def_send faust`), SynthDef sends (`/def_send synth`), buffer jobs (`/buffer_*`) and plugin discovery (`/plugin_scan`), plugin defs, recovery and live state operations, each of which runs on its own FIFO worker thread. Use it instead of matching individual `/done`s when you fire several async commands and just want to know they have all landed (e.g. after sending a def without waiting, before the `/synth_new` that needs it). It is a real barrier, not a round-trip of `/server_status`: a `/server_sync.reply` guarantees the prior compiles/jobs are installed.
 
 ```text
 /synth_new  name id addAction targetID [ctlName value]...   # ctl args: s f pairs

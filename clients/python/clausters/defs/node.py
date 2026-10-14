@@ -176,10 +176,65 @@ class Node:
         self._server().send_msg("/plugin_event", self.id, json.dumps(event))
         return self
 
+    def save_plugin_state(self, *, timeout: float = 10.0) -> bytes:
+        """Capture this live plugin's opaque state for loading or recovery.
+
+        Blocking, live servers only. The node is silent during the operation;
+        its helper is replaced and held notes are cleared. State is independent
+        of the def and other instances. Missing/duplicate chunks raise an error.
+        """
+        from ..errors import CommandError
+        server = self._server()
+        if getattr(server.interface, "time_mode", None) == "score":
+            raise CommandError("live plugin state unavailable in an OSC score")
+        rows = server._request_batch(
+            "/plugin_saveState", self.id, reply="/plugin_saveState.reply", timeout=timeout)
+        chunks = {}
+        count = None
+        for row in rows:
+            if len(row) != 4 or row[0] != self.id:
+                raise CommandError("invalid /plugin_saveState.reply")
+            _, index, total, payload = row
+            if (not isinstance(index, int) or not isinstance(total, int)
+                    or total < 1 or total > 171 or index < 0 or index >= total
+                    or index in chunks or (count is not None and total != count)
+                    or not isinstance(payload, bytes) or len(payload) > 6144):
+                raise CommandError("invalid /plugin_saveState.reply")
+            count = total
+            chunks[index] = payload
+        if count is None or len(chunks) != count:
+            raise CommandError("incomplete /plugin_saveState.reply")
+        state = b"".join(chunks[index] for index in range(count))
+        if len(state) > 1024 * 1024:
+            raise CommandError("plugin state capacity exceeded")
+        return state
+
+    def load_plugin_state(self, state: bytes, *, timeout: float = 10.0):
+        """Load opaque state into this live node, retaining routes and maps.
+
+        Unmapped parameters take the loaded values. The node is silent during
+        preparation, then a fresh helper is swapped at a block boundary with
+        cleared held notes. A failed transaction requires `restart_plugin()`.
+        """
+        if not isinstance(state, bytes):
+            raise TypeError("plugin state must be bytes")
+        if len(state) > 1024 * 1024:
+            raise ValueError("plugin state capacity exceeded")
+        server = self._server()
+        if getattr(server.interface, "time_mode", None) == "score":
+            from ..errors import CommandError
+            raise CommandError("live plugin state unavailable in an OSC score")
+        reply, args = server.request(
+            "/plugin_loadState", self.id, state, timeout=timeout, expect=("/done", "/fail"))
+        if reply == "/fail":
+            from ..errors import CommandError
+            raise CommandError(f"/plugin_loadState failed: {args}")
+        return self
+
     def restart_plugin(self, *, timeout: float = 10.0):
         """Restart this plugin node with a fresh helper and cleared held notes.
 
-        Restore its initial state and current controls. The server swaps the
+        Restore its last captured/loaded state (else initial state) and current controls. The server swaps the
         prepared generation at a block boundary; unsaved DSP history is lost.
         """
         server = _resolve(self.server)

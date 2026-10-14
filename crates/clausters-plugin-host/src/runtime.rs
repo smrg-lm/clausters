@@ -160,6 +160,21 @@ impl Instance {
         config: Config,
         timeout: Duration,
     ) -> Result<Self, String> {
+        Self::load_with_state(executable, path, id, config, timeout, None)
+    }
+    /// Load initial state before activation so ports, parameters and latency
+    /// are negotiated from the restored instance, not stale processor metadata.
+    pub fn load_with_state(
+        executable: &Path,
+        path: &Path,
+        id: &str,
+        config: Config,
+        timeout: Duration,
+        state: Option<&[u8]>,
+    ) -> Result<Self, String> {
+        if state.is_some_and(|bytes| bytes.len() > MAX_STATE_BYTES) {
+            return Err("plugin state capacity exceeded".into());
+        }
         let mapping = Mapping::create(config)?;
         let mut helper = Helper::spawn(executable, timeout)?;
         let path = path.canonicalize().map_err(|e| e.to_string())?;
@@ -168,6 +183,7 @@ impl Instance {
             id: id.into(),
             segment: mapping.path().to_string_lossy().into_owned(),
             generation: config.generation,
+            state: state.map(<[u8]>::to_vec),
         })?;
         let Response::Metadata(metadata) = response else {
             return Err("invalid plugin load response".into());
@@ -187,6 +203,18 @@ impl Instance {
             metadata: *metadata,
             producer_claimed: false,
         })
+    }
+    /// Lease administrative control before transferring the audio endpoint.
+    /// The caller must quiesce its producer before using this socket.
+    pub fn administration(&self) -> Result<Administration, String> {
+        let socket = self.helper.socket.try_clone().map_err(|e| e.to_string())?;
+        socket
+            .set_read_timeout(Some(self.helper.timeout))
+            .map_err(|e| e.to_string())?;
+        socket
+            .set_write_timeout(Some(self.helper.timeout))
+            .map_err(|e| e.to_string())?;
+        Ok(Administration { socket })
     }
     /// Lease the sole producer once; no allocation/unmapping on producer drop.
     pub fn producer(&mut self) -> Result<Producer<'_>, String> {
@@ -261,6 +289,23 @@ impl Drop for Instance {
         let _: Result<Response, _> = self.helper.read();
         let _ = self.helper.child.kill();
         let _ = self.helper.child.wait();
+    }
+}
+
+/// Non-RT administrative lease. The audio owner keeps the helper alive;
+/// freeing it makes an outstanding operation fail on the bounded socket.
+pub struct Administration {
+    socket: UnixStream,
+}
+impl Administration {
+    /// Capture a quiesced instance, on the helper's main thread.
+    pub fn save_state(&mut self) -> Result<Vec<u8>, String> {
+        protocol::send(&mut self.socket, &Request::SaveState)?;
+        match protocol::receive(&mut self.socket)? {
+            Response::State(bytes) if bytes.len() <= MAX_STATE_BYTES => Ok(bytes),
+            Response::Error(error) => Err(error),
+            _ => Err("invalid plugin state response".into()),
+        }
     }
 }
 
@@ -583,15 +628,14 @@ fn audio_worker(
             }
             let _ = ack_tx.send(start);
             let mut paused = false;
+            let mut pause_requested = false;
             loop {
                 if consumer.view().stopping() || consumer.view().failure() != 0 {
                     break;
                 }
                 match rx.try_recv() {
                     Ok(AudioControl::Pause) => {
-                        processor.pause();
-                        paused = true;
-                        let _ = ack_tx.send(Ok(()));
+                        pause_requested = true;
                     }
                     Ok(AudioControl::Resume) => {
                         let result = processor.start();
@@ -672,6 +716,12 @@ fn audio_worker(
                         slot.finish(result);
                     }
                 } else {
+                    if pause_requested {
+                        processor.pause();
+                        paused = true;
+                        pause_requested = false;
+                        let _ = ack_tx.send(Ok(()));
+                    }
                     std::thread::sleep(Duration::from_micros(50));
                 }
             }
@@ -812,6 +862,7 @@ fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, Str
             id,
             segment,
             generation,
+            state,
         } => {
             if loaded.is_some() {
                 return Err("plugin helper already owns an instance".into());
@@ -821,6 +872,14 @@ fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, Str
                 let mapping = Arc::new(Mapping::open(Path::new(&segment), generation)?);
                 let config = mapping.view()?.config();
                 let mut instance = crate::clap::load(Path::new(&path), &id)?;
+                if let Some(bytes) = state {
+                    if bytes.len() > MAX_STATE_BYTES {
+                        return Err("plugin state capacity exceeded".into());
+                    }
+                    instance.load_state(&bytes)?;
+                    // Activation below fulfills any restart request caused by loading.
+                    let _ = instance.restart_requested();
+                }
                 let processor = instance.activate(config)?;
                 let worker = audio_worker(Arc::clone(&mapping), processor)?;
                 let mut plugin = Loaded {
@@ -834,7 +893,7 @@ fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, Str
             }
             #[cfg(not(feature = "clap"))]
             {
-                let _ = (path, id, segment, generation);
+                let _ = (path, id, segment, generation, state);
                 Err("plugin helper built without CLAP support".into())
             }
         }

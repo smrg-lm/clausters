@@ -1055,3 +1055,41 @@ def test_persistent_plugin_events_are_addressed_to_one_node():
     for event in events:
         assert node.plugin_event(event) is node
     assert iface.sent == [("/plugin_event", [42, json.dumps(event)]) for event in events]
+
+
+def test_plugin_state_chunks_load_and_failure_wire():
+    from clausters.defs import Node
+    from clausters.errors import CommandError
+    iface = _FakeInterface()
+    node = Node(42, Server(interface=iface))
+    iface._replies = [osc.message("/plugin_saveState.reply", 42, 1, 2, b"last"),
+                      osc.message("/plugin_saveState.reply", 42, 0, 2, b"first"),
+                      osc.message("/done", "/plugin_saveState", 42)]
+    assert node.save_plugin_state() == b"firstlast"
+    assert iface.sent[-1] == ("/plugin_saveState", [42])
+    iface._replies = [osc.message("/done", "/plugin_loadState", 42)]
+    assert node.load_plugin_state(b"firstlast") is node
+    assert iface.sent[-1] == ("/plugin_loadState", [42, b"firstlast"])
+    for rows in [[], [(42, 0, 2, b"a")], [(42, 0, 1, b"a"), (42, 0, 1, b"b")],
+                 [(43, 0, 1, b"a")], [(42, 0, 0, b"")]]:
+        iface._replies = [osc.message("/plugin_saveState.reply", *row) for row in rows]
+        iface._replies.append(osc.message("/done", "/plugin_saveState", 42))
+        with pytest.raises(CommandError):
+            node.save_plugin_state()
+    iface._replies = [osc.message("/fail", "/plugin_loadState", "invalid state")]
+    with pytest.raises(CommandError):
+        node.load_plugin_state(b"bad")
+    iface._replies = [osc.message("/plugin_saveState.reply", 42, 0, 1, b""),
+                      osc.message("/done", "/plugin_saveState", 42)]
+    assert node.save_plugin_state() == b""
+
+
+def test_live_plugin_state_rejects_osc_scores():
+    from clausters.defs import Node
+    from clausters.errors import CommandError
+    from clausters.base._oscinterface import OscNrtInterface
+    node = Node(42, Server(interface=OscNrtInterface()))
+    with pytest.raises(CommandError, match="OSC score"):
+        node.save_plugin_state()
+    with pytest.raises(CommandError, match="OSC score"):
+        node.load_plugin_state(b"state")

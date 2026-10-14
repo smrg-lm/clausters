@@ -103,7 +103,7 @@ impl CmdTranslator {
         mut event: Event,
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
-        let Some(NodeDef::Plugin(def, generation)) = self.node_defs.get(&node) else {
+        let Some(NodeDef::Plugin(def, generation, ..)) = self.node_defs.get(&node) else {
             return Err("not a plugin node".into());
         };
         let index = match port {

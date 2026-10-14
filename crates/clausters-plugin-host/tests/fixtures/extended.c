@@ -16,12 +16,21 @@ static void check_thread(bool audio) {
 static bool save_state(const clap_plugin_t *p, const clap_ostream_t *stream) {
     check_thread(false);
     double value = data(p)->gain;
-    return stream->write(stream, &value, sizeof(value)) == sizeof(value);
+    if (value == 0.333) return true;
+    if (stream->write(stream, &value, sizeof(value)) != sizeof(value)) return false;
+    if (value == 0.625) {
+        unsigned char payload[13000];
+        memset(payload, 17, sizeof(payload));
+        return stream->write(stream, payload, sizeof(payload)) == sizeof(payload);
+    }
+    return true;
 }
 static bool load_state(const clap_plugin_t *p, const clap_istream_t *stream) {
     check_thread(false);
     double value;
-    if (stream->read(stream, &value, sizeof(value)) != sizeof(value)) return false;
+    int64_t count = stream->read(stream, &value, sizeof(value));
+    if (count == 0) { data(p)->gain = 0.333; return true; }
+    if (count != sizeof(value)) return false;
     data(p)->gain = value; return true;
 }
 static const clap_plugin_state_t state_extension = {save_state, load_state};
@@ -40,7 +49,29 @@ static bool events_get(const clap_plugin_t *p, uint32_t index, bool input, clap_
     return note_get(p, index, true, info) && (input || index == 0);
 }
 static const clap_plugin_note_ports_t event_ports = {events_count, events_get};
+static bool state_param_info(const clap_plugin_t *p, uint32_t index, clap_param_info_t *info) {
+    if (!param_info(p, index, info)) return false;
+    if (data(p)->gain > 0.7) { info->max_value = 2; strcpy(info->name, "Restored gain"); }
+    return true;
+}
+static const clap_plugin_params_t state_params = {
+    param_count, state_param_info, param_value, param_text, param_parse, param_flush
+};
+static uint32_t state_latency_get(const clap_plugin_t *p) { return data(p)->gain > 0.7 ? 23 : 0; }
+static const clap_plugin_latency_t state_latency = {state_latency_get};
+static bool state_port_get(const clap_plugin_t *p, uint32_t index, bool input, clap_audio_port_info_t *info) {
+    if (!port_get(p, index, input, info)) return false;
+    if (data(p)->gain > 0.7) strcpy(info->name, "Restored port");
+    if (data(p)->gain < 0) info->channel_count = 2;
+    return true;
+}
+static const clap_plugin_audio_ports_t state_ports = {port_count, state_port_get};
 static const void *extended_extension(const clap_plugin_t *p, const char *id) {
+    if (!strcmp(p->desc->id, "org.clausters.fixture.state")) {
+        if (!strcmp(id, CLAP_EXT_PARAMS)) return &state_params;
+        if (!strcmp(id, CLAP_EXT_LATENCY)) return &state_latency;
+        if (!strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &state_ports;
+    }
     if (data(p)->kind == 2 && !strcmp(id, CLAP_EXT_NOTE_PORTS)) return &event_ports;
     if (!strcmp(p->desc->id, "org.clausters.fixture.ports") && !strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &multi_ports;
     if (!strcmp(id, CLAP_EXT_STATE)) return &state_extension;

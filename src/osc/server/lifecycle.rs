@@ -577,8 +577,8 @@ impl OscServer {
     fn collect_freed(&mut self) {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
-                Garbage::FreedSynth { id, .. } => {
-                    self.translator.forget_node(id);
+                Garbage::FreedSynth { id, synth } => {
+                    self.translator.forget_freed_synth(id, synth.incarnation());
                 }
                 Garbage::FreedGroup { id, .. } => {
                     // A governed group that has been freed cannot govern
@@ -646,6 +646,14 @@ impl OscServer {
             }
         }
         while let Some(ev) = self.handle.pop_event() {
+            // A replaced/free generation can report its death after this ID
+            // already names another node. Never release or notify the new ID.
+            if ev.kind == NodeEventKind::End
+                && !ev.is_group
+                && self.translator.mirror.get(ev.id).is_some()
+            {
+                continue;
+            }
             let addr = match ev.kind {
                 NodeEventKind::Go => "/node_start",
                 NodeEventKind::End => "/node_end",

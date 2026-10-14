@@ -116,6 +116,18 @@ path compensation are not available yet. See the
 
 `node.restart_plugin()` prepares recovery asynchronously and waits for its acknowledgement.
 
+`state = node.save_plugin_state()` captures that live node's opaque bytes;
+`node.load_plugin_state(state)` loads them into a live node. These calls wait
+for completion and raise on failure. The image is independent of its def and
+other instances, and becomes that node's recovery image for
+`node.restart_plugin()`. Keep the bytes yourself for use after a server boot.
+Capture/load are silent during preparation and clear held notes; routing and
+maps survive, and load takes the loaded values for unmapped parameters.
+Metadata is refreshed safely; incompatible port/control identities fail.
+Use TCP or IPC for state images too large for one UDP datagram, and issue one
+capture at a time per connection. Offline renders carry initial bytes in the
+`PluginDef` reference instead.
+
 Offline OSC scores can also carry plugin definitions and persistent events
 when rendered by a native Linux build with `plugin-clap` and its matching
 helper. The bridge latency stays in the samples; processing waits outside RT,

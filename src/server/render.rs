@@ -621,7 +621,9 @@ impl Renderer {
     fn collect(&mut self) {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
-                Garbage::FreedSynth { id, .. } => self.translator.forget_node(id),
+                Garbage::FreedSynth { id, synth } => {
+                    self.translator.forget_freed_synth(id, synth.incarnation())
+                }
                 Garbage::SpentBundle(_) => {}
                 Garbage::RejectedBundle(_) => self.dropped = true,
                 Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {

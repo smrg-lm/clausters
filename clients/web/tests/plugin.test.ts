@@ -36,3 +36,35 @@ test("persistent events are addressed to the same node in the reference order", 
     for (const event of events) assert.equal(node.pluginEvent(event), node);
     assert.deepEqual(calls, events.map((event) => ["/plugin_event", ["i", 42], JSON.stringify(event)]));
 });
+
+
+test("opaque live state reassembles validated chunks and loads the shared blob", async () => {
+    const calls: unknown[][] = [];
+    let rows = [{ addr: "/plugin_saveState.reply", args: [42, 1, 2, new Uint8Array([3])] },
+                { addr: "/plugin_saveState.reply", args: [42, 0, 2, new Uint8Array([1, 2])] }];
+    const server = {
+        requestBatch: async (...args: unknown[]) => { calls.push(args); return rows; },
+        command: async (...args: unknown[]) => { calls.push(args); },
+    } as unknown as Server;
+    const node = new Node(42, server);
+    const state = await node.savePluginState();
+    assert.deepEqual(state, new Uint8Array([1, 2, 3]));
+    assert.deepEqual(calls.pop(), ["/plugin_saveState", [42], { reply: "/plugin_saveState.reply", timeout: 10 }]);
+    assert.equal(await node.loadPluginState(state), node);
+    assert.deepEqual(calls.pop(), ["/plugin_loadState", [42, state], 10]);
+    for (const invalid of [[], [rows[0]], [rows[1], rows[1]],
+        [{ addr: "/plugin_saveState.reply", args: [43, 0, 1, new Uint8Array()] }],
+        [{ addr: "/plugin_saveState.reply", args: [42, 0, 0, new Uint8Array()] }]]) {
+        rows = invalid;
+        await assert.rejects(node.savePluginState());
+    }
+    rows = [{ addr: "/plugin_saveState.reply", args: [42, 0, 1, new Uint8Array()] }];
+    assert.deepEqual(await node.savePluginState(), new Uint8Array());
+});
+
+
+test("live plugin state refuses an OSC score rather than waiting or scoring it", async () => {
+    const node = new Node(42, { scoring: true } as Server);
+    await assert.rejects(node.savePluginState(), /OSC score/);
+    await assert.rejects(node.loadPluginState(new Uint8Array()), /OSC score/);
+});

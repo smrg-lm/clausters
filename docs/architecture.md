@@ -2030,3 +2030,37 @@ notes and expression within split blocks. Frozen spans, deferred events, tempo
 changes and transport jumps are compared through the same slice contract.
 Third-party plugins can use entropy, wall time or external resources; neither
 this processing mode nor the engine's random seed makes them deterministic.
+
+
+### Live native plugin state
+
+Each `NodeDef::Plugin` retains an administrative lease for its own generation.
+The lease owns a duplicated bounded-timeout control socket; `AudioInstance`
+keeps ownership of the helper and segment, so freeing the node makes pending
+administration fail safely. Only the plugin worker locks the lease. The RT
+endpoint sees an atomic phase: running, suspension requested, quiesced, failed.
+After finishing its current staged block, it acknowledges suspension and stops
+submissions and output. The helper drains accepted jobs before pausing its
+processor and calling state save on its main thread.
+
+The same four-job worker and submitted/drained barrier counters cover state,
+discovery, def loading and recovery. A captured or supplied image builds a
+private node recipe and a fresh helper off RT. The administrative handshake
+version changes when initial state is added to the load request; the audio
+segment and both public C ABIs keep their layouts. Initial state is loaded
+before activation, so the adapter builds its processor from refreshed metadata.
+Port IDs/order/channel counts and control IDs are validated against the live
+surface; changed labels, parameter metadata and intrinsic latency are retained
+in the new node recipe. The network mirror updates unmapped parameter values
+on load. The loaded def table and on-disk reference are untouched.
+
+The prepared endpoint is queued through `RestartSynth`, with incarnation and
+recipe checks guarding against free/reuse. Freed-processor garbage also checks
+its incarnation before removing a mirror entry; a stale end event cannot
+release or notify the reused node ID. Its replacement hook retains routing
+and maps; load retains loaded values for unmapped parameters, while capture and
+restart retain actual current controls. The old generation and all its payloads
+leave through the existing garbage FIFO. A failed accepted state operation
+latches a silent generation and requires explicit restart with the last
+successful image. Save replies fragment opaque bytes at 6144-byte boundaries,
+including one empty fragment for an empty image, before `/done` and the barrier.

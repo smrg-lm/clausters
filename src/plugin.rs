@@ -4,7 +4,7 @@
 //! plugin binaries. Helpers are constructed and retired on non-audio threads.
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crate::dsp::{BusUsage, ProcessCtx, ReplyKind, ReplyMsg};
 use crate::node::{ControlMap, SynthNode};
@@ -57,10 +57,23 @@ pub struct PluginDef {
     pub info: PluginInfo,
     pub names: Vec<String>,
     pub defaults: Vec<f32>,
+    initial_state: bool,
 }
 impl PluginDef {
     /// Probe in disposable helpers, then activate and validate the initial state.
     pub fn probe(reference: PluginReference, sample_rate: f32) -> Result<Self, String> {
+        let present = !reference.state.is_empty();
+        Self::probe_inner(reference, sample_rate, present)
+    }
+    /// Probe a captured state, including a valid empty image.
+    pub fn probe_state(reference: PluginReference, sample_rate: f32) -> Result<Self, String> {
+        Self::probe_inner(reference, sample_rate, true)
+    }
+    fn probe_inner(
+        reference: PluginReference,
+        sample_rate: f32,
+        initial_state: bool,
+    ) -> Result<Self, String> {
         if reference.format != "clap" {
             return Err("unsupported plugin format".into());
         }
@@ -94,6 +107,7 @@ impl PluginDef {
             info,
             names: Vec::new(),
             defaults: Vec::new(),
+            initial_state,
         };
         def.info.parameters.sort_by_key(|p| p.id);
         for p in &def.info.parameters {
@@ -132,19 +146,21 @@ impl PluginDef {
         }
     }
     fn instance(&self, sample_rate: f32) -> Result<Instance, String> {
-        let mut instance = Instance::load(
+        let instance = Instance::load_with_state(
             &helper_path()?,
             Path::new(&self.reference.path),
             &self.reference.id,
             self.config(sample_rate),
             DEFAULT_TIMEOUT,
+            self.initial_state
+                .then_some(self.reference.state.as_slice()),
         )?;
-        if !self.reference.state.is_empty() {
-            instance.load_state(&self.reference.state)?;
-        }
         let info = instance.metadata();
-        if info.inputs != self.info.inputs
-            || info.outputs != self.info.outputs
+        let ports = |ports: &[clausters_plugin_host::format::AudioPort]| {
+            ports.iter().map(|p| (p.id, p.channels)).collect::<Vec<_>>()
+        };
+        if ports(&info.inputs) != ports(&self.info.inputs)
+            || ports(&info.outputs) != ports(&self.info.outputs)
             || info
                 .parameters
                 .iter()
@@ -177,6 +193,48 @@ impl PluginDef {
         (usage, indices)
     }
 }
+/// Per-node administrative lease and block-boundary quiescence handshake.
+/// Only the non-RT worker locks the socket; the callback touches atomics alone.
+pub struct PluginAdmin {
+    phase: AtomicU32,
+    control: std::sync::Mutex<clausters_plugin_host::runtime::Administration>,
+}
+impl PluginAdmin {
+    /// Reserve this generation; overlapping state/restart requests are rejected.
+    pub fn reserve(&self) -> Result<(), String> {
+        self.phase
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| ())
+            .map_err(|_| "plugin state operation already pending".into())
+    }
+    pub fn pending(&self) -> bool {
+        matches!(self.phase.load(Ordering::Acquire), 1 | 2)
+    }
+    /// A failed transaction remains silent until explicit recovery.
+    pub fn abort(&self) {
+        self.phase.store(3, Ordering::Release);
+    }
+    /// Capture after the callback has stopped submitting jobs at a block boundary.
+    pub fn wait_boundary(&self) -> Result<(), String> {
+        let start = std::time::Instant::now();
+        while self.phase.load(Ordering::Acquire) != 2 {
+            if start.elapsed() >= DEFAULT_TIMEOUT {
+                return Err("plugin state boundary timeout".into());
+            }
+            std::thread::sleep(std::time::Duration::from_micros(50));
+        }
+        Ok(())
+    }
+    /// Capture after quiescence and after the helper drains accepted jobs.
+    pub fn capture(&self) -> Result<Vec<u8>, String> {
+        self.wait_boundary()?;
+        self.control
+            .lock()
+            .map_err(|_| "plugin state control poisoned")?
+            .save_state()
+    }
+}
+
 #[derive(Clone, Copy)]
 struct HeldNote {
     source: u128,
@@ -201,6 +259,8 @@ pub const HELD_NOTES: usize = 256;
 pub struct PluginSynth {
     def: Arc<PluginDef>,
     audio: AudioInstance,
+    admin: Arc<PluginAdmin>,
+    state_loaded: bool,
     values: Vec<f32>,
     sent: Vec<f32>,
     maps: Vec<ControlMap>,
@@ -230,7 +290,12 @@ impl PluginSynth {
         Self::with_mode(def, sample_rate, true)
     }
     fn with_mode(def: Arc<PluginDef>, sample_rate: f32, offline: bool) -> Result<Self, String> {
-        let audio = AudioInstance::new(def.instance(sample_rate)?)?;
+        let instance = def.instance(sample_rate)?;
+        let admin = Arc::new(PluginAdmin {
+            phase: AtomicU32::new(0),
+            control: std::sync::Mutex::new(instance.administration()?),
+        });
+        let audio = AudioInstance::new(instance)?;
         let note_ports = def
             .info
             .note_inputs
@@ -272,6 +337,8 @@ impl PluginSynth {
             maps: vec![ControlMap::UNMAPPED; def.names.len()],
             def,
             audio,
+            admin,
+            state_loaded: false,
             input: vec![0.0; inputs * FRAMES],
             output: vec![0.0; outputs * FRAMES],
             job: Job::default(),
@@ -289,6 +356,14 @@ impl PluginSynth {
             ended: [0; clausters_core::plugin_shm::EVENTS],
             ended_count: 0,
         })
+    }
+    /// Administrative handle for this live generation, never shared by a def.
+    pub fn administration(&self) -> Arc<PluginAdmin> {
+        Arc::clone(&self.admin)
+    }
+    /// A load replaces parameter values but keeps routing and live maps.
+    pub fn loaded_state(&mut self) {
+        self.state_loaded = true;
     }
     fn fail(&mut self, failure: Failure) {
         self.audio.fail(failure);
@@ -560,6 +635,9 @@ impl PluginSynth {
 }
 impl SynthNode for PluginSynth {
     fn prepare_slice(&mut self, ctx: &ProcessCtx, active: bool) {
+        if self.admin.phase.load(Ordering::Acquire) >= 2 {
+            return;
+        }
         if !self.open {
             self.open = true;
             self.job = Job {
@@ -626,9 +704,18 @@ impl SynthNode for PluginSynth {
             }
             self.open = false;
         }
+        if self.admin.phase.load(Ordering::Acquire) == 1 {
+            self.admin.phase.store(2, Ordering::Release);
+        }
+        if self.admin.phase.load(Ordering::Acquire) == 3 {
+            self.audio.fail(Failure::Protocol);
+        }
         self.fault = self.audio.failure();
     }
     fn process(&mut self, ctx: &mut ProcessCtx) {
+        if self.admin.phase.load(Ordering::Acquire) >= 2 {
+            return;
+        }
         for i in 0..self.values.len() {
             let map = self.maps[i];
             if map.bus >= 0 {
@@ -791,7 +878,9 @@ impl SynthNode for PluginSynth {
     fn restore_controls_from(&mut self, prior: &dyn SynthNode) {
         for i in 0..self.values.len() {
             if let Some((value, map)) = prior.control_state(i) {
-                self.values[i] = value;
+                if !self.state_loaded || i >= self.sent.len() {
+                    self.values[i] = value;
+                }
                 self.maps[i] = map;
             }
         }

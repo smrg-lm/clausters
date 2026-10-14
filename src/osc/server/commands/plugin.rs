@@ -29,6 +29,15 @@ enum ScanJob {
         client: ClientId,
         ticket: u64,
     },
+    State {
+        id: i32,
+        expected: u64,
+        def: Arc<crate::plugin::PluginDef>,
+        admin: Arc<crate::plugin::PluginAdmin>,
+        bytes: Option<Vec<u8>>,
+        sample_rate: f32,
+        client: ClientId,
+    },
     Restart {
         id: i32,
         expected: u64,
@@ -38,6 +47,12 @@ enum ScanJob {
     },
 }
 #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+struct PreparedState {
+    def: Arc<crate::plugin::PluginDef>,
+    synth: Box<crate::plugin::PluginSynth>,
+    bytes: Vec<u8>,
+}
+#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
 enum ScanResult {
     Scan(ScanReply),
     Def {
@@ -45,6 +60,15 @@ enum ScanResult {
         result: Result<Box<crate::plugin::PluginDef>, String>,
         client: ClientId,
         ticket: u64,
+    },
+    State {
+        id: i32,
+        expected: u64,
+        prior: Arc<crate::plugin::PluginDef>,
+        admin: Arc<crate::plugin::PluginAdmin>,
+        loading: bool,
+        result: Result<PreparedState, String>,
+        client: ClientId,
     },
     Restart {
         id: i32,
@@ -105,6 +129,57 @@ impl ScanWorker {
                             client,
                             ticket,
                         },
+                        ScanJob::State {
+                            id,
+                            expected,
+                            def,
+                            admin,
+                            bytes,
+                            sample_rate,
+                            client,
+                        } => {
+                            let loading = bytes.is_some();
+                            let result = (|| {
+                                let state = match bytes {
+                                    Some(bytes) => {
+                                        admin.wait_boundary()?;
+                                        bytes
+                                    }
+                                    None => admin.capture()?,
+                                };
+                                let mut reference = def.reference.clone();
+                                reference.state = state.clone();
+                                let refreshed =
+                                    crate::plugin::PluginDef::probe_state(reference, sample_rate)?;
+                                if refreshed.names != def.names {
+                                    return Err(
+                                        "plugin state changed its control identities".into()
+                                    );
+                                }
+                                let refreshed = Arc::new(refreshed);
+                                let mut synth = crate::plugin::PluginSynth::new(
+                                    Arc::clone(&refreshed),
+                                    sample_rate,
+                                )?;
+                                if loading {
+                                    synth.loaded_state();
+                                }
+                                Ok(PreparedState {
+                                    def: refreshed,
+                                    synth: Box::new(synth),
+                                    bytes: state,
+                                })
+                            })();
+                            ScanResult::State {
+                                id,
+                                expected,
+                                prior: def,
+                                admin,
+                                loading,
+                                result,
+                                client,
+                            }
+                        }
                         ScanJob::Restart {
                             id,
                             expected,
@@ -252,11 +327,14 @@ impl OscServer {
         }
         #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
         {
-            let Some(crate::osc::translate::NodeDef::Plugin(def, expected)) =
+            let Some(crate::osc::translate::NodeDef::Plugin(def, expected, admin)) =
                 self.translator.node_defs.get(&id)
             else {
                 return Err("not a plugin node".into());
             };
+            if admin.pending() {
+                return Err("plugin state operation already pending".into());
+            }
             if self.plugin_submitted - self.plugin_drained >= 4 {
                 return Err("plugin worker queue full".into());
             }
@@ -276,6 +354,70 @@ impl OscServer {
         #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
         {
             let _ = (id, from);
+            Err("server built without native CLAP support".into())
+        }
+    }
+    pub(in crate::osc::server) fn handle_plugin_state(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+        loading: bool,
+    ) -> Answer {
+        let id = args.int()?;
+        let bytes = if loading {
+            let Some(OscType::Blob(bytes)) = args.rest().first() else {
+                return Err("expected plugin state blob".into());
+            };
+            if bytes.len() > 1024 * 1024 {
+                return Err("plugin state capacity exceeded".into());
+            }
+            if args.rest().len() != 1 {
+                return Err("expected one plugin state blob".into());
+            }
+            Some(bytes.clone())
+        } else {
+            if !args.is_empty() {
+                return Err("expected one plugin node id".into());
+            }
+            None
+        };
+        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        {
+            let Some(crate::osc::translate::NodeDef::Plugin(def, expected, admin)) =
+                self.translator.node_defs.get(&id)
+            else {
+                return Err("not a plugin node".into());
+            };
+            if !def.info.state {
+                return Err("plugin has no state extension".into());
+            }
+            if self.plugin_submitted - self.plugin_drained >= 4 {
+                return Err("plugin worker queue full".into());
+            }
+            admin.reserve()?;
+            if self
+                .plugin_scanner
+                .sender
+                .try_send(ScanJob::State {
+                    id,
+                    expected: *expected,
+                    def: Arc::clone(def),
+                    admin: Arc::clone(admin),
+                    bytes,
+                    sample_rate: self.handle.sample_rate,
+                    client: from,
+                })
+                .is_err()
+            {
+                admin.abort();
+                return Err("plugin worker unavailable".into());
+            }
+            self.plugin_submitted += 1;
+            Ok(())
+        }
+        #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+        {
+            let _ = (id, from, bytes);
             Err("server built without native CLAP support".into())
         }
     }
@@ -321,6 +463,97 @@ impl OscServer {
                     }
                     continue;
                 }
+                ScanResult::State {
+                    id,
+                    expected,
+                    prior,
+                    admin,
+                    loading,
+                    result,
+                    client,
+                } => {
+                    let command = if loading {
+                        "/plugin_loadState"
+                    } else {
+                        "/plugin_saveState"
+                    };
+                    let current = matches!(self.translator.node_defs.get(&id), Some(crate::osc::translate::NodeDef::Plugin(def, generation, ..)) if *generation == expected && Arc::ptr_eq(def, &prior));
+                    let result = result.and_then(|value| {
+                        if current {
+                            Ok(value)
+                        } else {
+                            Err("plugin node no longer exists".into())
+                        }
+                    });
+                    match result {
+                        Ok(PreparedState { def, synth, bytes }) => {
+                            let generation = crate::node::SynthNode::incarnation(synth.as_ref());
+                            let next_admin = synth.administration();
+                            if self
+                                .handle
+                                .send(Cmd::RestartSynth {
+                                    id,
+                                    expected,
+                                    synth,
+                                })
+                                .is_err()
+                            {
+                                admin.abort();
+                                self.fail(client, command, "command FIFO full");
+                            } else {
+                                self.translator.retire_plugin_generation(id, expected);
+                                if loading {
+                                    for (index, value) in def
+                                        .defaults
+                                        .iter()
+                                        .take(def.info.parameters.len())
+                                        .enumerate()
+                                    {
+                                        let mapped = matches!(self.translator.mirror.get(id).map(|node| &node.body), Some(crate::osc::graph::MirrorBody::Synth { maps, .. }) if maps.iter().any(|(control, ..)| *control == index as u32));
+                                        if !mapped {
+                                            self.translator.mirror.set_control(
+                                                id,
+                                                index as u32,
+                                                *value,
+                                            );
+                                        }
+                                    }
+                                }
+                                self.translator.node_defs.insert(
+                                    id,
+                                    crate::osc::translate::NodeDef::Plugin(
+                                        def, generation, next_admin,
+                                    ),
+                                );
+                                if !loading {
+                                    let chunks = bytes.len().div_ceil(6144).max(1);
+                                    for chunk in 0..chunks {
+                                        let start = chunk * 6144;
+                                        self.reply(
+                                            client,
+                                            "/plugin_saveState.reply",
+                                            vec![
+                                                OscType::Int(id),
+                                                OscType::Int(chunk as i32),
+                                                OscType::Int(chunks as i32),
+                                                OscType::Blob(
+                                                    bytes[start..bytes.len().min(start + 6144)]
+                                                        .to_vec(),
+                                                ),
+                                            ],
+                                        );
+                                    }
+                                }
+                                self.done_with(client, command, vec![OscType::Int(id)]);
+                            }
+                        }
+                        Err(error) => {
+                            admin.abort();
+                            self.fail(client, command, error);
+                        }
+                    }
+                    continue;
+                }
                 ScanResult::Restart {
                     id,
                     expected,
@@ -328,7 +561,7 @@ impl OscServer {
                     result,
                     client,
                 } => {
-                    let current = matches!(self.translator.node_defs.get(&id), Some(crate::osc::translate::NodeDef::Plugin(current, generation)) if *generation == expected && Arc::ptr_eq(current, &def));
+                    let current = matches!(self.translator.node_defs.get(&id), Some(crate::osc::translate::NodeDef::Plugin(current, generation, ..)) if *generation == expected && Arc::ptr_eq(current, &def));
                     if !current {
                         self.fail(client, "/plugin_restart", "plugin node no longer exists");
                         continue;
@@ -336,6 +569,7 @@ impl OscServer {
                     match result {
                         Ok(synth) => {
                             let generation = crate::node::SynthNode::incarnation(synth.as_ref());
+                            let admin = synth.administration();
                             if self
                                 .handle
                                 .send(Cmd::RestartSynth {
@@ -350,7 +584,7 @@ impl OscServer {
                                 self.translator.retire_plugin_generation(id, expected);
                                 self.translator.node_defs.insert(
                                     id,
-                                    crate::osc::translate::NodeDef::Plugin(def, generation),
+                                    crate::osc::translate::NodeDef::Plugin(def, generation, admin),
                                 );
                                 self.done_with(client, "/plugin_restart", vec![OscType::Int(id)]);
                             }
