@@ -250,7 +250,7 @@ The transform stays RT-safe by construction: `FFT` keeps a sliding input buffer,
 
 **Bin-expression programs (`PV_Kernel`, M29).** The general per-frame mechanism: instead of one registered row per spectral operation, `PV_Kernel` interprets a pair of **user-authored postfix programs** (magnitude and phase) over every bin of each fresh frame — `clausters_core::pvprog`, whose opcodes are the shared `builtins` operator discriminants plus per-bin loads (`mag`, `phase`, `bin`, `nbins`, `binfreq`, `p0`…). The RT discipline is split exactly like the rest of the engine: the def carries the programs as wire token lists (`mag_expr`/`phase_expr`), the SynthDef compiler resolves and validates them on the network thread (`pvprog::compile` — stack discipline, parameter arity against the UGen's variadic inputs, the 256-op length cap), and the audio thread runs `PvProgram::eval` as a fixed loop over a build-time stack — no allocation, pure `f32`, so RT ≡ NRT bit-exactly on every feature combination. Two cost-shaping details: an identity phase program keeps each bin's phase by *scaling* the complex pair (the same arithmetic as the curated magnitude filters — a kernel reimplementing one renders sample-identically, which `tests/spectral.rs` asserts), and the polar `atan2` runs only when some program actually reads `phase`. A program is a pure per-bin map by design; cross-frame state, bin remaps and two-chain reads stay curated rows (the ADR: "The spectral frame is user-programmable through a bin-expression program").
 
-**Partitioned convolution (`Conv`, M28).** Convolution lives **outside** the `fr` chain (`src/dsp/conv.rs`): fast convolution's zero-padded rectangular segments, with a hop fixed by the partition size, are incompatible with the chain's windowed COLA discipline — a spectral multiply inside the chain would be *circular* convolution. The design is uniformly partitioned overlap-save with a frequency-domain delay line, shaped by two RT constraints. First, **the audio thread never transforms a kernel**: `/buffer_gen prepare_partconv` computes every partition's spectrum on the NRT queue into an ordinary pool buffer (`dsp::conv::layout`), and a kernel swap is just the `kernel` input moving to another prepared buffer (one-partition crossfade; the FDL holds *input* history, which is kernel-agnostic, so nothing rebuilds). Second, **the load is flat**: the `p ≥ 1` partition MACs of the upcoming hop only involve spectra that already exist, so they are spread across the blocks between hops (a fair share per `process` call, sample-exact under block splits), leaving the hop block only the input FFT/IFFT pair and the fresh-spectrum MAC — the bench's conv section measures the resulting steady-vs-hop phase profile. `Conv` is also the first UGen with **intrinsic latency** (one partition), reported through the new `UGen::latency`/`SynthNode::latency` hook (`UGenSynth` sums its UGens') that M12 anticipated — informational until a delay-compensation pass exists (`docs/model-vs-daw.md`).
+**Partitioned convolution (`Conv`, M28).** Convolution lives **outside** the `fr` chain (`src/dsp/conv.rs`): fast convolution's zero-padded rectangular segments, with a hop fixed by the partition size, are incompatible with the chain's windowed COLA discipline — a spectral multiply inside the chain would be *circular* convolution. The design is uniformly partitioned overlap-save with a frequency-domain delay line, shaped by two RT constraints. First, **the audio thread never transforms a kernel**: `/buffer_gen prepare_partconv` computes every partition's spectrum on the NRT queue into an ordinary pool buffer (`dsp::conv::layout`), and a kernel swap is just the `kernel` input moving to another prepared buffer (one-partition crossfade; the FDL holds *input* history, which is kernel-agnostic, so nothing rebuilds). Second, **the load is flat**: the `p ≥ 1` partition MACs of the upcoming hop only involve spectra that already exist, so they are spread across the blocks between hops (a fair share per `process` call, sample-exact under block splits), leaving the hop block only the input FFT/IFFT pair and the fresh-spectrum MAC — the bench's conv section measures the resulting steady-vs-hop phase profile. `Conv` is also the first UGen with **intrinsic latency** (one partition), reported through the new `UGen::latency`/`SynthNode::latency` hook (`UGenSynth` sums its UGens') that M12 anticipated — consumed by the general server delay-compensation pass (see below).
 
 **Why not scsynth's buffer.** scsynth's chain threads the frame through a client-allocated buffer the audio thread mutates in place. Clausters keeps the frame in synth-private scratch instead — no `/buffer_alloc`, and the chain is freed with the synth (the `LocalBuf` model). *This was originally justified by the pool's immutability, which no longer holds — pool buffers are writable* — and the design is kept on the two reasons that survive it: a spectral frame is scratch belonging to one synth, so making the client allocate and free one is a lifetime the graph can own instead; and a frame is a **spectrum in an internal layout**, not samples, so putting it where `/buffer_write` and the readers can reach it invites reading it as audio. Copying a frame into a pool buffer for inspection stays a possible extension, and is now a copy rather than a hole.
 
@@ -1689,7 +1689,7 @@ scsynth grew a binary plugin API (`UnitCmd`/interface tables) whose ABI broke wi
 - The *runtime*-extensible path for users is deliberately not Rust: send a **Faust def** (`/def_send faust`, JIT-compiled, sandboxed by the same `SynthNode` boundary). Most "I need a custom UGen" cases are a Faust one-liner.
 - If dynamic plugins ever become necessary, the lesson from scsynth applies: the boundary must be a **versioned C ABI** (or a wasm interface), checked at load time — the same policy already planned for the shared-memory layout and embed cdylib. Do not expose Rust types across it.
 
-Native **CLAP and VST3 discovery and isolated processing are implemented on Linux**. Both adapters participate in the same engine node tree. Native windows and delay compensation remain planned. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+Native **CLAP and VST3 discovery and isolated processing are implemented on Linux**. Both adapters participate in the same engine node tree. Native windows remain planned; delay compensation is shared engine infrastructure. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
 
 ### VST3 adapter
 
@@ -2098,3 +2098,47 @@ leave through the existing garbage FIFO. A failed accepted state operation
 latches a silent generation and requires explicit restart with the last
 successful image. Save replies fragment opaque bytes at 6144-byte boundaries,
 including one empty fragment for an empty image, before `/done` and the barrier.
+
+## Server delay compensation
+
+`dsp::compensation` analyzes the flattened command-mirror tree on the producer
+thread. It consumes exact audio bus usage and every family's declared
+`SynthNode::latency()`, computes global arrival times, and builds private input
+and writer histories. Nested automatic groups share a domain; manual groups,
+feedback/read-write paths and their connected audio sums are excluded. A dynamic
+bus can touch any bus and conservatively excludes the global graph.
+`/group_dumpGraph` prints the mirror's plan and exclusion reasons.
+
+`Cmd::SetCompensation` carries the fully allocated `Plan`. Immediate producer
+batches use `EngineHandle::send_batch` and one ring-buffer publication; timed
+bundles carry their plan with their routing changes. `NodeTree` holds active and
+pending plans; a split-block change suspends compensation until the next
+boundary. Before DSP, the tree checks the planned group ancestry and ordering modes, depth-first synth order,
+usage masks, object identities, routing controls/maps and latency declarations against its live nodes. A future mirror
+state cannot compensate a mismatching live tree. Async plugin replacement,
+MIDI/graph builders, event-lane starts, frees and offline commands all rebuild
+through the same translator. Retired plans leave through
+`Garbage::RetiredCompensation`; unchanged specifications swap their histories
+into the new plan, and fresh node identities receive fresh histories.
+
+During a synth visit, a stack-local `Buses` view reads delayed private inputs and
+captures that synth's output channels. `Out`, Faust and plugin outputs still
+add; `ReplaceOut` uses the overwrite door, preserving its mode through the
+history. The view shares the original control buses. Each read/write channel
+has its own `UnsafeCell`, so a read reference to one channel does not alias a
+mutable reference to another. After processing, private writer contributions
+are delayed and committed to the shared buses in the original execution order.
+The existing stage masks still grant exclusive global bus access; histories
+belong to individual node visitors and need no lock or atomic DSP arithmetic.
+
+| Resource | Capacity | Full behavior |
+|---|---|---|
+| Per-plan sample history | 16,777,216 samples total across input/output channels (64 MiB samples plus 16 MiB overwrite modes) | Exclude and report the entire plan as `delay storage capacity`; do not truncate or allocate in RT |
+| Active/pending plan retirement | Existing garbage FIFO and holding-list limits | Same non-RT retirement and bounded-overflow policy as synth/bundle garbage |
+
+`tests/compensation.rs` asserts dry/processed impulses, mixed writers,
+sidechains, chains, nested groups, parallel/split execution, overwrite semantics,
+latency replacement, history retention and mismatching future plans under
+`assert_no_alloc`. A SynthDef convolver supplies the same graph in the live
+engine and offline renderer, with identical samples. The runnable example is
+`examples/delay_compensation.rs`.

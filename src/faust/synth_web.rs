@@ -217,6 +217,10 @@ impl FaustSynth {
 }
 
 impl SynthNode for FaustSynth {
+    fn control_state(&self, index: usize) -> Option<(f32, crate::node::ControlMap)> {
+        self.body.control_state(index)
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx) {
         let (compute, dsp) = (self.def.compute, self.dsp.as_mut_ptr() as *mut u8);
         self.body.process(ctx, |frames, inputs, outputs| {

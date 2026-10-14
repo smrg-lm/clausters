@@ -162,6 +162,7 @@ impl CmdTranslator {
                 }
             }
             let (usage, bus_controls) = ndef.usage(&controls);
+            let usage = usage.clamp_audio(self.audio_bus_count);
             self.node_defs.insert(node_id, ndef);
             cmds.push(Cmd::AddSynth {
                 id: node_id,
@@ -462,6 +463,10 @@ impl CmdTranslator {
             target: parent,
             action,
             group: self.new_group(),
+        });
+        cmds.push(Cmd::SetGroupAuto {
+            id: group_id,
+            automatic: true,
         });
         let _ = self
             .mirror

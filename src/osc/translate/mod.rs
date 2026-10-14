@@ -256,6 +256,13 @@ impl NodeDef {
 }
 
 pub struct CmdTranslator {
+    latency: HashMap<i32, usize>,
+    compensation_identity: HashMap<i32, u64>,
+    compensation_objects: HashMap<i32, usize>,
+    next_compensation_identity: u64,
+    audio_bus_count: usize,
+    compensation_report: crate::dsp::compensation::Report,
+    compensation_dirty: bool,
     /// Faust instances bake the sample rate in at `/synth_new` time.
     #[cfg_attr(
         not(any(
@@ -414,6 +421,13 @@ impl CmdTranslator {
             synth_defs
         };
         Self {
+            latency: HashMap::new(),
+            compensation_identity: HashMap::new(),
+            compensation_objects: HashMap::new(),
+            next_compensation_identity: 0,
+            audio_bus_count: audio_buses,
+            compensation_report: Default::default(),
+            compensation_dirty: false,
             sample_rate,
             next_seed: Cell::new(clausters_core::rng::entropy_seed()),
             meters: Meters::detached(),
@@ -584,6 +598,9 @@ impl CmdTranslator {
         }
 
         let parent = self.mirror.parent(id);
+        self.latency.remove(&id);
+        self.compensation_identity.remove(&id);
+        self.compensation_objects.remove(&id);
         self.node_defs.remove(&id);
         self.mirror.remove(id);
         self.free_graph_node(id);
@@ -659,7 +676,8 @@ impl CmdTranslator {
         };
         let (base, _) = def.usage(controls);
         let usage = self.mirror.fold_maps_into_usage(id, base);
-        self.mirror.set_usage(id, usage);
+        self.mirror
+            .set_usage(id, usage.clamp_audio(self.audio_bus_count));
     }
 
     /// After a control change altered a synth's effective bus usage:
@@ -1229,6 +1247,151 @@ impl CmdTranslator {
     /// Everything allocating (boxed synths, name resolution) happens now;
     /// nothing reaches the engine until the caller ships the batch.
     pub fn translate(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let begin = cmds.len();
+        let result = self.translate_command(msg, cmds);
+        self.prepare_compensation(cmds, begin);
+        result
+    }
+
+    /// Retry the current plan when its producer publication was refused.
+    pub(crate) fn invalidate_compensation(&mut self) {
+        self.compensation_dirty = true;
+    }
+
+    /// Build and allocate the global latency plan on the command-producing
+    /// thread. Every builder, including asynchronous processor replacements,
+    /// calls this before publishing its batch.
+    pub fn prepare_compensation(&mut self, cmds: &mut Vec<Cmd>, begin: usize) {
+        for cmd in &cmds[begin..] {
+            match cmd {
+                Cmd::AddSynth { id, synth, .. } | Cmd::RestartSynth { id, synth, .. } => {
+                    self.latency.insert(*id, synth.latency());
+                    let object = synth.as_ref() as *const dyn SynthNode as *const () as usize;
+                    if self.compensation_objects.insert(*id, object) != Some(object) {
+                        self.next_compensation_identity =
+                            self.next_compensation_identity.wrapping_add(1);
+                        self.compensation_identity
+                            .insert(*id, self.next_compensation_identity);
+                    }
+                }
+                _ => {}
+            }
+        }
+        fn visit(
+            mirror: &TreeMirror,
+            id: i32,
+            domain: i32,
+            admitted: bool,
+            latency: &HashMap<i32, usize>,
+            out: &mut Vec<crate::dsp::compensation::AnalyzedNode>,
+        ) {
+            if mirror.synth_info(id).is_some() {
+                out.push(crate::dsp::compensation::AnalyzedNode {
+                    id,
+                    usage: mirror.usage_of(id),
+                    latency: latency.get(&id).copied().unwrap_or(0),
+                    automatic: admitted,
+                    domain,
+                    identity: 0,
+                    runtime_usage: crate::dsp::StageMask::of(&mirror.usage_of(id)),
+                });
+            } else if let Some(children) = mirror.children(id) {
+                let next = mirror.is_auto_group(id);
+                let domain = if next && admitted { domain } else { id };
+                for &child in children {
+                    visit(mirror, child, domain, next, latency, out);
+                }
+            }
+        }
+        let mut nodes = Vec::new();
+        visit(&self.mirror, 0, 0, false, &self.latency, &mut nodes);
+        for node in &mut nodes {
+            node.identity = self
+                .compensation_identity
+                .get(&node.id)
+                .copied()
+                .unwrap_or(0);
+            #[cfg(feature = "synth")]
+            if let Some(NodeDef::UGen(def)) = self.node_defs.get(&node.id)
+                && let Some((_, controls)) = self.mirror.synth_info(node.id)
+            {
+                node.usage = self.mirror.fold_maps_into_usage(
+                    node.id,
+                    crate::osc::graph::ugen_audio_usage(def, controls),
+                );
+            }
+            let mut bounded = BusUsage::default();
+            for bus in node.usage.reads() {
+                bounded.mark_bus(bus.min(self.audio_bus_count - 1), true, false);
+            }
+            for bus in node.usage.writes() {
+                bounded.mark_bus(bus.min(self.audio_bus_count - 1), false, true);
+            }
+            bounded.dynamic = node.usage.dynamic;
+            node.usage = bounded;
+        }
+        let mut report = crate::dsp::compensation::analyze(&nodes);
+        fn groups(mirror: &TreeMirror, id: i32, out: &mut Vec<(i32, i32, bool)>) {
+            if let Some(children) = mirror.children(id) {
+                out.push((id, mirror.parent(id).unwrap_or(0), mirror.is_auto_group(id)));
+                for &child in children {
+                    groups(mirror, child, out);
+                }
+            }
+        }
+        groups(&self.mirror, 0, &mut report.groups);
+        for node in &nodes {
+            report.objects.push(
+                self.compensation_objects
+                    .get(&node.id)
+                    .copied()
+                    .unwrap_or(0),
+            );
+            let mut routes = Vec::new();
+            if let Some(MirrorBody::Synth {
+                controls,
+                bus_controls,
+                maps,
+                ..
+            }) = self.mirror.get(node.id).map(|n| &n.body)
+            {
+                for (index, value) in controls.iter().enumerate() {
+                    let routing = bus_controls.contains(&(index as u32));
+                    let map = maps.iter().find(|&&(control, ..)| control == index as u32);
+                    if routing || map.is_some() {
+                        let (bus, audio) = map.map_or((-1, false), |&(_, bus, audio)| (bus, audio));
+                        routes.push(crate::dsp::compensation::RouteState {
+                            index,
+                            value: routing.then_some(value.to_bits()),
+                            bus,
+                            audio,
+                        });
+                    }
+                }
+            }
+            report.routes.push(routes);
+        }
+        if self.compensation_dirty
+            || report.nodes != self.compensation_report.nodes
+            || (!report.nodes.is_empty()
+                && (report.groups != self.compensation_report.groups
+                    || report.graph != self.compensation_report.graph
+                    || report.objects != self.compensation_report.objects
+                    || report.routes != self.compensation_report.routes))
+        {
+            cmds.push(Cmd::SetCompensation(Box::new(
+                crate::dsp::compensation::Plan::new(&report),
+            )));
+        }
+        self.compensation_dirty = false;
+        self.compensation_report = report;
+    }
+
+    fn translate_command(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
         match msg.addr.as_str() {
             "/plugin_event" => {
                 #[cfg(all(
@@ -1279,6 +1442,7 @@ impl CmdTranslator {
                     }
                 }
                 let (usage, bus_controls) = def.usage(&controls);
+                let usage = usage.clamp_audio(self.audio_bus_count);
                 self.node_defs.insert(id, def);
                 cmds.push(Cmd::AddSynth {
                     id,
@@ -1506,6 +1670,10 @@ impl CmdTranslator {
                         return Err("expected int (groupID, mode) pairs".into());
                     };
                     self.mirror.set_auto(*group, *mode != 0)?;
+                    cmds.push(Cmd::SetGroupAuto {
+                        id: *group,
+                        automatic: *mode != 0,
+                    });
                     if *mode != 0 {
                         self.resort_from(Some(*group), cmds);
                     }

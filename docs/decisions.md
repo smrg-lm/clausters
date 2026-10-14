@@ -1468,7 +1468,8 @@ pool and the no-allocation callback.
 - **Latency is reported, not compensated**: `Conv` is the first UGen with
   intrinsic latency (one partition), so it lands the `latency()` hook on
   `UGen`/`SynthNode` that the auto-ordering work anticipated. Parallel-path
-  compensation (PDC) remains open, per `docs/model-vs-daw.md`.
+  compensation was deferred at introduction; the general server pass now
+  consumes that hook (see `docs/model-vs-daw.md`).
 
 ## The spectral frame is user-programmable through a bin-expression program, not a new rate or a JIT kernel
 
@@ -2588,7 +2589,7 @@ error at graph-build time.
 
 **These UGens do not report an intrinsic latency.** The `latency()` hook exists
 for a UGen whose processing happens to lag (the partitioned convolver) and feeds
-a future plugin-delay compensation. A delay's delay is what the user asked for;
+general server delay compensation. A delay's delay is what the user asked for;
 compensating it would silently undo the instrument.
 
 **One convention worth writing down because it caught a test.** `decaytime` is
@@ -10163,3 +10164,28 @@ after `dlclose` had unmapped its code. Releasing COM references and balancing
 ModuleExit does not unregister a library's thread-local destructors. Keeping the
 code mapped until process exit is bounded by the disposable or per-node helper
 lifetime and preserves those callbacks without retaining live plugin instances.
+
+
+## Delay compensation belongs to the server bus graph
+
+The intrinsic-latency hook introduced with partitioned convolution now feeds
+one engine planner, independently of the def family. Native plugin bridge
+latency is one declaration among others. The planner flattens the automatic
+execution domains across nested groups; calculating a separate plan inside
+each group would lose the accumulated arrival time at its boundaries.
+
+The engine delays **writer contributions before summation**, using a private
+bus view during each node visit, rather than delaying an already mixed bus.
+The latter would preserve the phase error inside a dry/processed sum. It also
+aligns main and sidechain reads before an opaque processor runs. An overwrite
+keeps its mode in the output history, so ReplaceOut and later additive writers
+retain their execution semantics.
+
+Plans and histories are allocated on the producer thread and retired through
+the existing garbage FIFO. Stable specifications retain histories; a new node
+identity cannot retain another instance's samples. Split-block topology edits
+suspend compensation until a block boundary. Checking the planned execution
+order, object identities, routing controls/maps, usage and declarations against the live tree prevents an ahead-of-time
+command mirror from compensating a different graph. Manual, dynamic and
+feedback frontiers remain explicit rather than receiving guessed timing;
+authored musical delays remain outside the intrinsic-latency contract.

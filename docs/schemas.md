@@ -178,8 +178,9 @@ An accepted transaction that fails leaves the old generation silent until
 `/plugin_restart`; recovery uses the last successful image and current
 controls. A freed/reused node ID cannot receive an old operation's result.
 
-Latency is `depth * 64 + native latency` samples; parallel paths are not yet
-compensated. Native hosting requires a Linux server built with `plugin-clap` or `plugin-vst3`
+Latency is `depth * 64 + native latency` samples. The general server
+compensation pass aligns admitted automatic bus paths across def families
+(see [automatic ordering](auto-order.md#server-delay-compensation)). Native hosting requires a Linux server built with `plugin-clap` or `plugin-vst3`
 and its matching `clausters-plugin-host` binary. The in-page engine reports a
 capability error.
 
@@ -766,7 +767,7 @@ samples, and the server converts no rates, so resample the IR first. The audio t
 ready spectra, and its per-block cost is **flat**: the partition products are
 spread across the hop's blocks, so a long reverb tail does not spike the hop
 block. Intrinsic latency is one partition (`fftSize/2` samples), reported by
-the node (the first consumer of the latency hook; no delay compensation yet).
+the node, consumed by general server delay compensation in automatic bus paths.
 Moving the `kernel` input to a *different* prepared buffer crossfades over one
 partition (scsynth's `Convolution2L` behavior); regenerating the same buffer
 index switches hard — use a fresh buffer when the transition matters. An
@@ -1207,7 +1208,7 @@ The node tree is delivered to clients as **structured replies** — never scrape
 - **`/group_queryTree <groupID> [detail]`** → `/group_queryTree.reply` — the whole subtree from `groupID` (use `0` for the root). Args: `detail`, the group, its child count and its name, then depth-first per node: ID and child count (`-1` marks a synth) and then a name — the group's own (empty when unnamed) or the synth's def name — and per level the same payload `/node_query.reply` carries. Every node reads `ID, count, name` — one shape for both kinds, rather than a name only where it is new. `detail` is scsynth's `flag` widened into a level: **0** the shape alone, **1** the control count followed by (name|index, value) pairs (both scsynth-compatible), **2** also the maps and the inferred bus lists — which is what makes every entry a **full node record**, so a client reading a tree needs no follow-up `/node_query`. Values above 2 clamp to 2. At **2** a *group* also carries the two modes it runs under, as two ints right after its name: `/group_sortMode` (1 = the server orders its children by the buses they touch) and `/group_parallel` (1 = the independent ones run on the DSP workers). The queried group carries them too, right after its own name and before the first child — so the first entry starts at argument 6 rather than 4 at that level. They ride at 2 because 0 and 1 are scsynth's shape.
 - **`/node_query <nodeID>...`** → one `/node_query.reply` per node — the same record for one node, plus where it sits. Layout: `nodeID, parentID, prevID, nextID, isGroup`; then for a **group** `headID, tailID` (`-1` if empty), its `/group_name` (empty when unnamed) and the two modes it runs under as two ints, `/group_sortMode` and `/group_parallel`; for a **synth** `defName`, control count + (name|index, value) pairs, map count + (controlIndex, bus, audio) triples (the `/node_map`/`/node_mapAudio` bindings), and the inferred `reads`/`writes` bus lists as two strings (`"0,16"`, or `"-"` when none). Siblings are `-1` when absent.
   - A node the server does **not** hold answers `nodeID, -1, -1, -1, -1` — **`isGroup` = -1 means the node is gone** — rather than `/fail`. Absence is a *state* of the resource, reported in the record like `/def_query`'s empty family and `/buffer_query`'s `frames = -1`, so one dead id never aborts a query about the others. Only a malformed request (a non-int id) is a `/fail`.
-- **`/group_dumpGraph <groupID>`** → `/group_dumpGraph.reply [groupID, text]` — a human-readable rendering of the inferred bus graph (what each child reads/writes and the current order), with each group's name quoted next to its ID. A debugging aid; for machine use prefer `/group_queryTree`/`/node_query`, which is also where a group's `auto`/`manual` and `parallel` modes are read as flags rather than out of this string.
+- **`/group_dumpGraph <groupID>`** → `/group_dumpGraph.reply [groupID, text]` — a human-readable rendering of the inferred bus graph (what each child reads/writes and the current order), with each group's name quoted next to its ID, followed by the global planned intrinsic latencies, input/writer compensation delays in samples and uncompensated boundary reasons. A debugging aid; for machine use prefer `/group_queryTree`/`/node_query`, which is also where a group's `auto`/`manual` and `parallel` modes are read as flags rather than out of this string.
 
 The tree also **pushes**: a `/server_notify` client gets `/node_start` and `/node_end` as `nodeID, parentID, prevID, nextID, isGroup, name` (siblings are `-1` — this side does not track them; `name` is the group's `/group_name`, empty for a synth or an unnamed group). One shape for both kinds, so a client reads the record the same way whichever node it is about. These leave the audio thread through a lock-free FIFO and are sent by the network thread, so a registration also **buys promptness**: while any client is registered the server's idle tick shortens to the cadence a subscribed stream gets (10 ms), because the audio thread cannot wake the network loop the way a worker thread does. Without that the notification would wait for the housekeeping tick — measured at ~104 ms on an otherwise quiet connection.
 
@@ -1358,7 +1359,8 @@ assignments, read before processing; an unassigned controller has no effect.
 Editor callbacks and output parameters use the same parameter/gesture replies.
 A plugin request to change ports, parameters or latency fails the current
 generation safely; `/plugin_restart` prepares a new one with compatible IDs
-and ports, including refreshed latency. No path compensation is applied yet.
+and ports, including refreshed latency. The general server compensation plan
+is rebuilt for the replacement declaration.
 
 `/midi_bind` on a plugin def builds **one persistent instance at binding time**.
 Subsequent MIDI/UMP input uses the existing shared decoder and that instance;

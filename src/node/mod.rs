@@ -69,8 +69,8 @@ pub trait SynthNode: Send {
     /// Intrinsic latency of this synth in samples -- the sum of its UGens'
     /// intrinsic latencies: how far its output lags its input by
     /// construction, e.g. a partitioned convolver's partition length.
-    /// Informational for now -- the graph does not yet compensate parallel
-    /// paths (see `docs/model-vs-daw.md`); a future PDC pass consumes this.
+    /// Consumed by the general server compensation plan for admitted automatic
+    /// bus paths. Authored musical delays must not report this latency.
     fn latency(&self) -> usize {
         0
     }
@@ -292,6 +292,7 @@ pub enum FreedNode {
 pub struct Anchor(i32);
 
 struct NodeSlot {
+    automatic: bool,
     id: i32,
     parent: usize,
     kind: NodeKind,
@@ -327,6 +328,10 @@ impl Default for NodeTree {
 unsafe impl Sync for NodeTree {}
 
 pub struct NodeTree {
+    compensation: Option<Box<crate::dsp::compensation::Plan>>,
+    pending_compensation: Option<Box<crate::dsp::compensation::Plan>>,
+    compensation_pending: bool,
+    compensation_valid: bool,
     slots: Vec<UnsafeCell<Option<NodeSlot>>>,
     /// Which slot each live id is in, kept beside the slab by every write
     /// that fills or empties a slot ([`Self::find`]).
@@ -363,6 +368,53 @@ pub struct NodeTree {
 }
 
 impl NodeTree {
+    /// Mirrors the admitted ordering mode at the command's actual sample.
+    pub fn set_automatic(&mut self, id: i32, automatic: bool) {
+        if let Some(idx) = self.find(id)
+            && let Some(slot) = self.slot_mut(idx)
+            && matches!(slot.kind, NodeKind::Group(_))
+        {
+            slot.automatic = automatic;
+        }
+    }
+
+    fn compensation_groups_match(&self, plan: &crate::dsp::compensation::Plan) -> bool {
+        plan.groups().iter().all(|&(id, parent, automatic)| {
+            self.find(id)
+                .and_then(|idx| self.slot(idx))
+                .is_some_and(|slot| {
+                    matches!(slot.kind, NodeKind::Group(_))
+                        && slot.automatic == automatic
+                        && (if id == ROOT_NODE_ID {
+                            ROOT_NODE_ID
+                        } else {
+                            self.id_of(slot.parent)
+                        }) == parent
+                })
+        })
+    }
+
+    /// Install a prepared plan only at a block boundary. A split-block edit
+    /// suspends compensation until its prepared plan can become active.
+    pub fn set_compensation(
+        &mut self,
+        plan: Box<crate::dsp::compensation::Plan>,
+        _offset: usize,
+    ) -> Option<Box<crate::dsp::compensation::Plan>> {
+        self.compensation_pending = true;
+        self.pending_compensation.replace(plan)
+    }
+
+    /// Returns retired storage to the engine's non-RT garbage FIFO.
+    pub fn begin_compensation_block(&mut self) -> Option<Box<crate::dsp::compensation::Plan>> {
+        let mut plan = self.pending_compensation.take()?;
+        if let Some(old) = &mut self.compensation {
+            plan.retain_history(old);
+        }
+        self.compensation_pending = false;
+        self.compensation.replace(plan)
+    }
+
     /// A tree with the default node-slab capacity ([`MAX_NODES`]). The live
     /// server uses [`NodeTree::with_capacity`] with its `--max-nodes`.
     pub fn new() -> Self {
@@ -377,6 +429,7 @@ impl NodeTree {
         let mut slots: Vec<UnsafeCell<Option<NodeSlot>>> =
             (0..max_nodes).map(|_| UnsafeCell::new(None)).collect();
         *slots[ROOT_SLOT].get_mut() = Some(NodeSlot {
+            automatic: false,
             id: ROOT_NODE_ID,
             parent: NO_PARENT,
             kind: NodeKind::Group(Group {
@@ -390,6 +443,10 @@ impl NodeTree {
         let mut index = IdIndex::with_capacity(max_nodes);
         index.insert(ROOT_NODE_ID, ROOT_SLOT);
         Self {
+            compensation: None,
+            pending_compensation: None,
+            compensation_pending: false,
+            compensation_valid: false,
             slots,
             index,
             dfs_stack: Vec::with_capacity(max_nodes),
@@ -808,6 +865,7 @@ impl NodeTree {
         // After a Replace, `free` may have opened up earlier slots; the one
         // found above is still vacant either way.
         *self.slots[free].get_mut() = Some(NodeSlot {
+            automatic: false,
             id,
             parent: parent_idx,
             kind,
@@ -1285,6 +1343,13 @@ impl NodeTree {
     /// allocation. Children of groups flagged parallel (`/group_parallel`) run
     /// in dependency **stages** on the worker pool.
     pub fn process(&mut self, ctx: &ProcessCtx, pool: &WorkerPool) {
+        self.compensation_valid = self.compensation.as_ref().is_some_and(|plan| {
+            let mut position = 0;
+            plan.has_delays()
+                && self.compensation_groups_match(plan)
+                && self.compensation_matches(ROOT_SLOT, plan, &mut position)
+                && position == plan.len()
+        });
         // SAFETY: entry point -- this thread owns the whole tree; the pool
         // only ever receives disjoint subtrees.
         unsafe { self.process_index(ROOT_SLOT, ctx, pool) }
@@ -1348,6 +1413,28 @@ impl NodeTree {
         }
     }
 
+    fn compensation_matches(
+        &self,
+        idx: usize,
+        plan: &crate::dsp::compensation::Plan,
+        position: &mut usize,
+    ) -> bool {
+        let Some(slot) = self.slot(idx) else {
+            return false;
+        };
+        match &slot.kind {
+            NodeKind::Synth { node, usage } => {
+                let matches = plan.matches_node(*position, slot.id, node.as_ref(), *usage);
+                *position += 1;
+                matches
+            }
+            NodeKind::Group(group) => group
+                .children
+                .iter()
+                .all(|&child| self.compensation_matches(child, plan, position)),
+        }
+    }
+
     /// Processes the subtree rooted at slot `idx`, dispatching parallel
     /// stages to the pool.
     ///
@@ -1378,7 +1465,14 @@ impl NodeTree {
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
-                node.process(&mut ctx);
+                if self.compensation_valid
+                    && !self.compensation_pending
+                    && let Some(plan) = &self.compensation
+                {
+                    unsafe { plan.process(slot.id, node.as_mut(), &ctx) };
+                } else {
+                    node.process(&mut ctx);
+                }
                 match node.done_action() {
                     DoneAction::None => {}
                     DoneAction::PauseSelf => slot.paused = true,
@@ -1425,7 +1519,14 @@ impl NodeTree {
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
-                node.process(&mut ctx);
+                if self.compensation_valid
+                    && !self.compensation_pending
+                    && let Some(plan) = &self.compensation
+                {
+                    unsafe { plan.process(slot.id, node.as_mut(), &ctx) };
+                } else {
+                    node.process(&mut ctx);
+                }
                 match node.done_action() {
                     DoneAction::None => {}
                     DoneAction::PauseSelf => slot.paused = true,

@@ -113,6 +113,10 @@ rtprio = ["realtime", "cpal/realtime-dbus"]
 # `faust` feature on top); it has no target in a build without the SynthDef
 # family. Other examples are feature-neutral and stay auto-discovered.
 [[example]]
+name = "delay_compensation"
+required-features = ["synth"]
+
+[[example]]
 name = "bench"
 required-features = ["synth"]
 

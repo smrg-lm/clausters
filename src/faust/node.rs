@@ -21,6 +21,8 @@ pub struct FaustBody {
     /// reserved `out`/`in` routing controls are not mappable.
     maps: Vec<ControlMap>,
     out_bus: usize,
+    out_value: f32,
+    in_value: f32,
     in_bus: usize,
     in_bufs: Vec<Block>,
     out_bufs: Vec<Block>,
@@ -39,6 +41,8 @@ impl FaustBody {
             zones,
             maps,
             out_bus: 0,
+            out_value: 0.0,
+            in_value: 0.0,
             in_bus: 0,
             in_bufs: vec![Block::SILENCE; num_inputs],
             out_bufs: vec![Block::SILENCE; num_outputs],
@@ -65,7 +69,8 @@ impl FaustBody {
             let m = self.maps[i];
             if m.bus >= 0 {
                 let v = if m.audio {
-                    ctx.buses.audio((m.bus as usize).min(NUM_AUDIO_BUSES - 1))[offset]
+                    ctx.buses
+                        .audio((m.bus as usize).min(ctx.buses.audio_count() - 1))[offset]
                 } else {
                     ctx.buses.control.get(m.bus as usize)
                 };
@@ -101,6 +106,20 @@ impl FaustBody {
         }
     }
 
+    /// Stored control state for validating an off-thread routing snapshot.
+    pub fn control_state(&self, index: usize) -> Option<(f32, ControlMap)> {
+        if let Some(zone) = self.zones.get(index) {
+            // SAFETY: the audio owner reads its instance's parameter zone.
+            Some((unsafe { **zone }, self.maps[index]))
+        } else if index == self.zones.len() {
+            Some((self.out_value, ControlMap::UNMAPPED))
+        } else if index == self.zones.len() + 1 {
+            Some((self.in_value, ControlMap::UNMAPPED))
+        } else {
+            None
+        }
+    }
+
     pub fn set_control(&mut self, index: u32, value: f32) {
         let i = index as usize;
         // An explicit set overrides and clears any mapping (scsynth).
@@ -111,8 +130,10 @@ impl FaustBody {
             // SAFETY: as in `process`.
             unsafe { zone.write(value) };
         } else if i == self.zones.len() {
+            self.out_value = value;
             self.out_bus = clamp_first_bus(value, self.out_bufs.len());
         } else if i == self.zones.len() + 1 {
+            self.in_value = value;
             self.in_bus = clamp_first_bus(value, self.in_bufs.len());
         }
         // anything else is ignored, like scsynth

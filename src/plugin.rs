@@ -931,7 +931,7 @@ mod offline_tests {
                     "-O2",
                     "-fPIC",
                     "-shared",
-                    "-Itools/plugin-bridge/vendor",
+                    "-Ithird_party/clap/include",
                     "tools/plugin-bridge/fixture.c",
                     "-o"
                 ])

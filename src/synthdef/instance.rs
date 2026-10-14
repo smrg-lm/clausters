@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::dsp::registry::{BuildCtx, ExecMode};
 use crate::dsp::spectral::SpectralChain;
 use crate::dsp::{
-    BLOCK_SIZE, Block, DemandInputs, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx,
-    Rate, ReplyMsg, UGen, USUAL_UGEN_INPUTS, at,
+    BLOCK_SIZE, Block, DemandInputs, DoneAction, MAX_UGEN_INPUTS, ProcessCtx, Rate, ReplyMsg, UGen,
+    USUAL_UGEN_INPUTS, at,
 };
 use crate::node::{ControlMap, SynthNode};
 use crate::server::meters::Meters;
@@ -207,10 +207,14 @@ impl UGenSynth {
 }
 
 impl SynthNode for UGenSynth {
+    fn control_state(&self, index: usize) -> Option<(f32, ControlMap)> {
+        Some((*self.controls.get(index)?, *self.maps.get(index)?))
+    }
+
     fn latency(&self) -> usize {
         // The sum over UGens is exact for a serial chain (the common shape);
-        // a graph with parallel paths of unequal latency is the open PDC
-        // problem this hook feeds later.
+        // expose unequal intrinsic paths as separate synths connected by buses
+        // for the general server compensation pass to align them.
         self.ugens.iter().map(|u| u.latency()).sum()
     }
 
@@ -235,7 +239,8 @@ impl SynthNode for UGenSynth {
             let m = self.maps[i];
             if m.bus >= 0 {
                 self.controls[i] = if m.audio {
-                    ctx.buses.audio((m.bus as usize).min(NUM_AUDIO_BUSES - 1))[ctx.offset]
+                    ctx.buses
+                        .audio((m.bus as usize).min(ctx.buses.audio_count() - 1))[ctx.offset]
                 } else {
                     ctx.buses.control.get(m.bus as usize)
                 };

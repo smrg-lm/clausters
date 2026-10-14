@@ -630,6 +630,7 @@ impl Renderer {
     fn collect(&mut self) {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
+                Garbage::RetiredCompensation(_) => {}
                 Garbage::FreedSynth { id, synth } => {
                     self.translator.forget_freed_synth(id, synth.incarnation())
                 }
@@ -646,6 +647,11 @@ impl Renderer {
                 | Garbage::EventLaneSpent { .. }
                 | Garbage::TransportEnded { .. } => {}
             }
+        }
+        let mut compensation = Vec::new();
+        self.translator.prepare_compensation(&mut compensation, 0);
+        if self.handle.send_batch(compensation).is_err() {
+            self.dropped = true;
         }
         // Offline there is no client to notify, but the server-owned id
         // ranges still recycle on death, same as live.

@@ -54,7 +54,7 @@ impl UGen for ReplaceOut {
         let bus = audio_bus(inputs[0]);
         let signal = inputs[1];
         // SAFETY: same disjointness argument as `Out`.
-        let dest = &mut unsafe { ctx.buses.audio_mut(bus) }[ctx.offset..];
+        let dest = &mut unsafe { ctx.buses.audio_replace(bus) }[ctx.offset..];
         for (i, s) in output.iter_mut().enumerate() {
             let x = at(signal, i);
             dest[i] = x;

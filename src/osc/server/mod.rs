@@ -642,13 +642,13 @@ impl OscServer {
         }
     }
 
-    /// Sends the engine every command in `cmds`, stopping at the first a full
-    /// FIFO refuses.
+    /// Publishes the complete prepared batch, or refuses it on a full FIFO.
     fn send_all(&mut self, cmds: impl IntoIterator<Item = Cmd>) -> Result<(), String> {
-        for cmd in cmds {
-            if self.handle.send(cmd).is_err() {
-                return Err("command FIFO full".into());
-            }
+        let mut cmds: Vec<Cmd> = cmds.into_iter().collect();
+        self.translator.prepare_compensation(&mut cmds, 0);
+        if self.handle.send_batch(cmds).is_err() {
+            self.translator.invalidate_compensation();
+            return Err("command FIFO full".into());
         }
         Ok(())
     }

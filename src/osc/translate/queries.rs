@@ -381,6 +381,16 @@ impl CmdTranslator {
                 bus_list(usage.writes()),
             ));
         }
+        out.push_str("  compensation (global, samples):\n");
+        for spec in &self.compensation_report.nodes {
+            out.push_str(&format!(
+                "    {} intrinsic {} inputs {:?} writers {:?}\n",
+                spec.id, spec.latency, spec.reads, spec.writes
+            ));
+        }
+        for (id, reason) in &self.compensation_report.excluded {
+            out.push_str(&format!("    {id} uncompensated: {reason}\n"));
+        }
         Ok(out)
     }
 }

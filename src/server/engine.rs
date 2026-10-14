@@ -81,6 +81,11 @@ pub enum Cmd {
         expected: u64,
         synth: Box<dyn SynthNode>,
     },
+    SetCompensation(Box<crate::dsp::compensation::Plan>),
+    SetGroupAuto {
+        id: i32,
+        automatic: bool,
+    },
     AddSynth {
         id: i32,
         target: i32,
@@ -289,6 +294,7 @@ pub(crate) fn report_rejected(id: i32, why: Reject, who: &str) {
 pub enum Garbage {
     /// A replaced endpoint, without a node death or id release.
     RetiredSynth(Box<dyn SynthNode>),
+    RetiredCompensation(Box<crate::dsp::compensation::Plan>),
     FreedSynth {
         id: i32,
         synth: Box<dyn SynthNode>,
@@ -683,12 +689,14 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::SetControl { id, .. }
         | Cmd::MapControl { id, .. }
         | Cmd::SetUsage { id, .. }
+        | Cmd::SetGroupAuto { id, .. }
         | Cmd::SetGroupParallel { id, .. }
         | Cmd::UGenCommand { id, .. } => [Some(*id), None],
         // No node target: a bus write, a buffer swap, a tap route, the
         // transport's own controls, or a queue-wide operation. These carry no
         // opinion about which axis the bundle belongs to.
-        Cmd::PluginTempo { .. }
+        Cmd::SetCompensation(_)
+        | Cmd::PluginTempo { .. }
         | Cmd::TransportRun { .. }
         | Cmd::TransportGroup { .. }
         | Cmd::TransportFollow { .. }
@@ -1244,6 +1252,9 @@ impl Engine {
     /// is safe to call from the audio thread, and nothing there needs to.
     pub fn drain(&mut self) {
         self.drain_commands();
+        if let Some(plan) = self.tree.begin_compensation_block() {
+            garbage_sink!(self).push(Garbage::RetiredCompensation(plan));
+        }
         self.flush_pending_garbage();
     }
 
@@ -1262,6 +1273,9 @@ impl Engine {
         // there (`server::meters`).
         let meter_start = crate::server::meters::stamp();
         self.drain_commands();
+        if let Some(plan) = self.tree.begin_compensation_block() {
+            garbage_sink!(self).push(Garbage::RetiredCompensation(plan));
+        }
         self.flush_pending_garbage();
 
         self.buses.clear_audio();
@@ -1742,6 +1756,11 @@ impl Engine {
         if frames == 0 {
             return;
         }
+        if offset == 0
+            && let Some(plan) = self.tree.begin_compensation_block()
+        {
+            garbage_sink!(self).push(Garbage::RetiredCompensation(plan));
+        }
         // Where every transport stands at this slice's **first** frame. The
         // block is cut at every loop wrap, so each position advances by
         // exactly one per sample for the whole slice and a UGen reading it
@@ -2089,7 +2108,8 @@ impl Engine {
                 // refuses a `Cmd` variant that neither this match nor
                 // `apply_to_tree` handles -- a wildcard here would turn that
                 // omission into a panic on the audio thread.
-                Cmd::PluginEvent { .. }
+                Cmd::SetCompensation(_)
+                | Cmd::PluginEvent { .. }
                 | Cmd::RestartSynth { .. }
                 | Cmd::AddSynth { .. }
                 | Cmd::AddGroup { .. }
@@ -2101,6 +2121,7 @@ impl Engine {
                 | Cmd::SetControl { .. }
                 | Cmd::MapControl { .. }
                 | Cmd::SetUsage { .. }
+                | Cmd::SetGroupAuto { .. }
                 | Cmd::SetGroupParallel { .. }
                 | Cmd::UGenCommand { .. } => {
                     debug_assert!(false, "apply_to_tree returned a node command");
@@ -2175,6 +2196,11 @@ fn apply_to_tree(
     offset: usize,
 ) -> Option<Cmd> {
     match cmd {
+        Cmd::SetCompensation(plan) => {
+            if let Some(old) = tree.set_compensation(plan, offset) {
+                sink.push(Garbage::RetiredCompensation(old));
+            }
+        }
         Cmd::PluginEvent {
             id,
             generation,
@@ -2220,6 +2246,7 @@ fn apply_to_tree(
             }
         }
         Cmd::SetUsage { id, usage } => tree.set_usage(id, usage),
+        Cmd::SetGroupAuto { id, automatic } => tree.set_automatic(id, automatic),
         Cmd::SetGroupParallel { id, parallel } => {
             // Unknown or non-group IDs are ignored, like /node_set.
             let _ = tree.set_parallel(id, parallel);
@@ -2288,6 +2315,19 @@ impl EngineHandle {
     /// can retry or report failure.
     pub fn send(&mut self, cmd: Cmd) -> Result<(), Cmd> {
         self.cmd_tx.push(cmd).map_err(|PushError::Full(c)| c)
+    }
+
+    /// Publishes a complete off-thread command batch with one release store.
+    /// Failure returns every command: routing and its compensation plan cannot
+    /// be split by a full FIFO or observed halfway through publication.
+    pub fn send_batch(&mut self, cmds: Vec<Cmd>) -> Result<(), Vec<Cmd>> {
+        match self.cmd_tx.write_chunk_uninit(cmds.len()) {
+            Ok(chunk) => {
+                chunk.fill_from_iter(cmds);
+                Ok(())
+            }
+            Err(_) => Err(cmds),
+        }
     }
 
     /// Pops one item of garbage, if any. The caller drops it (we are on the

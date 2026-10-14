@@ -10,6 +10,7 @@
 // (`/buffer_*` serves any def family), denormal control, and the `/buffer_gen`
 // wavetable/generator commands (pure buffer math).
 pub mod buffer;
+pub mod compensation;
 pub mod denormals;
 #[cfg(unix)]
 pub mod region;
@@ -354,6 +355,25 @@ fn bits_list(bits: &[u64]) -> impl Iterator<Item = usize> + '_ {
 }
 
 impl BusUsage {
+    /// Resolve the same last-bus clamp used by Buses before dependency and
+    /// worker-stage analysis. Allocates only on the command-producing thread.
+    pub fn clamp_audio(&self, count: usize) -> Self {
+        let mut usage = Self {
+            control_reads: self.control_reads.clone(),
+            control_writes: self.control_writes.clone(),
+            dynamic: self.dynamic,
+            ..Self::default()
+        };
+        let last = count.max(1) - 1;
+        for bus in self.reads() {
+            usage.mark_bus(bus.min(last), true, false);
+        }
+        for bus in self.writes() {
+            usage.mark_bus(bus.min(last), false, true);
+        }
+        usage
+    }
+
     /// Every bus read, ascending.
     pub fn reads(&self) -> impl Iterator<Item = usize> + '_ {
         bits_list(&self.reads)
@@ -497,6 +517,7 @@ impl StageMask {
 pub struct Buses {
     audio: Vec<UnsafeCell<Block>>,
     pub control: ControlBuses,
+    view: Option<(*const Buses, *mut compensation::NodeDelay)>,
 }
 
 // SAFETY: concurrent access to `audio` only happens during a parallel stage,
@@ -512,13 +533,16 @@ impl Buses {
                 .map(|_| UnsafeCell::new(Block::SILENCE))
                 .collect(),
             control,
+            view: None,
         }
     }
 
     /// Number of audio buses (the hardware outputs are buses `0..channels`).
     #[inline]
     pub fn audio_count(&self) -> usize {
-        self.audio.len()
+        self.view.map_or(self.audio.len(), |(parent, _)| unsafe {
+            (*parent).audio_count()
+        })
     }
 
     pub fn clear_audio(&mut self) {
@@ -536,6 +560,10 @@ impl Buses {
     /// buses (scheduler invariant), so the plain reference is sound.
     #[inline]
     pub fn audio(&self, bus: usize) -> &[f32; BLOCK_SIZE] {
+        if let Some((parent, delay)) = self.view {
+            let bus = bus.min(unsafe { (*parent).audio_count() } - 1);
+            return unsafe { (*delay).read(bus).unwrap_or_else(|| (*parent).audio(bus)) };
+        }
         let bus = bus.min(self.audio.len() - 1);
         unsafe { &(*self.audio[bus].get()).0 }
     }
@@ -550,8 +578,38 @@ impl Buses {
     #[inline]
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn audio_mut(&self, bus: usize) -> &mut [f32; BLOCK_SIZE] {
+        if let Some((parent, delay)) = self.view {
+            let bus = bus.min(unsafe { (*parent).audio_count() } - 1);
+            if let Some(output) = unsafe { (*delay).write(bus, false) } {
+                return output;
+            }
+            return unsafe { (*parent).audio_mut(bus) };
+        }
         let bus = bus.min(self.audio.len() - 1);
         unsafe { &mut (*self.audio[bus].get()).0 }
+    }
+    /// Mutable overwrite access, preserving ReplaceOut through compensation.
+    ///
+    /// # Safety
+    /// The caller exclusively owns this bus for the returned reference.
+    #[allow(clippy::mut_from_ref)]
+    pub unsafe fn audio_replace(&self, bus: usize) -> &mut [f32; BLOCK_SIZE] {
+        if let Some((parent, delay)) = self.view {
+            let bus = bus.min(unsafe { (*parent).audio_count() } - 1);
+            if let Some(output) = unsafe { (*delay).write(bus, true) } {
+                return output;
+            }
+        }
+        unsafe { self.audio_mut(bus) }
+    }
+
+    /// A stack-local view; pointers cannot outlive the exclusive node visit.
+    pub(crate) unsafe fn compensated(parent: &Buses, delay: &mut compensation::NodeDelay) -> Self {
+        Self {
+            audio: Vec::new(),
+            control: parent.control.clone(),
+            view: Some((parent, delay)),
+        }
     }
 }
 
@@ -857,8 +915,8 @@ pub trait UGen: Send {
     /// Intrinsic latency in samples: how far this UGen's output lags its
     /// input by construction (the partitioned convolver reports its
     /// partition length; almost everything else is 0, the default). Reported
-    /// through `SynthNode::latency` for a future delay-compensation pass --
-    /// today it is informational only (see `docs/model-vs-daw.md`).
+    /// through `SynthNode::latency` to the general server compensation pass.
+    /// Authored musical delays do not contribute to this declaration.
     fn latency(&self) -> usize {
         0
     }

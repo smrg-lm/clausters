@@ -13,7 +13,7 @@ In scsynth, execution order is the client's problem: a node reading an audio bus
 - **`/group_sortMode groupID 1`** sorts the group's children right away and re-sorts on every change that can affect the order: a node added or removed, a def's bus retargeted via `/node_set`, a subtree moved in. The root group (0) is allowed. A manual move whose destination is an auto group — `/node_before`, `/node_after`, `/node_order`, `/group_head`, `/group_tail` — replies `/fail`: ordering there is the group's job now, and `mode 0` hands it back. Moving a node *out* of one is allowed by any of them, and the group re-sorts what is left. All of it is schedulable in timed bundles and usable in NRT scores.
 - Both clients spell it as a verb on the group — `group.auto_order()` in Python, `group.autoOrder()` in TypeScript, either with `False`/`false` to hand the order back. The manual moves this replaces are verbs there too, for the groups that keep their order by hand: `before`, `after` and `order` on a node, `head` and `tail` on a group. `Group.parallel` is its pair: the same analysis, read for *what can run at once* rather than *in what order* (see [`parallel.md`](parallel.md)).
 - **`/group_queryTree [groupID = 0] [detail = 0]`** replies with the scsynth-style tree listing: `detail`, the group, its child count, then depth-first per node the ID and child count (`-1` marks a synth), the synth's def name, and — from `detail = 1` — control count and (name, value) pairs (`detail = 2` appends the full node record; see [`schemas.md`](schemas.md)).
-- **`/group_dumpGraph [groupID = 0]`** replies with a human-readable view of what the analysis inferred: per child, the buses read and written and whether it is `dynamic` (see below).
+- **`/group_dumpGraph [groupID = 0]`** replies with a human-readable view of what the analysis inferred: per child, the buses read and written and whether it is `dynamic` (see below), followed by the global planned compensation delays and excluded boundaries.
 - **Which mode a group is in is readable as data**, not only out of that string: a group's record carries two flags, sort mode and parallel, in `/node_query.reply` and in `/group_queryTree.reply` at `detail = 2`. Both clients surface them on the node record (`info.auto_order` / `info.autoOrder`, `info.parallel`) and print them on a group's line — `group 1000 "mixer" (auto, parallel)`. That is how a client that has both ways of ordering says which one it is looking at, instead of finding out from a `/fail` on a manual move.
 
 ## How the analysis works
@@ -35,6 +35,27 @@ Sorting is per group, treating each child as a unit: a child *group* counts as t
 
 ## Mechanics and caveats
 
-Everything runs on the network thread against a mirror of the node tree; re-sorts reach the audio thread as ordinary node moves, so the engine (and its real-time guarantees) is untouched. The mirror reflects commands **as sent**: messages inside a not-yet-fired timed bundle are mirrored immediately, so `/group_queryTree` can briefly show a future state, and a re-sort racing a scheduled bundle converges at the next change. Order inside an auto group is a *consequence* of the analysis — clients should stop carrying add-action logic for ordering and just use `head`/`tail`.
+Everything runs on the network thread against a mirror of the node tree; re-sorts reach the audio thread as ordinary node moves. The engine retains the ordering mode to validate its compensation snapshot; dependency analysis remains off RT. The mirror reflects commands **as sent**: messages inside a not-yet-fired timed bundle are mirrored immediately, so `/group_queryTree` can briefly show a future state, and a re-sort racing a scheduled bundle converges at the next change. Order inside an auto group is a *consequence* of the analysis — clients should stop carrying add-action logic for ordering and just use `head`/`tail`.
 
 `python3 examples/auto_order.py` demonstrates the whole flow: a source → fx → master chain built deliberately backwards, silent in a manual group, audible the moment `/group_sortMode 1` arrives, with the inferred graph printed before and after.
+
+## Server delay compensation
+
+Automatic ordering also admits general server delay compensation: a node's
+`SynthNode::latency()` adds intrinsic processing latency, regardless of its def
+family. The shorter writer contributions are delayed before bus summation,
+and a processor's main and sidechain inputs are aligned before it processes.
+Nested automatic groups in one automatic domain participate in one global
+plan. The same mechanism aligns SynthDef convolution and isolated plugins;
+no extra client command or plugin-specific routing API is needed.
+
+Manual group boundaries, feedback/read-write paths and their connected sums
+remain uncompensated. Signal-driven bus indices suspend the global plan because
+their routing is unknown. Musical delays remain what the author requested.
+`/group_dumpGraph` reports the planned delays in samples and exclusions.
+Plans and buffers are prepared off the callback, activated at block boundaries
+and retired outside RT. An edit inside a block suspends compensation until the
+next boundary; an unchanged path retains its history. See
+[the design rationale](model-vs-daw.md#general-server-delay-compensation) for the
+full contract and `cargo run --example delay_compensation` for a dry/convolved
+impulse comparison in manual and automatic groups.

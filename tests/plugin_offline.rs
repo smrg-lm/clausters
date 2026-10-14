@@ -265,3 +265,49 @@ fn process_error_crash_and_hang_abort_with_node_and_processing_time() {
         assert!(error.contains("0.002667s"), "{kind}: {error}");
     }
 }
+
+#[cfg(feature = "synth")]
+#[test]
+fn automatic_server_compensation_aligns_dry_audio_with_bridge_and_native_latency() {
+    for (kind, latency) in [("gain", 256usize), ("delay", 263usize)] {
+        let source = json!({"name":"input","ugens":[{"kind":"Impulse","inputs":[{"const":0.0}]},{"kind":"Out","inputs":[{"const":4.0},{"ugen":0}]}]});
+        let dry = json!({"name":"dry","ugens":[{"kind":"In","inputs":[{"const":4.0}]},{"kind":"Mul","inputs":[{"ugen":0},{"const":0.5}]},{"kind":"Out","inputs":[{"const":0.0},{"ugen":1}]}]});
+        let mut messages = vec![msg(
+            "/group_sortMode",
+            vec![OscType::Int(0), OscType::Int(1)],
+        )];
+        for def in [source, dry] {
+            messages.push(msg(
+                "/def_send",
+                vec![
+                    OscType::String("synth".into()),
+                    OscType::Blob(def.to_string().into_bytes()),
+                ],
+            ));
+        }
+        for (name, id) in [("input", 41), ("dry", 43)] {
+            messages.push(msg(
+                "/synth_new",
+                vec![
+                    OscType::String(name.into()),
+                    OscType::Int(id),
+                    OscType::Int(1),
+                    OscType::Int(0),
+                ],
+            ));
+        }
+        messages.push(new_node());
+        let samples = compare(reference(kind, 4), vec![(0, messages)], 1);
+        for (index, &sample) in samples.iter().enumerate() {
+            let expected = if index == latency {
+                if kind == "gain" { 1.0 } else { 1.5 }
+            } else {
+                0.0
+            };
+            assert!(
+                (sample - expected).abs() < 1e-6,
+                "{kind} sample {index}: {sample} != {expected}"
+            );
+        }
+    }
+}

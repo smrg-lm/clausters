@@ -112,8 +112,12 @@ Query the loaded def to obtain its `ControlInfo` entries. CLAP parameter
 controls use native plain units; VST3 uses normalized `[0, 1]` values. VST3
 references use `format: "vst3"` and the scanned hexadecimal class ID. A native Linux
 server and matching helper process CLAP and VST3 plugins outside the audio callback.
-Latency includes the bounded block pipeline; native editors and automatic
-path compensation are not available yet. See the
+Latency includes the bounded block pipeline. General server delay compensation
+aligns statically admitted automatic bus paths across all def families, including
+convolution; use the group's `auto_order()`.
+Nested automatic groups share the plan; manual/dynamic/feedback boundaries are
+reported by `/group_dumpGraph`. Musical delays are unchanged. Native editors
+remain planned. See the
 [protocol reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-definitions-and-recovery).
 
 `node.restart_plugin()` prepares recovery asynchronously and waits for its acknowledgement.

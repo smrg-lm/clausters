@@ -32,7 +32,7 @@
 //! input has been collected: an intrinsic latency of `L` samples, reported
 //! through [`UGen::latency`](crate::dsp::UGen::latency)/`SynthNode::latency` --
 //! the first consumer of the hook the auto-ordering work anticipated
-//! (compensation itself is deferred; see `docs/model-vs-daw.md`).
+//! (consumed by general server compensation on automatic bus paths).
 //!
 //! **Kernel swap.** The FDL holds *input* history, which is kernel-agnostic,
 //! so swapping kernels never rebuilds state. When the `kernel` input moves to

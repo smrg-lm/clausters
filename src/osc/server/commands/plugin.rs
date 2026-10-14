@@ -541,12 +541,11 @@ impl OscServer {
                             let generation = crate::node::SynthNode::incarnation(synth.as_ref());
                             let next_admin = synth.administration();
                             if self
-                                .handle
-                                .send(Cmd::RestartSynth {
+                                .send_all([Cmd::RestartSynth {
                                     id,
                                     expected,
                                     synth,
-                                })
+                                }])
                                 .is_err()
                             {
                                 admin.abort();
@@ -622,12 +621,11 @@ impl OscServer {
                             let generation = crate::node::SynthNode::incarnation(synth.as_ref());
                             let admin = synth.administration();
                             if self
-                                .handle
-                                .send(Cmd::RestartSynth {
+                                .send_all([Cmd::RestartSynth {
                                     id,
                                     expected,
                                     synth,
-                                })
+                                }])
                                 .is_err()
                             {
                                 self.fail(client, "/plugin_restart", "command FIFO full");

@@ -680,6 +680,14 @@ impl OscServer {
     /// Builds lane `id`'s event `i` as the entry the engine takes: a note's
     /// `/synth_new` with a fresh id and its release, or a message.
     fn lane_entry(&mut self, id: i32, i: u32) -> Result<Option<Cmd>, String> {
+        let mut result = self.lane_entry_command(id, i)?;
+        if let Some(Cmd::EventLaneEntry { start, .. }) = &mut result {
+            self.translator.prepare_compensation(start, 0);
+        }
+        Ok(result)
+    }
+
+    fn lane_entry_command(&mut self, id: i32, i: u32) -> Result<Option<Cmd>, String> {
         let Some(lane) = self.lanes.get(&id) else {
             return Ok(None);
         };

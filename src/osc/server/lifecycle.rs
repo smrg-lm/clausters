@@ -568,6 +568,12 @@ impl OscServer {
     pub(in crate::osc::server) fn collect_garbage(&mut self) {
         self.collect_freed();
         self.free_emptied_slots();
+        let mut cmds = Vec::new();
+        self.translator.prepare_compensation(&mut cmds, 0);
+        if !cmds.is_empty() && self.handle.send_batch(cmds).is_err() {
+            self.translator.invalidate_compensation();
+            warn!("command FIFO full while publishing compensation");
+        }
     }
 
     /// Frees each graph voice whose members all ended on their own
@@ -598,6 +604,7 @@ impl OscServer {
     fn collect_freed(&mut self) {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
+                Garbage::RetiredCompensation(_) => {}
                 Garbage::FreedSynth { id, synth } => {
                     self.translator.forget_freed_synth(id, synth.incarnation());
                 }

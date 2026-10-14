@@ -178,7 +178,7 @@ completed items lives in the git history.)
 
 - ✅ **M11 — `/node_map`/`/node_mapAudio`: buses as a parameter source** *(done 2026-06-13)* — a node reads a control (or audio) bus into a control each block until `/node_map … -1` or `/node_set`; an RT-safe per-node mapping table over the existing bus atomics, schedulable like `/node_set`.
 
-- ✅ **M12 — Canonical graph form via bus connections** *(done 2026-06-12)* — infer the read/write dependency DAG from the buses and offer opt-in auto-ordered groups (`/group_sortMode`, recomputed on the network thread; `/group_queryTree`/`/group_dumpGraph`; manual moves `/fail` inside them); feedback cycles keep the explicit order (one block of delay). No plugin delay compensation yet — a natural later addition via a `latency()` on the trait when an intrinsic-latency UGen lands (rationale in `docs/model-vs-daw.md`).
+- ✅ **M12 — Canonical graph form via bus connections** *(done 2026-06-12)* — infer the read/write dependency DAG from the buses and offer opt-in auto-ordered groups (`/group_sortMode`, recomputed on the network thread; `/group_queryTree`/`/group_dumpGraph`; manual moves `/fail` inside them); feedback cycles keep the explicit order (one block of delay). Intrinsic latency and general server compensation are supplied by M28 and J8 (rationale in `docs/model-vs-daw.md`).
 
 - ✅ **M13 — Parallel tree processing** *(done 2026-06-12; requires M12)* — the M12 DAG drives stage-based parallelism (N−1 RT workers, bounded spin+backoff, no locks); same-stage nodes write disjoint buses so it stays bit-identical to sequential, and NRT renders benefit too.
 
@@ -205,7 +205,7 @@ completed items lives in the git history.)
 
 - ✅ **M27 — The curated PV set: parameterized operations, not a catalog** *(done 2026-07-18)* — grow the `PV_*` vocabulary to cover the musically common spectral operations **without porting scsynth's one-UGen-per-op catalog** (whose sc3-plugins tail shows where that leads: dozens of near-duplicate plugins freezing booleans into names — `PV_MagAbove`/`Below` are one algorithm and a flag, which our `PvMag`/`MagMode` already demonstrates). Four additions, each one *implementation* with modes: (a) extend `PvMag` with a `clip` mode and register `PV_MagClip`; (b) a **two-chain combiner** — one binary PV implementation whose operator is a parameter, registered under the scsynth-compatible names (`PV_Add`/`PV_Mul`/`PV_Min`/`PV_Max`/`PV_MagMul`/`PV_CopyPhase`); needs the compiler to let one spectral UGen take **two** chain slots (result lands in chain A, the wire keeps ordering, both `SpectralChain`s stay synth-private); (c) the **stateful pair** `PV_MagFreeze`/`PV_MagSmear` (per-instance frame memory, allocated at build); (d) one **bin-remap** implementation behind `PV_BinShift` (shift + stretch covers `PV_MagShift`). Anything beyond these waits for M29's general mechanism rather than joining a catalog — record that stance in `docs/decisions.md`. Tests extend `tests/spectral.rs`; a commented example in `examples/`; wire reference in `docs/schemas.md`.
 
-- ✅ **M28 — Partitioned convolution: one UGen, kernel prepared off the RT thread, flat load** *(done 2026-07-18)* — a single well-parameterized convolution UGen instead of scsynth's five variants (`Convolution`/`2`/`2L`/`3`/`StereoConvolution2L`), designed around the two constraints the `bench` spectral section quantifies: the FDL multiply–accumulate is the dominant per-hop cost (~217 µs for a 2 s IR at 48 kHz, 16% of a block budget), and it need not land on one block. Pieces: (a) kernel spectra **precomputed off the audio thread** into an immutable pool buffer by a typed `/buffer_gen` routine (the moral heir of scsynth's `PreparePartConv`, per the S-track `/server_cmd` stance) — the RT side only ever FFTs its input block and MACs against ready-made spectra, and a kernel swap is an `Arc` swap with a parameterized crossfade (subsuming `Convolution2L`; no re-FFT on the audio thread, which is where scsynth's `Convolution2` violates our rules); (b) **load spreading**: the P partition MACs distributed across the hop's blocks so the steady-state cost is flat (~P/blocks-per-hop partitions per block), leaving only the input FFT/IFFT pair on the hop block; (c) convolution runs **outside** the `fr` chain (its discipline — zero-padded rectangular segments, hop fixed by partition size — is incompatible with the windowed COLA analysis chain; same reason scsynth keeps them apart); (d) it is the first UGen with **intrinsic latency**, so add the `latency()` hook on `SynthNode` anticipated by M12 and report it (full PDC stays deferred per `docs/model-vs-daw.md`); a direct time-domain path for short kernels can come later as a degenerate partition case. Acceptance: a golden test against direct convolution, and a bench row showing the spread MAC flattening the peak-block column.
+- ✅ **M28 — Partitioned convolution: one UGen, kernel prepared off the RT thread, flat load** *(done 2026-07-18)* — a single well-parameterized convolution UGen instead of scsynth's five variants (`Convolution`/`2`/`2L`/`3`/`StereoConvolution2L`), designed around the two constraints the `bench` spectral section quantifies: the FDL multiply–accumulate is the dominant per-hop cost (~217 µs for a 2 s IR at 48 kHz, 16% of a block budget), and it need not land on one block. Pieces: (a) kernel spectra **precomputed off the audio thread** into an immutable pool buffer by a typed `/buffer_gen` routine (the moral heir of scsynth's `PreparePartConv`, per the S-track `/server_cmd` stance) — the RT side only ever FFTs its input block and MACs against ready-made spectra, and a kernel swap is an `Arc` swap with a parameterized crossfade (subsuming `Convolution2L`; no re-FFT on the audio thread, which is where scsynth's `Convolution2` violates our rules); (b) **load spreading**: the P partition MACs distributed across the hop's blocks so the steady-state cost is flat (~P/blocks-per-hop partitions per block), leaving only the input FFT/IFFT pair on the hop block; (c) convolution runs **outside** the `fr` chain (its discipline — zero-padded rectangular segments, hop fixed by partition size — is incompatible with the windowed COLA analysis chain; same reason scsynth keeps them apart); (d) it is the first UGen with **intrinsic latency**, so add the `latency()` hook on `SynthNode` anticipated by M12 and report it (general server compensation is supplied by J8, per `docs/model-vs-daw.md`); a direct time-domain path for short kernels can come later as a degenerate partition case. Acceptance: a golden test against direct convolution, and a bench row showing the spread MAC flattening the peak-block column.
 
 - ✅ **M29 — A general per-frame spectral mechanism (design spike first)** *(done 2026-07-18: spike + implementation)* — the long-term answer to the PV-catalog problem: make the spectral frame **user-programmable** so new bin operations stop requiring server releases. Two candidate designs, to be decided in a written spike before any implementation: (a) **bin algebra** — expose magnitude/phase as frame-rate values the existing S3 operator vocabulary composes (the Max/MSP `pfft~` model: the spectral domain as a substrate the graph itself processes; touches the compiler and the rate system); (b) a **JIT per-frame kernel** — a compiled callback over the frame via the existing Faust family patterns (compile on the network thread, RT-safe run; no registry growth). The spike weighs compiler surface vs. JIT dependency, NRT determinism, and the client-side authoring story, and lands as a `docs/decisions.md` entry; implementation follows only on real need (every M27 op we decline to add is this milestone's demand signal). **Outcome**: the spike surfaced and chose a third design that dominates both on every axis — a **bin-expression program**: one `PV_Kernel` UGen interpreting a compile-time-validated postfix program over per-bin values, opcodes riding the `clausters-core::builtins` op table, authored client-side with (a)'s operator algebra; no new rate, no JIT, exact NRT, full feature matrix. (b) is repositioned as the escalation path for kernels beyond a per-bin map. Recorded in `docs/decisions.md` — and **implemented the same day**: `clausters_core::pvprog` (program + RT-safe evaluator), the variadic `PV_Kernel` row, `mag_expr`/`phase_expr` wire fields validated at `/def_send synth`, the Python `clausters.defs.pv_expr` symbolic terms + `pv_kernel`, sample-identical equivalence tests against `PV_MagAbove`/`PV_BrickWall` in `tests/spectral.rs`, RT-safety coverage, `examples/spectral/kernel.py`, and the use-cases/restrictions docs in both books.
 
@@ -2360,7 +2360,7 @@ Section added 2026-10-13, at the user's request. The earlier "dynamic plugins no
 - ✅ **J7 — VST3.** *(done 2026-10-14)* Implement the existing format interface over `vst3`'s COM-style bindings without changing the family or inventing a second client surface. Cover lifecycle, parameter conversion, audio/event ports, state, transport, latency changes and editor callbacks against a repository VST3 fixture. Validate feature combinations with either adapter alone or both, with each existing def-family combination and without `embed`.
   **Parameter domain:** VST3 controls, queries and maps use its processor-native normalized `[0, 1]` values and `1 / stepCount` quantization; CLAP keeps plain units. Controller presentation conversion stays on the helper main thread and never enters audio. Component/controller state share one opaque image; callback edits use the existing parameter/gesture result path. Linux modules stay mapped through helper exit for registered TLS destructors. Native editor attachment remains J9.
 
-- ⬜ **J8 — Server delay compensation, anticipated by M12 and M28.** Implement the server's compensation work anticipated by **M12 — Canonical graph form via bus connections** and deferred by **M28 — Partitioned convolution**, which added `SynthNode::latency()`. This is shared engine infrastructure, not a plugin-only delay: use bridge plus intrinsic latency to align statically analyzable paths admitted by automatic ordering, across nested groups and their boundaries. Build the global dependency/latency plan and delay storage off RT and publish at block boundaries. Delay distinct writer contributions before bus summation and align main/sidechain inputs before processing; preserve `Out`/`ReplaceOut` semantics and parallel execution. Recompute safely for topology and declared latency changes; report uncompensated manual, dynamic and feedback boundaries, never compensate authored musical delays. Acceptance: impulses through dry/processed paths, multiple writers, chains, sidechains, nested groups, parallel workers, changing latency and the same graph offline. This answers the server-side latency part of **"`mt.fx` is a declared empty slot, and what an effect *is* as a document is unspecified"** under Future directions; its document/preset/bypass/tail questions remain there.
+- ✅ **J8 — Server delay compensation, anticipated by M12 and M28.** *(done 2026-10-14)* Implement the server's compensation work anticipated by **M12 — Canonical graph form via bus connections** and deferred by **M28 — Partitioned convolution**, which added `SynthNode::latency()`. This is shared engine infrastructure, not a plugin-only delay: use bridge plus intrinsic latency to align statically analyzable paths admitted by automatic ordering, across nested groups and their boundaries. Build the global dependency/latency plan and delay storage off RT and publish at block boundaries. Delay distinct writer contributions before bus summation and align main/sidechain inputs before processing; preserve `Out`/`ReplaceOut` semantics and parallel execution. Recompute safely for topology and declared latency changes; report uncompensated manual, dynamic and feedback boundaries, never compensate authored musical delays. Acceptance: impulses through dry/processed paths, multiple writers, chains, sidechains, nested groups, parallel workers, changing latency and the same graph offline. This answers the server-side latency part of **"`mt.fx` is a declared empty slot, and what an effect *is* as a document is unspecified"** under Future directions; its document/preset/bypass/tail questions remain there.
 - ⬜ **J9 — The plugin's own window and packaging.** The helper's main thread opens/closes/resizes a floating native editor, initially X11/XWayland, and runs the required GUI, timer and fd callbacks; plugin edits update the same parameter queries and notifications. The window is on the native server's machine, including when a web client requests it. Cover reopen, free, crash and processing while the editor is open. Package the matching helper with server, embed and Python native artifacts; validate the version handshake. Run paired Python/TypeScript examples by ear and eye with CLAP and VST3, refresh Python's bundled binaries first, and close with the feature matrix, client parity, pyright, web build/tests and all three doc builds.
 
 Further formats/platforms are checkbox entries under Future directions. Document inserts remain the existing `mt.fx` entry; this track provides hosting, state and engine compensation, not a separate application routing implementation.
@@ -2400,6 +2400,15 @@ Further formats/platforms are checkbox entries under Future directions. Document
   human-audible/visual behavior is checked by running one.
 
 ## Future directions (a design that is not a fix)
+
+- ⬜ **Per-output and intra-SynthDef latency** — general server compensation
+  consumes one declared latency per opaque synth and aligns its bus paths.
+  A serial SynthDef chain reports the sum of its intrinsic UGen latencies;
+  unequal parallel intrinsic paths inside one def need a per-wire/per-output
+  contract and a compiler-side alignment pass. Until that design is adopted,
+  expose those paths as separate synths connected by buses. Authored musical
+  delays must remain excluded from intrinsic latency.
+
 
 - ⬜ **Def selector maps over persistent plugin bindings.** Native note/velocity/gate routing and native MIDI program changes are supported; mapping a program to another def, or MPE expression to arbitrary instance parameters, needs an explicit persistent-instance replacement/per-note-parameter policy. Reject those `/midi_map` selectors rather than accepting a map the plugin route ignores.
 
@@ -2475,17 +2484,18 @@ where it came from).
   slot is a nested-graph slot, so an effect may itself be a GraphDef and a
   compound effect needs no new mechanism.
 
-  What is missing is the **document**, and it is four questions, none of them
-  about nodes:
+  What remains missing is the **document**: preset, bypass and tail semantics,
+  and how its routing is admitted to the server's automatic domains.
 
-  - **The preset**: what is saved when a piece is saved, and what reloading it
+  - **The preset**: what is saved when a document is saved, and what reloading it
     means for an effect whose parameters are a def's and not this project's.
     A leaf is opaque for a reason; an effect's state is the same kind of thing
     and probably the same answer, but it has to be said.
-  - **The declared latency and who compensates it**: today nothing in a piece
-    has any, so every path is aligned by construction. One effect with a
-    look-ahead ends that, and the compensation is the master's problem rather
-    than the effect's -- which makes it a rule about the piece, not a field.
+  - **The declared latency and who compensates it**: the server side is
+    supplied by M28's `SynthNode::latency()` and J8's general engine plan,
+    including isolated-plugin bridge latency. The document still has to name
+    its effect routing and its admission to automatic domains; this is not a
+    separate compensation algorithm in the master or in each client.
   - **Bypass**: whether it is a state of the chain or of the effect, and whether
     a bypassed effect keeps running (its tail survives, it costs what it cost)
     or stops (it is free, and re-enabling it clicks).
@@ -2495,7 +2505,7 @@ where it came from).
 
   Until those are answered the slot stays empty, and that is not a gap in the
   node system: the shape of the hole is right, and a wrong answer to any of the
-  four would be much harder to take back than a missing feature. This entry is what outlives the
+  remaining document questions would be much harder to take back than a missing feature. This entry is what outlives the
   spec the node system was built from.
 
 - ✅ **A UGen's trailing inputs could be declared optional, so a def survives one growing** *(named 2026-08-16, after S17 moved `PlayBuf` from four inputs to seven and every stored def that used it stopped compiling — seven of them on the author's machine, warning at every boot)*. Arity is exact: `synthdef::compile` rejects a UGen whose input count is not the descriptor's, and `UGenInput.default` is advisory metadata the server never applies. So a UGen that grows breaks every def written against it, including the ones already persisted on disk and the ones inside a saved bundle.
@@ -2715,8 +2725,11 @@ where it came from).
   bus) rather than a bus number, which is an instance's detail; (b) an execution
   order that is no longer the tree's -- a track that feeds another has to run
   first, so a topological order over the routing, with a cycle detected and
-  refused by name; (c) latency, which nothing has today and which decides whether
-  two parallel paths sound together the moment one of them carries an effect.
+  refused by name; the server's M12 auto groups infer order and retain feedback,
+  so the document still has to state that stricter cycle policy. (c) Latency
+  alignment is supplied by M28/J8 in the server; the document must route its
+  parallel paths into the admitted automatic domains rather than duplicate
+  compensation in a client.
 
 - ⬜ **Sends: pre- or post-fader is the send's choice, and a meter can read
   either side** *(named 2026-09-10 in the node system's spec)*. **What already
@@ -2888,6 +2901,20 @@ where it came from).
 - ⬜ **Third-party plugin formats and native platforms after the Linux reference host** *(named 2026-10-13 with the J track)*. J1-J9 deliver CLAP and VST3 on Linux. LV2, Audio Units and native hosting/editor packaging on macOS and Windows remain possible follow-up work, using the same format interface and client surface. Audio Units are platform-specific. Do not add a second client-side hosting implementation or treat a native editor running on the server as an editor running in a browser. The in-page engine question is recorded in `clients/web/PLAN.md`, **"Native plugins and the in-page engine"**.
 
 ## Found by use: the running list of fixes
+
+- ✅ **Clamped audio buses in dependency analysis** *(fixed 2026-10-14)* —
+  audio I/O clamps an out-of-range index to the last configured bus, while
+  the mirror had analyzed its unbounded index. Ordering, worker masks and
+  compensation now analyze the same physical bus, including control retargets
+  and mapped controls. A reversed source/reader graph with a reduced bus count
+  tests the dependency and allocation-free parallel execution.
+
+- ✅ **Offline plugin unit fixture header path** *(fixed 2026-10-14)* — the
+  unit test compiled the bridge fixture against the retired
+  `tools/plugin-bridge/vendor` include directory. It now uses the same
+  `third_party/clap/include` headers as the production helper and integration
+  fixtures, so a clean checkout does not need an ignored legacy vendor tree.
+
 
 - ✅ **Large CLAP catalogues hid compatible LSP plugins.** Discovery rejected binaries with more than 128 identities, and one over-capacity metadata row failed every sibling. Raise the bounded catalogue to 512, page administrative requests in groups of four and retain per-plugin compatibility diagnostics; the installed LSP catalogue reports 182 compatible plugins and 12 parameter-capacity diagnostics.
 

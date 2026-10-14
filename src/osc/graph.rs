@@ -10,7 +10,8 @@
 //!
 //! Everything runs on the network thread against [`TreeMirror`], a mirror of
 //! the node tree maintained from the same commands the engine receives; the
-//! audio thread is untouched (re-sorts are ordinary `Cmd::MoveNode`s). The
+//! re-sorts are ordinary `Cmd::MoveNode`s. The engine retains the ordering
+//! mode only to validate its compensation snapshot. The
 //! mirror reflects commands **as sent**: commands inside a not-yet-fired
 //! timed bundle are mirrored immediately, so the mirror can run briefly
 //! ahead of the engine -- re-sorts converge once the bundle fires.
@@ -56,13 +57,24 @@ pub use crate::dsp::BusUsage;
 /// of those must re-run the analysis).
 #[cfg(feature = "synth")]
 pub fn ugen_usage(def: &SynthDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
+    ugen_usage_impl(def, controls, true)
+}
+
+/// Audio data dependencies exclude ReplaceOut's ordering-only read.
+#[cfg(feature = "synth")]
+pub fn ugen_audio_usage(def: &SynthDef, controls: &[f32]) -> BusUsage {
+    ugen_usage_impl(def, controls, false).0
+}
+
+#[cfg(feature = "synth")]
+fn ugen_usage_impl(def: &SynthDef, controls: &[f32], replace_reads: bool) -> (BusUsage, Vec<u32>) {
     let mut usage = BusUsage::default();
     let mut bus_controls = Vec::new();
     for ugen in &def.ugens {
         let (read, write, control) = match ugen.desc.bus {
             BusRole::Read => (true, false, false),
             BusRole::Write => (false, true, false),
-            BusRole::ReadWrite => (true, true, false),
+            BusRole::ReadWrite => (replace_reads, true, false),
             BusRole::ReadControl => (true, false, true),
             BusRole::WriteControl => (false, true, true),
             BusRole::None => continue,

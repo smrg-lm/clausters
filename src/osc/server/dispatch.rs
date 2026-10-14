@@ -79,6 +79,7 @@ impl OscServer {
             }
         }
         if !cmds.is_empty() && self.handle.send(Cmd::Schedule { time, cmds }).is_err() {
+            self.translator.invalidate_compensation();
             self.fail(from, "#bundle", "command FIFO full");
         }
     }
@@ -139,6 +140,7 @@ impl OscServer {
                 })
                 .is_err()
         {
+            self.translator.invalidate_compensation();
             return Err("command FIFO full".into());
         }
         Ok(())
@@ -189,6 +191,7 @@ impl OscServer {
             }
         };
         if self.handle.send(Cmd::ClearSched { only }).is_err() {
+            self.translator.invalidate_compensation();
             return Err("command FIFO full".into());
         }
         self.done(from, "/sched_clear");
@@ -235,6 +238,7 @@ impl OscServer {
             .send(Cmd::Schedule { time: device, cmds })
             .is_err()
         {
+            self.translator.invalidate_compensation();
             return Err("command FIFO full".into());
         }
         self.done(from, "/sched_atTransport");

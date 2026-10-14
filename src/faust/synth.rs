@@ -150,6 +150,10 @@ impl FaustSynth {
 }
 
 impl SynthNode for FaustSynth {
+    fn control_state(&self, index: usize) -> Option<(f32, crate::node::ControlMap)> {
+        self.body.control_state(index)
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx) {
         let dsp = self.dsp.as_ptr();
         self.body.process(ctx, |frames, inputs, outputs| unsafe {
