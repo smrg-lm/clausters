@@ -84,6 +84,7 @@ embed = []
 plugin = ["dep:clausters-plugin-host"]
 # Independently selectable first native adapter. Native plugins are Linux-only.
 plugin-clap = ["plugin", "clausters-plugin-host/clap"]
+plugin-vst3 = ["plugin", "clausters-plugin-host/vst3"]
 # Native PipeWire audio backend (Linux/BSD) via cpal's pipewire host. Default,
 # since the target systems always ship PipeWire: `cpal::default_host()` prefers
 # PipeWire, falling back to ALSA at runtime if it is unavailable, so no code
@@ -127,7 +128,7 @@ required-features = ["synth", "embed"]
 
 [[example]]
 name = "plugin_scan"
-required-features = ["plugin-clap"]
+required-features = ["plugin"]
 
 [dependencies]
 # Shared native core: the single source of truth for the numeric builtins,

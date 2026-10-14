@@ -1,0 +1,450 @@
+--- a/fixture.rs
++++ b/fixture.rs
+@@ -0,0 +1,2 @@
++// Adapted from vst3-rs's MIT-licensed gain example; see LICENSE-MIT.
++// External SDK names are retained by the fixture to exercise the native ABI.
+@@ -52 +54 @@ unsafe fn len_wstring(string: *const TChar) -> usize {
+-const PLUGIN_NAME: &'static str = "Gain (vst3-rs example plugin)";
++const PLUGIN_NAME: &str = "Clausters VST3 fixture";
+@@ -55,0 +58,4 @@ struct GainProcessor {
++    level: AtomicU64,
++    context: Cell<*mut IHostApplication>,
++    connection: std::cell::RefCell<Option<vst3::ComPtr<IConnectionPoint>>>,
++    main: std::thread::ThreadId,
+@@ -59 +65,6 @@ impl Class for GainProcessor {
+-    type Interfaces = (IComponent, IAudioProcessor, IProcessContextRequirements);
++    type Interfaces = (
++        IComponent,
++        IAudioProcessor,
++        IProcessContextRequirements,
++        IConnectionPoint,
++    );
+@@ -67 +78,5 @@ impl GainProcessor {
+-            gain: AtomicU64::new(1.0f64.to_bits()),
++            gain: AtomicU64::new(0.5f64.to_bits()),
++            level: AtomicU64::new(0),
++            context: Cell::new(ptr::null_mut()),
++            connection: std::cell::RefCell::new(None),
++            main: std::thread::current().id(),
+@@ -73 +88,10 @@ impl IPluginBaseTrait for GainProcessor {
+-    unsafe fn initialize(&self, _context: *mut FUnknown) -> tresult {
++    unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
++        assert_eq!(self.main, std::thread::current().id());
++        let host = ComRef::from_raw(context)
++            .unwrap()
++            .cast::<IHostApplication>()
++            .unwrap();
++        let mut name = [0; 128];
++        assert_eq!(host.getName(&mut name), kResultOk);
++        assert_eq!(name[0], 67);
++        self.context.set(host.into_raw());
+@@ -76 +99,0 @@ impl IPluginBaseTrait for GainProcessor {
+-
+@@ -77,0 +101,32 @@ impl IPluginBaseTrait for GainProcessor {
++        assert_eq!(self.main, std::thread::current().id());
++        assert!(self.connection.borrow().is_none());
++        drop(vst3::ComPtr::from_raw(
++            self.context.replace(ptr::null_mut()),
++        ));
++        kResultOk
++    }
++}
++impl IConnectionPointTrait for GainProcessor {
++    unsafe fn connect(&self, other: *mut IConnectionPoint) -> tresult {
++        let other = ComRef::from_raw(other).unwrap().to_com_ptr();
++        let host = ComRef::from_raw(self.context.get()).unwrap();
++        let mut cid = IMessage_iid;
++        let mut iid = IMessage_iid;
++        let mut object = ptr::null_mut();
++        assert_eq!(
++            host.createInstance(&mut cid, &mut iid, &mut object),
++            kResultOk
++        );
++        let message = vst3::ComPtr::<IMessage>::from_raw(object.cast()).unwrap();
++        message.setMessageID(c"fixture-connect".as_ptr());
++        let attrs = ComRef::from_raw(message.getAttributes()).unwrap();
++        assert_eq!(attrs.setInt(c"identity".as_ptr(), 19), kResultOk);
++        assert_eq!(other.notify(message.as_ptr()), kResultOk);
++        *self.connection.borrow_mut() = Some(other);
++        kResultOk
++    }
++    unsafe fn disconnect(&self, _: *mut IConnectionPoint) -> tresult {
++        self.connection.borrow_mut().take();
++        kResultOk
++    }
++    unsafe fn notify(&self, _: *mut IMessage) -> tresult {
+@@ -81 +135,0 @@ impl IPluginBaseTrait for GainProcessor {
+-
+@@ -99 +153 @@ impl IComponentTrait for GainProcessor {
+-            MediaTypes_::kEvent => 0,
++            MediaTypes_::kEvent => 1,
+@@ -122 +176 @@ impl IComponentTrait for GainProcessor {
+-                        bus.flags = BusInfo_::BusFlags_::kDefaultActive as u32;
++                        bus.flags = BusInfo_::BusFlags_::kDefaultActive;
+@@ -137 +191 @@ impl IComponentTrait for GainProcessor {
+-                        bus.flags = BusInfo_::BusFlags_::kDefaultActive as u32 as uint32;
++                        bus.flags = BusInfo_::BusFlags_::kDefaultActive;
+@@ -145 +199,13 @@ impl IComponentTrait for GainProcessor {
+-            MediaTypes_::kEvent => kInvalidArgument,
++            MediaTypes_::kEvent => {
++                if index != 0 {
++                    return kInvalidArgument;
++                }
++                let bus = &mut *bus;
++                bus.mediaType = mediaType;
++                bus.direction = dir;
++                bus.channelCount = 16;
++                copy_wstring("Notes", &mut bus.name);
++                bus.busType = BusTypes_::kMain as BusType;
++                bus.flags = 1;
++                kResultOk
++            }
+@@ -172 +238,13 @@ impl IComponentTrait for GainProcessor {
+-    unsafe fn setState(&self, _state: *mut IBStream) -> tresult {
++    unsafe fn setState(&self, state: *mut IBStream) -> tresult {
++        assert_eq!(std::thread::current().id(), self.main);
++        let state = ComRef::from_raw(state).unwrap();
++        let mut value = 0u64;
++        let mut count = 0;
++        if state.read((&mut value as *mut u64).cast(), 8, &mut count) != kResultOk || count != 8 {
++            return kInvalidArgument;
++        }
++        let gain = f64::from_bits(value);
++        if !(0.0..=1.0).contains(&gain) {
++            return kInvalidArgument;
++        }
++        self.gain.store(value, Ordering::Relaxed);
+@@ -176,2 +254,5 @@ impl IComponentTrait for GainProcessor {
+-    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
+-        kResultOk
++    unsafe fn getState(&self, state: *mut IBStream) -> tresult {
++        assert_eq!(std::thread::current().id(), self.main);
++        let state = ComRef::from_raw(state).unwrap();
++        let mut value = self.gain.load(Ordering::Relaxed);
++        state.write((&mut value as *mut u64).cast(), 8, ptr::null_mut())
+@@ -229,2 +310,2 @@ impl IAudioProcessorTrait for GainProcessor {
+-            SymbolicSampleSizes_::kSample32 => kResultOk as i32,
+-            SymbolicSampleSizes_::kSample64 => kNotImplemented as i32,
++            SymbolicSampleSizes_::kSample32 => kResultOk,
++            SymbolicSampleSizes_::kSample64 => kNotImplemented,
+@@ -236 +317,5 @@ impl IAudioProcessorTrait for GainProcessor {
+-        0
++        if f64::from_bits(self.gain.load(Ordering::Relaxed)) > 0.7 {
++            23
++        } else {
++            0
++        }
+@@ -248,24 +333,41 @@ impl IAudioProcessorTrait for GainProcessor {
+-        let process_data = &*data;
+-
+-        if let Some(param_changes) = ComRef::from_raw(process_data.inputParameterChanges) {
+-            let param_count = param_changes.getParameterCount();
+-            for param_index in 0..param_count {
+-                if let Some(param_queue) =
+-                    ComRef::from_raw(param_changes.getParameterData(param_index))
+-                {
+-                    let param_id = param_queue.getParameterId();
+-                    let point_count = param_queue.getPointCount();
+-
+-                    match param_id {
+-                        0 => {
+-                            let mut sample_offset = 0;
+-                            let mut value = 0.0;
+-                            let result = param_queue.getPoint(
+-                                point_count - 1,
+-                                &mut sample_offset,
+-                                &mut value,
+-                            );
+-
+-                            if result == kResultTrue {
+-                                self.gain.store(value.to_bits(), Ordering::Relaxed);
+-                            }
++        assert_ne!(std::thread::current().id(), self.main);
++        let data = &*data;
++        assert_eq!(data.symbolicSampleSize, 0);
++        let context = &*data.processContext;
++        assert_eq!(context.sampleRate, 48000.0);
++        assert!(context.tempo > 0.0);
++        if context.tempo == 97.0 {
++            assert_eq!(context.projectTimeSamples, 4096);
++            assert_eq!(
++                context.state & ProcessContext_::StatesAndFlags_::kPlaying,
++                0
++            );
++            assert_eq!(context.continousTimeSamples % 64, 13);
++        }
++        let changes = ComRef::from_raw(data.inputParameterChanges).unwrap();
++        let events = ComRef::from_raw(data.inputEvents).unwrap();
++        let out_events = ComRef::from_raw(data.outputEvents).unwrap();
++        for sample in 0..data.numSamples {
++            for index in 0..changes.getParameterCount() {
++                let queue = ComRef::from_raw(changes.getParameterData(index)).unwrap();
++                assert_eq!(queue.getParameterId(), 0);
++                for point in 0..queue.getPointCount() {
++                    let mut offset = 0;
++                    let mut value = 0.0;
++                    assert_eq!(queue.getPoint(point, &mut offset, &mut value), kResultOk);
++                    if offset == sample {
++                        self.gain.store(value.to_bits(), Ordering::Relaxed);
++                    }
++                }
++            }
++            for index in 0..events.getEventCount() {
++                let mut event: Event = std::mem::zeroed();
++                assert_eq!(events.getEvent(index, &mut event), kResultOk);
++                if event.sampleOffset == sample {
++                    assert_eq!(out_events.addEvent(&mut event), kResultOk);
++                    if event.r#type == 4 {
++                        let e = event.__field0.noteExpressionValue;
++                        match e.typeId {
++                            0 => assert_eq!(e.value, 0.25),
++                            2 => assert!((e.value - 0.55).abs() < 1e-12),
++                            _ => (),
+@@ -273 +375,8 @@ impl IAudioProcessorTrait for GainProcessor {
+-                        _ => {}
++                    }
++                    match event.r#type {
++                        0 => self.level.store(
++                            (event.__field0.noteOn.velocity as f64).to_bits(),
++                            Ordering::Relaxed,
++                        ),
++                        1 => self.level.store(0, Ordering::Relaxed),
++                        _ => (),
+@@ -276,0 +386,7 @@ impl IAudioProcessorTrait for GainProcessor {
++            let gain = f64::from_bits(self.gain.load(Ordering::Relaxed)) as f32;
++            let level = f64::from_bits(self.level.load(Ordering::Relaxed)) as f32;
++            for channel in 0..2 {
++                let input = *(*data.inputs).__field0.channelBuffers32.add(channel);
++                let output = *(*data.outputs).__field0.channelBuffers32.add(channel);
++                *output.add(sample as usize) = gain * (*input.add(sample as usize) + level);
++            }
+@@ -278,37 +393,0 @@ impl IAudioProcessorTrait for GainProcessor {
+-
+-        let gain = f64::from_bits(self.gain.load(Ordering::Relaxed)) as f32;
+-
+-        let num_samples = process_data.numSamples as usize;
+-
+-        if process_data.numInputs != 1 || process_data.numOutputs != 1 {
+-            return kResultOk;
+-        }
+-
+-        let input_buses =
+-            slice::from_raw_parts(process_data.inputs, process_data.numInputs as usize);
+-        let output_buses =
+-            slice::from_raw_parts(process_data.outputs, process_data.numOutputs as usize);
+-
+-        if input_buses[0].numChannels != 2 || output_buses[0].numChannels != 2 {
+-            return kResultOk;
+-        }
+-
+-        let input_channels = slice::from_raw_parts(
+-            input_buses[0].__field0.channelBuffers32,
+-            input_buses[0].numChannels as usize,
+-        );
+-        let output_channels = slice::from_raw_parts(
+-            output_buses[0].__field0.channelBuffers32,
+-            output_buses[0].numChannels as usize,
+-        );
+-
+-        let input_l = slice::from_raw_parts(input_channels[0], num_samples);
+-        let input_r = slice::from_raw_parts(input_channels[1], num_samples);
+-        let output_l = slice::from_raw_parts_mut(output_channels[0], num_samples);
+-        let output_r = slice::from_raw_parts_mut(output_channels[1], num_samples);
+-
+-        for i in 0..num_samples {
+-            output_l[i] = gain * input_l[i];
+-            output_r[i] = gain * input_r[i];
+-        }
+-
+@@ -330,0 +410,4 @@ struct GainController {
++    handler: std::cell::RefCell<Option<vst3::ComPtr<IComponentHandler>>>,
++    main: std::thread::ThreadId,
++    edited: Cell<bool>,
++    connection: std::cell::RefCell<Option<vst3::ComPtr<IConnectionPoint>>>,
+@@ -334 +417 @@ impl Class for GainController {
+-    type Interfaces = (IEditController,);
++    type Interfaces = (IEditController, IConnectionPoint, IMidiMapping);
+@@ -342 +425,5 @@ impl GainController {
+-            gain: Cell::new(1.0),
++            gain: Cell::new(0.5),
++            handler: std::cell::RefCell::new(None),
++            main: std::thread::current().id(),
++            edited: Cell::new(false),
++            connection: std::cell::RefCell::new(None),
+@@ -358,5 +445,8 @@ impl IEditControllerTrait for GainController {
+-    unsafe fn setComponentState(&self, _state: *mut IBStream) -> tresult {
+-        kNotImplemented
+-    }
+-
+-    unsafe fn setState(&self, _state: *mut IBStream) -> tresult {
++    unsafe fn setComponentState(&self, state: *mut IBStream) -> tresult {
++        let state = ComRef::from_raw(state).unwrap();
++        let mut value = 0u64;
++        let mut count = 0;
++        if state.read((&mut value as *mut u64).cast(), 8, &mut count) != kResultOk || count != 8 {
++            return kInvalidArgument;
++        }
++        self.gain.set(f64::from_bits(value));
+@@ -366,2 +456,8 @@ impl IEditControllerTrait for GainController {
+-    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
+-        kResultOk
++    unsafe fn setState(&self, state: *mut IBStream) -> tresult {
++        self.setComponentState(state)
++    }
++    unsafe fn getState(&self, state: *mut IBStream) -> tresult {
++        let mut value = self.gain.get().to_bits();
++        ComRef::from_raw(state)
++            .unwrap()
++            .write((&mut value as *mut u64).cast(), 8, ptr::null_mut())
+@@ -370,0 +467 @@ impl IEditControllerTrait for GainController {
++        assert_eq!(self.main, std::thread::current().id());
+@@ -384 +481 @@ impl IEditControllerTrait for GainController {
+-                info.defaultNormalizedValue = 1.0;
++                info.defaultNormalizedValue = 0.5;
+@@ -386 +483 @@ impl IEditControllerTrait for GainController {
+-                info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate as i32;
++                info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate;
+@@ -435,0 +533 @@ impl IEditControllerTrait for GainController {
++        assert_eq!(self.main, std::thread::current().id());
+@@ -437 +535 @@ impl IEditControllerTrait for GainController {
+-            0 => value_normalized,
++            0 => value_normalized * 2.0,
+@@ -442,0 +541 @@ impl IEditControllerTrait for GainController {
++        assert_eq!(self.main, std::thread::current().id());
+@@ -444 +543 @@ impl IEditControllerTrait for GainController {
+-            0 => plain_value,
++            0 => plain_value / 2.0,
+@@ -449,0 +549 @@ impl IEditControllerTrait for GainController {
++        assert_eq!(self.main, std::thread::current().id());
+@@ -458,0 +559 @@ impl IEditControllerTrait for GainController {
++                assert_eq!(self.main, std::thread::current().id());
+@@ -459,0 +561,10 @@ impl IEditControllerTrait for GainController {
++                if let Some(handler) = self.handler.borrow().as_ref() {
++                    if value == 0.66 && !self.edited.replace(true) {
++                        assert_eq!(handler.beginEdit(0), kResultOk);
++                        assert_eq!(handler.performEdit(0, 0.375), kResultOk);
++                        assert_eq!(handler.endEdit(0), kResultOk);
++                    }
++                    if value == 0.99 {
++                        assert_eq!(handler.restartComponent(8), kResultOk);
++                    }
++                }
+@@ -466 +577,3 @@ impl IEditControllerTrait for GainController {
+-    unsafe fn setComponentHandler(&self, _handler: *mut IComponentHandler) -> tresult {
++    unsafe fn setComponentHandler(&self, handler: *mut IComponentHandler) -> tresult {
++        assert_eq!(self.main, std::thread::current().id());
++        *self.handler.borrow_mut() = ComRef::from_raw(handler).map(|h| h.to_com_ptr());
+@@ -471 +584,5 @@ impl IEditControllerTrait for GainController {
+-        ptr::null_mut()
++        assert_eq!(self.main, std::thread::current().id());
++        ComWrapper::new(View)
++            .to_com_ptr::<IPlugView>()
++            .unwrap()
++            .into_raw()
+@@ -592,0 +710,106 @@ extern "system" fn GetPluginFactory() -> *mut IPluginFactory {
++
++struct View;
++impl Class for View {
++    type Interfaces = (IPlugView,);
++}
++impl IPlugViewTrait for View {
++    unsafe fn isPlatformTypeSupported(&self, r#type: FIDString) -> tresult {
++        if std::ffi::CStr::from_ptr(r#type).to_bytes() == b"X11EmbedWindowID" {
++            kResultOk
++        } else {
++            kResultFalse
++        }
++    }
++    unsafe fn attached(&self, _parent: *mut ::std::ffi::c_void, _type: FIDString) -> tresult {
++        kResultOk
++    }
++    unsafe fn removed(&self) -> tresult {
++        kResultOk
++    }
++    unsafe fn onWheel(&self, _distance: f32) -> tresult {
++        kResultOk
++    }
++    unsafe fn onKeyDown(&self, _key: char16, _keyCode: int16, _modifiers: int16) -> tresult {
++        kResultOk
++    }
++    unsafe fn onKeyUp(&self, _key: char16, _keyCode: int16, _modifiers: int16) -> tresult {
++        kResultOk
++    }
++    unsafe fn getSize(&self, size: *mut ViewRect) -> tresult {
++        *size = ViewRect {
++            left: 0,
++            top: 0,
++            right: 320,
++            bottom: 200,
++        };
++        kResultOk
++    }
++    unsafe fn onSize(&self, _newSize: *mut ViewRect) -> tresult {
++        kResultOk
++    }
++    unsafe fn onFocus(&self, _state: TBool) -> tresult {
++        kResultOk
++    }
++    unsafe fn setFrame(&self, frame: *mut IPlugFrame) -> tresult {
++        if let Some(frame) = ComRef::from_raw(frame) {
++            let mut rect = ViewRect {
++                left: 0,
++                top: 0,
++                right: 320,
++                bottom: 200,
++            };
++            assert_eq!(
++                frame.resizeView(ptr::null_mut(), &mut rect),
++                kNotImplemented
++            );
++        }
++        kResultOk
++    }
++    unsafe fn canResize(&self) -> tresult {
++        kResultOk
++    }
++    unsafe fn checkSizeConstraint(&self, _rect: *mut ViewRect) -> tresult {
++        kResultOk
++    }
++}
++
++impl IConnectionPointTrait for GainController {
++    unsafe fn connect(&self, other: *mut IConnectionPoint) -> tresult {
++        *self.connection.borrow_mut() = Some(ComRef::from_raw(other).unwrap().to_com_ptr());
++        kResultOk
++    }
++    unsafe fn disconnect(&self, _: *mut IConnectionPoint) -> tresult {
++        self.connection.borrow_mut().take();
++        kResultOk
++    }
++    unsafe fn notify(&self, message: *mut IMessage) -> tresult {
++        assert_eq!(self.main, std::thread::current().id());
++        let message = ComRef::from_raw(message).unwrap();
++        assert_eq!(
++            std::ffi::CStr::from_ptr(message.getMessageID()).to_bytes(),
++            b"fixture-connect"
++        );
++        let attrs = ComRef::from_raw(message.getAttributes()).unwrap();
++        let mut id = 0;
++        assert_eq!(attrs.getInt(c"identity".as_ptr(), &mut id), kResultOk);
++        assert_eq!(id, 19);
++        kResultOk
++    }
++}
++impl IMidiMappingTrait for GainController {
++    unsafe fn getMidiControllerAssignment(
++        &self,
++        bus: i32,
++        channel: i16,
++        cc: i16,
++        id: *mut u32,
++    ) -> tresult {
++        assert_eq!(self.main, std::thread::current().id());
++        if bus == 0 && channel == 2 && cc == 7 {
++            *id = 0;
++            kResultOk
++        } else {
++            kResultFalse
++        }
++    }
++}

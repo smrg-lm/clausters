@@ -36,9 +36,9 @@ class ServerQueries:
     # ---- server introspection: what a running server actually holds ----
 
     def scan_plugins(self, *dirs: str, timeout: "float | None" = None) -> "list[dict]":
-        """Scan CLAP plugins on a native server, returning JSON metadata/error rows.
+        """Scan CLAP and VST3 plugins on a native server, returning JSON metadata/error rows.
 
-        With no directories, use the server's CLAP search roots. Every binary
+        With no directories, use the server's CLAP and VST3 search roots. Every binary
         is inspected in a disposable helper with a bounded timeout. Compatible
         rows identify the binary path, native plugin id, ports and plain-value
         parameters; error rows retain per-binary crash/timeout diagnostics.
@@ -46,7 +46,7 @@ class ServerQueries:
 
         Blocking, never call from a routine. Choose a timeout for the whole
         catalogue, and TCP for large replies. An in-page engine or a server
-        without native CLAP support replies with a capability error.
+        without native plugin support replies with a capability error.
         """
         rows = self._request_batch("/plugin_scan", *dirs,
                                    reply="/plugin_scan.reply", timeout=timeout)

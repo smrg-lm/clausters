@@ -59,7 +59,10 @@ use crate::osc::graph::faust_usage;
 mod buffers;
 mod graph;
 mod midi;
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 pub(crate) mod plugin;
 mod queries;
 
@@ -74,7 +77,10 @@ pub enum NodeDef {
     UGen(Arc<SynthDef>),
     #[cfg(feature = "faust")]
     Faust(Arc<FaustDef>),
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     Plugin(
         Arc<crate::plugin::PluginDef>,
         u64,
@@ -89,7 +95,10 @@ impl NodeDef {
         not(any(
             feature = "synth",
             feature = "faust",
-            all(feature = "plugin-clap", target_os = "linux")
+            all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            )
         )),
         allow(unused_variables)
     )]
@@ -99,12 +108,18 @@ impl NodeDef {
             NodeDef::UGen(def) => def.control_index(name),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => def.control_index(name),
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             NodeDef::Plugin(def, ..) => def.control_index(name),
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
-                all(feature = "plugin-clap", target_os = "linux")
+                all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )
             )))]
             _ => match *self {},
         }
@@ -115,7 +130,10 @@ impl NodeDef {
         not(any(
             feature = "synth",
             feature = "faust",
-            all(feature = "plugin-clap", target_os = "linux")
+            all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            )
         )),
         allow(unused_variables)
     )]
@@ -123,7 +141,10 @@ impl NodeDef {
         match self {
             #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_names.get(index).map(String::as_str),
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             NodeDef::Plugin(def, ..) => def.names.get(index).map(String::as_str),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => match index.checked_sub(def.params.len()) {
@@ -135,7 +156,10 @@ impl NodeDef {
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
-                all(feature = "plugin-clap", target_os = "linux")
+                all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )
             )))]
             _ => match *self {},
         }
@@ -149,12 +173,18 @@ impl NodeDef {
             NodeDef::UGen(def) => Some(def.ugens.len()),
             #[cfg(feature = "faust")]
             NodeDef::Faust(_) => None,
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             NodeDef::Plugin(..) => None,
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
-                all(feature = "plugin-clap", target_os = "linux")
+                all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )
             )))]
             _ => match *self {},
         }
@@ -165,7 +195,10 @@ impl NodeDef {
         match self {
             #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_defaults.clone(),
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             NodeDef::Plugin(def, ..) => def.defaults.clone(),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => {
@@ -177,7 +210,10 @@ impl NodeDef {
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
-                all(feature = "plugin-clap", target_os = "linux")
+                all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )
             )))]
             _ => match *self {},
         }
@@ -188,7 +224,10 @@ impl NodeDef {
         not(any(
             feature = "synth",
             feature = "faust",
-            all(feature = "plugin-clap", target_os = "linux")
+            all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            )
         )),
         allow(unused_variables)
     )]
@@ -198,12 +237,18 @@ impl NodeDef {
             NodeDef::UGen(def) => ugen_usage(def, controls),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => faust_usage(def, controls),
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             NodeDef::Plugin(def, ..) => def.usage(controls),
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
-                all(feature = "plugin-clap", target_os = "linux")
+                all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )
             )))]
             _ => match *self {},
         }
@@ -213,7 +258,13 @@ impl NodeDef {
 pub struct CmdTranslator {
     /// Faust instances bake the sample rate in at `/synth_new` time.
     #[cfg_attr(
-        not(any(feature = "faust", all(feature = "plugin-clap", target_os = "linux"))),
+        not(any(
+            feature = "faust",
+            all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            )
+        )),
         allow(dead_code)
     )]
     sample_rate: f32,
@@ -248,15 +299,30 @@ pub struct CmdTranslator {
     /// Compiled Faust defs by name, refcounted (every instance holds a clone).
     #[cfg(feature = "faust")]
     pub faust_defs: HashMap<String, Arc<FaustDef>>,
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     pub plugin_defs: HashMap<String, Arc<crate::plugin::PluginDef>>,
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     pub(crate) offline_plugins: bool,
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     plugin_note_queues: HashMap<plugin::MidiAddress, std::collections::VecDeque<i32>>,
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     plugin_note_counts: HashMap<i32, usize>,
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     next_plugin_note: i32,
     /// Network-side tree mirror: topology, per-node controls and bus usage,
     /// auto-sorted groups. Fed by the same commands the engine gets.
@@ -357,15 +423,30 @@ impl CmdTranslator {
             auto_ids: Registry::new(partition.auto_base, partition.auto_capacity),
             #[cfg(feature = "faust")]
             faust_defs: HashMap::new(),
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             plugin_defs: HashMap::new(),
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             offline_plugins: false,
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             plugin_note_queues: HashMap::new(),
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             plugin_note_counts: HashMap::new(),
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             next_plugin_note: -2,
             mirror: TreeMirror::new(),
             buffers: empty_pool_with(limits.max_buffers),
@@ -401,7 +482,10 @@ impl CmdTranslator {
         {
             n += self.faust_defs.len();
         }
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             n += self.plugin_defs.len();
         }
@@ -430,7 +514,10 @@ impl CmdTranslator {
             let synth = FaustSynth::new(Arc::clone(def), self.sample_rate, &self.buffers)?;
             return Ok((Box::new(synth), NodeDef::Faust(Arc::clone(def))));
         }
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         if let Some(def) = self.plugin_defs.get(name) {
             let synth = if self.offline_plugins {
                 crate::plugin::PluginSynth::offline(Arc::clone(def), self.sample_rate)?
@@ -467,12 +554,18 @@ impl CmdTranslator {
     /// Forget a freed processor only if its isolated generation still matches.
     /// A node ID can already have been reused before garbage is collected.
     pub(crate) fn forget_freed_synth(&mut self, id: i32, incarnation: u64) {
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         if matches!(self.node_defs.get(&id), Some(NodeDef::Plugin(_, current, ..)) if *current != incarnation)
         {
             return;
         }
-        #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+        #[cfg(not(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        )))]
         let _ = incarnation;
         self.forget_node(id);
     }
@@ -481,7 +574,10 @@ impl CmdTranslator {
     /// for a GraphDef's slot or instance, what `/node_free` would have dropped:
     /// its translator state and its private buses.
     pub fn forget_node(&mut self, id: i32) {
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             self.plugin_note_queues.retain(|(node, ..), _| *node != id);
             self.plugin_note_counts.remove(&id);
@@ -1045,7 +1141,10 @@ impl CmdTranslator {
             self.synth_defs.remove(name);
             #[cfg(feature = "faust")]
             self.faust_defs.remove(name);
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             self.plugin_defs.remove(name);
             self.graph_defs.remove(name);
         }
@@ -1132,11 +1231,17 @@ impl CmdTranslator {
     pub fn translate(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         match msg.addr.as_str() {
             "/plugin_event" => {
-                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
                 {
                     self.plugin_event(msg, cmds)
                 }
-                #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+                #[cfg(not(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )))]
                 {
                     Err("native plugin events unavailable in this engine".into())
                 }

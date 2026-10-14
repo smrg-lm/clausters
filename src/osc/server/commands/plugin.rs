@@ -1,25 +1,37 @@
 //! Native plugin discovery, always outside the network/audio threads.
 use super::super::*;
 
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 pub(in crate::osc::server) struct ScanWorker {
     sender: std::sync::mpsc::SyncSender<ScanJob>,
     receiver: std::sync::mpsc::Receiver<ScanResult>,
     cancelled: Arc<std::sync::atomic::AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 struct ScanRequest {
     dirs: Vec<std::path::PathBuf>,
     cache: Option<std::path::PathBuf>,
     client: ClientId,
 }
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 struct ScanReply {
     client: ClientId,
     result: Result<Vec<clausters_plugin_host::format::ScanEntry>, String>,
 }
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 enum ScanJob {
     Scan(ScanRequest),
     Def {
@@ -46,13 +58,19 @@ enum ScanJob {
         client: ClientId,
     },
 }
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 struct PreparedState {
     def: Arc<crate::plugin::PluginDef>,
     synth: Box<crate::plugin::PluginSynth>,
     bytes: Vec<u8>,
 }
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 enum ScanResult {
     Scan(ScanReply),
     Def {
@@ -78,7 +96,10 @@ enum ScanResult {
         client: ClientId,
     },
 }
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 impl ScanWorker {
     pub(in crate::osc::server) fn spawn(waker: Option<crate::osc::wake::Waker>) -> Self {
         let (sender, incoming) = std::sync::mpsc::sync_channel::<ScanJob>(4);
@@ -216,7 +237,10 @@ impl ScanWorker {
         }
     }
 }
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 impl Drop for ScanWorker {
     fn drop(&mut self) {
         self.cancelled.store(true, Ordering::Release);
@@ -241,7 +265,10 @@ impl OscServer {
         if dirs.len() > 32 {
             return Err("plugin scan directory capacity exceeded".into());
         }
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             if dirs.is_empty() {
                 dirs = clausters_plugin_host::runtime::default_dirs();
@@ -272,11 +299,14 @@ impl OscServer {
         }
         #[cfg(all(
             not(target_arch = "wasm32"),
-            not(all(feature = "plugin-clap", target_os = "linux"))
+            not(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))
         ))]
         {
             let _ = from;
-            Err("server built without native CLAP support".into())
+            Err("server built without native plugin support".into())
         }
     }
     pub(in crate::osc::server) fn handle_def_send_plugin(
@@ -284,7 +314,10 @@ impl OscServer {
         args: &[OscType],
         from: ClientId,
     ) -> Answer {
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             let Some(OscType::String(name)) = args.first() else {
                 return Err("expected plugin name and reference JSON".into());
@@ -310,10 +343,13 @@ impl OscServer {
             self.plugin_submitted += 1;
             Ok(())
         }
-        #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+        #[cfg(not(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        )))]
         {
             let _ = (args, from);
-            Err("server built without native CLAP support".into())
+            Err("server built without native plugin support".into())
         }
     }
     pub(in crate::osc::server) fn handle_plugin_restart(
@@ -325,7 +361,10 @@ impl OscServer {
         if !args.is_empty() {
             return Err("expected one plugin node id".into());
         }
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             let Some(crate::osc::translate::NodeDef::Plugin(def, expected, admin)) =
                 self.translator.node_defs.get(&id)
@@ -351,10 +390,13 @@ impl OscServer {
             self.plugin_submitted += 1;
             Ok(())
         }
-        #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+        #[cfg(not(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        )))]
         {
             let _ = (id, from);
-            Err("server built without native CLAP support".into())
+            Err("server built without native plugin support".into())
         }
     }
     pub(in crate::osc::server) fn handle_plugin_state(
@@ -381,7 +423,10 @@ impl OscServer {
             }
             None
         };
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             let Some(crate::osc::translate::NodeDef::Plugin(def, expected, admin)) =
                 self.translator.node_defs.get(&id)
@@ -415,13 +460,19 @@ impl OscServer {
             self.plugin_submitted += 1;
             Ok(())
         }
-        #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+        #[cfg(not(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        )))]
         {
             let _ = (id, from, bytes);
-            Err("server built without native CLAP support".into())
+            Err("server built without native plugin support".into())
         }
     }
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     pub(in crate::osc::server) fn collect_plugin_results(&mut self) {
         while let Ok(result) = self.plugin_scanner.receiver.try_recv() {
             self.plugin_drained += 1;

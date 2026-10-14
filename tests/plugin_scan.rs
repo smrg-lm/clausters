@@ -150,13 +150,16 @@ fn scan_capability_validation_and_barrier() {
                 .unwrap();
         assert_eq!(cached["entries"], serde_json::Value::Array(entries));
     }
-    #[cfg(not(all(target_os = "linux", feature = "plugin-clap")))]
+    #[cfg(not(all(
+        target_os = "linux",
+        any(feature = "plugin-clap", feature = "plugin-vst3")
+    )))]
     {
         send("/plugin_scan", Vec::new());
         let reply = recv();
         assert_eq!(reply.addr, "/fail");
         assert!(
-            matches!(&reply.args[1], OscType::String(s) if s.contains("CLAP support") || s.contains("in-page"))
+            matches!(&reply.args[1], OscType::String(s) if s.contains("plugin support") || s.contains("in-page"))
         );
         send("/server_sync", vec![OscType::Int(38)]);
         assert_eq!(recv().addr, "/server_sync.reply");

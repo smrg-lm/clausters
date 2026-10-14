@@ -101,9 +101,9 @@ under one set of `cfg`s is not always right under another.
 | 14 | `cargo clippy --all-targets` in `clients/gui` | yes |
 
 The native plugin infrastructure adds opt-in rows: `plugin` with no adapter,
-`clausters-plugin-host --no-default-features`, and `plugin-clap` with neither,
-either or both def families. Rustdoc also checks the root's CLAP feature and the
-adapter-free helper. These are not covered by CI's default-feature lint job.
+`clausters-plugin-host --no-default-features`, and CLAP alone, VST3 alone and
+both adapters with neither, either or both def families. Rustdoc checks both
+adapters, and clippy checks the combined helper and repository VST3 fixture. These are not covered by CI's default-feature lint job.
 
 Every clippy line runs with `-- -D warnings` and every doc line with
 `RUSTDOCFLAGS=-D warnings`, matching CI's bar, so a warning is a failure rather

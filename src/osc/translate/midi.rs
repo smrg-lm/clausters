@@ -42,14 +42,20 @@ impl CmdTranslator {
         let mut binding = MidiBinding::new(instrument.clone(), target, action, gate);
         binding.graph_instance = self.bind_graph_instance(instrument, target, action, cmds)?;
         if let Some(old) = self.midi.channels.insert(channel, binding) {
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             if let Some(id) = old.graph_instance
                 && matches!(self.node_defs.get(&id), Some(NodeDef::Plugin(..)))
             {
                 cmds.push(Cmd::FreeNode { id });
                 self.mirror.remove(id);
             }
-            #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+            #[cfg(not(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            )))]
             let _ = old;
         }
         self.midi.refresh_allowed();
@@ -108,7 +114,10 @@ impl CmdTranslator {
         zone: &mut ZoneBinding,
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         if self
             .plugin_defs
             .get(&zone.binding.instrument)
@@ -189,7 +198,10 @@ impl CmdTranslator {
         action: i32,
         cmds: &mut Vec<Cmd>,
     ) -> Result<Option<i32>, String> {
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         if self.plugin_defs.contains_key(instrument) {
             let instance = self.midi.alloc_id().ok_or("out of MIDI instance ids")?;
             let msg = midi_message(
@@ -319,7 +331,10 @@ impl CmdTranslator {
             return Err("expected: channel, selector, name".into());
         };
         let channel = midi_channel(*channel)?;
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             let zone = self.midi.zones.get(&channel);
             let binding = zone
@@ -400,7 +415,10 @@ impl CmdTranslator {
         bytes: &[u8],
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         for bytes in bytes.as_chunks::<3>().0 {
             if bytes[0] & 0xf0 == 0xb0
                 && bytes[1] == 64
@@ -452,7 +470,10 @@ impl CmdTranslator {
     /// semitones, when one is mapped); pressure, timbre and a mapped
     /// controller set theirs; a note-off releases it, its lift first.
     fn translate_mpe(&mut self, event: MpeEvent, cmds: &mut Vec<Cmd>) -> Result<(), String> {
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         if self.plugin_mpe(event, cmds)? {
             return Ok(());
         }
@@ -647,7 +668,10 @@ impl CmdTranslator {
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
         use ChannelVoiceMessage::*;
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             let channel = match msg {
                 NoteOn { channel, .. }
@@ -1025,7 +1049,10 @@ impl CmdTranslator {
                     note,
                     message,
                 } => {
-                    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                    #[cfg(all(
+                        any(feature = "plugin-clap", feature = "plugin-vst3"),
+                        target_os = "linux"
+                    ))]
                     if let Some(node) = self
                         .midi
                         .channels

@@ -1689,14 +1689,48 @@ scsynth grew a binary plugin API (`UnitCmd`/interface tables) whose ABI broke wi
 - The *runtime*-extensible path for users is deliberately not Rust: send a **Faust def** (`/def_send faust`, JIT-compiled, sandboxed by the same `SynthNode` boundary). Most "I need a custom UGen" cases are a Faust one-liner.
 - If dynamic plugins ever become necessary, the lesson from scsynth applies: the boundary must be a **versioned C ABI** (or a wasm interface), checked at load time — the same policy already planned for the shared-memory layout and embed cdylib. Do not expose Rust types across it.
 
-Native **CLAP discovery and the isolated processing host are implemented on Linux**. CLAP nodes participate in the engine node tree. VST3, editors and delay compensation remain planned. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+Native **CLAP and VST3 discovery and isolated processing are implemented on Linux**. Both adapters participate in the same engine node tree. Native windows and delay compensation remain planned. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+
+### VST3 adapter
+
+The helper loads a Linux bundle's native module or a standalone `.vst3` binary,
+checks `ModuleEntry`/`ModuleExit` and the factory, then enumerates audio classes.
+`IComponent`/`IAudioProcessor` and a combined or separate `IEditController` share
+one instance. Main initializes and connects both ends, installs the host
+application/component handler, negotiates arrangements and activates buses.
+All COM references are released before ModuleExit. `RTLD_NODELETE` keeps code
+mapped for outstanding TLS destructors until the helper process exits.
+
+VST3 parameter values are normalized, including queries, state defaults and
+bus mappings. The controller's presentation conversion methods are main-thread
+only and never used by the audio processor. Parameter flags are translated to
+the common vocabulary; normalized stepped parameters retain `1 / stepCount`.
+Main reads MIDI controller assignments once before activation. Audio owns
+preallocated COM parameter queues and event lists, plus fixed stack arrays of
+bus/channel pointers. No controller method, stream or reference release crosses
+that seam. Spans supply project samples, continuous samples, playing, tempo and
+music position; events are already rebased by the common worker.
+
+The component and controller have separate bounded state streams in one opaque
+image. Before capture, main synchronizes the controller to the stopped
+processor's parameter shadow. Restore loads the component, then component state
+into the controller, then its private state, before activation. Native state
+transactions use the existing per-node generation replacement. Restart/rescan
+callbacks latch the existing fault; they cannot alter an active segment.
+
+The component handler queues at most 16 begin/edit/end events in an `rtrb`
+ring to audio; a full ring requests safe failure. Audio sends those events
+through the existing sorted result list and updates the same parameter shadow.
+Controller messages have at most 64 attributes and 1 MiB of total payload.
+Editor discovery supplies `IPlugFrame` without attaching a window; resize
+requests return `kNotImplemented` until the native window layer attaches one.
 
 ### Native host and versioned segment
 
 `clausters_core::plugin_shm` owns the pointer-free audio layout and its bounded
 producer/consumer protocol. `crates/clausters-plugin-host` owns Linux mappings,
 process supervision and the common `FormatInstance`/`FormatProcessor` interface;
-its first adapter uses `clack-host`. External libraries are loaded exclusively
+its CLAP adapter uses `clack-host`, and its VST3 adapter uses `vst3` COM bindings. External libraries are loaded exclusively
 inside helpers, including during discovery. This is crash isolation, not a
 security sandbox for hostile code.
 
@@ -1710,7 +1744,7 @@ fails the current segment rather than changing its negotiated layout in place.
 The parent kills and reaps a hung helper before unmapping/unlinking its segment;
 instance retirement is an administrative operation, never an audio operation.
 
-The control handshake (version `1`) requires an exact match of the audio ABI,
+The control handshake (version `4`) requires an exact match of the audio ABI,
 frames, slots, event and span capacities. The independent
 `PLUGIN_ABI_VERSION = 1` identifies the new segment boundary; it changes neither
 the existing embed IPC ABI nor the core C ABI. An attach checks magic, version,

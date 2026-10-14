@@ -7,7 +7,7 @@ use crate::format::*;
 use crate::mapping::Mapping;
 use crate::protocol::{self, Handshake, Request, Response};
 use clausters_core::plugin_shm::{Config, Failure, Producer};
-#[cfg(feature = "clap")]
+#[cfg(any(feature = "clap", feature = "vst3"))]
 use clausters_core::plugin_shm::{EventList, FRAMES};
 use std::collections::HashSet;
 use std::io::ErrorKind;
@@ -372,7 +372,7 @@ impl AudioInstance {
     }
 }
 
-/// CLAP default search roots. Absent default directories are simply empty.
+/// Native format default search roots. Absent default directories are simply empty.
 pub fn default_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<_> = std::env::var_os("CLAP_PATH")
         .map(|p| std::env::split_paths(&p).collect())
@@ -383,6 +383,18 @@ pub fn default_dirs() -> Vec<PathBuf> {
     dirs.extend([
         PathBuf::from("/usr/lib/clap"),
         PathBuf::from("/usr/local/lib/clap"),
+    ]);
+    dirs.extend(
+        std::env::var_os("VST3_PATH")
+            .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+            .unwrap_or_default(),
+    );
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join(".vst3"));
+    }
+    dirs.extend([
+        PathBuf::from("/usr/lib/vst3"),
+        PathBuf::from("/usr/local/lib/vst3"),
     ]);
     dirs.into_iter().filter(|p| p.exists()).collect()
 }
@@ -431,7 +443,15 @@ pub fn scan_cancellable(
         if !seen.insert(canonical.clone()) {
             continue;
         }
-        if canonical.is_dir() {
+        if canonical
+            .extension()
+            .is_some_and(|e| e == "vst3" || e == "clap")
+        {
+            if candidates.len() == MAX_CANDIDATES {
+                return Err("plugin scan candidate capacity exceeded".into());
+            }
+            candidates.push(canonical);
+        } else if canonical.is_dir() {
             if depth >= 8 {
                 result.push(ScanEntry::Error {
                     path: canonical.to_string_lossy().into_owned(),
@@ -468,11 +488,6 @@ pub fn scan_cancellable(
                     error: e.to_string(),
                 }),
             }
-        } else if canonical.extension().is_some_and(|e| e == "clap") {
-            if candidates.len() == MAX_CANDIDATES {
-                return Err("plugin scan candidate capacity exceeded".into());
-            }
-            candidates.push(canonical);
         }
         if seen.len() > 8192 || result.len() > MAX_CANDIDATES {
             return Err("plugin scan traversal capacity exceeded".into());
@@ -602,7 +617,7 @@ impl Worker {
         Ok(processor)
     }
 }
-#[cfg(feature = "clap")]
+#[cfg(any(feature = "clap", feature = "vst3"))]
 fn audio_worker(
     mapping: Arc<Mapping>,
     mut processor: Box<dyn FormatProcessor>,
@@ -830,32 +845,14 @@ pub unsafe fn helper_main(fd: i32) -> Result<(), String> {
 }
 fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, String> {
     match request {
-        Request::Probe { path, id } => {
-            #[cfg(feature = "clap")]
-            {
-                Ok(Response::Metadata(Box::new(
-                    crate::clap::load(Path::new(&path), &id)?.metadata()?,
-                )))
-            }
-            #[cfg(not(feature = "clap"))]
-            {
-                let _ = (path, id);
-                Err("plugin helper built without CLAP support".into())
-            }
-        }
+        Request::Probe { path, id } => Ok(Response::Metadata(Box::new(
+            load_format(Path::new(&path), &id)?.metadata()?,
+        ))),
         Request::Scan { path, offset } => {
             if loaded.is_some() {
                 return Err("scan helper already owns an instance".into());
             }
-            #[cfg(feature = "clap")]
-            {
-                Ok(Response::Scan(crate::clap::scan(Path::new(&path), offset)?))
-            }
-            #[cfg(not(feature = "clap"))]
-            {
-                let _ = (path, offset);
-                Err("plugin helper built without CLAP support".into())
-            }
+            Ok(Response::Scan(scan_format(Path::new(&path), offset)?))
         }
         Request::Load {
             path,
@@ -867,17 +864,16 @@ fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, Str
             if loaded.is_some() {
                 return Err("plugin helper already owns an instance".into());
             }
-            #[cfg(feature = "clap")]
+            #[cfg(any(feature = "clap", feature = "vst3"))]
             {
                 let mapping = Arc::new(Mapping::open(Path::new(&segment), generation)?);
                 let config = mapping.view()?.config();
-                let mut instance = crate::clap::load(Path::new(&path), &id)?;
+                let mut instance = load_format(Path::new(&path), &id)?;
                 if let Some(bytes) = state {
                     if bytes.len() > MAX_STATE_BYTES {
                         return Err("plugin state capacity exceeded".into());
                     }
                     instance.load_state(&bytes)?;
-                    // Activation below fulfills any restart request caused by loading.
                     let _ = instance.restart_requested();
                 }
                 let processor = instance.activate(config)?;
@@ -891,10 +887,10 @@ fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, Str
                 *loaded = Some(plugin);
                 Ok(Response::Metadata(Box::new(metadata)))
             }
-            #[cfg(not(feature = "clap"))]
+            #[cfg(not(any(feature = "clap", feature = "vst3")))]
             {
                 let _ = (path, id, segment, generation, state);
-                Err("plugin helper built without CLAP support".into())
+                Err("plugin helper built without adapters".into())
             }
         }
         Request::Metadata => Ok(Response::Metadata(Box::new(
@@ -913,5 +909,30 @@ fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, Str
                 .parameter(id)?,
         )),
         Request::Shutdown => Ok(Response::Ok),
+    }
+}
+
+fn load_format(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, String> {
+    match path.extension().and_then(|e| e.to_str()) {
+        #[cfg(feature = "clap")]
+        Some("clap") => crate::clap::load(path, id),
+        #[cfg(feature = "vst3")]
+        Some("vst3") => crate::vst3::load(path, id),
+        _ => {
+            let _ = id;
+            Err("plugin format unavailable in helper".into())
+        }
+    }
+}
+fn scan_format(path: &Path, offset: usize) -> Result<Vec<ScanEntry>, String> {
+    match path.extension().and_then(|e| e.to_str()) {
+        #[cfg(feature = "clap")]
+        Some("clap") => crate::clap::scan(path, offset),
+        #[cfg(feature = "vst3")]
+        Some("vst3") => crate::vst3::scan(path, offset),
+        _ => {
+            let _ = offset;
+            Err("plugin format unavailable in helper".into())
+        }
     }
 }

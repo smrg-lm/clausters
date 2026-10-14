@@ -13,3 +13,6 @@ mod mapping;
 mod protocol;
 #[cfg(target_os = "linux")]
 pub mod runtime;
+
+#[cfg(all(target_os = "linux", feature = "vst3"))]
+mod vst3;

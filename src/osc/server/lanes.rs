@@ -574,7 +574,10 @@ impl OscServer {
         let Some(lane) = self.lanes.get_mut(&id) else {
             return Ok(());
         };
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         self.translator.clear_plugin_lane(id);
         lane.generation = lane.generation.wrapping_add(1);
         lane.queued.clear();
@@ -700,7 +703,10 @@ impl OscServer {
                 release: how,
             } => {
                 if let EventLaneVoice::Plugin { node, port } = voice {
-                    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                    #[cfg(all(
+                        any(feature = "plugin-clap", feature = "plugin-vst3"),
+                        target_os = "linux"
+                    ))]
                     {
                         let source = crate::osc::translate::plugin::lane_source(
                             id,
@@ -763,7 +769,10 @@ impl OscServer {
                             release,
                         }));
                     }
-                    #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+                    #[cfg(not(all(
+                        any(feature = "plugin-clap", feature = "plugin-vst3"),
+                        target_os = "linux"
+                    )))]
                     {
                         let _ = (node, port);
                         return Err("native plugin notes unavailable in this engine".into());
@@ -824,7 +833,10 @@ impl OscServer {
                 length = held;
             }
             EventLaneEvent::Message(message) => {
-                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
                 if message.addr == "/plugin_event" {
                     self.translator.plugin_event_scoped(
                         &message,
@@ -838,7 +850,10 @@ impl OscServer {
                 } else {
                     self.translator.translate(&message, &mut start)?;
                 }
-                #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+                #[cfg(not(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )))]
                 self.translator.translate(&message, &mut start)?;
             }
             EventLaneEvent::MidiNote {
@@ -849,7 +864,10 @@ impl OscServer {
                 program,
                 voice,
             } => {
-                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
                 if let Some(node) = self
                     .translator
                     .midi
@@ -930,7 +948,10 @@ impl OscServer {
                 length: held,
                 voice,
             } => {
-                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
                 if let Some(node) = self
                     .translator
                     .midi
@@ -1030,7 +1051,10 @@ impl OscServer {
                 else {
                     return Ok(None);
                 };
-                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
                 if matches!(
                     self.translator.node_defs.get(&node),
                     Some(crate::osc::translate::NodeDef::Plugin(..))
@@ -1082,7 +1106,10 @@ impl OscServer {
                 }
             }
             EventLaneEvent::MidiSet { message, voices } => {
-                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
                 {
                     let channel = match message {
                         ChannelVoiceMessage::NoteOn { channel, .. }
@@ -1147,7 +1174,10 @@ impl OscServer {
                 else {
                     return Ok(None);
                 };
-                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
                 if matches!(
                     self.translator.node_defs.get(&node),
                     Some(crate::osc::translate::NodeDef::Plugin(..))

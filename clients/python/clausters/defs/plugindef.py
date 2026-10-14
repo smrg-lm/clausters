@@ -9,7 +9,8 @@ class PluginDef:
     Each input/output row has `id`, `channels` and `bus`. IDs come from
     `Server.scan_plugins`; every native audio port must be represented.
     `state` contains optional opaque initial-state bytes as JSON integers.
-    Parameter controls use `param:<native-id>` in native plain-value units;
+    Parameter controls use `param:<native-id>`: CLAP plain-value units,
+    VST3 normalized `[0, 1]` values;
     port controls use `in:<native-id>` and `out:<native-id>`.
     """
     def __init__(self, name: str, reference: dict):

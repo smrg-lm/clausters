@@ -1310,7 +1310,10 @@ impl Engine {
             }
         }
 
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         self.tree.finish_block();
         // Buses 0..channels are the hardware outputs.
         for (f, frame) in out.chunks_exact_mut(self.channels).enumerate() {
@@ -1769,7 +1772,10 @@ impl Engine {
             frames,
             transport: self.tree.transport_view(0),
         };
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         self.tree.prepare_slice(&ctx);
         self.tree.process(&ctx, &self.pool);
     }

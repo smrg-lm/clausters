@@ -1291,7 +1291,10 @@ impl NodeTree {
     }
 
     /// Prepare only isolated endpoints, including those under paused groups.
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     pub fn prepare_slice(&mut self, ctx: &ProcessCtx) {
         for position in 0..self.plugin_nodes.len() {
             let idx = self.plugin_nodes[position];
@@ -1325,7 +1328,10 @@ impl NodeTree {
         }
     }
     /// Publish isolated jobs once and queue failures, even while frozen.
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     pub fn finish_block(&mut self) {
         for position in 0..self.plugin_nodes.len() {
             let idx = self.plugin_nodes[position];

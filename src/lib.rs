@@ -58,5 +58,8 @@ pub mod synthdef;
 pub use clausters_core;
 pub use rosc;
 
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 pub mod plugin;

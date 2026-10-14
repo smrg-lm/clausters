@@ -5028,3 +5028,13 @@ sound.
   console from the browser's log (`--enable-logging=stderr`) and the tail of
   the rest of that log. Checked by forcing a hang at `status` and at `clock`.
   What is left: read the next CI timeout and fix what it names.
+
+
+- ⬜ **The example-pair audit misreads the persistent plugin pair** *(found
+  2026-10-14)*. `scripts/audit-example-pairs.py plugins/persistent` maps Python's
+  native `Session.live` boot to `embed` while retaining the page's `live`
+  attachment, and counts JavaScript array `find`/`push` as client API calls.
+  Reading the pair verb by verb confirms the same plugin, transport, lane,
+  routine and cleanup calls, with native boot versus page attachment named in
+  both examples. The extractor needs to distinguish those platform and
+  language operations so a correct pair passes without hiding API divergence.

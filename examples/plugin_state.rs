@@ -1,16 +1,24 @@
-//! Capture, load and recover one live CLAP effect's opaque state over OSC.
+//! Capture, load and recover one live native effect's opaque state over OSC.
 //!
 //! Build the helper with `cargo build -p clausters-plugin-host`, then build the
 //! repository fixture:
 //! `cc -std=c11 -O2 -fPIC -shared -Itools/plugin-bridge/vendor crates/clausters-plugin-host/tests/fixtures/extended.c -o /tmp/clausters-state.clap`
 //! Run `cargo run --example plugin_state --features plugin-clap -- /tmp/clausters-state.clap org.clausters.fixture.state`.
+//! For VST3, build the helper with `--features vst3`, then build the fixture:
+//! `cargo build --offline --manifest-path crates/clausters-plugin-host/tests/fixtures/vst3/Cargo.toml --target-dir /tmp/clausters-vst3-fixture`
+//! Copy `/tmp/clausters-vst3-fixture/debug/libclausters_vst3_fixture.so` to
+//! `/tmp/clausters-state.vst3`, then run with `--features plugin-vst3` and the
+//! arguments `/tmp/clausters-state.vst3 6E33225254224A00AA69301AF318797D`.
 //! This effect has a gain at native parameter ID 0 and opaque state support.
 //! The example boots a device-free server and records a sine through the live
 //! bridge to `examples/out/plugin-state.wav`. Listen to its four levels:
 //! initial 0.5, captured 0.75, edited 0.2, restored 0.75. Capture/load have a
 //! silent preparation interval and clear held notes. The snapshot is also the
 //! recovery image; restart keeps current controls. No audio device is needed.
-#[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use clausters::dsp::{ProcessCtx, StageMask};
     use clausters::node::{AddAction, SynthNode};
@@ -81,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
     let reference = PluginReference {
-        format: "clap".into(),
+        format: info.format.clone(),
         path: args[1].clone(),
         id: args[2].clone(),
         inputs,
@@ -232,7 +240,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
-#[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+#[cfg(not(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+)))]
 fn main() {
-    eprintln!("Build on Linux with --features plugin-clap");
+    eprintln!("Build on Linux with --features plugin-clap or plugin-vst3");
 }

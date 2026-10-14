@@ -1,7 +1,8 @@
-//! Scan native CLAP plugins over OSC without opening an audio device.
+//! Scan native CLAP and VST3 plugins over OSC without opening an audio device.
 //!
 //! Build the matching helper first: `cargo build -p clausters-plugin-host`.
 //! Then run `cargo run --example plugin_scan --features plugin-clap -- <dirs...>`.
+//! For VST3 use the server feature `plugin-vst3` and helper feature `vst3`.
 //! `bash tools/plugin-bridge/run.sh` builds a small catalogue at
 //! `target/plugin-bridge/` for a deterministic manual check. The example starts
 //! its own server, scans via a real UDP client, verifies the async barrier and

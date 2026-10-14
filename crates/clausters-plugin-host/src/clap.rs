@@ -237,6 +237,7 @@ impl FormatInstance for Clap {
                     flags: p.flags.bits(),
                     min: p.min_value,
                     max: p.max_value,
+                    step: if p.flags.bits() & 1 != 0 { 1.0 } else { 0.0 },
                     default: p.default_value,
                 });
             }

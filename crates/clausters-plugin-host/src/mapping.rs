@@ -43,7 +43,7 @@ impl Mapping {
         unsafe { View::initialize(mapping.base.as_ptr(), len, config) }.map_err(str::to_owned)?;
         Ok(mapping)
     }
-    #[cfg(feature = "clap")]
+    #[cfg(any(feature = "clap", feature = "vst3"))]
     pub(crate) fn open(path: &Path, generation: u64) -> Result<Self, String> {
         let file = OpenOptions::new()
             .read(true)

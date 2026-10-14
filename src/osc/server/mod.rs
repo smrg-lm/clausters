@@ -287,9 +287,15 @@ pub struct OscServer {
     nrt_drained: u64,
     faust_submitted: u64,
     faust_drained: u64,
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     plugin_scanner: commands::plugin::ScanWorker,
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     plugin_claims: std::collections::HashMap<String, u64>,
     plugin_submitted: u64,
     plugin_drained: u64,

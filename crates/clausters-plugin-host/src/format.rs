@@ -35,7 +35,7 @@ pub struct NotePort {
     /// CLAP dialect bits: CLAP=1, MIDI=2, MIDI MPE=4, MIDI2=8.
     pub dialects: u32,
 }
-/// A native plain-value parameter; normalized conversion belongs to an adapter.
+/// An adapter-native parameter; CLAP uses plain units, VST3 normalized units.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Parameter {
     /// Stable native identity; display name/order does not identify a parameter.
@@ -44,19 +44,22 @@ pub struct Parameter {
     pub name: String,
     /// Hierarchical display grouping.
     pub module: String,
-    /// Native flags (including read-only/stepped/automatable status).
+    /// Common CLAP-compatible flags, including stepped/read-only/automatable.
     pub flags: u32,
-    /// Native plain-value minimum.
+    /// Minimum in the adapter-native parameter units.
     pub min: f64,
-    /// Native plain-value maximum.
+    /// Maximum in the same units.
     pub max: f64,
-    /// Default in the same plain-value units.
+    /// Quantization interval in the reported units; zero means continuous.
+    #[serde(default)]
+    pub step: f64,
+    /// Default in the same parameter units.
     pub default: f64,
 }
 /// Stable reference and processing surface reported by isolated discovery.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct PluginInfo {
-    /// Adapter name, initially `clap`.
+    /// Adapter name: `clap` or `vst3`.
     pub format: String,
     /// Canonical binary path, on the server's filesystem.
     pub path: String,
@@ -76,13 +79,13 @@ pub struct PluginInfo {
     pub note_inputs: Vec<NotePort>,
     /// Note outputs in processing-port order.
     pub note_outputs: Vec<NotePort>,
-    /// Parameters with stable native ids and plain-value ranges.
+    /// Parameters with stable native ids and adapter-native ranges.
     pub parameters: Vec<Parameter>,
     /// Declared intrinsic latency after activation.
     pub latency: u32,
     /// Whether the plugin exposes opaque state save/load.
     pub state: bool,
-    /// Whether a floating X11 editor is supported (opening it is separate work).
+    /// Whether a native X11 editor is supported (opening it is separate work).
     pub editor: bool,
 }
 impl PluginInfo {
@@ -132,6 +135,8 @@ impl PluginInfo {
                 || !p.min.is_finite()
                 || !p.max.is_finite()
                 || !p.default.is_finite()
+                || !p.step.is_finite()
+                || p.step < 0.0
                 || p.min > p.max
                 || !(p.min..=p.max).contains(&p.default)
             {
@@ -177,7 +182,7 @@ pub trait FormatInstance {
     fn save_state(&mut self) -> Result<Vec<u8>, String>;
     /// Opaque state restore, with processing stopped.
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String>;
-    /// Plain parameter query on the main thread.
+    /// Parameter query in adapter-native units on the main thread.
     fn parameter(&mut self, id: u32) -> Result<f64, String>;
     /// Serve requested main-thread callbacks.
     fn main_callback(&mut self);

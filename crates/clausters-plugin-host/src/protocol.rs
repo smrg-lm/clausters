@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
-pub(crate) const CONTROL_VERSION: u32 = 3;
+pub(crate) const CONTROL_VERSION: u32 = 4;
 pub(crate) const MAX_FRAME: usize = 8 * 1024 * 1024;
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Handshake {

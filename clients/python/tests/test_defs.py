@@ -1026,12 +1026,13 @@ def test_midi_query_reads_channels_and_zones_by_channel():
     assert str(zone).startswith("zone on 0 (15 members): mpe_voice")
 
 
-def test_plugin_reference_control_info_and_restart_wire():
+@pytest.mark.parametrize("plugin_format", ["clap", "vst3"])
+def test_plugin_reference_control_info_and_restart_wire(plugin_format):
     from clausters import PluginDef, Synth
     from clausters.defs.info import parse_def_info
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    reference = {"format": "clap", "path": "/plugins/test.clap", "id": "test",
+    reference = {"format": plugin_format, "path": f"/plugins/test.{plugin_format}", "id": "test",
                  "inputs": [], "outputs": [{"id": 0, "channels": 1, "bus": 0}]}
     recipe = PluginDef("test", reference)
     recipe.send(srv, wait=False)

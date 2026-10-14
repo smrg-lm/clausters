@@ -73,7 +73,7 @@ See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-buil
 
 `server.scan_plugins("/plugins", timeout=30.0)` scans directories on the native
 server and returns JSON metadata and per-binary error rows. With no directories,
-it uses the server's CLAP search roots. A Linux server built with `plugin-clap`
+it uses the server's CLAP and VST3 search roots. A Linux server built with `plugin-clap` or `plugin-vst3`
 and its matching helper are required; ordinary builds reply with a capability
 error. Scanning is blocking, so keep it outside clock routines. Use TCP for a
 large catalogue and choose a timeout for all binaries. Stable identities, plain
@@ -108,8 +108,10 @@ rule and its three corollaries open the server's OSC reference.
 `PluginDef(name, reference)` sends a native binary reference with native IDs,
 port routing and optional initial state. A plugin def builds a `Synth` like
 any other def; its controls use `param:<id>`, `in:<id>` and `out:<id>`.
-Query the loaded def to obtain its `ControlInfo` entries. A native Linux
-server and matching helper process CLAP plugins outside the audio callback.
+Query the loaded def to obtain its `ControlInfo` entries. CLAP parameter
+controls use native plain units; VST3 uses normalized `[0, 1]` values. VST3
+references use `format: "vst3"` and the scanned hexadecimal class ID. A native Linux
+server and matching helper process CLAP and VST3 plugins outside the audio callback.
 Latency includes the bounded block pipeline; native editors and automatic
 path compensation are not available yet. See the
 [protocol reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-definitions-and-recovery).
@@ -129,7 +131,7 @@ capture at a time per connection. Offline renders carry initial bytes in the
 `PluginDef` reference instead.
 
 Offline OSC scores can also carry plugin definitions and persistent events
-when rendered by a native Linux build with `plugin-clap` and its matching
+when rendered by a native Linux build with `plugin-clap` or `plugin-vst3` and its matching
 helper. The bridge latency stays in the samples; processing waits outside RT,
 and a failed or hung helper aborts with the node id and processing time.
 Plugins are deterministic only when their own implementation and inputs are;

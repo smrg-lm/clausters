@@ -34,7 +34,10 @@ impl CmdTranslator {
                 all.extend(self.synth_defs.keys().cloned());
                 #[cfg(feature = "faust")]
                 all.extend(self.faust_defs.keys().cloned());
-                #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
                 all.extend(self.plugin_defs.keys().cloned());
                 all.extend(self.graph_defs.keys().cloned());
                 all.sort();
@@ -88,7 +91,10 @@ impl CmdTranslator {
             }
             return args;
         }
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         if let Some(def) = self.plugin_defs.get(name) {
             let mut args = vec![
                 OscType::String(name.into()),
@@ -103,7 +109,7 @@ impl CmdTranslator {
                     OscType::String("kr".into()),
                     OscType::Float(p.map_or(0.0, |p| p.min as f32)),
                     OscType::Float(p.map_or(NUM_AUDIO_BUSES as f32 - 1.0, |p| p.max as f32)),
-                    OscType::Float(p.map_or(1.0, |p| if p.flags & 1 != 0 { 1.0 } else { 0.0 })),
+                    OscType::Float(p.map_or(1.0, |p| p.step as f32)),
                 ]);
             }
             return args;

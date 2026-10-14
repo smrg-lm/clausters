@@ -14,7 +14,8 @@ export interface PluginReference {
     depth?: number;
 }
 /** Native plugin recipe; each Synth owns one isolated, persistent helper.
- * Controls are `param:<id>` in native plain units, `in:<id>` and `out:<id>`.
+ * Controls are `param:<id>` (CLAP plain units, VST3 normalized `[0, 1]`),
+ * `in:<id>` and `out:<id>`.
  * IDs come from scanPlugins; every native audio port must be represented.
  */
 export class PluginDef {

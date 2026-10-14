@@ -74,7 +74,7 @@ impl PluginDef {
         sample_rate: f32,
         initial_state: bool,
     ) -> Result<Self, String> {
-        if reference.format != "clap" {
+        if !matches!(reference.format.as_str(), "clap" | "vst3") {
             return Err("unsupported plugin format".into());
         }
         let helper = helper_path()?;
@@ -84,6 +84,9 @@ impl PluginDef {
             &reference.id,
             DEFAULT_TIMEOUT,
         )?;
+        if info.format != reference.format {
+            return Err("plugin format does not match binary".into());
+        }
         for (ports, routes) in [
             (&info.inputs, &reference.inputs),
             (&info.outputs, &reference.outputs),
@@ -910,7 +913,7 @@ impl SynthNode for PluginSynth {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "plugin-clap"))]
 mod offline_tests {
     use super::*;
     use crate::dsp::{Buses, ControlBuses, TransportCtx};

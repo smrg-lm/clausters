@@ -30,7 +30,10 @@ impl OscServer {
         if kind != DefKind::Faust {
             self.translator.faust_defs.remove(name);
         }
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         {
             self.plugin_claims.remove(name);
             if kind != DefKind::Plugin {
@@ -117,7 +120,10 @@ impl OscServer {
         _from: ClientId,
     ) -> Answer {
         self.translator.d_free(args.rest())?;
-        #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
         for arg in args.rest() {
             if let OscType::String(name) = arg {
                 self.plugin_claims.remove(name);

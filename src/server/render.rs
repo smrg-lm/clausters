@@ -313,7 +313,10 @@ fn render_logged(
                 cfg.limits,
             );
             t.set_seed(seed);
-            #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             {
                 t.offline_plugins = true;
             }
@@ -557,7 +560,10 @@ impl Renderer {
         }
     }
 
-    #[cfg(all(feature = "plugin-clap", target_os = "linux"))]
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     fn d_plugin(&mut self, args: &[OscType]) -> Result<(), String> {
         let Some(OscType::String(name)) = args.first() else {
             return Err("expected plugin name and reference JSON".into());
@@ -572,7 +578,10 @@ impl Renderer {
         Ok(())
     }
 
-    #[cfg(not(all(feature = "plugin-clap", target_os = "linux")))]
+    #[cfg(not(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    )))]
     fn d_plugin(&mut self, _args: &[OscType]) -> Result<(), String> {
         Err("server built without native CLAP support".into())
     }

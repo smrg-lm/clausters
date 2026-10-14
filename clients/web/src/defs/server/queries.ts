@@ -35,13 +35,13 @@ import type { Server } from "./index.ts";
 /** The introspection queries. Composed into `Server`; never used alone. */
 export class ServerQueries {
     /**
-     * Scan CLAP plugins on the native server, returning JSON metadata/error
-     * rows. With no directories, use the server's CLAP search roots. A disposable
+     * Scan CLAP and VST3 plugins on the native server, returning JSON metadata/error
+     * rows. With no directories, use the server's CLAP and VST3 search roots. A disposable
      * helper inspects each binary with a timeout; metadata identifies the binary,
      * native plugin id, ports and plain-value parameters. Persistence caches it
      * in the server data directory. Choose a timeout for the whole catalogue
      * and TCP for large replies. An in-page engine or a server without native
-     * CLAP support replies with a capability error.
+     * native plugin support replies with a capability error.
      */
     async scanPlugins(this: Server, dirs: string[] = [], timeout?: number): Promise<Record<string, unknown>[]> {
         const messages = await this.requestBatch("/plugin_scan", dirs, {

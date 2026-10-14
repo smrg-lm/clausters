@@ -135,8 +135,13 @@ jobs:
       # exits non-zero if any did -- so one run reports the whole picture
       # instead of stopping at the first break.
       - run: bash third_party/prepare-clap.sh
+      - run: bash third_party/prepare-vst3-fixture.sh
+      - run: cargo fetch --locked --manifest-path crates/clausters-plugin-host/tests/fixtures/vst3/Cargo.toml
       - name: The fmt + clippy + rustdoc matrix
         run: .agents/skills/feature-matrix/check.sh
+      - run: cargo test -p clausters-plugin-host --no-default-features --features clap,vst3
+      - run: cargo build -p clausters-plugin-host --no-default-features --features clap,vst3
+      - run: cargo test --no-default-features --features plugin-clap,plugin-vst3 --test plugin_events --test plugin_family --test plugin_offline --test plugin_scan --test plugin_state --test plugin_vst3
       # Mirrors ci.yml's test-default invocation, including --test-threads=1 and
       # the coredump capture: this is the run that has historically produced the
       # Faust SIGILL, and a release failing here is exactly when the dump is

@@ -10143,3 +10143,23 @@ recovery without changing that recipe on disk. An accepted failed transaction
 stays silent until explicit restart. This makes save/load disruptive operations
 with an explicit contract, rather than pretending to offer continuous capture
 of an arbitrary third-party processor.
+
+
+## VST3 parameters keep the processor's native domain (2026-10-14)
+
+VST3 processes normalized values, while `IEditController` converts presentation
+units only on the UI thread. Calling that conversion for sample-offset
+parameter changes or audio-bus mappings would break the thread contract. A
+sampled conversion table would make arbitrary nonlinear parameters approximate.
+The adapter therefore reports `[0, 1]` values, defaults and normalized steps;
+CLAP keeps its native plain units. Both clients use the same `param:<id>`
+controls and the reported range. Per-note volume/tuning use the SDK's defined
+conversion and remain in the shared expression vocabulary. See the
+[VST3 controller contract](https://steinbergmedia.github.io/vst3_doc/vstinterfaces/classSteinberg_1_1Vst_1_1IEditController.html).
+
+The Linux module is opened with `RTLD_NODELETE`. An allocation-guarded local
+fixture passed processing and teardown, then crashed in a Rust TLS destructor
+after `dlclose` had unmapped its code. Releasing COM references and balancing
+ModuleExit does not unregister a library's thread-local destructors. Keeping the
+code mapped until process exit is bounded by the disposable or per-node helper
+lifetime and preserves those callbacks without retaining live plugin instances.

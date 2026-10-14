@@ -50,6 +50,10 @@ jobs:
         include:
           - host_features: clap
             server_features: plugin-clap
+          - host_features: vst3
+            server_features: plugin-vst3
+          - host_features: clap,vst3
+            server_features: plugin-clap,plugin-vst3
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -57,10 +61,12 @@ jobs:
         with:
           key: plugins-${{ matrix.host_features }}
       - run: bash third_party/prepare-clap.sh
+      - run: bash third_party/prepare-vst3-fixture.sh
+      - run: cargo fetch --locked --manifest-path crates/clausters-plugin-host/tests/fixtures/vst3/Cargo.toml
       - run: cargo test -p clausters-core --test plugin_shm
       - run: cargo test -p clausters-plugin-host --no-default-features --features ${{ matrix.host_features }}
       - run: cargo build -p clausters-plugin-host --no-default-features --features ${{ matrix.host_features }}
-      - run: cargo test --no-default-features --features ${{ matrix.server_features }} --test plugin_events --test plugin_family --test plugin_offline --test plugin_scan --test plugin_state
+      - run: cargo test --no-default-features --features ${{ matrix.server_features }} --test plugin_events --test plugin_family --test plugin_offline --test plugin_scan --test plugin_state --test plugin_vst3
 
   # Build libfaust once (or hit the cache) so the faust-linking jobs below can
   # just restore it. On a cold cache this is the long pole; downstream jobs

@@ -5,13 +5,13 @@ import { Node } from "../src/defs/node.ts";
 import type { Server } from "../src/defs/server/index.ts";
 import { parseDefInfo } from "../src/defs/info.ts";
 
-test("native references, plain-value ControlInfo and restart use the shared wire", async () => {
+for (const format of ["clap", "vst3"]) test(`${format} references, ControlInfo and restart use the shared wire`, async () => {
     const calls: unknown[][] = [];
     const server = {
         sendMsg: (...args: unknown[]) => calls.push(args),
         command: async (...args: unknown[]) => { calls.push(args); },
     } as unknown as Server;
-    const reference = { format: "clap", path: "/plugins/test.clap", id: "test",
+    const reference = { format, path: `/plugins/test.${format}`, id: "test",
         inputs: [], outputs: [{ id: 0, channels: 1, bus: 0 }] };
     const def = new PluginDef("test", reference);
     await def.send(server, { wait: false });

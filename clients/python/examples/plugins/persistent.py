@@ -2,13 +2,14 @@
 """One persistent native instrument, live notes and a server-owned event lane.
 
 Build the native server with `cargo build --features plugin-clap` and its helper
-with `cargo build -p clausters-plugin-host`. Set `CLAUSTERS_BIN` to the workspace
-server (or refresh the bundled binaries with that feature enabled), then run:
+with `cargo build -p clausters-plugin-host`. For VST3 use `plugin-vst3`
+and build the helper with `--features vst3` (or `clap,vst3` for both).
+Set `CLAUSTERS_BIN` to the workspace server (or refresh the bundled binaries with that feature enabled), then run:
 
     PLUGIN_BINARY=/path/instrument.clap PLUGIN_ID=vendor.instrument \
         python clients/python/examples/plugins/persistent.py
 
-Use an instrument with a CLAP note-expression port and an audible initial
+Use an instrument with a native note-expression port and an audible initial
 preset, such as Surge XT. A sampler also needs samples in its initial state.
 The numeric repository fixture can verify events but is not a musical preset.
 This is a `# %%` notebook: the same calls and event sequence as the web page.
@@ -35,7 +36,7 @@ rows = server.scan_plugins(BINARY, timeout=60.0)
 info = next(row["plugin"] for row in rows
             if row["kind"] == "plugin" and row["plugin"]["id"] == PLUGIN_ID)
 if not info["note_inputs"] or not info["note_inputs"][0]["dialects"] & 1:
-    raise ValueError("choose an instrument with a CLAP note-expression port")
+    raise ValueError("choose an instrument with a native note-expression port")
 port = info["note_inputs"][0]["id"]
 reference = {"format": info["format"], "path": info["path"], "id": info["id"],
              "inputs": [], "outputs": []}

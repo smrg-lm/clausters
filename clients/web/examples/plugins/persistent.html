@@ -2,10 +2,11 @@
 <html lang="en"><meta charset="utf-8"><title>Persistent native instrument</title>
 <!--
 Same calls and event sequence as clients/python/examples/plugins/persistent.py.
-Build the server with plugin-clap and its matching helper. Start a native server
+Build the server with plugin-clap or plugin-vst3 and its matching helper
+(with clap, vst3 or both features). Start a native server
 with --ws 57112, build the web package and serve this tree over HTTP. This page
 attaches to that server; a page cannot boot a native process (Python can).
-Choose a CLAP instrument with a native note-expression port and an audible
+Choose a CLAP or VST3 instrument with a native note-expression port and an audible
 initial preset, such as Surge XT. Samplers need samples in their initial state.
 -->
 <label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
@@ -24,7 +25,7 @@ $("play").onclick = async () => {
         const server = session.server;
         const rows = await server.scanPlugins([$("binary").value], 60.0);
         const info = rows.find((row) => row.kind === "plugin" && row.plugin.id === $("plugin").value)?.plugin;
-        if (!info?.note_inputs.length || !(info.note_inputs[0].dialects & 1)) throw new Error("choose an instrument with a CLAP note-expression port");
+        if (!info?.note_inputs.length || !(info.note_inputs[0].dialects & 1)) throw new Error("choose an instrument with a native note-expression port");
         const port = info.note_inputs[0].id;
         const reference = { format: info.format, path: info.path, id: info.id, inputs: [], outputs: [] };
         let bus = 4;

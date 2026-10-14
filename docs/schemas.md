@@ -31,11 +31,12 @@ Both reply asynchronously: `/done "/def_send" <family>` — a Faust compile, whi
 
 ### Native plugin discovery
 
-`/plugin_scan [string dir ...]` asynchronously discovers CLAP plugins on a Linux
-server built with `plugin-clap`. The server uses the matching
+`/plugin_scan [string dir ...]` asynchronously discovers CLAP and VST3 plugins on a Linux
+server built with `plugin-clap`, `plugin-vst3` or both. The server uses the matching
 `clausters-plugin-host` executable (adjacent to the server, or selected by
 `CLAUSTERS_PLUGIN_HOST`). Without directories it searches `CLAP_PATH`, `~/.clap`,
-`/usr/lib/clap` and `/usr/local/lib/clap`, ignoring absent default roots. Explicit
+`/usr/lib/clap` and `/usr/local/lib/clap`, plus `VST3_PATH`, `~/.vst3`,
+`/usr/lib/vst3` and `/usr/local/lib/vst3`, ignoring absent default roots. Explicit
 missing paths yield diagnostics. Paths name the server's filesystem.
 
 Discovery never loads a plugin into the server: each binary is inspected in a
@@ -43,7 +44,7 @@ disposable helper, with a two-second timeout per administrative request.
 Compatibility is checked again when an instance is loaded. A failed binary
 returns an error row and other binaries continue. Traversal/catalogue capacity
 errors, an unavailable helper, a full scan queue or a cache-write failure reply
-`/fail "/plugin_scan" <reason>`. Builds without native CLAP support and an in-page
+`/fail "/plugin_scan" <reason>`. Builds without native plugin support and an in-page
 engine return a capability error. Scanning does not create nodes or send defs.
 
 Each `/plugin_scan.reply` has five arguments:
@@ -60,17 +61,28 @@ catalogue. `/server_sync` waits for the scan and its cache write.
 The reconstructed rows use these schemas:
 
 ```json
-{"kind":"plugin","plugin":{"format":"clap","path":"/plugins/gain.clap","id":"org.vendor.gain","name":"Gain","vendor":"Vendor","version":"1","inputs":[{"id":10,"name":"Input","channels":2,"flags":1}],"outputs":[{"id":20,"name":"Output","channels":2,"flags":1}],"note_inputs":[],"note_outputs":[],"parameters":[{"id":19,"name":"Gain","module":"","flags":32,"min":0.0,"max":1.0,"default":0.5}],"latency":0,"state":true,"editor":false}}
+{"kind":"plugin","plugin":{"format":"clap","path":"/plugins/gain.clap","id":"org.vendor.gain","name":"Gain","vendor":"Vendor","version":"1","inputs":[{"id":10,"name":"Input","channels":2,"flags":1}],"outputs":[{"id":20,"name":"Output","channels":2,"flags":1}],"note_inputs":[],"note_outputs":[],"parameters":[{"id":19,"name":"Gain","module":"","flags":32,"min":0.0,"max":1.0,"step":0.0,"default":0.5}],"latency":0,"state":true,"editor":false}}
 {"kind":"error","path":"/plugins/broken.clap","error":"plugin helper timeout/protocol error"}
 ```
+
+VST3 candidates can be standalone `.vst3` binaries or Linux bundles with a
+native module under `Contents/<architecture>-linux/`. Discovery reports only
+`Audio Module Class` entries, with a 32-digit hexadecimal class ID. Use the
+returned path and ID in a `PluginDef`; the format is `vst3`. Build the matching
+helper with `cargo build -p clausters-plugin-host --no-default-features
+--features vst3` (or `--features clap,vst3` for both). A missing adapter returns
+a per-candidate diagnostic. VST3 component and controller state are stored
+together in an opaque host image; preserve those bytes without interpreting them.
 
 Identity is `(format, canonical binary path, native plugin id)`; a binary may
 hold several plugins. Native port and parameter ids survive discovery order;
 names are display strings. Port arrays follow processing-port order. Note ports
 carry `id`, `name` and native `dialects` flags. Parameter values and bounds use
-native plain units; `flags` retain CLAP's native flags. `latency` is the intrinsic
+adapter-native units: CLAP plain values, VST3 normalized values in `[0, 1]`.
+`step` is the quantization interval (zero for continuous parameters); `flags`
+use CLAP-compatible stepped/read-only/automatable bits for either adapter. `latency` is the intrinsic
 frame count queried after activation at 48 kHz, independent of the bridge delay.
-`state` reports opaque save/load support; `editor` reports floating X11 editor
+`state` reports opaque save/load support; `editor` reports native X11 editor
 support, without opening a window.
 
 Limits are 32 roots, 128 binaries, 512 plugins per binary, 16 ports and 32 audio
@@ -105,14 +117,14 @@ can still round-trip a valid empty image.
 `depth` is a pipeline delay of 1–16 engine blocks, default four.
 
 Instantiate with `/synth_new` and control with `/node_set`, `/node_map` and
-`/node_mapAudio`. Parameter names are `param:<native-id>`, in **native plain
-units**, represented at the server's ordinary float control precision. Bus
+`/node_mapAudio`. Parameter names are `param:<native-id>`, in **adapter-native
+units** (CLAP plain values, VST3 normalized `[0, 1]` values), represented at the server's ordinary float control precision. Bus
 names are `in:<native-port-id>` and `out:<native-port-id>`. Native IDs, never
 display labels, identify controls. Numeric control indices refer to the
 reported control order: parameters sorted by native ID, then input ports,
 then output ports. `/def_query.reply` uses family `plugin`; each control has
-`name, default, "kr", min, max, step`, like a Faust control. A parameter's
-step is one if stepped, otherwise zero. Bus controls have integer steps.
+`name, default, "kr", min, max, step`, like a Faust control. A stepped CLAP parameter's step is one; a stepped VST3 parameter's step is
+`1 / stepCount`. Continuous parameters have step zero. Bus controls have integer steps.
 Read-only parameters cannot be written. Out-of-range parameters or exceeded
 block capacities produce silence and a per-node fault, rather than clipping
 or losing automation without a report.
@@ -167,7 +179,7 @@ An accepted transaction that fails leaves the old generation silent until
 controls. A freed/reused node ID cannot receive an old operation's result.
 
 Latency is `depth * 64 + native latency` samples; parallel paths are not yet
-compensated. Native hosting requires a Linux server built with `plugin-clap`
+compensated. Native hosting requires a Linux server built with `plugin-clap` or `plugin-vst3`
 and its matching `clausters-plugin-host` binary. The in-page engine reports a
 capability error.
 
@@ -353,7 +365,7 @@ Both stream transports share a few **edge guards**, sized like everything else f
 ## NRT mode (offline rendering)
 
 The same engine renders OSC scores to WAV without an audio device.
-Native Linux builds with `plugin-clap` and their matching helper also accept
+Native Linux builds with `plugin-clap` or `plugin-vst3` and their matching helper also accept
 `/def_send plugin`, `/synth_new` and `/plugin_event` in an OSC score. References
 are loaded synchronously before time advances. All audio ports and the same
 sample-offset event/transport spans are processed by the isolated helper.
@@ -1330,16 +1342,27 @@ channel or key, applying only to matching notes of their own origin.
 `midi` carries exactly one three-byte MIDI 1 channel-voice message; its running
 status, SysEx and MIDI 2 native dialect are not supported by this command.
 
-Native expression requires a CLAP note port. MIDI-only ports receive converted
+Native expression requires a native note-expression port (CLAP or VST3). MIDI-only ports receive converted
 note attacks/releases but cannot distinguish overlapping attacks of the same
 channel/key: the node reports a protocol fault rather than merging ownership.
 MIDI notes, sustain, pressure, pitch bend and standard volume/pan/expression/
 brightness controllers can be translated to CLAP note events when no MIDI
 dialect is offered. Other unsupported controllers report an error.
 
+For VST3 the adapter converts volume to its normalized gain range (amplitude
+`0..4` becomes `0..1`), tuning in semitones to its centered normalized range
+(`-120..120` becomes `0..1`), and pressure to poly pressure. `choke` becomes an
+immediate note-off; VST3 has no distinct choke or note-end event. MIDI notes
+become native notes and CC/pressure/bend use the controller's `IMidiMapping`
+assignments, read before processing; an unassigned controller has no effect.
+Editor callbacks and output parameters use the same parameter/gesture replies.
+A plugin request to change ports, parameters or latency fails the current
+generation safely; `/plugin_restart` prepares a new one with compatible IDs
+and ports, including refreshed latency. No path compensation is applied yet.
+
 `/midi_bind` on a plugin def builds **one persistent instance at binding time**.
 Subsequent MIDI/UMP input uses the existing shared decoder and that instance;
-MPE requires a CLAP expression port and preserves the decoder's note IDs.
+MPE requires a native expression port and preserves the decoder's note IDs.
 `/midi_unbind` frees the instance. Mapped parameter controls still use
 `/midi_map` on plain-channel bindings (CC, pressure, poly pressure or bend);
 otherwise native controllers reach the plugin. Note/velocity/gate/def-program

@@ -106,6 +106,19 @@ clippy "clippy: CLAP with synth" --all-targets --no-default-features --features 
 clippy "clippy: CLAP with faust" --all-targets --no-default-features --features faust,plugin-clap
 clippy "clippy: CLAP with both def families" --all-targets --no-default-features --features synth,faust,plugin-clap
 
+# Each native adapter is independent of every def-family combination.
+for adapter in plugin-vst3 plugin-clap,plugin-vst3; do
+    for families in "" synth faust synth,faust; do
+        features="$adapter"
+        if [ -n "$families" ]; then features="$families,$adapter"; fi
+        clippy "clippy: $features" --all-targets --no-default-features --features "$features"
+    done
+done
+clippy "clippy: plugin host, both adapters" -p clausters-plugin-host --all-targets --no-default-features --features clap,vst3
+run "prepare: VST3 fixture" bash third_party/prepare-vst3-fixture.sh
+run "fmt: VST3 fixture" cargo fmt --manifest-path crates/clausters-plugin-host/tests/fixtures/vst3/Cargo.toml --check
+clippy "clippy: VST3 fixture" --manifest-path crates/clausters-plugin-host/tests/fixtures/vst3/Cargo.toml --target-dir target/matrix-vst3-fixture
+
 # `verovio` is off by default, so CI's `--workspace --all-targets` never enables
 # it and the whole notation layer it pulls in goes unlinted -- the same gap as
 # the def families, for the same reason. It needs no libverovio on the machine:
@@ -164,6 +177,8 @@ doc "rustdoc: faust alone" \
     cargo doc --no-deps --workspace --no-default-features --features faust
 doc "rustdoc: CLAP infrastructure" \
     cargo doc --no-deps --no-default-features --features plugin-clap
+doc "rustdoc: VST3 infrastructure" cargo doc --no-deps --no-default-features --features plugin-vst3
+doc "rustdoc: both native adapters" cargo doc --no-deps --no-default-features --features plugin-clap,plugin-vst3
 doc "rustdoc: plugin host, no adapter" \
     cargo doc --no-deps -p clausters-plugin-host --no-default-features
 
