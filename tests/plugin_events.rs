@@ -558,7 +558,7 @@ fn osc_lane_replacement_releases_its_origin_without_releasing_the_keyboard() {
         vec![OscType::Int(0), OscType::Int(-1), OscType::Int(10)],
     );
     assert_eq!(recv().addr, "/done");
-    send("/lane_set",vec![OscType::Int(-1),OscType::String(serde_json::json!({"notes":[[0,4096,{"plugin":42},{"key":60,"velocity":0.4},"gate"]]}).to_string())]);
+    send("/lane_set",vec![OscType::Int(-1),OscType::String(serde_json::json!({"notes":[[0,4096,{"node":42},{"key":60,"velocity":0.4},"gate"]]}).to_string())]);
     assert_eq!(recv().addr, "/done");
     let note = event(7, 1, "note_on", 60, 0.2);
     send(&note.addr, note.args);

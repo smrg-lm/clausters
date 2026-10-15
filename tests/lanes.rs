@@ -1159,3 +1159,81 @@ fn subtree(server: &mut ClaustersHeadless, group: i32) -> usize {
     }
     panic!("no /group_queryTree.reply");
 }
+
+/// **A lane's line plays as one held voice.** Three notes joined into one
+/// line on a def whose level is lagged: a joined note sets the synth the line
+/// started -- the level glides into it -- where a new synth would start at its
+/// level at once; and the line ends on its last note's end.
+#[test]
+fn a_lanes_joined_notes_are_one_held_voice() {
+    let mut server = server();
+    let glide = r#"{
+        "name": "glide",
+        "controls": [{"name": "level", "default": 0.5}],
+        "ugens": [
+            {"kind": "Lag", "inputs": [{"control": 0}, {"const": 0.01}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    send(
+        &mut server,
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(glide.as_bytes().to_vec()),
+        ],
+    );
+    let json = r#"{"notes": [
+        [1000, 4800, "glide", {"level": 0.25}, "free"],
+        [4800, 9600, "glide", {"level": 0.5}, "free", 0],
+        [9600, 14400, "glide", {"level": 0.75}, "free", 1]
+    ]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(LANE), OscType::String(json.into())],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 300);
+    assert_eq!(
+        sounding(&out),
+        vec![(1000, 14400)],
+        "one line, released at its end"
+    );
+    assert!((out[4000] - 0.25).abs() < 1e-3);
+    assert!(
+        out[4810] > 0.25 && out[4810] < 0.4,
+        "the joined note glides from the held level: {}",
+        out[4810]
+    );
+    assert!((out[9000] - 0.5).abs() < 1e-3);
+    assert!((out[14000] - 0.75).abs() < 1e-3);
+}
+
+/// **A locate into a line still ends it**: the note the position lands on
+/// starts the line's node, and releases it at the line's end.
+#[test]
+fn a_line_entered_midway_still_ends() {
+    let mut server = server();
+    let json = r#"{"notes": [
+        [1000, 4800, "dc", {"level": 0.25}, "free"],
+        [4800, 9600, "dc", {"level": 0.5}, "free", 0],
+        [9600, 14400, "dc", {"level": 0.75}, "free", 1]
+    ]}"#;
+    send(
+        &mut server,
+        "/lane_set",
+        vec![OscType::Int(LANE), OscType::String(json.into())],
+    );
+    send(
+        &mut server,
+        "/transport_locateSample",
+        vec![OscType::Int(0), OscType::Long(4000)],
+    );
+    play(&mut server);
+    let out = pull(&mut server, 300);
+    // From the locate: the second note starts the node at 800 samples in,
+    // the third continues it, and the line ends at 14400 - 4000.
+    assert_eq!(sounding(&out), vec![(800, 10400)]);
+    assert!((out[9000] - 0.75).abs() < 1e-3, "{}", out[9000]);
+}

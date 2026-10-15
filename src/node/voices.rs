@@ -376,8 +376,11 @@ impl VoicesNode {
                             let control = self.map.poly.or(self.map.pressure);
                             self.set(i, control, e.value as f32);
                         }
+                        // Controller 74's meaning, so its mapping is the
+                        // fallback: a per-note timbre moves what CC 74 does.
                         Some(Expression::Brightness) => {
-                            self.set(i, self.map.timbre, e.value as f32);
+                            let control = self.map.timbre.or(self.map.cc[74]);
+                            self.set(i, control, e.value as f32);
                         }
                         _ => {}
                     }

@@ -47,7 +47,7 @@
 
 use clausters_core::event::render::{self, Arg, Type};
 use clausters_core::event_lane::{
-    EventLaneData, EventLaneMessage, EventLaneMidi, EventLaneNote, EventLaneVoice, Release,
+    EventLaneData, EventLaneDestination, EventLaneMessage, EventLaneMidi, EventLaneNote, Release,
 };
 use clausters_core::ids::{IdError, IdSpaces, Space};
 use clausters_core::osc::OscType;
@@ -262,15 +262,52 @@ pub struct SlotNote {
 /// a second (the shape is [`EventLaneData`]'s). A note is what the core renders its
 /// keys to -- the def, `freq`, `amp` and every other numeric key, released by
 /// `gate 0` when its def is gated and by a free otherwise -- as a synth, or as
-/// the slot `slots` names for it at its index, when curves shape it. A MIDI
+/// the slot `slots` names for it at its index, when curves shape it; a note
+/// whose instrument is a node is that node's note, its key, tuning, velocity,
+/// channel and controls the core's reading of its keys. A note that `joins`
+/// another (a voice's line, by the joined event's id) continues it on the
+/// lane, so a line sounds the same from a pattern and from a sequence. A MIDI
 /// event is the message the core spells it as, which the server plays as
 /// though it had reached its MIDI input; an OSC event is a message the server
 /// runs as written. A rest sounds nothing.
 pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
     let sample = |secs: f64| (secs.max(0.0) * rate).round() as u64;
     let mut data = EventLaneData::default();
+    // Each note's index in the lane, by its event's id, for the joins.
+    let mut by_id: std::collections::HashMap<String, usize> = Default::default();
+    let joined = |keys: &Map<String, Value>, by_id: &std::collections::HashMap<String, usize>| {
+        keys.get("joins")
+            .and_then(Value::as_i64)
+            .and_then(|id| by_id.get(&id.to_string()).copied())
+    };
     for (i, event) in placed.iter().enumerate() {
         match Type::of(&event.keys) {
+            Type::Note if render::node_note_of(&event.keys).is_some() => {
+                let Some(note) = render::node_note_of(&event.keys) else {
+                    continue;
+                };
+                let mut controls = vec![
+                    ("key".to_owned(), f64::from(note.key)),
+                    ("velocity".to_owned(), note.velocity),
+                    ("channel".to_owned(), f64::from(note.channel)),
+                ];
+                if note.tuning.abs() > 1e-9 {
+                    controls.push(("tuning".to_owned(), note.tuning));
+                }
+                controls.extend(note.controls);
+                let joins = joined(&event.keys, &by_id);
+                if !event.id.is_empty() {
+                    by_id.insert(event.id.clone(), data.notes.len());
+                }
+                data.notes.push(EventLaneNote {
+                    start: sample(event.start),
+                    end: sample(event.end.max(event.start)),
+                    destination: EventLaneDestination::Node(note.node),
+                    controls,
+                    release: Release::Free,
+                    joins,
+                });
+            }
             Type::Note => {
                 let Some(Voice {
                     def,
@@ -280,22 +317,27 @@ pub fn data(placed: &[Placed], rate: f64, slots: &[Option<SlotNote>]) -> Value {
                 else {
                     continue;
                 };
-                let voice = match slots.get(i).and_then(Option::as_ref) {
+                let destination = match slots.get(i).and_then(Option::as_ref) {
                     Some(slot) => {
                         controls.extend(slot.ports.iter().cloned());
-                        EventLaneVoice::Slot {
+                        EventLaneDestination::Slot {
                             graph: slot.graph,
                             slot: slot.slot.clone(),
                         }
                     }
-                    None => EventLaneVoice::Def(def),
+                    None => EventLaneDestination::Def(def),
                 };
+                let joins = joined(&event.keys, &by_id);
+                if !event.id.is_empty() {
+                    by_id.insert(event.id.clone(), data.notes.len());
+                }
                 data.notes.push(EventLaneNote {
                     start: sample(event.start),
                     end: sample(event.end.max(event.start)),
-                    voice,
+                    destination,
                     controls,
                     release,
+                    joins,
                 });
             }
             Type::Midi => {

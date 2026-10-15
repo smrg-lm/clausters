@@ -39,9 +39,11 @@ pub const RESERVED: &[&str] = &[
     "root",
     "scale",
     "node",
-    // How a voice holds one node across its notes ([`synth`]).
+    // How a voice holds one node across its notes ([`synth`]), and which note
+    // a stored one continues.
     "held",
     "continues",
+    "joins",
     "velocity",
     "db",
     // What the note says on a page ([`super::notation::KEYS`]).
@@ -343,8 +345,133 @@ fn instrument(keys: &Map<String, Value>) -> &str {
         .unwrap_or("default")
 }
 
+/// Where an event's note plays, from its `instrument` key.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Destination {
+    /// A synth of this def per note -- a name, or nothing (`"default"`).
+    Def(String),
+    /// A note of this node, a plugin's or a `Voices` node: `{"node": id}`.
+    Node(i32),
+}
+
+/// The destination an event's `instrument` names.
+#[must_use]
+pub fn destination(keys: &Map<String, Value>) -> Destination {
+    match keys
+        .get("instrument")
+        .and_then(Value::as_object)
+        .and_then(|o| o.get("node"))
+        .and_then(Value::as_i64)
+        .and_then(|n| i32::try_from(n).ok())
+    {
+        Some(node) => Destination::Node(node),
+        None => Destination::Def(instrument(keys).to_owned()),
+    }
+}
+
+/// **A note as a node reads it**: the key and the tuning its pitch is, its
+/// velocity (its amplitude, as the level keys say), its channel, and the
+/// controls it sets on its voice -- every other number the event holds and
+/// does not reserve, by name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NodeNote {
+    pub node: i32,
+    /// The nearest key, 0-127.
+    pub key: i16,
+    /// The rest of the pitch, in semitones from the key.
+    pub tuning: f64,
+    pub velocity: f64,
+    pub channel: i16,
+    pub controls: Vec<(String, f64)>,
+}
+
+/// The [`NodeNote`] of a note event whose destination is a node; `None`
+/// for anything else.
+#[must_use]
+pub fn node_note_of(keys: &Map<String, Value>) -> Option<NodeNote> {
+    if Type::of(keys) != Type::Note {
+        return None;
+    }
+    let Destination::Node(node) = destination(keys) else {
+        return None;
+    };
+    let midinote = pitch_of(keys).midinote(&scale_of(keys));
+    let key = midinote.round().clamp(0.0, 127.0);
+    let mut controls: Vec<(String, f64)> = keys
+        .iter()
+        .filter(|(k, v)| {
+            !RESERVED.contains(&k.as_str())
+                && !matches!(k.as_str(), "freq" | "amp" | "out")
+                && v.is_number()
+        })
+        .filter_map(|(k, v)| v.as_f64().map(|n| (k.clone(), n)))
+        .collect();
+    controls.sort_by(|a, b| a.0.cmp(&b.0));
+    Some(NodeNote {
+        node,
+        key: key as i16,
+        tuning: midinote - key,
+        velocity: level_of(keys).amp().clamp(0.0, 1.0),
+        channel: number(keys, "channel").map_or(0, |c| c.clamp(0.0, 15.0) as i16),
+        controls,
+    })
+}
+
+/// **A note event as the events of a note on a node**: `/node_event node
+/// json` with its note-on (identified as `note_id`), its tuning when the
+/// pitch is between keys, and a `control` for each control it sets; and, at
+/// its sustain, `/node_event node json` with its note-off. A note that
+/// `continues` another (a voice's, as in [`synth`]) joins it --
+/// the note-on carries `joins` -- and a `held` one has no note-off. `None`
+/// for anything that is not a note on a node.
+#[must_use]
+pub fn node_note(keys: &Map<String, Value>, note_id: i32) -> Option<Synth> {
+    let note = node_note_of(keys)?;
+    let mut on = serde_json::json!({
+        "kind": "note_on",
+        "channel": note.channel,
+        "key": note.key,
+        "note_id": note_id,
+        "velocity": note.velocity,
+    });
+    if let Some(joins) = number(keys, "continues") {
+        on["joins"] = Value::from(joins as i64);
+    }
+    let mut events = vec![on];
+    if note.tuning.abs() > 1e-9 {
+        events.push(serde_json::json!({
+            "kind": "expression", "expression": "tuning",
+            "note_id": note_id, "value": note.tuning,
+        }));
+    }
+    for (name, value) in &note.controls {
+        events.push(serde_json::json!({
+            "kind": "control", "control": name, "note_id": note_id, "value": value,
+        }));
+    }
+    let message = |events: Value| {
+        vec![
+            Arg::Str("/node_event".into()),
+            Arg::Int(note.node),
+            Arg::Str(events.to_string()),
+        ]
+    };
+    let held = matches!(keys.get("held"), Some(Value::Bool(true)));
+    let release = if held {
+        Vec::new()
+    } else {
+        message(serde_json::json!({"kind": "note_off", "note_id": note_id}))
+    };
+    Some(Synth {
+        start: message(Value::Array(events)),
+        release,
+        sustain: sustain_of(keys),
+    })
+}
+
 /// A note event as the messages that start and end its synth, on node `node`;
-/// `None` for anything that is not a note. The controls are `freq` and `amp`
+/// `None` for anything that is not a note, and for a note on a node
+/// ([`node_note`]). The controls are `freq` and `amp`
 /// (the ones a synth takes by convention), `out` when stated, then every other
 /// number the event holds and does not reserve ([`RESERVED`]), by name.
 ///
@@ -357,7 +484,7 @@ fn instrument(keys: &Map<String, Value>) -> &str {
 /// release of that node.
 #[must_use]
 pub fn synth(keys: &Map<String, Value>, node: i32) -> Option<Synth> {
-    if Type::of(keys) != Type::Note {
+    if Type::of(keys) != Type::Note || matches!(destination(keys), Destination::Node(_)) {
         return None;
     }
     let scale = scale_of(keys);
@@ -863,5 +990,56 @@ mod tests {
         let mut e = keys(json!({"dur": 1}));
         set_key(&mut e, "pitches", json!([{"step": "a", "octave": 4}]));
         assert!(!e.contains_key("midinote"));
+    }
+
+    #[test]
+    fn a_note_on_a_node_is_its_events_there() {
+        let k = keys(
+            json!({"instrument": {"node": 1001}, "midinote": 60.5, "amp": 0.25,
+                            "cutoff": 900, "channel": 2}),
+        );
+        let note = node_note(&k, 7).unwrap();
+        assert!(synth(&k, 5).is_none(), "a note on a node makes no synth");
+        assert_eq!(
+            note.start[..2],
+            [Arg::Str("/node_event".into()), Arg::Int(1001)]
+        );
+        let Arg::Str(events) = &note.start[2] else {
+            panic!()
+        };
+        let events: Value = serde_json::from_str(events).unwrap();
+        assert_eq!(events[0]["kind"], "note_on");
+        assert_eq!(events[0]["key"], 61, "the nearest key");
+        assert_eq!(events[0]["channel"], 2);
+        assert_eq!(events[0]["velocity"], 0.25);
+        assert_eq!(events[1]["expression"], "tuning");
+        assert!((events[1]["value"].as_f64().unwrap() + 0.5).abs() < 1e-9);
+        assert_eq!(events[2]["control"], "cutoff");
+        let Arg::Str(off) = &note.release[2] else {
+            panic!()
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(off).unwrap()["kind"],
+            "note_off"
+        );
+        // A voice's: a held note has no note-off, the next one joins it.
+        let held = node_note(
+            &keys(json!({"instrument": {"node": 1001}, "held": true})),
+            8,
+        )
+        .unwrap();
+        assert!(held.release.is_empty());
+        let next = node_note(
+            &keys(json!({"instrument": {"node": 1001}, "continues": 8})),
+            9,
+        )
+        .unwrap();
+        let Arg::Str(events) = &next.start[2] else {
+            panic!()
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(events).unwrap()[0]["joins"],
+            8
+        );
     }
 }

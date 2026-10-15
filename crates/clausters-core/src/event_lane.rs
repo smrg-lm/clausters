@@ -9,17 +9,21 @@
 //! On the wire it is JSON, each entry an array so a long lane stays compact:
 //!
 //! ```text
-//! {"notes":    [[start, end, voice, {"control": value, ...}, "gate"|"free"], ...],
+//! {"notes":    [[start, end, voice, {"control": value, ...}, "gate"|"free", joins], ...],
 //!  "messages": [[position, "/address", args...], ...],
 //!  "midi":     [[position, byte, byte, ...], ...],
 //!  "ump":      [[position, word, word, ...], ...]}
 //! ```
 //!
-//! Every list may be absent, and an empty one is not written. A note's `voice`
-//! is a def's name, played as a synth, or `{"graph": id, "slot": name}`, one
-//! more of a slot of a running graph instance, its controls the slot's ports.
-//! A graph is how a note carries more than its def: the curves that shape it,
-//! read beside it.
+//! Every list may be absent, and an empty one is not written. A note's
+//! destination (`voice` above, its place on the wire) is a def's name, played
+//! as a synth; `{"graph": id, "slot": name}`, one more of a slot of a running
+//! graph instance, its controls the slot's ports -- a graph is how a note
+//! carries more than its def: the curves that shape it, read beside it; or
+//! `{"node": id}`, a note of a node that reads notes (a plugin's or a
+//! `Voices` node), never a new one. `joins`, when written, is the index in
+//! the list of the note this one continues: a legato line, which the
+//! destination plays as one held voice.
 
 use serde_json::{Map, Value, json};
 
@@ -34,11 +38,12 @@ pub enum Release {
     Free,
 }
 
-/// What a lane's note is made as.
+/// Where a lane's note is played.
 #[derive(Debug, Clone, PartialEq)]
-pub enum EventLaneVoice {
-    /// A note of one persistent native plugin node, never a new synth.
-    Plugin { node: i32, port: Option<u32> },
+pub enum EventLaneDestination {
+    /// A note of a node that reads notes -- a plugin's or a `Voices` node --
+    /// never a new node.
+    Node(i32),
     /// A synth of this def (`/synth_new`), its controls the def's.
     Def(String),
     /// One more of `slot` in the graph instance `graph` (`/graph_addSlot`),
@@ -46,15 +51,19 @@ pub enum EventLaneVoice {
     Slot { graph: i32, slot: String },
 }
 
-/// A note: a voice with `controls`, started at `start` and released at `end`.
+/// A note: played at `destination` with `controls`, started at `start` and
+/// released at `end`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventLaneNote {
     pub start: u64,
     pub end: u64,
-    pub voice: EventLaneVoice,
+    pub destination: EventLaneDestination,
     /// The controls it starts with, by name.
     pub controls: Vec<(String, f64)>,
     pub release: Release,
+    /// The note of the lane, by its index in the list, that this one
+    /// continues: the line goes on rather than starting again.
+    pub joins: Option<usize>,
 }
 
 /// A command the server takes in a timed bundle, run at `position` as written.
@@ -106,12 +115,19 @@ impl EventLaneData {
                     Release::Gate => "gate",
                     Release::Free => "free",
                 };
-                let voice = match &note.voice {
-                    EventLaneVoice::Plugin { node, port } => json!({"plugin": node, "port": port}),
-                    EventLaneVoice::Def(def) => json!(def),
-                    EventLaneVoice::Slot { graph, slot } => json!({"graph": graph, "slot": slot}),
+                let destination = match &note.destination {
+                    EventLaneDestination::Node(node) => json!({"node": node}),
+                    EventLaneDestination::Def(def) => json!(def),
+                    EventLaneDestination::Slot { graph, slot } => {
+                        json!({"graph": graph, "slot": slot})
+                    }
                 };
-                json!([note.start, note.end, voice, controls, release])
+                match note.joins {
+                    Some(joins) => {
+                        json!([note.start, note.end, destination, controls, release, joins])
+                    }
+                    None => json!([note.start, note.end, destination, controls, release]),
+                }
             });
             out.insert("notes".into(), Value::Array(notes.collect()));
         }
@@ -166,26 +182,16 @@ impl EventLaneData {
             let [start, end, voice, controls, tail @ ..] = fields.as_slice() else {
                 return Err("a note is [start, end, voice, controls, release]".into());
             };
-            let voice = match voice {
-                Value::String(def) => EventLaneVoice::Def(def.clone()),
-                Value::Object(slot) if slot.contains_key("plugin") => EventLaneVoice::Plugin {
-                    node: slot
-                        .get("plugin")
+            let destination = match voice {
+                Value::String(def) => EventLaneDestination::Def(def.clone()),
+                Value::Object(node) if node.contains_key("node") => EventLaneDestination::Node(
+                    node.get("node")
                         .and_then(Value::as_i64)
                         .and_then(|n| i32::try_from(n).ok())
                         .filter(|n| *n > 0)
-                        .ok_or("a plugin voice needs a positive node id")?,
-                    port: match slot.get("port") {
-                        None | Some(Value::Null) => None,
-                        Some(value) => Some(
-                            value
-                                .as_u64()
-                                .and_then(|p| u32::try_from(p).ok())
-                                .ok_or("a plugin port is a native unsigned id")?,
-                        ),
-                    },
-                },
-                Value::Object(slot) => EventLaneVoice::Slot {
+                        .ok_or("a note on a node needs a positive node id")?,
+                ),
+                Value::Object(slot) => EventLaneDestination::Slot {
                     graph: slot
                         .get("graph")
                         .and_then(Value::as_i64)
@@ -197,26 +203,27 @@ impl EventLaneData {
                         .ok_or("a note's slot is a name")?
                         .to_string(),
                 },
-                _ => return Err("a note's voice is a def's name or a graph's slot".into()),
+                _ => {
+                    return Err("a note is played by a def's name, a graph's slot or a node".into());
+                }
             };
-            if matches!(voice, EventLaneVoice::Plugin { .. }) {
+            if matches!(destination, EventLaneDestination::Node(_)) {
                 let values = controls
                     .as_object()
-                    .ok_or("plugin note controls must be an object")?;
-                for (name, value) in values {
-                    if !matches!(name.as_str(), "key" | "velocity" | "channel")
-                        || value.as_f64().is_none_or(|v| !v.is_finite())
-                    {
-                        return Err(
-                            "plugin note controls are numeric key, velocity and channel".into()
-                        );
-                    }
+                    .ok_or("a node's note controls must be an object")?;
+                // `key`, `velocity`, `channel` and `tuning` are the note's; any
+                // other is one of the node's controls, set for this note.
+                if values
+                    .values()
+                    .any(|v| v.as_f64().is_none_or(|v| !v.is_finite()))
+                {
+                    return Err("a node's note controls are numbers".into());
                 }
                 for (name, maximum) in [("key", 127.0), ("channel", 15.0)] {
                     if let Some(value) = values.get(name).and_then(Value::as_f64)
                         && (value.fract() != 0.0 || !(0.0..=maximum).contains(&value))
                     {
-                        return Err(format!("invalid plugin note {name}"));
+                        return Err(format!("invalid note {name}"));
                     }
                 }
                 if values
@@ -224,7 +231,7 @@ impl EventLaneData {
                     .and_then(Value::as_f64)
                     .is_some_and(|v| !(0.0..=1.0).contains(&v))
                 {
-                    return Err("invalid plugin note velocity".into());
+                    return Err("invalid note velocity".into());
                 }
             }
             let controls = controls
@@ -240,13 +247,34 @@ impl EventLaneData {
                     return Err(format!("a note is released by gate or free, not {other}"));
                 }
             };
+            let joins = match tail.get(1) {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(
+                    value
+                        .as_u64()
+                        .map(|j| j as usize)
+                        .filter(|j| *j != data.notes.len())
+                        .ok_or("a note joins another by its index")?,
+                ),
+            };
             data.notes.push(EventLaneNote {
                 start: sample(start, "start")?,
                 end: sample(end, "end")?,
-                voice,
+                destination,
                 controls,
                 release,
+                joins,
             });
+        }
+        if let Some(bad) = data
+            .notes
+            .iter()
+            .filter_map(|n| n.joins)
+            .find(|j| *j >= data.notes.len())
+        {
+            return Err(format!(
+                "a note joins note {bad}, which the lane does not hold"
+            ));
         }
         for message in list("messages") {
             let fields = message.as_array().ok_or("a message is an array")?;
@@ -329,19 +357,21 @@ mod tests {
                 EventLaneNote {
                     start: 10,
                     end: 20,
-                    voice: EventLaneVoice::Def("default".into()),
+                    destination: EventLaneDestination::Def("default".into()),
                     controls: vec![("amp".into(), 0.25), ("freq".into(), 440.0)],
                     release: Release::Free,
+                    joins: None,
                 },
                 EventLaneNote {
                     start: 12,
                     end: 30,
-                    voice: EventLaneVoice::Slot {
+                    destination: EventLaneDestination::Slot {
                         graph: 1000,
                         slot: "note.0".into(),
                     },
                     controls: vec![("freq".into(), 330.0)],
                     release: Release::Gate,
+                    joins: Some(0),
                 },
             ],
             messages: vec![EventLaneMessage {
@@ -379,22 +409,24 @@ mod tests {
 }
 
 #[cfg(test)]
-mod plugin_tests {
+mod node_tests {
     use super::*;
     #[test]
-    fn persistent_plugin_voice_round_trips_native_port_identity() {
-        let json=br#"{"notes":[[10,20,{"plugin":42,"port":4000000000},{"key":60,"velocity":0.5},"free"]]}"#;
+    fn a_note_on_a_node_and_a_join_round_trip() {
+        let json = br#"{"notes":[[10,20,{"node":42},{"key":60,"velocity":0.5},"free"],
+                                 [20,30,{"node":42},{"key":62,"velocity":0.5},"free",0]]}"#;
         let data = EventLaneData::from_json(json).unwrap();
-        assert_eq!(
-            data.notes[0].voice,
-            EventLaneVoice::Plugin {
-                node: 42,
-                port: Some(4_000_000_000)
-            }
-        );
+        assert_eq!(data.notes[0].destination, EventLaneDestination::Node(42));
+        assert_eq!(data.notes[1].joins, Some(0));
         assert_eq!(
             EventLaneData::from_json(&serde_json::to_vec(&data.to_json()).unwrap()).unwrap(),
             data
         );
+    }
+
+    #[test]
+    fn a_join_outside_the_lane_or_onto_itself_is_refused() {
+        assert!(EventLaneData::from_json(br#"{"notes":[[0,1,"x",{},"free",3]]}"#).is_err());
+        assert!(EventLaneData::from_json(br#"{"notes":[[0,1,"x",{},"free",0]]}"#).is_err());
     }
 }

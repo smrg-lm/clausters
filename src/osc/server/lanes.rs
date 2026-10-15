@@ -38,7 +38,7 @@ use std::collections::{HashMap, HashSet};
 use clausters_core::event::render::Arg;
 use clausters_core::event_bus::{BusEvent, Kind, lane_source};
 use clausters_core::event_lane::{
-    EventLaneData, EventLaneMidi, EventLaneUmp, EventLaneVoice, Release,
+    EventLaneData, EventLaneDestination, EventLaneMidi, EventLaneUmp, Release,
 };
 use clausters_midi::mpe::{Decoder, MpeEvent, Side};
 
@@ -57,13 +57,20 @@ pub(in crate::osc::server) const LOOKAHEAD_SECS: f64 = 0.5;
 /// One event of a lane, at a position of its transport.
 #[derive(Clone, Debug, PartialEq)]
 enum EventLaneEvent {
-    /// A note: a synth of a def, or one more of a graph's slot, with
-    /// `controls`, released `length` samples after it starts.
+    /// A note: a synth of a def, one more of a graph's slot, or a note of a
+    /// node, with `controls`, released `length` samples after it starts --
+    /// unless a later note `joins` it, which makes it `held`. `joins` is the
+    /// event, by its index, this note continues, and `line` how long from
+    /// its start until the line it belongs to ends: what a node a line made
+    /// is released at, so a line cut short (a locate into it) still ends.
     Note {
-        voice: EventLaneVoice,
+        destination: EventLaneDestination,
         controls: Vec<OscType>,
         length: u64,
         release: Release,
+        joins: Option<u32>,
+        held: bool,
+        line: u64,
     },
     /// A command the server takes in a timed bundle, run as it is written.
     Message(OscMessage),
@@ -148,29 +155,59 @@ pub(in crate::osc::server) struct EventLane {
     /// The node of each MIDI voice built in this generation, by its `voice`,
     /// for the expressive messages after it.
     voices: HashMap<u32, i32>,
+    /// The node each note of this generation made, by its event's index, for
+    /// a note that joins it.
+    note_nodes: HashMap<u32, i32>,
 }
 
 /// Reads a lane's data (`clausters_core::event_lane::EventLaneData`, the JSON
 /// `/lane_set` carries) into its events, sorted by position.
 fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, EventLaneEvent)>, String> {
     let data = EventLaneData::from_json(json)?;
-    let mut events = Vec::new();
-    for note in data.notes {
+    let joined: HashSet<usize> = data.notes.iter().filter_map(|n| n.joins).collect();
+    // Where each note's line ends: the end of the last note joined after it.
+    let mut next: HashMap<usize, usize> = HashMap::new();
+    for (k, note) in data.notes.iter().enumerate() {
+        if let Some(j) = note.joins {
+            next.insert(j, k);
+        }
+    }
+    let line_end = |mut k: usize| {
+        let mut steps = 0;
+        while let Some(&n) = next.get(&k) {
+            k = n;
+            steps += 1;
+            if steps > data.notes.len() {
+                break;
+            }
+        }
+        data.notes[k].end
+    };
+    let lines: Vec<u64> = (0..data.notes.len()).map(line_end).collect();
+    // `(position, note index, event)`: the note index finds each join once
+    // the events are in position order.
+    let mut notes = Vec::new();
+    for (k, note) in data.notes.into_iter().enumerate() {
         let controls = note
             .controls
             .into_iter()
             .flat_map(|(name, value)| [OscType::String(name), OscType::Float(value as f32)])
             .collect();
-        events.push((
+        notes.push((
             note.start,
+            Some(k),
             EventLaneEvent::Note {
-                voice: note.voice,
+                destination: note.destination,
                 controls,
                 length: note.end.saturating_sub(note.start),
                 release: note.release,
+                joins: note.joins.map(|j| j as u32),
+                held: joined.contains(&k),
+                line: lines[k].saturating_sub(note.start),
             },
         ));
     }
+    let mut events: Vec<(u64, Option<usize>, EventLaneEvent)> = notes;
     for message in data.messages {
         let args = message
             .args
@@ -183,15 +220,36 @@ fn parse_events(json: &[u8], zones: Decoder) -> Result<Vec<(u64, EventLaneEvent)
             .collect();
         events.push((
             message.position,
+            None,
             EventLaneEvent::Message(OscMessage {
                 addr: message.addr,
                 args,
             }),
         ));
     }
-    events.extend(midi_events(data.midi, data.ump, zones));
-    events.sort_by_key(|(position, _)| *position);
-    Ok(events)
+    events.extend(
+        midi_events(data.midi, data.ump, zones)
+            .into_iter()
+            .map(|(at, e)| (at, None, e)),
+    );
+    events.sort_by_key(|(position, ..)| *position);
+    // A join named a note by its index in the list; the lane names an event
+    // by its index in position order.
+    let mut at_index: HashMap<usize, u32> = HashMap::new();
+    for (i, (_, note, _)) in events.iter().enumerate() {
+        if let Some(k) = note {
+            at_index.insert(*k, i as u32);
+        }
+    }
+    Ok(events
+        .into_iter()
+        .map(|(position, _, mut event)| {
+            if let EventLaneEvent::Note { joins, .. } = &mut event {
+                *joins = joins.and_then(|k| at_index.get(&(k as usize)).copied());
+            }
+            (position, event)
+        })
+        .collect())
 }
 
 /// **A lane's MIDI messages as its events**, read in position order as the
@@ -490,14 +548,14 @@ fn ahead(
     }
 }
 
-/// **A lane's note on a node that reads notes**: its note-on and note-off,
-/// from the lane's `source`, its identity the event's index. The controls a
-/// note on a node carries are its `key`, `velocity` and `channel`.
-fn node_note(
-    controls: &[OscType],
-    source: u128,
-    note_id: i32,
-) -> Result<(BusEvent, BusEvent), String> {
+/// A node note's events and the controls it names.
+type NodeNote = (Vec<BusEvent>, Vec<(String, f64)>);
+
+/// **A lane's note on a node that reads notes**: its note-on, and its
+/// tuning when it has one, from the lane's `source`, its identity the
+/// event's index; and the controls it sets on its voice by name, for the
+/// node to resolve. `key`, `velocity`, `channel` and `tuning` are the note's.
+fn node_note(controls: &[OscType], source: u128, note_id: i32) -> Result<NodeNote, String> {
     let mut on = BusEvent {
         channel: 0,
         key: 60,
@@ -505,12 +563,14 @@ fn node_note(
         value: 1.0,
         ..BusEvent::new(Kind::NoteOn, source)
     };
+    let mut tuning = 0.0;
+    let mut others = Vec::new();
     for pair in controls.as_chunks::<2>().0 {
         let (OscType::String(name), Some(value)) = (
             &pair[0],
             crate::osc::args::float_value(&pair[1]).map(f64::from),
         ) else {
-            return Err("a note on a node carries key, velocity and channel".into());
+            return Err("a note's controls are names and numbers".into());
         };
         match name.as_str() {
             "key" if value.fract() == 0.0 && (0.0..=127.0).contains(&value) => {
@@ -520,16 +580,21 @@ fn node_note(
                 on.channel = value as i16
             }
             "velocity" if (0.0..=1.0).contains(&value) => on.value = value,
+            "tuning" => tuning = value,
             "key" | "channel" | "velocity" => return Err(format!("invalid note {name}")),
-            _ => return Err("a note on a node carries key, velocity and channel".into()),
+            other => others.push((other.to_string(), value)),
         }
     }
-    let off = BusEvent {
-        kind: Kind::NoteOff,
-        value: 0.0,
-        ..on
-    };
-    Ok((on, off))
+    let mut events = vec![on];
+    if tuning != 0.0 {
+        events.push(BusEvent {
+            note_id,
+            index: clausters_core::event_bus::Expression::Tuning as u32,
+            value: tuning,
+            ..BusEvent::new(Kind::Expression, source)
+        });
+    }
+    Ok((events, others))
 }
 
 impl OscServer {
@@ -557,6 +622,7 @@ impl OscServer {
                 generation: 0,
                 queued: HashSet::new(),
                 voices: HashMap::new(),
+                note_nodes: HashMap::new(),
             },
         );
         self.retune_timeout();
@@ -626,6 +692,7 @@ impl OscServer {
         lane.generation = lane.generation.wrapping_add(1);
         lane.queued.clear();
         lane.voices.clear();
+        lane.note_nodes.clear();
         let transport = lane.transport;
         self.handle
             .send(Cmd::ClearLane {
@@ -753,29 +820,53 @@ impl OscServer {
         let note_id = |voice: u32| (voice & 0x7fff_ffff) as i32;
         match event {
             EventLaneEvent::Note {
-                voice,
+                destination,
                 controls,
                 length: held,
                 release: how,
+                joins,
+                held: kept,
+                line,
             } => {
-                if let EventLaneVoice::Plugin { node, .. } = voice {
-                    let (on, off) = node_note(&controls, source, i as i32)?;
-                    if !self
+                if let EventLaneDestination::Node(node) = destination {
+                    let Some(def) = self
                         .translator
                         .node_defs
                         .get(&node)
-                        .is_some_and(|def| def.reads_notes())
-                    {
+                        .filter(|d| d.reads_notes())
+                    else {
                         return Err(format!("node {node} reads no notes"));
+                    };
+                    let (mut on, controls) = node_note(&controls, source, i as i32)?;
+                    on[0].joins = joins.map_or(-1, |j| j as i32);
+                    for (name, value) in controls {
+                        let index = def
+                            .control_index(&name)
+                            .filter(|_| def.takes_note_controls())
+                            .ok_or_else(|| format!("node {node} takes no note control {name:?}"))?;
+                        on.push(BusEvent {
+                            note_id: i as i32,
+                            index,
+                            value,
+                            ..BusEvent::new(Kind::Control, source)
+                        });
                     }
-                    start.push(Cmd::NodeEvent {
-                        id: node,
-                        event: on,
-                    });
-                    release.push(Cmd::NodeEvent {
-                        id: node,
-                        event: off,
-                    });
+                    let off = BusEvent {
+                        kind: Kind::NoteOff,
+                        value: 0.0,
+                        joins: -1,
+                        ..on[0]
+                    };
+                    start.extend(
+                        on.into_iter()
+                            .map(|event| Cmd::NodeEvent { id: node, event }),
+                    );
+                    if !kept {
+                        release.push(Cmd::NodeEvent {
+                            id: node,
+                            event: off,
+                        });
+                    }
                     return Ok(Some(Cmd::EventLaneEntry {
                         transport,
                         tag,
@@ -785,11 +876,21 @@ impl OscServer {
                         release,
                     }));
                 }
-                // A synth, or one more of a graph's slot -- whose group is the
-                // note, released through the slot's `gate` port or freed whole.
-                let message = match voice {
-                    EventLaneVoice::Plugin { .. } => unreachable!("handled above"),
-                    EventLaneVoice::Def(def) => {
+                // A note that joins one this generation made sets that node's
+                // controls instead of starting another: the line goes on.
+                let continued =
+                    joins.and_then(|j| self.lanes.get(&id)?.note_nodes.get(&j).copied());
+                let message = match (continued, destination) {
+                    (Some(node), _) => {
+                        let mut args = vec![OscType::Int(node)];
+                        args.extend(controls);
+                        OscMessage {
+                            addr: "/node_set".into(),
+                            args,
+                        }
+                    }
+                    (None, EventLaneDestination::Node(_)) => unreachable!("handled above"),
+                    (None, EventLaneDestination::Def(def)) => {
                         let mut args = vec![
                             OscType::String(def),
                             OscType::Int(-1),
@@ -802,7 +903,7 @@ impl OscServer {
                             args,
                         }
                     }
-                    EventLaneVoice::Slot { graph, slot } => {
+                    (None, EventLaneDestination::Slot { graph, slot }) => {
                         let mut args =
                             vec![OscType::Int(graph), OscType::String(slot), OscType::Int(-1)];
                         args.extend(controls);
@@ -813,31 +914,40 @@ impl OscServer {
                     }
                 };
                 self.translator.translate(&message, &mut start)?;
-                let Some(node) = start.iter().find_map(|cmd| match cmd {
+                let made = start.iter().find_map(|cmd| match cmd {
                     Cmd::AddSynth { id, .. } | Cmd::AddGroup { id, .. } => Some(*id),
                     _ => None,
-                }) else {
+                });
+                let Some(node) = continued.or(made) else {
                     return Ok(None);
                 };
-                let message = match how {
-                    Release::Gate => OscMessage {
-                        addr: "/node_set".into(),
-                        args: vec![
-                            OscType::Int(node),
-                            OscType::String("gate".into()),
-                            OscType::Float(0.0),
-                        ],
-                    },
-                    Release::Free => OscMessage {
-                        addr: "/node_free".into(),
-                        args: vec![OscType::Int(node)],
-                    },
-                };
-                if let Err(why) = self.translator.translate(&message, &mut release) {
-                    self.forget_unrun(&start);
-                    return Err(why);
+                if let Some(lane) = self.lanes.get_mut(&id) {
+                    lane.note_nodes.insert(i, node);
                 }
-                length = held;
+                // The note that made the node releases it, at the line's end;
+                // one that continued a node leaves it to its maker.
+                if continued.is_none() {
+                    let message = match how {
+                        Release::Gate => OscMessage {
+                            addr: "/node_set".into(),
+                            args: vec![
+                                OscType::Int(node),
+                                OscType::String("gate".into()),
+                                OscType::Float(0.0),
+                            ],
+                        },
+                        Release::Free => OscMessage {
+                            addr: "/node_free".into(),
+                            args: vec![OscType::Int(node)],
+                        },
+                    };
+                    if let Err(why) = self.translator.translate(&message, &mut release) {
+                        self.forget_unrun(&start);
+                        return Err(why);
+                    }
+                }
+                // A note alone is its own line.
+                length = line;
             }
             EventLaneEvent::Message(message) => {
                 #[cfg(all(
