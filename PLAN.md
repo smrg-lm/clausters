@@ -2424,6 +2424,16 @@ Further formats/platforms are checkbox entries under Future directions. Document
 
 ## Future directions (a design that is not a fix)
 
+- ⬜ **A measured bound on what one block drains** *(named 2026-10-15, by the
+  first audit)*. `Engine::drain_commands` applies every command in the FIFO at
+  the start of a block, and the network thread can refill it while it does, so
+  the FIFO's capacity bounds what is queued at once and not the work one block
+  takes. It is scsynth's model, the producer is far slower than the drain, and
+  no late block has been traced to it. Capping the commands per block would
+  delay immediate commands to later blocks, which changes their timing, so the
+  first step is a measurement: sustained command production against the CPU
+  meter's late-block count. A policy is designed only if that shows a cost.
+
 - ⬜ **Per-output and intra-SynthDef latency** — general server compensation
   consumes one declared latency per opaque synth and aligns its bus paths.
   A serial SynthDef chain reports the sum of its intrinsic UGen latencies;
@@ -2924,6 +2934,20 @@ where it came from).
 - ⬜ **Third-party plugin formats and native platforms after the Linux reference host** *(named 2026-10-13 with the J track)*. J1-J9 deliver CLAP and VST3 on Linux. LV2, Audio Units and native hosting/editor packaging on macOS and Windows remain possible follow-up work, using the same format interface and client surface. Audio Units are platform-specific. Do not add a second client-side hosting implementation or treat a native editor running on the server as an editor running in a browser. The in-page engine question is recorded in `clients/web/PLAN.md`, **"Native plugins and the in-page engine"**.
 
 ## Found by use: the running list of fixes
+
+- ⬜ **The embedded engine runs without the SIGXCPU guard** *(found
+  2026-10-15, by the first audit: the Python suite's embed tests were killed by
+  SIGXCPU in the PipeWire callback, on a debug build sharing ten CPUs with
+  other compilations, and not on an ordinary machine)*. RTKit grants the audio
+  thread real-time scheduling under `RLIMIT_RTTIME`, and the binary arms
+  `server::rt::install_sigxcpu_guard` so a thread past that budget is demoted
+  instead of killed (M24). The guard is a process-wide signal disposition, so
+  the library never installs it, and an embedded engine (the Python and FFI
+  embed, a GUI host's standalone server) runs under the same watchdog with the
+  default disposition: an overloaded process dies with a core dump. What is
+  open is whether the embed offers the guard to its host (an opt-in the
+  process owner calls, since a library must not take a signal from it), and a
+  run that confirms the guard is what the audit's process lacked.
 
 - ⬜ **Every stored plugin def is probed again at boot, before the server
   answers** *(found 2026-10-14, running the plugin examples against the default
