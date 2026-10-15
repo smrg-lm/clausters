@@ -232,6 +232,12 @@ on trust, so that is where drift accumulates:
   runs them in every browser the suite knows, and that pass is **required
   before a release and run on request otherwise** -- never as part of a
   feature's ordinary testing, since it repeats the slowest half of the suite.
+- **A test CI runs opens no window.** CI has no display and gets none (no
+  `xvfb-run`): a test that has to open a native window -- a plugin editor, a
+  host window -- is `#[ignore = "opens a native window; run by hand with
+  --ignored"]`, beside a headless test of whatever it can check without one,
+  and is run by hand on a display (`cargo test ... -- --ignored`) when the
+  code it covers changes.
 - **CI does not lint everything.** It skips the def-family feature matrix and
   never builds the docs, so between a push and a tag rustdoc's lints are watched
   by nothing: `.agents/skills/feature-matrix/check.sh`. A release runs the whole

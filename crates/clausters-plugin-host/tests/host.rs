@@ -576,30 +576,40 @@ fn producer_hot_path_can_run_with_all_syscalls_trapped() {
     unsafe { std::alloc::dealloc(memory, layout) };
 }
 
+/// The X11 editor fixture, compiled once per test process.
+fn editor_fixture() -> &'static Path {
+    static EDITOR: OnceLock<PathBuf> = OnceLock::new();
+    EDITOR.get_or_init(|| {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let path = fixtures().join("editor.clap");
+        let compiled = Command::new("cc")
+            .args([
+                "-std=c11", "-O2", "-fPIC", "-shared", "-Wall", "-Wextra", "-Werror", "-I",
+            ])
+            .arg(root.join("../../third_party/clap/include"))
+            .arg(root.join("tests/fixtures/editor.c"))
+            .arg("-o")
+            .arg(&path)
+            .arg("-lX11")
+            .output()
+            .unwrap();
+        assert!(
+            compiled.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        path
+    })
+}
+
+/// What CI checks of an editor, with no window: the capability is reported
+/// and an instance starts with its editor closed.
 #[test]
-fn native_editor_reopens_resizes_and_emits_edits_while_audio_runs() {
+fn native_editor_is_reported_and_starts_closed() {
     use clausters_plugin_host::format::EditorCommand;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let path = fixtures().join("editor.clap");
-    let compiled = Command::new("cc")
-        .args([
-            "-std=c11", "-O2", "-fPIC", "-shared", "-Wall", "-Wextra", "-Werror", "-I",
-        ])
-        .arg(root.join("../../third_party/clap/include"))
-        .arg(root.join("tests/fixtures/editor.c"))
-        .arg("-o")
-        .arg(&path)
-        .arg("-lX11")
-        .output()
-        .unwrap();
-    assert!(
-        compiled.status.success(),
-        "{}",
-        String::from_utf8_lossy(&compiled.stderr)
-    );
     let mut instance = Instance::load(
         helper(),
-        &path,
+        editor_fixture(),
         "org.clausters.fixture.gain",
         config(false),
         Duration::from_secs(2),
@@ -607,10 +617,27 @@ fn native_editor_reopens_resizes_and_emits_edits_while_audio_runs() {
     .unwrap();
     assert!(instance.metadata().editor);
     assert!(!instance.editor(EditorCommand::Query).unwrap().open);
-    if std::env::var_os("DISPLAY").is_none() {
-        assert!(instance.editor(EditorCommand::Open).is_err());
-        return;
-    }
+}
+
+#[test]
+#[ignore = "opens a native window; run by hand with --ignored"]
+fn native_editor_reopens_resizes_and_emits_edits_while_audio_runs() {
+    use clausters_plugin_host::format::EditorCommand;
+    let path = editor_fixture();
+    let mut instance = Instance::load(
+        helper(),
+        path,
+        "org.clausters.fixture.gain",
+        config(false),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    assert!(instance.metadata().editor);
+    assert!(!instance.editor(EditorCommand::Query).unwrap().open);
+    assert!(
+        std::env::var_os("DISPLAY").is_some(),
+        "this test opens a window: run it on a display"
+    );
     let mut admin = instance.administration().unwrap();
     let pid = instance.pid();
     let segment = instance.segment_path().to_owned();

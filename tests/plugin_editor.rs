@@ -11,7 +11,9 @@ mod plugin_live;
 #[path = "common/vst3_fixture.rs"]
 mod vst3_fixture;
 use plugin_live::Live;
-fn exercise(format: &str, path: &std::path::Path, identity: &str, channels: u32) {
+/// Without `window`, only what needs no window: the def, the node, the
+/// closed editor's query and argument checks. With it, the editor is opened.
+fn exercise(format: &str, path: &std::path::Path, identity: &str, channels: u32, window: bool) {
     let live = Live::new();
     let reference = serde_json::json!({"format":format,"path":path,"id":identity,
         "inputs":[{"id":0,"channels":channels,"bus":4}],"outputs":[{"id":0,"channels":channels,"bus":0}]});
@@ -60,9 +62,13 @@ fn exercise(format: &str, path: &std::path::Path, identity: &str, channels: u32)
         vec![OscType::Int(42), OscType::Int(0), OscType::Int(200)],
     );
     assert_eq!(live.recv().addr, "/fail");
-    if std::env::var_os("DISPLAY").is_none() {
+    if !window {
         return;
     }
+    assert!(
+        std::env::var_os("DISPLAY").is_some(),
+        "this test opens a window: run it on a display"
+    );
     live.send("/node_run", vec![OscType::Int(42), OscType::Int(0)]);
     live.sync();
     live.send("/server_notify", vec![OscType::Int(1)]);
@@ -121,38 +127,66 @@ fn exercise(format: &str, path: &std::path::Path, identity: &str, channels: u32)
     assert_eq!(live.recv().addr, "/fail");
 }
 #[cfg(feature = "plugin-clap")]
+fn clap_fixture() -> &'static std::path::Path {
+    static FIXTURE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    FIXTURE.get_or_init(|| {
+        let path =
+            std::env::temp_dir().join(format!("clausters-osc-editor-{}.clap", std::process::id()));
+        let result = std::process::Command::new("cc")
+            .args([
+                "-std=c11",
+                "-O2",
+                "-fPIC",
+                "-shared",
+                "-Ithird_party/clap/include",
+                "crates/clausters-plugin-host/tests/fixtures/editor.c",
+                "-o",
+            ])
+            .arg(&path)
+            .arg("-lX11")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        path
+    })
+}
+#[cfg(feature = "plugin-clap")]
 #[test]
-fn clap_editor_controls_and_notifications_share_the_existing_node() {
-    let path =
-        std::env::temp_dir().join(format!("clausters-osc-editor-{}.clap", std::process::id()));
-    let result = std::process::Command::new("cc")
-        .args([
-            "-std=c11",
-            "-O2",
-            "-fPIC",
-            "-shared",
-            "-Ithird_party/clap/include",
-            "crates/clausters-plugin-host/tests/fixtures/editor.c",
-            "-o",
-        ])
-        .arg(&path)
-        .arg("-lX11")
-        .output()
-        .unwrap();
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
+fn clap_editor_is_addressed_through_the_existing_node() {
+    exercise(
+        "clap",
+        clap_fixture(),
+        "org.clausters.fixture.gain",
+        1,
+        false,
     );
-    exercise("clap", &path, "org.clausters.fixture.gain", 1);
+}
+#[cfg(feature = "plugin-clap")]
+#[test]
+#[ignore = "opens a native window; run by hand with --ignored"]
+fn clap_editor_controls_and_notifications_share_the_existing_node() {
+    exercise(
+        "clap",
+        clap_fixture(),
+        "org.clausters.fixture.gain",
+        1,
+        true,
+    );
+}
+#[cfg(feature = "plugin-vst3")]
+const VST3_ID: &str = "6E33225254224A00AA69301AF318797D";
+#[cfg(feature = "plugin-vst3")]
+#[test]
+fn vst3_editor_is_addressed_through_the_existing_node() {
+    exercise("vst3", vst3_fixture::fixture(), VST3_ID, 2, false);
 }
 #[cfg(feature = "plugin-vst3")]
 #[test]
+#[ignore = "opens a native window; run by hand with --ignored"]
 fn vst3_editor_controls_and_notifications_share_the_existing_node() {
-    exercise(
-        "vst3",
-        vst3_fixture::fixture(),
-        "6E33225254224A00AA69301AF318797D",
-        2,
-    );
+    exercise("vst3", vst3_fixture::fixture(), VST3_ID, 2, true);
 }

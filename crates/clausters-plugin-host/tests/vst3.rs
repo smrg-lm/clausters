@@ -283,16 +283,27 @@ fn midi_notes_and_mapped_controllers_keep_offsets_and_queries() {
 #[path = "../src/editor.rs"]
 mod editor;
 
+/// What CI checks of the VST3 editor, with no window.
 #[test]
+fn native_editor_is_reported_and_starts_closed() {
+    use clausters_plugin_host::format::EditorCommand;
+    let mut instance =
+        Instance::load(helper(), fixture(), ID, config(708), Duration::from_secs(2)).unwrap();
+    assert!(instance.metadata().editor);
+    assert!(!instance.editor(EditorCommand::Query).unwrap().open);
+}
+
+#[test]
+#[ignore = "opens a native window; run by hand with --ignored"]
 fn native_editor_runs_linux_timer_and_fd_callbacks_while_processing() {
     use clausters_plugin_host::format::EditorCommand;
     let mut instance =
         Instance::load(helper(), fixture(), ID, config(707), Duration::from_secs(2)).unwrap();
     assert!(!instance.editor(EditorCommand::Query).unwrap().open);
-    if std::env::var_os("DISPLAY").is_none() {
-        assert!(instance.editor(EditorCommand::Open).is_err());
-        return;
-    }
+    assert!(
+        std::env::var_os("DISPLAY").is_some(),
+        "this test opens a window: run it on a display"
+    );
     let mut admin = instance.administration().unwrap();
     let pid = instance.pid();
     let segment = instance.segment_path().to_owned();
