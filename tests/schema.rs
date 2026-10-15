@@ -33,6 +33,8 @@ const NOT_COMMANDS: &[&str] = &[
     "/node_move",
     "/node_off",
     "/node_on",
+    // A native plugin editor's edit, told to every subscriber.
+    "/plugin_edit",
     // The broadcast a peer's write becomes: `/buffer_touch` is the command,
     // this is what every other client is told.
     "/buffer_touched",
