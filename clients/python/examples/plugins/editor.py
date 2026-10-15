@@ -2,15 +2,17 @@
 """A native effect's editor on the server's machine, with a continuous quiet tone.
 
 The installed Linux package includes the CLAP/VST3 helper; in a checkout run
-`scripts/refresh-bin.sh` first. Name the effect by what it is called, as
-`server.plugins()` lists them, and run:
+`scripts/refresh-bin.sh` first. Run it once to list the effects with a native
+editor the server found, then name one by what it is called:
 
+    python clients/python/examples/plugins/editor.py
     PLUGIN="Parametric Equalizer x8 Stereo" \
         python clients/python/examples/plugins/editor.py
 
 The server looks in the standard CLAP and VST3 directories; set `PLUGIN_PATH`
 to a directory or binary elsewhere, and `PLUGIN_FORMAT` (`clap` or `vst3`)
-when the name is installed in both. Choose a mono/stereo effect with an
+when the name is installed in both; the page lists the same effects to
+choose from. Choose a mono/stereo effect with an
 audible default preset and an X11 editor; the parametric equalizer above is
 one. The repository CLAP gain and VST3 fixtures also work, named `gain` and
 `Clausters VST3 fixture` with `PLUGIN_PATH` at the built binary: their editors
@@ -26,17 +28,22 @@ from clausters import PluginDef, Session, Synth, SynthDef
 from clausters.defs import out, sine
 
 NAME = os.environ.get("PLUGIN", "")
-if not NAME:
-    raise ValueError("set PLUGIN to the name of a native effect")
 PATHS = [os.environ["PLUGIN_PATH"]] if os.environ.get("PLUGIN_PATH") else []
 session = Session.live(port=57113).activate()
 server = session.server
 
 # %%
-# The catalog is what the server found installed: the effect is found by its
-# name, and carries its ports, parameters and identity.
-effect = server.plugins(*PATHS, timeout=60.0).find(
-    NAME, format=os.environ.get("PLUGIN_FORMAT"), kind="effect")
+# The catalog is what the server found installed; its effects with a native
+# editor are listed, each named by what it is called and its format.
+catalog = server.plugins(*PATHS, timeout=60.0)
+effects = [plugin for plugin in catalog.effects() if plugin.has_editor]
+if not NAME:
+    for plugin in effects:
+        print(f"{plugin.name} ({plugin.format}, {plugin.vendor})")
+    session.close()
+    raise ValueError("set PLUGIN to one of the effects listed above")
+# The one named carries its ports, parameters and identity.
+effect = catalog.find(NAME, format=os.environ.get("PLUGIN_FORMAT"), kind="effect")
 if not effect.has_editor:
     raise ValueError("choose an effect with a native X11 editor")
 # Its main input reads bus 4, where the tones are; its main output is bus 0.

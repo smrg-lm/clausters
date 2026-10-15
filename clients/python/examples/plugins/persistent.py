@@ -2,14 +2,17 @@
 """One persistent native instrument, live notes and a server-owned event lane.
 
 The installed Linux package includes the CLAP/VST3 helper; in a checkout run
-`scripts/refresh-bin.sh` first. Name an installed instrument by what it is
-called, as `server.plugins()` lists them, and run:
+`scripts/refresh-bin.sh` first. Run it once to list the instruments with a
+native note-expression port the server found, then name one by what it is
+called:
 
+    python clients/python/examples/plugins/persistent.py
     PLUGIN="Surge XT" python clients/python/examples/plugins/persistent.py
 
 The server looks in the standard CLAP and VST3 directories; set `PLUGIN_PATH`
 to a directory or binary elsewhere, and `PLUGIN_FORMAT` (`clap` or `vst3`)
-when the name is installed in both. It needs an instrument with a native
+when the name is installed in both. The page lists the same instruments to
+choose from. It needs an instrument with a native
 note-expression port and an audible initial preset; an effects collection has
 none. A sampler also needs samples in its initial state. The numeric
 repository fixture can verify events but is not a musical preset. This is a
@@ -22,8 +25,6 @@ import sys
 from clausters import Group, PluginDef, Routine, Session, Synth
 
 NAME = os.environ.get("PLUGIN", "")
-if not NAME:
-    raise ValueError("set PLUGIN to the name of a native instrument")
 PATHS = [os.environ["PLUGIN_PATH"]] if os.environ.get("PLUGIN_PATH") else []
 
 session = Session.live(port=57113).activate()
@@ -31,10 +32,19 @@ session.clock.set_tempo(2.0)
 server = session.server
 
 # %%
-# The catalog is what the server found installed: the instrument is found by
-# its name, and carries its ports, parameters and identity.
-keys = server.plugins(*PATHS, timeout=60.0).find(
-    NAME, format=os.environ.get("PLUGIN_FORMAT"), kind="instrument")
+# The catalog is what the server found installed; its instruments with a
+# native note-expression port are listed, each named by what it is called and
+# its format.
+catalog = server.plugins(*PATHS, timeout=60.0)
+instruments = [plugin for plugin in catalog.instruments()
+               if plugin.note_inputs and plugin.note_inputs[0]["dialects"] & 1]
+if not NAME:
+    for plugin in instruments:
+        print(f"{plugin.name} ({plugin.format}, {plugin.vendor})")
+    session.close()
+    raise ValueError("set PLUGIN to one of the instruments listed above")
+# The one named carries its ports, parameters and identity.
+keys = catalog.find(NAME, format=os.environ.get("PLUGIN_FORMAT"), kind="instrument")
 if not keys.note_inputs or not keys.note_inputs[0]["dialects"] & 1:
     raise ValueError("choose an instrument with a native note-expression port")
 # Its main output is bus 0. A tmp_ name keeps the def out of the data

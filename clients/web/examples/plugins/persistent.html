@@ -6,33 +6,54 @@ Start a native server built with plugin-clap,plugin-vst3, its matching helper
 beside it (the Linux package and scripts/refresh-bin.sh both provide that
 pair), with --ws 57112; build the web package and serve this tree over HTTP.
 This page attaches to that server; a page cannot boot a native process
-(Python can). Name an installed CLAP or VST3 instrument by what it is
-called, as server.plugins() lists them; the server looks in the standard
-CLAP and VST3 directories, or in the directory or binary given, and the
-format says which when the name is in both. It needs a native
-note-expression port and an audible initial preset, such as Surge XT; an
-effects collection has none. Samplers need samples in their initial state.
+(Python can). List the plugins: the server looks in the standard CLAP and
+VST3 directories, or in the directory or binary given, and the list holds the
+instruments it found with a native note-expression port; an effects
+collection has none. Choose one with an audible initial preset, such as
+Surge XT.
+Samplers need samples in their initial state.
 -->
 <label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
-<label>Plugin name <input id="name" placeholder="Surge XT"></label><br>
-<label>Directory or binary on server (optional) <input id="path"></label><br>
-<label>Format (optional) <input id="format" placeholder="clap or vst3"></label><br>
-<button id="play">Play</button><pre id="log"></pre>
+<label>Directory or binary on server (optional) <input id="path"></label>
+<button id="list">List plugins</button><br>
+<label>Instrument <select id="plugin"></select></label><br>
+<button id="play" disabled>Play</button><pre id="log"></pre>
 <script type="module">
 import { Group, PluginDef, Routine, Session, Synth } from "../../dist/index.js";
 const $ = (id) => document.getElementById(id);
-$("play").onclick = async () => {
-    let session, voice, governed;
+const smoke = new URLSearchParams(location.search).has("smoke");
+let session = null, catalog = null;
+async function finish() {
+    if (session) await session.close();
+    session = null; catalog = null;
+    $("plugin").replaceChildren(); $("play").disabled = true;
+}
+$("list").onclick = async () => {
     try {
-        $("play").disabled = true;
+        $("list").disabled = true;
+        await finish();
         session = (await Session.live($("url").value)).activate();
         session.clock.setTempo(2.0);
-        const server = session.server;
-        // The catalog is what the server found installed: the instrument is found
-        // by its name, and carries its ports, parameters and identity.
+        // The catalog is what the server found installed; its instruments with a
+        // native note-expression port fill the list, each named by what it is
+        // called and its format.
         const paths = $("path").value ? [$("path").value] : [];
-        const keys = (await server.plugins(paths, { timeout: 60.0 })).find(
-            $("name").value, { format: $("format").value || undefined, kind: "instrument" });
+        catalog = await session.server.plugins(paths, { timeout: 60.0 });
+        const instruments = catalog.instruments().filter((p) => p.noteInputs.length && p.noteInputs[0].dialects & 1);
+        $("plugin").replaceChildren(...instruments.map((p) =>
+            new Option(`${p.name} (${p.format}, ${p.vendor})`, JSON.stringify({ name: p.name, format: p.format }))));
+        $("play").disabled = !instruments.length;
+        $("log").textContent = `${instruments.length} instruments with note expression found.`;
+    } catch (error) { $("log").textContent = String(error); await finish(); }
+    finally { $("list").disabled = false; }
+};
+$("play").onclick = async () => {
+    let voice, governed;
+    try {
+        $("play").disabled = true; $("list").disabled = true;
+        const server = session.server;
+        const { name, format } = JSON.parse($("plugin").value);
+        const keys = catalog.find(name, { format, kind: "instrument" });
         if (!keys.noteInputs.length || !(keys.noteInputs[0].dialects & 1)) throw new Error("choose an instrument with a native note-expression port");
         // Its main output is bus 0. A tmp_ name keeps the def out of the data
         // directory: a stored plugin def is probed again on every boot, and this
@@ -65,18 +86,21 @@ $("play").onclick = async () => {
         if ((await server.status()).synths !== 1) throw new Error("notes must share one persistent instance");
         await server.transportStop();
         await server.laneFree(3100);
-        voice.free(); governed.free(); await session.close(); session = null;
+        voice.free(); governed.free(); await finish();
         $("log").textContent = "Played live notes and lane notes on one persistent instance.";
-        if (new URLSearchParams(location.search).has("smoke")) await fetch("/smoke-verdict-PASS-persistent-plugin");
-    } catch (error) { $("log").textContent = String(error); if (new URLSearchParams(location.search).has("smoke")) await fetch(`/smoke-verdict-FAIL-${encodeURIComponent(String(error))}`); }
-    finally { if (session) await session.close(); $("play").disabled = false; }
+        if (smoke) await fetch("/smoke-verdict-PASS-persistent-plugin");
+    } catch (error) {
+        $("log").textContent = String(error); await finish();
+        if (smoke) await fetch(`/smoke-verdict-FAIL-${encodeURIComponent(String(error))}`);
+    } finally { $("list").disabled = false; }
 };
-const params = new URLSearchParams(location.search);
-if (params.has("smoke")) {
+if (smoke) {
+    const params = new URLSearchParams(location.search);
     $("url").value = params.get("url") ?? $("url").value;
-    $("name").value = params.get("name") ?? "";
     $("path").value = params.get("path") ?? "";
-    $("format").value = params.get("format") ?? "";
+    await $("list").onclick();
+    const wanted = [...$("plugin").options].find((o) => JSON.parse(o.value).name === params.get("name"));
+    if (wanted) $("plugin").value = wanted.value;
     $("play").click();
 }
 </script></html>

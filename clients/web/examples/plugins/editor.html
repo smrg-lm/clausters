@@ -5,35 +5,56 @@ Same calls, names and tones as clients/python/examples/plugins/editor.py.
 Build the web package and serve this tree. Start a native server with
 --ws 57112 and plugin-clap,plugin-vst3, with its matching helper beside it.
 Python boots that process; a page attaches to one started separately.
-Name the effect by what it is called, as server.plugins() lists them; the
-server looks in the standard CLAP and VST3 directories, or in the directory
-or binary given, and the format says which when the name is in both.
-Choose a mono/stereo effect with an audible preset and an X11 editor, such as
-"Parametric Equalizer x8 Stereo". The repository CLAP gain and VST3 fixtures
-also work. Edit the native window on the server's machine while the quiet
-tones play; Finish closes the session.
+List the plugins: the server looks in the standard CLAP and VST3
+directories, or in the directory or binary given, and the list holds the
+effects it found that have a native editor. Choose a mono/stereo effect with
+an audible preset and an X11 editor, such as "Parametric Equalizer x8
+Stereo". The repository CLAP gain and VST3 fixtures also work. Edit the
+native window on the server's machine while the quiet tones play; Finish
+closes the session.
 -->
 <label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
-<label>Plugin name <input id="name" placeholder="Parametric Equalizer x8 Stereo"></label><br>
-<label>Directory or binary on server (optional) <input id="path"></label><br>
-<label>Format (optional) <input id="format" placeholder="clap or vst3"></label><br>
-<button id="open">Open editor</button><button id="finish" disabled>Finish</button>
+<label>Directory or binary on server (optional) <input id="path"></label>
+<button id="list">List plugins</button><br>
+<label>Effect <select id="plugin"></select></label><br>
+<button id="open" disabled>Open editor</button><button id="finish" disabled>Finish</button>
 <pre id="log"></pre>
 <script type="module">
 import { PluginDef, Session, Synth, SynthDef, defs } from "../../dist/index.js";
 const { out, sine } = defs;
 const $ = (id) => document.getElementById(id);
-$("open").onclick = async () => {
-    let session, source, voice;
+const smoke = new URLSearchParams(location.search).has("smoke");
+let session = null, catalog = null;
+async function finish() {
+    if (session) await session.close();
+    session = null; catalog = null;
+    $("plugin").replaceChildren(); $("open").disabled = true; $("finish").disabled = true;
+}
+$("list").onclick = async () => {
     try {
-        $("open").disabled = true;
+        $("list").disabled = true;
+        await finish();
         session = (await Session.live($("url").value)).activate();
-        const server = session.server;
-        // The catalog is what the server found installed: the effect is found by
-        // its name, and carries its ports, parameters and identity.
+        // The catalog is what the server found installed; its effects with a
+        // native editor fill the list, each named by what it is called and its format.
         const paths = $("path").value ? [$("path").value] : [];
-        const effect = (await server.plugins(paths, { timeout: 60.0 })).find(
-            $("name").value, { format: $("format").value || undefined, kind: "effect" });
+        catalog = await session.server.plugins(paths, { timeout: 60.0 });
+        const effects = catalog.effects().filter((p) => p.hasEditor);
+        $("plugin").replaceChildren(...effects.map((p) =>
+            new Option(`${p.name} (${p.format}, ${p.vendor})`, JSON.stringify({ name: p.name, format: p.format }))));
+        $("open").disabled = !effects.length;
+        $("log").textContent = `${effects.length} effects with an editor found.`;
+    } catch (error) { $("log").textContent = String(error); await finish(); }
+    finally { $("list").disabled = false; }
+};
+$("open").onclick = async () => {
+    let source, voice;
+    try {
+        $("open").disabled = true; $("list").disabled = true;
+        const server = session.server;
+        // The one chosen carries its ports, parameters and identity.
+        const { name, format } = JSON.parse($("plugin").value);
+        const effect = catalog.find(name, { format, kind: "effect" });
         if (!effect.hasEditor) throw new Error("choose an effect with a native X11 editor");
         // Its main input reads bus 4, where the tones are; its main output is bus 0.
         // A tmp_ name keeps the def out of the data directory: a stored plugin def
@@ -50,20 +71,21 @@ $("open").onclick = async () => {
         $("finish").disabled = false;
         await new Promise((resolve) => { $("finish").onclick = resolve; });
         await voice.closePluginEditor();
-        voice.free(); source.free(); await session.close(); session = null;
+        voice.free(); source.free(); await finish();
         $("log").textContent = "Native editor closed; session finished.";
-        if (new URLSearchParams(location.search).has("smoke")) await fetch("/smoke-verdict-PASS-plugin-editor");
+        if (smoke) await fetch("/smoke-verdict-PASS-plugin-editor");
     } catch (error) {
-        $("log").textContent = String(error);
-        if (new URLSearchParams(location.search).has("smoke")) await fetch(`/smoke-verdict-FAIL-${encodeURIComponent(String(error))}`);
-    } finally { if (session) await session.close(); $("open").disabled = false; $("finish").disabled = true; }
+        $("log").textContent = String(error); await finish();
+        if (smoke) await fetch(`/smoke-verdict-FAIL-${encodeURIComponent(String(error))}`);
+    } finally { $("list").disabled = false; }
 };
-const params = new URLSearchParams(location.search);
-if (params.has("smoke")) {
+if (smoke) {
+    const params = new URLSearchParams(location.search);
     $("url").value = params.get("url") ?? $("url").value;
-    $("name").value = params.get("name") ?? "";
     $("path").value = params.get("path") ?? "";
-    $("format").value = params.get("format") ?? "";
+    await $("list").onclick();
+    const wanted = [...$("plugin").options].find((o) => JSON.parse(o.value).name === params.get("name"));
+    if (wanted) $("plugin").value = wanted.value;
     $("open").click();
 }
 </script></html>
