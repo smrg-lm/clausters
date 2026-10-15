@@ -264,7 +264,7 @@ fn a_node_event_plays_as_one_read_from_the_bus_and_sources_own_their_notes() {
 }
 
 #[test]
-fn a_joined_note_retunes_the_held_one_on_a_native_port() {
+fn a_joined_note_is_a_new_note_overlapping_the_held_one_or_the_held_one_on_its_key() {
     let mut t = translator();
     let (mut engine, mut handle) = engine();
     send(&mut handle, keys(&mut t, 42, 2));
@@ -281,18 +281,36 @@ fn a_joined_note_retunes_the_held_one_on_a_native_port() {
             ),
         ),
     );
-    // One note, four semitones up: its tuning adds 4 * 0.01.
+    // Another key is a new note, not a retuning: the held one ends as it
+    // starts, so one note sounds, with no tuning.
     let joined = blocks(&mut engine, &mut handle, 8);
     assert!(
-        close(*joined.last().unwrap(), 0.5 + 0.04 + BASE),
+        close(*joined.last().unwrap(), 0.5 + BASE),
         "{}",
         joined.last().unwrap()
+    );
+    // The same key is a tie: the held note goes on as the joining one.
+    send(
+        &mut handle,
+        translate(
+            &mut t,
+            bus_event(
+                2,
+                json!({"kind": "note_on", "key": 64, "note_id": 3, "joins": 2, "velocity": 0.25}),
+            ),
+        ),
+    );
+    let tied = blocks(&mut engine, &mut handle, 8);
+    assert!(
+        close(*tied.last().unwrap(), 0.5 + BASE),
+        "kept, not re-attacked: {}",
+        tied.last().unwrap()
     );
     send(
         &mut handle,
         translate(
             &mut t,
-            bus_event(2, json!({"kind": "note_off", "note_id": 2})),
+            bus_event(2, json!({"kind": "note_off", "note_id": 3})),
         ),
     );
     let ended = blocks(&mut engine, &mut handle, 8);

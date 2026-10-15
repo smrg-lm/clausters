@@ -133,7 +133,8 @@ def pvoice(inval, instrument, *args, artic=False, voice=None, **patterns):
     gated envelope wants as it does under `pbind`, else by freeing the node,
     which cuts the sound; on an ``instrument`` that is a node (a
     `clausters.defs.Voices` node, a plugin's), each joined note-on joins the
-    note before it, which keeps its voice; on MIDI, notes that overlap;
+    note before it -- a ``Voices`` node moves its voice to the new pitch, a
+    plugin gets the new note overlapping the old one; on MIDI, notes that overlap;
     rendered into an `clausters.seq.EventSequence`, a ``tie`` where a joined
     note keeps its pitch and a slur over each run that moves, and ``joins``
     on each joined note, naming the one it goes on from. What varies inside one note is

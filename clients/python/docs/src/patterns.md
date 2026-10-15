@@ -117,7 +117,7 @@ With `artic`, a note joins the next while `legato >= 1` and the next one re-atta
 **The articulation is one datum, and each destination realizes it in its own terms.** The data is the notes and their `legato`; what a join *becomes* is the instrument's:
 
 - **on the server**, the voice holds one node: the first note starts a synth, each joined note sets that synth's controls instead of starting another, and only the last releases it — so a control with a lag glides, and nothing re-attacks;
-- **on a node** — an `instrument` that is a `Voices` node or a plugin's (below) — each joined note-on joins the note before it, which keeps its voice and moves to the new pitch;
+- **on a node** — an `instrument` that is a `Voices` node or a plugin's (below) — each joined note-on joins the note before it: a `Voices` node moves the voice it holds to the new pitch, and a plugin gets the new note before the old one ends, which it plays as it plays overlapping notes;
 - **on MIDI**, joined notes overlap, which a synthesizer in mono mode plays legato;
 - **on a page**, rendered into an `EventSequence`, a joined note that keeps its pitch is a **tie** and a run of joined notes that moves is a **slur**, from its first note to the one that articulates.
 

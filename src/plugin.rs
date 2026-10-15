@@ -870,10 +870,13 @@ impl PluginSynth {
         self.plugin_event(e.source, event);
     }
 
-    /// A note-on that continues the note `e.joins` of its source: a native
-    /// port retunes the note it holds to the new key, a MIDI port overlaps
-    /// the new key and ends the old one -- the legato each dialect can say.
-    /// False when the source holds no such note, which then starts as any.
+    /// A note-on that continues the note `e.joins` of its source. On the
+    /// same key the held note goes on as the new one (a tie); on another key
+    /// the new note sounds before the old one ends -- legato, which the plugin
+    /// plays as it plays overlapping notes (a mono synth glides). A change of
+    /// key is a new note in every dialect, never a retuning of the held one:
+    /// a retuning is an inflection, and a join is an articulation. False when
+    /// the source holds no such note, which then starts as any.
     fn join(&mut self, port: i16, e: &BusEvent) -> bool {
         let Some(i) = self.notes.iter().position(|n| {
             n.is_some_and(|n| n.source == e.source && n.id == e.joins && n.port == port)
@@ -881,22 +884,9 @@ impl PluginSynth {
             return false;
         };
         let held = self.notes[i].expect("found above");
-        if self.dialects[port as usize] & 1 != 0 || held.key == e.key {
+        if held.key == e.key {
             if let Some(note) = self.notes[i].as_mut() {
                 note.id = e.note_id;
-            }
-            if held.key != e.key {
-                self.emit(Event {
-                    offset: e.offset,
-                    kind: EventKind::Expression as u32,
-                    id: Expression::Tuning as u32,
-                    note_id: held.native,
-                    port,
-                    channel: held.channel,
-                    key: held.key,
-                    value: f64::from(e.key - held.key),
-                    ..Event::default()
-                });
             }
             return true;
         }
