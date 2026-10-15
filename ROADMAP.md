@@ -295,13 +295,6 @@ its plan; the plan is where its acceptance is read.
   conversion is private to the notes editor (`ppar` and `pvoice`, the
   pattern-side question, shipped with `C73e`).
 
-- ⬜ **The J track — third-party plugins, out of process**, `J9`
-  *(root `PLAN.md`, "J track — third-party plugins: a `plugin` def family, out
-  of process")*. **J9 — The plugin's own window and packaging** remains: the
-  Python examples have been heard and seen; the paired pages by ear and eye
-  and the feature matrix are left. Its decisions and acceptance live in the
-  root plan.
-
 - ⬜ **The V track — the host seen and driven by a script**, `V1`-`V5`
   *(`clients/gui/PLAN.md`, "V track — development: the host seen and driven
   by a script")*. A development track: `/gui_capture` and `/gui_pointer`, so
