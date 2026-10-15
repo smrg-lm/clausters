@@ -318,9 +318,9 @@ export interface InitOutput {
     readonly webserver_takeDelegated: (a: number) => [number, number];
     readonly webserver_takeFaustJobs: (a: number) => [number, number];
     readonly webserver_writeChunk: (a: number, b: number, c: number) => [number, number];
-    readonly last_render_seed: () => bigint;
-    readonly last_render_events: () => number;
     readonly abi_version: () => number;
+    readonly last_render_events: () => number;
+    readonly last_render_seed: () => bigint;
     readonly _abs: (a: number) => number;
     readonly _acos: (a: number) => number;
     readonly _acosf: (a: number) => number;
