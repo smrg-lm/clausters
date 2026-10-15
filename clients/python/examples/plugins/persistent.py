@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""One persistent native instrument, live notes and a server-owned event lane.
+"""One persistent native instrument, live notes, a pattern and a server-owned
+event lane.
+
+The instrument is one node; the lane, the live notes and a pattern whose
+`Event`s name that node as their ``instrument`` all play it, and none of them
+makes a node of its own.
 
 The installed Linux package includes the CLAP/VST3 helper; in a checkout run
 `scripts/refresh-bin.sh` first. Run it once to list the instruments with a
@@ -23,6 +28,7 @@ boot a native process; the page attaches to one started separately.
 import os
 import sys
 from clausters import Group, PluginDef, Routine, Session, Synth
+from clausters.seq import pbind, pseq
 
 NAME = os.environ.get("PLUGIN", "")
 PATHS = [os.environ["PLUGIN_PATH"]] if os.environ.get("PLUGIN_PATH") else []
@@ -43,10 +49,12 @@ if not NAME:
         print(f"{plugin.name} ({plugin.format}, {plugin.vendor})")
     session.close()
     raise ValueError("set PLUGIN to one of the instruments listed above")
+
 # The one named carries its ports, parameters and identity.
 keys = catalog.find(NAME, format=os.environ.get("PLUGIN_FORMAT"), kind="instrument")
 if not keys.note_inputs or not keys.note_inputs[0]["dialects"] & 1:
     raise ValueError("choose an instrument with a native note-expression port")
+
 # Its main output is bus 0. A tmp_ name keeps the def out of the data
 # directory: a stored plugin def is probed again on every boot, and this one
 # means nothing to a later session.
@@ -87,6 +95,11 @@ def phrase():
 Routine(phrase).play()
 
 # %%
+# A pattern plays the same node: each event names it as its instrument, so
+# each note is a note of the plugin, not a synth.
+pbind(instrument=voice, midinote=pseq([72, 74, 76, 79]), dur=0.5, amp=0.15).play()
+
+# %%
 def finish():
     server.transport_stop()
     server.lane_free(3100)
@@ -97,7 +110,7 @@ def finish():
 
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        session.run(3.0)
+        session.run(4.0)
         assert server.status().synths == 1, "notes must share one persistent instance"
     finally:
         finish()

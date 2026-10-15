@@ -234,13 +234,10 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`J11`-`J12` — notes routed like audio, and a node's generic editor**
-  *(`PLAN.md`, "J track")*. Both are written against `J10`'s catalog and
-  controls named by port. `J11` adds event buses, the persistent `Voices` node
-  and `Event` addressing a node, and settles what "voice" means against
-  `pvoice` and the event sequence. `J12` draws an editor for any node in the
-  host (`edit(node)`), with values read back from the server; it does not
-  depend on `J11`.
+- ⬜ **`J12` — a node's generic editor** *(`PLAN.md`, "J track")*. Written
+  against `J10`'s catalog and controls named by port: it draws an editor for
+  any node in the host (`edit(node)`), with values read back from the
+  server.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

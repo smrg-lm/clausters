@@ -61,7 +61,7 @@ Inside a `pbind` each key's pattern receives the event being built: `seq.pkey("d
 
 **Articulation and inflection** are two different things. An articulation is how distinct notes relate — legato, detached, a tie, a slur; an inflection is a variation inside one note — its bend, its pressure — and belongs to the note as its `expression`. A change of note is an articulation even in MPE, where a note keeps its note-on and is inflected by its bend.
 
-`seq.pvoice(instrument, bindings, { artic })` is the pattern of articulation: notes of one voice, each note's `legato` saying how it goes on to the next (with `artic`, it joins while `legato >= 1`; without, always; a rest breaks the line). The join is one datum that each destination realizes: on the server one node held across the joined notes and set by each, on MIDI overlapping notes, and rendered into an `EventSequence` a `tie` where a joined note keeps its pitch and a slur over each run that moves — the sequence keeps both the `legato` and the page's marks.
+`seq.pvoice(instrument, bindings, { artic })` is the pattern of articulation: notes of one voice, each note's `legato` saying how it goes on to the next (with `artic`, it joins while `legato >= 1`; without, always; a rest breaks the line). The join is one datum that each destination realizes: on the server one node held across the joined notes and set by each, on a node (a `Voices` node or a plugin's) each joined note-on joining the note before it, which keeps its voice, on MIDI overlapping notes, and rendered into an `EventSequence` a `tie` where a joined note keeps its pitch and a slur over each run that moves — the sequence keeps the `legato`, the page's marks and each joined note's `joins`, so played on the server it is the same held line.
 
 ```js
 const line = seq.pvoice(
@@ -71,6 +71,17 @@ const line = seq.pvoice(
 );
 const data = (await line.renderEvents()).data(); // a tie on the first 64, a slur from 1 to 4
 ```
+
+## An instrument that is a node
+
+An event's `instrument` is a def's name — a synth of that def per note — or **a node**: a `Voices` node, which holds N voices of one def and gives them to notes, or a plugin's node, which plays its own. A note on a node makes no node; it is given to that node, identified by a note id the server handle writes on the event (`noteId`), and its end is that note's note-off:
+
+```js
+const keys = new Voices("default", 8);                        // eight voices, one node
+seq.pbind({ instrument: keys, midinote: seq.pseq([72, 76, 79]), dur: 0.25 }).play();
+```
+
+Every other number the event holds is a control of the note's own voice. A node reads its notes from an **event bus** too — its `notes` control names one, as `in` names an audio bus — so the same instrument plays from MIDI (`Server.midiBind` routes a channel to a bus) and from `Server.busEvent` alike. A note on a node carries no curves. `examples/basics/voices.html` plays one `Voices` node from MIDI, a pattern, a `pvoice` line and the client.
 
 ## Writing a pattern
 

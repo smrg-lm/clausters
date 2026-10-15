@@ -10223,3 +10223,51 @@ order, object identities, routing controls/maps, usage and declarations against 
 command mirror from compensating a different graph. Manual, dynamic and
 feedback frontiers remain explicit rather than receiving guessed timing;
 authored musical delays remain outside the intrinsic-latency contract.
+
+## Notes are routed like audio: event buses and the `Voices` node (2026-10-15)
+
+*Decided with the user, 2026-10-14.* Notes reached a plugin by three paths --
+a live MIDI binding, an event lane and the client's `plugin_event` -- and each
+decided on its own what kind of instrument received them. A binding could only
+make an instance of its own, never play a node that already existed, and the
+client's `Event` built `/synth_new` itself, so a pattern could not play a
+plugin. The target was scsynth's simplicity: buses of a few kinds, and every
+node reads and writes the buses its controls name.
+
+So notes got a **bus kind of their own**. An event bus is written by whatever
+is not a node (the MIDI input, a lane, a client) and read by nodes with a
+`notes` control, so a MIDI binding is routing and no longer chooses the
+instrument. The events keep their source, which is what lets a stop, a lane
+replacement or a free release only its own notes when several writers share
+one bus. All buses share one fixed list of events a block, allocated at boot:
+a bus is a number, not a buffer, and a quiet bus costs nothing.
+
+**A note never makes a node.** The alternative -- a synth per note on the
+event path, as MIDI did -- needs the network thread to allocate and the tree
+to change on every note, and it gives a plugin and a def two different
+models. A `Voices` node holds its voices from the moment it is built and gives
+them to notes on the audio thread, the way a plugin plays its own; what it
+needed was for a voice to start over without being rebuilt, so every UGen
+gained a `reset` on its own memory and a Faust instance is cleared. Random
+streams continue across a reset (a voice's noise is not the previous note's
+noise again) and pool delay lines and disk streams are not reset, which is why
+a def with `DiskIn`/`DiskOut` cannot be a voice. `/synth_new` per note stays
+for whoever wants it, as in scsynth.
+
+Three choices that are not obvious from the code:
+
+- **The binding's half.** An instrument binding still makes its node -- a
+  `Voices` node of 16 voices, or a plugin's node -- on a bus of its own from
+  the top half of the event buses; a client allocates from the bottom half
+  (`clausters_core::ids::binding_event_reserved`). A GraphDef binding keeps a
+  voice slot per note, because its notes are its slots, not voices of one
+  def.
+- **A voice's legato is one held voice.** A `pvoice` line on a node is one
+  note joined by the next, by note id, rather than one node continued; a
+  sequence rendered from it writes the join on each note (`joins`), so a lane
+  plays the same line the pattern did. A def's line in a lane holds the synth
+  its first note made.
+- **What went.** `/midi_bind`'s gate flag is accepted and ignored (a voice
+  closes its gate when the def has one), the clients no longer send it, and a
+  program change is the reading node's to interpret, so `/midi_map` refuses
+  `progN`.

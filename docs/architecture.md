@@ -164,6 +164,8 @@ Audited: `tests/capacity.rs` overflows each structure on purpose and pins the be
 | Inputs per UGen | 256 (`dsp::MAX_UGEN_INPUTS`, hard ceiling) | `--max-ugen-inputs` | `/def_send synth` rejects the def with `/fail` |
 | Audio buses | 128 (`dsp::NUM_AUDIO_BUSES`, hard ceiling) | `--audio-buses` | bus-index inputs are clamped per block |
 | Control buses | 16384 | `--control-buses` | out-of-range reads return 0.0, writes are ignored |
+| Event buses | 64 buses sharing 1024 events a block (`dsp::events::EventBuses`) | `--event-buses` | events past the block's list are dropped and counted; a bus note-on past 256 held notes is dropped |
+| `Voices` node | 1–256 voices, built with the node (`osc::translate::voices::MAX_VOICES`) | — | every voice busy: the oldest released voice is stolen, else the oldest held |
 | IPC rings | 64 KiB each | `--shm` | backpressure: `push` fails, the producer retries; nothing is dropped (a full *reply* ring drops the reply with a log — the client stopped draining) |
 
 The **boot-flag** column marks what is configurable at server start (S7): the four pool sizes plus the buses and the hardware I/O channels (`--outputs`/`--inputs`). Every one sizes a slab or `Vec` built **once at startup** — fixed at runtime, never at compile time — fed by the same config-file → flag precedence as the other options (`[server]` keys `max_nodes`, `max_buffers`, `max_graph_children`, `max_ugen_inputs`, `outputs`, `inputs`). One carries a compile-time hard ceiling the flag clamps to, because it sizes a fixed-width structure the audio thread relies on: UGen inputs at 256 (the per-UGen input list is a stack array in `synthdef::instance`, only that wide for a UGen with more than 32). The bus counts had one too — audio buses at 128, because a node's usage mask was a `u128` — and it is gone: a node's exact usage is a bit vector built on the network thread (`dsp::BusUsage`) and what the engine packs parallel stages from is a conservative summary of it folded into 128 lanes (`dsp::StageMask`), where two buses landing in one lane cost parallelism and never correctness. Both counts must be powers of two, and what a bus costs is memory plus the per-block clear (`tests/bus_scale.rs` measures it). A client discovers the live values with `/server_query` (see `schemas.md`). `tests/capacity.rs` overflows the configurable slabs at both the default and a small custom size.
@@ -227,6 +229,45 @@ Each transport keeps a queue of its own beside the device one, whose entries liv
 Routing happens in `drain_commands`, engine-side, because the engine is the only one that sees the tree and membership is dynamic. It is a walk up `parent` to the nearest governed group (`NodeTree::governing`), allocation-free and bounded. A bundle is atomic, so one governed message takes the whole bundle with it; a **move** counts by *either* end, since splicing a node into a frozen subtree is the same structural edit as creating one there. The stamp itself arrives on the device axis (the network thread built it against the device clock) and is converted at drain, where the frozen total is known.
 
 Two things fall out for free and are worth knowing. A **UGen's internal time** — `Sweep`, `Timer`, `Phasor`, `EnvGen`, the delay lines — advances per *processed* sample, so a frozen node's time freezes with it, with no code at all; that is the underlying reason the whole freeze is coherent. And the **seam** is already right: a frozen subtree's audio bus goes silent (audio buses are cleared every block and nobody refills one) while its control bus **holds** its last value (control buses are not cleared) — a signal against a value, and a control bus falling to zero would make every parameter mapped to it jump on each pause.
+
+## Event buses and the `Voices` node
+
+Notes travel the way audio does. An **event bus** is a numbered list of
+`clausters_core::event_bus::BusEvent`s for the current block -- a note-on,
+note-off, choke, expression, controller, bend, pressure, program or control,
+each with its source, sample offset, channel, key and note id -- held in one
+preallocated list every bus shares (`dsp::events::EventBuses`, inside
+`dsp::Buses`). The engine clears it at the start of each block, before it
+drains the command FIFO, so everything written for a block is written before
+any node reads it.
+
+**Writers are never nodes.** The MIDI input (`/midi_bind` is routing: a
+channel or an MPE zone writes a bus, `osc::translate::midi`), an event lane
+(`osc::server::lanes`, from its own `lane_source`) and a client
+(`/bus_event`) all reach the audio thread as `Cmd::BusEvent`; `/node_event`
+(`Cmd::NodeEvent`) gives events to one node without a bus. The source
+travels with every event, so a transport stop, a lane replacement or a free
+releases only the notes its source started.
+
+**Readers are nodes with a `notes` control**, which names the bus as `in`
+names an audio bus. A `SynthNode` that `reads_notes` takes its bus in
+`note_event`, and is on the tree's `note_nodes` list so a stop can call its
+`release_notes`/`release_transport_notes`. A plugin node converts each event
+to its note port's dialect (`PluginSynth::read_bus_event`); a **`Voices`
+node** (`node::voices`) holds N instances of one SynthDef or FaustDef, all
+built on the network thread with the node, and gives them to notes on the
+audio thread: a note takes a free voice, `reset`s it on its own memory (every
+UGen implements `UGen::reset`, a Faust instance is cleared) and sets what its
+voice map says (`VoiceMap`, the old MIDI binding's control table, now the
+node's); a voice whose def frees itself returns to the pool. A note never
+makes a node, so no node is created or freed on the event path.
+
+The client's `Event` reaches the same readers: an `instrument` that is a node
+is rendered by the core (`clausters_core::event::render::node_note`) as the
+`/node_event` messages of one note, and a lane note whose destination is
+`{"node": id}` writes the same events from the lane's source. A voice's legato
+(`pvoice`) is one held voice on both paths: a joined note-on carries the note
+id it `joins`, and a lane note carries the index of the note it joins.
 
 ## Feedback (`LocalIn`/`LocalOut`)
 
@@ -2074,6 +2115,8 @@ retire the old ledger. A full ledger is rejected before submission; a full
 input list, note table, sustain table or span list latches a node fault and
 silence. Release bursts obey the same capacity contract.
 
+MIDI and lane notes reach a plugin through its event bus (see "Event buses
+and the `Voices` node"); `/plugin_event` keeps the native-event door above.
 Both MIDI and lane inputs retain the existing shared decoder. Native CLAP
 expression preserves decoded precision; MIDI-only ports receive MIDI 1 events
 and reject unsupported per-note expression and same-channel/key overlaps.

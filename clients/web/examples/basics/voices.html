@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a Voices node, played three ways</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A <b>Voices</b> node is one instrument in the tree, played
+by MIDI, by a pattern and by the client -- and a note never makes a node.
+
+<b>An instrument is a node that reads an event bus.</b> <code>Voices</code>
+holds eight voices of the built-in <code>default</code>, all built with the
+node, and its <code>notes</code> control names the event bus it reads -- as a
+node's <code>in</code> names the audio bus it reads. Whatever writes that bus
+plays it: a note takes a free voice, resets it and starts it; its end closes
+the voice's gate.
+
+Three writers reach the same eight voices, one after the other:
+<b>MIDI</b> -- <code>midiBind</code> routes channel 0 to the bus, and the chord
+arrives as MIDI 2.0 packets (<code>midiUmp</code>), the path a keyboard on a
+native server's MIDI input takes; <b>a pattern</b> -- an <code>Event</code>
+whose <code>instrument</code> is the node is one of its notes, so
+<code>pbind({ instrument: keys, ... })</code> plays it, and a
+<code>pvoice</code> line on it is one held voice; and <b>the client</b> --
+<code>busEvent</code> writes notes on the bus from a routine, at its logical
+beat. The node count is printed at the end: one node, however many notes
+played.</div>
+
+      <button id="run">run</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/basics/voices.py: the same
+      instrument, the same three writers in the same order. The script boots a
+      native server (Session.live); this page opens the in-page engine
+      (Session.embed), which has no MIDI input of its own, so a keyboard
+      reaches only the script's server -- the packets below take the same
+      path in both. Build the package first (./build.sh in clients/web) and
+      serve this tree over HTTP.
+    -->
+    <script type="module">
+      import { Routine, Session, Voices, seq } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+      const wait = (seconds) => new Promise((r) => setTimeout(r, seconds * 1000));
+
+      async function run() {
+        const session = (await Session.embed()).activate();
+        session.start();
+        const server = session.server;
+
+        // ---- the instrument and its bus ----
+        // The bus is allocated like any other; the node reads it, and
+        // channel 0 of the MIDI input writes it.
+        const bus = server.eventBuses.alloc();
+        const keys = new Voices("default", 8, { notes: bus });
+        server.midiBind(0, bus);
+        await server.sync();
+
+        // ---- three writers, one instrument ----
+        // An A major chord as MIDI 2.0 note-ons on channel 0, then their
+        // note-offs: the server reads them as it reads its MIDI input.
+        async function midiChord() {
+          for (const key of [69, 73, 76]) server.midiUmp(0x4090_0000 | (key << 8), 0x2000_0000);
+          await wait(1.5);
+          for (const key of [69, 73, 76]) server.midiUmp(0x4080_0000 | (key << 8), 0);
+        }
+
+        // Notes written on the bus from a routine, each at its beat.
+        function* fromTheClient() {
+          const notes = [81, 76, 72];
+          for (let i = 0; i < notes.length; i++) {
+            server.busEvent(bus, { kind: "note_on", key: notes[i], velocity: 0.15, note_id: i + 1 });
+            yield 0.5;
+          }
+          server.busEvent(bus, ...[0, 1, 2].map((i) => ({ kind: "note_off", note_id: i + 1 })));
+        }
+
+        log("MIDI on channel 0: a chord");
+        await midiChord();
+        await wait(1.0);
+
+        log("a pattern: each note a voice of the node");
+        seq.pbind({ instrument: keys, midinote: seq.pseq([72, 76, 79, 84, 79, 76]), dur: 0.25,
+                    amp: 0.15 }).play();
+        await wait(2.0);
+
+        log("a pvoice line: one held voice moving through its notes");
+        seq.pvoice(keys, { midinote: seq.pseq([72, 74, 76, 77, 79]), dur: 0.4, amp: 0.15 }).play();
+        await wait(2.5);
+
+        log("the client writes the bus");
+        new Routine(fromTheClient).play();
+        await wait(2.5);
+
+        log(`nodes on the server: ${(await server.status()).synths} -- the Voices node alone`);
+
+        server.midiUnbind(0);
+        keys.free();
+        server.eventBuses.free(bus);
+        await session.close();
+      }
+
+      $("run").onclick = () => {
+        $("run").disabled = true;
+        run().catch((err) => log(`failed: ${err}`));
+      };
+    </script>
+  </body>
+</html>

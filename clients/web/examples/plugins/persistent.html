@@ -2,6 +2,9 @@
 <html lang="en"><meta charset="utf-8"><title>Persistent native instrument</title>
 <!--
 Same calls and event sequence as clients/python/examples/plugins/persistent.py.
+The instrument is one node; the lane, the live notes and a pattern whose
+Events name that node as their instrument all play it, and none of them makes
+a node of its own.
 Start a native server built with plugin-clap,plugin-vst3, its matching helper
 beside it (the Linux package and scripts/refresh-bin.sh both provide that
 pair), with --ws 57112; build the web package and serve this tree over HTTP.
@@ -19,7 +22,7 @@ Samplers need samples in their initial state.
 <label>Instrument <select id="plugin"></select></label><br>
 <button id="play" disabled>Play</button><pre id="log"></pre>
 <script type="module">
-import { Group, PluginDef, Routine, Session, Synth } from "../../dist/index.js";
+import { Group, PluginDef, Routine, Session, Synth, seq } from "../../dist/index.js";
 const $ = (id) => document.getElementById(id);
 const smoke = new URLSearchParams(location.search).has("smoke");
 let session = null, catalog = null;
@@ -82,7 +85,10 @@ $("play").onclick = async () => {
             voice.pluginEvent({ kind: "note_off", source: 1, note_id: 2, channel: 0, key: 67, value: 0.0 });
         }
         new Routine(phrase).play();
-        await session.run(3.0);
+        // A pattern plays the same node: each event names it as its
+        // instrument, so each note is a note of the plugin, not a synth.
+        seq.pbind({ instrument: voice, midinote: seq.pseq([72, 74, 76, 79]), dur: 0.5, amp: 0.15 }).play();
+        await session.run(4.0);
         if ((await server.status()).synths !== 1) throw new Error("notes must share one persistent instance");
         await server.transportStop();
         await server.laneFree(3100);

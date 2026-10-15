@@ -1237,3 +1237,109 @@ fn a_line_entered_midway_still_ends() {
     assert_eq!(sounding(&out), vec![(800, 10400)]);
     assert!((out[9000] - 0.75).abs() < 1e-3, "{}", out[9000]);
 }
+
+/// **A `pvoice` line sounds the same from a pattern and from a lane**: a
+/// pattern gives a `Voices` node its notes as `/node_event`s, each joined
+/// note-on joining the one before; a sequence rendered from it is a lane
+/// whose notes carry their joins. Both are one held voice gliding across
+/// the line, sample for sample.
+#[test]
+fn a_joined_line_on_a_node_is_the_same_from_a_lane_and_from_events() {
+    const VOICES: i32 = 2000;
+    let block = BLOCK_SIZE as u64;
+    // On block boundaries, where an event sent between blocks lands too.
+    let edges = [8 * block, 40 * block, 72 * block, 104 * block];
+    let keys = [60, 64, 67];
+    let render = |by_lane: bool| {
+        let mut server = server();
+        let pitch = r#"{
+            "name": "pitch",
+            "controls": [{"name": "freq", "default": 440.0}],
+            "ugens": [
+                {"kind": "Mul", "inputs": [{"control": 0}, {"const": 0.001}]},
+                {"kind": "Lag", "inputs": [{"ugen": 0}, {"const": 0.01}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+            ]
+        }"#;
+        send(
+            &mut server,
+            "/def_send",
+            vec![
+                OscType::String("synth".into()),
+                OscType::Blob(pitch.as_bytes().to_vec()),
+            ],
+        );
+        send(
+            &mut server,
+            "/voices_new",
+            vec![
+                OscType::String("pitch".into()),
+                OscType::Int(VOICES),
+                OscType::Int(0),
+                OscType::Int(0),
+                OscType::Int(2),
+            ],
+        );
+        if by_lane {
+            let notes: Vec<String> = (0..3)
+                .map(|i| {
+                    let joins = if i == 0 {
+                        String::new()
+                    } else {
+                        format!(", {}", i - 1)
+                    };
+                    format!(
+                        r#"[{}, {}, {{"node": {VOICES}}}, {{"key": {}}}, "gate"{joins}]"#,
+                        edges[i],
+                        edges[i + 1],
+                        keys[i]
+                    )
+                })
+                .collect();
+            send(
+                &mut server,
+                "/lane_set",
+                vec![
+                    OscType::Int(LANE),
+                    OscType::String(format!(r#"{{"notes": [{}]}}"#, notes.join(", "))),
+                ],
+            );
+            play(&mut server);
+            return pull(&mut server, 120);
+        }
+        let mut out = Vec::new();
+        let mut at = 0u64;
+        for (i, edge) in edges.iter().enumerate() {
+            out.extend(pull(&mut server, ((edge - at) / block) as usize));
+            at = *edge;
+            let event = match i {
+                0 => format!(r#"{{"kind": "note_on", "key": {}, "note_id": 1}}"#, keys[0]),
+                3 => r#"{"kind": "note_off", "note_id": 3}"#.to_string(),
+                _ => format!(
+                    r#"{{"kind": "note_on", "key": {}, "note_id": {}, "joins": {i}}}"#,
+                    keys[i],
+                    i + 1
+                ),
+            };
+            send(
+                &mut server,
+                "/node_event",
+                vec![OscType::Int(VOICES), OscType::String(event)],
+            );
+        }
+        out.extend(pull(&mut server, 120 - (at / block) as usize));
+        out
+    };
+    let (lane, events) = (render(true), render(false));
+    assert_eq!(
+        sounding(&lane),
+        vec![(edges[0] as usize, edges[3] as usize)]
+    );
+    let glide = edges[1] as usize + 10;
+    assert!(
+        lane[glide] > lane[glide - 20] && lane[glide] < 0.329,
+        "the joined note glides on the held voice: {}",
+        lane[glide]
+    );
+    assert_eq!(lane, events, "a lane's line is the pattern's line");
+}

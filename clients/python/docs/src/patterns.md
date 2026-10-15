@@ -117,6 +117,7 @@ With `artic`, a note joins the next while `legato >= 1` and the next one re-atta
 **The articulation is one datum, and each destination realizes it in its own terms.** The data is the notes and their `legato`; what a join *becomes* is the instrument's:
 
 - **on the server**, the voice holds one node: the first note starts a synth, each joined note sets that synth's controls instead of starting another, and only the last releases it — so a control with a lag glides, and nothing re-attacks;
+- **on a node** — an `instrument` that is a `Voices` node or a plugin's (below) — each joined note-on joins the note before it, which keeps its voice and moves to the new pitch;
 - **on MIDI**, joined notes overlap, which a synthesizer in mono mode plays legato;
 - **on a page**, rendered into an `EventSequence`, a joined note that keeps its pitch is a **tie** and a run of joined notes that moves is a **slur**, from its first note to the one that articulates.
 
@@ -126,9 +127,23 @@ data = line.render_events().data()
 data["notation"]["spanners"]                            # [{"kind": "slur", "from": 1, "to": 4}]
 ```
 
-The rendered sequence keeps **both shapes**: each note's `legato`, and the tie and slur — the slur in the sequence's notation, where a score reads it. Neither is lost on the way.
+The rendered sequence keeps **both shapes**: each note's `legato`, and the tie and slur — the slur in the sequence's notation, where a score reads it. And it keeps what it plays as: each joined note's `joins` names the note it goes on from, so the sequence played on the server is the same held line the pattern played. Nothing is lost on the way.
 
 What varies inside one of those notes is not the voice's business: give the note an `expression` and it is inflected however it is articulated. `voice=` writes which voice of the staff the line is, so two voices played together (`ppar([upper, lower])`) stay apart on the page.
+
+## An instrument that is a node
+
+An event's `instrument` is a def's name — a synth of that def per note — or **a node**: a `Voices` node, which holds N voices of one def and gives them to notes, or a plugin's node, which plays its own. A note on a node makes no node; it is given to that node, identified by a note id the server handle writes on the event (`note_id`), and its end is that note's note-off:
+
+```python
+from clausters import Voices
+from clausters.seq import pbind, pseq
+
+keys = Voices("default", 8)                       # eight voices, one node
+pbind(instrument=keys, midinote=pseq([72, 76, 79]), dur=0.25).play()
+```
+
+Every other number the event holds is a control of the note's own voice. A node reads its notes from an **event bus** too — its `notes` control names one, as `in` names an audio bus — so the same instrument plays from MIDI (`Server.midi_bind` routes a channel to a bus) and from `Server.bus_event` alike. A note on a node carries no curves. `basics/voices` in the client's examples plays one `Voices` node from MIDI, a pattern, a `pvoice` line and the client.
 
 ## Writing a pattern
 
