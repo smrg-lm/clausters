@@ -688,6 +688,22 @@ impl Worker {
         Ok(processor)
     }
 }
+/// Whether a thread the plugin starts may take real-time scheduling itself:
+/// a nonzero `RLIMIT_RTPRIO`. Without it, RTKit can promote the helper's
+/// processing thread and nothing else, and a plugin whose processing waits
+/// on worker threads of its own then has a real-time thread spinning on
+/// threads it starves -- until RTKit's watchdog demotes it, after a gap. So
+/// the processing thread is promoted only where the plugin's threads can be
+/// too, which is how an audio system configured for real-time work runs.
+#[cfg(all(feature = "rtprio", any(feature = "clap", feature = "vst3")))]
+fn plugin_threads_may_be_realtime() -> bool {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: getrlimit writes one rlimit for this process.
+    unsafe { libc::getrlimit(libc::RLIMIT_RTPRIO, &mut limit) == 0 && limit.rlim_cur > 0 }
+}
 #[cfg(any(feature = "clap", feature = "vst3"))]
 fn audio_worker(
     mapping: Arc<Mapping>,
@@ -706,11 +722,15 @@ fn audio_worker(
             let c = view.config();
             // Best effort: a refused promotion leaves the thread as it was.
             #[cfg(feature = "rtprio")]
-            let _realtime = audio_thread_priority::promote_current_thread_to_real_time(
-                FRAMES as u32,
-                c.sample_rate as u32,
-            )
-            .ok();
+            let _realtime = plugin_threads_may_be_realtime()
+                .then(|| {
+                    audio_thread_priority::promote_current_thread_to_real_time(
+                        FRAMES as u32,
+                        c.sample_rate as u32,
+                    )
+                    .ok()
+                })
+                .flatten();
             let mut consumer = view.consumer();
             let mut pending = EventList::default();
             let start = processor.start();

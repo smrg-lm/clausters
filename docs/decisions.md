@@ -10181,6 +10181,25 @@ code mapped until process exit is bounded by the disposable or per-node helper
 lifetime and preserves those callbacks without retaining live plugin instances.
 
 
+## A plugin's processing thread is real-time only where the plugin's threads can be (2026-10-14)
+
+The server's callback is real-time through RTKit, which promotes the threads
+that ask it and nothing else. The helper's processing thread can ask the same
+way, but many instruments process by handing work to threads of their own and
+waiting for them, and those threads promote themselves with
+`pthread_setschedparam`, which needs a nonzero `RLIMIT_RTPRIO`. On a desktop
+with RTKit and no such limit -- the default -- that request fails, and a
+real-time thread then waits on ordinary threads it can keep off the CPU. An
+instrument doing exactly that ran its processing thread past RTKit's watchdog
+on every load: a gap until the SIGXCPU guard demoted it.
+
+So the helper promotes its processing thread only when `RLIMIT_RTPRIO` is
+nonzero, which is how a system set up for real-time audio runs and where a
+plugin's threads can follow. Elsewhere it stays as an ordinary thread, which
+is what every plugin was written to survive. A single-threaded plugin loses
+priority it could have had on such a desktop; the alternative is a gap for
+every plugin that is not.
+
 ## Delay compensation belongs to the server bus graph
 
 The intrinsic-latency hook introduced with partitioned convolution now feeds

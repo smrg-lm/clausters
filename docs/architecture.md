@@ -1998,9 +1998,11 @@ The burst case turned out to be the default one; the depth that answers it is
 above ("The depth also covers one device callback").
 
 With the helper's `rtprio` feature (on in the packaged helper) its processing
-thread asks RTKit for real-time scheduling, best effort, as the server's
-callback does, and a SIGXCPU from RTKit's watchdog demotes that thread instead
-of killing the helper. A helper's stdout and stderr both reach the server's
+thread asks for real-time scheduling, best effort, as the server's callback
+does -- but only where `RLIMIT_RTPRIO` is nonzero, so the plugin's own threads
+can take it too (see `docs/decisions.md`, "A plugin's processing thread is
+real-time only where the plugin's threads can be"). A SIGXCPU from RTKit's
+watchdog demotes that thread instead of killing the helper. A helper's stdout and stderr both reach the server's
 stderr, so what a plugin prints is not lost and never mixes with the protocol,
 which has its own socket.
 
