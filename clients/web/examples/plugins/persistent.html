@@ -6,13 +6,17 @@ Start a native server built with plugin-clap,plugin-vst3, its matching helper
 beside it (the Linux package and scripts/refresh-bin.sh both provide that
 pair), with --ws 57112; build the web package and serve this tree over HTTP.
 This page attaches to that server; a page cannot boot a native process
-(Python can). Name an installed CLAP or VST3 instrument with a native
+(Python can). Name an installed CLAP or VST3 instrument by what it is
+called, as server.plugins() lists them; the server looks in the standard
+CLAP and VST3 directories, or in the directory or binary given, and the
+format says which when the name is in both. It needs a native
 note-expression port and an audible initial preset, such as Surge XT; an
 effects collection has none. Samplers need samples in their initial state.
 -->
 <label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
-<label>Binary on server <input id="binary" placeholder="/path/instrument.clap"></label><br>
-<label>Native plugin ID <input id="plugin"></label><br>
+<label>Plugin name <input id="name" placeholder="Surge XT"></label><br>
+<label>Directory or binary on server (optional) <input id="path"></label><br>
+<label>Format (optional) <input id="format" placeholder="clap or vst3"></label><br>
 <button id="play">Play</button><pre id="log"></pre>
 <script type="module">
 import { Group, PluginDef, Routine, Session, Synth } from "../../dist/index.js";
@@ -24,37 +28,37 @@ $("play").onclick = async () => {
         session = (await Session.live($("url").value)).activate();
         session.clock.setTempo(2.0);
         const server = session.server;
-        const rows = await server.scanPlugins([$("binary").value], 60.0);
-        const info = rows.find((row) => row.kind === "plugin" && row.plugin.id === $("plugin").value)?.plugin;
-        if (!info?.note_inputs.length || !(info.note_inputs[0].dialects & 1)) throw new Error("choose an instrument with a native note-expression port");
-        const port = info.note_inputs[0].id;
-        const reference = { format: info.format, path: info.path, id: info.id, inputs: [], outputs: [] };
-        let bus = 4;
-        for (const item of info.inputs) { reference.inputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
-        bus = 0;
-        for (const item of info.outputs) { reference.outputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
-        // A tmp_ name keeps the def out of the data directory: a stored plugin def
-        // is probed again on every boot, and this one means nothing to a later session.
-        await new PluginDef("tmp_persistent_keys", reference).send(server);
+        // The catalog is what the server found installed: the instrument is found
+        // by its name, and carries its ports, parameters and identity.
+        const paths = $("path").value ? [$("path").value] : [];
+        const keys = (await server.plugins(paths, { timeout: 60.0 })).find(
+            $("name").value, { format: $("format").value || undefined, kind: "instrument" });
+        if (!keys.noteInputs.length || !(keys.noteInputs[0].dialects & 1)) throw new Error("choose an instrument with a native note-expression port");
+        // Its main output is bus 0. A tmp_ name keeps the def out of the data
+        // directory: a stored plugin def is probed again on every boot, and this
+        // one means nothing to a later session.
+        await new PluginDef("tmp_persistent_keys", keys).send(server);
+        // The instrument is outside the governed group, so live input keeps
+        // processing during a stop. Notes go to its main note input.
         governed = new Group({ server });
         voice = new Synth("tmp_persistent_keys", {}, { target: 0, server });
         await server.setTransport(0, 2.0);
         await server.transportGroup(governed);
         await server.laneNew(3100, governed);
         await server.laneSet(3100, { notes: [
-            [12000, 48000, { plugin: voice.id, port }, { key: 64, velocity: 0.15 }, "gate"],
-            [60000, 108000, { plugin: voice.id, port }, { key: 69, velocity: 0.15 }, "gate"],
+            [12000, 48000, { plugin: voice.id }, { key: 64, velocity: 0.15 }, "gate"],
+            [60000, 108000, { plugin: voice.id }, { key: 69, velocity: 0.15 }, "gate"],
         ] });
         await server.transportPlay();
         function* phrase() {
-            voice.pluginEvent({ kind: "note_on", source: 1, note_id: 1, port, channel: 0, key: 60, value: 0.15 });
-            voice.pluginEvent({ kind: "note_on", source: 1, note_id: 2, port, channel: 0, key: 67, value: 0.15 });
+            voice.pluginEvent({ kind: "note_on", source: 1, note_id: 1, channel: 0, key: 60, value: 0.15 });
+            voice.pluginEvent({ kind: "note_on", source: 1, note_id: 2, channel: 0, key: 67, value: 0.15 });
             yield 0.5;
-            voice.pluginEvent({ kind: "expression", source: 1, note_id: 1, port, channel: 0, key: 60, id: 6, value: 0.4 });
+            voice.pluginEvent({ kind: "expression", source: 1, note_id: 1, channel: 0, key: 60, id: 6, value: 0.4 });
             yield 0.5;
-            voice.pluginEvent({ kind: "note_off", source: 1, note_id: 1, port, channel: 0, key: 60, value: 0.0 });
+            voice.pluginEvent({ kind: "note_off", source: 1, note_id: 1, channel: 0, key: 60, value: 0.0 });
             yield 1.0;
-            voice.pluginEvent({ kind: "note_off", source: 1, note_id: 2, port, channel: 0, key: 67, value: 0.0 });
+            voice.pluginEvent({ kind: "note_off", source: 1, note_id: 2, channel: 0, key: 67, value: 0.0 });
         }
         new Routine(phrase).play();
         await session.run(3.0);
@@ -70,8 +74,9 @@ $("play").onclick = async () => {
 const params = new URLSearchParams(location.search);
 if (params.has("smoke")) {
     $("url").value = params.get("url") ?? $("url").value;
-    $("binary").value = params.get("binary") ?? "";
-    $("plugin").value = params.get("plugin") ?? "";
+    $("name").value = params.get("name") ?? "";
+    $("path").value = params.get("path") ?? "";
+    $("format").value = params.get("format") ?? "";
     $("play").click();
 }
 </script></html>

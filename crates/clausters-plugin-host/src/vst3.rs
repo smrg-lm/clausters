@@ -554,6 +554,9 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         let mut vendor: PFactoryInfo = zero();
         ok(factory.getFactoryInfo(&mut vendor))?;
         let mut version = String::new();
+        let mut features = Vec::new();
+        let mut sdk_version = String::new();
+        let mut class_vendor = String::new();
         if let Some(factory) = factory.cast::<IPluginFactory2>() {
             for index in 0..factory.countClasses() {
                 let mut extended: PClassInfo2 = zero();
@@ -561,6 +564,14 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
                     && extended.cid == class.cid
                 {
                     version = narrow(&extended.version);
+                    sdk_version = narrow(&extended.sdkVersion);
+                    class_vendor = narrow(&extended.vendor);
+                    features = narrow(&extended.subCategories)
+                        .split('|')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                        .collect();
                     break;
                 }
             }
@@ -574,8 +585,18 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
                 .into_owned(),
             id: identity(class.cid),
             name: narrow(&class.name),
-            vendor: narrow(&vendor.vendor),
+            vendor: if class_vendor.is_empty() {
+                narrow(&vendor.vendor)
+            } else {
+                class_vendor
+            },
             version,
+            description: String::new(),
+            url: narrow(&vendor.url),
+            manual_url: String::new(),
+            support_url: narrow(&vendor.email),
+            features,
+            sdk_version,
             inputs: vec![],
             outputs: vec![],
             note_inputs: vec![],
@@ -633,8 +654,63 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         Ok(Box::new(instance))
     }
 }
+/// A bus's channel layout from its speaker arrangement, else from its count.
+fn layout(arrangement: Option<SpeakerArrangement>, channels: i32) -> String {
+    use SpeakerArr::*;
+    let ambisonic = [
+        kAmbi1stOrderACN,
+        kAmbi2cdOrderACN,
+        kAmbi3rdOrderACN,
+        kAmbi4thOrderACN,
+        kAmbi5thOrderACN,
+        kAmbi6thOrderACN,
+        kAmbi7thOrderACN,
+    ];
+    match (arrangement, channels) {
+        (Some(a), _) if a == kMono => "mono",
+        (None, 1) => "mono",
+        (Some(a), _) if ambisonic.contains(&a) => "ambisonic",
+        (_, 2) => "stereo",
+        (_, c) if c > 2 => "surround",
+        _ => "",
+    }
+    .into()
+}
 impl Instance {
+    /// Each unit's path of names from the root, which a parameter's module is;
+    /// empty without unit information.
+    fn units(&self) -> std::collections::HashMap<i32, String> {
+        let mut paths = std::collections::HashMap::new();
+        let Some(units) = self.controller.cast::<IUnitInfo>() else {
+            return paths;
+        };
+        let mut found = std::collections::HashMap::new();
+        // SAFETY: helper main thread, as every controller call.
+        unsafe {
+            for index in 0..units.getUnitCount().clamp(0, 4096) {
+                let mut unit: UnitInfo = zero();
+                if units.getUnitInfo(index, &mut unit) == kResultOk {
+                    found.insert(unit.id, (unit.parentUnitId, wide(&unit.name)));
+                }
+            }
+        }
+        for &id in found.keys() {
+            let mut names = Vec::new();
+            let mut at = id;
+            while at != kRootUnitId && names.len() < 32 {
+                let Some((parent, name)) = found.get(&at) else {
+                    break;
+                };
+                names.push(name.clone());
+                at = *parent;
+            }
+            names.reverse();
+            paths.insert(id, names.join("/"));
+        }
+        paths
+    }
     fn parameters(&self) -> Result<Vec<Parameter>, String> {
+        let units = self.units();
         unsafe {
             let count = self.controller.getParameterCount();
             if !(0..=MAX_PARAMETERS as i32).contains(&count) {
@@ -655,7 +731,7 @@ impl Instance {
                 parameters.push(Parameter {
                     id: p.id,
                     name: wide(&p.title),
-                    module: p.unitId.to_string(),
+                    module: units.get(&p.unitId).cloned().unwrap_or_default(),
                     flags,
                     min: 0.0,
                     max: 1.0,
@@ -721,11 +797,20 @@ impl FormatInstance for Instance {
                             if bus.channelCount <= 0 {
                                 return Err("invalid VST3 audio bus".into());
                             }
+                            let mut arrangement: SpeakerArrangement = 0;
+                            let arranged = self.processor.getBusArrangement(
+                                direction,
+                                index,
+                                &mut arrangement,
+                            ) == kResultOk;
                             let port = AudioPort {
                                 id: index as u32,
                                 name: wide(&bus.name),
                                 channels: bus.channelCount as u32,
                                 flags: bus.flags,
+                                main: bus.busType == BusTypes_::kMain as BusType,
+                                layout: layout(arranged.then_some(arrangement), bus.channelCount),
+                                active: bus.flags & BusInfo_::BusFlags_::kDefaultActive != 0,
                             };
                             if direction == 0 {
                                 info.inputs.push(port);
@@ -737,6 +822,8 @@ impl FormatInstance for Instance {
                                 id: index as u32,
                                 name: wide(&bus.name),
                                 dialects: 3,
+                                preferred: 1,
+                                channels: bus.channelCount.max(0) as u32,
                             };
                             if direction == 0 {
                                 info.note_inputs.push(port);
@@ -772,7 +859,7 @@ impl FormatInstance for Instance {
             return Err("VST3 instance already active".into());
         }
         let info = self.metadata()?;
-        if !info.matches(config) {
+        if !fits(&info, config) {
             return Err("VST3 port configuration mismatch".into());
         }
         unsafe {

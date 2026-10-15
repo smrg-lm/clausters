@@ -7,7 +7,7 @@ use clack_common::events::io::{EventBuffer, OutputEventBuffer, OutputEvents, Try
 use clack_common::events::spaces::CoreEventSpace;
 use clack_common::events::{EventFlags, EventHeader, Match, Pckn, UnknownEvent};
 use clack_common::utils::{BeatTime, ClapId, SecondsTime};
-use clack_extensions::audio_ports::{AudioPortInfoBuffer, PluginAudioPorts};
+use clack_extensions::audio_ports::{AudioPortFlags, AudioPortInfoBuffer, PluginAudioPorts};
 use clack_extensions::gui::{
     GuiApiType, GuiConfiguration, GuiSize, HostGui, HostGuiImpl, PluginGui, Window,
 };
@@ -299,6 +299,18 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         name: ctext(descriptor.name()),
         vendor: ctext(descriptor.vendor()),
         version: ctext(descriptor.version()),
+        description: ctext(descriptor.description()),
+        url: ctext(descriptor.url()),
+        manual_url: ctext(descriptor.manual_url()),
+        support_url: ctext(descriptor.support_url()),
+        features: descriptor
+            .features()
+            .map(|f| f.to_string_lossy().into_owned())
+            .collect(),
+        sdk_version: {
+            let v = descriptor.as_raw().clap_version;
+            format!("{}.{}.{}", v.major, v.minor, v.revision)
+        },
         signals,
         callbacks,
         window: None,
@@ -317,6 +329,12 @@ struct Clap {
     name: String,
     vendor: String,
     version: String,
+    description: String,
+    url: String,
+    manual_url: String,
+    support_url: String,
+    features: Vec<String>,
+    sdk_version: String,
     signals: Arc<Signals>,
     callbacks: Rc<RefCell<Callbacks>>,
     window: Option<NativeWindow>,
@@ -351,6 +369,12 @@ impl FormatInstance for Clap {
                         name: text(p.name),
                         channels: p.channel_count,
                         flags: p.flags.bits(),
+                        main: p.flags.contains(AudioPortFlags::IS_MAIN),
+                        layout: p
+                            .port_type
+                            .map(|t| t.0.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        active: true,
                     })
                 })
                 .collect()
@@ -375,6 +399,8 @@ impl FormatInstance for Clap {
                         id: p.id.get(),
                         name: text(p.name),
                         dialects: p.supported_dialects.bits(),
+                        preferred: p.preferred_dialect.map_or(0, |d| d as u32),
+                        channels: NOTE_CHANNELS,
                     })
                 })
                 .collect()
@@ -431,6 +457,12 @@ impl FormatInstance for Clap {
             name: self.name.clone(),
             vendor: self.vendor.clone(),
             version: self.version.clone(),
+            description: self.description.clone(),
+            url: self.url.clone(),
+            manual_url: self.manual_url.clone(),
+            support_url: self.support_url.clone(),
+            features: self.features.clone(),
+            sdk_version: self.sdk_version.clone(),
             inputs,
             outputs,
             note_inputs,
@@ -445,7 +477,7 @@ impl FormatInstance for Clap {
     }
     fn activate(&mut self, config: Config) -> Result<Box<dyn FormatProcessor>, String> {
         let info = self.metadata()?;
-        if !config.valid() || !info.matches(config) {
+        if !config.valid() || !fits(&info, config) {
             return Err("plugin ports do not match segment".into());
         }
         let processor = self

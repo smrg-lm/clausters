@@ -22,8 +22,8 @@ typedef struct {
     float delay[7];
 } Fixture;
 
-static const char *const fx_features[] = {"audio-effect", NULL};
-static const char *const instrument_features[] = {"instrument", NULL};
+static const char *const fx_features[] = {"audio-effect", "utility", "mono", NULL};
+static const char *const instrument_features[] = {"instrument", "synthesizer", "stereo", NULL};
 #define DESC(id, features) {CLAP_VERSION_INIT, "org.clausters.fixture." id, id, \
     "Clausters", "", "", "", "1", "Bridge test fixture", features}
 static const clap_plugin_descriptor_t descriptors[] = {

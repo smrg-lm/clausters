@@ -31,7 +31,7 @@ Both reply asynchronously: `/done "/def_send" <family>` — a Faust compile, whi
 
 ### Native plugin discovery
 
-`/plugin_scan [string dir ...]` asynchronously discovers CLAP and VST3 plugins on a Linux
+`/plugin_scan [int rescan] [string dir ...]` asynchronously discovers CLAP and VST3 plugins on a Linux
 server built with `plugin-clap`, `plugin-vst3` or both. The server uses the matching
 `clausters-plugin-host` executable (adjacent to the server, or selected by
 `CLAUSTERS_PLUGIN_HOST`). Without directories it searches `CLAP_PATH`, `~/.clap`,
@@ -40,7 +40,12 @@ server built with `plugin-clap`, `plugin-vst3` or both. The server uses the matc
 missing paths yield diagnostics. Paths name the server's filesystem.
 
 Discovery never loads a plugin into the server: each binary is inspected in a
-disposable helper, with a two-second timeout per administrative request.
+disposable helper, with a two-second timeout per administrative request. With
+persistence enabled, a binary whose canonical path, modification time and size
+(for a bundle directory, its newest file and total size) match the cache
+written by the same helper version is **not inspected again**: its cached rows,
+diagnostics included, are reported. A leading nonzero `rescan` int inspects
+every binary.
 Compatibility is checked again when an instance is loaded. A failed binary
 returns an error row and other binaries continue. Traversal/catalogue capacity
 errors, an unavailable helper, a full scan queue or a cache-write failure reply
@@ -61,9 +66,36 @@ catalogue. `/server_sync` waits for the scan and its cache write.
 The reconstructed rows use these schemas:
 
 ```json
-{"kind":"plugin","plugin":{"format":"clap","path":"/plugins/gain.clap","id":"org.vendor.gain","name":"Gain","vendor":"Vendor","version":"1","inputs":[{"id":10,"name":"Input","channels":2,"flags":1}],"outputs":[{"id":20,"name":"Output","channels":2,"flags":1}],"note_inputs":[],"note_outputs":[],"parameters":[{"id":19,"name":"Gain","module":"","flags":32,"min":0.0,"max":1.0,"step":0.0,"default":0.5}],"latency":0,"state":true,"editor":false}}
+{"kind":"plugin","plugin":{"format":"clap","path":"/plugins/gain.clap","id":"org.vendor.gain","name":"Gain","vendor":"Vendor","version":"1","description":"A gain","url":"https://vendor.example","manual_url":"","support_url":"","features":["audio-effect","utility","stereo"],"sdk_version":"1.2.2","inputs":[{"id":10,"name":"Input","channels":2,"flags":1,"main":true,"layout":"stereo","active":true}],"outputs":[{"id":20,"name":"Output","channels":2,"flags":1,"main":true,"layout":"stereo","active":true}],"note_inputs":[],"note_outputs":[],"parameters":[{"id":19,"name":"Gain","module":"","flags":32,"min":0.0,"max":1.0,"step":0.0,"default":0.5}],"latency":0,"state":true,"editor":false}}
 {"kind":"error","path":"/plugins/broken.clap","error":"plugin helper timeout/protocol error"}
 ```
+
+**Everything the formats declare is reported.** `description`, `url`,
+`manual_url` and `support_url` come from a CLAP descriptor; a VST3 class has
+none of the first and third, reports its factory's address as `url` and its
+e-mail as `support_url`. `features` is what the plugin declares itself to be,
+as declared: CLAP's descriptor features, or VST3's class subcategories split at
+`|` (`["Instrument","Piano"]`). `sdk_version` is the interface version it was
+built against. An audio port's `main` marks the main port of its direction
+(CLAP's main flag, VST3's main bus type) against auxiliary ones; `layout` is
+its declared channel layout (`mono`, `stereo`, `surround`, `ambisonic`, a CLAP
+port type) or empty; `active` is whether the plugin wants it active by default
+(VST3's flag; always true for CLAP). `flags` stays in the format's own
+vocabulary. A note port also carries `preferred`, the dialect bit it prefers
+(zero when none), and `channels` (a VST3 event bus's count; 16 for CLAP). A
+parameter's `module` is CLAP's module path or the VST3 unit path, `/`-joined.
+Fields added later default when absent, so a reader takes older rows. Data a
+plugin loads from outside (an impulse response, samples) has no standard
+declaration in either format; it lives in the opaque state.
+
+**The clients read rows into one vocabulary**, through the shared core
+(`clausters_core::plugin_catalog`): a `kind` (`instrument`, `effect`,
+`note_effect`, `analyzer`, `other`; from the declared category, else from the
+ports), `tags` (the common words both vocabularies map to: `synth`, `sampler`,
+`piano`, `drum`, `reverb`, `delay`, `eq`, `dynamics`, `distortion`,
+`modulation`, `filter`, `pitch`, `spatial`, `utility`, ...), `channels` and the
+control aliases below. That reading is the clients' and the core's; the wire
+carries the declarations.
 
 VST3 candidates can be standalone `.vst3` binaries or Linux bundles with a
 native module under `Contents/<architecture>-linux/`. Discovery reports only
@@ -88,10 +120,15 @@ support, without opening a window.
 Limits are 32 roots, 128 binaries, 512 plugins per binary, 16 ports and 32 audio
 channels per direction, 8192 parameters per plugin and a 16 MiB catalogue.
 With persistence enabled the server atomically writes
-`<data_dir>/plugins.json` as `{"version":1,"entries":[...]}`, including diagnostics.
-With persistence disabled there is no cache write. `Server.scan_plugins(*dirs,
-timeout=...)` and `await server.scanPlugins(dirs, timeout)` return these JSON
-rows; choose a timeout for the whole catalogue rather than one binary.
+`<data_dir>/plugins.json` as `{"version":2,"helper":<package version>,
+"binaries":[{"path","modified","size","entries":[...]}]}`: every binary it has
+inspected, diagnostics included, merged across scans and pruned of binaries no
+longer on disk. A file of another version or helper is read as empty. With
+persistence disabled there is no cache and every binary is inspected.
+`Server.plugins(*dirs, rescan=..., timeout=...)` and `await
+server.plugins(dirs, { rescan, timeout })` return a catalog of these rows, and
+`scan_plugins`/`scanPlugins` the rows themselves; choose a timeout for the
+whole catalogue rather than one binary.
 
 ### Native plugin definitions and recovery
 
@@ -109,7 +146,10 @@ The path names the binary on the server filesystem; `id` selects one native
 plugin in that binary. Every audio port must occur exactly once in its
 respective direction, with its native `id` and matching `channels`. Rows may
 be in any order. `bus` defaults to zero; the port reads or sums its consecutive
-channels there. This includes sidechains and additional outputs, without a
+channels there. A **negative** `bus` leaves the port unconnected: an input
+reads silence and an output writes nowhere. The clients build references
+through the shared core, where a bus number routes the main port and leaves
+auxiliary ones unconnected. This includes sidechains and additional outputs, without a
 separate addressing rule. Unknown fields and incompatible layouts fail. The
 optional `state` is an opaque snapshot as JSON byte integers (at most 1 MiB).
 An omitted or empty initial `state` uses the plugin defaults; live state commands
@@ -120,10 +160,18 @@ Instantiate with `/synth_new` and control with `/node_set`, `/node_map` and
 `/node_mapAudio`. Parameter names are `param:<native-id>`, in **adapter-native
 units** (CLAP plain values, VST3 normalized `[0, 1]` values), represented at the server's ordinary float control precision. Bus
 names are `in:<native-port-id>` and `out:<native-port-id>`. Native IDs, never
-display labels, identify controls. Numeric control indices refer to the
+display labels, identify controls. **Each control also answers to an alias**
+read from its port or parameter: the main audio input and output are `in` and
+`out` (the one flagged main, else the first), another port
+`in_<name>`/`out_<name>`, a parameter its name; a name is lowercased, every
+other run of characters one `_`, a leading digit prefixed by `p`. An alias two
+controls would share is nobody's: a port's wins over a parameter's, and one
+claimed twice within ports or within parameters is dropped for all claimants.
+Queries report the native-id names. Numeric control indices refer to the
 reported control order: parameters sorted by native ID, then input ports,
 then output ports. `/def_query.reply` uses family `plugin`; each control has
-`name, default, "kr", min, max, step`, like a Faust control. A stepped CLAP parameter's step is one; a stepped VST3 parameter's step is
+`name, default, "kr", min, max, step`, like a Faust control; a bus control's
+minimum is -1, unconnected. A stepped CLAP parameter's step is one; a stepped VST3 parameter's step is
 `1 / stepCount`. Continuous parameters have step zero. Bus controls have integer steps.
 Read-only parameters cannot be written. Out-of-range parameters or exceeded
 block capacities produce silence and a per-node fault, rather than clipping

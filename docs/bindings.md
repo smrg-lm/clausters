@@ -303,6 +303,20 @@ spaces kept apart by arithmetic are two spaces that eventually overlap.
 | `clausters_core_bundle_validate` | `bundle_validate` | |
 | `clausters_core_patch_compile` | `patch_compile` | the cord→bus pass, one bus per connected net. Reached from a page since the multitrack editor was ported: a logical aggregate draws as a directed patch, and a cord drawn there is compiled by this rather than by a second answer written in TypeScript |
 
+## Native plugins
+
+What a plugin is as data, its catalog and a plugin def's reference
+(`clausters_core::plugin_catalog`). Each door is one JSON request and one JSON
+answer in both bindings, the same documents: a client reads and searches a
+catalog and builds a reference through these, so the vocabulary, the search
+and the port rule are the core's.
+
+| C ABI | wasm | Note |
+|---|---|---|
+| `clausters_core_plugin_catalog` | `plugin_catalog` | `idiom` — C fills a buffer from a JSON request; wasm takes the request's JSON string and returns the answer's |
+| `clausters_core_plugin_search` | `plugin_search` | `idiom` — the same |
+| `clausters_core_plugin_reference` | `plugin_reference` | `idiom` — the same |
+
 ## The document
 
 One implementation of what an edit *means*, bound by every client rather than

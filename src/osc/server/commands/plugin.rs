@@ -22,6 +22,8 @@ mod workers {
     pub(in crate::osc::server) struct ScanRequest {
         pub dirs: Vec<std::path::PathBuf>,
         pub cache: Option<std::path::PathBuf>,
+        /// Inspect every binary, cached or not.
+        pub rescan: bool,
         pub client: ClientId,
     }
     pub(in crate::osc::server) struct ScanReply {
@@ -137,16 +139,22 @@ mod workers {
             PluginJob::Scan(job) => {
                 let result = (|| {
                     let helper = clausters_plugin_host::runtime::helper_path()?;
-                    let entries = clausters_plugin_host::runtime::scan_cancellable(
+                    let mut cache = job
+                        .cache
+                        .as_deref()
+                        .map(clausters_plugin_host::runtime::ScanCache::read);
+                    let outcome = clausters_plugin_host::runtime::scan_cached(
                         &helper,
                         &job.dirs,
                         clausters_plugin_host::runtime::DEFAULT_TIMEOUT,
                         stop,
+                        cache.as_mut(),
+                        job.rescan,
                     )?;
-                    if let Some(dir) = &job.cache {
-                        clausters_plugin_host::runtime::cache(dir, &entries)?;
+                    if let (Some(dir), Some(cache)) = (&job.cache, &cache) {
+                        cache.write(dir)?;
                     }
-                    Ok(entries)
+                    Ok(outcome.entries)
                 })();
                 PluginResult::Scan(ScanReply {
                     client: job.client,
@@ -423,7 +431,12 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let mut dirs = Vec::new();
-        for argument in args.rest() {
+        let mut rescan = false;
+        for (i, argument) in args.rest().iter().enumerate() {
+            if let (0, OscType::Int(flag)) = (i, argument) {
+                rescan = *flag != 0;
+                continue;
+            }
             let OscType::String(path) = argument else {
                 return Err("plugin scan directories must be strings".into());
             };
@@ -450,13 +463,14 @@ impl OscServer {
                 .submit(PluginJob::Scan(ScanRequest {
                     dirs,
                     cache,
+                    rescan,
                     client: from,
                 }))?;
             Ok(())
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = from;
+            let _ = (from, rescan);
             Err("native plugins unavailable in the in-page engine".into())
         }
         #[cfg(all(
@@ -467,7 +481,7 @@ impl OscServer {
             ))
         ))]
         {
-            let _ = from;
+            let _ = (from, rescan);
             Err("server built without native plugin support".into())
         }
     }

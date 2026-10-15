@@ -71,13 +71,37 @@ See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-buil
 
 ### Native plugin discovery
 
-`server.scan_plugins("/plugins", timeout=30.0)` scans directories on the native
-server and returns JSON metadata and per-binary error rows. With no directories,
-it uses the server's CLAP and VST3 search roots. A Linux server built with `plugin-clap` or `plugin-vst3`
-and its matching helper are required; ordinary builds reply with a capability
-error. Scanning is blocking, so keep it outside clock routines. Use TCP for a
-large catalogue and choose a timeout for all binaries. Stable identities, plain
-parameter units, capacities and the persistence cache are specified in the
+`server.plugins()` returns a `PluginCatalog` of the CLAP and VST3 plugins
+installed on the native server's machine: the server's standard search roots,
+or the directories and binaries given (`server.plugins("/opt/plugins")`). Each
+entry is a `Plugin`, found by what it is called rather than by its native id:
+
+```python
+catalog = server.plugins(timeout=60.0)
+eq = catalog.find("Parametric Equalizer x8 Stereo")
+catalog.find("Keys", format="vst3")          # the name is installed in both
+catalog.filter(kind="effect", tag="reverb")  # every reverb
+```
+
+A `Plugin` carries its identity (`format`, `path`, `id`, `key`), what it says
+about itself (`name`, `vendor`, `version`, `description`, `url`), its audio and
+note ports, its parameters and what it supports (`has_state`, `has_editor`).
+**What it is** comes from what it declares in either format's vocabulary
+(`features`, as declared): `kind` (`"instrument"`, `"effect"`,
+`"note_effect"`, `"analyzer"`, `"other"`), `tags` (`"synth"`, `"reverb"`,
+`"eq"`, ...) and `channels` (`"mono"`, `"stereo"`, ...). `find` raises when
+nothing matches or when several still do, naming the candidates. Data a
+plugin loads from outside, such as an impulse response, has no standard
+declaration in either format; it lives in the plugin's state.
+
+The server keeps what it found: a binary unchanged since it was inspected is
+not inspected again, so asking twice is cheap, and `rescan=True` inspects
+every binary. A Linux server built with `plugin-clap` or `plugin-vst3` and its
+matching helper are required; ordinary builds reply with a capability error.
+Discovery is blocking, so keep it outside clock routines; use TCP for a large
+catalogue and choose a timeout for all binaries. `server.scan_plugins()`
+returns the rows underneath. Stable identities, plain parameter units,
+capacities and the cache are specified in the
 [server reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-discovery).
 
 ## `clausters.Session` — ergonomic defaults, no globals
@@ -105,12 +129,26 @@ rule and its three corollaries open the server's OSC reference.
 
 ### Native plugin definitions
 
-`PluginDef(name, reference)` sends a native binary reference with native IDs,
-port routing and optional initial state. A plugin def builds a `Synth` like
-any other def; its controls use `param:<id>`, `in:<id>` and `out:<id>`.
-Query the loaded def to obtain its `ControlInfo` entries. CLAP parameter
-controls use native plain units; VST3 uses normalized `[0, 1]` values. VST3
-references use `format: "vst3"` and the scanned hexadecimal class ID. A native Linux
+`PluginDef(name, plugin)` is the decision about one `Plugin`: which buses its
+audio ports use and the state it starts from. `outputs` defaults to bus 0 and
+`inputs` to unconnected (an input reads silence); a bus number puts the main
+port there and leaves auxiliary ports (a sidechain, separate outputs)
+unconnected, and `{port: bus}` routes the ports it names. A port the plugin
+does not have is refused before anything is sent:
+
+```python
+PluginDef("eq", eq, inputs=4).send(server)                  # main in on 4, main out on 0
+PluginDef("duck", comp, inputs={"in": 4, "in_sidechain": 8})
+```
+
+A plugin def builds a `Synth` like any other def. Its controls answer to the
+names in `plugin.controls` -- `in` and `out` for the main audio ports,
+`in_<name>`/`out_<name>` for the others, a parameter's name -- and always to
+their native-id names, `param:<id>`, `in:<id>` and `out:<id>`; a negative bus
+leaves a port unconnected. Query the loaded def to obtain its `ControlInfo`
+entries. CLAP parameter controls use native plain units; VST3 uses normalized
+`[0, 1]` values. The def's `reference` is its stored form, and
+`PluginDef(name, reference)` rebuilds one from it. A native Linux
 server and matching helper process CLAP and VST3 plugins outside the audio callback.
 Latency includes the bounded block pipeline. General server delay compensation
 aligns statically admitted automatic bus paths across all def families, including
@@ -156,8 +194,9 @@ See the [offline reference](https://clausters.readthedocs.io/en/latest/schemas.h
 
 `node.plugin_event(event)` sends notes, MIDI or native per-note expression to the
 existing instance. Use distinct `source` origins for independent players and
-note IDs for overlapping keys. A lane voice `{"plugin": node_id, "port":
-native_port_id}` holds notes on that same instance; replacing or freeing the
+note IDs for overlapping keys; an event without a `port` goes to the main
+note input. A lane voice `{"plugin": node_id}` (with an optional `"port"`)
+holds notes on that same instance; replacing or freeing the
 lane releases only its notes. MIDI bindings of a plugin def likewise create
 one persistent instance, using the shared MIDI decoder. MPE requires a CLAP
 note-expression port; unsupported dialects report errors. Bind a governed or

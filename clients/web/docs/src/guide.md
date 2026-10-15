@@ -302,23 +302,54 @@ Above that sit `Event` and `rest`, the value patterns (`pseq`, `pser`, `prand`, 
 
 ## Native plugin discovery
 
-`await server.scanPlugins(["/plugins"], 30.0)` returns the same metadata/error
-rows as Python's `server.scan_plugins`. Directories belong to the server. Over
-WebSocket a tab can scan a Linux native server built with `plugin-clap` or `plugin-vst3` and its
-matching helper; an in-page engine replies with a capability error because it
-cannot load native binaries or create helper processes. With no directories,
-the server uses its CLAP and VST3 search roots. Choose a timeout for the whole catalogue.
-See the [server reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-discovery)
+`await server.plugins()` returns a `PluginCatalog` of the CLAP and VST3
+plugins installed on the native server's machine, as Python's
+`server.plugins` does: the server's standard search roots, or the directories
+and binaries given (`await server.plugins(["/opt/plugins"])`). Each entry is
+a `Plugin`, found by what it is called rather than by its native id:
+
+```js
+const catalog = await server.plugins([], { timeout: 60.0 });
+const eq = catalog.find("Parametric Equalizer x8 Stereo");
+catalog.find("Keys", { format: "vst3" });          // the name is installed in both
+catalog.filter(null, { kind: "effect", tag: "reverb" });
+```
+
+A `Plugin` carries its identity (`format`, `path`, `id`, `key`), what it says
+about itself (`name`, `vendor`, `version`, `description`, `url`), its audio
+and note ports, its parameters and what it supports (`hasState`,
+`hasEditor`). **What it is** comes from what it declares in either format's
+vocabulary (`features`): `kind`, `tags` and `channels`, read by the same core
+as Python's. `find` throws when nothing matches or several still do, naming
+the candidates. The server keeps what it found, so asking twice is cheap;
+`{ rescan: true }` inspects every binary. Directories belong to the server.
+Over WebSocket a tab reaches a Linux native server built with `plugin-clap`
+or `plugin-vst3` and its matching helper; an in-page engine replies with a
+capability error because it cannot load native binaries or create helper
+processes. `await server.scanPlugins()` returns the rows underneath. See the
+[server reference](https://clausters.readthedocs.io/en/latest/schemas.html#native-plugin-discovery)
 for stable identities, parameter units, capacities and caching.
 
 ### Native plugin definitions
 
-`PluginDef(name, reference)` sends a native binary reference with native IDs,
-port routing and optional initial state. A plugin def builds a `Synth` like
-any other def; its controls use `param:<id>`, `in:<id>` and `out:<id>`.
-Query the loaded def to obtain its `ControlInfo` entries. CLAP parameter
-controls use native plain units; VST3 uses normalized `[0, 1]` values. VST3
-references use `format: "vst3"` and the scanned hexadecimal class ID. A native Linux
+`new PluginDef(name, plugin, { inputs, outputs, state })` is the decision
+about one `Plugin`: which buses its audio ports use and the state it starts
+from. `outputs` defaults to bus 0 and `inputs` to unconnected; a bus number
+puts the main port there and leaves auxiliary ports unconnected, and
+`{port: bus}` routes the ports it names. A port the plugin does not have is
+refused before anything is sent:
+
+```js
+await new PluginDef("eq", eq, { inputs: 4 }).send(server);
+```
+
+A plugin def builds a `Synth` like any other def. Its controls answer to the
+names in `plugin.controls` (`in`, `out`, `in_<name>`, a parameter's name) and
+always to `param:<id>`, `in:<id>` and `out:<id>`; a negative bus leaves a port
+unconnected. Query the loaded def to obtain its `ControlInfo` entries. CLAP
+parameter controls use native plain units; VST3 uses normalized `[0, 1]`
+values. The def's `reference` is its stored form, and
+`new PluginDef(name, reference)` rebuilds one from it. A native Linux
 server and matching helper process CLAP and VST3 plugins outside the audio callback.
 Latency includes the bounded block pipeline. General server delay compensation
 aligns statically admitted automatic bus paths across all def families, including
@@ -366,8 +397,9 @@ An in-page render cannot load native plugins.
 
 `node.pluginEvent(event)` sends notes, MIDI or native per-note expression to the
 existing instance. Use distinct `source` origins for independent players and
-note IDs for overlapping keys. A lane voice `{"plugin": node_id, "port":
-native_port_id}` holds notes on that same instance; replacing or freeing the
+note IDs for overlapping keys; an event without a `port` goes to the main
+note input. A lane voice `{"plugin": node_id}` (with an optional `"port"`)
+holds notes on that same instance; replacing or freeing the
 lane releases only its notes. MIDI bindings of a plugin def likewise create
 one persistent instance, using the shared MIDI decoder. MPE requires a CLAP
 note-expression port; unsupported dialects report errors. Bind a governed or

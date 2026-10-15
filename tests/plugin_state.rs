@@ -202,3 +202,52 @@ fn initial_state_refreshes_latency_ports_and_parameter_metadata_before_activatio
     let synth = PluginSynth::new(def, 48000.0, 0).unwrap();
     assert_eq!(synth.latency(), 256 + 23);
 }
+#[test]
+fn controls_answer_to_their_aliases_and_an_unconnected_input_is_silent() {
+    let live = Live::new();
+    let mut unrouted = reference();
+    unrouted.inputs[0].bus = -1;
+    live.send(
+        "/def_send",
+        vec![
+            OscType::String("plugin".into()),
+            OscType::String("fx".into()),
+            OscType::String(serde_json::to_string(&unrouted).unwrap()),
+        ],
+    );
+    live.done("/def_send");
+    live.send(
+        "/synth_new",
+        vec![
+            OscType::String("fx".into()),
+            OscType::Int(42),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    live.sync();
+    // The source writes bus 4; nothing reads it yet.
+    live.output(0.0, 0.0);
+    let set = |name: &str, value: f32| {
+        live.send(
+            "/node_set",
+            vec![
+                OscType::Int(42),
+                OscType::String(name.into()),
+                OscType::Float(value),
+            ],
+        );
+        live.sync();
+    };
+    // The main input is `in`, the gain parameter `gain`.
+    set("in", 4.0);
+    live.output(0.5, 0.0);
+    set("gain", 0.25);
+    live.output(0.25, 0.0);
+    set("out", 1.0);
+    live.output(0.0, 0.25);
+    set("in", -1.0);
+    live.output(0.0, 0.0);
+    live.send("/node_free", vec![OscType::Int(42)]);
+    live.sync();
+}

@@ -1,0 +1,812 @@
+{
+ "rows": [
+  {
+   "kind": "plugin",
+   "plugin": {
+    "format": "clap",
+    "path": "/plugins/Keys.clap",
+    "id": "org.test.keys",
+    "name": "Keys",
+    "vendor": "Test",
+    "version": "1",
+    "description": "",
+    "url": "",
+    "manual_url": "",
+    "support_url": "",
+    "features": [
+     "instrument",
+     "piano",
+     "stereo"
+    ],
+    "sdk_version": "",
+    "inputs": [],
+    "outputs": [
+     {
+      "id": 20,
+      "name": "Main Out",
+      "channels": 2,
+      "flags": 1,
+      "main": true,
+      "layout": "stereo",
+      "active": true
+     }
+    ],
+    "note_inputs": [
+     {
+      "id": 0,
+      "name": "Notes",
+      "dialects": 3,
+      "preferred": 1,
+      "channels": 16
+     }
+    ],
+    "note_outputs": [],
+    "parameters": [
+     {
+      "id": 1,
+      "name": "Volume",
+      "module": "",
+      "flags": 0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.0,
+      "default": 0.5
+     },
+     {
+      "id": 2,
+      "name": "Hall Mix",
+      "module": "Room",
+      "flags": 0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.0,
+      "default": 0.5
+     }
+    ],
+    "latency": 0,
+    "state": true,
+    "editor": true
+   }
+  },
+  {
+   "kind": "plugin",
+   "plugin": {
+    "format": "vst3",
+    "path": "/plugins/Keys.vst3",
+    "id": "org.test.keys",
+    "name": "Keys",
+    "vendor": "Test",
+    "version": "1",
+    "description": "",
+    "url": "",
+    "manual_url": "",
+    "support_url": "",
+    "features": [
+     "Instrument",
+     "Piano"
+    ],
+    "sdk_version": "",
+    "inputs": [],
+    "outputs": [
+     {
+      "id": 20,
+      "name": "Main Out",
+      "channels": 2,
+      "flags": 1,
+      "main": true,
+      "layout": "stereo",
+      "active": true
+     }
+    ],
+    "note_inputs": [
+     {
+      "id": 0,
+      "name": "Notes",
+      "dialects": 3,
+      "preferred": 1,
+      "channels": 16
+     }
+    ],
+    "note_outputs": [],
+    "parameters": [
+     {
+      "id": 7,
+      "name": "Volume",
+      "module": "",
+      "flags": 0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.0,
+      "default": 0.5
+     }
+    ],
+    "latency": 0,
+    "state": true,
+    "editor": true
+   }
+  },
+  {
+   "kind": "plugin",
+   "plugin": {
+    "format": "clap",
+    "path": "/plugins/Plate.clap",
+    "id": "org.test.plate",
+    "name": "Plate",
+    "vendor": "Test",
+    "version": "1",
+    "description": "",
+    "url": "",
+    "manual_url": "",
+    "support_url": "",
+    "features": [
+     "audio-effect",
+     "reverb"
+    ],
+    "sdk_version": "",
+    "inputs": [
+     {
+      "id": 10,
+      "name": "Main In",
+      "channels": 2,
+      "flags": 1,
+      "main": true,
+      "layout": "stereo",
+      "active": true
+     },
+     {
+      "id": 11,
+      "name": "Side Chain",
+      "channels": 1,
+      "flags": 0,
+      "main": false,
+      "layout": "mono",
+      "active": true
+     }
+    ],
+    "outputs": [
+     {
+      "id": 20,
+      "name": "Main Out",
+      "channels": 2,
+      "flags": 1,
+      "main": true,
+      "layout": "stereo",
+      "active": true
+     }
+    ],
+    "note_inputs": [],
+    "note_outputs": [],
+    "parameters": [
+     {
+      "id": 3,
+      "name": "Mix (%)",
+      "module": "",
+      "flags": 0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.0,
+      "default": 0.5
+     },
+     {
+      "id": 4,
+      "name": "mix",
+      "module": "",
+      "flags": 0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.0,
+      "default": 0.5
+     },
+     {
+      "id": 5,
+      "name": "Decay",
+      "module": "",
+      "flags": 0,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.0,
+      "default": 0.5
+     }
+    ],
+    "latency": 0,
+    "state": true,
+    "editor": true
+   }
+  },
+  {
+   "kind": "plugin",
+   "plugin": {
+    "format": "vst3",
+    "path": "/plugins/Scope.vst3",
+    "id": "org.test.scope",
+    "name": "Scope",
+    "vendor": "Test",
+    "version": "1",
+    "description": "",
+    "url": "",
+    "manual_url": "",
+    "support_url": "",
+    "features": [
+     "Fx",
+     "Analyzer"
+    ],
+    "sdk_version": "",
+    "inputs": [
+     {
+      "id": 0,
+      "name": "In",
+      "channels": 2,
+      "flags": 1,
+      "main": true,
+      "layout": "stereo",
+      "active": true
+     }
+    ],
+    "outputs": [
+     {
+      "id": 20,
+      "name": "Main Out",
+      "channels": 2,
+      "flags": 1,
+      "main": true,
+      "layout": "stereo",
+      "active": true
+     }
+    ],
+    "note_inputs": [],
+    "note_outputs": [],
+    "parameters": [],
+    "latency": 0,
+    "state": true,
+    "editor": true
+   }
+  },
+  {
+   "kind": "error",
+   "path": "/plugins/broken.clap",
+   "error": "plugin helper timeout"
+  }
+ ],
+ "catalog": {
+  "plugins": [
+   {
+    "channels": "stereo",
+    "controls": {
+     "hall_mix": "param:2",
+     "out": "out:20",
+     "volume": "param:1"
+    },
+    "description": "",
+    "editor": true,
+    "features": [
+     "instrument",
+     "piano",
+     "stereo"
+    ],
+    "format": "clap",
+    "id": "org.test.keys",
+    "inputs": [],
+    "key": "clap:/plugins/Keys.clap#org.test.keys",
+    "kind": "instrument",
+    "latency": 0,
+    "manual_url": "",
+    "name": "Keys",
+    "note_inputs": [
+     {
+      "channels": 16,
+      "dialects": 3,
+      "id": 0,
+      "name": "Notes",
+      "preferred": 1
+     }
+    ],
+    "note_outputs": [],
+    "outputs": [
+     {
+      "active": true,
+      "channels": 2,
+      "flags": 1,
+      "id": 20,
+      "layout": "stereo",
+      "main": true,
+      "name": "Main Out"
+     }
+    ],
+    "parameters": [
+     {
+      "default": 0.5,
+      "flags": 0,
+      "id": 1,
+      "max": 1.0,
+      "min": 0.0,
+      "module": "",
+      "name": "Volume",
+      "step": 0.0
+     },
+     {
+      "default": 0.5,
+      "flags": 0,
+      "id": 2,
+      "max": 1.0,
+      "min": 0.0,
+      "module": "Room",
+      "name": "Hall Mix",
+      "step": 0.0
+     }
+    ],
+    "path": "/plugins/Keys.clap",
+    "sdk_version": "",
+    "state": true,
+    "support_url": "",
+    "tags": [
+     "piano"
+    ],
+    "url": "",
+    "vendor": "Test",
+    "version": "1"
+   },
+   {
+    "channels": "stereo",
+    "controls": {
+     "out": "out:20",
+     "volume": "param:7"
+    },
+    "description": "",
+    "editor": true,
+    "features": [
+     "Instrument",
+     "Piano"
+    ],
+    "format": "vst3",
+    "id": "org.test.keys",
+    "inputs": [],
+    "key": "vst3:/plugins/Keys.vst3#org.test.keys",
+    "kind": "instrument",
+    "latency": 0,
+    "manual_url": "",
+    "name": "Keys",
+    "note_inputs": [
+     {
+      "channels": 16,
+      "dialects": 3,
+      "id": 0,
+      "name": "Notes",
+      "preferred": 1
+     }
+    ],
+    "note_outputs": [],
+    "outputs": [
+     {
+      "active": true,
+      "channels": 2,
+      "flags": 1,
+      "id": 20,
+      "layout": "stereo",
+      "main": true,
+      "name": "Main Out"
+     }
+    ],
+    "parameters": [
+     {
+      "default": 0.5,
+      "flags": 0,
+      "id": 7,
+      "max": 1.0,
+      "min": 0.0,
+      "module": "",
+      "name": "Volume",
+      "step": 0.0
+     }
+    ],
+    "path": "/plugins/Keys.vst3",
+    "sdk_version": "",
+    "state": true,
+    "support_url": "",
+    "tags": [
+     "piano"
+    ],
+    "url": "",
+    "vendor": "Test",
+    "version": "1"
+   },
+   {
+    "channels": "stereo",
+    "controls": {
+     "decay": "param:5",
+     "in": "in:10",
+     "in_side_chain": "in:11",
+     "out": "out:20"
+    },
+    "description": "",
+    "editor": true,
+    "features": [
+     "audio-effect",
+     "reverb"
+    ],
+    "format": "clap",
+    "id": "org.test.plate",
+    "inputs": [
+     {
+      "active": true,
+      "channels": 2,
+      "flags": 1,
+      "id": 10,
+      "layout": "stereo",
+      "main": true,
+      "name": "Main In"
+     },
+     {
+      "active": true,
+      "channels": 1,
+      "flags": 0,
+      "id": 11,
+      "layout": "mono",
+      "main": false,
+      "name": "Side Chain"
+     }
+    ],
+    "key": "clap:/plugins/Plate.clap#org.test.plate",
+    "kind": "effect",
+    "latency": 0,
+    "manual_url": "",
+    "name": "Plate",
+    "note_inputs": [],
+    "note_outputs": [],
+    "outputs": [
+     {
+      "active": true,
+      "channels": 2,
+      "flags": 1,
+      "id": 20,
+      "layout": "stereo",
+      "main": true,
+      "name": "Main Out"
+     }
+    ],
+    "parameters": [
+     {
+      "default": 0.5,
+      "flags": 0,
+      "id": 3,
+      "max": 1.0,
+      "min": 0.0,
+      "module": "",
+      "name": "Mix (%)",
+      "step": 0.0
+     },
+     {
+      "default": 0.5,
+      "flags": 0,
+      "id": 4,
+      "max": 1.0,
+      "min": 0.0,
+      "module": "",
+      "name": "mix",
+      "step": 0.0
+     },
+     {
+      "default": 0.5,
+      "flags": 0,
+      "id": 5,
+      "max": 1.0,
+      "min": 0.0,
+      "module": "",
+      "name": "Decay",
+      "step": 0.0
+     }
+    ],
+    "path": "/plugins/Plate.clap",
+    "sdk_version": "",
+    "state": true,
+    "support_url": "",
+    "tags": [
+     "reverb"
+    ],
+    "url": "",
+    "vendor": "Test",
+    "version": "1"
+   },
+   {
+    "channels": "stereo",
+    "controls": {
+     "in": "in:0",
+     "out": "out:20"
+    },
+    "description": "",
+    "editor": true,
+    "features": [
+     "Fx",
+     "Analyzer"
+    ],
+    "format": "vst3",
+    "id": "org.test.scope",
+    "inputs": [
+     {
+      "active": true,
+      "channels": 2,
+      "flags": 1,
+      "id": 0,
+      "layout": "stereo",
+      "main": true,
+      "name": "In"
+     }
+    ],
+    "key": "vst3:/plugins/Scope.vst3#org.test.scope",
+    "kind": "analyzer",
+    "latency": 0,
+    "manual_url": "",
+    "name": "Scope",
+    "note_inputs": [],
+    "note_outputs": [],
+    "outputs": [
+     {
+      "active": true,
+      "channels": 2,
+      "flags": 1,
+      "id": 20,
+      "layout": "stereo",
+      "main": true,
+      "name": "Main Out"
+     }
+    ],
+    "parameters": [],
+    "path": "/plugins/Scope.vst3",
+    "sdk_version": "",
+    "state": true,
+    "support_url": "",
+    "tags": [],
+    "url": "",
+    "vendor": "Test",
+    "version": "1"
+   }
+  ],
+  "errors": [
+   {
+    "error": "plugin helper timeout",
+    "path": "/plugins/broken.clap"
+   }
+  ]
+ },
+ "finds": [
+  {
+   "name": "keys",
+   "query": {},
+   "result": {
+    "error": "2 plugins match name \"keys\": clap \"Keys\" by \"Test\" (/plugins/Keys.clap); vst3 \"Keys\" by \"Test\" (/plugins/Keys.vst3); say which with a format or a vendor"
+   }
+  },
+  {
+   "name": "keys",
+   "query": {
+    "format": "vst3"
+   },
+   "result": {
+    "value": 1
+   }
+  },
+  {
+   "name": null,
+   "query": {
+    "tag": "reverb"
+   },
+   "result": {
+    "value": 2
+   }
+  },
+  {
+   "name": null,
+   "query": {
+    "kind": "analyzer"
+   },
+   "result": {
+    "value": 3
+   }
+  },
+  {
+   "name": "organ",
+   "query": {},
+   "result": {
+    "error": "no plugin matches name \"organ\""
+   }
+  }
+ ],
+ "filters": [
+  {
+   "name": null,
+   "query": {},
+   "result": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "name": null,
+   "query": {
+    "kind": "instrument"
+   },
+   "result": [
+    0,
+    1
+   ]
+  },
+  {
+   "name": "e",
+   "query": {
+    "vendor": "test"
+   },
+   "result": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "name": null,
+   "query": {
+    "format": "CLAP"
+   },
+   "result": [
+    0,
+    2
+   ]
+  }
+ ],
+ "references": [
+  {
+   "plugin": "Plate",
+   "options": {},
+   "result": {
+    "value": {
+     "depth": 4,
+     "format": "clap",
+     "id": "org.test.plate",
+     "inputs": [
+      {
+       "bus": -1,
+       "channels": 2,
+       "id": 10
+      },
+      {
+       "bus": -1,
+       "channels": 1,
+       "id": 11
+      }
+     ],
+     "outputs": [
+      {
+       "bus": 0,
+       "channels": 2,
+       "id": 20
+      }
+     ],
+     "path": "/plugins/Plate.clap",
+     "state": []
+    }
+   }
+  },
+  {
+   "plugin": "Plate",
+   "options": {
+    "inputs": 4
+   },
+   "result": {
+    "value": {
+     "depth": 4,
+     "format": "clap",
+     "id": "org.test.plate",
+     "inputs": [
+      {
+       "bus": 4,
+       "channels": 2,
+       "id": 10
+      },
+      {
+       "bus": -1,
+       "channels": 1,
+       "id": 11
+      }
+     ],
+     "outputs": [
+      {
+       "bus": 0,
+       "channels": 2,
+       "id": 20
+      }
+     ],
+     "path": "/plugins/Plate.clap",
+     "state": []
+    }
+   }
+  },
+  {
+   "plugin": "Plate",
+   "options": {
+    "inputs": {
+     "in_side_chain": 8
+    },
+    "outputs": 2,
+    "state": [
+     1,
+     2
+    ]
+   },
+   "result": {
+    "value": {
+     "depth": 4,
+     "format": "clap",
+     "id": "org.test.plate",
+     "inputs": [
+      {
+       "bus": -1,
+       "channels": 2,
+       "id": 10
+      },
+      {
+       "bus": 8,
+       "channels": 1,
+       "id": 11
+      }
+     ],
+     "outputs": [
+      {
+       "bus": 2,
+       "channels": 2,
+       "id": 20
+      }
+     ],
+     "path": "/plugins/Plate.clap",
+     "state": [
+      1,
+      2
+     ]
+    }
+   }
+  },
+  {
+   "plugin": "Plate",
+   "options": {
+    "inputs": {
+     "in_aux": 8
+    }
+   },
+   "result": {
+    "error": "\"Plate\" has no input port \"in_aux\"; its ports are in, in_side_chain"
+   }
+  },
+  {
+   "plugin": "Scope",
+   "options": {
+    "inputs": {
+     "in": 6
+    },
+    "outputs": null
+   },
+   "result": {
+    "value": {
+     "depth": 4,
+     "format": "vst3",
+     "id": "org.test.scope",
+     "inputs": [
+      {
+       "bus": 6,
+       "channels": 2,
+       "id": 0
+      }
+     ],
+     "outputs": [
+      {
+       "bus": -1,
+       "channels": 2,
+       "id": 20
+      }
+     ],
+     "path": "/plugins/Scope.vst3",
+     "state": []
+    }
+   }
+  }
+ ]
+}

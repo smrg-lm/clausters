@@ -1781,11 +1781,30 @@ walks at most 32 roots, depth 8, 8192 visited paths and 4096 pending paths;
 it skips directory-entry symlinks and inspects at most 128 binaries, each in a
 disposable helper. Each binary may expose at most 512 plugin ids. Administrative
 requests have a two-second timeout; crashes, incompatible versions and capacity
-failures become diagnostics. Catalogue pages hold at most four rows; a plugin whose metadata exceeds capacity contributes its own diagnostic without hiding compatible peers. Successful scans, including diagnostic
-rows, atomically replace `<data_dir>/plugins.json` before their completion and
+failures become diagnostics. Catalogue pages hold at most four rows; a plugin whose metadata exceeds capacity contributes its own diagnostic without hiding compatible peers. The scan reads
+`<data_dir>/plugins.json` first (`runtime::ScanCache`): a binary whose stamp
+(canonical path, modification time, size; a bundle's newest file and total
+size) matches its record from the same helper version is reported from there
+and not inspected (`runtime::scan_cached`), unless the request asks for a
+rescan. The cache learns each binary inspected, forgets the ones no longer on
+disk and is atomically rewritten before the scan's completion and
 `/server_sync` barrier. The catalogue is capped at 16 MiB. The [wire reference](schemas.md#native-plugin-discovery)
-defines fragments and stable identities; Python and TypeScript decode that same
-wire format and add no discovery logic of their own.
+defines fragments and stable identities.
+
+**What a plugin is, as data, lives in the core** (`clausters_core::plugin_catalog`):
+`PluginInfo` and its ports and parameters, the scan row, and `PluginReference`,
+which the helper re-exports and the server stores. The rules over them are
+written there once: `PluginReference::check` (every audio port routed once
+with its channel count), which the server's probe and a client's def both run;
+`PluginInfo::control_aliases` (the names a node's controls answer to besides
+their native ids), which `PluginDef::control_index` consults; the reading of
+CLAP features and VST3 subcategories into a kind, tags and a channel layout;
+search; and the default routing (a bus number routes the main port). Python
+and TypeScript decode the wire format and reach all of this through three
+JSON doors (`plugin_catalog`, `plugin_search`, `plugin_reference`), adding no
+discovery logic of their own. A negative port bus is unconnected: the node
+stages silence for an input and writes nothing for an output, and the bus
+usage it reports for ordering and compensation leaves the port out.
 
 Repository fixtures verify handshake/layout mismatches, compatibility during
 scan and load, channel order, split samples, state/main-thread and

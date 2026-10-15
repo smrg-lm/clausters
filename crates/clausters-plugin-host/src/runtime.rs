@@ -268,7 +268,7 @@ impl Instance {
         metadata.validate()?;
         if metadata.id != id
             || metadata.path != path.to_string_lossy()
-            || !metadata.matches(config)
+            || !crate::format::fits(&metadata, config)
             || !mapping.view()?.ready()
             || mapping.view()?.failure() != 0
         {
@@ -348,7 +348,7 @@ impl Instance {
             return Err("invalid plugin metadata response".into());
         };
         info.validate()?;
-        if !info.matches(self.mapping.view()?.config())
+        if !crate::format::fits(&info, self.mapping.view()?.config())
             || info.id != self.metadata.id
             || info.path != self.metadata.path
         {
@@ -516,6 +516,31 @@ pub fn scan_cancellable(
     timeout: Duration,
     cancelled: &std::sync::atomic::AtomicBool,
 ) -> Result<Vec<ScanEntry>, String> {
+    scan_cached(executable, dirs, timeout, cancelled, None, false).map(|o| o.entries)
+}
+/// What one scan did: the rows it reports, and how many binaries it inspected
+/// in a helper and how many it took from the cache unchanged.
+#[derive(Debug)]
+pub struct ScanOutcome {
+    pub entries: Vec<ScanEntry>,
+    pub inspected: usize,
+    pub reused: usize,
+}
+/// **Discovery over a cache**: a binary whose canonical path, modification
+/// time and size match its cached record -- written by this same helper
+/// version -- is not inspected again, and its cached rows (diagnostics
+/// included) are reported; `rescan` inspects every binary. The cache learns
+/// every binary inspected and forgets those no longer on disk.
+pub fn scan_cached(
+    executable: &Path,
+    dirs: &[PathBuf],
+    timeout: Duration,
+    cancelled: &std::sync::atomic::AtomicBool,
+    mut cache: Option<&mut ScanCache>,
+    rescan: bool,
+) -> Result<ScanOutcome, String> {
+    let mut inspected = 0;
+    let mut reused = 0;
     if dirs.len() > 32 {
         return Err("plugin scan directory capacity exceeded".into());
     }
@@ -595,6 +620,18 @@ pub fn scan_cancellable(
         if cancelled.load(Ordering::Acquire) {
             return Err("plugin scan cancelled".into());
         }
+        let key = path.to_string_lossy().into_owned();
+        let stamp = stamp(&path);
+        if !rescan
+            && let (Some(cache), Some(stamp)) = (cache.as_deref(), stamp)
+            && let Some(cached) = cache.binaries.get(&key)
+            && (cached.modified, cached.size) == stamp
+        {
+            result.extend(cached.entries.iter().cloned());
+            reused += 1;
+            continue;
+        }
+        inspected += 1;
         let outcome = (|| {
             let mut child = Helper::spawn(executable, timeout)?;
             let mut plugins = Vec::new();
@@ -635,13 +672,25 @@ pub fn scan_cancellable(
             }
             Ok(plugins)
         })();
-        match outcome {
-            Ok(plugins) => result.extend(plugins),
-            Err(error) => result.push(ScanEntry::Error {
-                path: path.to_string_lossy().into_owned(),
+        let rows = match outcome {
+            Ok(plugins) => plugins,
+            Err(error) => vec![ScanEntry::Error {
+                path: key.clone(),
                 error,
-            }),
+            }],
+        };
+        if let (Some(cache), Some((modified, size))) = (cache.as_deref_mut(), stamp) {
+            cache.binaries.insert(
+                key.clone(),
+                CachedBinary {
+                    path: key,
+                    modified,
+                    size,
+                    entries: rows.clone(),
+                },
+            );
         }
+        result.extend(rows);
         if serde_json::to_vec(&result)
             .map_err(|e| e.to_string())?
             .len()
@@ -657,21 +706,109 @@ pub fn scan_cancellable(
     {
         return Err("plugin scan catalogue capacity exceeded".into());
     }
-    Ok(result)
+    if let Some(cache) = cache {
+        cache.binaries.retain(|path, _| Path::new(path).exists());
+    }
+    Ok(ScanOutcome {
+        entries: result,
+        inspected,
+        reused,
+    })
 }
-/// Atomically cache successful scan rows and diagnostics in the server data directory.
-pub fn cache(data_dir: &Path, entries: &[ScanEntry]) -> Result<(), String> {
+/// A binary's modification time (nanoseconds) and size; a bundle directory's
+/// newest file and total size, bounded. `None` when it cannot be read, which
+/// inspects it.
+fn stamp(path: &Path) -> Option<(u64, u64)> {
+    let nanos = |m: &std::fs::Metadata| {
+        m.modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_nanos() as u64)
+    };
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_dir() {
+        return Some((nanos(&meta)?, meta.len()));
+    }
+    let (mut newest, mut size, mut seen) = (nanos(&meta)?, 0u64, 0usize);
+    let mut pending = vec![(path.to_path_buf(), 0usize)];
+    while let Some((dir, depth)) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+            seen += 1;
+            if seen > 4096 {
+                return None;
+            }
+            let meta = entry.metadata().ok()?;
+            newest = newest.max(nanos(&meta)?);
+            if meta.is_dir() {
+                if depth < 8 {
+                    pending.push((entry.path(), depth + 1));
+                }
+            } else {
+                size += meta.len();
+            }
+        }
+    }
+    Some((newest, size))
+}
+/// The cache's format; a file of another version is read as empty.
+const CACHE_VERSION: u32 = 2;
+/// One binary as it was last inspected.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct CachedBinary {
+    pub path: String,
+    pub modified: u64,
+    pub size: u64,
+    pub entries: Vec<ScanEntry>,
+}
+/// **What discovery knows from before**, per canonical binary path: its
+/// stamp and the rows it reported. Kept in `<data_dir>/plugins.json`.
+#[derive(Debug, Default)]
+pub struct ScanCache {
+    pub binaries: std::collections::HashMap<String, CachedBinary>,
+}
+impl ScanCache {
+    /// The cache in `data_dir`; missing, unreadable, of another format or
+    /// written by another helper version, an empty one (every binary is then
+    /// inspected, and the file rewritten).
+    pub fn read(data_dir: &Path) -> Self {
+        let read = || -> Option<Self> {
+            let json: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(data_dir.join("plugins.json")).ok()?).ok()?;
+            if json["version"] != CACHE_VERSION || json["helper"] != env!("CARGO_PKG_VERSION") {
+                return None;
+            }
+            let binaries: Vec<CachedBinary> =
+                serde_json::from_value(json["binaries"].clone()).ok()?;
+            Some(Self {
+                binaries: binaries.into_iter().map(|b| (b.path.clone(), b)).collect(),
+            })
+        };
+        read().unwrap_or_default()
+    }
+    /// Atomically write the cache into `data_dir`.
+    pub fn write(&self, data_dir: &Path) -> Result<(), String> {
+        let mut binaries: Vec<&CachedBinary> = self.binaries.values().collect();
+        binaries.sort_by(|a, b| a.path.cmp(&b.path));
+        let json = serde_json::json!({
+            "version": CACHE_VERSION,
+            "helper": env!("CARGO_PKG_VERSION"),
+            "binaries": binaries,
+        });
+        write_atomic(data_dir, &json)
+    }
+}
+fn write_atomic(data_dir: &Path, json: &serde_json::Value) -> Result<(), String> {
     std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
     let temp = data_dir.join(format!(
         ".plugins-{}-{}.json",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
-    let json = serde_json::json!({"version": 1, "entries": entries});
     let result = (|| {
         std::fs::write(
             &temp,
-            serde_json::to_vec_pretty(&json).map_err(|e| e.to_string())?,
+            serde_json::to_vec_pretty(json).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
         std::fs::rename(&temp, data_dir.join("plugins.json")).map_err(|e| e.to_string())
@@ -900,7 +1037,7 @@ struct Loaded {
 impl Loaded {
     fn metadata(&mut self) -> Result<PluginInfo, String> {
         let info = self.instance.metadata()?;
-        if !info.matches(self.mapping.view()?.config()) {
+        if !crate::format::fits(&info, self.mapping.view()?.config()) {
             self.mapping.view()?.fail(Failure::Protocol);
             return Err("plugin ports changed".into());
         }

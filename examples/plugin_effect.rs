@@ -11,9 +11,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use clausters::dsp::{ProcessCtx, StageMask};
     use clausters::node::{AddAction, SynthNode};
     use clausters::osc::server::{OscServer, ServerInfo};
-    use clausters::plugin::{PluginReference, PortReference};
     use clausters::rosc::{OscMessage, OscPacket, OscType, encoder};
     use clausters::server::engine::{Cmd, engine_pair};
+    use clausters_core::plugin_catalog::{Route, reference};
     use std::net::UdpSocket;
     use std::time::{Duration, Instant};
     struct Source {
@@ -48,43 +48,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &args[2],
         Duration::from_secs(2),
     )?;
-    let mut bus = 4;
-    let inputs = info
-        .inputs
-        .iter()
-        .map(|p| {
-            let row = PortReference {
-                id: p.id,
-                channels: p.channels,
-                bus,
-            };
-            bus += p.channels;
-            row
-        })
-        .collect();
-    let mut bus = 0;
-    let outputs = info
-        .outputs
-        .iter()
-        .map(|p| {
-            let row = PortReference {
-                id: p.id,
-                channels: p.channels,
-                bus,
-            };
-            bus += p.channels;
-            row
-        })
-        .collect();
-    let reference = PluginReference {
-        format: "clap".into(),
-        path: args[1].clone(),
-        id: args[2].clone(),
-        inputs,
-        outputs,
-        state: Vec::new(),
-        depth: 4,
-    };
+    // Inputs read from bus 4, where the source writes; outputs write from bus 0.
+    let reference = reference(&info, &Route::From(4), &Route::From(0), Vec::new())?;
     let (mut engine, mut handle) = engine_pair(48000.0, 2);
     handle
         .send(Cmd::AddSynth {

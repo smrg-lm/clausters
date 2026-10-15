@@ -43,6 +43,7 @@ mod measure;
 pub mod notation;
 mod out;
 mod patch;
+mod plugin;
 mod registry;
 mod rng;
 mod scale;
@@ -65,6 +66,7 @@ pub use event::*;
 pub use history::*;
 pub use measure::*;
 pub use patch::*;
+pub use plugin::*;
 pub use registry::*;
 pub use rng::*;
 pub use scale::*;
@@ -559,7 +561,11 @@ pub use time::*;
 /// **v89 a gesture is applied as one.** `clausters_domain_edit_all`: the
 /// edits one gesture came to, all of them or none, with the payload that puts
 /// each back. Additive.
-pub const CORE_ABI_VERSION: u32 = 89;
+/// **v90 the plugin catalog.** `clausters_core_plugin_catalog`,
+/// `clausters_core_plugin_search` and `clausters_core_plugin_reference`: a
+/// catalog read from scan rows, searched, and a plugin def's reference built
+/// with its ports routed. Additive.
+pub const CORE_ABI_VERSION: u32 = 90;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

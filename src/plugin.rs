@@ -9,8 +9,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use crate::dsp::{BusUsage, ProcessCtx, ReplyKind, ReplyMsg};
 use crate::node::{ControlMap, SynthNode};
 use clausters_core::plugin_shm::{
-    Config, DEFAULT_DEPTH, Event, EventKind, EventList, FRAMES, Failure, Job, MAX_DEPTH, SPANS,
-    Span,
+    Config, Event, EventKind, EventList, FRAMES, Failure, Job, MAX_DEPTH, SPANS, Span,
 };
 use clausters_plugin_host::format::PluginInfo;
 use clausters_plugin_host::runtime::{
@@ -20,32 +19,7 @@ use serde::{Deserialize, Serialize};
 
 static GENERATION: AtomicU64 = AtomicU64::new(1_000_000);
 
-/// One native port routed to consecutive server audio buses.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PortReference {
-    pub id: u32,
-    pub channels: u32,
-    #[serde(default)]
-    pub bus: u32,
-}
-/// Persistent recipe; state bytes are an opaque initial-state snapshot.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PluginReference {
-    pub format: String,
-    pub path: String,
-    pub id: String,
-    pub inputs: Vec<PortReference>,
-    pub outputs: Vec<PortReference>,
-    #[serde(default)]
-    pub state: Vec<u8>,
-    #[serde(default = "default_depth")]
-    pub depth: u32,
-}
-fn default_depth() -> u32 {
-    DEFAULT_DEPTH
-}
+pub use clausters_core::plugin_catalog::{PluginReference, PortReference};
 /// On-disk record preserves the original name across filename sanitizing.
 #[derive(Serialize, Deserialize)]
 pub struct PluginRecord {
@@ -58,6 +32,9 @@ pub struct PluginDef {
     pub info: PluginInfo,
     pub names: Vec<String>,
     pub defaults: Vec<f32>,
+    /// What else names a control: its port's or parameter's alias, mapped to
+    /// the native-id name (`clausters_core::plugin_catalog`).
+    pub aliases: std::collections::HashMap<String, String>,
     initial_state: bool,
 }
 impl PluginDef {
@@ -85,32 +62,13 @@ impl PluginDef {
             &reference.id,
             DEFAULT_TIMEOUT,
         )?;
-        if info.format != reference.format {
-            return Err("plugin format does not match binary".into());
-        }
-        for (ports, routes) in [
-            (&info.inputs, &reference.inputs),
-            (&info.outputs, &reference.outputs),
-        ] {
-            if ports.len() != routes.len() {
-                return Err("plugin port configuration mismatch".into());
-            }
-            for port in ports {
-                if routes
-                    .iter()
-                    .filter(|r| r.id == port.id && r.channels == port.channels)
-                    .count()
-                    != 1
-                {
-                    return Err("plugin port configuration mismatch".into());
-                }
-            }
-        }
+        reference.check(&info)?;
         let mut def = Self {
             reference,
             info,
             names: Vec::new(),
             defaults: Vec::new(),
+            aliases: Default::default(),
             initial_state,
         };
         def.info.parameters.sort_by_key(|p| p.id);
@@ -136,6 +94,7 @@ impl PluginDef {
             def.defaults[i] = instance.parameter(p.id)? as f32;
         }
         drop(instance);
+        def.aliases = def.info.control_aliases().into_iter().collect();
         Ok(def)
     }
     /// The pipeline a live instance gets: the reference's depth, raised to
@@ -198,10 +157,13 @@ impl PluginDef {
             info: self.info.clone(),
             names: self.names.clone(),
             defaults: self.defaults.clone(),
+            aliases: self.aliases.clone(),
             initial_state: true,
         }
     }
+    /// A control by its native-id name or by its alias.
     pub fn control_index(&self, name: &str) -> Option<u32> {
+        let name = self.aliases.get(name).map_or(name, String::as_str);
         self.names.iter().position(|n| n == name).map(|n| n as u32)
     }
     /// Exactly the bus sets that processing reads and sums into.
@@ -211,9 +173,12 @@ impl PluginDef {
         let mut index = self.info.parameters.len();
         for (read, ports) in [(true, &self.info.inputs), (false, &self.info.outputs)] {
             for port in ports {
-                let first = values.get(index).copied().unwrap_or(0.0).max(0.0) as usize;
+                // A negative bus leaves the port unconnected.
+                let first = values.get(index).copied().unwrap_or(0.0);
                 for channel in 0..port.channels as usize {
-                    usage.mark_bus(first.saturating_add(channel), read, !read);
+                    if first >= 0.0 {
+                        usage.mark_bus((first as usize).saturating_add(channel), read, !read);
+                    }
                 }
                 indices.push(index as u32);
                 index += 1;
@@ -886,11 +851,17 @@ impl SynthNode for PluginSynth {
         let mut control = self.def.info.parameters.len();
         let mut channel = 0;
         for port in &self.def.info.inputs {
+            // An unconnected (negative) or missing bus reads silence.
+            let connected = self.values[control] >= 0.0;
             let first = self.values[control].max(0.0) as usize;
             for ch in 0..port.channels as usize {
-                if first.saturating_add(ch) < ctx.buses.audio_count() {
-                    self.input[channel * FRAMES + range.start..channel * FRAMES + range.end]
+                let staged =
+                    &mut self.input[channel * FRAMES + range.start..channel * FRAMES + range.end];
+                if connected && first.saturating_add(ch) < ctx.buses.audio_count() {
+                    staged
                         .copy_from_slice(&ctx.buses.audio(first.saturating_add(ch))[range.clone()]);
+                } else {
+                    staged.fill(0.0);
                 }
                 channel += 1;
             }
@@ -898,9 +869,10 @@ impl SynthNode for PluginSynth {
         }
         channel = 0;
         for port in &self.def.info.outputs {
+            let connected = self.values[control] >= 0.0;
             let first = self.values[control].max(0.0) as usize;
             for ch in 0..port.channels as usize {
-                if first.saturating_add(ch) < ctx.buses.audio_count() {
+                if connected && first.saturating_add(ch) < ctx.buses.audio_count() {
                     // SAFETY: the scheduler owns these buses through this node's StageMask.
                     for (dst, src) in unsafe { ctx.buses.audio_mut(first.saturating_add(ch)) }
                         [range.clone()]
@@ -1163,7 +1135,7 @@ mod offline_tests {
     #[test]
     fn the_pipeline_covers_a_device_callback_of_many_blocks() {
         let def = instrument("callback");
-        assert_eq!(def.live_depth(0), DEFAULT_DEPTH);
+        assert_eq!(def.live_depth(0), clausters_core::plugin_shm::DEFAULT_DEPTH);
         assert_eq!(def.live_depth(2048), 32);
         assert_eq!(def.live_depth(1 << 20), MAX_DEPTH);
         let buses = Buses::new(ControlBuses::new(16), 16);

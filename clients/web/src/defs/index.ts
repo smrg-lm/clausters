@@ -97,5 +97,5 @@ export * as signals from "./signals.ts";
 export * as boxes from "./boxes.ts";
 export * as pvExpr from "./pv_expr.ts";
 
-export { PluginDef } from "./plugindef.ts";
-export type { PluginReference, PluginPortReference } from "./plugindef.ts";
+export { Plugin, PluginCatalog, PluginDef } from "./plugindef.ts";
+export type { PluginQuery, PluginReference, PluginPortReference, PluginRoute } from "./plugindef.ts";

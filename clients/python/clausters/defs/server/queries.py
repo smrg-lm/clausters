@@ -8,6 +8,7 @@ why asking beats assuming.
 """
 
 import json
+from typing import TYPE_CHECKING
 
 from ...errors import CommandError
 from ..info import (
@@ -29,26 +30,50 @@ from .options import (
     ServerInfo,
 )
 
+if TYPE_CHECKING:
+    from ..plugindef import PluginCatalog
+
 
 class ServerQueries:
     """The introspection half of `Server`; never instantiated on its own."""
 
     # ---- server introspection: what a running server actually holds ----
 
-    def scan_plugins(self, *dirs: str, timeout: "float | None" = None) -> "list[dict]":
+    def plugins(self, *dirs: str, rescan: bool = False,
+                timeout: "float | None" = None) -> "PluginCatalog":
+        """**The native plugins installed on the server's machine**, as a
+        `clausters.PluginCatalog` to search (`find`, `filter`) and build defs
+        from (``PluginDef(name, catalog.find("..."))``).
+
+        With no directories, the server's CLAP and VST3 search roots; else the
+        directories and binaries given, on the server's filesystem. The
+        server keeps what it found: a binary unchanged since it was last
+        inspected (same path, modification time and size) is not inspected
+        again, so asking again is cheap; ``rescan`` inspects every one.
+        Blocking, never call from a routine; see `scan_plugins` for the rows
+        underneath."""
+        from ..plugindef import PluginCatalog
+        return PluginCatalog.from_rows(self.scan_plugins(*dirs, rescan=rescan, timeout=timeout))
+
+    def scan_plugins(self, *dirs: str, rescan: bool = False,
+                     timeout: "float | None" = None) -> "list[dict]":
         """Scan CLAP and VST3 plugins on a native server, returning JSON metadata/error rows.
 
         With no directories, use the server's CLAP and VST3 search roots. Every binary
         is inspected in a disposable helper with a bounded timeout. Compatible
         rows identify the binary path, native plugin id, ports and plain-value
         parameters; error rows retain per-binary crash/timeout diagnostics.
-        Metadata is cached in the server data directory when persistence is on.
+        Metadata is cached in the server data directory when persistence is
+        on, and a binary unchanged since it was cached is reported from there
+        without inspecting it; ``rescan`` inspects every binary. `plugins`
+        reads these rows as a catalog.
 
         Blocking, never call from a routine. Choose a timeout for the whole
         catalogue, and TCP for large replies. An in-page engine or a server
         without native plugin support replies with a capability error.
         """
-        rows = self._request_batch("/plugin_scan", *dirs,
+        args = (1, *dirs) if rescan else dirs
+        rows = self._request_batch("/plugin_scan", *args,
                                    reply="/plugin_scan.reply", timeout=timeout)
         try:
             manifest = [row for row in rows if len(row) == 5 and row[0] == -1]

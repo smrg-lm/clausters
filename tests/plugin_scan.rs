@@ -85,70 +85,93 @@ fn scan_capability_validation_and_barrier() {
         };
         msg
     };
-    send("/plugin_scan", vec![OscType::Int(1)]);
+    // A leading int is the rescan flag; anything else that is not a path is refused.
+    send(
+        "/plugin_scan",
+        vec![OscType::String("/nonexistent".into()), OscType::Int(1)],
+    );
     let invalid = recv();
     assert_eq!(invalid.addr, "/fail");
     assert!(matches!(&invalid.args[1], OscType::String(s) if s.contains("strings")));
     #[cfg(all(target_os = "linux", feature = "plugin-clap"))]
     {
-        send(
-            "/plugin_scan",
-            vec![OscType::String(directory.to_string_lossy().into_owned())],
-        );
-        send("/server_status", Vec::new());
-        send("/server_sync", vec![OscType::Int(38)]);
-        // The deliberately hanging first candidate cannot block the network loop.
-        let before = std::time::Instant::now();
-        assert_eq!(recv().addr, "/server_status.reply");
-        assert!(before.elapsed() < Duration::from_secs(1));
-        let mut entries = Vec::new();
-        let mut manifest = false;
-        let mut done = false;
-        loop {
-            let msg = recv();
-            match msg.addr.as_str() {
-                "/plugin_scan.reply" => {
-                    let [
-                        OscType::Int(index),
-                        OscType::Int(count),
-                        OscType::Int(chunk),
-                        OscType::Int(chunks),
-                        OscType::Blob(bytes),
-                    ] = msg.args.as_slice()
-                    else {
-                        panic!("invalid fragment")
-                    };
-                    assert_eq!(*count, 7);
-                    if *index == -1 {
-                        manifest = true;
-                        assert!(bytes.is_empty());
-                    } else {
-                        assert_eq!((*chunk, *chunks), (0, 1));
-                        entries.push(serde_json::from_slice::<serde_json::Value>(bytes).unwrap());
-                    }
-                }
-                "/done" => {
-                    assert_eq!(msg.args[0], OscType::String("/plugin_scan".into()));
-                    done = true;
-                }
-                "/server_sync.reply" => {
-                    assert_eq!(msg.args[0], OscType::Int(38));
-                    break;
-                }
-                _ => panic!("unexpected reply: {msg:?}"),
+        let scan = |rescan: bool| {
+            let mut args = vec![OscType::String(directory.to_string_lossy().into_owned())];
+            if rescan {
+                args.insert(0, OscType::Int(1));
             }
-        }
-        assert!(done && manifest);
-        assert_eq!(entries.len(), 7);
-        assert!(
-            entries
-                .iter()
-                .any(|e| e["kind"] == "error" && e["error"].as_str().unwrap().contains("timeout"))
-        );
+            let started = std::time::Instant::now();
+            send("/plugin_scan", args);
+            send("/server_status", Vec::new());
+            send("/server_sync", vec![OscType::Int(38)]);
+            // The deliberately hanging first candidate cannot block the network loop.
+            let before = std::time::Instant::now();
+            assert_eq!(recv().addr, "/server_status.reply");
+            assert!(before.elapsed() < Duration::from_secs(1));
+            let mut entries = Vec::new();
+            let mut manifest = false;
+            let mut done = false;
+            loop {
+                let msg = recv();
+                match msg.addr.as_str() {
+                    "/plugin_scan.reply" => {
+                        let [
+                            OscType::Int(index),
+                            OscType::Int(count),
+                            OscType::Int(chunk),
+                            OscType::Int(chunks),
+                            OscType::Blob(bytes),
+                        ] = msg.args.as_slice()
+                        else {
+                            panic!("invalid fragment")
+                        };
+                        assert_eq!(*count, 7);
+                        if *index == -1 {
+                            manifest = true;
+                            assert!(bytes.is_empty());
+                        } else {
+                            assert_eq!((*chunk, *chunks), (0, 1));
+                            entries
+                                .push(serde_json::from_slice::<serde_json::Value>(bytes).unwrap());
+                        }
+                    }
+                    "/done" => {
+                        assert_eq!(msg.args[0], OscType::String("/plugin_scan".into()));
+                        done = true;
+                    }
+                    "/server_sync.reply" => {
+                        assert_eq!(msg.args[0], OscType::Int(38));
+                        break;
+                    }
+                    _ => panic!("unexpected reply: {msg:?}"),
+                }
+            }
+            assert!(done && manifest);
+            assert_eq!(entries.len(), 7);
+            assert!(
+                entries
+                    .iter()
+                    .any(|e| e["kind"] == "error"
+                        && e["error"].as_str().unwrap().contains("timeout"))
+            );
+            (entries, started.elapsed())
+        };
+        // The first scan waits out the hanging candidate's timeout; the second
+        // finds every binary unchanged in the cache and inspects none, so it
+        // does not; a rescan inspects them all again.
+        let (first, slow) = scan(false);
+        assert!(slow >= Duration::from_secs(2), "{slow:?}");
         let cached: serde_json::Value =
             serde_json::from_slice(&std::fs::read(directory.join("data/plugins.json")).unwrap())
                 .unwrap();
-        assert_eq!(cached["entries"], serde_json::Value::Array(entries));
+        assert_eq!(cached["version"], 2);
+        assert_eq!(cached["binaries"].as_array().unwrap().len(), 2);
+        let (second, fast) = scan(false);
+        assert!(fast < Duration::from_secs(1), "{fast:?}");
+        assert_eq!(second, first);
+        let (forced, slow) = scan(true);
+        assert!(slow >= Duration::from_secs(2), "{slow:?}");
+        assert_eq!(forced, first);
     }
     #[cfg(not(all(
         target_os = "linux",

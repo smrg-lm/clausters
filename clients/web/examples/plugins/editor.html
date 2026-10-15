@@ -5,13 +5,18 @@ Same calls, names and tones as clients/python/examples/plugins/editor.py.
 Build the web package and serve this tree. Start a native server with
 --ws 57112 and plugin-clap,plugin-vst3, with its matching helper beside it.
 Python boots that process; a page attaches to one started separately.
-Choose a mono/stereo effect with an audible preset and an X11 editor.
-The repository CLAP gain and VST3 fixtures also work. Edit the native window
-on the server's machine while the quiet tones play; Finish closes the session.
+Name the effect by what it is called, as server.plugins() lists them; the
+server looks in the standard CLAP and VST3 directories, or in the directory
+or binary given, and the format says which when the name is in both.
+Choose a mono/stereo effect with an audible preset and an X11 editor, such as
+"Parametric Equalizer x8 Stereo". The repository CLAP gain and VST3 fixtures
+also work. Edit the native window on the server's machine while the quiet
+tones play; Finish closes the session.
 -->
 <label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
-<label>Binary on server <input id="binary" placeholder="/path/effect.clap"></label><br>
-<label>Native plugin ID <input id="plugin"></label><br>
+<label>Plugin name <input id="name" placeholder="Parametric Equalizer x8 Stereo"></label><br>
+<label>Directory or binary on server (optional) <input id="path"></label><br>
+<label>Format (optional) <input id="format" placeholder="clap or vst3"></label><br>
 <button id="open">Open editor</button><button id="finish" disabled>Finish</button>
 <pre id="log"></pre>
 <script type="module">
@@ -24,17 +29,16 @@ $("open").onclick = async () => {
         $("open").disabled = true;
         session = (await Session.live($("url").value)).activate();
         const server = session.server;
-        const rows = await server.scanPlugins([$("binary").value], 60.0);
-        const info = rows.find((row) => row.kind === "plugin" && row.plugin.id === $("plugin").value)?.plugin;
-        if (!info?.editor || !info.inputs.length) throw new Error("choose an effect with a native X11 editor");
-        const reference = { format: info.format, path: info.path, id: info.id, inputs: [], outputs: [] };
-        let bus = 4;
-        for (const item of info.inputs) { reference.inputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
-        bus = 0;
-        for (const item of info.outputs) { reference.outputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
+        // The catalog is what the server found installed: the effect is found by
+        // its name, and carries its ports, parameters and identity.
+        const paths = $("path").value ? [$("path").value] : [];
+        const effect = (await server.plugins(paths, { timeout: 60.0 })).find(
+            $("name").value, { format: $("format").value || undefined, kind: "effect" });
+        if (!effect.hasEditor) throw new Error("choose an effect with a native X11 editor");
+        // Its main input reads bus 4, where the tones are; its main output is bus 0.
         // A tmp_ name keeps the def out of the data directory: a stored plugin def
         // is probed again on every boot, and this one means nothing to a later session.
-        await new PluginDef("tmp_editor_effect", reference).send(server);
+        await new PluginDef("tmp_editor_effect", effect, { inputs: 4 }).send(server);
         await new SynthDef("editor_tone", out(4.0, sine(220.0).mul(0.08)), out(5.0, sine(330.0).mul(0.08))).send(server);
         source = new Synth("editor_tone", {}, { server });
         voice = new Synth("tmp_editor_effect", {}, { server });
@@ -57,8 +61,9 @@ $("open").onclick = async () => {
 const params = new URLSearchParams(location.search);
 if (params.has("smoke")) {
     $("url").value = params.get("url") ?? $("url").value;
-    $("binary").value = params.get("binary") ?? "";
-    $("plugin").value = params.get("plugin") ?? "";
+    $("name").value = params.get("name") ?? "";
+    $("path").value = params.get("path") ?? "";
+    $("format").value = params.get("format") ?? "";
     $("open").click();
 }
 </script></html>

@@ -52,6 +52,10 @@
 //!   editing envelopes, so what an editor draws is what the server plays.
 //! - [`event_lane`] -- an event lane's data, the shape `/lane_set` carries: written
 //!   by the client that places a sequence on a transport, read by the server.
+//! - [`plugin_catalog`] -- a native plugin as data: what discovery reports
+//!   about one, the catalog of them read into one vocabulary (kind, tags,
+//!   channels, controls by name), search, and the reference a plugin def
+//!   stores, with the port rule the server and every client check.
 //! - [`registry`] -- the finite-resource id registry (node ids, buses,
 //!   buffers): a bounded occupancy map where every release is reusable and
 //!   exhaustion is explicit, shared so the server's reserved ranges and every
@@ -114,6 +118,7 @@ pub mod osc;
 pub mod oscil;
 pub mod patch;
 pub mod peaks;
+pub mod plugin_catalog;
 pub mod plugin_shm;
 pub mod pvprog;
 pub mod ratio;

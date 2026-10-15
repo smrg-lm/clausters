@@ -1,17 +1,27 @@
 --- a/fixture.rs
 +++ b/fixture.rs
-@@ -0,0 +1,2 @@
+@@ -1,3 +1,5 @@
 +// Adapted from vst3-rs's MIT-licensed gain example; see LICENSE-MIT.
 +// External SDK names are retained by the fixture to exercise the native ABI.
-@@ -52 +54 @@
+ #![allow(non_upper_case_globals)]
+ #![allow(non_camel_case_types)]
+ #![allow(non_snake_case)]
+@@ -49,14 +51,23 @@
+     len as usize
+ }
+ 
 -const PLUGIN_NAME: &'static str = "Gain (vst3-rs example plugin)";
 +const PLUGIN_NAME: &str = "Clausters VST3 fixture";
-@@ -55,0 +58,4 @@
+ 
+ struct GainProcessor {
+     gain: AtomicU64,
 +    level: AtomicU64,
 +    context: Cell<*mut IHostApplication>,
 +    connection: std::cell::RefCell<Option<vst3::ComPtr<IConnectionPoint>>>,
 +    main: std::thread::ThreadId,
-@@ -59 +65,6 @@
+ }
+ 
+ impl Class for GainProcessor {
 -    type Interfaces = (IComponent, IAudioProcessor, IProcessContextRequirements);
 +    type Interfaces = (
 +        IComponent,
@@ -19,18 +29,25 @@
 +        IProcessContextRequirements,
 +        IConnectionPoint,
 +    );
-@@ -67 +78,5 @@
+ }
+ 
+ impl GainProcessor {
+@@ -64,21 +75,64 @@
+ 
+     fn new() -> GainProcessor {
+         GainProcessor {
 -            gain: AtomicU64::new(1.0f64.to_bits()),
 +            gain: AtomicU64::new(0.5f64.to_bits()),
 +            level: AtomicU64::new(0),
 +            context: Cell::new(ptr::null_mut()),
 +            connection: std::cell::RefCell::new(None),
 +            main: std::thread::current().id(),
-@@ -73,4 +88,12 @@
+         }
+     }
+ }
+ 
+ impl IPluginBaseTrait for GainProcessor {
 -    unsafe fn initialize(&self, _context: *mut FUnknown) -> tresult {
--        kResultOk
--    }
--
 +    unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
 +        assert_eq!(self.main, std::thread::current().id());
 +        let host = ComRef::from_raw(context)
@@ -41,13 +58,10 @@
 +        assert_eq!(host.getName(&mut name), kResultOk);
 +        assert_eq!(name[0], 67);
 +        self.context.set(host.into_raw());
-+        kResultOk
-+    }
-@@ -78,4 +101,35 @@
--        kResultOk
--    }
--}
+         kResultOk
+     }
 -
+     unsafe fn terminate(&self) -> tresult {
 +        assert_eq!(self.main, std::thread::current().id());
 +        assert!(self.connection.borrow().is_none());
 +        drop(vst3::ComPtr::from_raw(
@@ -80,19 +94,44 @@
 +        kResultOk
 +    }
 +    unsafe fn notify(&self, _: *mut IMessage) -> tresult {
-+        kResultOk
-+    }
-+}
-@@ -99 +153 @@
+         kResultOk
+     }
+ }
+-
+ impl IComponentTrait for GainProcessor {
+     unsafe fn getControllerClassId(&self, class_id: *mut TUID) -> tresult {
+         *class_id = GainController::CID;
+@@ -96,7 +150,7 @@
+                 BusDirections_::kOutput => 1,
+                 _ => 0,
+             },
 -            MediaTypes_::kEvent => 0,
 +            MediaTypes_::kEvent => 1,
-@@ -122 +176 @@
+             _ => 0,
+         }
+     }
+@@ -119,7 +173,7 @@
+                         bus.channelCount = 2;
+                         copy_wstring("Input", &mut bus.name);
+                         bus.busType = BusTypes_::kMain as BusType;
 -                        bus.flags = BusInfo_::BusFlags_::kDefaultActive as u32;
 +                        bus.flags = BusInfo_::BusFlags_::kDefaultActive;
-@@ -137 +191 @@
+ 
+                         kResultOk
+                     }
+@@ -134,7 +188,7 @@
+                         bus.channelCount = 2;
+                         copy_wstring("Output", &mut bus.name);
+                         bus.busType = BusTypes_::kMain as BusType;
 -                        bus.flags = BusInfo_::BusFlags_::kDefaultActive as u32 as uint32;
 +                        bus.flags = BusInfo_::BusFlags_::kDefaultActive;
-@@ -145 +199,13 @@
+ 
+                         kResultOk
+                     }
+@@ -142,7 +196,19 @@
+                 },
+                 _ => kInvalidArgument,
+             },
 -            MediaTypes_::kEvent => kInvalidArgument,
 +            MediaTypes_::kEvent => {
 +                if index != 0 {
@@ -107,13 +146,14 @@
 +                bus.flags = 1;
 +                kResultOk
 +            }
-@@ -172,6 +238,21 @@
+             _ => kInvalidArgument,
+         }
+     }
+@@ -169,12 +235,27 @@
+         kResultOk
+     }
+ 
 -    unsafe fn setState(&self, _state: *mut IBStream) -> tresult {
--        kResultOk
--    }
--
--    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
--        kResultOk
 +    unsafe fn setState(&self, state: *mut IBStream) -> tresult {
 +        assert_eq!(std::thread::current().id(), self.main);
 +        let state = ComRef::from_raw(state).unwrap();
@@ -127,27 +167,45 @@
 +            return kInvalidArgument;
 +        }
 +        self.gain.store(value, Ordering::Relaxed);
-+        kResultOk
-+    }
-+
+         kResultOk
+     }
+ 
+-    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
+-        kResultOk
 +    unsafe fn getState(&self, state: *mut IBStream) -> tresult {
 +        assert_eq!(std::thread::current().id(), self.main);
 +        let state = ComRef::from_raw(state).unwrap();
 +        let mut value = self.gain.load(Ordering::Relaxed);
 +        state.write((&mut value as *mut u64).cast(), 8, ptr::null_mut())
-@@ -229,2 +310,2 @@
+     }
+ }
+ 
+@@ -226,14 +307,18 @@
+ 
+     unsafe fn canProcessSampleSize(&self, symbolic_sample_size: i32) -> tresult {
+         match symbolic_sample_size as SymbolicSampleSizes {
 -            SymbolicSampleSizes_::kSample32 => kResultOk as i32,
 -            SymbolicSampleSizes_::kSample64 => kNotImplemented as i32,
 +            SymbolicSampleSizes_::kSample32 => kResultOk,
 +            SymbolicSampleSizes_::kSample64 => kNotImplemented,
-@@ -236 +317,5 @@
+             _ => kInvalidArgument,
+         }
+     }
+ 
+     unsafe fn getLatencySamples(&self) -> u32 {
 -        0
 +        if f64::from_bits(self.gain.load(Ordering::Relaxed)) > 0.7 {
 +            23
 +        } else {
 +            0
 +        }
-@@ -248,26 +333,27 @@
+     }
+ 
+     unsafe fn setupProcessing(&self, _setup: *mut ProcessSetup) -> tresult {
+@@ -245,73 +330,67 @@
+     }
+ 
+     unsafe fn process(&self, data: *mut ProcessData) -> tresult {
 -        let process_data = &*data;
 -
 -        if let Some(param_changes) = ComRef::from_raw(process_data.inputParameterChanges) {
@@ -172,8 +230,6 @@
 -                            if result == kResultTrue {
 -                                self.gain.store(value.to_bits(), Ordering::Relaxed);
 -                            }
--                        }
--                        _ => {}
 +        assert_ne!(std::thread::current().id(), self.main);
 +        let data = &*data;
 +        assert_eq!(data.symbolicSampleSize, 0);
@@ -201,8 +257,41 @@
 +                    assert_eq!(queue.getPoint(point, &mut offset, &mut value), kResultOk);
 +                    if offset == sample {
 +                        self.gain.store(value.to_bits(), Ordering::Relaxed);
-@@ -277,38 +363,31 @@
--        }
++                    }
++                }
++            }
++            for index in 0..events.getEventCount() {
++                let mut event: Event = std::mem::zeroed();
++                assert_eq!(events.getEvent(index, &mut event), kResultOk);
++                if event.sampleOffset == sample {
++                    assert_eq!(out_events.addEvent(&mut event), kResultOk);
++                    if event.r#type == 4 {
++                        let e = event.__field0.noteExpressionValue;
++                        match e.typeId {
++                            0 => assert_eq!(e.value, 0.25),
++                            2 => assert!((e.value - 0.55).abs() < 1e-12),
++                            _ => (),
+                         }
+-                        _ => {}
++                    }
++                    match event.r#type {
++                        0 => self.level.store(
++                            (event.__field0.noteOn.velocity as f64).to_bits(),
++                            Ordering::Relaxed,
++                        ),
++                        1 => self.level.store(0, Ordering::Relaxed),
++                        _ => (),
+                     }
+                 }
+             }
++            let gain = f64::from_bits(self.gain.load(Ordering::Relaxed)) as f32;
++            let level = f64::from_bits(self.level.load(Ordering::Relaxed)) as f32;
++            for channel in 0..2 {
++                let input = *(*data.inputs).__field0.channelBuffers32.add(channel);
++                let output = *(*data.outputs).__field0.channelBuffers32.add(channel);
++                *output.add(sample as usize) = gain * (*input.add(sample as usize) + level);
++            }
+         }
 -
 -        let gain = f64::from_bits(self.gain.load(Ordering::Relaxed)) as f32;
 -
@@ -240,63 +329,47 @@
 -            output_r[i] = gain * input_r[i];
 -        }
 -
-+            for index in 0..events.getEventCount() {
-+                let mut event: Event = std::mem::zeroed();
-+                assert_eq!(events.getEvent(index, &mut event), kResultOk);
-+                if event.sampleOffset == sample {
-+                    assert_eq!(out_events.addEvent(&mut event), kResultOk);
-+                    if event.r#type == 4 {
-+                        let e = event.__field0.noteExpressionValue;
-+                        match e.typeId {
-+                            0 => assert_eq!(e.value, 0.25),
-+                            2 => assert!((e.value - 0.55).abs() < 1e-12),
-+                            _ => (),
-+                        }
-+                    }
-+                    match event.r#type {
-+                        0 => self.level.store(
-+                            (event.__field0.noteOn.velocity as f64).to_bits(),
-+                            Ordering::Relaxed,
-+                        ),
-+                        1 => self.level.store(0, Ordering::Relaxed),
-+                        _ => (),
-+                    }
-+                }
-+            }
-+            let gain = f64::from_bits(self.gain.load(Ordering::Relaxed)) as f32;
-+            let level = f64::from_bits(self.level.load(Ordering::Relaxed)) as f32;
-+            for channel in 0..2 {
-+                let input = *(*data.inputs).__field0.channelBuffers32.add(channel);
-+                let output = *(*data.outputs).__field0.channelBuffers32.add(channel);
-+                *output.add(sample as usize) = gain * (*input.add(sample as usize) + level);
-+            }
-+        }
-@@ -330,0 +410,4 @@
+         kResultOk
+     }
+ 
+@@ -328,10 +407,14 @@
+ 
+ struct GainController {
+     gain: Cell<f64>,
 +    handler: std::cell::RefCell<Option<vst3::ComPtr<IComponentHandler>>>,
 +    main: std::thread::ThreadId,
 +    edited: Cell<bool>,
 +    connection: std::cell::RefCell<Option<vst3::ComPtr<IConnectionPoint>>>,
-@@ -334 +417 @@
+ }
+ 
+ impl Class for GainController {
 -    type Interfaces = (IEditController,);
 +    type Interfaces = (IEditController, IConnectionPoint, IMidiMapping);
-@@ -342 +425,5 @@
+ }
+ 
+ impl GainController {
+@@ -339,7 +422,11 @@
+ 
+     fn new() -> GainController {
+         GainController {
 -            gain: Cell::new(1.0),
 +            gain: Cell::new(0.5),
 +            handler: std::cell::RefCell::new(None),
 +            main: std::thread::current().id(),
 +            edited: Cell::new(false),
 +            connection: std::cell::RefCell::new(None),
-@@ -358,10 +445,19 @@
+         }
+     }
+ }
+@@ -355,19 +442,29 @@
+ }
+ 
+ impl IEditControllerTrait for GainController {
 -    unsafe fn setComponentState(&self, _state: *mut IBStream) -> tresult {
 -        kNotImplemented
 -    }
 -
 -    unsafe fn setState(&self, _state: *mut IBStream) -> tresult {
--        kResultOk
--    }
--
--    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
--        kResultOk
 +    unsafe fn setComponentState(&self, state: *mut IBStream) -> tresult {
 +        let state = ComRef::from_raw(state).unwrap();
 +        let mut value = 0u64;
@@ -305,9 +378,11 @@
 +            return kInvalidArgument;
 +        }
 +        self.gain.set(f64::from_bits(value));
-+        kResultOk
-+    }
-+
+         kResultOk
+     }
+ 
+-    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
+-        kResultOk
 +    unsafe fn setState(&self, state: *mut IBStream) -> tresult {
 +        self.setComponentState(state)
 +    }
@@ -316,29 +391,57 @@
 +        ComRef::from_raw(state)
 +            .unwrap()
 +            .write((&mut value as *mut u64).cast(), 8, ptr::null_mut())
-@@ -370,0 +467 @@
+     }
+ 
+     unsafe fn getParameterCount(&self) -> i32 {
 +        assert_eq!(self.main, std::thread::current().id());
-@@ -384 +481 @@
+         1
+     }
+ 
+@@ -381,9 +478,9 @@
+                 copy_wstring("Gain", &mut info.shortTitle);
+                 copy_wstring("", &mut info.units);
+                 info.stepCount = 0;
 -                info.defaultNormalizedValue = 1.0;
 +                info.defaultNormalizedValue = 0.5;
-@@ -386 +483 @@
+                 info.unitId = 0;
 -                info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate as i32;
 +                info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate;
-@@ -435,0 +533 @@
+ 
+                 kResultOk
+             }
+@@ -433,20 +530,23 @@
+     }
+ 
+     unsafe fn normalizedParamToPlain(&self, id: u32, value_normalized: f64) -> f64 {
 +        assert_eq!(self.main, std::thread::current().id());
-@@ -437 +535 @@
+         match id {
 -            0 => value_normalized,
 +            0 => value_normalized * 2.0,
-@@ -442,0 +541 @@
+             _ => 0.0,
+         }
+     }
+ 
+     unsafe fn plainParamToNormalized(&self, id: u32, plain_value: f64) -> f64 {
 +        assert_eq!(self.main, std::thread::current().id());
-@@ -444 +543 @@
+         match id {
 -            0 => plain_value,
 +            0 => plain_value / 2.0,
-@@ -449,0 +549 @@
+             _ => 0.0,
+         }
+     }
+ 
+     unsafe fn getParamNormalized(&self, id: u32) -> f64 {
 +        assert_eq!(self.main, std::thread::current().id());
-@@ -458,0 +559 @@
+         match id {
+             0 => self.gain.get(),
+             _ => 0.0,
+@@ -456,26 +556,71 @@
+     unsafe fn setParamNormalized(&self, id: u32, value: f64) -> tresult {
+         match id {
+             0 => {
 +                assert_eq!(self.main, std::thread::current().id());
-@@ -459,0 +561,10 @@
+                 self.gain.set(value);
 +                if let Some(handler) = self.handler.borrow().as_ref() {
 +                    if value == 0.66 && !self.edited.replace(true) {
 +                        assert_eq!(handler.beginEdit(0), kResultOk);
@@ -349,12 +452,20 @@
 +                        assert_eq!(handler.restartComponent(8), kResultOk);
 +                    }
 +                }
-@@ -466 +577,3 @@
+                 kResultOk
+             }
+             _ => kInvalidArgument,
+         }
+     }
+ 
 -    unsafe fn setComponentHandler(&self, _handler: *mut IComponentHandler) -> tresult {
 +    unsafe fn setComponentHandler(&self, handler: *mut IComponentHandler) -> tresult {
 +        assert_eq!(self.main, std::thread::current().id());
 +        *self.handler.borrow_mut() = ComRef::from_raw(handler).map(|h| h.to_com_ptr());
-@@ -471 +584,12 @@
+         kResultOk
+     }
+ 
+     unsafe fn createView(&self, _name: *const c_char) -> *mut IPlugView {
 -        ptr::null_mut()
 +        assert_eq!(self.main, std::thread::current().id());
 +        ComWrapper::new(View {
@@ -368,7 +479,42 @@
 +        .to_com_ptr::<IPlugView>()
 +        .unwrap()
 +        .into_raw()
-@@ -592,0 +717,266 @@
+     }
+ }
+ 
+ struct Factory {}
+ 
+ impl Class for Factory {
+-    type Interfaces = (IPluginFactory,);
++    type Interfaces = (IPluginFactory2,);
++}
++
++impl IPluginFactory2Trait for Factory {
++    unsafe fn getClassInfo2(&self, index: i32, info: *mut PClassInfo2) -> tresult {
++        let mut basic: PClassInfo = std::mem::zeroed();
++        let result = self.getClassInfo(index, &mut basic);
++        if result != kResultOk {
++            return result;
++        }
++        let info = &mut *info;
++        info.cid = basic.cid;
++        info.cardinality = basic.cardinality;
++        info.category = basic.category;
++        info.name = basic.name;
++        info.classFlags = 0;
++        copy_cstring(if index == 0 { "Fx|EQ|Stereo" } else { "" }, &mut info.subCategories);
++        copy_cstring("", &mut info.vendor);
++        copy_cstring("1.0.0", &mut info.version);
++        copy_cstring("VST 3.8.0", &mut info.sdkVersion);
++        kResultOk
++    }
+ }
+ 
+ impl IPluginFactoryTrait for Factory {
+@@ -590,3 +735,269 @@
+         .unwrap()
+         .into_raw()
+ }
 +
 +// The editor exercises both Linux run-loop interfaces on the helper main thread.
 +use vst3::Steinberg::Linux::*;

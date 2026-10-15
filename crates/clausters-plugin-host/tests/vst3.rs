@@ -41,6 +41,15 @@ fn bundles_class_ids_state_and_independent_instances() {
     assert_eq!(plugin.parameters[0].default, 0.5);
     assert_eq!(plugin.note_inputs.len(), 1);
     assert!(plugin.editor);
+    // What the class and its buses declare reaches the row.
+    assert_eq!(plugin.features, ["Fx", "EQ", "Stereo"]);
+    assert_eq!(plugin.sdk_version, "VST 3.8.0");
+    assert_eq!(plugin.version, "1.0.0");
+    assert_eq!(plugin.vendor, "Vendor");
+    assert_eq!(plugin.url, "https://example.com");
+    assert!(plugin.inputs[0].main && plugin.inputs[0].active);
+    assert_eq!(plugin.inputs[0].layout, "stereo");
+    assert_eq!(plugin.note_inputs[0].channels, 16);
     assert!(runtime::probe(helper(), fixture(), "bad-id", Duration::from_secs(2)).is_err());
     let mut a =
         Instance::load(helper(), fixture(), ID, config(101), Duration::from_secs(2)).unwrap();

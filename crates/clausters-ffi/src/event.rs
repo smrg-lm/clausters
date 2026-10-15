@@ -240,7 +240,7 @@ pub extern "C" fn clausters_core_event_sustain(
 /// # Safety
 /// `request` must be null or readable for `len` bytes, `out` null or writable
 /// for `out_cap`.
-unsafe fn json_door(
+pub(crate) unsafe fn json_door(
     request: *const u8,
     len: usize,
     out: *mut u8,

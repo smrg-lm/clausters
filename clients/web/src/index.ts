@@ -295,5 +295,5 @@ export type {
  */
 export * as opfs from "./engine/opfs.ts";
 
-export { PluginDef } from "./defs/plugindef.ts";
-export type { PluginReference, PluginPortReference } from "./defs/plugindef.ts";
+export { Plugin, PluginCatalog, PluginDef } from "./defs/plugindef.ts";
+export type { PluginQuery, PluginReference, PluginPortReference, PluginRoute } from "./defs/plugindef.ts";

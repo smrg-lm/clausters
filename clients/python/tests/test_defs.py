@@ -44,6 +44,66 @@ def test_plugin_scan_reassembles_chunks_and_rejects_missing_metadata():
         srv.scan_plugins()
 
 
+def _plugin_row(name, fmt, features, inputs=1):
+    port = lambda i, n, main: {"id": i, "name": n, "channels": 2, "flags": int(main),
+                               "main": main, "layout": "stereo", "active": True}
+    return {"kind": "plugin", "plugin": {
+        "format": fmt, "path": f"/plugins/{name}.{fmt}", "id": f"org.test.{name}",
+        "name": name, "vendor": "Test", "version": "1", "features": features,
+        "inputs": [port(10, "Main", True), port(11, "Side Chain", False)][:inputs],
+        "outputs": [port(20, "Main", True)], "note_inputs": [], "note_outputs": [],
+        "parameters": [{"id": 5, "name": "Volume", "module": "", "flags": 0,
+                        "min": 0.0, "max": 1.0, "step": 0.0, "default": 0.5}],
+        "latency": 0, "state": True, "editor": False}}
+
+
+def test_a_plugin_catalog_is_searched_and_builds_defs_by_the_core():
+    _ffi_or_skip()
+    from clausters import Plugin, PluginCatalog, PluginDef
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    rows = [_plugin_row("Piano", "clap", ["instrument", "piano"]),
+            _plugin_row("Piano", "vst3", ["Instrument", "Piano"]),
+            _plugin_row("Hall", "clap", ["audio-effect", "reverb", "stereo"], inputs=2),
+            {"kind": "error", "path": "/plugins/bad.clap", "error": "timeout"}]
+    payloads = [json.dumps(row).encode() for row in rows]
+    iface._replies = ([osc.message("/plugin_scan.reply", -1, len(rows), 0, 0, b"")]
+                      + [osc.message("/plugin_scan.reply", i, len(rows), 0, 1, payload)
+                         for i, payload in enumerate(payloads)]
+                      + [osc.message("/done", "/plugin_scan")])
+    catalog = srv.plugins("/plugins", rescan=True)
+    assert iface.sent[-1] == ("/plugin_scan", [1, "/plugins"])
+    assert isinstance(catalog, PluginCatalog) and len(catalog) == 3
+    assert catalog.errors == [{"path": "/plugins/bad.clap", "error": "timeout"}]
+    with pytest.raises(ValueError, match="2 plugins match"):
+        catalog.find("piano")
+    piano = catalog.find("piano", format="vst3")
+    assert isinstance(piano, Plugin) and piano.kind == "instrument" and piano.tags == ("piano",)
+    assert piano.key == "vst3:/plugins/Piano.vst3#org.test.Piano"
+    hall = catalog.find(tag="reverb")
+    assert hall.channels == "stereo" and hall.kind == "effect"
+    assert hall.controls == {"in": "in:10", "in_side_chain": "in:11", "out": "out:20",
+                             "volume": "param:5"}
+    assert [p.name for p in catalog.instruments()] == ["Piano", "Piano"]
+    assert catalog.effects() == [hall]
+    # The def's ports are routed by the core: outputs from bus 0 and inputs
+    # unconnected unless routed, by a first bus or port by port.
+    recipe = PluginDef("hall", hall)
+    assert [p["bus"] for p in recipe.reference["inputs"]] == [-1, -1]
+    assert recipe.reference["outputs"] == [{"id": 20, "channels": 2, "bus": 0}]
+    assert recipe.reference["path"] == "/plugins/Hall.clap"
+    assert [p["bus"] for p in PluginDef("h", hall, inputs=4).reference["inputs"]] == [4, -1]
+    named = PluginDef("h", hall, inputs={"in_side_chain": 8}, outputs=2, state=b"\x01")
+    assert [p["bus"] for p in named.reference["inputs"]] == [-1, 8]
+    assert named.reference["outputs"][0]["bus"] == 2 and named.reference["state"] == [1]
+    with pytest.raises(ValueError, match="in_side_chain"):
+        PluginDef("h", hall, inputs={"in_aux": 8})
+    with pytest.raises(ValueError, match="routes its own ports"):
+        PluginDef("h", recipe.reference, inputs=4)
+    recipe.send(srv, wait=False)
+    assert iface.sent[-1] == ("/def_send", ["plugin", "hall", json.dumps(recipe.reference)])
+
+
 def _ffi_or_skip():
     try:
         from clausters import _native

@@ -107,7 +107,7 @@ impl CmdTranslator {
                     OscType::String(control.clone()),
                     OscType::Float(def.defaults[i]),
                     OscType::String("kr".into()),
-                    OscType::Float(p.map_or(0.0, |p| p.min as f32)),
+                    OscType::Float(p.map_or(-1.0, |p| p.min as f32)),
                     OscType::Float(p.map_or(NUM_AUDIO_BUSES as f32 - 1.0, |p| p.max as f32)),
                     OscType::Float(p.map_or(1.0, |p| p.step as f32)),
                 ]);

@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 89
+CORE_ABI_VERSION = 90
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -561,7 +561,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_event_sustain.restype = ctypes.c_double
     lib.clausters_core_event_sustain.argtypes = [ctypes.c_double] * 4
     # Rendering an event (ABI v72): JSON in, size-then-fill out.
-    for name in ("event_synth", "event_midi", "event_of_midi", "articulation"):
+    for name in ("event_synth", "event_midi", "event_of_midi", "articulation",
+                 "plugin_catalog", "plugin_search", "plugin_reference"):
         fn = getattr(lib, f"clausters_core_{name}")
         fn.restype = ctypes.c_size_t
         fn.argtypes = [ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
@@ -3572,6 +3573,40 @@ def articulation(pitches, joins) -> tuple:
                          "joins": [[int(a), int(b)] for a, b in joins]},
                         "articulation")
     return list(answer["ties"]), [tuple(s) for s in answer["slurs"]]
+
+
+def plugin_catalog(rows: list) -> dict:
+    """A catalog from `/plugin_scan` rows: ``{"plugins": [entry, ...],
+    "errors": [{"path", "error"}, ...]}``, each entry the plugin's metadata
+    with ``key``, ``kind``, ``tags``, ``channels`` and ``controls``
+    (``clausters_core::plugin_catalog::catalog_request``)."""
+    return _json_call(lib().clausters_core_plugin_catalog, {"rows": rows}, "plugin catalog")
+
+
+def plugin_find(plugins: list, query: dict) -> int:
+    """The one catalog entry a query names, as an index, or `ValueError` naming
+    the candidates (``clausters_core::plugin_catalog::search_request``)."""
+    answer = _json_call(lib().clausters_core_plugin_search,
+                        {"plugins": plugins, "query": query, "one": True}, "plugin search")
+    return int(answer["index"])
+
+
+def plugin_filter(plugins: list, query: dict) -> list:
+    """The catalog entries a query holds for, as indices
+    (``clausters_core::plugin_catalog::search_request``)."""
+    answer = _json_call(lib().clausters_core_plugin_search,
+                        {"plugins": plugins, "query": query, "one": False}, "plugin search")
+    return [int(i) for i in answer["indices"]]
+
+
+def plugin_reference(plugin: dict, inputs, outputs, state=None) -> dict:
+    """A plugin def's reference to ``plugin`` (a catalog entry), its ports
+    routed by ``inputs`` and ``outputs`` -- ``None``, a first bus, or
+    ``{port: bus}`` -- with optional initial ``state`` bytes
+    (``clausters_core::plugin_catalog::reference_request``)."""
+    payload = {"plugin": plugin, "inputs": inputs, "outputs": outputs,
+               "state": None if state is None else list(state)}
+    return _json_call(lib().clausters_core_plugin_reference, payload, "plugin reference")
 
 
 def event_midi(keys: dict, channel: int = 0) -> list:

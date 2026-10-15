@@ -1750,6 +1750,23 @@ export function pitch_resolve(pitch: Float64Array, scale: Float32Array): Float64
 export function pitch_set(pitch: Float64Array, key: number, value: number, scale: Float32Array, spelling: number): Float64Array;
 
 /**
+ * JS face: a catalog from scan rows, `{"rows"}` in, `{"plugins", "errors"}` out.
+ */
+export function plugin_catalog(request: string): string;
+
+/**
+ * JS face: a plugin def's reference, `{"plugin", "inputs", "outputs",
+ * "state"}` in, the reference out.
+ */
+export function plugin_reference(request: string): string;
+
+/**
+ * JS face: a search over a catalog's plugins, `{"plugins", "query", "one"}`
+ * in, `{"index"}` or `{"indices"}` out.
+ */
+export function plugin_search(request: string): string;
+
+/**
  * JS face: **the props a break-point curve is drawn with**, as a JSON string --
  * `{"points": [...], "min": .., "max": .., "duration": ..}`.
  *
@@ -2175,6 +2192,9 @@ export interface InitOutput {
     readonly patchCompile: (a: number, b: number) => [number, number, number, number];
     readonly pitch_resolve: (a: number, b: number, c: number, d: number) => [number, number];
     readonly pitch_set: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+    readonly plugin_catalog: (a: number, b: number) => [number, number];
+    readonly plugin_reference: (a: number, b: number) => [number, number];
+    readonly plugin_search: (a: number, b: number) => [number, number];
     readonly pointsProps: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly pyramid_baseBucket: (a: number) => number;
     readonly pyramid_build: (a: number, b: number, c: number, d: number) => number;
@@ -2297,11 +2317,11 @@ export interface InitOutput {
     readonly widgetids_release: (a: number, b: number) => void;
     readonly widgetids_retire: (a: number, b: number) => [number, number];
     readonly widgetids_unbounded: (a: number) => number;
-    readonly widgetids_contains: (a: number, b: number) => number;
+    readonly widgetids_inUse: (a: number) => number;
     readonly amp_of_velocity: (a: number) => number;
     readonly velocity_of_amp: (a: number) => number;
+    readonly widgetids_contains: (a: number, b: number) => number;
     readonly tempomap_isEmpty: (a: number) => number;
-    readonly widgetids_inUse: (a: number) => number;
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;
     readonly clausters_midi_read_clip: (a: number, b: number, c: number) => number;

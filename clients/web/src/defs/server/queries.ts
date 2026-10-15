@@ -31,20 +31,41 @@ import {
 } from "./options.ts";
 import type { ServerInfo } from "./options.ts";
 import type { Server } from "./index.ts";
+import { PluginCatalog } from "../plugindef.ts";
 
 /** The introspection queries. Composed into `Server`; never used alone. */
 export class ServerQueries {
     /**
-     * Scan CLAP and VST3 plugins on the native server, returning JSON metadata/error
-     * rows. With no directories, use the server's CLAP and VST3 search roots. A disposable
-     * helper inspects each binary with a timeout; metadata identifies the binary,
-     * native plugin id, ports and plain-value parameters. Persistence caches it
-     * in the server data directory. Choose a timeout for the whole catalogue
-     * and TCP for large replies. An in-page engine or a server without native
-     * native plugin support replies with a capability error.
+     * **The native plugins installed on the server's machine**, as a
+     * {@link PluginCatalog} to search (`find`, `filter`) and build defs from
+     * (`new PluginDef(name, catalog.find("..."))`). With no directories, the
+     * server's CLAP and VST3 search roots; else the directories and binaries
+     * given, on the server's filesystem. The server keeps what it found: a
+     * binary unchanged since it was last inspected (same path, modification
+     * time and size) is not inspected again, so asking again is cheap;
+     * `rescan` inspects every one. See {@link scanPlugins} for the rows
+     * underneath.
      */
-    async scanPlugins(this: Server, dirs: string[] = [], timeout?: number): Promise<Record<string, unknown>[]> {
-        const messages = await this.requestBatch("/plugin_scan", dirs, {
+    async plugins(this: Server, dirs: string[] = [],
+        { rescan = false, timeout }: { rescan?: boolean; timeout?: number } = {}): Promise<PluginCatalog> {
+        return PluginCatalog.fromRows(await this.scanPlugins(dirs, { rescan, timeout }));
+    }
+    /**
+     * Scan CLAP and VST3 plugins on a native server, returning JSON
+     * metadata/error rows. With no directories, the server's CLAP and VST3
+     * search roots. Every binary is inspected in a disposable helper with a
+     * bounded timeout; metadata identifies the binary, native plugin id,
+     * ports and plain-value parameters, and error rows keep per-binary
+     * diagnostics. Persistence caches it in the server data directory, and a
+     * binary unchanged since it was cached is reported from there without
+     * inspecting it; `rescan` inspects every binary. {@link plugins} reads
+     * these rows as a catalog. Choose a timeout for the whole catalogue and
+     * TCP for large replies. An in-page engine or a server without native
+     * plugin support replies with a capability error.
+     */
+    async scanPlugins(this: Server, dirs: string[] = [],
+        { rescan = false, timeout }: { rescan?: boolean; timeout?: number } = {}): Promise<Record<string, unknown>[]> {
+        const messages = await this.requestBatch("/plugin_scan", rescan ? [1, ...dirs] : dirs, {
             reply: "/plugin_scan.reply", timeout,
         });
         try {

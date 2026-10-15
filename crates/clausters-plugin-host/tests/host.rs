@@ -160,12 +160,51 @@ fn discovery_isolated_compatible_and_cached_with_failure_diagnostics() {
             .iter()
             .any(|(p, e)| p.ends_with("incompatible.clap") && e.contains("version"))
     );
+    // What both formats declare reaches the row.
+    let instrument = plugins
+        .iter()
+        .find(|p| p.id.ends_with(".instrument"))
+        .unwrap();
+    assert_eq!(instrument.features, ["instrument", "synthesizer", "stereo"]);
+    assert_eq!(instrument.description, "Bridge test fixture");
+    assert_eq!(instrument.note_inputs[0].preferred, 1);
+    assert_eq!(instrument.note_inputs[0].channels, 16);
+    assert!(gain.inputs[0].main);
+    assert_eq!(gain.inputs[0].layout, "mono");
+    let ports = plugins.iter().find(|p| p.id.ends_with(".ports")).unwrap();
+    assert!(ports.inputs[0].main && !ports.inputs[1].main);
+    assert_eq!(ports.inputs[0].layout, "stereo");
+    // A cached scan inspects only what changed: nothing, the second time,
+    // and reports the same rows; a rescan inspects everything again.
     let cache = fixtures().join("cache");
-    runtime::cache(&cache, &entries).unwrap();
+    let _ = std::fs::remove_dir_all(&cache);
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let scan = |rescan| {
+        let mut known = runtime::ScanCache::read(&cache);
+        let outcome = runtime::scan_cached(
+            helper(),
+            &[fixtures().into()],
+            Duration::from_millis(300),
+            &stop,
+            Some(&mut known),
+            rescan,
+        )
+        .unwrap();
+        known.write(&cache).unwrap();
+        outcome
+    };
+    let first = scan(false);
+    assert_eq!((first.inspected, first.reused), (first.inspected, 0));
+    assert!(first.inspected >= 4);
+    let second = scan(false);
+    assert_eq!((second.inspected, second.reused), (0, first.inspected));
+    assert_eq!(second.entries, first.entries);
+    let forced = scan(true);
+    assert_eq!((forced.inspected, forced.reused), (first.inspected, 0));
     let json: serde_json::Value =
         serde_json::from_slice(&std::fs::read(cache.join("plugins.json")).unwrap()).unwrap();
-    assert_eq!(json["version"], 1);
-    assert_eq!(json["entries"].as_array().unwrap().len(), 12);
+    assert_eq!(json["version"], 2);
+    assert_eq!(json["binaries"].as_array().unwrap().len(), first.inspected);
     assert!(
         Instance::load(
             helper(),
