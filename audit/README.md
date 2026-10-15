@@ -6,11 +6,11 @@ The harness never measures the working checkout. It clones the chosen commit int
 
 ## Where results live
 
-Results are **not** kept in the repository. A campaign's runs, logs, measurements and sealed records stay in its external work root, and `archive` packs each run into a tar.gz with a SHA-256 sidecar, kept by whoever ran the audit. `audit/records/` is ignored by git and can hold a local copy.
+Results are **not** kept in the repository. A campaign's runs, logs, measurements and sealed records stay in its external work root, and `archive` packs each run into a tar.gz with a SHA-256 sidecar, kept by whoever ran the audit. `audit/records/` is ignored by git and holds the auditor's compressed copy of each campaign's reviewed record, one zip per campaign, with a `SHA256SUMS` beside them.
 
 What the repository keeps is what was decided: [PLAN.md](PLAN.md) lists each finding of a campaign and the commit or plan entry that settled it, and an application finding that stays open is filed in the owning plan's "Found by use" or "Future directions", like any other.
 
-The first campaign (2026-10-15, commit `04f4b742`) is archived as `2026-10-15_04f4b742_01-records.tar.gz` with its `.sha256` in the auditor's data directory. Read [methodology notes](methodology-notes.md) before the next one: that campaign needed corrections the runner does not make yet.
+The first campaign (2026-10-15, commit `04f4b742`) is `audit/records/2026-10-15_04f4b742_01.zip` on the auditor's machine. Beside it, `audit-branch.bundle` keeps the history of the branch the tooling was developed on (`git fetch audit-branch.bundle audit:audit` restores it). The resources the campaign actually ran (commit `2e376873`, an earlier version of that branch's second commit) are not in it: each run's own archive carries them as `resources.tar`. Read [methodology notes](methodology-notes.md) before the next one: that campaign needed corrections the runner does not make yet.
 
 ## Prepare
 

@@ -412,6 +412,14 @@ on trust, so that is where drift accumulates:
 a feature branch on your own — this overrides the default "if on the default
 branch, branch first" behavior.
 
+**Commit message layout:** use a one-line subject of at most 72 characters,
+a blank line, then a body explaining what changed, why and the relevant
+validation. Wrap body paragraphs at 72 columns with actual newline characters;
+do not put a whole paragraph on one physical line or write literal `\n`
+escapes. Separate paragraphs with a blank line. Before committing, check the
+exact message file for ASCII, line lengths and trailers, and pass it with
+`git commit --file` so shell quoting cannot change its layout.
+
 **No trailers in commit messages.** Not `Co-Authored-By:`, not a "generated
 with" line, not attribution of any kind, whoever or whatever wrote the commit.
 The subject and body are the entire message, and the last line is prose. The

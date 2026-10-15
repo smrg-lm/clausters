@@ -1,6 +1,6 @@
 # Methodology improvements from the first campaign
 
-Campaign: 2026-10-15, application commit 04f4b742ce1c8b11569c9533030eeba4ff596095, initial audit resources 2e376873. These are audit-tool/procedure findings, distinct from application defects. Corrections made in disposable copies and exact scenario snapshots remain in the campaign evidence. No application source fix is included. Evidence paths below are inside the campaign's archived record (`2026-10-15_04f4b742_01-records.tar.gz`), not in the repository.
+Campaign: 2026-10-15, application commit 04f4b742ce1c8b11569c9533030eeba4ff596095, initial audit resources 2e376873. These are audit-tool/procedure findings, distinct from application defects. Corrections made in disposable copies and exact scenario snapshots remain in the campaign evidence. No application source fix is included. Evidence paths below are inside the campaign's archived record (`audit/records/2026-10-15_04f4b742_01.zip`, kept by the auditor), not in the repository.
 
 | ID | Observation and evidence | Method improvement | State |
 | --- | --- | --- | --- |
