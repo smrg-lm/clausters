@@ -47,13 +47,15 @@ bus = 0
 for item in info["outputs"]:
     reference["outputs"].append({"id": item["id"], "channels": item["channels"], "bus": bus})
     bus += item["channels"]
-PluginDef("persistent_keys", reference).send(server)
+# A tmp_ name keeps the def out of the data directory: a stored plugin def
+# is probed again on every boot, and this one means nothing to a later session.
+PluginDef("tmp_persistent_keys", reference).send(server)
 
 # %%
 # The instrument is outside the governed group, so live input keeps processing
 # during a stop. Only the lane's notes are released by the transport gesture.
 governed = Group(server=server)
-voice = Synth("persistent_keys", target=0, server=server)
+voice = Synth("tmp_persistent_keys", target=0, server=server)
 server.set_transport(0, 2.0)
 server.transport_group(governed)
 server.lane_new(3100, governed)

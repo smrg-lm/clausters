@@ -105,6 +105,11 @@ already carry it.
   reports the step it stopped at and the page's console; what is open is the
   diagnosis, from the next timeout's output.
 
+- ⬜ **Every stored plugin def is probed again at boot, before the server
+  answers** *(root `PLAN.md`, Found by use)*. A data directory that has seen a
+  heavy instrument loads it on every boot. What is open is restoring a stored
+  plugin def without loading the plugin until a node asks for it.
+
 - ⬜ **A notebook example that writes files cannot run cell by cell in an
   interactive session** *(`clients/python/PLAN.md`, Found by use)*. The output
   directory is resolved from `__file__`, which a cell-by-cell session does not
@@ -292,7 +297,10 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **The J track — third-party plugins, out of process**, `J9`
   *(root `PLAN.md`, "J track — third-party plugins: a `plugin` def family, out
-  of process")*. **J9 — The plugin's own window and packaging** remains; its decisions and acceptance live in the root plan.
+  of process")*. **J9 — The plugin's own window and packaging** remains: the
+  Python examples have been heard and seen; the paired pages by ear and eye
+  and the feature matrix are left. Its decisions and acceptance live in the
+  root plan.
 
 - ⬜ **The V track — the host seen and driven by a script**, `V1`-`V5`
   *(`clients/gui/PLAN.md`, "V track — development: the host seen and driven

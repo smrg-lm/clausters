@@ -33,9 +33,11 @@ $("play").onclick = async () => {
         for (const item of info.inputs) { reference.inputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
         bus = 0;
         for (const item of info.outputs) { reference.outputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
-        await new PluginDef("persistent_keys", reference).send(server);
+        // A tmp_ name keeps the def out of the data directory: a stored plugin def
+        // is probed again on every boot, and this one means nothing to a later session.
+        await new PluginDef("tmp_persistent_keys", reference).send(server);
         governed = new Group({ server });
-        voice = new Synth("persistent_keys", {}, { target: 0, server });
+        voice = new Synth("tmp_persistent_keys", {}, { target: 0, server });
         await server.setTransport(0, 2.0);
         await server.transportGroup(governed);
         await server.laneNew(3100, governed);

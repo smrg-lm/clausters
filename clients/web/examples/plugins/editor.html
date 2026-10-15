@@ -32,10 +32,12 @@ $("open").onclick = async () => {
         for (const item of info.inputs) { reference.inputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
         bus = 0;
         for (const item of info.outputs) { reference.outputs.push({ id: item.id, channels: item.channels, bus }); bus += item.channels; }
-        await new PluginDef("editor_effect", reference).send(server);
+        // A tmp_ name keeps the def out of the data directory: a stored plugin def
+        // is probed again on every boot, and this one means nothing to a later session.
+        await new PluginDef("tmp_editor_effect", reference).send(server);
         await new SynthDef("editor_tone", out(4.0, sine(220.0).mul(0.08)), out(5.0, sine(330.0).mul(0.08))).send(server);
         source = new Synth("editor_tone", {}, { server });
-        voice = new Synth("editor_effect", {}, { server });
+        voice = new Synth("tmp_editor_effect", {}, { server });
         await server.sync();
         await voice.openPluginEditor();
         $("log").textContent = JSON.stringify(await voice.queryPluginEditor());

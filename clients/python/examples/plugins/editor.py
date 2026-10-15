@@ -46,11 +46,13 @@ bus = 0
 for item in info["outputs"]:
     reference["outputs"].append({"id": item["id"], "channels": item["channels"], "bus": bus})
     bus += item["channels"]
-PluginDef("editor_effect", reference).send(server)
+# A tmp_ name keeps the def out of the data directory: a stored plugin def
+# is probed again on every boot, and this one means nothing to a later session.
+PluginDef("tmp_editor_effect", reference).send(server)
 SynthDef("editor_tone", out(4.0, sine(220.0) * 0.08),
          out(5.0, sine(330.0) * 0.08)).send(server)
 source = Synth("editor_tone", server=server)
-voice = Synth("editor_effect", server=server)
+voice = Synth("tmp_editor_effect", server=server)
 server.sync()
 
 # %%
