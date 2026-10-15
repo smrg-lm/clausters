@@ -26,7 +26,9 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
 /// samples or wavetables takes seconds, which an administrative request does not.
 pub const LOAD_TIMEOUT: Duration = Duration::from_secs(30);
 /// A processing thread with no job for this long polls at `IDLE_POLL`.
+#[cfg(any(feature = "clap", feature = "vst3"))]
 const IDLE_AFTER: Duration = Duration::from_millis(200);
+#[cfg(any(feature = "clap", feature = "vst3"))]
 const IDLE_POLL: Duration = Duration::from_millis(1);
 /// Most candidate binaries inspected in one scan.
 pub const MAX_CANDIDATES: usize = 128;
