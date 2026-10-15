@@ -11,15 +11,18 @@
 //! a `TcpStream`), so instead of the answering loop holding a write half, each
 //! connection thread also drains a per-connection reply queue and writes the
 //! bytes itself. To interleave reads with those queued replies the thread polls
-//! with a short read timeout ([`POLL_TIMEOUT`]). The queue holds
-//! [`REPLY_QUEUE`] replies; a reply that finds it full drops the connection --
-//! the counterpart of the TCP carrier's write timeout.
+//! with a short read timeout ([`POLL_TIMEOUT`]). The queue holds at most
+//! [`REPLY_QUEUE_BYTES`] of replies; a reply that would overflow it drops the
+//! connection -- the counterpart of the TCP carrier's write timeout. It is
+//! bounded in bytes, not replies, because one answer can legitimately be many
+//! replies at once (a plugin scan's catalogue is hundreds of fragments, sent
+//! in one turn, faster than a 5 ms poll drains them).
 
 use std::io;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{SyncSender, TrySendError, sync_channel};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{Sender, channel};
 use std::time::Duration;
 
 use tungstenite::Message;
@@ -32,31 +35,41 @@ use crate::{ClientSlots, Conn, Event, Hub, Sink, Waker, queue_and_wake};
 /// to spin.
 pub const POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
-/// Capacity, in replies, of each connection's outbound queue. The connection
+/// Capacity, in bytes, of each connection's outbound queue: twice the largest
+/// single answer the server sends (a 16 MiB plugin catalogue). The connection
 /// thread drains it every poll tick, so a backlog this deep means the client
 /// has stopped reading.
-pub const REPLY_QUEUE: usize = 256;
+pub const REPLY_QUEUE_BYTES: usize = 32 * 1024 * 1024;
 
 /// The reply half of a WebSocket connection: the queue its thread drains, and
 /// a raw handle to the socket so a reply that finds the queue full can drop the
 /// connection.
 #[derive(Debug)]
 pub struct WsConn {
-    replies: SyncSender<Vec<u8>>,
+    replies: Sender<Vec<u8>>,
+    /// Bytes queued and not yet written, shared with the connection thread.
+    queued: Arc<AtomicUsize>,
+    /// Set once the connection is dropped or gone: later replies are
+    /// discarded without a word, so one lost client is one warning.
+    dead: AtomicBool,
     raw: TcpStream,
 }
 
 impl Conn for WsConn {
     fn reply(&self, id: u64, bytes: &[u8]) {
-        match self.replies.try_send(bytes.to_vec()) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_)) => {
-                tracing::warn!("dropping ws client {id}: not draining its replies");
-                let _ = self.raw.shutdown(Shutdown::Both);
-            }
-            Err(TrySendError::Disconnected(_)) => {
-                tracing::warn!("ws client {id} reply channel closed before send");
-            }
+        if self.dead.load(Ordering::Relaxed) {
+            return;
+        }
+        if self.queued.load(Ordering::Acquire) + bytes.len() > REPLY_QUEUE_BYTES {
+            self.dead.store(true, Ordering::Relaxed);
+            tracing::warn!("dropping ws client {id}: not draining its replies");
+            let _ = self.raw.shutdown(Shutdown::Both);
+            return;
+        }
+        self.queued.fetch_add(bytes.len(), Ordering::AcqRel);
+        if self.replies.send(bytes.to_vec()).is_err() {
+            self.dead.store(true, Ordering::Relaxed);
+            tracing::warn!("ws client {id} closed before its replies were sent");
         }
     }
 }
@@ -139,8 +152,15 @@ fn conn_loop(id: u64, stream: TcpStream, max_frame: usize, sink: impl Sink<WsCon
     let Ok(raw) = ws.get_ref().try_clone() else {
         return;
     };
-    let (replies, queued) = sync_channel::<Vec<u8>>(REPLY_QUEUE);
-    if !sink(Event::Connected(id, WsConn { replies, raw })) {
+    let (replies, pending) = channel::<Vec<u8>>();
+    let queued = Arc::new(AtomicUsize::new(0));
+    let conn = WsConn {
+        replies,
+        queued: Arc::clone(&queued),
+        dead: AtomicBool::new(false),
+        raw,
+    };
+    if !sink(Event::Connected(id, conn)) {
         return; // the consumer is gone
     }
 
@@ -166,7 +186,8 @@ fn conn_loop(id: u64, stream: TcpStream, max_frame: usize, sink: impl Sink<WsCon
         }
         // Flush every queued reply (and any pong tungstenite queued on a ping).
         let mut dead = false;
-        while let Ok(bytes) = queued.try_recv() {
+        while let Ok(bytes) = pending.try_recv() {
+            queued.fetch_sub(bytes.len(), Ordering::AcqRel);
             if ws.send(Message::Binary(bytes)).is_err() {
                 dead = true;
                 break;
@@ -227,5 +248,43 @@ mod tests {
             }
         }
         panic!("no reply arrived within the deadline");
+    }
+
+    /// One answer can be hundreds of replies in one turn -- a plugin scan's
+    /// catalogue -- far more than a poll tick drains. They all arrive, in
+    /// order, and the client stays connected.
+    #[test]
+    fn a_burst_of_replies_in_one_turn_is_delivered_whole() {
+        let wake = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let waker = Waker::to(wake.local_addr().unwrap()).unwrap();
+        let mut hub = hub(
+            ("127.0.0.1", 0),
+            waker,
+            1 << 20,
+            Arc::new(ClientSlots::new(4)),
+        )
+        .unwrap();
+        let port = hub.local_addr().port();
+        let (mut client, _resp) =
+            tungstenite::connect(format!("ws://127.0.0.1:{port}/")).expect("ws connect");
+        client.send(Message::Binary(b"/scan".to_vec())).unwrap();
+        let (id, _) = wait_frame(&mut hub);
+        const REPLIES: usize = 1000;
+        for index in 0..REPLIES {
+            let mut reply = vec![0u8; 6144];
+            reply[..8].copy_from_slice(&(index as u64).to_le_bytes());
+            hub.reply(id, &reply);
+        }
+        let mut next = 0;
+        while next < REPLIES {
+            match client.read() {
+                Ok(Message::Binary(b)) => {
+                    assert_eq!(u64::from_le_bytes(b[..8].try_into().unwrap()), next as u64);
+                    next += 1;
+                }
+                Ok(_) => {}
+                Err(e) => panic!("reply {next} of {REPLIES} lost: {e}"),
+            }
+        }
     }
 }

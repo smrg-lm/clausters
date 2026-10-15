@@ -21,7 +21,7 @@
 //!   accept, and the slot is released when the connection's thread exits;
 //! - **a bounded reply path**: a TCP reply write gives up after
 //!   [`tcp::REPLY_WRITE_TIMEOUT`], a WebSocket reply queue holds
-//!   `ws::REPLY_QUEUE` replies, and a client that stops reading is dropped
+//!   `ws::REPLY_QUEUE_BYTES` of replies, and a client that stops reading is dropped
 //!   rather than stalling the loop that answers it.
 //!
 //! Decoding is not here: the bytes of a frame go to the caller, which decodes
