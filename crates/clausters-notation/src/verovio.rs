@@ -17,6 +17,7 @@ unsafe extern "C" {
     fn vrvToolkit_constructor() -> *mut c_void;
     fn vrvToolkit_constructorResourcePath(resourcePath: *const c_char) -> *mut c_void;
     fn vrvToolkit_destructor(tkPtr: *mut c_void);
+    #[cfg(test)]
     fn vrvToolkit_getVersion(tkPtr: *mut c_void) -> *const c_char;
     fn vrvToolkit_setOptions(tkPtr: *mut c_void, options: *const c_char) -> bool;
     fn vrvToolkit_loadData(tkPtr: *mut c_void, data: *const c_char) -> bool;
@@ -33,7 +34,6 @@ unsafe extern "C" {
     ) -> *const c_char;
     fn vrvToolkit_edit(tkPtr: *mut c_void, editorAction: *const c_char) -> bool;
     fn vrvToolkit_getPageCount(tkPtr: *mut c_void) -> i32;
-    fn vrvToolkit_editInfo(tkPtr: *mut c_void) -> *const c_char;
     fn vrvToolkit_getLog(tkPtr: *mut c_void) -> *const c_char;
     fn enableLogToBuffer(value: bool);
 }
@@ -148,8 +148,11 @@ fn resources_under(root: &std::path::Path) -> Option<String> {
 /// The methods are lock-free by design: verovio's global resource state makes
 /// construction the racy part, so callers serialize whole sequences with
 /// [`ffi_lock`] rather than paying a lock per call. Holding a `Toolkit` across
-/// threads without that discipline is unsound.
-pub struct Toolkit {
+/// threads without that discipline is unsound, which is why the type is the
+/// crate's own: every path out of it (`Score`, `engrave_svg`, `complaints`)
+/// takes the lock and keeps the order verovio needs, and no caller outside can
+/// reach a method without them.
+pub(crate) struct Toolkit {
     ptr: *mut c_void,
 }
 
@@ -173,6 +176,7 @@ impl Toolkit {
     }
 
     /// verovio's version string.
+    #[cfg(test)]
     pub fn version(&self) -> String {
         // SAFETY: `ptr` is a live toolkit; the returned pointer is copied at once.
         unsafe { cstr_to_string(vrvToolkit_getVersion(self.ptr)) }
@@ -242,12 +246,6 @@ impl Toolkit {
     pub fn page_count(&self) -> i32 {
         // SAFETY: `self.ptr` is a live toolkit for as long as `self` is.
         unsafe { vrvToolkit_getPageCount(self.ptr) }
-    }
-
-    /// What the editor reported about the last action, as a JSON object string.
-    pub fn edit_info(&self) -> String {
-        // SAFETY: live toolkit; the returned pointer is copied at once.
-        unsafe { cstr_to_string(vrvToolkit_editInfo(self.ptr)) }
     }
 }
 

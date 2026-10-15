@@ -218,13 +218,6 @@ impl<E: Engraver> Score<E> {
         })
     }
 
-    /// The engraver underneath, for a binding's own escape hatch (verovio's
-    /// `editInfo`, its version string) -- never for driving an edit, which is
-    /// what this type is for.
-    pub fn engraver(&self) -> &E {
-        &self.engraver
-    }
-
     /// This score engraved into a [`Page`] -- from the live document, so it
     /// reflects every edit applied so far.
     pub fn display_list(&mut self, page: i32) -> Page {
