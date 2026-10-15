@@ -24,6 +24,8 @@ impl Bound {
 }
 
 impl UGen for Bound {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         bound_slice(self.op, inputs[0], inputs[1], inputs[2], output);
     }

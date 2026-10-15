@@ -42,6 +42,10 @@ impl SelfControl {
 }
 
 impl UGen for SelfControl {
+    fn reset(&mut self) {
+        self.active = false;
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         self.active = false;
         for (i, out) in output.iter_mut().enumerate() {
@@ -99,6 +103,10 @@ impl WhenDone {
 }
 
 impl UGen for WhenDone {
+    fn reset(&mut self) {
+        self.flag = false;
+    }
+
     fn set_done_flag(&mut self, done: bool) {
         self.flag = done;
     }

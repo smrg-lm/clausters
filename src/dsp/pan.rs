@@ -212,6 +212,8 @@ impl Pan {
 }
 
 impl UGen for Pan {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         // A one-source row feeds the same signal to both gains, which is
         // exactly what panning a mono source means.
@@ -320,6 +322,8 @@ impl Rotate {
 }
 
 impl UGen for Rotate {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (x, y) = (inputs[0], inputs[1]);
         // `MidSide` takes no parameter, so its channel index sits one slot
@@ -356,6 +360,8 @@ impl UGen for Rotate {
 pub struct PanAz;
 
 impl UGen for PanAz {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (sig, pos, level) = (inputs[0], inputs[1], inputs[2]);
         let (width, orientation) = (inputs[3], inputs[4]);
@@ -443,6 +449,8 @@ impl Select {
 }
 
 impl UGen for Select {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let which = inputs[0];
         let sources = &inputs[1..];

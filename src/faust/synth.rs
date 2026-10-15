@@ -165,6 +165,10 @@ impl SynthNode for FaustSynth {
         self.body.set_control(index, value);
     }
 
+    fn reset(&mut self) {
+        unsafe { ffi::instanceClearCDSPInstance(self.dsp.as_ptr()) };
+    }
+
     fn map_control(&mut self, index: u32, bus: i32, audio: bool) {
         self.body.map_control(index, bus, audio);
     }

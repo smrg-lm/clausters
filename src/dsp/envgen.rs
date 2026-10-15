@@ -73,6 +73,10 @@ impl EnvGen {
 }
 
 impl UGen for EnvGen {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         // inputs:
         // 0: gate, 1: levelScale, 2: levelBias, 3: timeScale, 4: doneAction
@@ -243,6 +247,8 @@ impl UGen for EnvGen {
 pub struct EnvShape;
 
 impl UGen for EnvShape {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, s) in output.iter_mut().enumerate() {
             let phase = at(inputs[0], i).clamp(0.0, 1.0);

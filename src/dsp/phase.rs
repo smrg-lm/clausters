@@ -211,6 +211,10 @@ fn blep_saw(t: f64, dt: f64) -> f64 {
 }
 
 impl UGen for Saw {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let freq = inputs[0];
         let sr = ctx.sample_rate;
@@ -273,6 +277,10 @@ fn blep_pulse(t: f64, dt: f64, width: f64) -> f64 {
 }
 
 impl UGen for Pulse {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (freq, width) = (inputs[0], inputs[1]);
         let sr = ctx.sample_rate;
@@ -382,6 +390,10 @@ impl Lf {
 }
 
 impl UGen for Lf {
+    fn reset(&mut self) {
+        *self = Self::new(self.shape);
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         /// What the shapes with no duty cycle see: the value never read.
         const NO_WIDTH: &[f32] = &[0.5];
@@ -434,6 +446,10 @@ impl Default for Phasor {
 }
 
 impl UGen for Phasor {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let _ = ctx;
         let (trig, rate) = (inputs[0], inputs[1]);
@@ -493,6 +509,8 @@ impl UGen for Phasor {
 pub struct TransportPos;
 
 impl UGen for TransportPos {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let base = ctx.transport.position as f64;
         // Frames per output sample: 1 at `ar`, the slice length at `kr`, with
@@ -527,6 +545,8 @@ impl UGen for TransportPos {
 pub struct TransportFade;
 
 impl UGen for TransportFade {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         let step = if ctx.sample_rate > 0.0 {
             ctx.full_sample_rate / ctx.sample_rate

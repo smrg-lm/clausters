@@ -119,6 +119,15 @@ pub struct SpectralChain {
 }
 
 impl SpectralChain {
+    /// Back to an empty frame, keeping the window the chain now uses.
+    pub fn reset(&mut self) {
+        self.frame.fill(0.0);
+        self.ready = false;
+        self.pos = 0;
+        self.window_from = 0;
+        self.prev_window = self.window;
+    }
+
     pub fn new(winsize: usize) -> Self {
         Self {
             frame: vec![0.0; winsize],
@@ -184,6 +193,9 @@ pub struct Fft {
     frame_cleared: bool,
     /// De-circularized, windowed frame handed to the forward transform.
     scratch: Vec<f32>,
+    /// The hop-phase offset the node id gave it ([`UGen::set_node_id`]),
+    /// kept so a reset starts the hops where the first start did.
+    stagger: usize,
 }
 
 impl Fft {
@@ -207,11 +219,25 @@ impl Fft {
             live_until: 0,
             frame_cleared: true,
             scratch: vec![0.0; winsize],
+            stagger: 0,
         }
     }
 }
 
 impl UGen for Fft {
+    fn reset(&mut self) {
+        // The window a command chose is the node's and stays.
+        self.pending_window = None;
+        self.window_from = 0;
+        self.inbuf.fill(0.0);
+        self.write = 0;
+        self.pos = 0;
+        self.next_frame = (self.winsize + self.stagger) as u64;
+        self.live_until = 0;
+        self.frame_cleared = true;
+        self.scratch.fill(0.0);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         // Never reached for the spectral exec mode; a plain call is a no-op.
         output.fill(0.0);
@@ -294,8 +320,8 @@ impl UGen for Fft {
         // keeps offset 0.
         let blocks_per_hop = self.hop_size / BLOCK_SIZE;
         if blocks_per_hop > 1 && self.pos == 0 {
-            let stagger = (id.unsigned_abs() as usize % blocks_per_hop) * BLOCK_SIZE;
-            self.next_frame = (self.winsize + stagger) as u64;
+            self.stagger = (id.unsigned_abs() as usize % blocks_per_hop) * BLOCK_SIZE;
+            self.next_frame = (self.winsize + self.stagger) as u64;
         }
     }
 
@@ -381,6 +407,17 @@ impl Ifft {
 }
 
 impl UGen for Ifft {
+    fn reset(&mut self) {
+        // The window a command chose is the node's and stays.
+        self.prev_window.copy_from_slice(&self.window);
+        self.prev_norm.copy_from_slice(&self.norm);
+        self.window_from = 0;
+        self.ring.fill(0.0);
+        self.time.fill(0.0);
+        self.now = 0;
+        self.origin = None;
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -587,6 +624,8 @@ fn scale_bin(frame: &mut [f32], b: usize, half: usize, s: f32) {
 }
 
 impl UGen for PvMag {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -703,6 +742,11 @@ impl PvCombine {
 }
 
 impl UGen for PvCombine {
+    fn reset(&mut self) {
+        self.pending = None;
+        self.reported = false;
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -795,6 +839,10 @@ impl PvMagFreeze {
 }
 
 impl UGen for PvMagFreeze {
+    fn reset(&mut self) {
+        self.mags.fill(0.0);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -846,6 +894,10 @@ impl PvMagSmear {
 }
 
 impl UGen for PvMagSmear {
+    fn reset(&mut self) {
+        self.prefix.fill(0.0);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -910,6 +962,10 @@ impl PvBinShift {
 }
 
 impl UGen for PvBinShift {
+    fn reset(&mut self) {
+        self.scratch.fill(0.0);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -999,6 +1055,10 @@ impl PvKernel {
 }
 
 impl UGen for PvKernel {
+    fn reset(&mut self) {
+        self.stack.fill(0.0);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -1069,6 +1129,8 @@ impl UGen for PvKernel {
 pub struct PvBrickWall;
 
 impl UGen for PvBrickWall {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }

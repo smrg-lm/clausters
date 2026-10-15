@@ -308,6 +308,28 @@ mod ugen {
     }
 
     impl UGen for Conv {
+        fn reset(&mut self) {
+            for line in [
+                &mut self.inbuf,
+                &mut self.scratch,
+                &mut self.fdl,
+                &mut self.acc,
+                &mut self.tmp,
+                &mut self.time,
+                &mut self.fade,
+            ] {
+                line.fill(0.0);
+            }
+            self.write = 0;
+            self.since_hop = 0;
+            self.fdl_head = 0;
+            self.pending_p = 1;
+            self.fifo.clear();
+            self.kernel_buf = -1;
+            self.pending = None;
+            self.reported = None;
+        }
+
         fn latency(&self) -> usize {
             self.part
         }

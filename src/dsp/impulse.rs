@@ -28,6 +28,10 @@ impl Default for Impulse {
 }
 
 impl UGen for Impulse {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let freq = inputs[0];
         let sr = ctx.sample_rate as f64;

@@ -20,6 +20,8 @@ fn audio_bus(input: &[f32]) -> usize {
 pub struct In;
 
 impl UGen for In {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let bus = audio_bus(inputs[0]);
         let from = ctx.offset;
@@ -32,6 +34,8 @@ impl UGen for In {
 pub struct Out;
 
 impl UGen for Out {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let bus = audio_bus(inputs[0]);
         let signal = inputs[1];
@@ -50,6 +54,8 @@ impl UGen for Out {
 pub struct ReplaceOut;
 
 impl UGen for ReplaceOut {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let bus = audio_bus(inputs[0]);
         let signal = inputs[1];
@@ -67,6 +73,8 @@ impl UGen for ReplaceOut {
 pub struct InCtl;
 
 impl UGen for InCtl {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let idx = inputs[0][0].max(0.0) as usize;
         output.fill(ctx.buses.control.get(idx));
@@ -81,6 +89,8 @@ impl UGen for InCtl {
 pub struct OutCtl;
 
 impl UGen for OutCtl {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let idx = at(inputs[0], 0).max(0.0) as usize;
         let signal = inputs[1];

@@ -133,6 +133,10 @@ impl Default for PlayBuf {
 }
 
 impl UGen for PlayBuf {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let channel = inputs[1][0].max(0.0) as usize;
@@ -191,6 +195,8 @@ impl UGen for PlayBuf {
 pub struct BufRd;
 
 impl UGen for BufRd {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let channel = inputs[1][0].max(0.0) as usize;
@@ -234,6 +240,8 @@ impl UGen for BufRd {
 pub struct BufWr;
 
 impl UGen for BufWr {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let channel = inputs[1][0].max(0.0) as usize;
@@ -322,6 +330,10 @@ impl Default for RecordBuf {
 }
 
 impl UGen for RecordBuf {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let channel = inputs[1][0].max(0.0) as usize;
@@ -416,6 +428,8 @@ pub enum BufInfoKind {
 pub struct BufInfo(pub BufInfoKind);
 
 impl UGen for BufInfo {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let value = match ctx.buffers.get(index).and_then(|b| b.as_deref()) {

@@ -46,6 +46,10 @@ impl WhiteNoise {
 }
 
 impl UGen for WhiteNoise {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         self.noise.fill(output);
     }
@@ -98,6 +102,10 @@ impl PinkNoise {
 }
 
 impl UGen for PinkNoise {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         for s in output.iter_mut() {
             self.counter = self.counter.wrapping_add(1);
@@ -141,6 +149,11 @@ impl BrownNoise {
 }
 
 impl UGen for BrownNoise {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+        self.z = 0.0;
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         for s in output.iter_mut() {
             self.z += self.rng.uniform(-BROWN_STEP, BROWN_STEP);
@@ -184,6 +197,10 @@ impl GrayNoise {
 }
 
 impl UGen for GrayNoise {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         for s in output.iter_mut() {
             self.word ^= 1i32 << (self.rng.next_u64() & 31);
@@ -210,6 +227,10 @@ impl ClipNoise {
 }
 
 impl UGen for ClipNoise {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         for s in output.iter_mut() {
             *s = if self.rng.next_u64() & 1 == 0 {
@@ -299,6 +320,16 @@ impl LfNoise {
 }
 
 impl UGen for LfNoise {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+        self.counter = 0;
+        self.level = 0.0;
+        self.slope = 0.0;
+        self.curve = 0.0;
+        self.next_value = 0.0;
+        self.primed = false;
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate;
         if !self.primed {
@@ -376,6 +407,10 @@ impl Dust {
 }
 
 impl UGen for Dust {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let density = inputs[0];
         let sr = ctx.sample_rate as f64;
@@ -423,6 +458,10 @@ impl Default for Crackle {
 }
 
 impl UGen for Crackle {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, s) in output.iter_mut().enumerate() {
             let chaos = at(inputs[0], i) as f64;

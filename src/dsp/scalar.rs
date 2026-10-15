@@ -20,6 +20,8 @@ use crate::dsp::{ProcessCtx, UGen};
 pub struct SampleRate;
 
 impl UGen for SampleRate {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(ctx.full_sample_rate);
     }
@@ -54,6 +56,10 @@ impl Default for Rand {
 }
 
 impl UGen for Rand {
+    fn reset(&mut self) {
+        // The stream goes on, and the init pass draws the next value.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let lo = inputs[0][0];
         let hi = inputs[1][0];

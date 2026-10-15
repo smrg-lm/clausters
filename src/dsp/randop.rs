@@ -33,6 +33,10 @@ impl RandOp {
 }
 
 impl UGen for RandOp {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, s) in output.iter_mut().enumerate() {
             let a = at(inputs[0], i) as f64;

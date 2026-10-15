@@ -125,6 +125,10 @@ impl Line {
 }
 
 impl UGen for Line {
+    fn reset(&mut self) {
+        *self = Self::new(self.shape);
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         if inputs.len() < 4 {
             output.fill(0.0);

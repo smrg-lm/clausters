@@ -221,6 +221,11 @@ impl DiskIn {
 }
 
 impl UGen for DiskIn {
+    fn reset(&mut self) {
+        // A stream is its I/O thread's and cannot be restarted from here: a
+        // `Voices` node refuses a def that holds one.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let Some(a) = self.active.as_mut() else {
             output.fill(0.0);
@@ -395,6 +400,11 @@ impl DiskOut {
 }
 
 impl UGen for DiskOut {
+    fn reset(&mut self) {
+        // A stream is its I/O thread's and cannot be restarted from here: a
+        // `Voices` node refuses a def that holds one.
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let signal = inputs[0];
         // Pass the signal through regardless, so this UGen can be heard.

@@ -83,6 +83,15 @@ pub trait SynthNode: Send {
     /// here). Runs on the audio thread -- allocation-free.
     fn resume(&mut self) {}
 
+    /// **The synth starts again on its own memory** -- what a `Voices` node
+    /// does to a voice it hands to a new note: every piece of signal state
+    /// back to where a fresh instance's first block finds it (each UGen's
+    /// [`reset`](crate::dsp::UGen::reset), Faust's `instanceClear`), while
+    /// its controls and their bus maps stay as set. Runs on the audio thread
+    /// -- allocation-free. Default: nothing to reset (a native plugin is one
+    /// instance that is never a voice).
+    fn reset(&mut self) {}
+
     /// Tells the synth its node id, once, when the engine inserts it into the
     /// tree (every path funnels there: OSC, NRT scores, graphdef and MIDI
     /// voices, direct embedding). `UGenSynth` forwards it to its UGens -- the

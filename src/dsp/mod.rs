@@ -941,6 +941,20 @@ pub trait UGen: Send {
     /// arithmetic and nothing else.
     fn resume(&mut self) {}
 
+    /// **The voice starts again**: return to the state the constructor left,
+    /// on the memory the UGen already owns, so the next block sounds as a
+    /// freshly built instance's first block would. A `Voices` node calls it
+    /// on every UGen of a voice it hands to a new note.
+    ///
+    /// Required, so no kind can carry the last note's state into the next by
+    /// forgetting it: a phase, a filter's memory, a delay line, an envelope's
+    /// stage, a latched trigger -- everything a constructor sets. Two things
+    /// stay: a random generator's stream, which goes on (a voice restarted
+    /// on the seed it was built with would draw the same numbers for every
+    /// note), and what the constructor allocated, which is cleared and not
+    /// rebuilt. Runs on the audio thread: arithmetic and fills, nothing else.
+    fn reset(&mut self);
+
     /// Tells the UGen which node it lives in, once, when the node enters the
     /// tree. The only consumer today is `FFT`'s hop-phase stagger, which
     /// derives a deterministic per-instance offset from the id -- same id, same

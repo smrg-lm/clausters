@@ -453,6 +453,9 @@ unsafe extern "C" {
     pub fn createCDSPInstance(factory: *mut llvm_dsp_factory) -> *mut llvm_dsp;
     pub fn deleteCDSPInstance(dsp: *mut llvm_dsp);
     pub fn initCDSPInstance(dsp: *mut llvm_dsp, sample_rate: c_int);
+    /// Clears the instance's state (delay lines, recursions) and leaves its
+    /// controls alone. Allocation-free: allowed on the audio thread.
+    pub fn instanceClearCDSPInstance(dsp: *mut llvm_dsp);
     pub fn getNumInputsCDSPInstance(dsp: *mut llvm_dsp) -> c_int;
     pub fn getNumOutputsCDSPInstance(dsp: *mut llvm_dsp) -> c_int;
     pub fn buildUserInterfaceCDSPInstance(dsp: *mut llvm_dsp, ui: *mut UIGlue);

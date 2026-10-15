@@ -129,6 +129,10 @@ impl TrigPulse {
 }
 
 impl UGen for TrigPulse {
+    fn reset(&mut self) {
+        *self = Self::new(self.mode);
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate;
         for (i, out) in output.iter_mut().enumerate() {
@@ -204,6 +208,10 @@ impl Hold {
 }
 
 impl UGen for Hold {
+    fn reset(&mut self) {
+        *self = Self::new(self.mode);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, out) in output.iter_mut().enumerate() {
             let x = at(inputs[0], i);
@@ -237,6 +245,10 @@ pub struct Schmidt {
 }
 
 impl UGen for Schmidt {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, out) in output.iter_mut().enumerate() {
             let x = at(inputs[0], i);
@@ -286,6 +298,10 @@ impl FlipFlop {
 }
 
 impl UGen for FlipFlop {
+    fn reset(&mut self) {
+        *self = Self::new(self.mode);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, out) in output.iter_mut().enumerate() {
             if self.set.rose(at(inputs[0], i)) {
@@ -339,6 +355,10 @@ impl Counter {
 }
 
 impl UGen for Counter {
+    fn reset(&mut self) {
+        *self = Self::new(self.mode);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         if !self.primed {
             self.primed = true;
@@ -404,6 +424,10 @@ pub struct Stepper {
 }
 
 impl UGen for Stepper {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, out) in output.iter_mut().enumerate() {
             let lo = at(inputs[2], i) as i64;
@@ -467,6 +491,10 @@ impl Elapsed {
 }
 
 impl UGen for Elapsed {
+    fn reset(&mut self) {
+        *self = Self::new(self.mode);
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate as f64;
         for (i, out) in output.iter_mut().enumerate() {
@@ -505,6 +533,10 @@ pub struct Changed {
 }
 
 impl UGen for Changed {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         for (i, out) in output.iter_mut().enumerate() {
             let x = at(inputs[0], i);
@@ -556,6 +588,10 @@ impl Decay {
 }
 
 impl UGen for Decay {
+    fn reset(&mut self) {
+        *self = Self::new(self.two_stage);
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate;
         // The decay time is the last input either way; a two-stage decay reads
@@ -610,6 +646,10 @@ impl Default for DetectSilence {
 }
 
 impl UGen for DetectSilence {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         self.action = DoneAction::from_i32(at(inputs[3], 0) as i32);
         let sr = ctx.sample_rate;

@@ -224,6 +224,21 @@ impl SynthNode for UGenSynth {
         }
     }
 
+    fn reset(&mut self) {
+        for u in &mut self.ugens {
+            u.reset();
+        }
+        for wire in self.wires.iter_mut().chain(&mut self.locals) {
+            *wire = Block::SILENCE;
+        }
+        for chain in &mut self.chains {
+            chain.reset();
+        }
+        // The `ir` pass runs again on the next block, so a scalar reads the
+        // controls the new note set.
+        self.initialized = false;
+    }
+
     fn set_node_id(&mut self, id: i32) {
         for u in &mut self.ugens {
             u.set_node_id(id);

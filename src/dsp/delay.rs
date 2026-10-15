@@ -263,6 +263,14 @@ fn clamp_frames(interp: Interp, feedback: Feedback, frames: f64, max: f64) -> f6
 }
 
 impl UGen for Delay {
+    fn reset(&mut self) {
+        // A private line is cleared; a pool line is the buffer's and stays.
+        if let Storage::Private(line) = &mut self.line {
+            line.fill(0.0);
+        }
+        self.write = 0;
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate as f64;
         // The `Buf*` family puts the buffer and the channel first, as every

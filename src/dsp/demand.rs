@@ -172,6 +172,10 @@ impl Dramp {
 }
 
 impl UGen for Dramp {
+    fn reset(&mut self) {
+        *self = Self::new(self.kind);
+    }
+
     // Demand sources are skipped in block order; this is never called.
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
@@ -288,6 +292,15 @@ impl Drandom {
 }
 
 impl UGen for Drandom {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+        self.rep = Repeats::new();
+        self.lo = 0.0;
+        self.hi = 1.0;
+        self.step = 0.01;
+        self.value = 0.0;
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -437,6 +450,16 @@ impl Dlist {
 }
 
 impl UGen for Dlist {
+    fn reset(&mut self) {
+        // The generator's stream goes on: a restarted voice draws new numbers.
+        self.rep = Repeats::new();
+        self.index = 0;
+        for (i, p) in self.perm.iter_mut().enumerate() {
+            *p = i as u8;
+        }
+        self.reset_child = false;
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -541,6 +564,10 @@ impl Default for Dstutter {
 }
 
 impl UGen for Dstutter {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -578,6 +605,8 @@ impl UGen for Dstutter {
 pub struct Dswitch1;
 
 impl UGen for Dswitch1 {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -616,6 +645,8 @@ impl UGen for Dswitch1 {
 pub struct Dbufrd;
 
 impl UGen for Dbufrd {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }
@@ -681,6 +712,10 @@ impl Default for Demand {
 }
 
 impl UGen for Demand {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     // The synth drives this via `drive`; `process` is never called.
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
@@ -771,6 +806,10 @@ impl Duty {
 }
 
 impl UGen for Duty {
+    fn reset(&mut self) {
+        *self = Self::new(self.kind);
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
     }

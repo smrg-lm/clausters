@@ -45,6 +45,8 @@ impl BinaryOp {
 }
 
 impl UGen for BinaryOp {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         // Broadcasting slice op (allocation-free): identical to the previous
         // hand-written loop, now the single source of truth in the core.

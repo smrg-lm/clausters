@@ -43,6 +43,8 @@ impl RangeMap {
 }
 
 impl UGen for RangeMap {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let bounds = &inputs[1..6];
         if bounds.iter().all(|b| b.len() == 1) {

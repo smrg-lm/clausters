@@ -46,6 +46,10 @@ impl Default for Lag {
 }
 
 impl UGen for Lag {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn resume(&mut self) {
         // Primed again from the first input it sees, which is the value its
         // driver has *now* rather than the one it had when the music stopped.
@@ -90,6 +94,10 @@ impl Default for VarLag {
 }
 
 impl UGen for VarLag {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     fn resume(&mut self) {
         self.primed = false;
     }

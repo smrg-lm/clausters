@@ -34,6 +34,14 @@ impl SampleFifo {
         }
     }
 
+    /// Empties it, the samples zeroed, as `new` left it.
+    pub fn clear(&mut self) {
+        self.ring.fill(0.0);
+        self.head = 0;
+        self.tail = 0;
+        self.len = 0;
+    }
+
     /// The oldest sample, or silence when the FIFO is empty.
     #[inline]
     pub fn pop(&mut self) -> f32 {

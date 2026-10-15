@@ -43,6 +43,10 @@ impl Default for Meter {
 }
 
 impl UGen for Meter {
+    fn reset(&mut self) {
+        self.state = Ballistics::new();
+    }
+
     fn resume(&mut self) {
         // A held peak is "the loudest thing lately", and lately ended when the
         // transport did: a meter thawed with the old pass's peak still up
@@ -106,6 +110,10 @@ impl Default for ClipCount {
 }
 
 impl UGen for ClipCount {
+    fn reset(&mut self) {
+        self.state.reset();
+    }
+
     fn resume(&mut self) {
         // A new pass counts its own overs, and a count that goes backwards is
         // what puts a reader's mark out without anybody reaching for it.
@@ -160,6 +168,11 @@ impl Default for TruePeak {
 }
 
 impl UGen for TruePeak {
+    fn reset(&mut self) {
+        self.filter.reset();
+        self.state = Ballistics::new();
+    }
+
     fn resume(&mut self) {
         // A new pass measures its own signal: neither the old pass's held peak
         // nor the tail of its last block in the filter's window.

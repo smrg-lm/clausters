@@ -192,6 +192,10 @@ impl SvfMode {
 }
 
 impl UGen for Svf {
+    fn reset(&mut self) {
+        *self = Self::new(self.mode);
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate;
         let (sig, freq) = (inputs[0], inputs[1]);
@@ -291,6 +295,10 @@ impl OneFilter {
 }
 
 impl UGen for OneFilter {
+    fn reset(&mut self) {
+        *self = Self::new(self.kind);
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let _ = ctx;
         let (sig, coef) = (inputs[0], inputs[1]);

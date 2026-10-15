@@ -139,6 +139,16 @@ impl FaustBody {
         // anything else is ignored, like scsynth
     }
 
+    /// Writes parameter zone `index` and leaves its bus map alone -- what a
+    /// reset puts back, unlike [`Self::set_control`], which unmaps.
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub fn write_zone(&mut self, index: usize, value: f32) {
+        if let Some(zone) = self.zones.get(index) {
+            // SAFETY: as in `process`.
+            unsafe { zone.write(value) };
+        }
+    }
+
     pub fn map_control(&mut self, index: u32, bus: i32, audio: bool) {
         // Only the parameter zones are mappable; `out`/`in` routing is not.
         if let Some(m) = self.maps.get_mut(index as usize) {

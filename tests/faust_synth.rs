@@ -514,3 +514,52 @@ mod osc {
         server_thread.join().unwrap().unwrap();
     }
 }
+
+/// **A reset instance sounds as a fresh one does** -- what a `Voices` node
+/// asks of a Faust voice it hands to a new note: `instanceClear` brings the
+/// recursions back to zero and leaves the controls as they were set.
+#[test]
+fn a_reset_instance_sounds_as_a_fresh_one() {
+    use clausters::dsp::{Buses, ControlBuses, ProcessCtx};
+    // The sine's phasor and a resonance after it: two recursions.
+    let src = SINE_SRC.replacen(
+        "process = sin(6.283185307179586 * phasor) * amp;",
+        "process = sin(6.283185307179586 * phasor) * amp : + ~ *(0.9);",
+        1,
+    );
+    let def = compile_def("reset", &src);
+    let mut synth = FaustSynth::new(Arc::clone(&def), SR, &clausters::dsp::buffer::empty_pool())
+        .expect("instantiation");
+    synth.set_control(def.control_index("freq").unwrap(), 330.0);
+    let render = |synth: &mut FaustSynth| {
+        let mut out = Vec::new();
+        for _ in 0..20 {
+            let buses = Buses::new(ControlBuses::new(4), 4);
+            let mut ctx = ProcessCtx {
+                sample_rate: SR,
+                full_sample_rate: SR,
+                buses: &buses,
+                buffers: &[],
+                offset: 0,
+                frames: BLOCK_SIZE,
+                transport: Default::default(),
+            };
+            synth.process(&mut ctx);
+            out.extend_from_slice(&buses.audio(0)[..]);
+        }
+        out
+    };
+    let first = render(&mut synth);
+    assert!(first.iter().any(|v| *v != 0.0));
+    assert_ne!(
+        first,
+        render(&mut synth),
+        "the recursions carry on without a reset"
+    );
+    synth.reset();
+    assert_eq!(
+        first,
+        render(&mut synth),
+        "a reset instance must restart as a fresh one"
+    );
+}

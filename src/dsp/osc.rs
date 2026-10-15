@@ -60,6 +60,10 @@ impl Default for Osc {
 }
 
 impl UGen for Osc {
+    fn reset(&mut self) {
+        self.phase = 0.0;
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
@@ -101,6 +105,10 @@ impl Default for OscN {
 }
 
 impl UGen for OscN {
+    fn reset(&mut self) {
+        self.phase = 0.0;
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
@@ -154,6 +162,10 @@ impl VOsc {
 }
 
 impl UGen for VOsc {
+    fn reset(&mut self) {
+        self.phase = 0.0;
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate as f64;
         for (i, s) in output.iter_mut().enumerate() {
@@ -177,6 +189,8 @@ impl UGen for VOsc {
 pub struct Shaper;
 
 impl UGen for Shaper {
+    fn reset(&mut self) {}
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {

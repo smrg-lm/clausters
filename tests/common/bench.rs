@@ -32,6 +32,7 @@
 use std::sync::Arc;
 
 use clausters::clausters_core::rng::SEED_STRIDE;
+use clausters::dsp::buffer::Buffer;
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
 use clausters::node::SynthNode;
 use clausters::synthdef::instance::UGenSynth;
@@ -205,6 +206,14 @@ pub struct Run<'a> {
     /// Split every block at this sample, the way a scheduled bundle does.
     /// Rule 5's whole point: a stateful UGen must not be able to tell.
     pub cut: Option<usize>,
+    /// Reset the synth before the block that starts at this sample, the way
+    /// a `Voices` node restarts a voice for its next note.
+    pub reset_at: Option<usize>,
+    /// The buffer pool the synth reads.
+    pub buffers: &'a [Option<Arc<Buffer>>],
+    /// `(sample, control, value)`: a control set before the block that starts
+    /// at that sample.
+    pub sets: Vec<(usize, u32, f32)>,
 }
 
 impl Default for Run<'_> {
@@ -215,6 +224,9 @@ impl Default for Run<'_> {
             channels: 1,
             input: None,
             cut: None,
+            reset_at: None,
+            buffers: &[],
+            sets: Vec::new(),
         }
     }
 }
@@ -250,6 +262,11 @@ impl<'a> Run<'a> {
 /// -- offsets `0..cut` and `cut..BLOCK_SIZE` -- which is exactly what the engine
 /// does when a timed bundle lands mid-block.
 pub fn render_def(def_json: &str, run: &Run) -> Vec<Vec<f32>> {
+    render_def_with_done(def_json, run).0
+}
+
+/// [`render_def`], with the done action the synth reports after each block.
+pub fn render_def_with_done(def_json: &str, run: &Run) -> (Vec<Vec<f32>>, Vec<u8>) {
     let spec: SynthDefSpec = serde_json::from_str(def_json)
         .unwrap_or_else(|e| panic!("subject def is not a valid spec: {e}\n{def_json}"));
     let def = compile(spec).unwrap_or_else(|e| panic!("subject def does not compile: {e}"));
@@ -257,10 +274,17 @@ pub fn render_def(def_json: &str, run: &Run) -> Vec<Vec<f32>> {
     let mut buses = Buses::new(ControlBuses::new(16), AUDIO_BUSES);
 
     let mut out = vec![Vec::with_capacity(run.samples); run.channels];
+    let mut done = Vec::new();
     let mut pos = 0;
     while pos < run.samples {
         buses.clear_audio();
         let n = BLOCK_SIZE.min(run.samples - pos);
+        if run.reset_at == Some(pos) {
+            synth.reset();
+        }
+        for &(_, index, value) in run.sets.iter().filter(|(at, ..)| *at == pos) {
+            synth.set_control(index, value);
+        }
         if let Some(x) = run.input {
             // SAFETY: single-threaded test, sole owner of the input bus.
             let drive = unsafe { buses.audio_mut(IN_BUS) };
@@ -277,7 +301,7 @@ pub fn render_def(def_json: &str, run: &Run) -> Vec<Vec<f32>> {
                 sample_rate: run.sample_rate,
                 full_sample_rate: run.sample_rate,
                 buses: &buses,
-                buffers: &[],
+                buffers: run.buffers,
                 offset,
                 frames,
                 transport: Default::default(),
@@ -287,9 +311,10 @@ pub fn render_def(def_json: &str, run: &Run) -> Vec<Vec<f32>> {
         for (chan, dst) in out.iter_mut().enumerate() {
             dst.extend_from_slice(&buses.audio(chan)[..n]);
         }
+        done.push(synth.done_action() as u8);
         pos += n;
     }
-    out
+    (out, done)
 }
 
 /// Renders one subject, one vector per channel. `cut` splits every block.
@@ -343,6 +368,59 @@ fn wrap(ugen_json: &str, with_input: bool) -> String {
 }
 
 // ---- the generic rules ----
+
+/// **A reset synth sounds as a fresh one does.** Renders `half` samples, resets
+/// the synth and renders `half` more with the same input and the same control
+/// sets, then requires the second half to repeat the first exactly: the same
+/// arithmetic from the same state, so not one sample may differ. `half` is
+/// rounded up to whole blocks, since a voice is reset between blocks.
+pub fn assert_reset_restarts(name: &str, def_json: &str, run: Run, half: usize) {
+    let half = half.next_multiple_of(BLOCK_SIZE);
+    let input: Option<Vec<f32>> = run.input.map(|x| {
+        let once = &x[..half.min(x.len())];
+        once.iter().chain(once).copied().collect()
+    });
+    let mut sets = run.sets.clone();
+    sets.extend(run.sets.iter().map(|&(at, c, v)| (at + half, c, v)));
+    let twice = Run {
+        samples: 2 * half,
+        input: input.as_deref(),
+        reset_at: Some(half),
+        sets,
+        ..run
+    };
+    let (out, done) = render_def_with_done(def_json, &twice);
+    let blocks = half / BLOCK_SIZE;
+    assert_eq!(
+        done[..blocks],
+        done[blocks..],
+        "{name}: the done actions after a reset are not a fresh instance's"
+    );
+    let acts = done[..blocks].iter().any(|d| *d != 0);
+    for (chan, x) in out.iter().enumerate() {
+        let (first, second) = x.split_at(half);
+        assert!(
+            acts || first.iter().any(|v| *v != 0.0),
+            "{name} channel {chan}: silent and inert, so a reset would prove nothing"
+        );
+        if let Some(i) = (0..half).find(|&i| first[i].to_bits() != second[i].to_bits()) {
+            panic!(
+                "{name} channel {chan}: after a reset sample {i} is {} where a \
+                 fresh instance gave {}",
+                second[i], first[i]
+            );
+        }
+    }
+}
+
+/// [`assert_reset_restarts`] over one subject, driven by its own source.
+pub fn assert_subject_resets(s: &Subject, half: usize) {
+    let hz = s.hz.unwrap_or(220.0);
+    let input = s.source.as_ref().map(|k| source_signal(k, half, hz));
+    let mut run = Run::new(half).channels(s.channels);
+    run.input = input.as_deref();
+    assert_reset_restarts(&s.name, &s.def_json(), run, half);
+}
 
 /// Rule 5. Renders the subject whole and with every block cut at `at`, and
 /// requires the two to agree.

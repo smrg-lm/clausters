@@ -74,6 +74,11 @@ impl Default for SendTrig {
 }
 
 impl UGen for SendTrig {
+    fn reset(&mut self) {
+        // Buffered replies still leave with this block's drain.
+        self.prev = Edge::default();
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (trig, id, value) = (inputs[0], inputs[1], inputs[2]);
         for (f, &cur) in trig.iter().enumerate() {
@@ -121,6 +126,11 @@ impl SendReply {
 }
 
 impl UGen for SendReply {
+    fn reset(&mut self) {
+        // Buffered replies still leave with this block's drain.
+        self.prev = Edge::default();
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         // Variadic: [trig, replyID, value0, value1, ...]. A missing trig (an
         // ill-formed def) simply never fires.
@@ -178,6 +188,11 @@ impl Poll {
 }
 
 impl UGen for Poll {
+    fn reset(&mut self) {
+        // Buffered replies still leave with this block's drain.
+        self.prev = Edge::default();
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (trig, sig, trigid) = (inputs[0], inputs[1], inputs[2]);
         for (f, &cur) in trig.iter().enumerate() {

@@ -29,6 +29,10 @@ pub struct LocalIn;
 pub struct LocalOut;
 
 impl UGen for LocalIn {
+    fn reset(&mut self) {
+        // The feedback channels are the synth's, cleared with it.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         debug_assert!(false, "LocalIn must be intercepted by UGenSynth::process");
         output.fill(0.0); // safe fallback should this ever run in release
@@ -36,6 +40,10 @@ impl UGen for LocalIn {
 }
 
 impl UGen for LocalOut {
+    fn reset(&mut self) {
+        // The feedback channels are the synth's, cleared with it.
+    }
+
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         debug_assert!(false, "LocalOut must be intercepted by UGenSynth::process");
         output.fill(0.0);

@@ -13,6 +13,8 @@ use crate::dsp::{ProcessCtx, UGen};
 pub struct MulAdd;
 
 impl UGen for MulAdd {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         builtins::mul_add_slice(inputs[0], inputs[1], inputs[2], output);
     }
@@ -22,6 +24,8 @@ impl UGen for MulAdd {
 pub struct Sum3;
 
 impl UGen for Sum3 {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         builtins::sum3_slice(inputs[0], inputs[1], inputs[2], output);
     }
@@ -31,6 +35,8 @@ impl UGen for Sum3 {
 pub struct Sum4;
 
 impl UGen for Sum4 {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         builtins::sum4_slice(inputs[0], inputs[1], inputs[2], inputs[3], output);
     }

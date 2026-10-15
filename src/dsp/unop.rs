@@ -22,6 +22,8 @@ impl UnaryOp {
 }
 
 impl UGen for UnaryOp {
+    fn reset(&mut self) {}
+
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         builtins::unary_slice(self.op, inputs[0], output);
     }

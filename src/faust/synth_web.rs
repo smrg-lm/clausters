@@ -162,6 +162,11 @@ pub struct FaustSynth {
     /// `soundfile`. Kept alive for the instance's life: the DSP holds raw
     /// pointers into it.
     _soundfiles: Vec<SoundfileData>,
+    /// The rate `init` was given, for a reset's.
+    sample_rate: i32,
+    /// Room for the controls while a reset runs `init`, which puts them back
+    /// to their defaults: allocated here so the reset does not.
+    held: Vec<f32>,
 }
 
 // SAFETY: the struct is owned exclusively and the zone pointers reach into
@@ -206,12 +211,15 @@ impl FaustSynth {
             .iter()
             .map(|o| unsafe { base.add(*o) } as *mut f32)
             .collect();
+        let held = vec![0.0; zones.len()];
         let body = FaustBody::new(zones, def.num_inputs, def.num_outputs);
         Ok(Self {
             def,
             dsp,
             body,
             _soundfiles: soundfiles,
+            sample_rate: sample_rate as i32,
+            held,
         })
     }
 }
@@ -230,6 +238,19 @@ impl SynthNode for FaustSynth {
 
     fn set_control(&mut self, index: u32, value: f32) {
         self.body.set_control(index, value);
+    }
+
+    /// The wasm module exports `init` and not `instanceClear`, so the state
+    /// is cleared by `init` with the controls held across it -- the same
+    /// state the native backend's `instanceClear` leaves.
+    fn reset(&mut self) {
+        for (i, held) in self.held.iter_mut().enumerate() {
+            *held = self.body.control_state(i).map_or(0.0, |(v, _)| v);
+        }
+        (self.def.init)(self.dsp.as_mut_ptr() as *mut u8, self.sample_rate);
+        for (i, held) in self.held.iter().enumerate() {
+            self.body.write_zone(i, *held);
+        }
     }
 
     fn map_control(&mut self, index: u32, bus: i32, audio: bool) {
