@@ -68,6 +68,7 @@ jobs:
       - run: cargo test -p clausters-plugin-host --no-default-features --features ${{ matrix.host_features }}
       - run: cargo build -p clausters-plugin-host --no-default-features --features ${{ matrix.host_features }}
       - run: cargo test --no-default-features --features ${{ matrix.server_features }} --test plugin_events --test plugin_family --test plugin_offline --test plugin_scan --test plugin_state --test plugin_vst3 --test plugin_editor
+      - run: cargo test --no-default-features --features ${{ matrix.server_features }} --lib plugin::
 
   # Build libfaust once (or hit the cache) so the faust-linking jobs below can
   # just restore it. On a cold cache this is the long pole; downstream jobs

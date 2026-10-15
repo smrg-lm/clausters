@@ -436,7 +436,7 @@
          match id {
              0 => self.gain.get(),
              _ => 0.0,
-@@ -456,26 +556,71 @@
+@@ -456,26 +556,74 @@
      unsafe fn setParamNormalized(&self, id: u32, value: f64) -> tresult {
          match id {
              0 => {
@@ -502,7 +502,10 @@
 +        info.category = basic.category;
 +        info.name = basic.name;
 +        info.classFlags = 0;
-+        copy_cstring(if index == 0 { "Fx|EQ|Stereo" } else { "" }, &mut info.subCategories);
++        copy_cstring(
++            if index == 0 { "Fx|EQ|Stereo" } else { "" },
++            &mut info.subCategories,
++        );
 +        copy_cstring("", &mut info.vendor);
 +        copy_cstring("1.0.0", &mut info.version);
 +        copy_cstring("VST 3.8.0", &mut info.sdkVersion);
@@ -511,7 +514,7 @@
  }
  
  impl IPluginFactoryTrait for Factory {
-@@ -590,3 +735,269 @@
+@@ -590,3 +738,269 @@
          .unwrap()
          .into_raw()
  }

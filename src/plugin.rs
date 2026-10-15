@@ -1303,7 +1303,7 @@ mod offline_tests {
                     "-fPIC",
                     "-shared",
                     "-Ithird_party/clap/include",
-                    "tools/plugin-bridge/fixture.c",
+                    "crates/clausters-plugin-host/tests/fixtures/clap.c",
                     "-o"
                 ])
                 .arg(&path)

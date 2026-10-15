@@ -17,7 +17,7 @@
 //! Everything here is plain data with the rules over it, written once: the
 //! server validates with [`PluginReference::check`], and every client binds the
 //! same functions to read a catalog ([`catalog_json`]), search it ([`filter`],
-//! [`find`]) and build a reference ([`reference`]), so a reference that does
+//! [`find`]) and build a reference ([`reference()`]), so a reference that does
 //! not fit its plugin is refused before it is sent.
 //!
 //! **What a plugin declares itself to be** comes from two vocabularies: CLAP's
@@ -941,7 +941,7 @@ pub fn search_request(request: &Value) -> Value {
 
 /// **The client door to a reference**: `{"plugin": entry, "inputs": route,
 /// "outputs": route, "state": [byte, ...]}` (each route as
-/// [`Route::from_json`] reads it) answers the [`reference`] as JSON.
+/// [`Route::from_json`] reads it) answers the [`reference()`] as JSON.
 #[must_use]
 pub fn reference_request(request: &Value) -> Value {
     let answer = || -> Result<Value, String> {

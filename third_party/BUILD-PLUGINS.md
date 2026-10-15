@@ -27,6 +27,7 @@ cargo test -p clausters-core --test plugin_shm
 cargo test -p clausters-plugin-host --no-default-features --features clap,vst3
 cargo build -p clausters-plugin-host --no-default-features --features clap,vst3
 cargo test --no-default-features --features plugin-clap,plugin-vst3 --test plugin_events --test plugin_family --test plugin_offline --test plugin_scan --test plugin_state --test plugin_vst3
+cargo test --no-default-features --features plugin-clap,plugin-vst3 --lib plugin::
 ```
 
 CI also runs each adapter alone. Use `clap` / `plugin-clap`, or `vst3` /
