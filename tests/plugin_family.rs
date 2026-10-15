@@ -47,7 +47,7 @@ fn exact_due_audio_slices_native_controls_maps_and_latency_without_allocations()
     let (usage, indices) = def.usage(&def.defaults);
     assert_eq!(indices, [1, 2]);
     let _ = usage;
-    let mut synth = PluginSynth::new(Arc::clone(&def), 48000.0).unwrap();
+    let mut synth = PluginSynth::new(Arc::clone(&def), 48000.0, 0).unwrap();
     assert_eq!(synth.latency(), 256);
     let mut buses = Buses::new(ControlBuses::new(16), 16);
     for block in 0..20 {
@@ -105,7 +105,7 @@ fn exact_due_audio_slices_native_controls_maps_and_latency_without_allocations()
 #[test]
 fn capacity_and_process_death_latch_a_single_node_fault() {
     for kind in ["gain", "crash", "hang", "error"] {
-        let mut synth = PluginSynth::new(def(kind), 48000.0).unwrap();
+        let mut synth = PluginSynth::new(def(kind), 48000.0, 0).unwrap();
         let buses = Buses::new(ControlBuses::new(16), 16);
         for block in 0..22 {
             let mut ctx = ProcessCtx {

@@ -1746,7 +1746,7 @@ instance retirement is an administrative operation, never an audio operation.
 
 The control handshake (version `4`) requires an exact match of the audio ABI,
 frames, slots, event and span capacities. The independent
-`PLUGIN_ABI_VERSION = 1` identifies the new segment boundary; it changes neither
+`PLUGIN_ABI_VERSION = 2` identifies the segment boundary; it changes neither
 the existing embed IPC ABI nor the core C ABI. An attach checks magic, version,
 byte length, structure sizes, alignment, configuration and generation before
 payload access. The shared header and slots are `repr(C)` and aligned to 64
@@ -1755,9 +1755,9 @@ immutable: a replacement requires a new mapping and generation.
 
 | Capacity | Bound |
 |---|---|
-| Engine job | 64 frames; 32 slots; depth 1–16, default 4 |
+| Engine job | 64 frames; 128 slots; depth 1–96, default 4, raised to cover one device callback |
 | Audio | At most 16 ports and 32 channels per direction; channel-major `f32` |
-| Events | 16 input events, 16 output events and 16 deferred events; sorted sample offsets |
+| Events | 64 input events, 64 output events and 64 deferred events; sorted sample offsets. A parameter burst waits for room (three quarters of a job at most); a release burst is deferred to the next job rather than failing |
 | Spans | 8, covering the block exactly; active/playing, position and tempo |
 | Metadata/state | 1024 parameters; opaque state at most 1 MiB |
 | Control | Length-prefixed JSON, at most 8 MiB per frame |
@@ -1845,7 +1845,7 @@ with release, acquired before reuse. `BUSY` needs no publication beyond the
 atomic state itself. Failure/stop/publication counters use release/acquire.
 Integer atomics must be lock-free and aligned on the host architecture; the
 Rust target must provide native 32-bit and 64-bit atomics. The callback scans at
-most 32 slots per call and never allocates, frees, locks, waits or wakes anyone.
+most 128 slots per call and never allocates, frees, locks, waits or wakes anyone.
 
 **Output keeps its authored sample index.** With depth `D`, job `k` can be used
 only at engine block `k + D`, with matching generation and sequence. The first
@@ -1943,6 +1943,18 @@ observed one/two-block misses, not a universal minimum. The depth is selected
 off RT before activation; changing it prepares a new bridge rather than moving
 in-flight output to a new timeline. The tested configurable range is 1–16.
 
+**The depth also covers one device callback.** The measurement drove one
+64-frame block per callback. A device callback of `n` blocks runs them back to
+back in microseconds, so a result due inside it can only come from a job
+published in an earlier callback: with PipeWire's default 1024- or 2048-frame
+quantum and depth four, twelve or more blocks of every callback missed, and
+eight in a row latched `Starved` on an idle machine. A live instance therefore
+gets `max(depth, ceil(device_frames / 64))`, capped at 96, where
+`device_frames` is the longest callback the engine has run (an atomic max in
+`Counters`, written by the callback and the embed render). Offline rendering
+keeps the reference's depth. A callback that grows after an instance was built
+starves it, and `/plugin_restart` sizes the new one for the callback seen.
+
 In the 750-block matrix at depth four, without full CPU saturation, the largest run-level callback p99
 was 2.540 us and the largest callback observation was 63.078 us; both include
 timing/preemption noise. The maximum observed completed-job latency was
@@ -1982,6 +1994,15 @@ DSP need their own production measurements before inheriting an operating
 envelope. Pre-touch segment/staging/output pages outside RT; arm the production
 processing thread's denormal policy before calling plugins. The prototype's
 negative saturation results remain evidence of a limit, not a relaxed RT rule.
+The burst case turned out to be the default one; the depth that answers it is
+above ("The depth also covers one device callback").
+
+With the helper's `rtprio` feature (on in the packaged helper) its processing
+thread asks RTKit for real-time scheduling, best effort, as the server's
+callback does, and a SIGXCPU from RTKit's watchdog demotes that thread instead
+of killing the helper. A helper's stdout and stderr both reach the server's
+stderr, so what a plugin prints is not lost and never mixes with the protocol,
+which has its own socket.
 
 ### Native plugin nodes
 

@@ -327,6 +327,8 @@ impl ClaustersHeadless {
                 out.len()
             ));
         }
+        self.engine
+            .note_device_callback(out.len() / self.channels.max(1));
         for chunk in out.chunks_exact_mut(block) {
             if self.server.step() {
                 self.quit = true;

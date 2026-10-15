@@ -13,6 +13,18 @@ pub const MAX_PARAMETERS: usize = 1024;
 /// Opaque state limit on the administrative plane.
 pub const MAX_STATE_BYTES: usize = 1024 * 1024;
 
+/// Beats per bar the transport reports. The server's grid has a tempo and no
+/// meter, and a plugin reads a meter anyway: 4/4 is what hosts report when the
+/// project states none, and a zero denominator is a division a plugin makes.
+pub const BEATS_PER_BAR: u32 = 4;
+/// Where a span starts on the musical axis, for every format: the beat, the
+/// beat its bar starts on, and that bar's zero-based number.
+pub fn musical_position(span: &Span, sample_rate: f64) -> (f64, f64, i32) {
+    let beats = span.position as f64 / sample_rate * span.tempo / 60.0;
+    let bar = (beats / BEATS_PER_BAR as f64).floor();
+    (beats, bar * BEATS_PER_BAR as f64, bar as i32)
+}
+
 /// An audio port's native identity and channel configuration.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct AudioPort {

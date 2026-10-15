@@ -65,10 +65,15 @@ pub fn helper_path() -> Result<PathBuf, String> {
             }
         }
     }
-    let workspace =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/clausters-plugin-host");
-    if workspace.is_file() {
-        return Ok(workspace);
+    // A development build may run from anywhere in its own workspace; a
+    // release build never reaches for a path baked in at compile time.
+    #[cfg(debug_assertions)]
+    {
+        let workspace =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/clausters-plugin-host");
+        if workspace.is_file() {
+            return Ok(workspace);
+        }
     }
     Err("plugin helper not found; set CLAUSTERS_PLUGIN_HOST".into())
 }
@@ -92,14 +97,16 @@ impl Helper {
             .arg("--control-fd")
             .arg(fd.to_string())
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        // SAFETY: pre_exec only calls async-signal-safe fcntl and does not allocate.
-        // All other inherited descriptors keep CLOEXEC; plugins cannot corrupt
-        // the administrative protocol by printing to stdout.
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        // SAFETY: pre_exec only calls async-signal-safe fcntl/dup2 and does not
+        // allocate. All other inherited descriptors keep CLOEXEC. The protocol
+        // has its own socket, so what a plugin prints reaches the server's
+        // stderr -- stdout included, where it would otherwise mix with the
+        // server's own output.
         unsafe {
             command.pre_exec(move || {
-                if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+                if libc::fcntl(fd, libc::F_SETFD, 0) == -1 || libc::dup2(2, 1) == -1 {
                     return Err(std::io::Error::last_os_error());
                 }
                 Ok(())
@@ -398,6 +405,10 @@ impl AudioInstance {
             }
         }
     }
+    /// Pipeline delay of this mapping, in engine blocks.
+    pub fn depth(&self) -> u32 {
+        self.producer.view().config().depth
+    }
     /// Identity of this mapping incarnation.
     pub fn generation(&self) -> u64 {
         self.producer.view().config().generation
@@ -677,6 +688,13 @@ fn audio_worker(
                 return;
             };
             let c = view.config();
+            // Best effort: a refused promotion leaves the thread as it was.
+            #[cfg(feature = "rtprio")]
+            let _realtime = audio_thread_priority::promote_current_thread_to_real_time(
+                FRAMES as u32,
+                c.sample_rate as u32,
+            )
+            .ok();
             let mut consumer = view.consumer();
             let mut pending = EventList::default();
             let start = processor.start();

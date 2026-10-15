@@ -320,6 +320,13 @@ pub struct CmdTranslator {
         any(feature = "plugin-clap", feature = "plugin-vst3"),
         target_os = "linux"
     ))]
+    /// The live engine's counters, read for the device callback length a new
+    /// plugin pipeline must cover; `None` reads as no callback yet.
+    pub(crate) device: Option<Arc<crate::server::engine::Counters>>,
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     plugin_note_queues: HashMap<plugin::MidiAddress, std::collections::VecDeque<i32>>,
     #[cfg(all(
         any(feature = "plugin-clap", feature = "plugin-vst3"),
@@ -451,6 +458,11 @@ impl CmdTranslator {
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
             ))]
+            device: None,
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             plugin_note_queues: HashMap::new(),
             #[cfg(all(
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
@@ -536,7 +548,11 @@ impl CmdTranslator {
             let synth = if self.offline_plugins {
                 crate::plugin::PluginSynth::offline(Arc::clone(def), self.sample_rate)?
             } else {
-                crate::plugin::PluginSynth::new(Arc::clone(def), self.sample_rate)?
+                crate::plugin::PluginSynth::new(
+                    Arc::clone(def),
+                    self.sample_rate,
+                    self.device_frames(),
+                )?
             };
             let generation = synth.incarnation();
             let admin = synth.administration();
@@ -546,6 +562,17 @@ impl CmdTranslator {
             ));
         }
         Err(format!("SynthDef not found: {name}"))
+    }
+
+    /// The longest device callback the live engine has run, in frames.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    pub(crate) fn device_frames(&self) -> u32 {
+        self.device.as_ref().map_or(0, |c| {
+            c.device_frames.load(std::sync::atomic::Ordering::Relaxed)
+        })
     }
 
     /// A group's `/group_name`, `""` when it has none (and for a synth). What

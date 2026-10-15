@@ -3,7 +3,7 @@
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
 use clausters_core::plugin_shm::{
-    Config, DEFAULT_DEPTH, Event, EventKind, EventList, FRAMES, Failure, Job, Span,
+    Config, DEFAULT_DEPTH, EVENTS, Event, EventKind, EventList, FRAMES, Failure, Job, Span,
 };
 use clausters_plugin_host::format::ScanEntry;
 use clausters_plugin_host::runtime::{self, Instance};
@@ -426,7 +426,7 @@ fn frozen_events_resume_in_order_and_backlog_overflow_fails() {
     let mut producer = overflow.producer().unwrap();
     let mut job = Job::full(0);
     job.spans[0].active = 0;
-    for index in 0..16 {
+    for index in 0..EVENTS as u32 {
         assert!(job.events.push(Event {
             offset: index,
             kind: EventKind::NoteOn as u32,

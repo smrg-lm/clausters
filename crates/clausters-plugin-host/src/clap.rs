@@ -895,23 +895,22 @@ impl FormatProcessor for Audio {
         if span.playing != 0 {
             flags |= TransportFlags::IS_PLAYING;
         }
+        let (beats, bar_start, bar_number) = musical_position(&span, self.rate);
         let transport = TransportEvent {
             header: EventHeader::new_core(0, EventFlags::empty()),
             flags,
             song_pos_seconds: SecondsTime::from_float(span.position as f64 / self.rate),
             tempo: span.tempo,
-            song_pos_beats: BeatTime::from_float(
-                span.position as f64 / self.rate * span.tempo / 60.0,
-            ),
+            song_pos_beats: BeatTime::from_float(beats),
             tempo_inc: 0.0,
             loop_start_beats: BeatTime::from_bits(0),
             loop_end_beats: BeatTime::from_bits(0),
             loop_start_seconds: SecondsTime::from_bits(0),
             loop_end_seconds: SecondsTime::from_bits(0),
-            bar_start: BeatTime::from_bits(0),
-            bar_number: 0,
-            time_signature_numerator: 0,
-            time_signature_denominator: 0,
+            bar_start: BeatTime::from_float(bar_start),
+            bar_number,
+            time_signature_numerator: BEATS_PER_BAR as u16,
+            time_signature_denominator: 4,
         };
         let mut collector = Collector {
             result,

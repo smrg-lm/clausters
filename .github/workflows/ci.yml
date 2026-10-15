@@ -52,12 +52,12 @@ jobs:
             server_features: plugin-clap
           - host_features: vst3
             server_features: plugin-vst3
-          - host_features: clap,vst3
+          - host_features: clap,vst3,rtprio
             server_features: plugin-clap,plugin-vst3
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libx11-dev xvfb xauth
+      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libdbus-1-dev xvfb xauth
       - uses: Swatinem/rust-cache@v2
         with:
           key: plugins-${{ matrix.host_features }}

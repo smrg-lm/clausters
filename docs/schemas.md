@@ -114,7 +114,7 @@ separate addressing rule. Unknown fields and incompatible layouts fail. The
 optional `state` is an opaque snapshot as JSON byte integers (at most 1 MiB).
 An omitted or empty initial `state` uses the plugin defaults; live state commands
 can still round-trip a valid empty image.
-`depth` is a pipeline delay of 1–16 engine blocks, default four.
+`depth` is the minimum pipeline delay, 1–96 engine blocks, default four. A live instance raises it to cover the longest device callback the server has run (a 2048-frame callback is 32 blocks), because the blocks of one callback run back to back; `/synth_new` and `/plugin_restart` read it when they build the instance. Offline rendering uses `depth` as written.
 
 Instantiate with `/synth_new` and control with `/node_set`, `/node_map` and
 `/node_mapAudio`. Parameter names are `param:<native-id>`, in **adapter-native
@@ -182,8 +182,11 @@ swap occurs at a block boundary, keeps tree identity, restores the node's last s
 (or the recipe's initial state before its first state operation) plus the actual current controls and maps, and clears held
 notes and unsaved DSP history. A generation check prevents a freed/reused ID
 from receiving an old restart. Faults use `/node_fault <id> "Plugin" <code>
-<reason>` for notification subscribers: 1 capacity, 2 starved helper, 3
-processing, 4 protocol. Recovery is explicit; nodes never restart by themselves.
+<reason>` for notification subscribers: 1 capacity (a bounded queue or
+event list overflowed), 2 starved (eight results in a row missed their block:
+the helper died or hung, or the device callback grew past the pipeline), 3
+processing, 4 protocol. A burst of parameter changes waits for room in later
+blocks, and a burst of releases is deferred, rather than either failing. Recovery is explicit; nodes never restart by themselves.
 
 `/plugin_saveState <node-id:int>` asynchronously captures opaque state from a
 live node. Replies are `/plugin_saveState.reply <node:int> <chunk:int>

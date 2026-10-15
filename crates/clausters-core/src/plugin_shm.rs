@@ -12,13 +12,17 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Plugin segment ABI, checked independently of the embed and core C ABIs.
-pub const PLUGIN_ABI_VERSION: u32 = 1;
+pub const PLUGIN_ABI_VERSION: u32 = 2;
 /// Engine frames per published job.
 pub const FRAMES: usize = 64;
-/// Fixed slot count: no reuse while a helper owns a slot.
-pub const SLOTS: usize = 32;
+/// Fixed slot count: no reuse while a helper owns a slot. It bounds the
+/// deepest pipeline, which must cover one whole device callback.
+pub const SLOTS: usize = 128;
+/// Deepest pipeline in engine blocks: a 4096-frame device callback is 64
+/// blocks, and a slot must stay free for the job published while one is due.
+pub const MAX_DEPTH: u32 = 96;
 /// Maximum events per job, result and frozen-event backlog.
-pub const EVENTS: usize = 16;
+pub const EVENTS: usize = 64;
 /// Maximum transport/active spans per job.
 pub const SPANS: usize = 8;
 /// Maximum total channels per direction, negotiated before activation.
@@ -61,7 +65,7 @@ pub struct Config {
     pub inputs: u32,
     /// Total output channels over all ports.
     pub outputs: u32,
-    /// Pipeline delay in complete engine blocks, 1 through 16.
+    /// Pipeline delay in complete engine blocks, 1 through `MAX_DEPTH`.
     pub depth: u32,
     /// Reserved; must be zero.
     pub reserved: u32,
@@ -75,7 +79,7 @@ impl Config {
             && self.inputs <= CHANNELS
             && self.outputs > 0
             && self.outputs <= CHANNELS
-            && (1..=16).contains(&self.depth)
+            && (1..=MAX_DEPTH).contains(&self.depth)
             && self.reserved == 0
             && self.sample_origin <= i64::MAX as u64 - FRAMES as u64
     }
@@ -152,12 +156,20 @@ impl Event {
 }
 /// Fixed-capacity event list, used for both directions and deferred events.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct EventList {
     /// Number of valid entries; never greater than `EVENTS`.
     pub count: u32,
     /// Sample-ordered event records.
     pub values: [Event; EVENTS],
+}
+impl Default for EventList {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            values: [Event::default(); EVENTS],
+        }
+    }
 }
 impl EventList {
     /// Reject full, invalid or out-of-order input without allocating.

@@ -1085,8 +1085,26 @@ pub fn describe_fault(msg: &ReplyMsg) -> String {
         "Conv" => conv::describe_fault(msg.id, msg.values()),
         #[cfg(feature = "synth")]
         name if name.starts_with("PV_") => spectral::describe_fault(msg),
+        "Plugin" => describe_plugin_fault(msg.id),
         name => format!("{name}: fault {} {:?}", msg.id, msg.values()),
     }
+}
+
+/// The sentence for an isolated plugin's latched failure, by its
+/// `plugin_shm::Failure` code. Every one leaves the node silent until
+/// `/plugin_restart`.
+fn describe_plugin_fault(code: i32) -> String {
+    let what = match code {
+        1 => "capacity: a bounded event list or queue overflowed",
+        2 => {
+            "starved: eight results in a row missed their block -- the helper \
+             died or hung, or the device callback grew past the pipeline"
+        }
+        3 => "process: the plugin failed to process or returned invalid output",
+        4 => "protocol: an invalid event, a changed surface or a restart request",
+        _ => "unknown failure",
+    };
+    format!("Plugin: fault {code} ({what}); silent until /plugin_restart")
 }
 
 /// A side-effect message a UGen emits on a trigger (`SendReply`/`SendTrig`/

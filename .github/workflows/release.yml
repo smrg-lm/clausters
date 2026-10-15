@@ -200,7 +200,7 @@ jobs:
       - name: Package the standalone server binary
         run: |
           cargo build --release --features plugin-clap,plugin-vst3
-          cargo build --release -p clausters-plugin-host --no-default-features --features clap,vst3
+          cargo build --release -p clausters-plugin-host --no-default-features --features clap,vst3,rtprio
           VERSION="${GITHUB_REF_NAME#v}"
           tar -C target/release -czf "clausters-server-${VERSION}-linux-x86_64.tar.gz" clausters clausters-plugin-host
       # What the package actually weighs and what it actually carries, in the

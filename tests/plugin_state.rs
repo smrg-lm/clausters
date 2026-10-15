@@ -196,6 +196,6 @@ fn initial_state_refreshes_latency_ports_and_parameter_metadata_before_activatio
     assert_eq!(def.defaults[0], 0.75);
     assert_eq!(def.info.parameters[0].max, 2.0);
     assert_eq!(def.info.inputs[0].name, "Restored port");
-    let synth = PluginSynth::new(def, 48000.0).unwrap();
+    let synth = PluginSynth::new(def, 48000.0, 0).unwrap();
     assert_eq!(synth.latency(), 256 + 23);
 }

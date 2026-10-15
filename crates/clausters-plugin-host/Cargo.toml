@@ -9,6 +9,11 @@ description = "Isolated native plugin discovery and per-instance processing host
 default = ["clap"]
 clap = ["dep:clack-host", "dep:clack-extensions", "dep:clack-common", "dep:x11-dl"]
 vst3 = ["dep:vst3", "dep:libloading", "dep:x11-dl"]
+# Real-time scheduling for the helper's processing thread, through RTKit over
+# DBus, as the server's own `rtprio` does for its callback (build-dep
+# `libdbus-1-dev`). Without it the thread that has to meet the server's
+# deadlines competes with everything else on the machine.
+rtprio = ["dep:audio_thread_priority"]
 
 [dependencies]
 clausters-core = { path = "../clausters-core" }
@@ -23,6 +28,7 @@ clack-common = { version = "0.2", optional = true }
 clack-extensions = { version = "0.2", optional = true, features = ["clack-host", "audio-ports", "note-ports", "params", "state", "latency", "gui", "thread-check", "timer", "posix-fd"] }
 
 x11-dl = { version = "2.21", optional = true }
+audio_thread_priority = { version = "0.35", optional = true, default-features = false, features = ["with_dbus"] }
 
 [dev-dependencies]
 assert_no_alloc = "1"

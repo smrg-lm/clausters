@@ -1562,11 +1562,16 @@ impl FormatProcessor for Processor {
         context.projectTimeSamples = span.position;
         context.continousTimeSamples = steady as i64;
         context.tempo = span.tempo;
-        context.projectTimeMusic =
-            span.position as f64 / self.config.sample_rate * span.tempo / 60.0;
+        let (beats, bar_start, _) = musical_position(&span, self.config.sample_rate);
+        context.projectTimeMusic = beats;
+        context.barPositionMusic = bar_start;
+        context.timeSigNumerator = BEATS_PER_BAR as i32;
+        context.timeSigDenominator = 4;
         context.state = ProcessContext_::StatesAndFlags_::kTempoValid
             | ProcessContext_::StatesAndFlags_::kContTimeValid
-            | ProcessContext_::StatesAndFlags_::kProjectTimeMusicValid;
+            | ProcessContext_::StatesAndFlags_::kProjectTimeMusicValid
+            | ProcessContext_::StatesAndFlags_::kBarPositionValid
+            | ProcessContext_::StatesAndFlags_::kTimeSigValid;
         if span.playing != 0 {
             context.state |= ProcessContext_::StatesAndFlags_::kPlaying;
         }

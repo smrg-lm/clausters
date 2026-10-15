@@ -96,6 +96,13 @@ impl OscServer {
         );
         // The disk threads of the synths it builds are this server's workers.
         translator.set_meters(Arc::clone(&meters));
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
+        {
+            translator.device = Some(handle.shared_counters());
+        }
         let transports = vec![Transport::default(); handle.limits.transports];
         #[cfg(all(
             any(feature = "plugin-clap", feature = "plugin-vst3"),

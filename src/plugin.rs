@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use crate::dsp::{BusUsage, ProcessCtx, ReplyKind, ReplyMsg};
 use crate::node::{ControlMap, SynthNode};
 use clausters_core::plugin_shm::{
-    Config, DEFAULT_DEPTH, Event, EventKind, EventList, FRAMES, Failure, Job, SPANS, Span,
+    Config, DEFAULT_DEPTH, Event, EventKind, EventList, FRAMES, Failure, Job, MAX_DEPTH, SPANS,
+    Span,
 };
 use clausters_plugin_host::format::PluginInfo;
 use clausters_plugin_host::runtime::{
@@ -127,7 +128,7 @@ impl PluginDef {
                     .push(routes.iter().find(|r| r.id == p.id).unwrap().bus as f32);
             }
         }
-        let mut instance = def.instance(sample_rate)?;
+        let mut instance = def.instance(sample_rate, def.reference.depth)?;
         // State can change parameter defaults, but cannot change the loaded surface.
         def.info = instance.metadata().clone();
         def.info.parameters.sort_by_key(|p| p.id);
@@ -137,23 +138,33 @@ impl PluginDef {
         drop(instance);
         Ok(def)
     }
-    fn config(&self, sample_rate: f32) -> Config {
+    /// The pipeline a live instance gets: the reference's depth, raised to
+    /// cover one whole device callback. A callback of `n` blocks runs them
+    /// back to back, so a result due inside it can only come from a job
+    /// published in an earlier callback.
+    pub fn live_depth(&self, device_frames: u32) -> u32 {
+        self.reference
+            .depth
+            .max((device_frames as usize).div_ceil(FRAMES) as u32)
+            .min(MAX_DEPTH)
+    }
+    fn config(&self, sample_rate: f32, depth: u32) -> Config {
         Config {
             generation: GENERATION.fetch_add(1, Ordering::Relaxed),
             sample_rate: sample_rate as f64,
             sample_origin: 0,
             inputs: self.info.inputs.iter().map(|p| p.channels).sum(),
             outputs: self.info.outputs.iter().map(|p| p.channels).sum(),
-            depth: self.reference.depth,
+            depth,
             reserved: 0,
         }
     }
-    fn instance(&self, sample_rate: f32) -> Result<Instance, String> {
+    fn instance(&self, sample_rate: f32, depth: u32) -> Result<Instance, String> {
         let instance = Instance::load_with_state(
             &helper_path()?,
             Path::new(&self.reference.path),
             &self.reference.id,
-            self.config(sample_rate),
+            self.config(sample_rate, depth),
             DEFAULT_TIMEOUT,
             self.initial_state
                 .then_some(self.reference.state.as_slice()),
@@ -270,6 +281,8 @@ struct Pedal {
 }
 /// Maximum concurrently owned native notes in one persistent instance.
 pub const HELD_NOTES: usize = 256;
+/// Most parameter changes one job carries; the rest of the list is the notes'.
+const PARAMETER_EVENTS: usize = clausters_core::plugin_shm::EVENTS * 3 / 4;
 /// One persistent helper, one bounded producer and preallocated block staging.
 /// Dropped through the engine's garbage FIFO, never inside the audio callback.
 pub struct PluginSynth {
@@ -297,17 +310,28 @@ pub struct PluginSynth {
     ended: [i32; clausters_core::plugin_shm::EVENTS],
     ended_count: usize,
     control_events: EventList,
+    deferred: [Event; HELD_NOTES],
+    deferred_count: usize,
 }
 impl PluginSynth {
-    pub fn new(def: Arc<PluginDef>, sample_rate: f32) -> Result<Self, String> {
-        Self::with_mode(def, sample_rate, false)
+    /// A live instance whose pipeline covers device callbacks of up to
+    /// `device_frames` frames (zero before the first callback).
+    pub fn new(def: Arc<PluginDef>, sample_rate: f32, device_frames: u32) -> Result<Self, String> {
+        let depth = def.live_depth(device_frames);
+        Self::with_mode(def, sample_rate, depth, false)
     }
     /// Build a synchronous helper endpoint exclusively for the offline renderer.
     pub(crate) fn offline(def: Arc<PluginDef>, sample_rate: f32) -> Result<Self, String> {
-        Self::with_mode(def, sample_rate, true)
+        let depth = def.reference.depth;
+        Self::with_mode(def, sample_rate, depth, true)
     }
-    fn with_mode(def: Arc<PluginDef>, sample_rate: f32, offline: bool) -> Result<Self, String> {
-        let instance = def.instance(sample_rate)?;
+    fn with_mode(
+        def: Arc<PluginDef>,
+        sample_rate: f32,
+        depth: u32,
+        offline: bool,
+    ) -> Result<Self, String> {
+        let instance = def.instance(sample_rate, depth)?;
         let admin = Arc::new(PluginAdmin {
             phase: AtomicU32::new(0),
             control: std::sync::Mutex::new(instance.administration()?),
@@ -373,6 +397,8 @@ impl PluginSynth {
             ended: [0; clausters_core::plugin_shm::EVENTS],
             ended_count: 0,
             control_events: EventList::default(),
+            deferred: [Event::default(); HELD_NOTES],
+            deferred_count: 0,
         })
     }
     /// Administrative handle for this live generation, never shared by a def.
@@ -393,7 +419,19 @@ impl PluginSynth {
         } else {
             self.pending.push(event)
         };
-        if !ok {
+        if ok {
+            return;
+        }
+        // A release is never lost and never fails the instance for want of
+        // room: it goes out first in the next job. A stop with a full
+        // keyboard held is spread over a few blocks instead.
+        let release = event.kind == EventKind::NoteOff as u32
+            || event.kind == EventKind::NoteChoke as u32
+            || (event.kind == EventKind::Midi as u32 && event.id & 0xf0 == 0x80);
+        if release && self.deferred_count < self.deferred.len() {
+            self.deferred[self.deferred_count] = Event { offset: 0, ..event };
+            self.deferred_count += 1;
+        } else {
             self.fail(Failure::Capacity);
         }
     }
@@ -622,6 +660,28 @@ impl PluginSynth {
             }
         }
     }
+    /// Choke every held note `released` selects. Bounded scan over the fixed
+    /// note table; no allocation.
+    fn release_where(&mut self, offset: usize, released: impl Fn(&HeldNote) -> bool) {
+        for i in 0..self.notes.len() {
+            let Some(note) = self.notes[i] else {
+                continue;
+            };
+            if !released(&note) {
+                continue;
+            }
+            self.notes[i] = None;
+            self.native_note(Event {
+                offset: offset as u32,
+                kind: EventKind::NoteChoke as u32,
+                note_id: note.native,
+                port: note.port,
+                channel: note.channel,
+                key: note.key,
+                ..Event::default()
+            });
+        }
+    }
     fn parameter(&mut self, index: usize, offset: usize) {
         if self.sent[index] == self.values[index] {
             return;
@@ -633,6 +693,12 @@ impl PluginSynth {
         let value = self.values[index] as f64;
         if !value.is_finite() || !((p.min as f32)..=(p.max as f32)).contains(&(value as f32)) {
             self.fail(Failure::Protocol);
+            return;
+        }
+        // A burst of edits waits for room rather than failing the instance:
+        // what is not sent stays unsent and goes out in a later slice, and
+        // a quarter of the list stays free for notes.
+        if self.job.events.count as usize >= PARAMETER_EVENTS {
             return;
         }
         if !self.job.events.push(Event {
@@ -658,10 +724,19 @@ impl SynthNode for PluginSynth {
         }
         if !self.open {
             self.open = true;
-            self.job = Job {
-                events: std::mem::take(&mut self.pending),
-                ..Job::default()
-            };
+            self.job = Job::default();
+            // Deferred releases first, at the job's first sample, then what
+            // arrived while no job was open.
+            let mut sent = 0;
+            while sent < self.deferred_count && self.job.events.push(self.deferred[sent]) {
+                sent += 1;
+            }
+            self.deferred.copy_within(sent..self.deferred_count, 0);
+            self.deferred_count -= sent;
+            let pending = std::mem::take(&mut self.pending);
+            for event in pending.values.iter().take(pending.count as usize) {
+                self.emit(*event);
+            }
             self.input.fill(0.0);
             let mut events = EventList::default();
             self.audio.receive(&mut self.output, &mut events);
@@ -864,61 +939,25 @@ impl SynthNode for PluginSynth {
         }
     }
     fn release_plugin_notes(&mut self, lane: Option<i32>, offset: usize) {
-        for i in 0..self.notes.len() {
-            let Some(note) = self.notes[i] else {
-                continue;
-            };
-            if lane.is_some_and(|lane| {
-                note.source >> 96 != 1 || ((note.source >> 32) & 0xffff_ffff) != lane as u32 as u128
-            }) {
-                continue;
-            }
-            self.notes[i] = None;
-            self.native_note(Event {
-                offset: offset as u32,
-                kind: EventKind::NoteChoke as u32,
-                note_id: note.native,
-                port: note.port,
-                channel: note.channel,
-                key: note.key,
-                ..Event::default()
-            });
-        }
+        let from_lane = |source: u128| {
+            lane.is_none_or(|lane| {
+                source >> 96 == 1 && ((source >> 32) & 0xffff_ffff) == lane as u32 as u128
+            })
+        };
+        self.release_where(offset, |note| from_lane(note.source));
         for pedal in &mut self.pedals {
-            if pedal.is_some_and(|p| {
-                lane.is_none()
-                    || (p.source >> 96 == 1
-                        && ((p.source >> 32) & 0xffff_ffff) == lane.unwrap() as u32 as u128)
-            }) {
+            if pedal.is_some_and(|p| from_lane(p.source)) {
                 *pedal = None;
             }
         }
     }
     fn release_plugin_transport(&mut self, transport: usize, offset: usize) {
-        for i in 0..self.notes.len() {
-            let Some(note) = self.notes[i] else {
-                continue;
-            };
-            if note.source >> 96 != 1
-                || ((note.source >> 64) & u32::MAX as u128) != transport as u128
-            {
-                continue;
-            }
-            self.notes[i] = None;
-            self.native_note(Event {
-                offset: offset as u32,
-                kind: 3,
-                note_id: note.native,
-                port: note.port,
-                channel: note.channel,
-                key: note.key,
-                ..Event::default()
-            });
-        }
+        let governed = |source: u128| {
+            source >> 96 == 1 && ((source >> 64) & u32::MAX as u128) == transport as u128
+        };
+        self.release_where(offset, |note| governed(note.source));
         for pedal in &mut self.pedals {
-            if pedal.is_some_and(|p| {
-                p.source >> 96 == 1 && ((p.source >> 64) & u32::MAX as u128) == transport as u128
-            }) {
+            if pedal.is_some_and(|p| governed(p.source)) {
                 *pedal = None;
             }
         }
@@ -943,7 +982,7 @@ impl SynthNode for PluginSynth {
         1
     }
     fn latency(&self) -> usize {
-        self.def.reference.depth as usize * FRAMES + self.audio.metadata().latency as usize
+        self.audio.depth() as usize * FRAMES + self.audio.metadata().latency as usize
     }
     fn has_replies(&self) -> bool {
         true
@@ -986,10 +1025,9 @@ mod offline_tests {
     use super::*;
     use crate::dsp::{Buses, ControlBuses, TransportCtx};
 
-    #[test]
-    fn offline_and_live_helpers_agree_on_frozen_spans_and_transport_jumps() {
+    fn instrument(name: &str) -> Arc<PluginDef> {
         let directory =
-            std::env::temp_dir().join(format!("clausters-plugin-slices-{}", std::process::id()));
+            std::env::temp_dir().join(format!("clausters-plugin-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join("fixture.clap");
         assert!(
@@ -1009,8 +1047,94 @@ mod offline_tests {
                 .success()
         );
         let reference = serde_json::from_value(serde_json::json!({"format":"clap", "path":path, "id":"org.clausters.fixture.instrument", "inputs":[], "outputs":[{"id":0,"channels":1,"bus":0}]})).unwrap();
-        let def = Arc::new(PluginDef::probe(reference, 48000.0).unwrap());
-        let mut live = PluginSynth::new(Arc::clone(&def), 48000.0).unwrap();
+        Arc::new(PluginDef::probe(reference, 48000.0).unwrap())
+    }
+
+    fn context(buses: &Buses, offset: usize, frames: usize) -> ProcessCtx<'_> {
+        ProcessCtx {
+            sample_rate: 48000.0,
+            full_sample_rate: 48000.0,
+            buses,
+            buffers: &[],
+            offset,
+            frames,
+            transport: TransportCtx::default(),
+        }
+    }
+
+    #[test]
+    fn a_release_burst_larger_than_a_job_is_deferred_rather_than_failed() {
+        let mut synth = PluginSynth::new(instrument("releases"), 48000.0, 0).unwrap();
+        let buses = Buses::new(ControlBuses::new(16), 16);
+        let held = clausters_core::plugin_shm::EVENTS + 26;
+        for block in 0..6 {
+            synth.prepare_slice(&context(&buses, 0, FRAMES), true);
+            if block < 3 {
+                for key in (block * held / 3)..((block + 1) * held / 3) {
+                    synth.plugin_event(
+                        1,
+                        Event {
+                            kind: EventKind::NoteOn as u32,
+                            port: 0,
+                            channel: 0,
+                            key: key as i16,
+                            note_id: key as i32,
+                            value: 0.5,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+            if block == 3 {
+                assert_eq!(synth.notes.iter().flatten().count(), held);
+                synth.release_plugin_notes(None, 0);
+                assert_eq!(
+                    synth.deferred_count,
+                    held - clausters_core::plugin_shm::EVENTS
+                );
+            }
+            synth.finish_block();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            assert_eq!(synth.fault, 0, "block {block}");
+        }
+        assert_eq!(synth.deferred_count, 0);
+        assert!(synth.notes.iter().all(Option::is_none));
+    }
+
+    /// A 2048-frame device callback runs 32 blocks back to back: a result due
+    /// inside it can only come from the previous callback. Sized for the
+    /// callback, the pipeline delivers; sized for single blocks, it starves.
+    #[test]
+    fn the_pipeline_covers_a_device_callback_of_many_blocks() {
+        let def = instrument("callback");
+        assert_eq!(def.live_depth(0), DEFAULT_DEPTH);
+        assert_eq!(def.live_depth(2048), 32);
+        assert_eq!(def.live_depth(1 << 20), MAX_DEPTH);
+        let buses = Buses::new(ControlBuses::new(16), 16);
+        for (device_frames, starves) in [(2048, false), (0, true)] {
+            let mut synth = PluginSynth::new(Arc::clone(&def), 48000.0, device_frames).unwrap();
+            for _ in 0..8 {
+                for _ in 0..32 {
+                    synth.prepare_slice(&context(&buses, 0, FRAMES), true);
+                    synth.finish_block();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(40));
+            }
+            assert_eq!(
+                synth.fault == Failure::Starved as u32,
+                starves,
+                "device callback of {device_frames} frames"
+            );
+            if !starves {
+                assert_eq!(synth.fault, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn offline_and_live_helpers_agree_on_frozen_spans_and_transport_jumps() {
+        let def = instrument("slices");
+        let mut live = PluginSynth::new(Arc::clone(&def), 48000.0, 0).unwrap();
         let mut offline = PluginSynth::offline(def, 48000.0).unwrap();
         let buses = Buses::new(ControlBuses::new(16), 16);
         let mut position = 0;

@@ -738,7 +738,7 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
         copied.append(binname)
     # The isolated native plugin helper is a matching artifact of server/embed.
     if platform.system() == "Linux":
-        _cargo_build(workspace, "clausters-plugin-host", "clap,vst3", profile, True)
+        _cargo_build(workspace, "clausters-plugin-host", "clap,vst3,rtprio", profile, True)
         os.makedirs(BIN_DIR, exist_ok=True)
         _stage(os.path.join(workspace, "target", profile, "clausters-plugin-host"),
                os.path.join(BIN_DIR, "clausters-plugin-host"))

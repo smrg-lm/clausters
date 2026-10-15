@@ -10103,6 +10103,15 @@ scheduler-dependent thread and wake protocol, and cost more at one instance.
 The first reference favors the simpler mechanism. This is not a universal
 minimum or a guarantee for a device callback with a different job cadence.
 
+*Corrected 2026-10-14.* The measurement drove one block per callback, and so
+did every test. A real device callback is many blocks run back to back
+(PipeWire's default quantum was 2048 frames, 32 blocks), and a result due
+inside one callback cannot come from a job published microseconds earlier in
+it. Depth four starved on an idle machine. The bridge depth is therefore at
+least one device callback, read from the longest callback the engine has run;
+the measured four stays the floor for small callbacks. The bridge latency is
+then the device period, which the device already imposes on everything else.
+
 The consequence is 256 bridge samples at 48 kHz/64 frames, plus intrinsic
 latency, with a fixed ownership protocol: late output is discarded, accepted
 input and releases are still consumed in order, and overflow or eight consecutive

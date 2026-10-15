@@ -491,7 +491,9 @@ where
             // Subnormals in decaying DSP state are 10-100x slower: keep the
             // callback thread in flush-to-zero mode (see dsp::denormals).
             crate::dsp::denormals::flush_to_zero();
-            adapter.stamp(data.len() / adapter.engine.channels().max(1));
+            let frames = data.len() / adapter.engine.channels().max(1);
+            adapter.engine.note_device_callback(frames);
+            adapter.stamp(frames);
             for s in data.iter_mut() {
                 *s = T::from_sample(adapter.next_sample());
             }

@@ -753,6 +753,10 @@ pub struct Counters {
     /// since boot) -- the engine-side xrun proxy: the callback cannot have met
     /// its deadline for that block unless the host buffered extra latency.
     pub late_blocks: AtomicU32,
+    /// The longest device callback seen, in frames; zero until one runs (and
+    /// always under NRT). One callback runs that many frames of blocks back to
+    /// back, which is what an isolated plugin's pipeline has to cover.
+    pub device_frames: AtomicU32,
 }
 
 impl Counters {
@@ -1039,6 +1043,7 @@ pub fn engine_pair_full(
         avg_cpu: AtomicU32::new(0),
         peak_cpu: AtomicU32::new(0),
         late_blocks: AtomicU32::new(0),
+        device_frames: AtomicU32::new(0),
     });
     // With an IPC segment the control buses live inside it, so their count is
     // whatever the segment was created with (read back from its header).
@@ -1117,6 +1122,14 @@ pub fn engine_pair_full(
 impl Engine {
     pub fn sample_rate(&self) -> f32 {
         self.sample_rate
+    }
+
+    /// Record a device callback about to fill `frames` frames. One relaxed
+    /// atomic max: safe on the audio thread.
+    pub fn note_device_callback(&self, frames: usize) {
+        self.counters
+            .device_frames
+            .fetch_max(frames.min(u32::MAX as usize) as u32, Ordering::Relaxed);
     }
 
     pub fn channels(&self) -> usize {
@@ -2427,5 +2440,11 @@ impl EngineHandle {
 
     pub fn counters(&self) -> &Counters {
         &self.counters
+    }
+
+    /// The counters, shared with whoever has to read them after this
+    /// handle has moved (the translator reads the device callback length).
+    pub fn shared_counters(&self) -> Arc<Counters> {
+        Arc::clone(&self.counters)
     }
 }

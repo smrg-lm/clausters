@@ -56,6 +56,7 @@ enum ScanJob {
         admin: Arc<crate::plugin::PluginAdmin>,
         bytes: Option<Vec<u8>>,
         sample_rate: f32,
+        device_frames: u32,
         client: ClientId,
     },
     Restart {
@@ -63,6 +64,7 @@ enum ScanJob {
         expected: u64,
         def: Arc<crate::plugin::PluginDef>,
         sample_rate: f32,
+        device_frames: u32,
         client: ClientId,
     },
 }
@@ -186,6 +188,7 @@ impl ScanWorker {
                             admin,
                             bytes,
                             sample_rate,
+                            device_frames,
                             client,
                         } => {
                             let loading = bytes.is_some();
@@ -210,6 +213,7 @@ impl ScanWorker {
                                 let mut synth = crate::plugin::PluginSynth::new(
                                     Arc::clone(&refreshed),
                                     sample_rate,
+                                    device_frames,
                                 )?;
                                 if loading {
                                     synth.loaded_state();
@@ -235,11 +239,15 @@ impl ScanWorker {
                             expected,
                             def,
                             sample_rate,
+                            device_frames,
                             client,
                         } => {
-                            let result =
-                                crate::plugin::PluginSynth::new(Arc::clone(&def), sample_rate)
-                                    .map(Box::new);
+                            let result = crate::plugin::PluginSynth::new(
+                                Arc::clone(&def),
+                                sample_rate,
+                                device_frames,
+                            )
+                            .map(Box::new);
                             ScanResult::Restart {
                                 id,
                                 expected,
@@ -488,6 +496,7 @@ impl OscServer {
                     expected: *expected,
                     def: Arc::clone(def),
                     sample_rate: self.handle.sample_rate,
+                    device_frames: self.translator.device_frames(),
                     client: from,
                 })
                 .map_err(|_| "plugin worker unavailable")?;
@@ -554,6 +563,7 @@ impl OscServer {
                     admin: Arc::clone(admin),
                     bytes,
                     sample_rate: self.handle.sample_rate,
+                    device_frames: self.translator.device_frames(),
                     client: from,
                 })
                 .is_err()

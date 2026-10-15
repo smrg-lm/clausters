@@ -638,7 +638,7 @@ fn bounded_note_ownership_and_input_event_overflow_are_explicit() {
     let (mut engine, mut handle) = engine();
     send(&mut handle, new_node(&mut translator, 0));
     let mut many = Vec::new();
-    for id in 0..17 {
+    for id in 0..clausters_core::plugin_shm::EVENTS as i32 + 1 {
         many.extend(translate(&mut translator, event(0, id, "note_on", 60, 0.1)));
     }
     send(&mut handle, many);
