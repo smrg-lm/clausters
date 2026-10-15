@@ -105,12 +105,12 @@ impl Helper {
             .arg("--control-fd")
             .arg(fd.to_string())
             .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
         // SAFETY: pre_exec only calls async-signal-safe fcntl/dup2 and does not
         // allocate. All other inherited descriptors keep CLOEXEC. The protocol
-        // has its own socket, so what a plugin prints reaches the server's
-        // stderr -- stdout included, where it would otherwise mix with the
+        // has its own socket, so the helper's stdout joins its stderr pipe and
+        // what a plugin prints is logged rather than lost or mixed into the
         // server's own output.
         unsafe {
             command.pre_exec(move || {
@@ -120,8 +120,11 @@ impl Helper {
                 Ok(())
             });
         }
-        let child = command.spawn().map_err(|e| format!("plugin helper: {e}"))?;
+        let mut child = command.spawn().map_err(|e| format!("plugin helper: {e}"))?;
         drop(child_socket);
+        if let Some(output) = child.stderr.take() {
+            log_output(child.id(), output);
+        }
         let mut helper = Self {
             child,
             socket: parent,
@@ -166,6 +169,27 @@ impl Drop for Helper {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Log what a helper prints, line by line, until it exits. Its own messages
+/// (prefixed `clausters-plugin-host:` or `plugin helper:`) are warnings; what
+/// the plugin prints is a third party's console chatter, logged at `debug`
+/// so it is there when asked for and quiet otherwise.
+fn log_output(pid: u32, output: std::process::ChildStderr) {
+    let _ = std::thread::Builder::new()
+        .name("plugin-output".into())
+        .spawn(move || {
+            use std::io::BufRead;
+            for line in std::io::BufReader::new(output).lines() {
+                let Ok(line) = line else { break };
+                if line.starts_with("clausters-plugin-host:") || line.starts_with("plugin helper:")
+                {
+                    tracing::warn!(target: "plugin", "helper {pid}: {line}");
+                } else {
+                    tracing::debug!(target: "plugin", "helper {pid}: {line}");
+                }
+            }
+        });
 }
 
 /// Probe one stable identity without enumerating unrelated plugins in its binary.

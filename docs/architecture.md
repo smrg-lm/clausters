@@ -2002,9 +2002,11 @@ thread asks for real-time scheduling, best effort, as the server's callback
 does -- but only where `RLIMIT_RTPRIO` is nonzero, so the plugin's own threads
 can take it too (see `docs/decisions.md`, "A plugin's processing thread is
 real-time only where the plugin's threads can be"). A SIGXCPU from RTKit's
-watchdog demotes that thread instead of killing the helper. A helper's stdout and stderr both reach the server's
-stderr, so what a plugin prints is not lost and never mixes with the protocol,
-which has its own socket.
+watchdog demotes that thread instead of killing the helper. A helper's stdout and stderr share one pipe the server reads
+line by line into its log: the helper's own messages as warnings, what the
+plugin prints at `debug` under the `plugin` target (`RUST_LOG=plugin=debug`
+or `-vv` shows it). Nothing a plugin prints reaches the console unasked or
+mixes with the protocol, which has its own socket.
 
 ### Native plugin nodes
 

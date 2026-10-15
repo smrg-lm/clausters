@@ -404,6 +404,7 @@ dependencies = [
  "rtrb",
  "serde",
  "serde_json",
+ "tracing",
  "vst3",
  "x11-dl",
 ]
