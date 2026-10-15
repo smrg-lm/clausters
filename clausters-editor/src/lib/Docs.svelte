@@ -25,7 +25,6 @@
   import X from "@lucide/svelte/icons/x";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
-  import * as Select from "$lib/components/ui/select";
   import { settings } from "./settings.svelte";
   import Grip from "./Grip.svelte";
   import { DocIndex, type DocResult } from "./docIndex";
@@ -37,8 +36,26 @@
     onDragStart,
   }: { onChooseFolder: () => void; onClose: () => void; onDragStart: (e: PointerEvent) => void } = $props();
 
+  /** A chapter of a book's table of contents (`books.rs`). */
+  interface Chapter {
+    title: string;
+    /** The document; null for a chapter not written yet. */
+    path: string | null;
+    children: Chapter[];
+  }
+  interface Book {
+    /** What its documents' paths start with: empty for the editor's own. */
+    prefix: string;
+    title: string;
+    parts: { title: string | null; chapters: Chapter[] }[];
+  }
+
   // `scroll` is where the page was left, so that going back returns there.
+  // `home` is the start page, every book and its chapters; `book` is one
+  // book's whole table of contents.
   type Page = (
+    | { kind: "home" }
+    | { kind: "book"; prefix: string }
     | { kind: "doc"; path: string; anchor?: string }
     | { kind: "text"; title: string; text: string }
     | { kind: "search"; query: string; results: DocResult[] }
@@ -47,6 +64,7 @@
   };
 
   let docs = $state<string[]>([]);
+  let books = $state<Book[]>([]);
   let history = $state<Page[]>([]);
   let pos = $state(-1);
   let html = $state("");
@@ -82,10 +100,80 @@
   });
 
   const current = $derived(history[pos]);
-  const title = $derived(
-    !current ? "" : current.kind === "doc" ? current.path : current.kind === "text" ? current.title : `"${current.query}"`,
-  );
-  const docItems = $derived(docs.map((d) => ({ value: d, label: d.replace(/\.md$/, "") })));
+
+  /** Every chapter's title, by its document. */
+  const chapterTitles = $derived.by(() => {
+    const titles = new Map<string, string>();
+    const walk = (chapters: Chapter[]) => {
+      for (const c of chapters) {
+        if (c.path && !titles.has(c.path)) titles.set(c.path, c.title);
+        walk(c.children);
+      }
+    };
+    for (const b of books) for (const p of b.parts) walk(p.chapters);
+    return titles;
+  });
+
+  /** The book a document belongs to: the package whose prefix it starts with,
+   *  else the editor's own. */
+  function bookOf(path: string): Book | undefined {
+    return (
+      books.find((b) => b.prefix && path.startsWith(b.prefix)) ?? books.find((b) => !b.prefix)
+    );
+  }
+
+  /** A document's name as its book's contents give it, else its file's. */
+  function chapterTitle(path: string): string {
+    return (chapterTitles.get(path) ?? path.split("/").pop()!.replace(/\.md$/, "")).replaceAll("`", "");
+  }
+
+  /** Where the page on screen is: a book and, inside it, a chapter. */
+  const trail = $derived.by((): { book?: Book; label: string } => {
+    if (!current || current.kind === "home") return { label: "Documentation" };
+    if (current.kind === "book") return { book: books.find((b) => b.prefix === current.prefix), label: "" };
+    if (current.kind === "doc") return { book: bookOf(current.path), label: chapterTitle(current.path) };
+    if (current.kind === "text") return { label: `${current.title} (pydoc)` };
+    return { label: `Search: "${current.query}"` };
+  });
+
+  /** A title as the table of contents writes it: Markdown's `code` spans drawn as code. */
+  const titleHtml = (title: string) => escapeHtml(title).replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  /** A chapter as a link, or as its title alone when it has no page yet. */
+  function chapterLink(c: Chapter): string {
+    const title = titleHtml(c.title);
+    return c.path ? `<a href="#" data-path="${escapeHtml(c.path)}">${title}</a>` : `<span>${title}</span>`;
+  }
+
+  // A heading, not a link to read: drawn as the heading it is, like a search result's title.
+  const bookLink = (b: Book) =>
+    `<a href="#" class="no-underline" data-book="${escapeHtml(b.prefix)}">${titleHtml(b.title)}</a>`;
+
+  /** The start page: each book, and each part's first-level chapters. */
+  function homeHtml(): string {
+    let out = "<h1>Documentation</h1>";
+    for (const b of books) {
+      out += `<h2>${bookLink(b)}</h2>`;
+      for (const p of b.parts) {
+        if (p.title) out += `<h4>${titleHtml(p.title)}</h4>`;
+        const items = p.chapters.map((c) => `<li>${chapterLink(c)}</li>`).join("");
+        out += `<ul>${items}</ul>`;
+      }
+    }
+    return out;
+  }
+
+  /** A book's whole table of contents. */
+  function bookHtml(b: Book): string {
+    const list = (chapters: Chapter[]): string =>
+      `<ul>${chapters.map((c) => `<li>${chapterLink(c)}${c.children.length ? list(c.children) : ""}</li>`).join("")}</ul>`;
+    let out = `<h1>${titleHtml(b.title)}</h1>`;
+    for (const p of b.parts) {
+      if (p.title) out += `<h2>${titleHtml(p.title)}</h2>`;
+      out += list(p.chapters);
+    }
+    return out;
+  }
 
   function scrollTo(anchor?: string) {
     const target = anchor ? content.querySelector(`#${CSS.escape(anchor)}`) : null;
@@ -109,6 +197,12 @@
         html = "";
         plain = String(e);
       }
+    } else if (page.kind === "home" || page.kind === "book") {
+      source = null;
+      shownPath = null;
+      const book = page.kind === "book" ? books.find((b) => b.prefix === page.prefix) : undefined;
+      html = book ? bookHtml(book) : homeHtml();
+      plain = null;
     } else if (page.kind === "text") {
       source = null;
       shownPath = null;
@@ -247,9 +341,13 @@
     go({ kind: "doc", path, anchor });
   }
 
+  /** The start page: every book, and its chapters. */
   export function home() {
-    const start = docs.find((d) => d.toLowerCase() === "index.md") ?? docs[0];
-    if (start) openDoc(start);
+    go({ kind: "home" });
+  }
+
+  function openBook(prefix: string) {
+    go({ kind: "book", prefix });
   }
 
   interface DocHit {
@@ -306,6 +404,10 @@
       return;
     }
     const link = target.closest("a");
+    if (link?.dataset.book !== undefined) {
+      e.preventDefault();
+      return openBook(link.dataset.book);
+    }
     // A search result: the document, at its section, with the word that matched found.
     if (link?.dataset.path) {
       e.preventDefault();
@@ -336,9 +438,11 @@
     shownPath = null;
     try {
       docs = await invoke<string[]>("list_docs");
+      books = await invoke<Book[]>("list_books");
       index = null;
     } catch (e) {
       docs = [];
+      books = [];
       source = null;
       html = "";
       plain = String(e);
@@ -358,8 +462,12 @@
   async function relist() {
     const before = docs.length;
     docs = await invoke<string[]>("list_docs").catch(() => docs);
+    books = await invoke<Book[]>("list_books").catch(() => books);
     index = null;
+    // The start page and a book's contents are drawn from the books: again,
+    // with what the new environment carries.
     if (before === 0 && docs.length > 0) home();
+    else if (current?.kind === "home" || current?.kind === "book") show(current);
   }
 
   onMount(() => {
@@ -390,22 +498,22 @@
     <Button variant="ghost" size="icon-sm" onclick={home} title="Documentation home" aria-label="Home">
       <House />
     </Button>
-    <Select.Root
-      type="single"
-      value={current?.kind === "doc" ? current.path : ""}
-      onValueChange={(path) => path && openDoc(path)}
-    >
-      <Select.Trigger size="sm" class="ml-1 min-w-0 flex-1 bg-background" aria-label="Document">
-        <span class="truncate">
-          {current?.kind === "text" ? `${title} (pydoc)` : (docItems.find((d) => d.value === title)?.label ?? "")}
-        </span>
-      </Select.Trigger>
-      <Select.Content>
-        {#each docItems as item (item.value)}
-          <Select.Item value={item.value} label={item.label} />
-        {/each}
-      </Select.Content>
-    </Select.Root>
+    <nav class="ml-1 flex min-w-0 flex-1 items-center gap-1 text-sm" aria-label="Where this page is">
+      {#if trail.book}
+        {@const book = trail.book}
+        <Button
+          variant="ghost"
+          size="sm"
+          class="h-7 min-w-0 shrink px-1.5"
+          onclick={() => openBook(book.prefix)}
+          title="The book's contents"
+        >
+          <span class="truncate">{book.title}</span>
+        </Button>
+        {#if trail.label}<span class="shrink-0 text-muted-foreground">&rsaquo;</span>{/if}
+      {/if}
+      <span class="truncate px-1">{trail.label}</span>
+    </nav>
     <Button variant="ghost" size="icon-sm" class="ml-0.5" onclick={find} title="Find (Ctrl+F in this page, Ctrl+Shift+F in every document)" aria-label="Find">
       <Search />
     </Button>
@@ -493,7 +601,9 @@
               data-term={r.terms[0] ?? ""}
               class="no-underline"
             >
-              <span class="font-medium">{r.path.replace(/\.md$/, "")}{r.heading ? ` > ${r.heading}` : ""}</span>
+              <span class="font-medium"
+                >{bookOf(r.path)?.title ?? ""} &rsaquo; {chapterTitle(r.path)}{r.heading ? ` \u203A ${r.heading}` : ""}</span
+              >
             </a>
             {#if r.line}<div class="text-muted-foreground">{@html marked(r.line, r.terms)}</div>{/if}
           </li>

@@ -21,7 +21,11 @@ fn docs_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Documentation folder not found: {e}"))
 }
 
-fn collect_md(root: &Path, dir: &Path, out: &mut Vec<String>) {
+/// The name mdBook gives a book's table of contents: read as the book's
+/// structure (`books`), never listed as a page of it.
+pub(crate) const SUMMARY: &str = "SUMMARY.md";
+
+pub(crate) fn collect_md(root: &Path, dir: &Path, out: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -29,7 +33,7 @@ fn collect_md(root: &Path, dir: &Path, out: &mut Vec<String>) {
         let path = entry.path();
         if path.is_dir() {
             collect_md(root, &path, out);
-        } else if path.extension().is_some_and(|e| e == "md") {
+        } else if path.extension().is_some_and(|e| e == "md") && entry.file_name() != SUMMARY {
             if let Ok(rel) = path.strip_prefix(root) {
                 out.push(rel.to_string_lossy().replace('\\', "/"));
             }
@@ -39,14 +43,14 @@ fn collect_md(root: &Path, dir: &Path, out: &mut Vec<String>) {
 
 /// A folder of documentation and the prefix its documents are listed under: none
 /// for the editor's own, the package's name and a slash for a package's book.
-struct Root {
-    prefix: String,
-    dir: PathBuf,
+pub(crate) struct Root {
+    pub(crate) prefix: String,
+    pub(crate) dir: PathBuf,
 }
 
 /// The editor's documentation, then the book of every package of the session's
 /// environment that registers one (see `pkgdocs`).
-fn roots(app: &AppHandle) -> Result<Vec<Root>, String> {
+pub(crate) fn roots(app: &AppHandle) -> Result<Vec<Root>, String> {
     let own = docs_dir(app);
     let mut roots: Vec<Root> = own
         .as_ref()

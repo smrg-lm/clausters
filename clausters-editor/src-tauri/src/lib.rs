@@ -1,3 +1,4 @@
+mod books;
 mod cli;
 mod config;
 mod envs;
@@ -36,6 +37,7 @@ pub fn run() {
             session::py_query,
             session::py_restart,
             session::py_interrupt,
+            books::list_books,
             files::list_docs,
             files::read_doc,
             files::search_docs,

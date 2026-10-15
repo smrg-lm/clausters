@@ -4,6 +4,7 @@ clausters/_libs/
 clausters/_bin/
 # The offline book, staged by build_docs.py.
 clausters/_docs/
+clausters/_server_docs/
 
 # Packaging / build artifacts.
 build/

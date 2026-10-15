@@ -148,7 +148,7 @@ if [[ $refresh == 1 ]]; then
     || die "clausters is not installed in .venv; run without --refresh first"
   info "Staging the native binaries (scripts/refresh-bin.sh)"
   "$root/scripts/refresh-bin.sh"
-  info "Staging the offline book (clients/python/build_docs.py)"
+  info "Staging the offline books (clients/python/build_docs.py)"
   "$venv/bin/python" "$root/clients/python/build_docs.py"
   if [[ $editor == 1 ]]; then
     info "Building and installing the editor"

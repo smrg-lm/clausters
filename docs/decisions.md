@@ -9929,12 +9929,31 @@ change it.
 **The book is copied as it is.** Its links are relative `.md` paths and the API
 pages anchor their members with `<a id>`, both of which a Markdown viewer that
 follows links resolves with no rewriting; the one change is that mdBook's
-`SUMMARY.md` becomes `index.md`, the page a viewer opens first. A heading's id
+`SUMMARY.md` is headed by the book's title rather than `# Summary`. A heading's id
 keeps `_`, as mdBook and GitHub keep it, so a link written for the published
 book lands on the same heading in the editor. And because the API pages are
 part of the book, building the wheel needs `pydoc-markdown`:
 `CLAUSTERS_SKIP_DOCS` leaves the book out of a development build, and a release
 refuses that skip as it refuses the others.
+
+**The table of contents is the book's structure, and the server's book rides
+along** *(2026-10-15)*. A list of files titled by their paths does not tell a
+reader what each one is, so the editor reads a folder's `SUMMARY.md` as the book
+it describes: title, parts, chapters by their titles. That file is mdBook's own
+format, not one of this project's. The editor's start page lists every book
+with its chapters, drawn from those tables, and a folder without one still reads
+as a list of its pages. The first version staged `SUMMARY.md` as an `index.md`
+page to read, which threw the structure away; it is now staged as it is.
+
+The wheel also bundles the server, so it carries the server's book too, under a
+second entry point (`clausters-server = "clausters._book:server"`). Only the
+parts a user reads are staged: the user guide and the library and embedding
+chapters, not the developer guide. Whoever reads a book inside an installed
+package has already installed it, so the pages and sections about building and
+installing are left out of both books (`build_docs.py` names them, and stops
+the build when one of them is no longer there). A link to anything left out is
+repointed at its published address. The GUI host has no book of its own yet;
+its pages stay where they are, in these two.
 
 ## A panic stops what an environment plays, and the editor's interrupt key reaches it
 

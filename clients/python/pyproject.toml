@@ -45,11 +45,13 @@ clausters-gui = "clausters._cli:gui_main"
 [project.optional-dependencies]
 editor = ["clausters-editor>=0.1"]
 
-# The offline book (`clausters/_docs/`, staged by build_docs.py), named for
-# clausters-editor: its documentation viewer lists the books every package of
+# The offline books (`clausters/_docs/` and the server's
+# `clausters/_server_docs/`, staged by build_docs.py), named for
+# clausters-editor: its documentation viewer shows the books every package of
 # the session's environment registers under this group.
 [project.entry-points."clausters_editor.docs"]
 clausters = "clausters._book:folder"
+clausters-server = "clausters._book:server"
 
 # What clausters-editor calls after its interrupt key stopped the session's
 # code, when this package is imported there: every session panics.
@@ -82,11 +84,12 @@ include = ["clausters", "clausters.*"]
 # where its data is at runtime. Thousands of one-glyph files, hence the
 # recursive glob.
 #
-# `_docs/**` is the client's book as Markdown, the API reference included
-# (build_docs.py), so the documentation reads offline.
+# `_docs/**` is the client's book as Markdown, the API reference included, and
+# `_server_docs/**` the user's parts of the server's (build_docs.py), so the
+# documentation reads offline.
 [tool.setuptools.package-data]
 clausters = ["_libs/*.so", "_libs/*.so.*", "_libs/*.dylib", "_libs/*.dll", "_bin/*",
-             "_libs/verovio/**", "_docs/**"]
+             "_libs/verovio/**", "_docs/**", "_server_docs/**"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

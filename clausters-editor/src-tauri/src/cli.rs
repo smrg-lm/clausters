@@ -2,9 +2,9 @@
 //!
 //! The arguments are parsed first thing in `run`, ahead of Tauri, so an option
 //! that only answers (`--help`, `--version`) or a mistake in them prints and
-//! exits without a window ever appearing. What reaches the application is `Cli`; a new option
-//! is a field here and, if the page needs it, one in what `cli_files` (or a
-//! command beside it) hands over.
+//! exits without a window ever appearing. What reaches the application is
+//! `Cli`; a new option is a field here and, if the page needs it, one in what
+//! `cli_files` (or a command beside it) hands over.
 
 use std::path::{Path, PathBuf};
 

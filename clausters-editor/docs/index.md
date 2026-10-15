@@ -74,7 +74,10 @@ help taken from the live session, so it also works with your own functions and
 imported modules.
 
 The documentation is hidden with the x on its bar (or View → Documentation) and
-comes back with `F1` or `Ctrl+D`.
+comes back with `F1` or `Ctrl+D`. `F1` and the house button open its start page,
+which lists the chapters of every book the editor has: its own, and those of the
+packages installed in the session's environment. The bar says which book and
+chapter is on screen; the book's name there opens its whole table of contents.
 
 The window holds up to four panels in two columns: the editor, the documentation,
 the post window and, with View → Split Editor, a second editor beside the first

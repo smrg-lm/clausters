@@ -227,8 +227,8 @@ jobs:
                   print(f"    {mib(i.file_size):>10}  {n.split('/')[-1]}")
           n = sum(1 for i in z.infolist() if "_libs/verovio/" in i.filename)
           print(f"    {n} verovio resource files")
-          docs = [i for i in z.infolist() if "/_docs/" in i.filename]
-          print(f"    {len(docs)} book pages, {mib(sum(i.compress_size for i in docs))} packed")
+          docs = [i for i in z.infolist() if "/_docs/" in i.filename or "/_server_docs/" in i.filename]
+          print(f"    {len(docs)} book pages (client and server), {mib(sum(i.compress_size for i in docs))} packed")
           EOF
       - uses: actions/upload-artifact@v6
         with:

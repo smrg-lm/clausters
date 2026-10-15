@@ -120,12 +120,20 @@ paths. The menu entry does not show up in the applications menu, because
 - **Documentation folder** (File → Preferences, or the folder button on the
   documentation panel): any folder with `.md` files; by default, the one bundled
   with the app.
-- **Package books**: beside that folder the viewer lists, under each package's
-  name, the book of every package of the session's environment that registers
-  one -- an entry point in the `clausters_editor.docs` group, a callable that
-  returns a folder of `.md` files (the clausters client registers its book this
-  way). Search and help reach them too; they are asked for again each time the
-  session starts.
+- **Package books**: beside that folder the viewer shows the book of every
+  package of the session's environment that registers one. A package registers
+  a book with an entry point in the `clausters_editor.docs` group, named after
+  the book: a callable that returns a folder of `.md` files. The clausters
+  client registers two this way, its own and the server's. Search and help reach them too; they are asked for
+  again each time the session starts.
+- **Books and the start page**: a folder that carries mdBook's table of
+  contents, `SUMMARY.md`, is read as the book it describes. Its first heading
+  is the book's title (unless it is mdBook's own `# Summary`), each later
+  heading a part and each `[Title](page.md)` a chapter, nested by indentation.
+  A folder without one is a book listing its pages by their first heading. The
+  start page (`F1`, the house button) shows every book with its parts and
+  first-level chapters, a book's title opens its whole table of contents, and
+  the bar says which book and chapter is on screen.
 - **Interrupt hooks**: `Ctrl+.` interrupts the session's code, then calls the
   function every imported package registers in the `clausters_editor.interrupt`
   group, so the key also stops what a package is still doing on its own (the
@@ -185,6 +193,7 @@ src-tauri/
                            interrupt hooks (clausters_editor.interrupt)
   src/session.rs           the Python process: start, send, interrupt, restart
   src/files.rs             the user's files, the docs/ folder and the package books
+  src/books.rs             each documentation folder as a book: title, parts and chapters (SUMMARY.md)
   src/pkgdocs.rs           the books the session's packages register (clausters_editor.docs)
   src/fonts.rs             installed monospaced fonts
   src/config.rs            persistent configuration

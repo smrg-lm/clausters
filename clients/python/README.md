@@ -145,9 +145,10 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
 - The **`editor` extra** (`clausters[editor]`) — installs `clausters-editor`, a
   separate package with its own command, whose session runs on the environment
   it is installed in.
-- **The book, offline** — `clausters/_docs/` is this documentation as Markdown,
-  the API reference included. clausters-editor lists it in its documentation
-  viewer, where its search and its help (`Ctrl+D`) reach it.
+- **The books, offline**: `clausters/_docs/` is this documentation as
+  Markdown, the API reference included, and `clausters/_server_docs/` holds the
+  user's parts of the server's book. clausters-editor shows both in its
+  documentation viewer, where its search and its help (`Ctrl+D`) reach them.
 - `clausters.launch` — launching and owning the server and GUI as child
   processes. `Session.live()` connects to a running server or starts one if none
   is up (choosing a shared-memory segment); `Session.gui()` starts the visual
@@ -314,8 +315,8 @@ works there from the first line.
 **5. After changing code:**
 
 - **Python in `clients/python`** — nothing: the install is editable. The
-  offline book is a copy, though: after a docstring or a book page changes,
-  `python clients/python/build_docs.py` stages it again.
+  offline books are a copy, though: after a docstring or a page of either
+  book changes, `python clients/python/build_docs.py` stages them again.
 - **Rust (server, core, GUI host)** — `scripts/refresh-bin.sh`. The package
   loads the binaries **staged inside it** before the workspace `target/`, so a
   rebuilt crate is not what runs until it is staged again; a manual test would
