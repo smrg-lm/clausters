@@ -66,6 +66,8 @@ mod midi;
 ))]
 pub(crate) mod plugin;
 mod queries;
+#[cfg(any(feature = "synth", feature = "faust"))]
+pub(crate) mod voices;
 
 pub use buffers::{BUFFER_JOBS, parse_buffer_gen, parse_buffer_msg};
 pub(crate) use buffers::{allocated, mirror_buffer};
@@ -87,6 +89,9 @@ pub enum NodeDef {
         u64,
         Arc<crate::plugin::PluginAdmin>,
     ),
+    /// A `Voices` node of a SynthDef or a FaustDef.
+    #[cfg(any(feature = "synth", feature = "faust"))]
+    Voices(Arc<voices::VoicesDef>),
 }
 
 // With neither def family compiled in, `NodeDef` is an empty enum: no node is
@@ -114,6 +119,8 @@ impl NodeDef {
                 target_os = "linux"
             ))]
             NodeDef::Plugin(def, ..) => def.control_index(name),
+            #[cfg(any(feature = "synth", feature = "faust"))]
+            NodeDef::Voices(v) => v.control_index(name),
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
@@ -129,11 +136,14 @@ impl NodeDef {
     /// Whether a node of this def reads notes: a plugin, a `Voices` node.
     pub fn reads_notes(&self) -> bool {
         match self {
+            #[cfg(any(feature = "synth", feature = "faust"))]
+            NodeDef::Voices(_) => true,
             #[cfg(all(
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
             ))]
             NodeDef::Plugin(..) => true,
+            // A plugin-only build has no other variant left for this arm.
             #[allow(unreachable_patterns)]
             _ => false,
         }
@@ -142,6 +152,10 @@ impl NodeDef {
     /// Whether a note may carry one of the node's controls -- a voice's, set
     /// for that note alone. A plugin's controls are the instance's.
     pub fn takes_note_controls(&self) -> bool {
+        #[cfg(any(feature = "synth", feature = "faust"))]
+        if let NodeDef::Voices(_) = self {
+            return true;
+        }
         false
     }
 
@@ -173,6 +187,11 @@ impl NodeDef {
                 Some(1) => Some("in"),
                 Some(_) => None,
             },
+            #[cfg(any(feature = "synth", feature = "faust"))]
+            NodeDef::Voices(v) => match index == v.controls {
+                true => Some("notes"),
+                false => v.inner.control_name(index),
+            },
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
@@ -198,6 +217,8 @@ impl NodeDef {
                 target_os = "linux"
             ))]
             NodeDef::Plugin(..) => None,
+            #[cfg(any(feature = "synth", feature = "faust"))]
+            NodeDef::Voices(v) => v.inner.ugen_count(),
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
@@ -226,6 +247,12 @@ impl NodeDef {
                 let mut v: Vec<f32> = def.params.iter().map(|p| p.init).collect();
                 v.extend([0.0, 0.0]);
                 v
+            }
+            #[cfg(any(feature = "synth", feature = "faust"))]
+            NodeDef::Voices(v) => {
+                let mut defaults = v.inner.control_defaults();
+                defaults.push(-1.0);
+                defaults
             }
             #[cfg(not(any(
                 feature = "synth",
@@ -262,6 +289,9 @@ impl NodeDef {
                 target_os = "linux"
             ))]
             NodeDef::Plugin(def, ..) => def.usage(controls),
+            // Every voice reads and writes the buses one would.
+            #[cfg(any(feature = "synth", feature = "faust"))]
+            NodeDef::Voices(v) => v.inner.usage(&controls[..v.controls.min(controls.len())]),
             #[cfg(not(any(
                 feature = "synth",
                 feature = "faust",
@@ -1554,6 +1584,26 @@ impl CmdTranslator {
     ) -> Result<(), String> {
         match msg.addr.as_str() {
             "/bus_event" => self.bus_event(msg, cmds),
+            "/voices_new" => {
+                #[cfg(any(feature = "synth", feature = "faust"))]
+                {
+                    self.voices_new(msg, cmds)
+                }
+                #[cfg(not(any(feature = "synth", feature = "faust")))]
+                {
+                    Err("Voices nodes need a def family in this build".into())
+                }
+            }
+            "/voices_map" => {
+                #[cfg(any(feature = "synth", feature = "faust"))]
+                {
+                    self.voices_map(msg, cmds)
+                }
+                #[cfg(not(any(feature = "synth", feature = "faust")))]
+                {
+                    Err("Voices nodes need a def family in this build".into())
+                }
+            }
             "/node_event" => self.node_event(msg, cmds),
             "/plugin_event" => {
                 #[cfg(all(

@@ -563,3 +563,71 @@ fn a_reset_instance_sounds_as_a_fresh_one() {
         "a reset instance must restart as a fresh one"
     );
 }
+
+/// **A FaustDef plays as a `Voices` node**: each note a voice, its `amp` the
+/// note's velocity, its `gate` open while the note is held. The def has no
+/// done action, so a released voice is taken again by the steal order.
+#[test]
+fn a_faust_def_plays_as_a_voices_node() {
+    use clausters::osc::translate::CmdTranslator;
+    use clausters::rosc::{OscMessage, OscType};
+    let def = compile_def(
+        "held",
+        r#"process = hslider("amp", 0.1, 0.0, 1.0, 0.001) * button("gate") * (hslider("freq", 440, 20, 20000, 1) > 0);"#,
+    );
+    let mut t = CmdTranslator::new(SR);
+    t.faust_defs.insert("held".into(), def);
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let mut cmds = Vec::new();
+    let mut translate = |addr: &str, args: Vec<OscType>, cmds: &mut Vec<Cmd>| {
+        t.translate(
+            &OscMessage {
+                addr: addr.into(),
+                args,
+            },
+            cmds,
+        )
+        .unwrap()
+    };
+    translate(
+        "/voices_new",
+        vec![
+            OscType::String("held".into()),
+            OscType::Int(100),
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::Int(2),
+            OscType::String("notes".into()),
+            OscType::Float(1.0),
+        ],
+        &mut cmds,
+    );
+    let events = serde_json::json!([
+        {"kind": "note_on", "key": 60, "note_id": 1, "velocity": 0.25},
+        {"kind": "note_on", "key": 64, "note_id": 2, "velocity": 0.5}
+    ]);
+    translate(
+        "/bus_event",
+        vec![OscType::Int(1), OscType::String(events.to_string())],
+        &mut cmds,
+    );
+    for cmd in cmds.drain(..) {
+        assert!(handle.send(cmd).is_ok());
+    }
+    let mut out = [0.0; BLOCK_SIZE * CHANNELS];
+    engine.process_block(&mut out);
+    assert!((out[(BLOCK_SIZE - 1) * CHANNELS] - 0.75).abs() < 1e-6);
+    translate(
+        "/bus_event",
+        vec![
+            OscType::Int(1),
+            OscType::String(r#"{"kind": "note_off", "note_id": 1}"#.into()),
+        ],
+        &mut cmds,
+    );
+    for cmd in cmds.drain(..) {
+        assert!(handle.send(cmd).is_ok());
+    }
+    engine.process_block(&mut out);
+    assert!((out[(BLOCK_SIZE - 1) * CHANNELS] - 0.5).abs() < 1e-6);
+}

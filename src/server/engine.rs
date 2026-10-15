@@ -76,6 +76,12 @@ pub enum Cmd {
         id: i32,
         event: crate::dsp::events::BusEvent,
     },
+    /// One entry of a `Voices` node's voice map (`/voices_map`).
+    VoiceMap {
+        id: i32,
+        slot: crate::node::voices::VoiceSlot,
+        index: Option<u32>,
+    },
     /// A fully validated event for an existing native instance generation.
     PluginEvent {
         id: i32,
@@ -699,6 +705,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::RunNode { id, .. }
         | Cmd::PluginEvent { id, .. }
         | Cmd::NodeEvent { id, .. }
+        | Cmd::VoiceMap { id, .. }
         | Cmd::RestartSynth { id, .. }
         | Cmd::SetControl { id, .. }
         | Cmd::MapControl { id, .. }
@@ -2141,6 +2148,7 @@ impl Engine {
                 Cmd::SetCompensation(_)
                 | Cmd::PluginEvent { .. }
                 | Cmd::NodeEvent { .. }
+                | Cmd::VoiceMap { .. }
                 | Cmd::RestartSynth { .. }
                 | Cmd::AddSynth { .. }
                 | Cmd::AddGroup { .. }
@@ -2230,6 +2238,11 @@ fn apply_to_tree(
         Cmd::SetCompensation(plan) => {
             if let Some(old) = tree.set_compensation(plan, offset) {
                 sink.push(Garbage::RetiredCompensation(old));
+            }
+        }
+        Cmd::VoiceMap { id, slot, index } => {
+            if let Some(node) = tree.synth_mut(id) {
+                node.voice_map(slot, index);
             }
         }
         Cmd::NodeEvent { id, mut event } => {

@@ -12,6 +12,7 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicI32, AtomicU8, AtomicUsize, Ordering};
 
 mod index;
+pub mod voices;
 
 use crate::dsp::{DoneAction, ProcessCtx, ReplyMsg, StageMask, TransportCtx};
 use crate::server::workers::WorkerPool;
@@ -45,6 +46,9 @@ pub trait SynthNode: Send {
     fn release_notes(&mut self, _lane: Option<i32>, _offset: usize) {}
     /// Release the notes the lanes of `transport` started, at `offset`.
     fn release_transport_notes(&mut self, _transport: usize, _offset: usize) {}
+    /// One entry of a `Voices` node's voice map (`/voices_map`). Default:
+    /// ignored -- only a `Voices` node has one.
+    fn voice_map(&mut self, _slot: voices::VoiceSlot, _index: Option<u32>) {}
     /// Governing transport tempo, kept separate from the UGen transport surface.
     fn plugin_tempo(&mut self, _bpm: f64) {}
     fn incarnation(&self) -> u64 {
