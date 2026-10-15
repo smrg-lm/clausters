@@ -19,6 +19,7 @@
 # The stream's own cost -- the bytes, and the time inside `server_reply` -- is
 # CPU work either way and carries over.
 set -euo pipefail
+OWN_PGID=$(ps -o pgid= -p $$ | tr -d ' ')
 cd "$(dirname "$0")/.."
 
 CANVASES="${1:-40}"
@@ -82,8 +83,15 @@ setsid "$CHROME" --headless=new --disable-gpu --no-sandbox \
     --user-data-dir="$profile" \
     "$url" >/dev/null 2>&1 &
 CHROME_PID=$!
-CHROME_PGID=$(ps -o pgid= -p "$CHROME_PID" 2>/dev/null | tr -d ' ')
-[ -n "$CHROME_PGID" ] || CHROME_PGID="$CHROME_PID"
+# The browser's own group, once setsid has made one. Read too early, the
+# group is still this script's, and killing that takes down the caller
+# (a CI step) with the browser; then only the pid is reaped.
+CHROME_PGID=""
+for _ in $(seq 1 40); do
+    pgid=$(ps -o pgid= -p "$CHROME_PID" 2>/dev/null | tr -d ' ' || true)
+    if [ -n "$pgid" ] && [ "$pgid" != "$OWN_PGID" ]; then CHROME_PGID=$pgid; break; fi
+    sleep 0.05
+done
 
 # Three phases plus the settle, with room for a slow build-up of canvases.
 budget=$(( SECONDS_PER_PHASE * 3 + 120 ))

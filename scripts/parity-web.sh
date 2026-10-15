@@ -14,6 +14,7 @@
 # Worker, and Chrome's virtual time does not wait for one. It is the same
 # posture every other page in the web suite reports with.
 set -euo pipefail
+OWN_PGID=$(ps -o pgid= -p $$ | tr -d ' ')
 cd "$(dirname "$0")/.."
 
 CHROME="${CHROME:-$(command -v google-chrome || command -v chromium || command -v chromium-browser)}"
@@ -45,8 +46,15 @@ setsid "$CHROME" --headless=new --disable-gpu --no-sandbox \
     --disable-breakpad --no-first-run --user-data-dir="$PROFILE" \
     "http://127.0.0.1:$PORT/tests/parity.html" >/dev/null 2>&1 &
 CHROME_PID=$!
-CHROME_PGID=$(ps -o pgid= -p "$CHROME_PID" 2>/dev/null | tr -d ' ')
-[ -n "$CHROME_PGID" ] || CHROME_PGID="$CHROME_PID"
+# The browser's own group, once setsid has made one. Read too early, the
+# group is still this script's, and killing that takes down the caller
+# (a CI step) with the browser; then only the pid is reaped.
+CHROME_PGID=""
+for _ in $(seq 1 40); do
+    pgid=$(ps -o pgid= -p "$CHROME_PID" 2>/dev/null | tr -d ' ' || true)
+    if [ -n "$pgid" ] && [ "$pgid" != "$OWN_PGID" ]; then CHROME_PGID=$pgid; break; fi
+    sleep 0.05
+done
 
 verdict=""
 for _ in $(seq 1 120); do   # up to 60 s

@@ -22,6 +22,7 @@
 # `BROWSERS=chrome,firefox`) runs the pages once per browser after the node
 # suites; it is **required before a release** and run on request otherwise.
 set -euo pipefail
+OWN_PGID=$(ps -o pgid= -p $$ | tr -d ' ')
 cd "$(dirname "$0")"
 
 BROWSERS="${BROWSERS:-chrome}"
@@ -163,8 +164,15 @@ run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
     # children inherit it. Falling back to the pid keeps this working if the
     # browser is a wrapper that exits before `ps` sees it.
     if [ -n "$LEAD" ]; then
-        BROWSER_PGID=$(ps -o pgid= -p "$BROWSER_PID" 2>/dev/null | tr -d ' ')
-        [ -n "$BROWSER_PGID" ] || BROWSER_PGID="$BROWSER_PID"
+        # The browser's own group, once setsid has made one. Read too early, the
+        # group is still this script's, and killing that takes down the caller
+        # (a CI step) with the browser; then only the pid is reaped.
+        BROWSER_PGID=""
+        for _ in $(seq 1 40); do
+            pgid=$(ps -o pgid= -p "$BROWSER_PID" 2>/dev/null | tr -d ' ' || true)
+            if [ -n "$pgid" ] && [ "$pgid" != "$OWN_PGID" ]; then BROWSER_PGID=$pgid; break; fi
+            sleep 0.05
+        done
     fi
 
     verdict=""
