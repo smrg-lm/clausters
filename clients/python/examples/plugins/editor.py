@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """A native effect editor on the server's machine, with a continuous quiet tone.
 
-The installed Linux package includes the CLAP/VST3 helper. In a checkout run
-`scripts/refresh-bin.sh` first, then set PLUGIN_BINARY and PLUGIN_ID and run:
+The installed Linux package includes the CLAP/VST3 helper; in a checkout run
+`scripts/refresh-bin.sh` first. Name the effect with two variables -- its binary
+and its native ID, as `server.scan_plugins(binary)` lists them -- and run:
 
-    python clients/python/examples/plugins/editor.py
+    PLUGIN_BINARY=/usr/lib/clap/lsp-plugins.clap \
+    PLUGIN_ID=in.lsp-plug.para_equalizer_x8_stereo \
+        python clients/python/examples/plugins/editor.py
 
-Choose a mono/stereo effect with an audible default preset and an X11 editor.
-The repository CLAP gain and VST3 fixtures also work. Their editors exercise
-callbacks and change gain to 0.75. Close/reopen the editor and edit its controls
-while the tones keep playing. Press Enter to finish the script; a notebook
-leaves the session open for the next cell. Python boots the native server;
-the paired page attaches to one booted separately.
+Choose a mono/stereo effect with an audible default preset and an X11 editor;
+the parametric equalizer above is one. The repository CLAP gain and VST3
+fixtures also work: their editors exercise callbacks and change gain to 0.75.
+Close/reopen the editor and edit its controls while the tones keep playing.
+Run as a script, Enter finishes; cell by cell, `finish()` closes the session.
+Python boots the native server; the paired page attaches to one booted
+separately.
 """
 # %%
 import os
-from pathlib import Path
 import sys
 from clausters import PluginDef, Session, Synth, SynthDef
 from clausters.defs import out, sine
@@ -24,8 +27,7 @@ BINARY = os.environ.get("PLUGIN_BINARY", "")
 PLUGIN_ID = os.environ.get("PLUGIN_ID", "")
 if not BINARY or not PLUGIN_ID:
     raise ValueError("set PLUGIN_BINARY and PLUGIN_ID to a native effect")
-OUT = Path(__file__).resolve().parents[1] / "out" / "plugin-editor"
-session = Session.live(port=57113, data_dir=OUT).activate()
+session = Session.live(port=57113).activate()
 server = session.server
 
 # %%

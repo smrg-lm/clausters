@@ -105,6 +105,11 @@ already carry it.
   reports the step it stopped at and the page's console; what is open is the
   diagnosis, from the next timeout's output.
 
+- ⬜ **A notebook example that writes files cannot run cell by cell in an
+  interactive session** *(`clients/python/PLAN.md`, Found by use)*. The output
+  directory is resolved from `__file__`, which a cell-by-cell session does not
+  define; what is open is the one rule every example follows instead.
+
 
 ## 2. Tests and reviews pending
 

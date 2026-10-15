@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """One persistent native instrument, live notes and a server-owned event lane.
 
-Build the native server with `cargo build --features plugin-clap` and its helper
-with `cargo build -p clausters-plugin-host`. For VST3 use `plugin-vst3`
-and build the helper with `--features vst3` (or `clap,vst3` for both).
-Set `CLAUSTERS_BIN` to the workspace server (or refresh the bundled binaries with that feature enabled), then run:
+The installed Linux package includes the CLAP/VST3 helper; in a checkout run
+`scripts/refresh-bin.sh` first. Name an installed instrument with two
+variables -- its binary and its native ID, as `server.scan_plugins(binary)`
+lists them -- and run:
 
     PLUGIN_BINARY=/path/instrument.clap PLUGIN_ID=vendor.instrument \
         python clients/python/examples/plugins/persistent.py
 
-Use an instrument with a native note-expression port and an audible initial
-preset, such as Surge XT. A sampler also needs samples in its initial state.
-The numeric repository fixture can verify events but is not a musical preset.
-This is a `# %%` notebook: the same calls and event sequence as the web page.
-Python can boot a native process; the page attaches to one started separately.
+It needs an instrument with a native note-expression port and an audible
+initial preset, such as Surge XT; an effects collection has none. A sampler
+also needs samples in its initial state. The numeric repository fixture can
+verify events but is not a musical preset. This is a `# %%` notebook: the same
+calls and event sequence as the web page. Python can boot a native process;
+the page attaches to one started separately.
 """
 # %%
 import os
-from pathlib import Path
 import sys
 from clausters import Group, PluginDef, Routine, Session, Synth
 
@@ -26,8 +26,7 @@ PLUGIN_ID = os.environ.get("PLUGIN_ID", "")
 if not BINARY or not PLUGIN_ID:
     raise ValueError("set PLUGIN_BINARY and PLUGIN_ID to a native instrument")
 
-OUT = Path(__file__).resolve().parents[1] / "out" / "plugins"
-session = Session.live(port=57113, data_dir=OUT).activate()
+session = Session.live(port=57113).activate()
 session.clock.set_tempo(2.0)
 server = session.server
 

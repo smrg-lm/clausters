@@ -2,12 +2,13 @@
 <html lang="en"><meta charset="utf-8"><title>Persistent native instrument</title>
 <!--
 Same calls and event sequence as clients/python/examples/plugins/persistent.py.
-Build the server with plugin-clap or plugin-vst3 and its matching helper
-(with clap, vst3 or both features). Start a native server
-with --ws 57112, build the web package and serve this tree over HTTP. This page
-attaches to that server; a page cannot boot a native process (Python can).
-Choose a CLAP or VST3 instrument with a native note-expression port and an audible
-initial preset, such as Surge XT. Samplers need samples in their initial state.
+Start a native server built with plugin-clap,plugin-vst3, its matching helper
+beside it (the Linux package and scripts/refresh-bin.sh both provide that
+pair), with --ws 57112; build the web package and serve this tree over HTTP.
+This page attaches to that server; a page cannot boot a native process
+(Python can). Name an installed CLAP or VST3 instrument with a native
+note-expression port and an audible initial preset, such as Surge XT; an
+effects collection has none. Samplers need samples in their initial state.
 -->
 <label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
 <label>Binary on server <input id="binary" placeholder="/path/instrument.clap"></label><br>
