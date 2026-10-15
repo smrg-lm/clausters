@@ -309,7 +309,18 @@ pub struct PluginSynth {
     control_events: EventList,
     deferred: [Event; HELD_NOTES],
     deferred_count: usize,
+    /// Notes named by their key that a lane's or a transport's release cut,
+    /// as `(source, port, channel, key)`: the note-off their writer still
+    /// owes them is theirs, and must not end a new note on the same key.
+    orphans: [Option<(u128, i16, i16, i16)>; ORPHANS],
+    next_orphan: usize,
+    /// Set while a bus's events are sent: what does not fit a job goes out
+    /// first in the next one rather than failing the instance, since a bus
+    /// carries what its writers wrote, not what one job holds.
+    spreading: bool,
 }
+/// Cut notes whose late note-off is remembered.
+const ORPHANS: usize = 64;
 impl PluginSynth {
     /// A live instance whose pipeline covers device callbacks of up to
     /// `device_frames` frames (zero before the first callback).
@@ -396,6 +407,9 @@ impl PluginSynth {
             control_events: EventList::default(),
             deferred: [Event::default(); HELD_NOTES],
             deferred_count: 0,
+            orphans: [None; ORPHANS],
+            next_orphan: 0,
+            spreading: false,
         })
     }
     /// Pipeline delay of this instance, in engine blocks.
@@ -429,7 +443,7 @@ impl PluginSynth {
         let release = event.kind == EventKind::NoteOff as u32
             || event.kind == EventKind::NoteChoke as u32
             || (event.kind == EventKind::Midi as u32 && event.id & 0xf0 == 0x80);
-        if release && self.deferred_count < self.deferred.len() {
+        if (release || self.spreading) && self.deferred_count < self.deferred.len() {
             self.deferred[self.deferred_count] = Event { offset: 0, ..event };
             self.deferred_count += 1;
         } else {
@@ -497,6 +511,19 @@ impl PluginSynth {
             });
             event.note_id = next;
             self.native_note(event);
+            return;
+        }
+        // A key's note-off its writer still owed a note that was cut is that
+        // note's, and ends nothing new.
+        if event.kind == EventKind::NoteOff as u32
+            && event.note_id == -1
+            && let Some(slot) = self.orphans.iter_mut().find(|o| {
+                o.is_some_and(|(s, p, c, k)| {
+                    s == source && p == event.port && c == event.channel && k == event.key
+                })
+            })
+        {
+            *slot = None;
             return;
         }
         for i in 0..self.notes.len() {
@@ -671,6 +698,11 @@ impl PluginSynth {
             if !released(&note) {
                 continue;
             }
+            if note.id == -1 {
+                self.orphans[self.next_orphan] =
+                    Some((note.source, note.port, note.channel, note.key));
+                self.next_orphan = (self.next_orphan + 1) % ORPHANS;
+            }
             self.notes[i] = None;
             self.native_note(Event {
                 offset: offset as u32,
@@ -725,6 +757,12 @@ impl PluginSynth {
     /// and what the port has no spelling for dropped -- a bus carries what
     /// any reader might want, and a reader takes what it can play.
     fn bus_event(&mut self, port: usize, e: &BusEvent) {
+        self.spreading = true;
+        self.read_bus_event(port, e);
+        self.spreading = false;
+    }
+
+    fn read_bus_event(&mut self, port: usize, e: &BusEvent) {
         let Some(&native_port) = self.note_ports.get(port) else {
             return;
         };
@@ -761,6 +799,11 @@ impl PluginSynth {
                     return;
                 }
                 self.end_clashing(e.source, native_port, e);
+                // A note past what the instance holds is not played: on a
+                // shared bus that is a writer's excess, not a fault.
+                if self.notes.iter().all(Option::is_some) {
+                    return;
+                }
                 Event {
                     kind: EventKind::NoteOn as u32,
                     value: e.value,

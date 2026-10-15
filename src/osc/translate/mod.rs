@@ -59,7 +59,7 @@ use crate::osc::graph::faust_usage;
 mod buffers;
 mod events;
 mod graph;
-mod midi;
+pub(crate) mod midi;
 #[cfg(all(
     any(feature = "plugin-clap", feature = "plugin-vst3"),
     target_os = "linux"
@@ -439,6 +439,9 @@ pub struct CmdTranslator {
     emptied_slots: Vec<i32>,
     graph_audio_buses: Registry,
     graph_control_buses: Registry,
+    /// The event buses an instrument binding's node reads: the top half of
+    /// the event-bus space, as the graphs' share of the audio buses is.
+    binding_buses: Registry,
     /// Boot-time pool capacities. `max_group_children` sizes every non-root
     /// group this translator builds (`/group_new`, `/synth_new`'s graph subgroups);
     /// `max_ugen_inputs` caps accepted inputs when compiling a def; the buffer
@@ -572,6 +575,10 @@ impl CmdTranslator {
             graph_control_buses: Registry::new(
                 (control_buses - control_reserved) as i64,
                 control_reserved,
+            ),
+            binding_buses: Registry::new(
+                (limits.event_buses - limits.event_buses / 2) as i64,
+                limits.event_buses / 2,
             ),
             limits,
         }
@@ -1718,7 +1725,7 @@ impl CmdTranslator {
             "/midi_bind" => self.midi_bind(msg, cmds),
             "/midi_bindZone" => self.midi_bind_zone(msg, cmds),
             "/midi_unbind" => self.midi_unbind(msg, cmds),
-            "/midi_map" => self.midi_map(msg),
+            "/midi_map" => self.midi_map(msg, cmds),
             "/midi_ump" => self.midi_ump(msg, cmds),
             "/node_free" => {
                 for arg in &msg.args {

@@ -196,10 +196,14 @@ fn midi_binding_is_one_instance_and_key_releases_are_fifo_with_sustain() {
     translator
         .translate_midi_bytes(&[0x90, 60, 64], &mut attack)
         .unwrap();
+    // The binding's node reads the bus the channel writes: a key is an event
+    // there, never a node of its own.
+    let bus = translator.midi.channels[&0].bus.unwrap();
+    assert_eq!(translator.midi.channels[&0].node, Some(node));
     assert!(
         attack
             .iter()
-            .all(|cmd| matches!(cmd,Cmd::PluginEvent { id,.. } if *id==node))
+            .all(|cmd| matches!(cmd, Cmd::BusEvent { bus: b, .. } if *b == bus))
     );
     assert_eq!(attack.len(), 2);
     send(&mut handle, attack);
@@ -659,16 +663,37 @@ fn bounded_note_ownership_and_input_event_overflow_are_explicit() {
             &mut cmds,
         )
         .unwrap();
-    for _ in 0..256 {
+    // Past the 256 notes an instance holds, a key on its bus is not played
+    // -- a shared bus's excess, not the instance's fault.
+    for _ in 0..257 {
         translator
             .translate_midi_bytes(&[0x90, 60, 64], &mut cmds)
             .unwrap();
     }
-    assert!(
-        translator
-            .translate_midi_bytes(&[0x90, 60, 64], &mut cmds)
-            .unwrap_err()
-            .contains("capacity")
-    );
     assert_eq!(translator.node_defs.len(), 1);
+    let (mut engine, mut handle) = self::engine();
+    let (attacks, setup): (Vec<Cmd>, Vec<Cmd>) = cmds
+        .into_iter()
+        .partition(|c| matches!(c, Cmd::BusEvent { .. }));
+    send(&mut handle, setup);
+    blocks(&mut engine, &mut handle, 2);
+    // A block holds at most the bus's own capacity of events: send them in
+    // a few blocks.
+    for chunk in attacks.chunks(100) {
+        for cmd in chunk {
+            if let Cmd::BusEvent { bus, event } = cmd {
+                assert!(
+                    handle
+                        .send(Cmd::BusEvent {
+                            bus: *bus,
+                            event: *event
+                        })
+                        .is_ok()
+                );
+            }
+        }
+        let held = blocks(&mut engine, &mut handle, 1);
+        assert!(held.iter().all(|v| v.is_finite()));
+    }
+    blocks(&mut engine, &mut handle, 6);
 }

@@ -172,6 +172,20 @@ pub struct MidiBinding {
     /// not persisted (it is re-instantiated on restore).
     #[serde(skip)]
     pub graph_instance: Option<i32>,
+    /// The event bus a routed binding writes (`/midi_bind channel bus`): the
+    /// channel's messages go there, and whatever reads it plays them. `None`
+    /// for an instrument binding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<u32>,
+    /// The node an instrument binding made -- a `Voices` node of a SynthDef
+    /// or a FaustDef, or a plugin's -- reading [`Self::bus`]. Runtime only:
+    /// made again on restore.
+    #[serde(skip)]
+    pub node: Option<i32>,
+    /// The event bus the channel writes: the route, or the bus an instrument
+    /// binding's node reads. Runtime only.
+    #[serde(skip)]
+    pub bus: Option<u32>,
 }
 
 /// A persisted binding: a channel plus its config, written to `midi.json` and
@@ -227,6 +241,18 @@ impl ZoneBinding {
             },
         }
     }
+
+    /// A zone of `members` routed to event bus `bus`: its notes and their
+    /// expression go there, each note by its own identity.
+    pub fn routed(members: u8, bus: u32) -> Self {
+        Self {
+            binding: MidiBinding::routed(bus),
+            config: ZoneConfig {
+                members,
+                timbre_cc: timbre_cc(),
+            },
+        }
+    }
 }
 
 /// A zone's sounding note, by the decoder's note id: its voice, its key and
@@ -256,7 +282,91 @@ impl MidiBinding {
             cc: HashMap::new(),
             programs: HashMap::new(),
             graph_instance: None,
+            route: None,
+            node: None,
+            bus: None,
         }
+    }
+
+    /// A binding that routes its channel to event bus `bus`, and plays
+    /// nothing of its own.
+    pub fn routed(bus: u32) -> Self {
+        Self {
+            route: Some(bus),
+            bus: Some(bus),
+            ..Self::new(String::new(), 0, 0, false)
+        }
+    }
+}
+
+/// **A channel voice message as an event on a bus**, from `source`, at
+/// MIDI 2.0 resolution: a note named by its channel and key, a polyphonic
+/// pressure as that key's pressure expression, and the channel's controller,
+/// pressure, bend and program.
+pub fn to_bus_event(msg: ChannelVoiceMessage, source: u128) -> clausters_core::event_bus::BusEvent {
+    use ChannelVoiceMessage::*;
+    use clausters_core::event_bus::{BusEvent, Expression, Kind};
+    let event = |kind, channel: u8| BusEvent {
+        channel: i16::from(channel),
+        ..BusEvent::new(kind, source)
+    };
+    match msg {
+        NoteOn {
+            channel,
+            note,
+            velocity,
+        } => BusEvent {
+            key: i16::from(note),
+            value: f64::from(velocity) / f64::from(u16::MAX),
+            ..event(
+                if velocity == 0 {
+                    Kind::NoteOff
+                } else {
+                    Kind::NoteOn
+                },
+                channel,
+            )
+        },
+        NoteOff {
+            channel,
+            note,
+            velocity,
+        } => BusEvent {
+            key: i16::from(note),
+            value: f64::from(velocity) / f64::from(u16::MAX),
+            ..event(Kind::NoteOff, channel)
+        },
+        PolyAftertouch {
+            channel,
+            note,
+            pressure,
+        } => BusEvent {
+            key: i16::from(note),
+            index: Expression::Pressure as u32,
+            value: f64::from(pressure) / f64::from(u32::MAX),
+            ..event(Kind::Expression, channel)
+        },
+        ChannelAftertouch { channel, pressure } => BusEvent {
+            value: f64::from(pressure) / f64::from(u32::MAX),
+            ..event(Kind::Pressure, channel)
+        },
+        ControlChange {
+            channel,
+            controller,
+            value,
+        } => BusEvent {
+            index: u32::from(controller),
+            value: f64::from(value) / f64::from(u32::MAX),
+            ..event(Kind::Controller, channel)
+        },
+        ProgramChange { channel, program } => BusEvent {
+            index: u32::from(program),
+            ..event(Kind::Program, channel)
+        },
+        PitchBend { channel, value } => BusEvent {
+            value: f64::from(convert::bend2control(value)),
+            ..event(Kind::Bend, channel)
+        },
     }
 }
 
@@ -271,8 +381,12 @@ pub struct MidiBindings {
     /// The zones' decoder: the live input goes through it, and what it passes
     /// through untouched is a plain channel's.
     pub decoder: clausters_midi::mpe::Decoder,
-    /// The zones' sounding notes, by the decoder's note id.
+    /// The zones' sounding notes, by the decoder's note id: on a GraphDef's
+    /// zone, the voice each note is.
     pub zone_voices: HashMap<u32, ZoneVoice>,
+    /// On a routed zone, the master of each sounding note's zone, by the
+    /// decoder's note id.
+    pub zone_notes: HashMap<u32, u8>,
     ids: Registry,
 }
 
@@ -286,6 +400,7 @@ impl MidiBindings {
             zones: HashMap::new(),
             decoder: clausters_midi::mpe::Decoder::new(),
             zone_voices: HashMap::new(),
+            zone_notes: HashMap::new(),
             ids: Registry::new(base, capacity),
         }
     }

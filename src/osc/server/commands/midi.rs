@@ -13,7 +13,9 @@ impl OscServer {
     /// `/midi_query [channel...]` -- one `/midi_query.reply` per binding, then
     /// `/done "/midi_query"`. A reply is `kind channel members instrument
     /// target addAction gate` and then the control map as `selector name`
-    /// pairs: `kind` is `"channel"` for a per-channel binding and `"zone"` for
+    /// pairs, then `bus` and the event bus the channel writes, and `node` and
+    /// the node an instrument binding made (an empty instrument is a channel
+    /// routed to a bus): `kind` is `"channel"` for a per-channel binding and `"zone"` for
     /// an MPE zone (`channel` its master, `members` as the device last set
     /// them). With no argument every binding is listed; a channel asked for
     /// and bound to nothing comes back as `"none" channel`.
@@ -121,6 +123,16 @@ fn binding_args(b: &MidiBinding, timbre_cc: Option<u8>) -> Vec<OscType> {
     if let Some(n) = timbre_cc {
         out.push(OscType::String("timbreCc".into()));
         out.push(OscType::Int(i32::from(n)));
+    }
+    // Where the channel's messages go, and the node an instrument binding
+    // made to read them there.
+    if let Some(bus) = b.bus {
+        out.push(OscType::String("bus".into()));
+        out.push(OscType::Int(bus as i32));
+    }
+    if let Some(node) = b.node {
+        out.push(OscType::String("node".into()));
+        out.push(OscType::Int(node));
     }
     out
 }

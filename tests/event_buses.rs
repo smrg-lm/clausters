@@ -371,3 +371,146 @@ fn a_bus_event_is_checked_before_it_is_sent() {
 fn send_node(t: &mut CmdTranslator) {
     keys(t, 42, -1);
 }
+
+/// `level`: `amp` while `gate` is open on bus `out`, then freed.
+#[cfg(feature = "synth")]
+fn level_def() -> Value {
+    let mut env = vec![
+        json!({"control": 2}),
+        json!({"const": 1.0}),
+        json!({"const": 0.0}),
+        json!({"const": 1.0}),
+        json!({"const": 2.0}),
+        json!({"const": 0.0}),
+        json!({"const": 2.0}),
+        json!({"const": 1.0}),
+        json!({"const": -99.0}),
+    ];
+    for seg in [[1.0, 0.0, 1.0, 0.0], [0.0, 0.001, 1.0, 0.0]] {
+        env.extend(seg.iter().map(|v| json!({ "const": v })));
+    }
+    json!({
+        "name": "level",
+        "controls": [
+            {"name": "freq", "default": 440.0},
+            {"name": "amp", "default": 0.1},
+            {"name": "gate", "default": 1.0},
+            {"name": "out", "default": 1.0}
+        ],
+        "ugens": [
+            {"kind": "EnvGen", "inputs": env},
+            {"kind": "Mul", "inputs": [{"ugen": 0}, {"control": 1}]},
+            {"kind": "Out", "inputs": [{"control": 3}, {"ugen": 1}]}
+        ]
+    })
+}
+
+/// **A keyboard, a lane and a client play one `Voices` node and one plugin
+/// at once**, all reading bus 2, and each writer ends only what it started: a
+/// cleared lane releases its notes on both readers while the keyboard's and
+/// the client's go on.
+#[cfg(feature = "synth")]
+#[test]
+fn three_writers_play_two_readers_and_each_releases_its_own() {
+    use clausters_core::event_bus::{BusEvent, Kind, lane_source};
+    let mut t = translator();
+    t.d_recv(&[OscType::String(level_def().to_string())])
+        .unwrap();
+    let (mut engine, mut handle) = engine();
+    send(&mut handle, keys(&mut t, 42, 2));
+    send(
+        &mut handle,
+        translate(
+            &mut t,
+            msg(
+                "/voices_new",
+                vec![
+                    OscType::String("level".into()),
+                    OscType::Int(43),
+                    OscType::Int(1),
+                    OscType::Int(0),
+                    OscType::Int(8),
+                    OscType::String("notes".into()),
+                    OscType::Float(2.0),
+                ],
+            ),
+        ),
+    );
+    // The keyboard: channel 0 routed to bus 2.
+    send(
+        &mut handle,
+        translate(
+            &mut t,
+            msg("/midi_bind", vec![OscType::Int(0), OscType::Int(2)]),
+        ),
+    );
+    let mut keyboard = Vec::new();
+    t.translate_midi_bytes(&[0x90, 60, 127], &mut keyboard)
+        .unwrap();
+    send(&mut handle, keyboard);
+    // A client's pattern note.
+    send(
+        &mut handle,
+        translate(
+            &mut t,
+            bus_event(
+                2,
+                json!({"kind": "note_on", "key": 64, "note_id": 1, "velocity": 0.25}),
+            ),
+        ),
+    );
+    // A lane's note, from lane 5 on transport 0.
+    let lane = BusEvent {
+        channel: 0,
+        key: 67,
+        note_id: 0,
+        value: 0.125,
+        ..BusEvent::new(Kind::NoteOn, lane_source(5, 1, 0))
+    };
+    send(
+        &mut handle,
+        vec![Cmd::BusEvent {
+            bus: 2,
+            event: lane,
+        }],
+    );
+    let mut out = [0.0; 128];
+    let mut last = |engine: &mut Engine, handle: &mut EngineHandle| {
+        let mut plugin = 0.0;
+        let mut voices = 0.0;
+        for _ in 0..8 {
+            assert_no_alloc(|| engine.process_block(&mut out));
+            plugin = out[126];
+            voices = out[127];
+            std::thread::sleep(Duration::from_millis(3));
+            while let Some(m) = handle.pop_reply() {
+                assert_ne!(m.kind, ReplyKind::Fault, "{m:?}");
+            }
+            while handle.pop_garbage().is_some() {}
+        }
+        (plugin, voices)
+    };
+    let (plugin, voices) = last(&mut engine, &mut handle);
+    assert!(close(plugin, 1.0 + 0.25 + 0.125 + BASE), "plugin {plugin}");
+    assert!(close(voices, 1.0 + 0.25 + 0.125), "voices {voices}");
+    // The lane is cleared: its note ends on both readers, the others stay.
+    send(
+        &mut handle,
+        vec![Cmd::ClearLane {
+            transport: 0,
+            lane: 5,
+            release: true,
+        }],
+    );
+    let (plugin, voices) = last(&mut engine, &mut handle);
+    assert!(close(plugin, 1.0 + 0.25 + BASE), "plugin {plugin}");
+    assert!(close(voices, 1.0 + 0.25), "voices {voices}");
+    // The keyboard lifts its key.
+    let mut keyboard = Vec::new();
+    t.translate_midi_bytes(&[0x80, 60, 0], &mut keyboard)
+        .unwrap();
+    send(&mut handle, keyboard);
+    let (plugin, voices) = last(&mut engine, &mut handle);
+    assert!(close(plugin, 0.25 + BASE), "plugin {plugin}");
+    assert!(close(voices, 0.25), "voices {voices}");
+}

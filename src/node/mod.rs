@@ -41,8 +41,9 @@ pub trait SynthNode: Send {
     /// `offset` in the block: played as one read from its event bus.
     /// Runs on the audio thread -- allocation-free. Default: ignored.
     fn note_event(&mut self, _event: &crate::dsp::events::BusEvent) {}
-    /// Release the notes a lane started (every lane's with `None`), at
-    /// `offset` in the block.
+    /// Release the notes lane `lane` started -- or, with `None`, every note
+    /// held, whoever started it: the node is under a group its transport
+    /// froze -- at `offset` in the block.
     fn release_notes(&mut self, _lane: Option<i32>, _offset: usize) {}
     /// Release the notes the lanes of `transport` started, at `offset`.
     fn release_transport_notes(&mut self, _transport: usize, _offset: usize) {}

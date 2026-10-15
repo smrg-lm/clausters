@@ -337,6 +337,7 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     }),
     ("/buffer_write", OscServer::handle_buffer_cmd),
     ("/buffer_zero", OscServer::handle_buffer_cmd),
+    ("/bus_event", OscServer::handle_via_translate),
     ("/bus_fill", |s, _, m, _| s.handle_bus_fill(Args::new(m))),
     ("/bus_get", |s, _, m, f| s.handle_bus_get(Args::new(m), f)),
     ("/bus_getRange", |s, _, m, f| {
@@ -419,6 +420,7 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     }),
     ("/node_after", OscServer::handle_via_translate),
     ("/node_before", OscServer::handle_via_translate),
+    ("/node_event", OscServer::handle_via_translate),
     ("/node_fill", OscServer::handle_via_translate),
     ("/node_free", OscServer::handle_via_translate),
     ("/node_map", OscServer::handle_via_translate),
@@ -544,6 +546,8 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/ugen_query", |s, _, m, f| {
         s.handle_ugen_query(Args::new(m), f)
     }),
+    ("/voices_map", OscServer::handle_via_translate),
+    ("/voices_new", OscServer::handle_via_translate),
 ];
 
 #[cfg(test)]

@@ -36,14 +36,16 @@
 use std::collections::{HashMap, HashSet};
 
 use clausters_core::event::render::Arg;
+use clausters_core::event_bus::{BusEvent, Kind, lane_source};
 use clausters_core::event_lane::{
     EventLaneData, EventLaneMidi, EventLaneUmp, EventLaneVoice, Release,
 };
-use clausters_midi::mpe::{Decoder, MpeEvent};
+use clausters_midi::mpe::{Decoder, MpeEvent, Side};
 
 use super::*;
 use crate::midi::ump::{PerNote, UmpMessage, parse_ump};
-use crate::midi::{ChannelVoiceMessage, parse_midi1};
+use crate::midi::{ChannelVoiceMessage, parse_midi1, to_bus_event};
+use crate::osc::translate::midi::{MidiRoute, message_channel, per_note_event, zone_events};
 use crate::server::engine::EventLaneTag;
 
 /// How far ahead of the position a lane is kept built, in seconds. Far more
@@ -488,6 +490,48 @@ fn ahead(
     }
 }
 
+/// **A lane's note on a node that reads notes**: its note-on and note-off,
+/// from the lane's `source`, its identity the event's index. The controls a
+/// note on a node carries are its `key`, `velocity` and `channel`.
+fn node_note(
+    controls: &[OscType],
+    source: u128,
+    note_id: i32,
+) -> Result<(BusEvent, BusEvent), String> {
+    let mut on = BusEvent {
+        channel: 0,
+        key: 60,
+        note_id,
+        value: 1.0,
+        ..BusEvent::new(Kind::NoteOn, source)
+    };
+    for pair in controls.as_chunks::<2>().0 {
+        let (OscType::String(name), Some(value)) = (
+            &pair[0],
+            crate::osc::args::float_value(&pair[1]).map(f64::from),
+        ) else {
+            return Err("a note on a node carries key, velocity and channel".into());
+        };
+        match name.as_str() {
+            "key" if value.fract() == 0.0 && (0.0..=127.0).contains(&value) => {
+                on.key = value as i16
+            }
+            "channel" if value.fract() == 0.0 && (0.0..=15.0).contains(&value) => {
+                on.channel = value as i16
+            }
+            "velocity" if (0.0..=1.0).contains(&value) => on.value = value,
+            "key" | "channel" | "velocity" => return Err(format!("invalid note {name}")),
+            _ => return Err("a note on a node carries key, velocity and channel".into()),
+        }
+    }
+    let off = BusEvent {
+        kind: Kind::NoteOff,
+        value: 0.0,
+        ..on
+    };
+    Ok((on, off))
+}
+
 impl OscServer {
     /// `/lane_new <transport:int32> <lane:int32> <target:int32>` -- makes lane
     /// `lane` on transport `transport`, its notes made at the tail of group
@@ -700,9 +744,13 @@ impl OscServer {
             generation: lane.generation,
             event: i,
         };
+        let source = lane_source(id, tag.generation, transport);
         let mut start = Vec::new();
         let mut release = Vec::new();
         let mut length = 0;
+        // A lane's note on a bus: its id is the lane's voice number, its own
+        // within the lane's source.
+        let note_id = |voice: u32| (voice & 0x7fff_ffff) as i32;
         match event {
             EventLaneEvent::Note {
                 voice,
@@ -710,81 +758,32 @@ impl OscServer {
                 length: held,
                 release: how,
             } => {
-                if let EventLaneVoice::Plugin { node, port } = voice {
-                    #[cfg(all(
-                        any(feature = "plugin-clap", feature = "plugin-vst3"),
-                        target_os = "linux"
-                    ))]
+                if let EventLaneVoice::Plugin { node, .. } = voice {
+                    let (on, off) = node_note(&controls, source, i as i32)?;
+                    if !self
+                        .translator
+                        .node_defs
+                        .get(&node)
+                        .is_some_and(|def| def.reads_notes())
                     {
-                        let source = crate::osc::translate::plugin::lane_source(
-                            id,
-                            tag.generation,
-                            transport,
-                        );
-                        let value = |name: &str, fallback: f64| {
-                            controls
-                                .as_chunks::<2>()
-                                .0
-                                .iter()
-                                .find_map(|pair| match &pair[0] {
-                                    OscType::String(key) if key == name => {
-                                        crate::osc::args::float_value(&pair[1]).map(f64::from)
-                                    }
-                                    _ => None,
-                                })
-                                .unwrap_or(fallback)
-                        };
-                        for pair in controls.as_chunks::<2>().0.iter() {
-                            if !matches!(&pair[0], OscType::String(key) if matches!(key.as_str(), "key"|"velocity"|"channel"))
-                            {
-                                return Err(
-                                    "plugin lane notes accept key, velocity and channel".into()
-                                );
-                            }
-                        }
-                        let key = value("key", 60.0);
-                        let channel = value("channel", 0.0);
-                        if key.fract() != 0.0 || channel.fract() != 0.0 {
-                            return Err("plugin key and channel must be integers".into());
-                        }
-                        let event = clausters_core::plugin_shm::Event {
-                            kind: 1,
-                            note_id: i as i32,
-                            key: key as i16,
-                            channel: channel as i16,
-                            value: value("velocity", 1.0),
-                            ..Default::default()
-                        };
-                        self.translator
-                            .plugin_event_cmd(node, source, port, event, &mut start)?;
-                        self.translator.plugin_event_cmd(
-                            node,
-                            source,
-                            port,
-                            clausters_core::plugin_shm::Event {
-                                kind: 2,
-                                value: 0.0,
-                                ..event
-                            },
-                            &mut release,
-                        )?;
-                        return Ok(Some(Cmd::EventLaneEntry {
-                            transport,
-                            tag,
-                            position,
-                            length: held,
-                            start,
-                            release,
-                        }));
+                        return Err(format!("node {node} reads no notes"));
                     }
-                    #[cfg(not(all(
-                        any(feature = "plugin-clap", feature = "plugin-vst3"),
-                        target_os = "linux"
-                    )))]
-                    {
-                        let _ = (node, port);
-                        return Err("native plugin notes unavailable in this engine".into());
-                    }
+                    start.push(Cmd::NodeEvent {
+                        id: node,
+                        event: on,
+                    });
+                    release.push(Cmd::NodeEvent {
+                        id: node,
+                        event: off,
+                    });
+                    return Ok(Some(Cmd::EventLaneEntry {
+                        transport,
+                        tag,
+                        position,
+                        length: held,
+                        start,
+                        release,
+                    }));
                 }
                 // A synth, or one more of a graph's slot -- whose group is the
                 // note, released through the slot's `gate` port or freed whole.
@@ -846,15 +845,8 @@ impl OscServer {
                     target_os = "linux"
                 ))]
                 if message.addr == "/plugin_event" {
-                    self.translator.plugin_event_scoped(
-                        &message,
-                        Some(crate::osc::translate::plugin::lane_source(
-                            id,
-                            tag.generation,
-                            transport,
-                        )),
-                        &mut start,
-                    )?;
+                    self.translator
+                        .plugin_event_scoped(&message, Some(source), &mut start)?;
                 } else {
                     self.translator.translate(&message, &mut start)?;
                 }
@@ -871,81 +863,53 @@ impl OscServer {
                 length: held,
                 program,
                 voice,
-            } => {
-                #[cfg(all(
-                    any(feature = "plugin-clap", feature = "plugin-vst3"),
-                    target_os = "linux"
-                ))]
-                if let Some(node) = self
-                    .translator
-                    .midi
-                    .channels
-                    .get(&channel)
-                    .and_then(|b| b.graph_instance)
-                    && matches!(
-                        self.translator.node_defs.get(&node),
-                        Some(crate::osc::translate::NodeDef::Plugin(..))
-                    )
-                {
-                    let source =
-                        crate::osc::translate::plugin::lane_source(id, tag.generation, transport);
+            } => match self.translator.midi_route(channel) {
+                Some(MidiRoute::Bus(bus)) => {
                     if let Some(program) = program {
-                        self.translator.plugin_midi(
-                            node,
-                            source,
-                            ChannelVoiceMessage::ProgramChange { channel, program },
-                            &mut start,
-                        )?;
+                        start.push(Cmd::BusEvent {
+                            bus,
+                            event: to_bus_event(
+                                ChannelVoiceMessage::ProgramChange { channel, program },
+                                source,
+                            ),
+                        });
                     }
-                    let event = clausters_core::plugin_shm::Event {
-                        kind: 1,
-                        note_id: voice as i32,
-                        channel: channel as i16,
-                        key: note as i16,
-                        value: velocity as f64 / 65535.0,
-                        ..Default::default()
-                    };
-                    self.translator
-                        .plugin_event_cmd(node, source, None, event, &mut start)?;
-                    self.translator.plugin_event_cmd(
-                        node,
-                        source,
-                        None,
-                        clausters_core::plugin_shm::Event {
-                            kind: 2,
-                            value: 0.0,
-                            ..event
+                    let mut on = to_bus_event(
+                        ChannelVoiceMessage::NoteOn {
+                            channel,
+                            note,
+                            velocity,
                         },
+                        source,
+                    );
+                    on.note_id = note_id(voice);
+                    let off = BusEvent {
+                        kind: Kind::NoteOff,
+                        value: 0.0,
+                        ..on
+                    };
+                    start.push(Cmd::BusEvent { bus, event: on });
+                    release.push(Cmd::BusEvent { bus, event: off });
+                    length = held;
+                }
+                Some(MidiRoute::Graph) => {
+                    let Some(node) = self.translator.lane_midi_note(
+                        channel,
+                        note,
+                        velocity,
+                        &mut start,
                         &mut release,
-                    )?;
+                    )?
+                    else {
+                        return Ok(None);
+                    };
                     if let Some(lane) = self.lanes.get_mut(&id) {
                         lane.voices.insert(voice, node);
                     }
-                    return Ok(Some(Cmd::EventLaneEntry {
-                        transport,
-                        tag,
-                        position,
-                        length: held,
-                        start,
-                        release,
-                    }));
+                    length = held;
                 }
-                let Some(node) = self.translator.lane_midi_note(
-                    channel,
-                    note,
-                    velocity,
-                    program,
-                    &mut start,
-                    &mut release,
-                )?
-                else {
-                    return Ok(None);
-                };
-                if let Some(lane) = self.lanes.get_mut(&id) {
-                    lane.voices.insert(voice, node);
-                }
-                length = held;
-            }
+                None => return Ok(None),
+            },
             EventLaneEvent::ZoneNote {
                 master,
                 key,
@@ -955,216 +919,129 @@ impl OscServer {
                 timbre,
                 length: held,
                 voice,
-            } => {
-                #[cfg(all(
-                    any(feature = "plugin-clap", feature = "plugin-vst3"),
-                    target_os = "linux"
-                ))]
-                if let Some(node) = self
-                    .translator
-                    .midi
-                    .zones
-                    .get(&master)
-                    .and_then(|z| z.binding.graph_instance)
-                    && matches!(self.translator.node_defs.get(&node), Some(crate::osc::translate::NodeDef::Plugin(def, ..)) if def.info.note_inputs.first().is_some_and(|p| p.dialects & 1 != 0))
-                {
-                    let source =
-                        crate::osc::translate::plugin::lane_source(id, tag.generation, transport);
-                    let address = clausters_core::plugin_shm::Event {
-                        note_id: voice as i32,
-                        channel: 0,
-                        key: key as i16,
-                        ..Default::default()
-                    };
-                    self.translator.plugin_event_cmd(
-                        node,
-                        source,
-                        None,
-                        clausters_core::plugin_shm::Event {
-                            kind: 1,
-                            value: velocity as f64 / 65535.0,
-                            ..address
+            } => match self.translator.zone_route(master) {
+                Some(MidiRoute::Bus(bus)) => {
+                    let events = zone_events(
+                        MpeEvent::NoteOn {
+                            note: voice,
+                            side: Side::of_master(master).unwrap_or(Side::Lower),
+                            channel: master,
+                            key,
+                            velocity,
+                            bend,
+                            pressure,
+                            timbre,
                         },
-                        &mut start,
-                    )?;
-                    for (id, value) in [
-                        (2, bend as f64),
-                        (6, pressure as f64 / u32::MAX as f64),
-                        (5, timbre as f64 / u32::MAX as f64),
-                    ] {
-                        self.translator.plugin_event_cmd(
-                            node,
-                            source,
-                            None,
-                            clausters_core::plugin_shm::Event {
-                                kind: 6,
-                                id,
-                                value,
-                                ..address
-                            },
-                            &mut start,
-                        )?;
+                        source,
+                        i16::from(master),
+                    );
+                    start.extend(events.into_iter().map(|event| Cmd::BusEvent { bus, event }));
+                    for event in zone_events(
+                        MpeEvent::NoteOff {
+                            note: voice,
+                            velocity: 0,
+                        },
+                        source,
+                        i16::from(master),
+                    ) {
+                        release.push(Cmd::BusEvent { bus, event });
                     }
-                    self.translator.plugin_event_cmd(
-                        node,
-                        source,
-                        None,
-                        clausters_core::plugin_shm::Event {
-                            kind: 2,
-                            value: 0.0,
-                            ..address
-                        },
+                    length = held;
+                }
+                Some(MidiRoute::Graph) => {
+                    let Some(node) = self.translator.lane_zone_note(
+                        master,
+                        key,
+                        velocity,
+                        bend,
+                        pressure,
+                        timbre,
+                        &mut start,
                         &mut release,
-                    )?;
+                    )?
+                    else {
+                        return Ok(None);
+                    };
                     if let Some(lane) = self.lanes.get_mut(&id) {
                         lane.voices.insert(voice, node);
                     }
-                    return Ok(Some(Cmd::EventLaneEntry {
-                        transport,
-                        tag,
-                        position,
-                        length: held,
-                        start,
-                        release,
-                    }));
+                    length = held;
                 }
-                let Some(node) = self.translator.lane_zone_note(
-                    master,
-                    key,
-                    velocity,
-                    bend,
-                    pressure,
-                    timbre,
-                    &mut start,
-                    &mut release,
-                )?
-                else {
-                    return Ok(None);
-                };
-                if let Some(lane) = self.lanes.get_mut(&id) {
-                    lane.voices.insert(voice, node);
-                }
-                length = held;
-            }
+                None => return Ok(None),
+            },
             EventLaneEvent::ZoneSet {
                 master,
                 key,
                 voice,
                 event,
-            } => {
-                let Some(node) = self
-                    .lanes
-                    .get(&id)
-                    .and_then(|l| l.voices.get(&voice).copied())
-                else {
-                    return Ok(None);
-                };
-                #[cfg(all(
-                    any(feature = "plugin-clap", feature = "plugin-vst3"),
-                    target_os = "linux"
-                ))]
-                if matches!(
-                    self.translator.node_defs.get(&node),
-                    Some(crate::osc::translate::NodeDef::Plugin(..))
-                ) {
-                    let (kind, expression, value) = match event {
-                        MpeEvent::Bend { semitones, .. } => (6, 2, semitones as f64),
-                        MpeEvent::Pressure { value, .. } => (6, 6, value as f64 / u32::MAX as f64),
-                        MpeEvent::Timbre { value, .. }
-                        | MpeEvent::Controller {
+            } => match self.translator.zone_route(master) {
+                Some(MidiRoute::Bus(bus)) => {
+                    let event = match event {
+                        MpeEvent::Bend { semitones, .. } => MpeEvent::Bend {
+                            note: voice,
+                            semitones,
+                        },
+                        MpeEvent::Pressure { value, .. } => {
+                            MpeEvent::Pressure { note: voice, value }
+                        }
+                        MpeEvent::Timbre { value, .. } => MpeEvent::Timbre { note: voice, value },
+                        MpeEvent::Controller {
                             controller: 74,
                             value,
                             ..
-                        } => (6, 5, value as f64 / u32::MAX as f64),
-                        MpeEvent::Controller {
-                            controller: 64,
-                            value,
-                            ..
-                        } => (5, 0xb0 | (64 << 8) | ((value >> 25) << 16), 0.0),
-                        _ => return Err("unsupported native MPE controller/dialect".into()),
+                        } => MpeEvent::Timbre { note: voice, value },
+                        other => other,
                     };
-                    self.translator.plugin_event_cmd(
-                        node,
-                        crate::osc::translate::plugin::lane_source(id, tag.generation, transport),
-                        None,
-                        clausters_core::plugin_shm::Event {
-                            kind,
-                            id: expression,
-                            note_id: if kind == 5 { -1 } else { voice as i32 },
-                            channel: -1,
-                            key: if kind == 5 { -1 } else { key as i16 },
-                            value,
-                            ..Default::default()
-                        },
-                        &mut start,
-                    )?;
-                    return Ok(Some(Cmd::EventLaneEntry {
-                        transport,
-                        tag,
-                        position,
-                        length: 0,
-                        start,
-                        release,
-                    }));
-                }
-                self.translator
-                    .lane_zone_set(master, key, node, event, &mut start);
-                if start.is_empty() {
-                    return Ok(None);
-                }
-            }
-            EventLaneEvent::MidiSet { message, voices } => {
-                #[cfg(all(
-                    any(feature = "plugin-clap", feature = "plugin-vst3"),
-                    target_os = "linux"
-                ))]
-                {
-                    let channel = match message {
-                        ChannelVoiceMessage::NoteOn { channel, .. }
-                        | ChannelVoiceMessage::NoteOff { channel, .. }
-                        | ChannelVoiceMessage::PolyAftertouch { channel, .. }
-                        | ChannelVoiceMessage::ChannelAftertouch { channel, .. }
-                        | ChannelVoiceMessage::ControlChange { channel, .. }
-                        | ChannelVoiceMessage::ProgramChange { channel, .. }
-                        | ChannelVoiceMessage::PitchBend { channel, .. } => channel,
-                    };
-                    if let Some(node) = self
-                        .translator
-                        .midi
-                        .channels
-                        .get(&channel)
-                        .and_then(|b| b.graph_instance)
-                        && matches!(
-                            self.translator.node_defs.get(&node),
-                            Some(crate::osc::translate::NodeDef::Plugin(..))
-                        )
-                    {
-                        self.translator.plugin_midi(
-                            node,
-                            crate::osc::translate::plugin::lane_source(
-                                id,
-                                tag.generation,
-                                transport,
-                            ),
-                            message,
-                            &mut start,
-                        )?;
-                        return Ok(Some(Cmd::EventLaneEntry {
-                            transport,
-                            tag,
-                            position,
-                            length: 0,
-                            start,
-                            release,
-                        }));
+                    start.extend(
+                        zone_events(event, source, i16::from(master))
+                            .into_iter()
+                            .map(|event| Cmd::BusEvent { bus, event }),
+                    );
+                    if start.is_empty() {
+                        return Ok(None);
                     }
                 }
-
-                let nodes: Vec<i32> = voices
-                    .iter()
-                    .filter_map(|v| self.lanes.get(&id)?.voices.get(v).copied())
-                    .collect();
-                self.translator.lane_midi_set(message, &nodes, &mut start);
+                Some(MidiRoute::Graph) => {
+                    let Some(node) = self
+                        .lanes
+                        .get(&id)
+                        .and_then(|l| l.voices.get(&voice).copied())
+                    else {
+                        return Ok(None);
+                    };
+                    self.translator
+                        .lane_zone_set(master, key, node, event, &mut start);
+                    if start.is_empty() {
+                        return Ok(None);
+                    }
+                }
+                None => return Ok(None),
+            },
+            EventLaneEvent::MidiSet { message, voices } => {
+                let channel = message_channel(message);
+                match self.translator.midi_route(channel) {
+                    Some(MidiRoute::Bus(_)) => {
+                        // As the live input plays it: an event on the bus,
+                        // or a plugin binding's mapped control.
+                        let mut cmds = Vec::new();
+                        self.translator.translate_midi(message, &mut cmds)?;
+                        start.extend(cmds.into_iter().map(|cmd| match cmd {
+                            Cmd::BusEvent { bus, mut event } => {
+                                event.source = source;
+                                Cmd::BusEvent { bus, event }
+                            }
+                            other => other,
+                        }));
+                    }
+                    Some(MidiRoute::Graph) => {
+                        let nodes: Vec<i32> = voices
+                            .iter()
+                            .filter_map(|v| self.lanes.get(&id)?.voices.get(v).copied())
+                            .collect();
+                        self.translator.lane_midi_set(message, &nodes, &mut start);
+                    }
+                    None => {}
+                }
                 if start.is_empty() {
                     return Ok(None);
                 }
@@ -1174,45 +1051,31 @@ impl OscServer {
                 note,
                 message,
                 voice,
-            } => {
-                let Some(node) = self
-                    .lanes
-                    .get(&id)
-                    .and_then(|lane| lane.voices.get(&voice).copied())
-                else {
-                    return Ok(None);
-                };
-                #[cfg(all(
-                    any(feature = "plugin-clap", feature = "plugin-vst3"),
-                    target_os = "linux"
-                ))]
-                if matches!(
-                    self.translator.node_defs.get(&node),
-                    Some(crate::osc::translate::NodeDef::Plugin(..))
-                ) {
-                    self.translator.plugin_per_note(
-                        node,
-                        crate::osc::translate::plugin::lane_source(id, tag.generation, transport),
-                        channel,
-                        note,
-                        message,
-                        &mut start,
-                    )?;
-                    return Ok(Some(Cmd::EventLaneEntry {
-                        transport,
-                        tag,
-                        position,
-                        length: 0,
-                        start,
-                        release,
-                    }));
+            } => match self.translator.midi_route(channel) {
+                Some(MidiRoute::Bus(bus)) => {
+                    let Some(event) =
+                        per_note_event(message, source, channel, note, note_id(voice))
+                    else {
+                        return Ok(None);
+                    };
+                    start.push(Cmd::BusEvent { bus, event });
                 }
-                self.translator
-                    .lane_per_note(node, channel, note, message, &mut start);
-                if start.is_empty() {
-                    return Ok(None);
+                Some(MidiRoute::Graph) => {
+                    let Some(node) = self
+                        .lanes
+                        .get(&id)
+                        .and_then(|lane| lane.voices.get(&voice).copied())
+                    else {
+                        return Ok(None);
+                    };
+                    self.translator
+                        .lane_per_note(node, channel, note, message, &mut start);
+                    if start.is_empty() {
+                        return Ok(None);
+                    }
                 }
-            }
+                None => return Ok(None),
+            },
         }
         Ok(Some(Cmd::EventLaneEntry {
             transport,

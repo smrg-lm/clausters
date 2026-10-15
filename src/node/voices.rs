@@ -151,7 +151,14 @@ pub struct VoicesNode {
     notes: f32,
     map: VoiceMap,
     clock: u64,
+    /// Notes named by their key that a lane's or a transport's release ended,
+    /// as `(source, channel, key)`: their writer's late note-off is theirs.
+    orphans: [Option<(u128, i16, i16)>; ORPHANS],
+    next_orphan: usize,
 }
+
+/// Ended notes whose late note-off is remembered.
+const ORPHANS: usize = 64;
 
 impl VoicesNode {
     /// A node over `voices`, all of one def whose controls start at
@@ -174,6 +181,8 @@ impl VoicesNode {
             notes: -1.0,
             map,
             clock: 0,
+            orphans: [None; ORPHANS],
+            next_orphan: 0,
         }
     }
 
@@ -322,6 +331,14 @@ impl VoicesNode {
                 }
             }
             Kind::NoteOff => {
+                if e.note_id < 0
+                    && let Some(slot) = self.orphans.iter_mut().find(|o| {
+                        o.is_some_and(|(s, c, k)| s == e.source && c == e.channel && k == e.key)
+                    })
+                {
+                    *slot = None;
+                    return;
+                }
                 // A note named by its key ends the source's oldest one.
                 let mut ends: Option<usize> = None;
                 for i in self.named(e) {
@@ -400,6 +417,11 @@ impl VoicesNode {
     fn release_where(&mut self, released: impl Fn(u128) -> bool) {
         for i in 0..self.voices.len() {
             if self.voices[i].state == State::Held && released(self.voices[i].note.source) {
+                let note = self.voices[i].note;
+                if note.note_id < 0 {
+                    self.orphans[self.next_orphan] = Some((note.source, note.channel, note.key));
+                    self.next_orphan = (self.next_orphan + 1) % ORPHANS;
+                }
                 self.release(i, 0.0);
             }
         }
@@ -438,8 +460,10 @@ impl SynthNode for VoicesNode {
     }
 
     fn release_notes(&mut self, lane: Option<i32>, _offset: usize) {
+        // Every note with no lane named: the node is under a group its
+        // transport has frozen.
         self.release_where(|source| {
-            clausters_core::event_bus::lane_of(source).is_some_and(|l| lane.is_none_or(|n| n == l))
+            lane.is_none_or(|n| clausters_core::event_bus::lane_of(source) == Some(n))
         });
     }
 

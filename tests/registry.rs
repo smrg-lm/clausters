@@ -7,7 +7,6 @@
 #![cfg(feature = "synth")]
 
 use clausters::dsp::Limits;
-use clausters::midi::ChannelVoiceMessage::{NoteOff, NoteOn};
 use clausters::osc::translate::CmdTranslator;
 use clausters::rosc::{OscMessage, OscType};
 use clausters::server::engine::Cmd;
@@ -80,48 +79,27 @@ fn auto_ids_recycle_on_node_end_and_exhaust_explicitly() {
 }
 
 #[test]
-fn midi_voice_ids_recycle_with_the_voices() {
+fn midi_binding_ids_and_buses_recycle_with_the_bindings() {
     let mut t = tiny_translator(4);
     let part = NodeIdPartition::from_max_nodes(4);
-    let mut cmds = Vec::new();
-    t.translate(
-        &msg(
-            "/midi_bind",
-            vec![OscType::Int(0), OscType::String("default".into())],
-        ),
-        &mut cmds,
-    )
-    .unwrap();
-
-    // Note-on/off cycles far past the range's width: each voice's death
-    // (note-off frees the node; its End event releases the id) keeps the
-    // range serving.
-    for _ in 0..(part.midi_capacity * 3) {
-        cmds.clear();
-        t.translate_midi(
-            NoteOn {
-                channel: 0,
-                note: 60,
-                velocity: 30000,
-            },
+    // Bind and unbind far past the range's width (and the bindings' share of
+    // the event buses): each node's death (its End event releases the id)
+    // and each unbind (which hands its bus back) keep both serving.
+    for _ in 0..(part.midi_capacity * 3).max(100) {
+        let mut cmds = Vec::new();
+        t.translate(
+            &msg(
+                "/midi_bind",
+                vec![OscType::Int(0), OscType::String("default".into())],
+            ),
             &mut cmds,
         )
         .unwrap();
-        let id = match cmds.first() {
-            Some(Cmd::AddSynth { id, .. }) => *id,
-            _ => panic!("expected AddSynth"),
-        };
+        let id = t.midi.channels[&0].node.expect("the binding's node");
         assert!((id as i64) >= part.midi_base);
         assert!((id as i64) < part.midi_base + part.midi_capacity as i64);
-        t.translate_midi(
-            NoteOff {
-                channel: 0,
-                note: 60,
-                velocity: 0,
-            },
-            &mut cmds,
-        )
-        .unwrap();
+        t.translate(&msg("/midi_unbind", vec![OscType::Int(0)]), &mut cmds)
+            .unwrap();
         t.release_node_id(id); // the End event the server loop would feed
     }
 }
