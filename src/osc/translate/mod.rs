@@ -57,6 +57,7 @@ use clausters_core::registry::{NodeIdPartition, Registry};
 use crate::osc::graph::faust_usage;
 
 mod buffers;
+mod events;
 mod graph;
 mod midi;
 #[cfg(all(
@@ -123,6 +124,25 @@ impl NodeDef {
             )))]
             _ => match *self {},
         }
+    }
+
+    /// Whether a node of this def reads notes: a plugin, a `Voices` node.
+    pub fn reads_notes(&self) -> bool {
+        match self {
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
+            NodeDef::Plugin(..) => true,
+            #[allow(unreachable_patterns)]
+            _ => false,
+        }
+    }
+
+    /// Whether a note may carry one of the node's controls -- a voice's, set
+    /// for that note alone. A plugin's controls are the instance's.
+    pub fn takes_note_controls(&self) -> bool {
+        false
     }
 
     /// Control name by index, for `/group_queryTree.reply`.
@@ -1533,6 +1553,8 @@ impl CmdTranslator {
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
         match msg.addr.as_str() {
+            "/bus_event" => self.bus_event(msg, cmds),
+            "/node_event" => self.node_event(msg, cmds),
             "/plugin_event" => {
                 #[cfg(all(
                     any(feature = "plugin-clap", feature = "plugin-vst3"),

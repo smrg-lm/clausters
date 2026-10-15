@@ -12,6 +12,7 @@
 pub mod buffer;
 pub mod compensation;
 pub mod denormals;
+pub mod events;
 #[cfg(unix)]
 pub mod region;
 pub mod stitch;
@@ -162,6 +163,9 @@ pub struct Limits {
     /// to `1..=`[`clausters_core::shm::MAX_TRANSPORTS`]; transport 0 is the
     /// one a server has always had.
     pub transports: usize,
+    /// Event buses (`--event-buses`): the notes and channel messages a
+    /// `notes` control reads, numbered from 0.
+    pub event_buses: usize,
 }
 
 /// Transports a server is booted with when nobody says otherwise: transport
@@ -180,6 +184,7 @@ impl Default for Limits {
             max_group_children: crate::node::MAX_GROUP_CHILDREN,
             max_ugen_inputs: MAX_UGEN_INPUTS,
             transports: DEFAULT_TRANSPORTS,
+            event_buses: events::DEFAULT_EVENT_BUSES,
         }
     }
 }
@@ -198,6 +203,7 @@ impl Limits {
             transports: self
                 .transports
                 .clamp(1, clausters_core::shm::MAX_TRANSPORTS),
+            event_buses: self.event_buses.max(1),
         }
     }
 }
@@ -517,6 +523,8 @@ impl StageMask {
 pub struct Buses {
     audio: Vec<UnsafeCell<Block>>,
     pub control: ControlBuses,
+    /// This block's events, every event bus's ([`events::EventBuses`]).
+    events: events::EventBuses,
     view: Option<(*const Buses, *mut compensation::NodeDelay)>,
 }
 
@@ -528,13 +536,34 @@ unsafe impl Sync for Buses {}
 
 impl Buses {
     pub fn new(control: ControlBuses, audio_count: usize) -> Self {
+        Self::with_event_buses(control, audio_count, events::DEFAULT_EVENT_BUSES)
+    }
+
+    /// [`Buses::new`] with `event_count` event buses.
+    pub fn with_event_buses(control: ControlBuses, audio_count: usize, event_count: usize) -> Self {
         Self {
             audio: (0..audio_count.max(1))
                 .map(|_| UnsafeCell::new(Block::SILENCE))
                 .collect(),
             control,
+            events: events::EventBuses::new(event_count),
             view: None,
         }
+    }
+
+    /// This block's events, read by the nodes that read an event bus.
+    #[inline]
+    pub fn events(&self) -> &events::EventBuses {
+        match self.view {
+            // SAFETY: a view lives inside its parent's node visit.
+            Some((parent, _)) => unsafe { &(*parent).events },
+            None => &self.events,
+        }
+    }
+
+    /// The events, for the engine that writes them.
+    pub fn events_mut(&mut self) -> &mut events::EventBuses {
+        &mut self.events
     }
 
     /// Number of audio buses (the hardware outputs are buses `0..channels`).
@@ -608,6 +637,7 @@ impl Buses {
         Self {
             audio: Vec::new(),
             control: parent.control.clone(),
+            events: events::EventBuses::none(),
             view: Some((parent, delay)),
         }
     }

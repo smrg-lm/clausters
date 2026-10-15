@@ -103,6 +103,7 @@ pub mod denormals;
 pub mod edit;
 pub mod envshape;
 pub mod event;
+pub mod event_bus;
 pub mod event_graph;
 pub mod event_lane;
 pub mod fft;

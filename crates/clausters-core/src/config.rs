@@ -87,6 +87,8 @@ pub struct ServerConfig {
     pub max_ugen_inputs: Option<usize>,
     /// Independent transports (`--transports`).
     pub transports: Option<usize>,
+    /// Event buses (`--event-buses`).
+    pub event_buses: Option<usize>,
     /// Whether to persist/reload defs; `false` is the `--no-persist` default.
     pub persist: Option<bool>,
     /// Data directory for the def store (`--data-dir`).
@@ -463,6 +465,7 @@ impl ServerConfig {
             max_graph_children: pick(self.max_graph_children, h.max_graph_children),
             max_ugen_inputs: pick(self.max_ugen_inputs, h.max_ugen_inputs),
             transports: pick(self.transports, h.transports),
+            event_buses: pick(self.event_buses, h.event_buses),
             persist: pick(self.persist, h.persist),
             data_dir: pick(self.data_dir, h.data_dir),
             shm: pick(self.shm, h.shm),

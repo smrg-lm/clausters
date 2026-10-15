@@ -138,7 +138,7 @@ impl OscServer {
     /// `/server_query.reply [audio_buses, control_buses, output_channels,
     /// block_size, nominal_sr, actual_sr, input_channels, max_nodes,
     /// max_buffers, max_graph_children, max_ugen_inputs, taps, tap_frames,
-    /// max_frame, max_stream_buses, transports]`. The first six fields are
+    /// max_frame, max_stream_buses, transports, event_buses]`. The first six fields are
     /// stable; the
     /// boot-time capacities, the tap region shape, the stream-transport frame
     /// ceiling (what a client should size bulk requests like
@@ -171,6 +171,7 @@ impl OscServer {
             // and the one a client can act on is its own.
             OscType::Int(self.stream_bus_cap(to).min(i32::MAX as usize) as i32),
             OscType::Int(self.transports.len() as i32),
+            OscType::Int(limits.event_buses as i32),
         ];
         self.reply(to, "/server_query.reply", args);
     }

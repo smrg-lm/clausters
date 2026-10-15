@@ -430,13 +430,15 @@ impl PluginInfo {
         let mut names: Vec<String> = ids.iter().map(|id| format!("param:{id}")).collect();
         names.extend(self.inputs.iter().map(|p| format!("in:{}", p.id)));
         names.extend(self.outputs.iter().map(|p| format!("out:{}", p.id)));
+        names.extend(self.note_inputs.iter().map(|p| format!("notes:{}", p.id)));
         names
     }
 
     /// **The controls as their ports and parameters read**, each alias with
     /// the native-id name it stands for: the main audio input and output are
-    /// `in` and `out`, another port `in_<name>`/`out_<name>`, a parameter its
-    /// name, all made identifiers ([`identifier`]). The native-id names stay
+    /// `in` and `out`, another port `in_<name>`/`out_<name>`, the main note
+    /// input `notes` (the event bus it reads) and another `notes_<name>`, a
+    /// parameter its name, all made identifiers ([`identifier`]). The native-id names stay
     /// the unambiguous spelling, and an alias two controls would share is
     /// nobody's: a port's alias wins over a parameter's, and an alias claimed
     /// twice within ports or within parameters is dropped for all claimants.
@@ -458,6 +460,18 @@ impl PluginInfo {
                 };
                 ports.push((alias, format!("{prefix}:{}", port.id)));
             }
+        }
+        let main = self.main_note_input();
+        for port in &self.note_inputs {
+            let alias = if main.is_some_and(|m| m.id == port.id) {
+                "notes".to_owned()
+            } else {
+                match identifier(&port.name) {
+                    Some(name) => format!("notes_{name}"),
+                    None => continue,
+                }
+            };
+            ports.push((alias, format!("notes:{}", port.id)));
         }
         let ports = unique(ports);
         let taken: HashSet<String> = ports.iter().map(|(a, _)| a.clone()).collect();

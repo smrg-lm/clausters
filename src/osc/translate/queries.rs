@@ -103,12 +103,19 @@ impl CmdTranslator {
             ];
             for (i, control) in def.names.iter().enumerate() {
                 let p = def.info.parameters.get(i);
+                // A port is a bus: an audio bus, or for a note input an
+                // event bus.
+                let last_bus = if i >= def.notes_control() {
+                    self.limits.event_buses as f32 - 1.0
+                } else {
+                    NUM_AUDIO_BUSES as f32 - 1.0
+                };
                 args.extend([
                     OscType::String(control.clone()),
                     OscType::Float(def.defaults[i]),
                     OscType::String("kr".into()),
                     OscType::Float(p.map_or(-1.0, |p| p.min as f32)),
-                    OscType::Float(p.map_or(NUM_AUDIO_BUSES as f32 - 1.0, |p| p.max as f32)),
+                    OscType::Float(p.map_or(last_bus, |p| p.max as f32)),
                     OscType::Float(p.map_or(1.0, |p| p.step as f32)),
                 ]);
             }

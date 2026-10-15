@@ -63,6 +63,19 @@ pub const LANE_CAPACITY: usize = 1024;
 /// synths and pre-reserved group child lists); applying them on the audio
 /// thread never allocates.
 pub enum Cmd {
+    /// An event written on event bus `bus` at the sample the command runs:
+    /// the nodes whose `notes` control names the bus read it in the slice
+    /// that starts there.
+    BusEvent {
+        bus: u32,
+        event: crate::dsp::events::BusEvent,
+    },
+    /// An event for one node -- a plugin or a `Voices` node -- read as though
+    /// it came from its bus, at the sample the command runs.
+    NodeEvent {
+        id: i32,
+        event: crate::dsp::events::BusEvent,
+    },
     /// A fully validated event for an existing native instance generation.
     PluginEvent {
         id: i32,
@@ -685,6 +698,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::DeepFreeGroup { id }
         | Cmd::RunNode { id, .. }
         | Cmd::PluginEvent { id, .. }
+        | Cmd::NodeEvent { id, .. }
         | Cmd::RestartSynth { id, .. }
         | Cmd::SetControl { id, .. }
         | Cmd::MapControl { id, .. }
@@ -696,6 +710,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         // transport's own controls, or a queue-wide operation. These carry no
         // opinion about which axis the bundle belongs to.
         Cmd::SetCompensation(_)
+        | Cmd::BusEvent { .. }
         | Cmd::PluginTempo { .. }
         | Cmd::TransportRun { .. }
         | Cmd::TransportGroup { .. }
@@ -1072,7 +1087,7 @@ pub fn engine_pair_full(
         channels,
         tree,
         pool: WorkerPool::new(workers, &meters),
-        buses: Buses::new(control_buses.clone(), audio_buses),
+        buses: Buses::with_event_buses(control_buses.clone(), audio_buses, limits.event_buses),
         buffers: empty_pool_with(limits.max_buffers),
         input_channels: 0,
         input_rx: None,
@@ -1285,6 +1300,8 @@ impl Engine {
         // the stamp is inert and both this meter and `/server_load` read 0
         // there (`server::meters`).
         let meter_start = crate::server::meters::stamp();
+        // The last block's events go before this one's commands write any.
+        self.buses.events_mut().clear();
         self.drain_commands();
         if let Some(plan) = self.tree.begin_compensation_block() {
             garbage_sink!(self).push(Garbage::RetiredCompensation(plan));
@@ -1482,9 +1499,9 @@ impl Engine {
         // end mark caused it, and where the pass goes back to.
         let froze = match edge {
             Edge::Wrap => {
-                self.tree.release_plugin_transport(k, offset);
+                self.tree.release_transport_notes(k, offset);
                 if let Some(group) = t.group {
-                    self.tree.release_plugin_notes(Some(group), None, offset);
+                    self.tree.release_notes(Some(group), None, offset);
                 }
                 // Back to the loop's start, re-anchored here so the
                 // position goes on advancing by one per sample from
@@ -1530,7 +1547,7 @@ impl Engine {
             }
         };
         if let Some((back, ended)) = froze {
-            self.tree.release_plugin_transport(k, offset);
+            self.tree.release_transport_notes(k, offset);
             // The governed group and the transport's clock freeze on
             // this sample, and the level is zero. An end then locates
             // to where the pass goes back to; the locate is anchored
@@ -1538,7 +1555,7 @@ impl Engine {
             t.rolling = false;
             t.fade = Ramp::level(0.0);
             if let Some(group) = t.group {
-                self.tree.release_plugin_notes(Some(group), None, offset);
+                self.tree.release_notes(Some(group), None, offset);
                 self.tree.set_paused(group, true);
             }
             if t.frozen_from.is_none() {
@@ -1840,6 +1857,9 @@ impl Engine {
                 return;
             };
             match cmd {
+                Cmd::BusEvent { bus, event } => {
+                    self.buses.events_mut().write(bus, self.cursor, event);
+                }
                 Cmd::PluginTempo { transport, bpm } => {
                     if let Some(t) = self.transports.get_mut(transport)
                         && bpm.is_finite()
@@ -1862,10 +1882,9 @@ impl Engine {
                     // live where the transport does not freeze them, so their
                     // releases ring out.
                     if !rolling && t.rolling && t.stopping.is_none() {
-                        self.tree.release_plugin_transport(transport, self.cursor);
+                        self.tree.release_transport_notes(transport, self.cursor);
                         if let Some(group) = t.group {
-                            self.tree
-                                .release_plugin_notes(Some(group), None, self.cursor);
+                            self.tree.release_notes(Some(group), None, self.cursor);
                         }
                         take_releases(&mut t.sched, &mut self.released, None);
                     }
@@ -1931,10 +1950,9 @@ impl Engine {
                                 )
                             }
                         }
-                        self.tree.release_plugin_transport(transport, self.cursor);
+                        self.tree.release_transport_notes(transport, self.cursor);
                         if let Some(group) = t.group {
-                            self.tree
-                                .release_plugin_notes(Some(group), None, self.cursor);
+                            self.tree.release_notes(Some(group), None, self.cursor);
                         }
                         // **A jump releases what the lanes were sounding**, as
                         // a DAW does: those notes belong where the position was.
@@ -2095,8 +2113,7 @@ impl Engine {
                     lane,
                     release,
                 } => {
-                    self.tree
-                        .release_plugin_notes(None, Some(lane), self.cursor);
+                    self.tree.release_notes(None, Some(lane), self.cursor);
                     if let Some(t) = self.transports.get_mut(transport) {
                         let mut j = 0;
                         while j < t.lanes.len() {
@@ -2123,6 +2140,7 @@ impl Engine {
                 // omission into a panic on the audio thread.
                 Cmd::SetCompensation(_)
                 | Cmd::PluginEvent { .. }
+                | Cmd::NodeEvent { .. }
                 | Cmd::RestartSynth { .. }
                 | Cmd::AddSynth { .. }
                 | Cmd::AddGroup { .. }
@@ -2212,6 +2230,12 @@ fn apply_to_tree(
         Cmd::SetCompensation(plan) => {
             if let Some(old) = tree.set_compensation(plan, offset) {
                 sink.push(Garbage::RetiredCompensation(old));
+            }
+        }
+        Cmd::NodeEvent { id, mut event } => {
+            if let Some(node) = tree.synth_mut(id) {
+                event.offset = offset as u32;
+                node.note_event(&event);
             }
         }
         Cmd::PluginEvent {

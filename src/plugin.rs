@@ -6,8 +6,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
+use crate::dsp::events::{BusEvent, Kind};
 use crate::dsp::{BusUsage, ProcessCtx, ReplyKind, ReplyMsg};
 use crate::node::{ControlMap, SynthNode};
+use clausters_core::event_bus::Expression;
 use clausters_core::plugin_shm::{
     Config, Event, EventKind, EventList, FRAMES, Failure, Job, MAX_DEPTH, SPANS, Span,
 };
@@ -86,6 +88,12 @@ impl PluginDef {
                     .push(routes.iter().find(|r| r.id == p.id).unwrap().bus as f32);
             }
         }
+        // Each note input reads the event bus its control names; none until
+        // one is set.
+        for p in &def.info.note_inputs {
+            def.names.push(format!("notes:{}", p.id));
+            def.defaults.push(-1.0);
+        }
         let mut instance = def.instance(sample_rate, def.reference.depth)?;
         // State can change parameter defaults, but cannot change the loaded surface.
         def.info = instance.metadata().clone();
@@ -160,6 +168,11 @@ impl PluginDef {
             aliases: self.aliases.clone(),
             initial_state: true,
         }
+    }
+    /// The first note-input control: the controls from here on are the
+    /// event buses the note inputs read, in their order.
+    pub fn notes_control(&self) -> usize {
+        self.info.parameters.len() + self.info.inputs.len() + self.info.outputs.len()
     }
     /// A control by its native-id name or by its alias.
     pub fn control_index(&self, name: &str) -> Option<u32> {
@@ -705,7 +718,219 @@ impl PluginSynth {
         self.sent[index] = self.values[index];
     }
 }
+impl PluginSynth {
+    /// **One event read from note input `port`'s bus** (or addressed to the
+    /// node), sent to the plugin in the port's dialect: native notes and
+    /// expressions where the port takes them, MIDI where it takes only that,
+    /// and what the port has no spelling for dropped -- a bus carries what
+    /// any reader might want, and a reader takes what it can play.
+    fn bus_event(&mut self, port: usize, e: &BusEvent) {
+        let Some(&native_port) = self.note_ports.get(port) else {
+            return;
+        };
+        let dialects = self.dialects[native_port as usize];
+        let native = dialects & 1 != 0;
+        let midi = dialects & 6 != 0;
+        let base = Event {
+            offset: e.offset,
+            port: port as i16,
+            channel: e.channel,
+            key: e.key,
+            note_id: e.note_id,
+            ..Event::default()
+        };
+        let bytes = |status: u8, d1: u8, d2: u8| Event {
+            kind: EventKind::Midi as u32,
+            id: u32::from(status) | (u32::from(d1) << 8) | (u32::from(d2) << 16),
+            channel: e.channel,
+            note_id: -1,
+            key: -1,
+            ..base
+        };
+        let channel = e.channel.clamp(0, 15) as u8;
+        let data7 = |v: f64| (v.clamp(0.0, 1.0) * 127.0).round() as u8;
+        let expression = |index: u32, value: f64| Event {
+            kind: EventKind::Expression as u32,
+            id: index,
+            value,
+            ..base
+        };
+        let event = match e.kind {
+            Kind::NoteOn => {
+                if e.joins >= 0 && self.join(native_port, e) {
+                    return;
+                }
+                self.end_clashing(e.source, native_port, e);
+                Event {
+                    kind: EventKind::NoteOn as u32,
+                    value: e.value,
+                    ..base
+                }
+            }
+            Kind::NoteOff => Event {
+                kind: EventKind::NoteOff as u32,
+                value: e.value,
+                ..base
+            },
+            Kind::Choke => Event {
+                kind: EventKind::NoteChoke as u32,
+                ..base
+            },
+            Kind::Expression if native => expression(e.index, e.value),
+            Kind::Expression if midi => match Expression::from_u32(e.index) {
+                Some(Expression::Pressure) if e.key >= 0 => {
+                    bytes(0xa0 | channel, e.key as u8, data7(e.value))
+                }
+                Some(Expression::Pressure) if e.note_id < 0 => {
+                    bytes(0xd0 | channel, data7(e.value), 0)
+                }
+                Some(Expression::Tuning) if e.key < 0 && e.note_id < 0 => {
+                    let v = ((e.value / 2.0).clamp(-1.0, 1.0) * 8191.0 + 8192.0).round() as u32;
+                    bytes(0xe0 | channel, (v & 127) as u8, ((v >> 7) & 127) as u8)
+                }
+                Some(Expression::Brightness) if e.key < 0 && e.note_id < 0 => {
+                    bytes(0xb0 | channel, 74, data7(e.value))
+                }
+                Some(Expression::Volume) if e.key < 0 && e.note_id < 0 => {
+                    bytes(0xb0 | channel, 7, data7(e.value))
+                }
+                Some(Expression::Pan) if e.key < 0 && e.note_id < 0 => {
+                    bytes(0xb0 | channel, 10, data7(e.value))
+                }
+                Some(Expression::Expression) if e.key < 0 && e.note_id < 0 => {
+                    bytes(0xb0 | channel, 11, data7(e.value))
+                }
+                _ => return,
+            },
+            Kind::Expression => return,
+            Kind::Controller => match (e.index, native) {
+                (7, true) => expression(Expression::Volume as u32, e.value),
+                (10, true) => expression(Expression::Pan as u32, e.value),
+                (11, true) => expression(Expression::Expression as u32, e.value),
+                (74, true) => expression(Expression::Brightness as u32, e.value),
+                // The pedal and the all-notes-off messages are read as MIDI
+                // whatever the dialect: the instance holds what they mean.
+                (64 | 120 | 123, _) => bytes(0xb0 | channel, e.index as u8, data7(e.value)),
+                (cc, false) if midi => bytes(0xb0 | channel, cc as u8, data7(e.value)),
+                _ => return,
+            },
+            Kind::Bend if native => expression(Expression::Tuning as u32, e.value * 2.0),
+            Kind::Bend if midi => {
+                let v = (e.value.clamp(-1.0, 1.0) * 8191.0 + 8192.0).round() as u32;
+                bytes(0xe0 | channel, (v & 127) as u8, ((v >> 7) & 127) as u8)
+            }
+            Kind::Pressure if native => expression(Expression::Pressure as u32, e.value),
+            Kind::Pressure if midi => bytes(0xd0 | channel, data7(e.value), 0),
+            Kind::Program if midi => bytes(0xc0 | channel, e.index as u8, 0),
+            Kind::Bend | Kind::Pressure | Kind::Program | Kind::Control => return,
+        };
+        self.plugin_event(e.source, event);
+    }
+
+    /// A note-on that continues the note `e.joins` of its source: a native
+    /// port retunes the note it holds to the new key, a MIDI port overlaps
+    /// the new key and ends the old one -- the legato each dialect can say.
+    /// False when the source holds no such note, which then starts as any.
+    fn join(&mut self, port: i16, e: &BusEvent) -> bool {
+        let Some(i) = self.notes.iter().position(|n| {
+            n.is_some_and(|n| n.source == e.source && n.id == e.joins && n.port == port)
+        }) else {
+            return false;
+        };
+        let held = self.notes[i].expect("found above");
+        if self.dialects[port as usize] & 1 != 0 || held.key == e.key {
+            if let Some(note) = self.notes[i].as_mut() {
+                note.id = e.note_id;
+            }
+            if held.key != e.key {
+                self.emit(Event {
+                    offset: e.offset,
+                    kind: EventKind::Expression as u32,
+                    id: Expression::Tuning as u32,
+                    note_id: held.native,
+                    port,
+                    channel: held.channel,
+                    key: held.key,
+                    value: f64::from(e.key - held.key),
+                    ..Event::default()
+                });
+            }
+            return true;
+        }
+        // The new key sounds before the old one ends, so the line does not
+        // break.
+        self.note_event(
+            e.source,
+            Event {
+                offset: e.offset,
+                kind: EventKind::NoteOn as u32,
+                note_id: e.note_id,
+                port,
+                channel: e.channel,
+                key: e.key,
+                value: e.value,
+                ..Event::default()
+            },
+        );
+        if let Some(j) = self
+            .notes
+            .iter()
+            .position(|n| n.is_some_and(|n| n.native == held.native))
+        {
+            self.notes[j] = None;
+            self.native_note(Event {
+                offset: e.offset,
+                kind: EventKind::NoteOff as u32,
+                note_id: held.native,
+                port,
+                channel: held.channel,
+                key: held.key,
+                ..Event::default()
+            });
+        }
+        true
+    }
+
+    /// What a new note would collide with ends first, as a retrigger: the
+    /// source's note of the same id, and on a MIDI port, whatever sounds on
+    /// the same channel and key. A bus is shared, so a collision is a
+    /// writer's ordinary overlap and never a fault.
+    fn end_clashing(&mut self, source: u128, port: i16, e: &BusEvent) {
+        let keyed = self.dialects[port as usize] & 1 == 0;
+        for i in 0..self.notes.len() {
+            let Some(note) = self.notes[i] else {
+                continue;
+            };
+            let same_id = e.note_id >= 0 && note.source == source && note.id == e.note_id;
+            let same_key = keyed && note.channel == e.channel && note.key == e.key;
+            if note.port != port || !(same_id || same_key) {
+                continue;
+            }
+            self.notes[i] = None;
+            self.native_note(Event {
+                offset: e.offset,
+                kind: EventKind::NoteOff as u32,
+                note_id: note.native,
+                port,
+                channel: note.channel,
+                key: note.key,
+                ..Event::default()
+            });
+        }
+    }
+}
+
 impl SynthNode for PluginSynth {
+    fn reads_notes(&self) -> bool {
+        true
+    }
+
+    fn note_event(&mut self, event: &BusEvent) {
+        if !self.def.info.note_inputs.is_empty() {
+            self.bus_event(0, event);
+        }
+    }
+
     fn prepare_slice(&mut self, ctx: &ProcessCtx, active: bool) {
         if self.admin.phase.load(Ordering::Acquire) >= 2 {
             return;
@@ -811,6 +1036,18 @@ impl SynthNode for PluginSynth {
             tempo: self.tempo,
         };
         self.job.span_count += 1;
+        // What the note inputs' buses hold for this slice.
+        let first = self.def.notes_control();
+        for port in 0..self.def.info.note_inputs.len() {
+            let bus = self.values[first + port];
+            if bus < 0.0 {
+                continue;
+            }
+            let events = ctx.buses.events();
+            for e in events.read(bus as u32, ctx.offset, ctx.frames) {
+                self.bus_event(port, e);
+            }
+        }
     }
     fn finish_block(&mut self) {
         if self.open {
@@ -933,7 +1170,7 @@ impl SynthNode for PluginSynth {
             self.note_event(source, event);
         }
     }
-    fn release_plugin_notes(&mut self, lane: Option<i32>, offset: usize) {
+    fn release_notes(&mut self, lane: Option<i32>, offset: usize) {
         let from_lane = |source: u128| {
             lane.is_none_or(|lane| {
                 source >> 96 == 1 && ((source >> 32) & 0xffff_ffff) == lane as u32 as u128
@@ -946,7 +1183,7 @@ impl SynthNode for PluginSynth {
             }
         }
     }
-    fn release_plugin_transport(&mut self, transport: usize, offset: usize) {
+    fn release_transport_notes(&mut self, transport: usize, offset: usize) {
         let governed = |source: u128| {
             source >> 96 == 1 && ((source >> 64) & u32::MAX as u128) == transport as u128
         };
@@ -1082,7 +1319,7 @@ mod offline_tests {
             }
             if block == 3 {
                 assert_eq!(synth.notes.iter().flatten().count(), held);
-                synth.release_plugin_notes(None, 0);
+                synth.release_notes(None, 0);
                 assert_eq!(
                     synth.deferred_count,
                     held - clausters_core::plugin_shm::EVENTS
@@ -1205,7 +1442,7 @@ mod offline_tests {
                         );
                     }
                     if block == 3 && offset == 0 {
-                        synth.release_plugin_notes(None, 0);
+                        synth.release_notes(None, 0);
                     }
                     if block == 5 && offset == 31 {
                         synth.plugin_event(

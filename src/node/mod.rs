@@ -29,13 +29,22 @@ pub trait SynthNode: Send {
     fn prepare_slice(&mut self, _ctx: &ProcessCtx, _active: bool) {}
     /// Publish completed block staging after all DSP workers have joined.
     fn finish_block(&mut self) {}
-    /// Isolated processor generation, zero for ordinary synths.
     /// A native event arriving at the engine's exact current sample offset.
     fn plugin_event(&mut self, _source: u128, _event: clausters_core::plugin_shm::Event) {}
-    /// Release notes owned by this lane (or all notes for a transport gesture).
-    fn release_plugin_notes(&mut self, _lane: Option<i32>, _offset: usize) {}
-    /// Release the lane origins belonging to one transport, including live subtrees.
-    fn release_plugin_transport(&mut self, _transport: usize, _offset: usize) {}
+    /// Whether this node reads notes -- a plugin or a `Voices` node: the tree
+    /// lists it so a lane's or a transport's notes can be released on it.
+    fn reads_notes(&self) -> bool {
+        false
+    }
+    /// **An event addressed to this node** (`Cmd::NodeEvent`), at its
+    /// `offset` in the block: played as one read from its event bus.
+    /// Runs on the audio thread -- allocation-free. Default: ignored.
+    fn note_event(&mut self, _event: &crate::dsp::events::BusEvent) {}
+    /// Release the notes a lane started (every lane's with `None`), at
+    /// `offset` in the block.
+    fn release_notes(&mut self, _lane: Option<i32>, _offset: usize) {}
+    /// Release the notes the lanes of `transport` started, at `offset`.
+    fn release_transport_notes(&mut self, _transport: usize, _offset: usize) {}
     /// Governing transport tempo, kept separate from the UGen transport surface.
     fn plugin_tempo(&mut self, _bpm: f64) {}
     fn incarnation(&self) -> u64 {
@@ -374,6 +383,9 @@ pub struct NodeTree {
     transport_views: Vec<TransportCtx>,
     plugin_tempos: Vec<f64>,
     plugin_nodes: Vec<usize>,
+    /// The slots whose node reads notes ([`SynthNode::reads_notes`]): where a
+    /// lane's or a transport's notes are released.
+    note_nodes: Vec<usize>,
 }
 
 impl NodeTree {
@@ -471,6 +483,7 @@ impl NodeTree {
             transport_views: vec![TransportCtx::default(); 1],
             plugin_tempos: vec![120.0; 1],
             plugin_nodes: Vec::with_capacity(max_nodes),
+            note_nodes: Vec::with_capacity(max_nodes),
         }
     }
 
@@ -487,10 +500,11 @@ impl NodeTree {
             *row = bpm;
         }
     }
-    /// Release plugin notes under a group, or a lane's origins across the tree.
-    pub fn release_plugin_notes(&mut self, group: Option<i32>, lane: Option<i32>, offset: usize) {
-        for position in 0..self.plugin_nodes.len() {
-            let idx = self.plugin_nodes[position];
+    /// Release the notes held under a group, or a lane's across the tree, on
+    /// every node that reads notes.
+    pub fn release_notes(&mut self, group: Option<i32>, lane: Option<i32>, offset: usize) {
+        for position in 0..self.note_nodes.len() {
+            let idx = self.note_nodes[position];
             let id = self.id_of(idx);
             if group.is_some_and(|group| !self.is_descendant_of(id, group)) {
                 continue;
@@ -500,20 +514,21 @@ impl NodeTree {
                 ..
             }) = self.slot_mut(idx)
             {
-                node.release_plugin_notes(lane, offset);
+                node.release_notes(lane, offset);
             }
         }
     }
-    /// Release lane-owned plugin notes, even on ungoverned persistent instances.
-    pub fn release_plugin_transport(&mut self, transport: usize, offset: usize) {
-        for position in 0..self.plugin_nodes.len() {
-            let idx = self.plugin_nodes[position];
+    /// Release the notes a transport's lanes started, on every node that
+    /// reads notes, governed or not.
+    pub fn release_transport_notes(&mut self, transport: usize, offset: usize) {
+        for position in 0..self.note_nodes.len() {
+            let idx = self.note_nodes[position];
             if let Some(NodeSlot {
                 kind: NodeKind::Synth { node, .. },
                 ..
             }) = self.slot_mut(idx)
             {
-                node.release_plugin_transport(transport, offset);
+                node.release_transport_notes(transport, offset);
             }
         }
     }
@@ -699,6 +714,11 @@ impl NodeTree {
         {
             self.plugin_nodes.swap_remove(position);
         }
+        if matches!(&slot.kind, NodeKind::Synth { node, .. } if node.reads_notes())
+            && let Some(position) = self.note_nodes.iter().position(|node| *node == idx)
+        {
+            self.note_nodes.swap_remove(position);
+        }
         Some(slot)
     }
 
@@ -867,6 +887,9 @@ impl NodeTree {
                 self.ugen_count += node.ugen_count();
                 if node.incarnation() != 0 {
                     self.plugin_nodes.push(free);
+                }
+                if node.reads_notes() {
+                    self.note_nodes.push(free);
                 }
             }
             NodeKind::Group(_) => self.group_count += 1,

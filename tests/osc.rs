@@ -3643,6 +3643,7 @@ fn server_info_reports_configured_limits() {
         max_group_children: 32,
         max_ugen_inputs: 24,
         transports: 3,
+        event_buses: 40,
     };
     let server = TestServer::spawn_with_limits(limits);
     server.send("/server_query", vec![]);
@@ -3685,6 +3686,7 @@ fn server_info_reports_configured_limits() {
         "the old constant is not the ceiling any more"
     );
     assert_eq!(ints[15], 3, "transports");
+    assert_eq!(ints[16], 40, "event_buses");
     server.quit();
 }
 

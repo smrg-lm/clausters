@@ -43,6 +43,8 @@ usage:
       --max-ugen-inputs <n>    accepted inputs per UGen (default 256, the max)
       --transports <n>         independent transports, 0 to n-1 (default 16,
                                at most 64)
+      --event-buses <n>        event buses, the notes a node's `notes` control
+                               reads (default 64)
       --udp [addr:]port    move the UDP front alone, off the base port. UDP is
                            always on: it is the door a client boots against
       --tcp [[addr:]port]  length-prefixed OSC over TCP -- on by default at the
@@ -401,6 +403,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(n) = cfg.transports {
         limits.transports = n;
     }
+    if let Some(n) = cfg.event_buses {
+        limits.event_buses = n;
+    }
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -510,6 +515,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             }
             "--transports" => {
                 limits.transports = flag_parse("--transports", "a value", &mut it)?;
+            }
+            "--event-buses" => {
+                limits.event_buses = flag_parse("--event-buses", "a value", &mut it)?;
             }
             #[cfg(feature = "rtprio")]
             "--pin" => {
