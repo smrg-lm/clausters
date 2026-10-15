@@ -26,7 +26,7 @@ from . import signals
 from . import ugens
 from .asdef import as_def, expr_channels
 from .boxes import Box
-from .bus import AudioBusAllocator, Bus, ControlBusAllocator
+from .bus import AudioBusAllocator, Bus, ControlBusAllocator, EventBusAllocator
 from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator, Part
 from .expr import Expr, FaustExpr, SynthExpr
@@ -34,7 +34,7 @@ from .faustdef import FaustDef
 from .plugindef import Plugin, PluginCatalog, PluginDef
 from .graphdef import GraphDef
 from .patch import DefPatch, GraphPatch, synthdef_ports
-from .node import AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth
+from .node import AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth, Voices
 # A client's id spaces on a server: the type `Server.ids` answers with.
 from .._native import IdSpaces
 from .info import (
@@ -267,12 +267,14 @@ __all__ = ["IdSpaces",
     "Bus",
     "AudioBusAllocator",
     "ControlBusAllocator",
+    "EventBusAllocator",
     "Buffer",
     "BufferAllocator",
     "Part",
     "AddAction",
     "Group",
     "Synth",
+    "Voices",
     "NodeIdAllocator",
     "ROOT_NODE_ID",
     "Server",

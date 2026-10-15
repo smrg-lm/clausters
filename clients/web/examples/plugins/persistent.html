@@ -67,8 +67,8 @@ $("play").onclick = async () => {
         await server.transportGroup(governed);
         await server.laneNew(3100, governed);
         await server.laneSet(3100, { notes: [
-            [12000, 48000, { plugin: voice.id }, { key: 64, velocity: 0.15 }, "gate"],
-            [60000, 108000, { plugin: voice.id }, { key: 69, velocity: 0.15 }, "gate"],
+            [12000, 48000, { node: voice.id }, { key: 64, velocity: 0.15 }, "gate"],
+            [60000, 108000, { node: voice.id }, { key: 69, velocity: 0.15 }, "gate"],
         ] });
         await server.transportPlay();
         function* phrase() {

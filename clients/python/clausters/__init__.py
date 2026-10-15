@@ -45,7 +45,7 @@ The layers:
 - `clausters.defs` -- the definition layer and server resources: the
   ``signals``/`FaustDef` pair, the UGen-graph ``ugens``/`SynthDef` pair, the
   node/bus/buffer handles and the `Server`. Its core names -- `Server`,
-  `ServerOptions`, `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`,
+  `ServerOptions`, `Synth`, `Voices`, `Group`, `AddAction`, `SynthDef`, `FaustDef`,
   `GraphDef`, `Bus`, `Buffer` -- are re-exported here; the UGen and signal
   callables are not, and stay under `clausters.defs`.
 - `clausters.data` -- what the server keeps *sending*, because what is being
@@ -124,6 +124,7 @@ from .defs import (
     ServerOptions,
     Synth,
     SynthDef,
+    Voices,
 )
 from .gui import GuiHost
 from .panic import panic
@@ -157,6 +158,7 @@ __all__ = [
     "main",
     # the server's resources: nodes, definitions, buses, buffers
     "Synth",
+    "Voices",
     "Group",
     "AddAction",
     "SynthDef",

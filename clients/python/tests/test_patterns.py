@@ -407,7 +407,7 @@ def test_a_voice_joins_its_notes_by_legato():
     assert [e.get("held", False) for e in always] == [True, True, False]
 
 
-def test_a_rendered_voice_writes_its_ties_and_slurs():
+def test_a_rendered_voice_writes_its_ties_slurs_and_joins():
     from clausters.seq import pvoice
 
     voice = pvoice("lead", midinote=pseq([60, 62, 64, 64, 67]), dur=0.5,
@@ -417,6 +417,8 @@ def test_a_rendered_voice_writes_its_ties_and_slurs():
         False, False, True, False, False]
     assert data["notation"]["spanners"] == [{"kind": "slur", "from": 1, "to": 4}]
     assert not any("held" in e["data"] or "continues" in e["data"] for e in data["events"])
+    # what it plays as: each joined note names the one it goes on from
+    assert [e["data"].get("joins") for e in data["events"]] == [None, 1, 2, 3, None]
     # a pbind is no voice: nothing is joined, whatever its legato
     assert "notation" not in pbind(midinote=pseq([60, 62]), legato=1.5).render_events().data()
 

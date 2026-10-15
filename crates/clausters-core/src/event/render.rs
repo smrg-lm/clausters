@@ -44,6 +44,8 @@ pub const RESERVED: &[&str] = &[
     "held",
     "continues",
     "joins",
+    // The id a note on a node was given ([`node_note`]).
+    "note_id",
     "velocity",
     "db",
     // What the note says on a page ([`super::notation::KEYS`]).

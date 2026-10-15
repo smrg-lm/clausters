@@ -273,6 +273,7 @@
     "channels": "stereo",
     "controls": {
      "hall_mix": "param:2",
+     "notes": "notes:0",
      "out": "out:20",
      "volume": "param:1"
     },
@@ -348,6 +349,7 @@
    {
     "channels": "stereo",
     "controls": {
+     "notes": "notes:0",
      "out": "out:20",
      "volume": "param:7"
     },

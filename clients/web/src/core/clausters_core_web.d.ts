@@ -330,7 +330,7 @@ export class IdSpaces {
     [Symbol.dispose](): void;
     /**
      * A run of `width` ids of `space` (`"nodes"`, `"audio"`, `"control"`,
-     * `"buffers"`, `"transports"`); throws when the space is exhausted.
+     * `"buffers"`, `"transports"`, `"events"`); throws when the space is exhausted.
      */
     alloc(space: string, width: number): number;
     /**
@@ -350,7 +350,7 @@ export class IdSpaces {
      * The spaces of a live client of a server of this shape, taking share
      * `index` of `of`.
      */
-    constructor(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, transports: number, index: number, of: number);
+    constructor(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, transports: number, event_buses: number, index: number, of: number);
     /**
      * A node the server reports gone, taken back if it was this client's.
      */
@@ -362,7 +362,7 @@ export class IdSpaces {
     /**
      * The spaces of an offline score: node ids never run out.
      */
-    static score(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, transports: number): IdSpaces;
+    static score(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, transports: number, event_buses: number): IdSpaces;
 }
 
 export class Instance {
@@ -1416,6 +1416,13 @@ export function event_delta(dur: number, stretch: number, delta: number): number
 export function event_midi(event: string, channel: number): string;
 
 /**
+ * JS face: a note event whose instrument is a node as the `/node_event`
+ * messages of note `note` on it, `{"start", "release", "sustain"}` with
+ * `[tag, value]` arguments, or `{"error"}` for anything else.
+ */
+export function event_node_note(event: string, note: number): string;
+
+/**
  * JS face: the notation keys, as JSON -- the table of what an event says
  * about the page it is written on (`clausters_core::event::notation::KEYS`).
  */
@@ -2094,6 +2101,7 @@ export interface InitOutput {
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly event_delta: (a: number, b: number, c: number) => number;
     readonly event_midi: (a: number, b: number, c: number) => [number, number];
+    readonly event_node_note: (a: number, b: number, c: number) => [number, number];
     readonly event_notation_keys: () => [number, number];
     readonly event_of_midi: (a: number, b: number) => [number, number];
     readonly event_sustain: (a: number, b: number, c: number, d: number) => number;
@@ -2123,10 +2131,10 @@ export interface InitOutput {
     readonly idspaces_contains: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly idspaces_inUse: (a: number, b: number, c: number) => [number, number, number];
     readonly idspaces_narrow: (a: number, b: number, c: number) => [number, number];
-    readonly idspaces_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+    readonly idspaces_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly idspaces_nodeEnded: (a: number, b: number) => number;
     readonly idspaces_release: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly idspaces_score: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly idspaces_score: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly instance_meters: (a: number) => [number, number];
     readonly instance_new: () => number;
     readonly instance_reconcile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];

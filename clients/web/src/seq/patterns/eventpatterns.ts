@@ -15,6 +15,7 @@
 
 import { StopStream } from "../../base/stream.ts";
 import { Event, rest } from "../event.ts";
+import type { Node } from "../../defs/node.ts";
 import { INF, asStream, pattern } from "../pattern.ts";
 import type { EventPattern, Pattern } from "../pattern.ts";
 
@@ -149,13 +150,15 @@ export interface VoiceOptions {
  * lag, a glide), and the note that ends a line releases it -- by its gate when
  * the events say `has_gate: true`, which an instrument with a gated envelope
  * wants as it does under `pbind`, else by freeing the node, which cuts the
- * sound; on MIDI, notes that overlap; rendered into an `EventSequence`,
- * a `tie` where a joined note keeps its pitch and a slur over each run that
- * moves. What varies inside one note is an inflection, and is the note's own
+ * sound; on an `instrument` that is a node (a `Voices` node, a plugin's), each
+ * joined note-on joins the note before it, which keeps its voice; on MIDI,
+ * notes that overlap; rendered into an `EventSequence`, a `tie` where a joined
+ * note keeps its pitch and a slur over each run that moves, and `joins` on
+ * each joined note, naming the one it goes on from. What varies inside one note is an inflection, and is the note's own
  * expression, not this.
  */
 export const pvoice = pattern(
-    function* pvoice(inval: unknown, instrument: string, bindings: Bindings, options: VoiceOptions = {}) {
+    function* pvoice(inval: unknown, instrument: string | Node | { node: number }, bindings: Bindings, options: VoiceOptions = {}) {
         const { artic = false, voice = null } = options;
         const streams = Object.entries(bindings).map(([key, value]) => [key, asStream(value)] as const);
         const build = (inval: unknown): Event => {
@@ -183,7 +186,11 @@ export const pvoice = pattern(
             }
             const joined = joins(note, following, artic);
             const node = previous?.get("node");
-            if (typeof node === "number") note.set({ continues: node });
+            // On a node, the note it continues is the previous one's id.
+            const noteId = previous?.get("noteId");
+            if (typeof node === "number") {
+                note.set({ continues: typeof noteId === "number" ? noteId : node });
+            }
             if (joined) note.set({ held: true });
             inval = yield note;
             if (following === null) return inval;
@@ -192,7 +199,7 @@ export const pvoice = pattern(
         }
     },
     { events: true },
-) as (instrument: string, bindings: Bindings, options?: VoiceOptions) => EventPattern<Event>;
+) as (instrument: string | Node | { node: number }, bindings: Bindings, options?: VoiceOptions) => EventPattern<Event>;
 
 /**
  * **Event patterns played together**: their events merged in time order into

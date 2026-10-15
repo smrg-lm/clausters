@@ -200,7 +200,7 @@ export { Server, Transport } from "./defs/server/index.ts";
 export type { TransportGrid, TransportState } from "./defs/server/index.ts";
 export type { MidiBinding, MidiBindOptions } from "./defs/server/index.ts";
 export type { ServerOptions, ServerTransportName } from "./defs/server/index.ts";
-export { AddAction, Group, Node, Synth } from "./defs/node.ts";
+export { AddAction, Group, Node, Synth, Voices } from "./defs/node.ts";
 // The options bags the node constructors take. Exported as types so the API
 // reference documents what those parameters accept: TypeDoc reports a public
 // signature that names a type it cannot reach, and an intersection like

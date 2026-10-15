@@ -889,6 +889,7 @@ class Recorder {
         const [at, local, toRoot] = this.now();
         const keys = event.keysData();
         delete keys.node;
+        delete keys.note_id;
         delete keys.server;
         delete keys.held;
         delete keys.continues;
@@ -1006,8 +1007,9 @@ async function rendered(
  * **A voice's legato, written on the page.** The notes that went on into the
  * next are joins; the core says which are ties (one pitch held) and which runs
  * are slurs (legato that moves), and both are written: `tie` on the tied note,
- * a slur spanner over each run's event ids. The events get their ids here, in
- * order, so the spanners can name them.
+ * a slur spanner over each run's event ids. And what it plays as: `joins` on
+ * each joined note, the id of the note it goes on from. The events get their
+ * ids here, in order, so the spanners and the joins can name them.
  */
 function articulate(data: Record<string, unknown>, joins: readonly [number, number][]): void {
     const events = data.events as { id?: number; data: Record<string, unknown> }[];
@@ -1020,6 +1022,8 @@ function articulate(data: Record<string, unknown>, joins: readonly [number, numb
         entry.id = i + 1;
     });
     for (const i of ties) events[i]!.data.tie = true;
+    // What it plays as: each joined note names the one it goes on from.
+    for (const [a, b] of joins) events[b]!.data.joins = a + 1;
     if (slurs.length > 0) {
         data.notation = { spanners: slurs.map(([a, b]) => ({ kind: "slur", from: a + 1, to: b + 1 })) };
     }

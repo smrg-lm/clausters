@@ -576,10 +576,10 @@ impl CmdTranslator {
                 (control_buses - control_reserved) as i64,
                 control_reserved,
             ),
-            binding_buses: Registry::new(
-                (limits.event_buses - limits.event_buses / 2) as i64,
-                limits.event_buses / 2,
-            ),
+            binding_buses: {
+                let half = clausters_core::ids::binding_event_reserved(limits.event_buses);
+                Registry::new((limits.event_buses - half) as i64, half)
+            },
             limits,
         }
     }

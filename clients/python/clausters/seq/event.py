@@ -245,11 +245,15 @@ class Event(dict):
         """The event's keys as plain JSON-able data -- what the core renders it
         from, and what a document stores. A value that is not data (the
         ``server`` a played event holds) is left out, and so are its curves
-        (``automation``), which travel beside the keys."""
+        (``automation``), which travel beside the keys. An ``instrument`` that
+        is a node (a `clausters.defs.Voices` node, a plugin's) is written as
+        the node it is, ``{"node": id}``."""
         out = {}
         for key, value in self.items():
             if key == "automation":
                 continue
+            if key == "instrument" and isinstance(value, Node):
+                value = {"node": value.id}
             if isinstance(value, tuple):
                 value = list(value)
             if value is None or isinstance(value, (bool, int, float, str, list, dict)):
@@ -273,6 +277,13 @@ class Event(dict):
         cuts it, `release` closes it musically. The scheduled self-release
         still arrives regardless.
 
+        **An ``instrument`` that is a node** -- a `clausters.defs.Voices`
+        node, a plugin's node, or ``{"node": id}`` -- makes no synth: the note
+        is given to that node (``/node_event``), which plays it on a voice of
+        its own. ``node`` is then that node, and ``note_id`` the note's id on
+        it; every other number the event holds that is not reserved is a
+        control of the note's voice. Such a note carries no curves.
+
         ``destination`` is optional: omitted, it resolves to the ambient server
         (the running session's, else the default session's -- booted with
         ``Server().boot()``), so ``Event().play()`` sounds a note with no `Session`
@@ -291,22 +302,30 @@ class Event(dict):
         return self
 
     def free(self):
-        """Cut the played note **now** (``/node_free``), without waiting for its
+        """Cut the played note **now** (``/node_free``; on a node, a choke of
+        the note), without waiting for its
         sustain -- for interrupting an extreme duration. A no-op when the event
         has not sounded (a rest, a MIDI play, or never played). The release
         already scheduled at play time still arrives and is harmless."""
         node, server = self.get("node"), self.get("server")
-        if node is not None and server is not None:
-            _forget(server, node)
-            Node(node, server).free()
+        if node is None or server is None:
+            return
+        if self.get("note_id") is not None:
+            Node(node, server).node_event({"kind": "choke", "note_id": self["note_id"]})
+            return
+        _forget(server, node)
+        Node(node, server).free()
 
     def release(self):
         """End the played note **musically**, now: the event's own release
         gesture -- ``gate 0`` when it releases by gate (``has_gate``, or the
         built-in ``"default"`` instrument's envelope), a plain ``/node_free``
-        otherwise. Same no-op rule as `free`."""
+        otherwise; a note on a node, its note-off. Same no-op rule as `free`."""
         node, server = self.get("node"), self.get("server")
         if node is None or server is None:
+            return
+        if self.get("note_id") is not None:
+            Node(node, server).node_event({"kind": "note_off", "note_id": self["note_id"]})
             return
         # The gesture is the one the note's own render ends it with.
         release = _native.event_synth(self.keys_data(), node)["release"]

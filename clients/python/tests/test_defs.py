@@ -1040,14 +1040,18 @@ def test_midi_bindings_go_out_as_the_server_reads_them():
 
     iface = _FakeInterface()
     srv = Server(interface=iface)
-    srv.midi_bind(0, "default", target=1001, action=AddAction.TAIL, gate=True)
+    srv.midi_bind(0, "default", target=1001, action=AddAction.TAIL)
     srv.midi_bind_zone(15, 0, "mpe_voice")
+    srv.midi_bind(3, 5)
+    srv.midi_bind_zone(0, 7, 6)
     srv.midi_map(0, "cc74", "cutoff")
     srv.midi_map(15, "timbre", "bright", cc=71)
     srv.midi_unbind(0)
-    assert iface.sent[-5:] == [
-        ("/midi_bind", [0, "default", 1001, 1, 1]),
-        ("/midi_bindZone", [15, 0, "mpe_voice", 0, 0, 0]),
+    assert iface.sent[-7:] == [
+        ("/midi_bind", [0, "default", 1001, 1]),
+        ("/midi_bindZone", [15, 0, "mpe_voice", 0, 0]),
+        ("/midi_bind", [3, 5]),
+        ("/midi_bindZone", [0, 7, 6]),
         ("/midi_map", [0, "cc74", "cutoff"]),
         ("/midi_map", [15, "timbre", "bright", 71]),
         ("/midi_unbind", [0]),
@@ -1067,7 +1071,8 @@ def test_midi_query_reads_channels_and_zones_by_channel():
     iface = _FakeInterface()
     srv = Server(interface=iface)
     iface.queue_reply("/midi_query.reply", "channel", 1, 0, "default", 0, 0, 1,
-                      "note", "freq", "vel", "amp", "gate", "gate", "cc7", "level")
+                      "note", "freq", "vel", "amp", "gate", "gate", "cc7", "level",
+                      "bus", 40, "node", 2000)
     iface.queue_reply("/midi_query.reply", "zone", 0, 15, "mpe_voice", 0, 0, 1,
                       "note", "freq", "vel", "amp", "gate", "gate",
                       "pressure", "pressure", "timbre", "timbre", "timbreCc", 74)
@@ -1081,9 +1086,69 @@ def test_midi_query_reads_channels_and_zones_by_channel():
     assert channel.kind == "channel" and channel.gate is True
     assert channel.controls["cc7"] == "level"
     assert channel.timbre_cc is None
+    assert (channel.bus, channel.node) == (40, 2000)
+    assert zone.bus is None and zone.node is None
     assert zone.kind == "zone" and zone.members == 15
     assert zone.controls["timbre"] == "timbre" and zone.timbre_cc == 74
     assert str(zone).startswith("zone on 0 (15 members): mpe_voice")
+
+
+def test_voices_and_the_event_buses_go_out_as_the_server_reads_them():
+    from clausters import Voices
+
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    bus = srv.event_buses.alloc()
+    assert bus == 0 and srv.event_buses.in_use == 1
+    keys = Voices("default", 8, {"notes": bus}, server=srv)
+    assert iface.sent[-1] == ("/voices_new", ["default", keys.id, 1, 0, 8, "notes", 0])
+    keys.voice_map("cc74", "cutoff")
+    assert iface.sent[-1] == ("/voices_map", [keys.id, "cc74", "cutoff"])
+    srv.bus_event(bus, {"kind": "note_on", "key": 60, "velocity": 0.5})
+    addr, args = iface.sent[-1]
+    assert (addr, args[0]) == ("/bus_event", bus)
+    assert json.loads(args[1]) == {"kind": "note_on", "key": 60, "velocity": 0.5}
+    keys.node_event({"kind": "note_off", "key": 60}, {"kind": "choke"})
+    addr, args = iface.sent[-1]
+    assert (addr, args[0]) == ("/node_event", keys.id)
+    assert len(json.loads(args[1])) == 2
+    srv.event_buses.free(bus)
+    with pytest.raises(RuntimeError):
+        srv.event_buses.free(bus)
+    for _ in range(32):
+        srv.event_buses.alloc()
+    with pytest.raises(RuntimeError, match="event buses"):
+        srv.event_buses.alloc()
+
+
+def test_an_event_on_a_node_is_a_note_of_it():
+    from clausters import Event, Voices
+
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    keys = Voices("default", 4, server=srv)
+    first = Event(instrument=keys, midinote=60.25, cutoff=900.0).play(srv)
+    assert first["node"] == keys.id and first["note_id"] == 1
+    start, end = iface.sent[-2:]
+    assert start[0] == "/node_event" and start[1][0] == keys.id
+    events = json.loads(start[1][1])
+    assert events[0]["kind"] == "note_on" and events[0]["key"] == 60
+    assert events[0]["note_id"] == 1
+    assert {"kind": "expression", "expression": "tuning", "note_id": 1,
+            "value": 0.25} in events
+    assert {"kind": "control", "control": "cutoff", "note_id": 1,
+            "value": 900.0} in events
+    assert json.loads(end[1][1]) == {"kind": "note_off", "note_id": 1}
+    second = Event(instrument={"node": keys.id}, continues=1, held=True).play(srv)
+    assert second["note_id"] == 2
+    start = iface.sent[-1]
+    assert json.loads(start[1][1])[0]["joins"] == 1
+    second.release()
+    assert json.loads(iface.sent[-1][1][1]) == {"kind": "note_off",
+                                                             "note_id": 2}
+    from clausters.multitrack import Automation
+    with pytest.raises(ValueError, match="curves"):
+        Event(instrument=keys, automation=[Automation({"control": "amp"})]).play(srv)
 
 
 @pytest.mark.parametrize("plugin_format", ["clap", "vst3"])

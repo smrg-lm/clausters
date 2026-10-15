@@ -176,6 +176,20 @@ class Node:
         self._server().send_msg("/plugin_event", self.id, json.dumps(event))
         return self
 
+    def node_event(self, *events: dict):
+        """Give events to this node, one that reads notes -- a `Voices` node
+        or a plugin's (``/node_event``) -- as though they came from the event
+        bus it reads. Each event is a dict as ``/bus_event`` writes one
+        (``{"kind": "note_on", "key": 60, "velocity": 0.8, "note_id": 1}``),
+        plus what only an event for one node says: ``{"kind": "control",
+        "control": "cutoff", "value": 900, "note_id": 1}`` sets a control of
+        that note's voice alone. They go out at the ambient moment, so inside
+        a routine at its logical beat. Returns ``self``."""
+        import json
+        payload = events[0] if len(events) == 1 else list(events)
+        self._server().send_bundle(("/node_event", self.id, json.dumps(payload)))
+        return self
+
     def _plugin_editor(self, command, *payload, timeout=10.0):
         from ..errors import CommandError
         server = self._server()
@@ -518,6 +532,66 @@ class Synth(Node):
         Node.__init__(synth, node_id, server)
         synth.defname = defname
         return synth
+
+
+class Voices(Node):
+    """**N voices of one def, given to notes**: one node of the tree holding
+    ``voices`` instances of a SynthDef or a FaustDef, all built with it.
+
+    A note reaching it -- from the event bus its ``notes`` control names
+    (what `clausters.defs.Server.midi_bind` routes a channel to, or what
+    `clausters.defs.Server.bus_event` writes), or given to it directly with
+    `Node.node_event` -- takes a free voice, resets it on its own memory and
+    starts it with the note's frequency and amplitude; the note's end closes
+    its ``gate``, or frees the voice when the def has none. A voice whose def
+    frees itself is free again, and with every voice busy a note takes the
+    oldest released one, else the oldest held. So a note never makes a node:
+    an `clausters.seq.Event` whose ``instrument`` is this node plays one of
+    its voices.
+
+    ```python
+    from clausters import Server, Voices
+
+    s = Server().boot()
+    bus = s.event_buses.alloc()
+    keys = Voices("default", 8, {"notes": bus}, server=s)  # reads the bus
+    s.midi_bind(0, bus)                                    # MIDI channel 0 writes it
+    ```
+
+    It is a `Node`: `Node.set` reaches every voice (and the voices to come),
+    `Node.free` frees them all.
+
+    Attributes:
+        defname: the def its voices are instances of.
+        voices: how many voices it holds.
+    """
+
+    def __init__(self, defname, voices: int = 16, controls=None, *, target=ROOT_NODE_ID,
+                 action=AddAction.TAIL, server=None):
+        """Makes the node (``/voices_new``) with ``voices`` (1-256) instances
+        of the def named ``defname``, already loaded on the server.
+        ``controls`` are the def's, set on every voice, and ``notes``, the
+        event bus it reads -- a dict, or a list of ``(name, value)`` pairs.
+        ``target`` and ``action`` place it as `Synth` does. A plugin def (which
+        plays its own voices), a GraphDef and a def holding a ``disk_in`` or
+        ``disk_out`` are refused by the server with ``/fail``."""
+        srv = _resolve(server)
+        node_id = srv._node_id()
+        srv.send_msg("/voices_new", str(defname), node_id, int(action), _target_id(target),
+                     int(voices), *_flatten_controls(controls))
+        super().__init__(node_id, srv)
+        self.defname = defname
+        self.voices = int(voices)
+
+    def voice_map(self, selector: str, control: str = ""):
+        """What a note sets on its voice (``/voices_map``): ``selector`` is
+        ``"note"`` (the frequency, ``freq`` by default), ``"vel"`` (the
+        amplitude, ``amp``), ``"gate"``, ``"bend"``, ``"pressure"``,
+        ``"poly"`` (a note's own pressure), ``"timbre"``, ``"lift"`` (release
+        velocity) or ``"ccN"``; ``control`` is one of the def's, empty to
+        clear the entry. Returns ``self``."""
+        self._server().send_msg("/voices_map", self.id, str(selector), str(control))
+        return self
 
 
 class Group(Node):

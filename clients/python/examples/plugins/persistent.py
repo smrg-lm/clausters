@@ -62,8 +62,8 @@ server.set_transport(0, 2.0)
 server.transport_group(governed)
 server.lane_new(3100, governed)
 server.lane_set(3100, {"notes": [
-    [12000, 48000, {"plugin": voice.id}, {"key": 64, "velocity": 0.15}, "gate"],
-    [60000, 108000, {"plugin": voice.id}, {"key": 69, "velocity": 0.15}, "gate"],
+    [12000, 48000, {"node": voice.id}, {"key": 64, "velocity": 0.15}, "gate"],
+    [60000, 108000, {"node": voice.id}, {"key": 69, "velocity": 0.15}, "gate"],
 ]})
 server.transport_play()
 

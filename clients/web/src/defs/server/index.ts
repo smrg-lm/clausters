@@ -66,7 +66,7 @@ import { sampleClockFor } from "../clocksync.ts";
 import type { ServerSampleClock } from "../clocksync.ts";
 import type { TempoClock } from "../../base/clock.ts";
 import { CurveEmitter } from "../../seq/curves.ts";
-import { synthRender, taggedMessage } from "../../seq/event.ts";
+import { nodeNoteRender, synthRender, taggedMessage } from "../../seq/event.ts";
 import type { Event } from "../../seq/event.ts";
 import { CommandError, ReplyTimeout, ServerError } from "../../errors.ts";
 import { IdSpaces, requireCore } from "../../base/core.ts";
@@ -74,11 +74,12 @@ import { NodeIdAllocator } from "../node.ts";
 import { WHOLE_SHARE } from "../../base/ids.ts";
 import { pageIds } from "../../base/pool.ts";
 import type { IdShare } from "../../base/ids.ts";
-import { AudioBusAllocator, ControlBusAllocator } from "../bus.ts";
+import { AudioBusAllocator, ControlBusAllocator, EventBusAllocator } from "../bus.ts";
 import { BufferAllocator } from "../buffer.ts";
 import {
     DEFAULT_AUDIO_BUSES,
     DEFAULT_CONTROL_BUSES,
+    DEFAULT_EVENT_BUSES,
     DEFAULT_MAX_BUFFERS,
     DEFAULT_MAX_NODES,
     DEFAULT_TAPS,
@@ -340,6 +341,7 @@ export class Server {
         audioBuses?: AudioBusAllocator;
         controlBuses?: ControlBusAllocator;
         buffers?: BufferAllocator;
+        eventBuses?: EventBusAllocator;
     } = {};
 
     /**
@@ -367,6 +369,7 @@ export class Server {
                       s.controlBuses,
                       s.maxBuffers,
                       s.transports,
+                      s.eventBuses,
                   )
                 : new IdSpaces(
                       s.maxNodes,
@@ -375,6 +378,7 @@ export class Server {
                       s.controlBuses,
                       s.maxBuffers,
                       s.transports,
+                      s.eventBuses,
                       this.share.index,
                       this.share.of,
                   );
@@ -433,6 +437,11 @@ export class Server {
 
     set buffers(value: BufferAllocator) {
         this.built.buffers = value;
+    }
+
+    /** The event buses this handle allocates (`EventBusAllocator`). */
+    get eventBuses(): EventBusAllocator {
+        return (this.built.eventBuses ??= new EventBusAllocator(this.ids));
     }
     /**
      * Seconds added to every timed send -- the scheduling headroom. Kept here
@@ -546,6 +555,7 @@ export class Server {
             channels: 2,
             taps: DEFAULT_TAPS,
             transports: DEFAULT_TRANSPORTS,
+            eventBuses: DEFAULT_EVENT_BUSES,
             ...sizing,
         };
         this.timeout = timeout;
@@ -770,6 +780,7 @@ export class Server {
             channels: info.channels,
             taps: info.taps,
             transports: info.transports,
+            eventBuses: info.eventBuses,
         };
         this.built = {};        // rebuilt against the sizes just read
         this.sampleRate = info.nominalSampleRate;
@@ -1042,13 +1053,17 @@ export class Server {
                 "a midi event plays on a MIDI destination (a MidiServer), not on one that carries OSC",
             );
         }
+        const keys = event.keysData();
+        if (typeof keys.instrument === "object" && keys.instrument !== null) {
+            return this.playNodeNote(event, keys);
+        }
         // A note of a voice that `continues` a node sets it rather than starting
         // one (`seq/patterns/eventpatterns.ts`, `pvoice`).
         const continued = event.get("continues");
         const node = typeof continued === "number" ? continued : this.nodes.alloc();
         // The messages are the core's render of the event, so every client
         // starts and ends a note with the same ones.
-        const synth = synthRender(event.keysData(), node);
+        const synth = synthRender(keys, node);
         const when = Moment.current();
         // Outside any clock the wall is read once, for the note, its release
         // and its curves alike.
@@ -1066,6 +1081,52 @@ export class Server {
         }
         this.curves.follow(node);
         return node;
+    }
+
+    /** The last note id `playEvent` gave a note on a node. */
+    #lastNote = 0;
+
+    /**
+     * A note whose instrument is a node (`{ node: id }`, a `Voices` node or a
+     * plugin's): its note-on given to that node, identified by a note id of
+     * this handle's, and its note-off at its sustain -- the core's render, as
+     * for a synth. The id is written on the event as `noteId`, which is what a
+     * voice's next note joins and what `free` and `release` end; the node is
+     * returned.
+     */
+    private playNodeNote(event: Event, keys: Record<string, unknown>): number {
+        if (event.get("automation")) {
+            throw new TypeError(
+                "a note on a node carries no curves: a curve sets a control of a synth, "
+                    + "and the node's voices are not one",
+            );
+        }
+        this.#lastNote = (this.#lastNote % 0x7fffffff) + 1;
+        const noteId = this.#lastNote;
+        const rendered = nodeNoteRender(keys, noteId);
+        const when = Moment.current();
+        const pin = when.clock === null ? this.curves.wall() : null;
+        this.sendAt(when, [taggedMessage(rendered.start)], { pin });
+        if (rendered.release.length > 0) {
+            this.sendAt(when.at(rendered.sustain), [taggedMessage(rendered.release)], { pin });
+        }
+        event.set({ noteId });
+        return (keys.instrument as { node: number }).node;
+    }
+
+    /**
+     * Writes events on event bus `bus` (`/bus_event`): whatever reads it -- a
+     * `Voices` node or a plugin's node whose `notes` names it -- plays them.
+     * Each event is an object: `{ kind: "note_on", channel: 0, key: 60,
+     * velocity: 0.8, note_id: 1 }`, then `note_off`, `choke`, `expression`,
+     * `controller`, `bend`, `pressure` and `program`; a note-on that `joins` a
+     * sounding note's id goes on in its voice. They go out at the ambient
+     * moment, so inside a routine at its logical beat.
+     */
+    busEvent(bus: number, ...events: Record<string, unknown>[]): this {
+        const payload = events.length === 1 ? events[0] : events;
+        this.sendBundle([["/bus_event", ["i", Math.trunc(bus)], JSON.stringify(payload)]]);
+        return this;
     }
 
     #curves: CurveEmitter | null = null;

@@ -65,9 +65,10 @@ def main():
     # the zone refused. This run starts from none and leaves none behind.
     with Session.live(server_args=("--midi", SERVER_PORT, "--no-persist")) as session:
         server = session.server
-        # The lower zone, fifteen members, gate-aware: a note-off closes the
-        # def's gate rather than freeing it, and the release rings out.
-        server.midi_bind_zone(0, 15, "default", gate=True)
+        # The lower zone, fifteen members, played by a `Voices` node of the
+        # default instrument: a note-off closes its voice's gate, and the
+        # release rings out.
+        server.midi_bind_zone(0, 15, "default")
 
         interface = MidiRtInterface(port=OUR_PORT)
         try:

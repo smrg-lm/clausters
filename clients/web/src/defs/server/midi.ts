@@ -1,13 +1,14 @@
 // What the server's MIDI plays: its bindings, and MIDI 2.0 packets sent in
 // (mirrors `clausters/defs/server/midi.py`).
 //
-// A **binding** says which instrument a MIDI channel plays and how its
-// messages reach that instrument's controls. It is the server's, not this
-// handle's: the same binding hears the server's live MIDI input (`--midi`) and
-// the MIDI messages a transport's event lane plays (`laneSet`'s `midi` and
-// `ump` lists), and a server with a data directory keeps it across restarts.
-// So a binding is made once, wherever the notes come from, and `midiQuery`
-// reads back what a server already has.
+// A **binding** is routing: a MIDI channel (or an MPE zone) writes its notes
+// and channel messages on an **event bus**, and whatever reads that bus plays
+// them -- a `Voices` node, a plugin's node, or several. The binding is the
+// server's, not this handle's: the same binding hears the server's live MIDI
+// input (`--midi`) and the MIDI messages a transport's event lane plays
+// (`laneSet`'s `midi` and `ump` lists), and a server with a data directory
+// keeps it across restarts. So a binding is made once, wherever the notes come
+// from, and `midiQuery` reads back what a server already has.
 //
 // `midiUmp` is the other half: MIDI 2.0 packets played now, as the live input
 // plays its messages.
@@ -25,11 +26,14 @@ import type { Server } from "./index.ts";
  *
  * `kind` is `"channel"` for a binding of one channel and `"zone"` for an MPE
  * zone, whose `channel` is its master and whose `members` is how many member
- * channels the device last said it has (0 for a channel). `controls` maps each
- * selector that names a control -- `note`, `vel` and `gate` always, then
- * `bend`, `pressure`, `poly`, `timbre`, `lift`, `ccN` and `progN` where mapped
- * -- to the name it drives (a `progN` names an instrument). `timbreCc` is a
- * zone's timbre controller, `null` on a channel.
+ * channels the device last said it has (0 for a channel). `instrument` is the
+ * def an instrument binding made its node of, empty for a channel routed to a
+ * bus. `controls` maps each selector that names a control -- `note`, `vel` and
+ * `gate`, then `bend`, `pressure`, `poly`, `timbre`, `lift` and `ccN` where
+ * mapped -- to the name it drives. `timbreCc` is a zone's timbre controller,
+ * `null` on a channel. `bus` is the event bus the binding writes, and `node`
+ * the node an instrument binding made (`null` for a routed one, and for a
+ * GraphDef's, whose notes are its voice slots).
  */
 export interface MidiBinding {
     kind: string;
@@ -41,16 +45,16 @@ export interface MidiBinding {
     gate: boolean;
     controls: Record<string, string>;
     timbreCc: number | null;
+    bus: number | null;
+    node: number | null;
 }
 
-/** Where a binding's voices go and how they end: `midiBind`'s options. */
+/** Where an instrument binding's node goes: `midiBind`'s options. */
 export interface MidiBindOptions {
-    /** The node its voices are added against: the root group unless given. */
+    /** The node it is added against: the root group unless given. */
     target?: NodeLike;
     /** How: `AddAction.HEAD` unless given. */
     action?: AddAction;
-    /** A note-off sets the voice's `gate` to 0 rather than freeing it. */
-    gate?: boolean;
 }
 
 /** A binding as one line: where, the instrument, and what each selector drives. */
@@ -61,13 +65,14 @@ export function formatMidiBinding(binding: MidiBinding): string {
     const mapped = Object.entries(binding.controls)
         .map(([selector, name]) => `${selector} -> ${name}`)
         .join(", ");
-    return `${where}: ${binding.instrument} [${mapped}]`;
+    const what = binding.instrument || `bus ${binding.bus}`;
+    return `${where}: ${what} [${mapped}]`;
 }
 
 /**
  * One `/midi_query.reply`: `kind channel members instrument target addAction
- * gate`, then `selector name` pairs and, on a zone, a trailing `timbreCc
- * <int>`. A `"none"` reply -- a channel asked for and bound to nothing -- is
+ * gate`, then `selector name` pairs, a zone's `timbreCc <int>`, the `bus
+ * <int>` it writes and an instrument binding's `node <int>`. A `"none"` reply -- a channel asked for and bound to nothing -- is
  * `null`.
  */
 export function parseMidiBinding(args: readonly unknown[]): MidiBinding | null {
@@ -82,10 +87,14 @@ export function parseMidiBinding(args: readonly unknown[]): MidiBinding | null {
         gate: Number(args[6]) !== 0,
         controls: {},
         timbreCc: null,
+        bus: null,
+        node: null,
     };
     for (let i = 7; i + 1 < args.length; i += 2) {
         const selector = String(args[i]);
         if (selector === "timbreCc") binding.timbreCc = Number(args[i + 1]);
+        else if (selector === "bus") binding.bus = Number(args[i + 1]);
+        else if (selector === "node") binding.node = Number(args[i + 1]);
         else binding.controls[selector] = String(args[i + 1]);
     }
     return binding;
@@ -106,51 +115,69 @@ function int32(word: number): number {
  */
 export class ServerMidi {
     /**
-     * Binds MIDI `channel` to the def named `instrument` (`/midi_bind`): each
-     * note on it makes a node of that def at `target` by `action`, its note
-     * number on `freq` and its velocity on `amp` until `midiMap` says
-     * otherwise. A SynthDef, a FaustDef and a GraphDef are bound alike (a
-     * GraphDef's shared members are made here, and each note is a voice of
-     * them). `channel` is 0-255: the 16 MIDI 1.0 channels and the extended
-     * MIDI 2.0 group x channel space.
+     * Routes MIDI `channel` (`/midi_bind`), 0-255: the 16 MIDI 1.0 channels
+     * and the extended MIDI 2.0 group x channel space.
      *
-     * A note-off frees the node, or, with `gate`, sets its `gate` control to
-     * 0, for a def whose envelope releases. The binding reaches both the live
-     * input and a transport lane's MIDI messages; binding a channel again
-     * replaces it.
+     * Given an event bus (a number), the channel writes there and makes
+     * nothing: whatever reads that bus plays it -- a `Voices` node or a
+     * plugin's node whose `notes` names it, or several. Given a def's name,
+     * the binding makes the reader too, at `target` by `action`, on an event
+     * bus of its own, and frees it with the binding: a `Voices` node of 16
+     * voices of a SynthDef or a FaustDef (its voice map is the binding's
+     * `midiMap`), or a plugin's node. A GraphDef is the exception: each note
+     * is one more of its voice slots. The binding reaches both the live input
+     * and a transport lane's MIDI messages; binding a channel again replaces
+     * it.
      */
-    midiBind(this: Server, channel: number, instrument: string, options: MidiBindOptions = {}): Server {
-        const { target = ROOT_NODE_ID, action = AddAction.HEAD, gate = false } = options;
+    midiBind(
+        this: Server,
+        channel: number,
+        instrument: string | number,
+        options: MidiBindOptions = {},
+    ): Server {
+        if (typeof instrument === "number") {
+            this.sendMsg("/midi_bind", ["i", Math.trunc(channel)], ["i", Math.trunc(instrument)]);
+            return this;
+        }
+        const { target = ROOT_NODE_ID, action = AddAction.HEAD } = options;
         this.sendMsg(
             "/midi_bind",
             ["i", Math.trunc(channel)],
             ["s", String(instrument)],
             ["i", nodeId(target)],
             ["i", action],
-            ["i", gate ? 1 : 0],
         );
         return this;
     }
 
     /**
-     * Binds an **MPE zone** to `instrument` (`/midi_bindZone`): the lower zone
-     * on master channel 0 (members ascending from 1) or the upper on 15
-     * (descending from 14), `members` member channels, 0 to wait for the
-     * device's own layout -- which wins when it arrives. Each note is a voice
-     * whose own channel's bend, pressure and timbre are its own: a voice
-     * starts with `freq`, `amp`, `press` (the pressure) and `slide` (the
-     * timbre) -- the built-in `default`'s controls -- so a def with those
-     * controls plays all three with no `midiMap`. Refused when the zone would
-     * reach a channel `midiBind` holds.
+     * Routes an **MPE zone** (`/midi_bindZone`) as `midiBind` routes a
+     * channel: the lower zone on master channel 0 (members ascending from 1)
+     * or the upper on 15 (descending from 14), `members` member channels, 0
+     * to wait for the device's own layout -- which wins when it arrives. Each
+     * note's own channel's bend, pressure and timbre are its own: a `Voices`
+     * node's voice starts with `freq`, `amp`, `press` (the pressure) and
+     * `slide` (the timbre) -- the built-in `default`'s controls -- so a def
+     * with those controls plays all three with no `midiMap`. Refused when the
+     * zone would reach a channel `midiBind` holds.
      */
     midiBindZone(
         this: Server,
         master: number,
         members: number,
-        instrument: string,
+        instrument: string | number,
         options: MidiBindOptions = {},
     ): Server {
-        const { target = ROOT_NODE_ID, action = AddAction.HEAD, gate = false } = options;
+        if (typeof instrument === "number") {
+            this.sendMsg(
+                "/midi_bindZone",
+                ["i", Math.trunc(master)],
+                ["i", Math.trunc(members)],
+                ["i", Math.trunc(instrument)],
+            );
+            return this;
+        }
+        const { target = ROOT_NODE_ID, action = AddAction.HEAD } = options;
         this.sendMsg(
             "/midi_bindZone",
             ["i", Math.trunc(master)],
@@ -158,14 +185,13 @@ export class ServerMidi {
             ["s", String(instrument)],
             ["i", nodeId(target)],
             ["i", action],
-            ["i", gate ? 1 : 0],
         );
         return this;
     }
 
     /**
-     * Removes `channel`'s binding (`/midi_unbind`), freeing every voice still
-     * sounding on it; on a zone's master, the zone and its voices.
+     * Removes `channel`'s binding (`/midi_unbind`), freeing the node an
+     * instrument binding made; on a zone's master, the zone's binding.
      */
     midiUnbind(this: Server, channel: number): Server {
         this.sendMsg("/midi_unbind", ["i", Math.trunc(channel)]);
@@ -173,14 +199,16 @@ export class ServerMidi {
     }
 
     /**
-     * Routes one kind of message on `channel` to the control `name`
-     * (`/midi_map`). `selector` is `"note"` (the frequency control), `"vel"`
-     * (the amplitude), `"gate"` (the gate control), `"bend"`, `"pressure"`
-     * (channel aftertouch), `"poly"` (per-note aftertouch, to the note's
-     * voice), `"lift"` (note-off velocity), `"ccN"` (control change `N`) or
-     * `"progN"` (program `N`, whose `name` is an instrument to switch to); on
-     * a zone's master, `"timbre"` too, with `cc` the controller that carries
-     * it (74 unless given). On a zone's master the map is the zone's.
+     * Routes one kind of message on an instrument binding's `channel` to the
+     * control `name` of the node it made (`/midi_map`) -- on a `Voices` node,
+     * an entry of its voice map (`Voices.voiceMap`). `selector` is `"note"` (the
+     * frequency control), `"vel"` (the amplitude), `"gate"` (the gate
+     * control), `"bend"`, `"pressure"` (channel aftertouch), `"poly"`
+     * (per-note aftertouch, to the note's voice), `"lift"` (note-off
+     * velocity) or `"ccN"` (control change `N`); on a zone's master,
+     * `"timbre"` too, with `cc` the controller that carries it (74 unless
+     * given). A channel routed to a bus has nothing to map: map on the node
+     * that reads it.
      */
     midiMap(this: Server, channel: number, selector: string, name: string, cc?: number): Server {
         const args: MsgArg[] = [["i", Math.trunc(channel)], ["s", String(selector)], ["s", String(name)]];

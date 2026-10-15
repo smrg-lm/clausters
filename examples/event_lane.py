@@ -18,9 +18,10 @@ script sends one lane a four-note figure and then only moves the transport:
   as a DAW's stop sends its note-offs;
 - it sends the lane the same figure as **MIDI messages** -- a note-on and a
   note-off per note, on channel 0 -- and binds that channel to the default
-  instrument with `midi_bind`: the server plays them as though they had
-  reached its MIDI input at those positions, and a locate releases the MIDI
-  note sounding as it released the synth.
+  instrument with `midi_bind`, which makes a `Voices` node of it: the server
+  plays them as though they had reached its MIDI input at those positions,
+  each note a voice of that node, and a locate releases the MIDI note
+  sounding as it released the synth.
 
 Listen for each change at the moment the script names it. Needs an audio
 device (it boots its own server and plays through the sound card). Run it:
@@ -108,9 +109,9 @@ def main():
         time.sleep(1.0)
 
         print("the figure as MIDI, through channel 0's binding")
-        # Voices of the default instrument at the tail of `voices`, released
-        # by their gate.
-        server.midi_bind(0, "default", target=voices, action=AddAction.TAIL, gate=True)
+        # A `Voices` node of the default instrument at the tail of `voices`;
+        # a note's end closes its voice's gate.
+        server.midi_bind(0, "default", target=voices, action=AddAction.TAIL)
         server.lane_set(LANE, midi_figure())
         server.transport_locate_sample(0)
         server.transport_play()

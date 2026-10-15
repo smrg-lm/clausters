@@ -715,7 +715,7 @@ class _Recorder:
     def play_event(self, event):
         at, local, to_root = self._now()
         keys = {k: v for k, v in event.keys_data().items()
-                if k not in ("node", "server", "held", "continues")}
+                if k not in ("node", "note_id", "server", "held", "continues")}
         if keys.get("type", "note") == "note":
             # How long it sounds, in the root's beats as well.
             keys["sustain"] = to_root(local + event.sustain()) - at
@@ -805,8 +805,10 @@ def _articulate(data: dict, joins) -> None:
     """**A voice's legato, written on the page.** The notes that went on into
     the next are joins; the core says which are ties (one pitch held) and
     which runs are slurs (legato that moves), and both are written: ``tie`` on
-    the tied note, a slur spanner over each run's event ids. The events get
-    their ids here, in order, so the spanners can name them."""
+    the tied note, a slur spanner over each run's event ids. And what it plays
+    as: ``joins`` on each joined note, the id of the note it goes on from. The
+    events get their ids here, in order, so the spanners and the joins can
+    name them."""
     events = data["events"]
     pitches = [float(e["data"].get("midinote", float("nan"))) for e in events]
     ties, slurs = _native.articulation(pitches, joins)
@@ -814,6 +816,9 @@ def _articulate(data: dict, joins) -> None:
         entry["id"] = i + 1
     for i in ties:
         events[i]["data"]["tie"] = True
+    # What it plays as: each joined note names the one it goes on from.
+    for a, b in joins:
+        events[b]["data"]["joins"] = a + 1
     if slurs:
         data["notation"] = {"spanners": [{"kind": "slur", "from": a + 1, "to": b + 1}
                                          for a, b in slurs]}

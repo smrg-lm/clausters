@@ -2,8 +2,8 @@
 //! for the clients sharing it -- the policy every endpoint used to restate.
 //!
 //! [`crate::registry::Registry`] is the occupancy map; this is what
-//! stands on it. A client needs five spaces -- node ids, audio buses, control
-//! buses, buffers, transports -- and each has a shape the *server* decides: the
+//! stands on it. A client needs six spaces -- node ids, audio buses, control
+//! buses, buffers, transports, event buses -- and each has a shape the *server* decides: the
 //! node table's client range, the output buses at the bottom of the audio
 //! space, the private GraphDef windows at the top of both bus spaces, the
 //! transport that is addressed by number ([`FIXED_TRANSPORTS`]). Two clients
@@ -82,7 +82,14 @@ pub fn share_of(base: i64, span: usize, share: IdShare) -> (i64, usize) {
 /// on its own, an audio editor, the GUI host's take monitor.
 pub const FIXED_TRANSPORTS: usize = 1;
 
-/// Which of the five spaces an id belongs to.
+/// **The event buses the server's MIDI bindings take**: the top half of
+/// `event_buses`, where an instrument binding's node reads its notes, as the
+/// GraphDefs' window is the top of the audio buses. A client allocates below.
+pub fn binding_event_reserved(event_buses: usize) -> usize {
+    event_buses / 2
+}
+
+/// Which of the six spaces an id belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Space {
     /// Node ids.
@@ -95,11 +102,13 @@ pub enum Space {
     Buffers,
     /// Transports: what a sequence played on its own takes one of.
     Transports,
+    /// Event buses: where a writer puts notes and a node reads them.
+    EventBuses,
 }
 
 impl Space {
     /// The space a wire name spells: `"nodes"`, `"audio"`, `"control"`,
-    /// `"buffers"`, `"transports"`.
+    /// `"buffers"`, `"transports"`, `"events"`.
     pub fn parse(name: &str) -> Option<Space> {
         Some(match name {
             "nodes" => Space::Nodes,
@@ -107,6 +116,7 @@ impl Space {
             "control" => Space::ControlBuses,
             "buffers" => Space::Buffers,
             "transports" => Space::Transports,
+            "events" => Space::EventBuses,
             _ => return None,
         })
     }
@@ -119,6 +129,7 @@ impl Space {
             Space::ControlBuses => "control buses",
             Space::Buffers => "buffer slots",
             Space::Transports => "transports",
+            Space::EventBuses => "event buses",
         }
     }
 }
@@ -174,6 +185,8 @@ pub struct ServerShape {
     pub buffers: usize,
     /// How many transports it has (`--transports`), the fixed ones included.
     pub transports: usize,
+    /// How many event buses it has (`--event-buses`).
+    pub event_buses: usize,
 }
 
 impl ServerShape {
@@ -187,6 +200,7 @@ impl ServerShape {
         control_buses: 16384,
         buffers: 4096,
         transports: 16,
+        event_buses: 64,
     };
 }
 
@@ -196,7 +210,7 @@ impl Default for ServerShape {
     }
 }
 
-/// **The five spaces one client allocates from.**
+/// **The six spaces one client allocates from.**
 #[derive(Clone, Debug)]
 pub struct IdSpaces {
     shape: ServerShape,
@@ -207,6 +221,7 @@ pub struct IdSpaces {
     control: Option<Registry>,
     buffers: Registry,
     transports: Option<Registry>,
+    events: Option<Registry>,
 }
 
 impl IdSpaces {
@@ -237,12 +252,18 @@ impl IdSpaces {
                 Registry::new(base, span)
             },
             transports: bus_space(shape.transports, FIXED_TRANSPORTS, 0, share),
+            events: bus_space(
+                shape.event_buses,
+                0,
+                binding_event_reserved(shape.event_buses),
+                share,
+            ),
         }
     }
 
     /// The spaces of an **offline score**: node ids ascend from the client base
     /// and never run out, because a score has no `/node_end` stream to recycle
-    /// from and one author by construction. The other four are the live ones.
+    /// from and one author by construction. The others are the live ones.
     pub fn score(shape: ServerShape) -> IdSpaces {
         let mut spaces = IdSpaces::new(shape, IdShare::WHOLE);
         spaces.score = true;
@@ -258,6 +279,7 @@ impl IdSpaces {
             Space::ControlBuses => self.control.as_mut(),
             Space::Buffers => Some(&mut self.buffers),
             Space::Transports => self.transports.as_mut(),
+            Space::EventBuses => self.events.as_mut(),
         }
     }
 
@@ -268,6 +290,7 @@ impl IdSpaces {
             Space::ControlBuses => self.control.as_ref(),
             Space::Buffers => Some(&self.buffers),
             Space::Transports => self.transports.as_ref(),
+            Space::EventBuses => self.events.as_ref(),
         }
     }
 
@@ -335,6 +358,7 @@ impl IdSpaces {
                 Space::ControlBuses,
                 Space::Buffers,
                 Space::Transports,
+                Space::EventBuses,
             ]
         } else {
             &[
@@ -343,6 +367,7 @@ impl IdSpaces {
                 Space::ControlBuses,
                 Space::Buffers,
                 Space::Transports,
+                Space::EventBuses,
             ]
         };
         for &space in bounded {
@@ -415,6 +440,7 @@ mod tests {
             control_buses: 16384,
             buffers: 1024,
             transports: 8,
+            event_buses: 64,
         }
     }
 
@@ -613,5 +639,23 @@ mod tests {
             Ok(8),
             "above the eight outputs"
         );
+    }
+
+    /// **A client's event buses are the bottom half**, shared as the others
+    /// are; the top half is the MIDI bindings'.
+    #[test]
+    fn event_buses_stop_below_the_bindings_half() {
+        let mut whole = IdSpaces::new(shape(), IdShare::WHOLE);
+        assert_eq!(whole.alloc(Space::EventBuses, 1), Ok(0));
+        let mut second = IdSpaces::new(shape(), IdShare::new(1, 2).unwrap());
+        assert_eq!(second.alloc(Space::EventBuses, 1), Ok(16));
+        for _ in 1..32 {
+            whole.alloc(Space::EventBuses, 1).unwrap();
+        }
+        assert_eq!(
+            whole.alloc(Space::EventBuses, 1),
+            Err(IdError::Exhausted(Space::EventBuses))
+        );
+        assert_eq!(binding_event_reserved(64), 32);
     }
 }

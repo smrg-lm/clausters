@@ -181,3 +181,48 @@ export class ControlBusAllocator extends Allocator {
         super("control", spaces);
     }
 }
+
+/**
+ * The event-bus space of a client's {@link IdSpaces}: below the half the
+ * server's MIDI bindings take.
+ *
+ * An event bus carries notes, not samples, so what this hands out is its
+ * number -- a node's `notes` control, `Server.midiBind`'s routing and
+ * `Server.busEvent`'s target all take it as a number.
+ */
+export class EventBusAllocator {
+    private readonly spaces: IdSpaces;
+
+    constructor(spaces: IdSpaces) {
+        requireCore("an event-bus allocator");
+        this.spaces = spaces;
+    }
+
+    /**
+     * A free event bus. Throws when none is left -- exhaustion is an explicit
+     * failure, never an aliased index.
+     */
+    alloc(): number {
+        try {
+            return this.spaces.alloc("events", 1);
+        } catch {
+            throw new AllocationError(
+                "out of event buses: free one, or boot the server with more (--event-buses)",
+            );
+        }
+    }
+
+    /** Returns the bus to the pool. A double free throws. */
+    free(bus: number): void {
+        try {
+            this.spaces.release("events", Math.trunc(bus), 1);
+        } catch {
+            throw new AllocationError(`double free of event bus ${bus}: not currently allocated here`);
+        }
+    }
+
+    /** How many event buses are currently allocated. */
+    get inUse(): number {
+        return this.spaces.inUse("events");
+    }
+}

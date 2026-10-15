@@ -120,6 +120,22 @@ export class Node {
         return this;
     }
 
+    /**
+     * Gives events to this node, one that reads notes -- a `Voices` node or a
+     * plugin's (`/node_event`) -- as though they came from the event bus it
+     * reads. Each event is an object as `/bus_event` writes one
+     * (`{ kind: "note_on", key: 60, velocity: 0.8, note_id: 1 }`), plus what
+     * only an event for one node says: `{ kind: "control", control: "cutoff",
+     * value: 900, note_id: 1 }` sets a control of that note's voice alone.
+     * They go out at the ambient moment, so inside a routine at its logical
+     * beat.
+     */
+    nodeEvent(...events: Record<string, unknown>[]): this {
+        const payload = events.length === 1 ? events[0] : events;
+        this.srv().sendBundle([["/node_event", ["i", this.id], JSON.stringify(payload)]]);
+        return this;
+    }
+
     private async pluginEditor(command: string, payload: number[] = [], timeout = 10.0) {
         const server = this.srv();
         if (server.scoring) throw new CommandError("native plugin editor unavailable in an OSC score");
@@ -414,6 +430,76 @@ export class Synth extends Node {
      */
     static fromId(id: number, defname: string, server?: Server): Synth {
         return new Synth(defname, undefined, { adopt: id, server });
+    }
+}
+
+/**
+ * **N voices of one def, given to notes**: one node of the tree holding
+ * `voices` instances of a SynthDef or a FaustDef, all built with it.
+ *
+ * A note reaching it -- from the event bus its `notes` control names (what
+ * `Server.midiBind` routes a channel to, or what `Server.busEvent` writes), or
+ * given to it directly with `Node.nodeEvent` -- takes a free voice, resets it
+ * on its own memory and starts it with the note's frequency and amplitude;
+ * the note's end closes its `gate`, or frees the voice when the def has none.
+ * A voice whose def frees itself is free again, and with every voice busy a
+ * note takes the oldest released one, else the oldest held. So a note never
+ * makes a node: an `Event` whose `instrument` is this node plays one of its
+ * voices.
+ *
+ * ```ts
+ * const bus = server.eventBuses.alloc();
+ * const keys = new Voices("default", 8, { notes: bus }, { server }); // reads the bus
+ * server.midiBind(0, bus);                                          // MIDI channel 0 writes it
+ * ```
+ *
+ * It is a `Node`: `set` reaches every voice (and the voices to come), `free`
+ * frees them all.
+ */
+export class Voices extends Node {
+    /** The def its voices are instances of. */
+    readonly defname: string;
+    /** How many voices it holds. */
+    readonly voices: number;
+
+    /**
+     * Makes the node (`/voices_new`) with `voices` (1-256) instances of the
+     * def named `defname`, already loaded on the server. `controls` are the
+     * def's, set on every voice, and `notes`, the event bus it reads.
+     * `target` and `action` place it as `Synth` does. A plugin def (which
+     * plays its own voices), a GraphDef and a def holding a `diskIn` or
+     * `diskOut` are refused by the server with `/fail`.
+     */
+    constructor(defname: string, voices = 16, controls?: Controls, options: Placement = {}) {
+        const server = resolveServer(options.server);
+        const { target = ROOT_NODE_ID, action = AddAction.TAIL } = options;
+        const id = options.adopt ?? server.nodes.alloc();
+        if (options.adopt === undefined) {
+            server.sendMsg(
+                "/voices_new",
+                String(defname),
+                ["i", id],
+                ["i", action],
+                ["i", nodeId(target)],
+                ["i", Math.trunc(voices)],
+                ...flattenControls(controls),
+            );
+        }
+        super(id, server);
+        this.defname = defname;
+        this.voices = Math.trunc(voices);
+    }
+
+    /**
+     * What a note sets on its voice (`/voices_map`): `selector` is `"note"`
+     * (the frequency, `freq` by default), `"vel"` (the amplitude, `amp`),
+     * `"gate"`, `"bend"`, `"pressure"`, `"poly"` (a note's own pressure),
+     * `"timbre"`, `"lift"` (release velocity) or `"ccN"`; `control` is one of
+     * the def's, empty to clear the entry.
+     */
+    voiceMap(selector: string, control = ""): this {
+        this.srv().sendMsg("/voices_map", ["i", this.id], String(selector), String(control));
+        return this;
     }
 }
 

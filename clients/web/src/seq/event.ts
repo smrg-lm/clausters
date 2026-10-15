@@ -16,6 +16,7 @@
 
 import {
     event_of_midi as coreEventOfMidi,
+    event_node_note as coreEventNodeNote,
     event_synth as coreEventSynth,
     event_written_midinote as coreWrittenMidinote,
     event_delta as coreDelta,
@@ -27,6 +28,7 @@ import {
     split_degree as coreSplitDegree,
 } from "../core/clausters_core_web.js";
 import { main } from "../base/main.ts";
+import { Node } from "../defs/node.ts";
 import type { MsgArg, OscArg, TimedMessage } from "../base/osc.ts";
 
 /**
@@ -341,13 +343,23 @@ export class Event {
      * spelling (`add_action`, `has_gate`) -- what the core renders it from, and
      * what a document stores. A value that is not data (the `server` a played
      * event holds) is left out, and so are its curves (`automation`), which
-     * travel beside the keys.
+     * travel beside the keys. An `instrument` that is a node (a `Voices` node,
+     * a plugin's) is written as the node it is, `{ node: id }`.
      */
     keysData(): Record<string, unknown> {
         const out: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(this.props)) {
             // Its curves travel beside the keys.
             if (key === "automation") continue;
+            if (key === "instrument" && value instanceof Node) {
+                out.instrument = { node: value.id };
+                continue;
+            }
+            if (key === "instrument" && typeof value === "object" && value !== null
+                && typeof (value as { node?: unknown }).node === "number") {
+                out.instrument = { node: (value as { node: number }).node };
+                continue;
+            }
             const plain = typeof value === "number" || typeof value === "string"
                 || typeof value === "boolean" || Array.isArray(value);
             if (plain) out[SPELLED[key] ?? key] = value;
@@ -369,6 +381,13 @@ export class Event {
      * after the fact -- `free` cuts it, `release` ends it musically. The
      * scheduled self-release still arrives regardless.
      *
+     * **An `instrument` that is a node** -- a `Voices` node, a plugin's node,
+     * or `{ node: id }` -- makes no synth: the note is given to that node
+     * (`/node_event`), which plays it on a voice of its own. `node` is then
+     * that node, and `noteId` the note's id on it; every other number the
+     * event holds that is not reserved is a control of the note's voice. Such
+     * a note carries no curves.
+     *
      * Outside a clock the note plays immediately; inside a routine it emits
      * at the routine's logical beat.
      */
@@ -386,33 +405,46 @@ export class Event {
     }
 
     /**
-     * Cuts the played note **now** (`/node_free`), without waiting for its
-     * sustain. A no-op when the event has not sounded (a rest, or never
-     * played). The release already scheduled at play time still arrives and
-     * is harmless.
+     * Cuts the played note **now** (`/node_free`; on a node, a choke of the
+     * note), without waiting for its sustain. A no-op when the event has not
+     * sounded (a rest, or never played). The release already scheduled at play
+     * time still arrives and is harmless.
      */
     free(): void {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
-        if (typeof node === "number" && server) {
-            forget(server, node);
-            server.sendMsg("/node_free", ["i", node]);
+        if (typeof node !== "number" || !server) return;
+        if (typeof this.props.noteId === "number") {
+            nodeEvent(server, node, { kind: "choke", note_id: this.props.noteId });
+            return;
         }
+        forget(server, node);
+        server.sendMsg("/node_free", ["i", node]);
     }
 
     /**
      * Ends the played note **musically**, now: `gate 0` when it releases by
-     * gate, a plain `/node_free` otherwise. Same no-op rule as `free`.
+     * gate, a plain `/node_free` otherwise; a note on a node, its note-off.
+     * Same no-op rule as `free`.
      */
     release(): void {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
         if (typeof node !== "number" || !server) return;
+        if (typeof this.props.noteId === "number") {
+            nodeEvent(server, node, { kind: "note_off", note_id: this.props.noteId });
+            return;
+        }
         // The gesture is the one the note's own render ends it with.
         const [addr, ...args] = taggedMessage(synthRender(this.keysData(), node).release);
         forget(server, node);
         server.sendMsg(addr, ...(args as OscArg[]));
     }
+}
+
+/** An event given to `node`, by `Node.nodeEvent`. */
+function nodeEvent(server: EventDestination, node: number, event: Record<string, unknown>): void {
+    new Node(node, server as unknown as ConstructorParameters<typeof Node>[1]).nodeEvent(event);
 }
 
 /** The note on `node` is ended by hand: its curves stop being sent. */
@@ -424,7 +456,11 @@ function forget(server: EventDestination, node: number): void {
  * The keys the reference client spells with an underscore, as this client's
  * idiom spells them: the core reads the reference spelling.
  */
-const SPELLED: Record<string, string> = { addAction: "add_action", hasGate: "has_gate" };
+const SPELLED: Record<string, string> = {
+    addAction: "add_action",
+    hasGate: "has_gate",
+    noteId: "note_id",
+};
 
 /**
  * An event read back from keys the document stored, in the reference client's
@@ -452,6 +488,23 @@ export function synthRender(
     node: number,
 ): { start: [string, unknown][]; release: [string, unknown][]; sustain: number } {
     const answer = JSON.parse(coreEventSynth(JSON.stringify(keys), node));
+    if (answer.error) throw new Error(answer.error);
+    return answer;
+}
+
+/**
+ * A note's keys, its instrument a node, as the `/node_event` messages of note
+ * `note` on it, the core's render: `start` and `release`, each a list of
+ * `[tag, value]` arguments with the address first, and the `sustain` between
+ * them in beats.
+ *
+ * @internal
+ */
+export function nodeNoteRender(
+    keys: Record<string, unknown>,
+    note: number,
+): { start: [string, unknown][]; release: [string, unknown][]; sustain: number } {
+    const answer = JSON.parse(coreEventNodeNote(JSON.stringify(keys), note));
     if (answer.error) throw new Error(answer.error);
     return answer;
 }

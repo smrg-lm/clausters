@@ -131,9 +131,12 @@ def pvoice(inval, instrument, *args, artic=False, voice=None, **patterns):
     control's lag, a glide), and the note that ends a line releases it -- by
     its gate when the events say ``has_gate=True``, which an instrument with a
     gated envelope wants as it does under `pbind`, else by freeing the node,
-    which cuts the sound; on MIDI, notes that overlap; rendered into an
-    `clausters.seq.EventSequence`, a ``tie`` where a joined note keeps its
-    pitch and a slur over each run that moves. What varies inside one note is
+    which cuts the sound; on an ``instrument`` that is a node (a
+    `clausters.defs.Voices` node, a plugin's), each joined note-on joins the
+    note before it, which keeps its voice; on MIDI, notes that overlap;
+    rendered into an `clausters.seq.EventSequence`, a ``tie`` where a joined
+    note keeps its pitch and a slur over each run that moves, and ``joins``
+    on each joined note, naming the one it goes on from. What varies inside one note is
     an inflection, and is the note's own expression, not this."""
     streams = {key: as_stream(value)
                for key, value in _bindings(args, patterns).items()}
@@ -160,7 +163,8 @@ def pvoice(inval, instrument, *args, artic=False, voice=None, **patterns):
             following = None
         joined = _joins(note, following, artic)
         if previous is not None and previous.get("node") is not None:
-            note["continues"] = previous["node"]
+            # On a node, the note it continues is the previous one's id.
+            note["continues"] = previous.get("note_id", previous["node"])
         if joined:
             note["held"] = True
         inval = yield note

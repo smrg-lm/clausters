@@ -293,6 +293,34 @@ pub unsafe extern "C" fn clausters_core_event_synth(
     }
 }
 
+/// A note event whose instrument is a node as the messages of one note on
+/// it: `{"event": {...}, "note": id}` in, `{"start": [..], "release": [..],
+/// "sustain": beats}` out, each message a `/node_event` as a list of
+/// `[tag, value]` arguments with the address first
+/// (`clausters_core::event::render::node_note`).
+///
+/// # Safety
+/// `request` must be readable for `len` bytes, `out` null or writable for
+/// `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_event_node_note(
+    request: *const u8,
+    len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from the caller.
+    unsafe {
+        json_door(request, len, out, out_cap, |req| {
+            let note = req.get("note").and_then(Value::as_i64).unwrap_or(-1) as i32;
+            match render::node_note(&event_of(req), note) {
+                Some(s) => s.to_json(),
+                None => json!({"error": "only a note on a node renders a node note"}),
+            }
+        })
+    }
+}
+
 /// What a voice's joins write on a page: `{"pitches": [midinote, ...],
 /// "joins": [[from, to], ...]}` in, `{"ties": [i, ...], "slurs": [[from, to],
 /// ...]}` out (`clausters_core::event::notation::articulation`).
@@ -511,6 +539,19 @@ mod tests {
         let bad = call(clausters_core_event_midi, r#"{"event":{"type":"osc"}}"#);
         assert!(bad["error"].is_string());
         assert!(call(clausters_core_event_synth, "nope")["error"].is_string());
+        let n = call(
+            clausters_core_event_node_note,
+            r#"{"event":{"midinote":69,"instrument":{"node":9}},"note":3}"#,
+        );
+        assert_eq!(n["start"][0], json!(["s", "/node_event"]));
+        assert_eq!(n["start"][1], json!(["i", 9]));
+        assert!(
+            call(
+                clausters_core_event_node_note,
+                r#"{"event":{"midinote":69},"note":3}"#
+            )["error"]
+                .is_string()
+        );
     }
 
     #[test]

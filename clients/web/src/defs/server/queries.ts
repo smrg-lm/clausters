@@ -24,6 +24,7 @@ import type { BufferInfo, DefInfo, UgenInfo } from "../info.ts";
 import { Group, ROOT_NODE_ID, nodeId } from "../node.ts";
 import type { NodeLike } from "../node.ts";
 import {
+    DEFAULT_EVENT_BUSES,
     DEFAULT_MAX_BUFFERS,
     DEFAULT_MAX_GRAPH_CHILDREN,
     DEFAULT_MAX_NODES,
@@ -196,6 +197,7 @@ export class ServerQueries {
             maxFrame: at(13, 65536),
             maxStreamBuses: at(14, 128),
             transports: at(15, 1),
+            eventBuses: at(16, DEFAULT_EVENT_BUSES),
         };
     }
 

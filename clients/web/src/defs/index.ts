@@ -67,10 +67,10 @@ export {
 export { EmbedSampleClock, WsSampleClock, sampleClockFor } from "./clocksync.ts";
 export type { Anchor, ServerSampleClock } from "./clocksync.ts";
 
-export { AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth } from "./node.ts";
+export { AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth, Voices } from "./node.ts";
 export type { Controls, NodeLike, Placement } from "./node.ts";
 
-export { AudioBusAllocator, Bus, ControlBusAllocator } from "./bus.ts";
+export { AudioBusAllocator, Bus, ControlBusAllocator, EventBusAllocator } from "./bus.ts";
 export type { BusLike, BusRate } from "./bus.ts";
 
 export { Buffer, BufferAllocator, NUM_BUFFERS } from "./buffer.ts";

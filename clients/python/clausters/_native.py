@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 90
+CORE_ABI_VERSION = 91
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -561,7 +561,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_event_sustain.restype = ctypes.c_double
     lib.clausters_core_event_sustain.argtypes = [ctypes.c_double] * 4
     # Rendering an event (ABI v72): JSON in, size-then-fill out.
-    for name in ("event_synth", "event_midi", "event_of_midi", "articulation",
+    for name in ("event_synth", "event_node_note", "event_midi", "event_of_midi", "articulation",
                  "plugin_catalog", "plugin_search", "plugin_reference"):
         fn = getattr(lib, f"clausters_core_{name}")
         fn.restype = ctypes.c_size_t
@@ -913,8 +913,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_ids_new.restype = ctypes.c_void_p
     lib.clausters_ids_new.argtypes = [
         ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64,
-        ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint32, ctypes.c_uint32,
-        ctypes.c_int32,
+        ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint32,
+        ctypes.c_uint32, ctypes.c_int32,
     ]
     lib.clausters_ids_free.restype = None
     lib.clausters_ids_free.argtypes = [ctypes.c_void_p]
@@ -3557,6 +3557,15 @@ def event_synth(keys: dict, node: int) -> dict:
                       "event synth")
 
 
+def event_node_note(keys: dict, note: int) -> dict:
+    """A note event whose instrument is a node (``{"node": id}``) as the
+    ``/node_event`` messages of note ``note`` on it: ``{"start", "release",
+    "sustain"}``, each message a list of ``[tag, value]`` arguments with the
+    address first. `ValueError` for anything else."""
+    return _json_call(lib().clausters_core_event_node_note,
+                      {"event": keys, "note": int(note)}, "event node note")
+
+
 def shape_value(shape: int, curve: float, a: float, b: float, t: float) -> float:
     """One envelope segment's level at ``t`` in ``[0, 1)``, from ``a`` to ``b``
     by SuperCollider's ``shape`` number and ``curve`` (what ``EnvGen`` plays)."""
@@ -4245,27 +4254,28 @@ class TempoMap:
 
 class IdSpaces:
     """**A client's id spaces** -- node ids, audio buses, control buses,
-    buffers, transports -- sized from the server and sliced by a share
+    buffers, transports, event buses -- sized from the server and sliced by a share
     (`clausters_ids_new`).
 
     The policy is the core's: the node table's client range, the audio buses
     above the server's own outputs, both bus spaces clear of their GraphDef
-    windows, the transports above the one addressed by number, the last share
+    windows, the transports above the one addressed by number, the event
+    buses below the MIDI bindings' half, the last share
     taking the remainder. Every allocator a `Server`
     has is a view of one of these, so the numbers a script, a page and the GUI
     host hand out follow one rule. Internally locked: the clock thread
     allocates while the reply thread takes ended nodes back.
     """
 
-    NODES, AUDIO, CONTROL, BUFFERS, TRANSPORTS = 0, 1, 2, 3, 4
+    NODES, AUDIO, CONTROL, BUFFERS, TRANSPORTS, EVENTS = 0, 1, 2, 3, 4, 5
 
     def __init__(self, *, max_nodes: int, audio_buses: int, outputs: int,
                  control_buses: int, buffers: int, transports: int = 16,
-                 index: int = 0, of: int = 1, score: bool = False):
+                 event_buses: int = 64, index: int = 0, of: int = 1, score: bool = False):
         self._lib = lib()
         self._handle = self._lib.clausters_ids_new(
             int(max_nodes), int(audio_buses), int(outputs), int(control_buses),
-            int(buffers), int(transports), int(index), int(of), 1 if score else 0)
+            int(buffers), int(transports), int(event_buses), int(index), int(of), 1 if score else 0)
         if not self._handle:
             raise ValueError(f"id share {index} is outside a split of {of}")
 

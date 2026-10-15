@@ -162,8 +162,8 @@ impl Host {
 
 /// The shape a `/server_query.reply` states: audio buses, control buses and
 /// outputs first, the node table and the buffer slots at 7 and 8, the
-/// transports at 15 -- the default count for a reply that stops short of
-/// them. `None` for a reply too short to carry the rest.
+/// transports at 15 and the event buses at 16 -- the default count for a
+/// reply that stops short of them. `None` for a reply too short to carry the rest.
 fn shape_of(args: &[OscType]) -> Option<ServerShape> {
     let int = |i: usize| match args.get(i) {
         Some(OscType::Int(v)) if *v >= 0 => Some(*v as usize),
@@ -176,6 +176,7 @@ fn shape_of(args: &[OscType]) -> Option<ServerShape> {
         max_nodes: int(7)?,
         buffers: int(8)?,
         transports: int(15).unwrap_or(ServerShape::DEFAULT.transports),
+        event_buses: int(16).unwrap_or(ServerShape::DEFAULT.event_buses),
     })
 }
 

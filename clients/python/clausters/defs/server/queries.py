@@ -23,6 +23,7 @@ from ..info import (
 )
 from ..node import Group, ROOT_NODE_ID
 from .options import (
+    DEFAULT_EVENT_BUSES,
     DEFAULT_MAX_BUFFERS,
     DEFAULT_MAX_GRAPH_CHILDREN,
     DEFAULT_MAX_NODES,
@@ -174,6 +175,7 @@ class ServerQueries:
             max_frame=at(13, int, 65536),
             max_stream_buses=at(14, int, 128),
             transports=at(15, int, 1),
+            event_buses=at(16, int, DEFAULT_EVENT_BUSES),
         )
 
     # ---- node tree introspection (RT only) ----

@@ -353,6 +353,7 @@ impl JsIdSpaces {
         control_buses: u32,
         buffers: u32,
         transports: u32,
+        event_buses: u32,
         index: u32,
         of: u32,
     ) -> Result<JsIdSpaces, JsError> {
@@ -366,12 +367,14 @@ impl JsIdSpaces {
                 control_buses,
                 buffers,
                 transports,
+                event_buses,
             ),
             share,
         )))
     }
 
     /// The spaces of an offline score: node ids never run out.
+    #[allow(clippy::too_many_arguments)]
     pub fn score(
         max_nodes: u32,
         audio_buses: u32,
@@ -379,6 +382,7 @@ impl JsIdSpaces {
         control_buses: u32,
         buffers: u32,
         transports: u32,
+        event_buses: u32,
     ) -> JsIdSpaces {
         JsIdSpaces(clausters_core::ids::IdSpaces::score(js_shape(
             max_nodes,
@@ -387,11 +391,12 @@ impl JsIdSpaces {
             control_buses,
             buffers,
             transports,
+            event_buses,
         )))
     }
 
     /// A run of `width` ids of `space` (`"nodes"`, `"audio"`, `"control"`,
-    /// `"buffers"`, `"transports"`); throws when the space is exhausted.
+    /// `"buffers"`, `"transports"`, `"events"`); throws when the space is exhausted.
     pub fn alloc(&mut self, space: &str, width: u32) -> Result<f64, JsError> {
         let space = js_space(space)?;
         self.0
@@ -444,6 +449,7 @@ fn js_shape(
     control_buses: u32,
     buffers: u32,
     transports: u32,
+    event_buses: u32,
 ) -> clausters_core::ids::ServerShape {
     clausters_core::ids::ServerShape {
         max_nodes: max_nodes as usize,
@@ -452,6 +458,7 @@ fn js_shape(
         control_buses: control_buses as usize,
         buffers: buffers as usize,
         transports: transports as usize,
+        event_buses: event_buses as usize,
     }
 }
 
@@ -1389,6 +1396,22 @@ pub fn event_synth(event: &str, node: i32) -> String {
     match clausters_core::event::render::synth(&keys, node) {
         Some(s) => s.to_json().to_string(),
         None => serde_json::json!({"error": "only a note renders a synth"}).to_string(),
+    }
+}
+
+/// JS face: a note event whose instrument is a node as the `/node_event`
+/// messages of note `note` on it, `{"start", "release", "sustain"}` with
+/// `[tag, value]` arguments, or `{"error"}` for anything else.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn event_node_note(event: &str, note: i32) -> String {
+    let keys = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(event)
+        .unwrap_or_default();
+    match clausters_core::event::render::node_note(&keys, note) {
+        Some(s) => s.to_json().to_string(),
+        None => {
+            serde_json::json!({"error": "only a note on a node renders a node note"}).to_string()
+        }
     }
 }
 

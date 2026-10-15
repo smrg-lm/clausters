@@ -33,6 +33,8 @@ DEFAULT_MAX_BUFFERS = 4096
 DEFAULT_MAX_GRAPH_CHILDREN = 512
 # The transports a server boots with when no ``--transports`` says otherwise.
 DEFAULT_TRANSPORTS = 16
+# The event buses a server boots with when no ``--event-buses`` says otherwise.
+DEFAULT_EVENT_BUSES = 64
 DEFAULT_MAX_UGEN_INPUTS = 256
 # The audio-tap region (`--taps`/`--tap-frames`): pre-allocated sample rings
 # an audio bus can be routed into with `Server.tap`, read by a GUI host out of
@@ -56,7 +58,7 @@ class ServerOptions:
       `Server.query_info`.
     - **Behavior** (``workers``, ``tcp``, ``ws``, ``midi``, ``persist``,
       ``max_frame``, ``max_stream_buses``, ``max_clients``, ``transports``,
-      ``pin``):
+      ``event_buses``, ``pin``):
       server-only, no client-side
       counterpart. Their default ``None`` emits **no flag**, leaving the
       server's own precedence intact (CLI flag > project config > user
@@ -145,6 +147,11 @@ class ServerOptions:
     #: more sequences at once. `ServerInfo.transports` reads
     #: back what it has.
     transports: "int | None" = None
+    #: Event buses, where MIDI, event lanes and `Server.bus_event` write notes
+    #: and a `clausters.defs.Voices` or plugin node reads them
+    #: (``--event-buses``); the server boots 64 by default, the top half the
+    #: MIDI bindings'. `ServerInfo.event_buses` reads back what it has.
+    event_buses: "int | None" = None
     #: The audio host/backend by name (``--host``): ``"jack"``, ``"alsa"``,
     #: ``"pipewire"``, ``"coreaudio"``, ``"wasapi"`` -- whatever the build
     #: has. ``None`` takes the platform's default.
@@ -221,6 +228,8 @@ class ServerOptions:
             flags += ["--max-clients", str(self.max_clients)]
         if self.transports is not None:
             flags += ["--transports", str(self.transports)]
+        if self.event_buses is not None:
+            flags += ["--event-buses", str(self.event_buses)]
         if self.pin is not None:
             cpus = self.pin if isinstance(self.pin, str) \
                 else ",".join(str(c) for c in self.pin)
@@ -272,6 +281,9 @@ class ServerInfo:
     #: ``0`` to ``transports - 1`` (`Server.transport_at`). Falls back to the
     #: one transport a server too old to report it had.
     transports: int = 1
+    #: How many event buses the server has (``--event-buses``). Falls back to
+    #: the default against a server too old to report it.
+    event_buses: int = DEFAULT_EVENT_BUSES
 
     def __str__(self) -> str:
         drift = ("" if self.actual_sample_rate == self.nominal_sample_rate
@@ -290,6 +302,7 @@ class ServerInfo:
             f"  frame   {self.max_frame} bytes max",
             f"  stream  {self.max_stream_buses} buses per /bus_stream",
             f"  transports {self.transports}",
+            f"  event buses {self.event_buses}",
         ])
 
 

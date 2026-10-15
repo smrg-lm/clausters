@@ -171,6 +171,7 @@ SERVER = dict(
     channels=2, inputChannels=0, audioBuses=1024, controlBuses=16384,
     maxNodes=1024, maxBuffers=1024, maxGraphChildren=64, maxUgenInputs=64,
     taps=4, tapFrames=8192, maxFrame=65536, maxStreamBuses=128, transports=8,
+    eventBuses=32,
 )
 case("server", SERVER,
      ServerInfo(block_size=64, nominal_sample_rate=48000.0,
@@ -178,7 +179,7 @@ case("server", SERVER,
                 audio_buses=1024, control_buses=16384, max_nodes=1024,
                 max_buffers=1024, max_graph_children=64, max_ugen_inputs=64,
                 taps=4, tap_frames=8192, max_frame=65536, max_stream_buses=128,
-                transports=8))
+                transports=8, event_buses=32))
 DRIFTED = dict(SERVER, actualSampleRate=48001.5, taps=0, tapFrames=0)
 case("server", DRIFTED,
      ServerInfo(block_size=64, nominal_sample_rate=48000.0,
@@ -186,7 +187,7 @@ case("server", DRIFTED,
                 audio_buses=1024, control_buses=16384, max_nodes=1024,
                 max_buffers=1024, max_graph_children=64, max_ugen_inputs=64,
                 taps=0, tap_frames=0, max_frame=65536, max_stream_buses=128,
-                transports=8))
+                transports=8, event_buses=32))
 
 # ---- numbers that find a wrong rounding rule ---------------------------------
 # An exact tie goes to the even digit in Python and to the larger one in

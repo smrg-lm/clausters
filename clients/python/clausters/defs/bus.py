@@ -213,3 +213,33 @@ class ControlBusAllocator(_Allocator):
 
     def __init__(self, spaces: "_native.IdSpaces"):
         super().__init__(spaces, "control")
+
+
+class EventBusAllocator:
+    """The event-bus space: below the half the server's MIDI bindings take.
+
+    An event bus carries notes, not samples, so what this hands out is its
+    number -- a node's ``notes`` control, `Server.midi_bind`'s routing and
+    `Server.bus_event`'s target all take it as an int."""
+
+    def __init__(self, spaces: "_native.IdSpaces"):
+        self._spaces = spaces
+
+    def alloc(self) -> int:
+        """A free event bus. Raises when none is left -- exhaustion is an
+        explicit failure, never an aliased index."""
+        index = self._spaces.alloc(_native.IdSpaces.EVENTS, 1)
+        if index is None:
+            raise RuntimeError("out of event buses: free one, or boot the server with "
+                               "more (--event-buses)")
+        return index
+
+    def free(self, bus: int):
+        """Returns the bus to the pool. A double free raises."""
+        if not self._spaces.release(_native.IdSpaces.EVENTS, int(bus), 1):
+            raise RuntimeError(f"double free of event bus {bus}: not currently allocated here")
+
+    @property
+    def in_use(self) -> int:
+        """How many event buses are currently allocated."""
+        return self._spaces.in_use(_native.IdSpaces.EVENTS)

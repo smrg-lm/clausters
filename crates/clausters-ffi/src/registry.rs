@@ -168,7 +168,7 @@ use clausters_core::ids::{IdError, IdShare, IdSpaces, ServerShape, Space};
 pub struct FfiIdSpaces(pub(crate) Mutex<IdSpaces>);
 
 /// The space a small integer names across the ABI: 0 nodes, 1 audio buses, 2
-/// control buses, 3 buffers, 4 transports.
+/// control buses, 3 buffers, 4 transports, 5 event buses.
 fn space_of(code: i32) -> Option<Space> {
     Some(match code {
         0 => Space::Nodes,
@@ -176,6 +176,7 @@ fn space_of(code: i32) -> Option<Space> {
         2 => Space::ControlBuses,
         3 => Space::Buffers,
         4 => Space::Transports,
+        5 => Space::EventBuses,
         _ => return None,
     })
 }
@@ -192,6 +193,7 @@ pub extern "C" fn clausters_ids_new(
     control_buses: u64,
     buffers: u64,
     transports: u64,
+    event_buses: u64,
     index: u32,
     of: u32,
     score: i32,
@@ -203,6 +205,7 @@ pub extern "C" fn clausters_ids_new(
         control_buses: control_buses as usize,
         buffers: buffers as usize,
         transports: transports as usize,
+        event_buses: event_buses as usize,
     };
     let Ok(share) = IdShare::new(index, of) else {
         return std::ptr::null_mut();

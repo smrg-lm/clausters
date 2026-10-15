@@ -117,6 +117,7 @@ export function newPools(shape: PoolShape = ENGINE_SHAPE): Pools {
             shape.controlBuses,
             shape.buffers,
             shape.transports,
+            shape.eventBuses,
             0,
             1,
         ),
@@ -148,6 +149,7 @@ export interface PoolShape {
     controlBuses: number;
     buffers: number;
     transports: number;
+    eventBuses: number;
 }
 
 /**
@@ -161,6 +163,7 @@ export const ENGINE_SHAPE: PoolShape = {
     controlBuses: 16384,
     buffers: 4096,
     transports: 16,
+    eventBuses: 64,
 };
 
 /** A `Pool` over one space of an `IdSpaces`, throwing rather than returning `undefined`. */
@@ -254,6 +257,7 @@ export function pageIds(): IdSpaces {
         ENGINE_SHAPE.controlBuses,
         ENGINE_SHAPE.buffers,
         ENGINE_SHAPE.transports,
+        ENGINE_SHAPE.eventBuses,
         0,
         1,
     );

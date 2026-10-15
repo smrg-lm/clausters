@@ -21,6 +21,7 @@ grid), `streams` (the subscriptions the server pushes) and `midi` (what the
 server's MIDI plays).
 """
 
+import json
 import time
 from dataclasses import replace
 from typing import TYPE_CHECKING
@@ -43,13 +44,14 @@ from ...base.timebase import LogicalTimebase, SampleClockTimebase
 #: What this client sent the audio server and what came back
 #: (`clausters.log`). Silent unless asked.
 log = _package_log.getChild("server")
-from ..bus import AudioBusAllocator, ControlBusAllocator
+from ..bus import AudioBusAllocator, ControlBusAllocator, EventBusAllocator
 from ..buffer import BufferAllocator
 from ..node import NodeIdAllocator, ROOT_NODE_ID
 from ...base.ids import WHOLE as WHOLE_SHARE, IdShare
 from .options import (
     DEFAULT_AUDIO_BUSES,
     DEFAULT_CONTROL_BUSES,
+    DEFAULT_EVENT_BUSES,
     DEFAULT_MAX_BUFFERS,
     DEFAULT_MAX_GRAPH_CHILDREN,
     DEFAULT_MAX_NODES,
@@ -240,6 +242,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         #: what sends the curves of the events this server plays (`curves`),
         #: made on first use.
         self._curves = None
+        #: the last note id `play_event` gave a note on a node.
+        self._last_note = 0
         #: the one sample-clock reader every clock locked to this server shares
         #: (`sample_clock`), built on first use and released by `close`. There
         #: is a single counter to model, so there is a single model of it.
@@ -404,6 +408,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
             outputs=info.channels,
             inputs=info.input_channels,
             transports=info.transports,
+            event_buses=info.event_buses,
         )
         self._build_allocators(False)
         return self
@@ -522,13 +527,16 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         if kind == "midi":
             raise ValueError("a midi event plays on a MIDI destination (a MidiServer), "
                              "not on one that carries OSC")
+        keys = event.keys_data()
+        if isinstance(keys.get("instrument"), dict):
+            return self._play_node_note(event, keys)
         # A note of a voice that `continues` a node sets it rather than starting
         # one (`clausters.seq.patterns.eventpatterns.pvoice`).
         continued = event.get("continues")
         node_id = int(continued) if continued is not None else self._node_id()
         # The messages are the core's render of the event, so every client
         # starts and ends a note with the same ones.
-        synth = _native.event_synth(event.keys_data(), node_id)
+        synth = _native.event_synth(keys, node_id)
         when = Moment.current()
         # Outside any clock the wall is read once, for the note, its release
         # and its curves alike.
@@ -546,6 +554,42 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
                           (_native.tagged_message(synth["release"]),), pin=pin)
         self.curves.follow(node_id)
         return node_id
+
+    def _play_node_note(self, event, keys) -> int:
+        """A note whose instrument is a node (``{"node": id}``, a `Voices`
+        node or a plugin's): its note-on given to that node, identified by a
+        note id of this handle's, and its note-off at its sustain -- the
+        core's render, as for a synth. The id is written on the event as
+        ``note_id``, which is what a voice's next note joins and what `free`
+        and `release` end; the node is returned."""
+        if event.get("automation"):
+            raise ValueError("a note on a node carries no curves: a curve sets a control "
+                             "of a synth, and the node's voices are not one")
+        self._last_note = self._last_note % 0x7FFFFFFF + 1
+        note_id = self._last_note
+        rendered = _native.event_node_note(keys, note_id)
+        when = Moment.current()
+        pin = self.curves.wall() if when.clock is None else None
+        self._send_at(when, (_native.tagged_message(rendered["start"]),), pin=pin)
+        if rendered["release"]:
+            self._send_at(when.at(rendered["sustain"]),
+                          (_native.tagged_message(rendered["release"]),), pin=pin)
+        event["note_id"] = note_id
+        return int(keys["instrument"]["node"])
+
+    def bus_event(self, bus: int, *events: dict):
+        """Write events on event bus ``bus`` (``/bus_event``): whatever reads
+        it -- a `clausters.defs.Voices` node or a plugin's node whose
+        ``notes`` names it -- plays them. Each event is a dict:
+        ``{"kind": "note_on", "channel": 0, "key": 60, "velocity": 0.8,
+        "note_id": 1}``, then ``note_off``, ``choke``, ``expression``,
+        ``controller``, ``bend``, ``pressure`` and ``program``; a note-on that
+        ``joins`` a sounding note's id goes on in its voice.
+        They go out at the ambient moment, so inside a routine at its logical
+        beat. Returns ``self``."""
+        payload = events[0] if len(events) == 1 else list(events)
+        self.send_bundle(("/bus_event", int(bus), json.dumps(payload)))
+        return self
 
     @property
     def curves(self):
@@ -740,11 +784,14 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
             buffers=opts.max_buffers,
             transports=(opts.transports if opts.transports is not None
                         else DEFAULT_TRANSPORTS),
+            event_buses=(opts.event_buses if opts.event_buses is not None
+                         else DEFAULT_EVENT_BUSES),
             index=self.share.index, of=self.share.of, score=score)
         self.nodes = NodeIdAllocator(self.ids)
         self.audio_buses = AudioBusAllocator(self.ids)
         self.control_buses = ControlBusAllocator(self.ids)
         self.buffers = BufferAllocator(self.ids)
+        self.event_buses = EventBusAllocator(self.ids)
 
     def _ensure_recycler(self):
         """Starts the notification listener once per server handle: a

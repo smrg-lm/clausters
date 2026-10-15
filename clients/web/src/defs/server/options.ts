@@ -59,6 +59,9 @@ export const DEFAULT_TAP_FRAMES = 16384;
 /** The transports a server boots with when no `--transports` says otherwise. */
 export const DEFAULT_TRANSPORTS = 16;
 
+/** The event buses a server boots with when no `--event-buses` says otherwise. */
+export const DEFAULT_EVENT_BUSES = 64;
+
 /**
  * The sizes a client's allocators need. They are a property of the *server*,
  * so `Server.attach`/`Server.boot` read them from `/server_query` rather than
@@ -84,6 +87,12 @@ export interface ServerSizing {
      * shares when there is one.
      */
     transports: number;
+    /**
+     * Event buses (`--event-buses`), where MIDI, event lanes and
+     * `Server.busEvent` write notes and a `Voices` or plugin node reads them;
+     * the top half is the MIDI bindings'.
+     */
+    eventBuses: number;
 }
 
 /** The static configuration a running server reports over `/server_query`. */
@@ -115,6 +124,11 @@ export interface ServerInfo extends ServerSizing {
      * a server too old to report it had.
      */
     transports: number;
+    /**
+     * How many event buses the server has (`--event-buses`). Falls back to
+     * the default against a server too old to report it.
+     */
+    eventBuses: number;
 }
 
 /**
@@ -144,6 +158,7 @@ export function formatServerInfo(info: ServerInfo): string {
         `  frame   ${info.maxFrame} bytes max`,
         `  stream  ${info.maxStreamBuses} buses per /bus_stream`,
         `  transports ${info.transports}`,
+        `  event buses ${info.eventBuses}`,
     ].join("\n");
 }
 

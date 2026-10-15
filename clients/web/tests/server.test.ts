@@ -30,7 +30,9 @@ import { WsConnection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
-import { Group, Synth } from "../src/defs/node.ts";
+import { Group, Synth, Voices } from "../src/defs/node.ts";
+import { Event } from "../src/seq/event.ts";
+import { Automation } from "../src/multitrack.ts";
 import { formatLoad, formatMidiBinding, loadName, Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { FaustDef } from "../src/defs/faustdef.ts";
@@ -646,28 +648,66 @@ test("a MIDI binding is made, mapped, read back and removed", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        server.midiBind(2, "default", { gate: true });
-        server.midiMap(2, "cc74", "cutoff");
+        server.midiBind(2, "default");
+        server.midiMap(2, "cc74", "pan");
         server.midiBindZone(15, 3, "default");
-        server.midiMap(15, "timbre", "bright", 71);
+        server.midiMap(15, "timbre", "slide", 71);
+        server.midiBind(5, 3);
         // MIDI 2.0 packets: a note-on whose velocity word has its top bit set.
         server.midiUmp(0x4092_3c00, 0xc000_0000);
         const bindings = await server.midiQuery();
-        assert.deepEqual([...bindings.keys()].sort((a, b) => a - b), [2, 15]);
+        assert.deepEqual([...bindings.keys()].sort((a, b) => a - b), [2, 5, 15]);
         const channel = bindings.get(2)!;
         assert.equal(channel.kind, "channel");
-        assert.equal(channel.gate, true);
-        assert.equal(channel.controls.cc74, "cutoff");
+        assert.equal(channel.controls.cc74, "pan");
         assert.equal(channel.timbreCc, null);
+        assert.equal(typeof channel.node, "number", "the node the binding made");
+        assert.ok(channel.bus! >= 32, "on a bus of the bindings' half");
+        const routed = bindings.get(5)!;
+        assert.equal(routed.bus, 3);
+        assert.equal(routed.node, null);
+        assert.match(formatMidiBinding(routed), /^channel 5: bus 3/);
         const zone = bindings.get(15)!;
         assert.equal(zone.kind, "zone");
         assert.equal(zone.members, 3);
-        assert.equal(zone.controls.timbre, "bright");
+        assert.equal(zone.controls.timbre, "slide");
         assert.equal(zone.timbreCc, 71);
         assert.match(formatMidiBinding(zone), /^zone on 15 \(3 members\): default/);
 
         server.midiUnbind(2);
+        server.midiUnbind(5);
         const left = await server.midiQuery([2, 15]);
         assert.deepEqual([...left.keys()], [15]);
+    });
+});
+
+test("a Voices node reads a bus, and an event on it is a note of it", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        const bus = server.eventBuses.alloc();
+        assert.equal(bus, 0);
+        const keys = new Voices("default", 4, { notes: bus }, { server });
+        keys.voiceMap("cc74", "pan");
+        server.busEvent(bus, { kind: "note_on", key: 69, velocity: 0.2, note_id: 1 });
+        const first = new Event({ instrument: keys, midinote: 72, amp: 0.2, dur: 0.1 }).play(server);
+        assert.equal(first.get("node"), keys.id);
+        assert.equal(first.get("noteId"), 1);
+        const second = new Event({ instrument: { node: keys.id }, continues: 1, held: true })
+            .play(server);
+        assert.equal(second.get("noteId"), 2);
+        second.release();
+        server.busEvent(bus, { kind: "note_off", key: 69, note_id: 1 });
+        await server.sync();
+        const info = await keys.info();
+        assert.equal(info.exists, true, "one node, its voices inside it");
+        assert.throws(
+            () => new Event({ instrument: keys, automation: [new Automation({ target: { control: "amp" } })] })
+                .play(server),
+            /curves/,
+        );
+        keys.free();
+        server.eventBuses.free(bus);
+        assert.throws(() => server.eventBuses.free(bus), /double free/);
     });
 });
