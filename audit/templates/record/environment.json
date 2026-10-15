@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "status": "template",
+  "cpu": null,
+  "memory": null,
+  "os_kernel": null,
+  "power_thermal_and_concurrent_load": null,
+  "affinity_and_scheduling": null,
+  "audio": null,
+  "gpu_driver_backend": null,
+  "display": null,
+  "browser": null,
+  "tools": [],
+  "unavailable_fields_with_reasons": []
+}

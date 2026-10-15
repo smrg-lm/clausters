@@ -1,0 +1,59 @@
+{
+  "format_version": 1,
+  "id": "gui",
+  "status": "ready",
+  "scope": "Native host default-feature headless logic tests plus separately recorded rendering/interaction and browser parity evidence.",
+  "acceptance": "Tests must exit zero and execute at least one test; suite wall time is descriptive. Device/rendering review requires evidence and has no invented performance threshold.",
+  "steps": [
+    {
+      "id": "gui-correctness",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--release",
+        "--lib"
+      ],
+      "cwd": "clients/gui",
+      "parser": "rust-tests",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "build-gui",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "--bin",
+        "clausters-gui"
+      ],
+      "cwd": "clients/gui",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "gui-device",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/gui.md for idle/active/scaling trials and native/browser parity. Attach raw captures and screenshots with backend, physical viewport and scale. Do not report test elapsed time as frame time."
+    },
+    {
+      "id": "gui-review",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/review.md for shared-rule placement, data bounds and window lifecycle; attach source-based findings and exclusions."
+    }
+  ],
+  "unit": "components"
+}

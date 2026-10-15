@@ -1,0 +1,5 @@
+# Local fallback only; prefer an external work root.
+.local/
+__pycache__/
+*.pyc
+records/

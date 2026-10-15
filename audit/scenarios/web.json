@@ -1,0 +1,78 @@
+{
+  "format_version": 1,
+  "id": "web",
+  "unit": "web",
+  "status": "ready",
+  "scope": "TypeScript client and its node/browser runtime, audited separately with clausters-python as API/behavior reference.",
+  "acceptance": "Build precedes test; node/browser suite must execute and hidden skips prevent acceptance. Explicit API/example parity and browser performance review required.",
+  "steps": [
+    {
+      "id": "web-native-server",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "web-native-gui",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--bin",
+        "clausters-gui"
+      ],
+      "cwd": "clients/gui",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "web-build",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "bash",
+        "./build.sh"
+      ],
+      "cwd": "clients/web",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "web-tests",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "bash",
+        "./test.sh"
+      ],
+      "cwd": "clients/web",
+      "parser": "node-tests",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "web-review",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/clients.md. Compare API and example calls side by side against the Python reference, check binding vectors, Worker/OPFS paths, scheduling and browser timing/allocations. Retain browser/version/flags and unsupported cases."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# Every component crate
+
+The workspace campaign must review every components entry in the saved manifest's crates inventory, not only the server and GUI executable crates. This includes core, C/wasm bindings, document, editing, applications, MIDI, network, notation, plugin hosting, browser engine/NRT support and any tracked fuzz/test-fixture packages. The editor crate belongs to its independent editor unit.
+
+For each manifest, inspect its role, public contracts, ownership/thread/unsafe boundaries, input validation, numeric/timing rules, allocation behavior, dependencies and useful tests. Select feature/target combinations appropriate to that crate. Root workspace native tests do not prove wasm, C ABI, plugin SDK or target-specific correctness. Execute the applicable existing feature/binding tests and build gates in the isolated clone, with external targets; preserve commands, outputs and skips. Code review should identify duplicated language-agnostic logic and misplaced client-only implementations.
+
+Attach crate-review evidence with crate_coverage keyed by every components manifest path, exactly as inventoried. Each entry has status, reason and evidence pointing into the retained review artifact. For example, a reviewed entry may be {"status":"passed","reason":"Contracts and relevant test/target evidence reviewed","evidence":"component-review.md#core"}. A missing/new crate blocks coverage; an unsupported target is documented skipped scope, never an implicit pass. The top-level manual step cannot pass while any crate entry is unreviewed or skipped. Attach at least the per-crate review table as an artifact.
+
+The evidence should distinguish fixture/fuzz tooling from production code by role and risk, not silently omit them. No automatic all-crate quality score is computed. The source's owning plans remain the place for authorized application fixes.

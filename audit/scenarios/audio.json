@@ -1,0 +1,88 @@
+{
+  "format_version": 1,
+  "id": "audio",
+  "status": "ready",
+  "scope": "Synth-family offline baseline plus separately recorded device/peer-family and code-review evidence. No whole-server claim from one feature set.",
+  "acceptance": "Automatic correctness commands must exit zero and execute nonempty test suites. Performance is descriptive until a paired reference exists. Device and review checks are mandatory manual evidence.",
+  "steps": [
+    {
+      "id": "audio-correctness",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--release",
+        "--no-default-features",
+        "--features",
+        "synth",
+        "--test",
+        "rt_safety",
+        "--test",
+        "capacity",
+        "--test",
+        "signal",
+        "--test",
+        "denormals",
+        "--test",
+        "subjects"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "build-dsp-benchmark",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "--no-default-features",
+        "--features",
+        "synth",
+        "--example",
+        "bench"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "dsp-throughput",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "{target}/release/examples/bench",
+        "--json"
+      ],
+      "cwd": ".",
+      "parser": "bench",
+      "repetitions": 3,
+      "warmup": 1,
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "audio-device",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/audio.md. Retain device/backend configuration, callback deadlines/xruns and correctness evidence. Include feature-family coverage and unsupported configurations. Offline throughput alone cannot pass this step."
+    },
+    {
+      "id": "audio-review",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/review.md for RT bounds, queue overflow, unsafe/FFI and lifecycle review; attach file/line evidence against the source commit."
+    }
+  ],
+  "unit": "components"
+}

@@ -1,0 +1,97 @@
+{
+  "format_version": 1,
+  "id": "editor",
+  "unit": "editor",
+  "status": "ready",
+  "scope": "clausters-editor is a separate Tauri/Svelte/Python application with its own packages and version. Do not infer its quality from the audio project.",
+  "acceptance": "Frontend checks/build and separate Rust fmt/clippy/tests plus UI/session, packaging and third-party license review. System WebKit dependencies must be prepared explicitly.",
+  "steps": [
+    {
+      "id": "editor-frontend-check",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "npm",
+        "run",
+        "check"
+      ],
+      "cwd": "clausters-editor",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "editor-frontend-build",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "cwd": "clausters-editor",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "editor-fmt",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "cwd": "clausters-editor/src-tauri",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "editor-clippy",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "clausters-editor/src-tauri",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "editor-tests",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline"
+      ],
+      "cwd": "clausters-editor/src-tauri",
+      "parser": "rust-tests",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "editor-review",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/editor.md. Include the editor Rust manifest in coverage, UI/session/recovery, Python package and notices --check with cargo-about 0.9.2. Retain separate performance and license evidence."
+    }
+  ]
+}

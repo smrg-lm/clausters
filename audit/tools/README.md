@@ -1,0 +1,9 @@
+# Tools and isolated preparation
+
+The exact initial tool profile is in versions.json. doctor checks complete version output for Python, Git, rustc, Cargo, Node and npm and records resolved executable paths and SHA-256 values. This profile is pinned to the current Linux workstation. For another environment, review and commit a new profile before preparing a campaign; never silently relax version checks. rustup proxy hashes alone do not identify the compiler, so both output and paths/hashes are recorded.
+
+prepare creates an external Python venv with the standard library and no pip, and verifies the installed prerequisites. No third-party package is needed for the harness itself. Separate package-unit tests use their existing dependencies in isolated clones/environments; see package-setup.md. Existing compiler tools and cached Cargo dependencies are reused; target outputs are isolated. Versions of dependencies remain those in the selected application's lockfiles, with --locked --offline preventing implicit updates/downloads. Missing tools or caches fail explicitly. Installing a different Rust toolchain or fetching missing dependencies is a separate explicit operator action, never a hidden fallback.
+
+The initial campaign needs no additional profiling package. Optional perf/flamegraph, GPU timestamp tooling, RTLA, Miri, fuzzers or dependency scanners may deepen a selected investigation. If used, preserve exact versions, commands, backend compatibility and artifacts in manual evidence; they are not installed globally by this harness or assumed to be supported.
+
+Validation of installation and isolation is covered by tests that prepare temporary synthetic repositories, create the venv, run known workloads and recover archives. The doctor command is a non-benchmark prerequisite check. Actual device permissions and backend availability are checked during the corresponding manual procedure.

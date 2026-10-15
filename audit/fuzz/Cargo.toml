@@ -16,7 +16,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-clausters-core = { path = "../crates/clausters-core" }
+clausters-core = { path = "../../crates/clausters-core" }
 
 [[bin]]
 name = "decode_packet"

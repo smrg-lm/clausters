@@ -1,0 +1,23 @@
+{
+  "format_version": 1,
+  "status": "template",
+  "campaign_id": null,
+  "source_commit": null,
+  "audit_resources_commit": null,
+  "started_at_utc": null,
+  "finished_at_utc": null,
+  "scenario_snapshots": [],
+  "commands": [],
+  "build_configuration": null,
+  "instrumentation": {
+    "used": null,
+    "patch_path": null,
+    "patch_sha256": null,
+    "optional_commit": null,
+    "replay_verified": null
+  },
+  "artifacts": [],
+  "external_archives": [],
+  "deviations": [],
+  "supersedes": null
+}

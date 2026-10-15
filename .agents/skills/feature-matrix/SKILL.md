@@ -162,10 +162,10 @@ the one that catches a link to something that does not exist at all, stays on.
 
 ## What it does not cover
 
-- **`fuzz/`** — a separate workspace, outside both CI and AGENTS.md's list. Lint
-  it by hand, from inside it (`cd fuzz && cargo clippy --all-targets`), when you
+- **`audit/fuzz/`** — a separate workspace, outside both CI and AGENTS.md's list. Lint
+  it by hand, from inside it (`cd audit/fuzz && cargo clippy --all-targets`), when you
   touch a fuzz target. It lints on stable — only *running* the fuzzer needs
-  nightly. The commit hook does lint it when a commit touches `fuzz/`, so this
+  nightly. The commit hook does lint it when a commit touches `audit/fuzz/`, so this
   is for the passes between commits.
 - **`--features embed`** and `midi-jack` — CI does exercise the embed test run
   (`cargo test --workspace --features embed`); `midi-jack` needs

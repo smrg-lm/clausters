@@ -1,0 +1,57 @@
+{
+  "format_version": 1,
+  "status": "pinned",
+  "profile": "initial-linux-2026-10-15",
+  "installation": "System prerequisites plus an isolated Python venv without pip; no third-party Python packages. Do not replace system tools automatically.",
+  "selected_tools": [
+    {
+      "name": "python",
+      "command": [
+        "python3",
+        "--version"
+      ],
+      "version_output": "Python 3.14.4"
+    },
+    {
+      "name": "git",
+      "command": [
+        "git",
+        "--version"
+      ],
+      "version_output": "git version 2.53.0"
+    },
+    {
+      "name": "rustc",
+      "command": [
+        "rustc",
+        "--version"
+      ],
+      "version_output": "rustc 1.99.0 (b940084d7 2026-09-28)"
+    },
+    {
+      "name": "cargo",
+      "command": [
+        "cargo",
+        "--version"
+      ],
+      "version_output": "cargo 1.99.0 (5f94df478 2026-08-27)"
+    },
+    {
+      "name": "node",
+      "command": [
+        "node",
+        "--version"
+      ],
+      "version_output": "v24.18.0"
+    },
+    {
+      "name": "npm",
+      "command": [
+        "npm",
+        "--version"
+      ],
+      "version_output": "11.16.0"
+    }
+  ],
+  "optional_tools": "Profilers are not silently installed or required. Their exact versions, capture commands and backend support must be recorded in manual evidence when selected."
+}

@@ -301,6 +301,21 @@ jobs:
   # it -- same mdBook version, same generators, same commands. That equivalence
   # is the point: a book that breaks here would break there, and Read the Docs
   # only reports it after the push, on a checkout nobody is watching.
+  audit:
+    name: audit harness (validator + contract tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      # The harness is standard-library Python and audits nothing here: these
+      # check its resources and its own contract over synthetic repositories,
+      # so a change that breaks a scenario or the runner is seen before the
+      # next campaign needs them.
+      - run: python3 audit/scripts/validate.py
+      - run: python3 -m unittest discover -s audit/tests -v
+
   docs:
     name: mdBooks (server + python + web clients)
     runs-on: ubuntu-latest

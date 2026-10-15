@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "id": "combined",
+  "status": "ready",
+  "scope": "Reserved-machine audio and GUI interference experiment; controls and simultaneous run use identical workloads.",
+  "acceptance": "Mandatory manual experiment; no automatic pass. Record observed deadlines and correctness. First performance figures establish a descriptive baseline.",
+  "steps": [
+    {
+      "id": "combined-device",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/combined.md. Capture three paired repetitions of audio-only, GUI-only and simultaneous activity, with common configuration and raw evidence. State all unavailable metrics and coverage exclusions; skipped required checks prevent sealing."
+    }
+  ],
+  "unit": "components"
+}

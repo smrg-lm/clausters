@@ -26,7 +26,7 @@
 #     git config core.hooksPath .githooks
 #
 # Only the workspaces the working tree actually touches are linted (root,
-# clients/gui, fuzz, clausters-editor -- four separate workspaces), and only the books whose
+# clients/gui, audit/fuzz, clausters-editor -- four separate workspaces), and only the books whose
 # sources it touches are built, so a commit pays for what it changed and
 # nothing else.
 #
@@ -125,7 +125,8 @@ while IFS= read -r -d '' entry; do
     esac
     case "$path" in
         clients/gui/*) want_gui=1 ;;
-        fuzz/*) want_fuzz=1 ;;
+        audit/fuzz/*) want_fuzz=1 ;;
+        audit/*) ;; # the rest of the audit tooling is Python and Markdown
         clausters-editor/*) want_editor=1 ;;
         clients/*) ;; # other clients hold no Rust the root workspace builds
         *) want_root=1 ;;
@@ -173,8 +174,8 @@ if [ "$want_gui" = 1 ]; then
     check "clippy(gui)" "$root/clients/gui" cargo clippy --all-targets -- -D warnings
 fi
 if [ "$want_fuzz" = 1 ]; then
-    check "fmt(fuzz)" "$root/fuzz" cargo fmt --check
-    check "clippy(fuzz)" "$root/fuzz" cargo clippy --all-targets -- -D warnings
+    check "fmt(fuzz)" "$root/audit/fuzz" cargo fmt --check
+    check "clippy(fuzz)" "$root/audit/fuzz" cargo clippy --all-targets -- -D warnings
 fi
 if [ "$want_editor" = 1 ]; then
     check "fmt(clausters-editor)" "$root/clausters-editor/src-tauri" cargo fmt --check

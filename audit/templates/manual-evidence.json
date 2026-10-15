@@ -1,0 +1,10 @@
+{
+  "status": "skipped",
+  "operator": "REPLACE with operator identity",
+  "procedure": "REPLACE with procedure revision and exact commands/actions",
+  "configuration": "REPLACE with device/backend, features, versions, viewport and fixture hashes as applicable",
+  "limitations": "REPLACE with unavailable measurements and scope exclusions, or explicitly none",
+  "reason": "REPLACE with evidence-based acceptance/failure/skip reason",
+  "metrics": [],
+  "artifacts": []
+}

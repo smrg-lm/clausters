@@ -68,23 +68,25 @@ All incoming OSC bytes decode through `osc::decode_packet`, the single entry poi
 ## Fuzzing the network edge
 
 Because every transport funnels through that one door, one fuzz target covers
-the whole inbound parse surface. The harness lives in `fuzz/` (a cargo-fuzz
-crate, deliberately **not** a workspace member — it needs nightly and only
-builds through cargo-fuzz):
+the whole inbound parse surface. The harness lives in `audit/fuzz/`, with the
+rest of the audit tooling (`audit/README.md`): a cargo-fuzz crate, deliberately
+**not** a workspace member, since it needs nightly and only builds through
+cargo-fuzz. Run it from that directory:
 
 ```sh
 rustup toolchain install nightly --profile minimal
 cargo install cargo-fuzz
-cargo +nightly fuzz run decode_packet fuzz/corpus/decode_packet fuzz/seeds/decode_packet -- -max_total_time=300
+cd audit/fuzz
+cargo +nightly fuzz run decode_packet corpus/decode_packet seeds/decode_packet -- -max_total_time=300
 ```
 
-Run it from the repo root. `fuzz/seeds/` holds a few versioned valid packets
-(message, args, blob, bundle) to start coverage from; the growing corpus and
-any crash artifacts land in `fuzz/corpus/` and `fuzz/artifacts/` (both
-git-ignored). Arbitrary bytes must decode to `Ok` or `Err` — a panic, hang or
-memory blow-up is a bug; minimize it with `cargo +nightly fuzz tmin` and fix
-it (or report it upstream to `rosc`) before release. Run a few minutes of
-fuzzing before publishing a release that touched the OSC path.
+`seeds/` holds a few versioned valid packets (message, args, blob, bundle) to
+start coverage from; the growing corpus and any crash artifacts land in
+`corpus/` and `artifacts/` (both git-ignored). Arbitrary bytes must decode to
+`Ok` or `Err` — a panic, hang or memory blow-up is a bug; minimize it with
+`cargo +nightly fuzz tmin` and fix it (or report it upstream to `rosc`) before
+release. Run a few minutes of fuzzing before publishing a release that touched
+the OSC path.
 
 ## Continuous integration
 
@@ -266,7 +268,7 @@ Its counterpart for the documentation is `scripts/check-docs.sh`, which builds t
 
 ## The commit hook
 
-`.githooks/pre-commit` stops a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the working tree touches (root, `clients/gui`, `fuzz` and `clausters-editor` are four separate workspaces), and a commit whose changes break a **book** — it runs `scripts/check-docs.sh` for the books whose sources the tree touches (a book's own pages, and whatever its API generator parses: the Python package's docstrings, the web package's TypeScript). A commit that touches neither costs nothing.
+`.githooks/pre-commit` stops a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the working tree touches (root, `clients/gui`, `audit/fuzz` and `clausters-editor` are four separate workspaces), and a commit whose changes break a **book** — it runs `scripts/check-docs.sh` for the books whose sources the tree touches (a book's own pages, and whatever its API generator parses: the Python package's docstrings, the web package's TypeScript). A commit that touches neither costs nothing.
 
 The books are in the hook because they are the check with the least coverage anywhere else: a dangling TSDoc `{@link}`, a page missing from a `SUMMARY.md` or a docstring pydoc-markdown chokes on compiles fine, tests fine, lints fine, and is seen by nothing until CI's `docs` job — which is where most of this repository's red builds have come from. The script builds all three the way CI and Read the Docs build them, with the same pinned tools, in about five seconds; run it by hand (`scripts/check-docs.sh [server|python|web]`) whenever the hook is not in play.
 

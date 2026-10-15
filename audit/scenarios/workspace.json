@@ -1,0 +1,61 @@
+{
+  "format_version": 1,
+  "id": "workspace",
+  "status": "ready",
+  "scope": "Every component Rust package, including fixtures and fuzz tooling. clausters-editor is inventoried under the separate editor audit unit.",
+  "acceptance": "Every inventoried package must have source-specific test/review evidence. Unknown/new crates remain in scope automatically. Host test pass does not establish wasm or FFI safety.",
+  "steps": [
+    {
+      "id": "workspace-correctness",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--locked",
+        "--offline",
+        "--release",
+        "--no-default-features",
+        "--features",
+        "synth"
+      ],
+      "cwd": ".",
+      "parser": "rust-tests",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "workspace-clippy",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--locked",
+        "--offline",
+        "--no-default-features",
+        "--features",
+        "synth",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "crate-review",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/crates.md. Supply crate_coverage keyed by every manifest in the recorded inventory, with per-crate status, reason and retained evidence reference. Review all features/target seams, including wasm/FFI/plugin paths, fuzz and test fixture crates. Only clausters-editor is excluded."
+    }
+  ],
+  "unit": "components"
+}

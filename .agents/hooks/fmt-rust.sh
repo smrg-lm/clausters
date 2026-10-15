@@ -12,7 +12,7 @@
 # whole class of "the commit needed a formatting pass" churn.
 #
 # `rustfmt` directly rather than `cargo fmt`: the tree has four workspaces
-# (root, clients/gui, fuzz, clausters-editor/src-tauri). The editor uses edition
+# (root, clients/gui, audit/fuzz, clausters-editor/src-tauri). The editor uses edition
 # 2021; the other workspaces use 2024. Select the edition by the resolved path.
 #
 # Formatting failures return feedback after the edit, which remains applied.
