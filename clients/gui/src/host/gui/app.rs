@@ -9,9 +9,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clausters_core::osc::{OscMessage, OscPacket, encode};
-use clausters_net::Conn;
 use clausters_net::tcp::TcpConn;
 use clausters_net::ws::WsConn;
+use clausters_net::{Conn, Inflight};
 use tracing::warn;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -159,6 +159,9 @@ pub(super) struct App {
     /// WebSocket reply handles by connection id; registered on `WsConnected`,
     /// pruned on `WsDisconnected`.
     pub(super) ws_conns: HashMap<u64, WsConn>,
+    /// The script front's frames in flight: each `Osc`, `TcpOsc` and `WsOsc`
+    /// event releases its place here as it is handled.
+    pub(super) inflight: Arc<Inflight>,
     /// Window opens requested before the first `resumed`, flushed on resume.
     pub(super) pending: Vec<(i32, ClientId)>,
     /// `/gui_verb`s asked of a window still in `pending`, performed once it
@@ -219,6 +222,7 @@ impl App {
         mut host: Host,
         socket: Arc<UdpSocket>,
         shm: Option<Arc<dyn BusSource>>,
+        inflight: Arc<Inflight>,
     ) -> Self {
         // The host's clipboard reaches the desktop's: text copied in a window
         // pastes in any other program, and the reverse.
@@ -233,6 +237,7 @@ impl App {
             by_winit: HashMap::new(),
             tcp_conns: HashMap::new(),
             ws_conns: HashMap::new(),
+            inflight,
             pending: Vec::new(),
             pending_verbs: Vec::new(),
             resumed: false,
@@ -595,6 +600,9 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        if let UserEvent::Osc { .. } | UserEvent::TcpOsc { .. } | UserEvent::WsOsc { .. } = event {
+            self.inflight.release();
+        }
         match event {
             UserEvent::Osc { from, bytes } => {
                 let packet = match clausters_core::osc::decode_packet(&bytes) {

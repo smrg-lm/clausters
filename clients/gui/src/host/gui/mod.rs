@@ -39,7 +39,7 @@ use std::time::Duration;
 
 use clausters_net::tcp::TcpConn;
 use clausters_net::ws::WsConn;
-use clausters_net::{ClientSlots, Event};
+use clausters_net::{ClientSlots, Event, Inflight};
 use tracing::{info, warn};
 use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
 
@@ -66,6 +66,8 @@ const PLACEHOLDER_ORIGIN: ClientId = ClientId::Udp(SocketAddr::new(
 pub enum UserEvent {
     /// One OSC datagram from a script and where it came from (decoded on the main
     /// thread, through the single shared door, to keep all logic on one thread).
+    /// This and the two stream frames below each hold a place in the front's
+    /// `Inflight` until the loop handles them.
     Osc { from: SocketAddr, bytes: Vec<u8> },
     /// A new TCP connection on the script front: its id and the handle its
     /// replies go out through. The reader threads feed the event loop
@@ -117,22 +119,31 @@ pub fn run(
     event_loop.set_control_flow(ControlFlow::Wait);
 
     let proxy = event_loop.create_proxy();
+    // The proxy's queue has no ceiling, so the script front bounds what it
+    // hands the loop itself: every carrier admits a frame through this one
+    // count, and the loop releases it when it handles the frame.
+    let inflight = Arc::new(Inflight::new(clausters_net::INBOUND_QUEUE));
     // The script -> host front.
     let recv_socket = Arc::clone(&socket);
     let script_proxy = proxy.clone();
+    let udp_inflight = Arc::clone(&inflight);
     std::thread::Builder::new()
         .name("clausters-gui-osc".into())
-        .spawn(move || transport_loop(recv_socket, script_proxy))
+        .spawn(move || transport_loop(recv_socket, script_proxy, &udp_inflight))
         .map_err(|e| e.to_string())?;
     // The stream legs share one client ceiling, like the audio server's.
     let slots = Arc::new(ClientSlots::new(clausters_net::DEFAULT_MAX_CLIENTS));
     // The framed TCP leg of the same front, straight into the event loop.
     if let Some((bind, max_frame)) = tcp {
         let tcp_proxy = proxy.clone();
+        let tcp_inflight = Arc::clone(&inflight);
         let bound = clausters_net::tcp::bind(bind, max_frame, Arc::clone(&slots), move |event| {
             let user_event = match event {
                 Event::Connected(id, conn) => UserEvent::TcpConnected { id, conn },
-                Event::Frame(id, bytes) => UserEvent::TcpOsc { id, bytes },
+                Event::Frame(id, bytes) => {
+                    tcp_inflight.admit();
+                    UserEvent::TcpOsc { id, bytes }
+                }
                 Event::Disconnected(id) => UserEvent::TcpDisconnected { id },
             };
             tcp_proxy.send_event(user_event).is_ok()
@@ -144,10 +155,14 @@ pub fn run(
     // the connection threads feed the event loop through its proxy.
     if let Some((bind, max_frame)) = ws {
         let ws_proxy = proxy.clone();
+        let ws_inflight = Arc::clone(&inflight);
         let bound = clausters_net::ws::bind(bind, max_frame, Arc::clone(&slots), move |event| {
             let user_event = match event {
                 Event::Connected(id, conn) => UserEvent::WsConnected { id, conn },
-                Event::Frame(id, bytes) => UserEvent::WsOsc { id, bytes },
+                Event::Frame(id, bytes) => {
+                    ws_inflight.admit();
+                    UserEvent::WsOsc { id, bytes }
+                }
                 Event::Disconnected(id) => UserEvent::WsDisconnected { id },
             };
             ws_proxy.send_event(user_event).is_ok()
@@ -182,16 +197,19 @@ pub fn run(
             .map_err(|e| e.to_string())?;
     }
 
-    let mut app = App::new(host, socket, bus);
+    let mut app = App::new(host, socket, bus, inflight);
     event_loop.run_app(&mut app).map_err(|e| e.to_string())
 }
 
-fn transport_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
+fn transport_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>, inflight: &Inflight) {
     let mut buf = vec![0u8; 65536];
     loop {
         match socket.recv_from(&mut buf) {
             Ok((0, _)) => {}
             Ok((len, from)) => {
+                // At the ceiling this thread stops reading, and the kernel's
+                // socket buffer drops what arrives meanwhile, as UDP does.
+                inflight.admit();
                 let event = UserEvent::Osc {
                     from,
                     bytes: buf[..len].to_vec(),

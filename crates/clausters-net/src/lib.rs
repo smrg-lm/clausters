@@ -19,6 +19,11 @@
 //!   instead of allocating on an untrusted length;
 //! - **a client ceiling** ([`ClientSlots`]): a connection past it is dropped at
 //!   accept, and the slot is released when the connection's thread exits;
+//! - **a bounded inbound path**: a [`Hub`]'s queue holds [`INBOUND_QUEUE`]
+//!   frames, and a sink of the caller's own (an event loop's proxy, whose queue
+//!   is unbounded) admits each frame through an [`Inflight`] of the same size,
+//!   so a client that sends faster than its consumer handles is blocked and
+//!   pushed back by flow control in either case;
 //! - **a bounded reply path**: a TCP reply write gives up after
 //!   [`tcp::REPLY_WRITE_TIMEOUT`], a WebSocket reply queue holds
 //!   `ws::REPLY_QUEUE_BYTES` of replies, and a client that stops reading is dropped
@@ -33,6 +38,7 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::sync::{Condvar, Mutex, PoisonError};
 
 pub mod tcp;
 #[cfg(not(target_arch = "wasm32"))]
@@ -89,6 +95,54 @@ pub struct SlotGuard(Arc<ClientSlots>);
 impl Drop for SlotGuard {
     fn drop(&mut self) {
         self.0.live.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// The frames a sink has handed on and its consumer has not handled yet, with a
+/// ceiling: the bound a [`Hub`]'s queue gives, for a sink whose own queue has
+/// none.
+///
+/// A window event loop's proxy queues without limit, so a connection that
+/// sends faster than the loop handles would otherwise grow the host's memory
+/// with every frame. The producer calls [`admit`](Self::admit) before handing a
+/// frame on, which blocks while the ceiling is reached -- the reader stops
+/// reading, and TCP flow control (or, for UDP, the kernel's socket buffer)
+/// pushes back to the sender -- and the consumer calls
+/// [`release`](Self::release) once per frame it takes. One `Inflight` shared by
+/// every carrier of a front bounds the front as a whole.
+pub struct Inflight {
+    count: Mutex<usize>,
+    freed: Condvar,
+    max: usize,
+}
+
+impl Inflight {
+    pub fn new(max: usize) -> Self {
+        Self {
+            count: Mutex::new(0),
+            freed: Condvar::new(),
+            max: max.max(1),
+        }
+    }
+
+    /// Counts one more frame in flight, waiting while `max` are. Never called
+    /// on the consumer's own thread, which is the one that frees a place.
+    pub fn admit(&self) {
+        let mut count = self.count.lock().unwrap_or_else(PoisonError::into_inner);
+        while *count >= self.max {
+            count = self
+                .freed
+                .wait(count)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        *count += 1;
+    }
+
+    /// One frame was taken by the consumer: a waiting producer may go on.
+    pub fn release(&self) {
+        let mut count = self.count.lock().unwrap_or_else(PoisonError::into_inner);
+        *count = count.saturating_sub(1);
+        self.freed.notify_one();
     }
 }
 
@@ -265,4 +319,41 @@ fn wait_frame<C: Conn>(hub: &mut Hub<C>) -> (u64, Vec<u8>) {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     panic!("no frame arrived within the deadline");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::channel;
+    use std::time::Duration;
+
+    #[test]
+    fn inflight_holds_a_producer_at_the_ceiling_until_the_consumer_takes_one() {
+        let inflight = Arc::new(Inflight::new(2));
+        let (done, finished) = channel();
+        let producer = {
+            let inflight = Arc::clone(&inflight);
+            std::thread::spawn(move || {
+                for frame in 0..3 {
+                    inflight.admit();
+                    done.send(frame).unwrap();
+                }
+            })
+        };
+        assert_eq!(finished.recv().unwrap(), 0);
+        assert_eq!(finished.recv().unwrap(), 1);
+        // The third frame waits: two are in flight and nobody took one.
+        assert!(finished.recv_timeout(Duration::from_millis(100)).is_err());
+        inflight.release();
+        assert_eq!(finished.recv_timeout(Duration::from_secs(5)).unwrap(), 2);
+        producer.join().unwrap();
+    }
+
+    #[test]
+    fn inflight_never_counts_below_zero() {
+        let inflight = Inflight::new(1);
+        inflight.release();
+        inflight.admit();
+        assert_eq!(*inflight.count.lock().unwrap(), 1);
+    }
 }
