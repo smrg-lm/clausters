@@ -74,7 +74,7 @@ fn two_nodes_capture_load_chunks_recover_and_keep_the_def_independent() {
         ],
     );
     live.output(0.625, 0.5);
-    let snapshot = live.save(42);
+    let snapshot = live.save_watching(42, Some(0));
     assert_eq!(&snapshot[..8], &0.625f64.to_ne_bytes());
     assert_eq!(snapshot.len(), 13008);
     assert_eq!(live.save(43), 0.5f64.to_ne_bytes());
@@ -126,20 +126,23 @@ fn two_nodes_capture_load_chunks_recover_and_keep_the_def_independent() {
         live.sync();
         live.output(1.5, 0.625);
     }
-    // A result from a freed generation must not reach a reused node ID.
-    live.send("/plugin_saveState", vec![OscType::Int(42)]);
-    live.send("/node_free", vec![OscType::Int(42)]);
-    live.send(
-        "/synth_new",
-        vec![
-            OscType::String("fx".into()),
-            OscType::Int(42),
-            OscType::Int(1),
-            OscType::Int(0),
-            OscType::String("param:0".into()),
-            OscType::Float(0.125),
-        ],
-    );
+    // A result from a freed generation must not reach a reused node ID. One
+    // bundle, so the capture cannot finish before the node is replaced.
+    live.send_bundle(vec![
+        ("/plugin_saveState", vec![OscType::Int(42)]),
+        ("/node_free", vec![OscType::Int(42)]),
+        (
+            "/synth_new",
+            vec![
+                OscType::String("fx".into()),
+                OscType::Int(42),
+                OscType::Int(1),
+                OscType::Int(0),
+                OscType::String("param:0".into()),
+                OscType::Float(0.125),
+            ],
+        ),
+    ]);
     live.send("/server_sync", vec![OscType::Int(19)]);
     assert_eq!(live.recv().addr, "/fail");
     assert_eq!(live.recv().addr, "/server_sync.reply");

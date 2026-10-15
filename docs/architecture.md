@@ -250,7 +250,7 @@ The transform stays RT-safe by construction: `FFT` keeps a sliding input buffer,
 
 **Bin-expression programs (`PV_Kernel`, M29).** The general per-frame mechanism: instead of one registered row per spectral operation, `PV_Kernel` interprets a pair of **user-authored postfix programs** (magnitude and phase) over every bin of each fresh frame — `clausters_core::pvprog`, whose opcodes are the shared `builtins` operator discriminants plus per-bin loads (`mag`, `phase`, `bin`, `nbins`, `binfreq`, `p0`…). The RT discipline is split exactly like the rest of the engine: the def carries the programs as wire token lists (`mag_expr`/`phase_expr`), the SynthDef compiler resolves and validates them on the network thread (`pvprog::compile` — stack discipline, parameter arity against the UGen's variadic inputs, the 256-op length cap), and the audio thread runs `PvProgram::eval` as a fixed loop over a build-time stack — no allocation, pure `f32`, so RT ≡ NRT bit-exactly on every feature combination. Two cost-shaping details: an identity phase program keeps each bin's phase by *scaling* the complex pair (the same arithmetic as the curated magnitude filters — a kernel reimplementing one renders sample-identically, which `tests/spectral.rs` asserts), and the polar `atan2` runs only when some program actually reads `phase`. A program is a pure per-bin map by design; cross-frame state, bin remaps and two-chain reads stay curated rows (the ADR: "The spectral frame is user-programmable through a bin-expression program").
 
-**Partitioned convolution (`Conv`, M28).** Convolution lives **outside** the `fr` chain (`src/dsp/conv.rs`): fast convolution's zero-padded rectangular segments, with a hop fixed by the partition size, are incompatible with the chain's windowed COLA discipline — a spectral multiply inside the chain would be *circular* convolution. The design is uniformly partitioned overlap-save with a frequency-domain delay line, shaped by two RT constraints. First, **the audio thread never transforms a kernel**: `/buffer_gen prepare_partconv` computes every partition's spectrum on the NRT queue into an ordinary pool buffer (`dsp::conv::layout`), and a kernel swap is just the `kernel` input moving to another prepared buffer (one-partition crossfade; the FDL holds *input* history, which is kernel-agnostic, so nothing rebuilds). Second, **the load is flat**: the `p ≥ 1` partition MACs of the upcoming hop only involve spectra that already exist, so they are spread across the blocks between hops (a fair share per `process` call, sample-exact under block splits), leaving the hop block only the input FFT/IFFT pair and the fresh-spectrum MAC — the bench's conv section measures the resulting steady-vs-hop phase profile. `Conv` is also the first UGen with **intrinsic latency** (one partition), reported through the new `UGen::latency`/`SynthNode::latency` hook (`UGenSynth` sums its UGens') that M12 anticipated — consumed by the general server delay-compensation pass (see below).
+**Partitioned convolution (`Conv`).** Convolution lives **outside** the `fr` chain (`src/dsp/conv.rs`): fast convolution's zero-padded rectangular segments, with a hop fixed by the partition size, are incompatible with the chain's windowed COLA discipline — a spectral multiply inside the chain would be *circular* convolution. The design is uniformly partitioned overlap-save with a frequency-domain delay line, shaped by two RT constraints. First, **the audio thread never transforms a kernel**: `/buffer_gen prepare_partconv` computes every partition's spectrum on the NRT queue into an ordinary pool buffer (`dsp::conv::layout`), and a kernel swap is just the `kernel` input moving to another prepared buffer (one-partition crossfade; the FDL holds *input* history, which is kernel-agnostic, so nothing rebuilds). Second, **the load is flat**: the `p ≥ 1` partition MACs of the upcoming hop only involve spectra that already exist, so they are spread across the blocks between hops (a fair share per `process` call, sample-exact under block splits), leaving the hop block only the input FFT/IFFT pair and the fresh-spectrum MAC — the bench's conv section measures the resulting steady-vs-hop phase profile. `Conv` is also the first UGen with **intrinsic latency** (one partition), reported through the new `UGen::latency`/`SynthNode::latency` hook (`UGenSynth` sums its UGens') that the canonical graph form anticipated — consumed by the general server delay-compensation pass (see below).
 
 **Why not scsynth's buffer.** scsynth's chain threads the frame through a client-allocated buffer the audio thread mutates in place. Clausters keeps the frame in synth-private scratch instead — no `/buffer_alloc`, and the chain is freed with the synth (the `LocalBuf` model). *This was originally justified by the pool's immutability, which no longer holds — pool buffers are writable* — and the design is kept on the two reasons that survive it: a spectral frame is scratch belonging to one synth, so making the client allocate and free one is a lifetime the graph can own instead; and a frame is a **spectrum in an internal layout**, not samples, so putting it where `/buffer_write` and the readers can reach it invites reading it as audio. Copying a frame into a pool buffer for inspection stays a possible extension, and is now a copy rather than a hole.
 
@@ -1759,7 +1759,7 @@ immutable: a replacement requires a new mapping and generation.
 | Audio | At most 16 ports and 32 channels per direction; channel-major `f32` |
 | Events | 64 input events, 64 output events and 64 deferred events; sorted sample offsets. A parameter burst waits for room (three quarters of a job at most); a release burst is deferred to the next job rather than failing |
 | Spans | 8, covering the block exactly; active/playing, position and tempo |
-| Metadata/state | 1024 parameters; opaque state at most 1 MiB |
+| Metadata/state | 8192 parameters; opaque state at most 1 MiB |
 | Control | Length-prefixed JSON, at most 8 MiB per frame |
 
 Only the borrowed `Producer` is suitable for the future engine callback. It
@@ -2095,12 +2095,26 @@ keeps ownership of the helper and segment, so freeing the node makes pending
 administration fail safely. Only the plugin worker locks the lease. The RT
 endpoint sees an atomic phase: running, suspension requested, quiesced, failed.
 After finishing its current staged block, it acknowledges suspension and stops
-submissions and output. The helper drains accepted jobs before pausing its
-processor and calling state save on its main thread.
+submissions and output -- for a load, which replaces the generation. A capture
+does neither: the helper saves on its main thread while its processing thread
+keeps running (both formats define saving as a main-thread call valid during
+processing), and the image becomes the node's recovery point by replacing its
+private recipe with the same one carrying that state (`PluginDef::with_state`,
+no probe).
 
-The same four-job worker and submitted/drained barrier counters cover state,
-discovery, def loading and recovery. A captured or supplied image builds a
-private node recipe and a fresh helper off RT. The administrative handshake
+Three workers, each with a four-job queue and its own submitted/drained
+counters, carry the plugin requests: **scan**, **build** (def probe, spare
+instance, restart, state load) and **control** (editor, capture). Each
+completes in order, so a `/server_sync` records the three submitted counts and
+waits until each worker has drained to its own. A spare is the server's own
+preparation and counts toward no barrier. The translator keeps one spare
+`PluginSynth` per def, with the def it was built for; `make_synth` takes it when
+it is that def's and deep enough for the current device callback, otherwise it
+builds synchronously, and either way asks for the next. A helper with no job
+for 200 ms polls every millisecond instead of every 50 us, so an idle spare
+costs little and the first job after it waits at most one slow period, inside
+the pipeline's depth. A supplied image builds a private node recipe and a
+fresh helper off RT. The administrative handshake
 version changes when initial state is added to the load request; the audio
 segment and both public C ABIs keep their layouts. Initial state is loaded
 before activation, so the adapter builds its processor from refreshed metadata.

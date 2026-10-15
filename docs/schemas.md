@@ -86,7 +86,7 @@ frame count queried after activation at 48 kHz, independent of the bridge delay.
 support, without opening a window.
 
 Limits are 32 roots, 128 binaries, 512 plugins per binary, 16 ports and 32 audio
-channels per direction, 1024 parameters per plugin and a 16 MiB catalogue.
+channels per direction, 8192 parameters per plugin and a 16 MiB catalogue.
 With persistence enabled the server atomically writes
 `<data_dir>/plugins.json` as `{"version":1,"entries":[...]}`, including diagnostics.
 With persistence disabled there is no cache write. `Server.scan_plugins(*dirs,
@@ -175,6 +175,15 @@ beside itself, the Python `_libs`/`_bin` pair and a prefix's `lib`/`bin` pair.
 `CLAUSTERS_PLUGIN_HOST` is the explicit development override. A missing or
 incompatible helper reports an error before loading third-party code.
 
+A plugin def keeps one **spare instance** running: `/def_send` starts it, and
+each `/synth_new` takes it and starts the next, so creating a node hands over a
+helper that has already loaded the plugin rather than loading it on the
+server's network thread. A burst of `/synth_new` faster than spares are built
+loads the rest synchronously. Plugin requests run on three workers -- discovery,
+loading (def, spare, restart, state load) and control (editor, state capture)
+-- so an editor never waits behind a scan or a slow load. A plugin may take up
+to 30 s to load; an administrative request answers within 2 s.
+
 `/plugin_restart <node-id:int>` prepares a fresh helper asynchronously; `/done
 "/plugin_restart" <node-id>` acknowledges preparation and queuing the swap,
 or `/fail` reports a non-plugin/missing node, full queue or load error. The
@@ -185,11 +194,15 @@ from receiving an old restart. Faults use `/node_fault <id> "Plugin" <code>
 <reason>` for notification subscribers: 1 capacity (a bounded queue or
 event list overflowed), 2 starved (eight results in a row missed their block:
 the helper died or hung, or the device callback grew past the pipeline), 3
-processing, 4 protocol. A burst of parameter changes waits for room in later
+processing, 4 protocol (an invalid event, a changed surface, or a restart the
+plugin asks for because its buses, latency, MIDI controller map or -- in CLAP --
+whole parameter list changed; new parameter values, titles or a VST3 parameter
+ID remap table are absorbed live). A burst of parameter changes waits for room in later
 blocks, and a burst of releases is deferred, rather than either failing. Recovery is explicit; nodes never restart by themselves.
 
 `/plugin_saveState <node-id:int>` asynchronously captures opaque state from a
-live node. Replies are `/plugin_saveState.reply <node:int> <chunk:int>
+live node, **while it keeps playing**: the running helper saves on its main
+thread and nothing is swapped, so held notes and DSP history survive. Replies are `/plugin_saveState.reply <node:int> <chunk:int>
 <chunks:int> <blob>` followed by `/done "/plugin_saveState" <node>`. Fragments
 are zero-based, at most 6144 bytes each; an empty image has one empty fragment.
 The image limit is 1 MiB. Clients must reject missing, repeated, inconsistent
@@ -204,13 +217,12 @@ A live node's image is independent of its def and every other instance; it is
 kept for explicit recovery, without modifying the persisted def. Save the
 returned bytes yourself to retain a live image across server boots.
 
-State operations suspend the node at a block boundary, drain accepted helper
-jobs for capture, and prepare a fresh helper with state loaded **before
-activation**. The node is silent during preparation; the new bridge clears
-held notes, queued events and unsaved DSP history. Routing, maps and tree
-identity survive. A load replaces unmapped parameter values; existing maps
-continue to drive the loaded parameters. A capture keeps current controls.
-Parameter ranges, flags, display names, port labels and intrinsic latency are
+A load suspends the node at a block boundary and prepares a fresh helper with
+the state loaded **before activation**. The node is silent during preparation;
+the new bridge clears held notes, queued events and unsaved DSP history.
+Routing, maps and tree identity survive. A load replaces unmapped parameter
+values; existing maps continue to drive the loaded parameters. A capture
+changes no control. On a load, parameter ranges, flags, display names, port labels and intrinsic latency are
 refreshed per node. Audio port IDs/order/channel counts and control IDs must
 remain compatible with the live routing; an incompatible image fails rather
 than changing a running graph's bus ownership. The shared def stays unchanged.

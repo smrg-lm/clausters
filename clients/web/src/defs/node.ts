@@ -157,7 +157,8 @@ export class Node {
     }
 
     /** Capture this live plugin's opaque state, independent of its def.
-     * The node is silent during preparation; a new helper clears held notes.
+     * The node keeps playing while it is captured, held notes included, and
+     * the image becomes its recovery image for `restartPlugin()`.
      * Missing/duplicate state chunks are errors. Live servers only.
      */
     async savePluginState({ timeout = 10.0 }: { timeout?: number } = {}): Promise<Uint8Array> {

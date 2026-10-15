@@ -8,8 +8,10 @@ use std::any::Any;
 pub const MAX_PLUGINS: usize = 512;
 /// Port rows per direction.
 pub const MAX_PORTS: usize = 16;
-/// Stable native parameters per instance.
-pub const MAX_PARAMETERS: usize = 1024;
+/// Stable native parameters per instance. A VST3 instrument that maps MIDI
+/// controllers to parameters declares one per controller and channel -- 2048
+/// before its own -- so the bound has room for that and more.
+pub const MAX_PARAMETERS: usize = 8192;
 /// Opaque state limit on the administrative plane.
 pub const MAX_STATE_BYTES: usize = 1024 * 1024;
 

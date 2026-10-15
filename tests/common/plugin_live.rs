@@ -98,6 +98,27 @@ impl Live {
             )
             .unwrap();
     }
+    /// Several messages in one immediate bundle, handled in one turn.
+    // Each test binary compiles this module; only some of them send bundles.
+    #[allow(dead_code)]
+    pub fn send_bundle(&self, messages: Vec<(&str, Vec<OscType>)>) {
+        let content = messages
+            .into_iter()
+            .map(|(addr, args)| {
+                OscPacket::Message(OscMessage {
+                    addr: addr.into(),
+                    args,
+                })
+            })
+            .collect();
+        let bundle = OscPacket::Bundle(clausters::rosc::OscBundle {
+            timetag: clausters::rosc::OscTime::from((0, 1)),
+            content,
+        });
+        self.socket
+            .send_to(&encoder::encode(&bundle).unwrap(), self.address)
+            .unwrap();
+    }
     pub fn recv(&self) -> OscMessage {
         let mut bytes = [0; 65536];
         let n = self.socket.recv(&mut bytes).unwrap();
@@ -117,14 +138,26 @@ impl Live {
         assert_eq!(self.recv().addr, "/server_sync.reply");
     }
     pub fn save(&self, node: i32) -> Vec<u8> {
+        self.save_watching(node, None)
+    }
+    /// Save while checking, on every reply, that output `channel` never fell
+    /// silent: a capture must not interrupt the node it captures.
+    pub fn save_watching(&self, node: i32, channel: Option<usize>) -> Vec<u8> {
         self.send("/plugin_saveState", vec![OscType::Int(node)]);
-        // Barrier must arrive after all fragments and completion, even while
-        // the worker awaits the callback boundary and prepares a new helper.
+        // Barrier must arrive after all fragments and completion.
         self.send("/server_sync", vec![OscType::Int(18)]);
         let mut bytes = Vec::new();
         let mut count = 0;
+        let watch = || {
+            if let Some(channel) = channel {
+                let value = f32::from_bits(self.outputs[channel].load(Ordering::Acquire));
+                assert_ne!(value, 0.0, "output {channel} fell silent during a save");
+            }
+        };
         loop {
+            watch();
             let message = self.recv();
+            watch();
             if message.addr == "/done" {
                 assert_eq!(message.args[0], OscType::String("/plugin_saveState".into()));
                 break;

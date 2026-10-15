@@ -108,7 +108,7 @@ impl OscServer {
             any(feature = "plugin-clap", feature = "plugin-vst3"),
             target_os = "linux"
         ))]
-        let plugin_scanner = commands::plugin::ScanWorker::spawn({
+        let plugin_workers = commands::plugin::PluginWorkers::spawn({
             #[cfg(feature = "faust")]
             {
                 waker.clone()
@@ -154,14 +154,22 @@ impl OscServer {
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
             ))]
-            plugin_scanner,
+            plugin_workers,
             #[cfg(all(
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
             ))]
             plugin_claims: std::collections::HashMap::new(),
-            plugin_submitted: 0,
-            plugin_drained: 0,
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
+            plugin_tickets: 0,
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
+            plugin_spares_building: std::collections::HashSet::new(),
             nrt_submitted: 0,
             nrt_in_flight: Default::default(),
             nrt_drained: 0,

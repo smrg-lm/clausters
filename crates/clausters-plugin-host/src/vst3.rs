@@ -168,6 +168,8 @@ unsafe fn create<I: Interface>(
 
 struct Shared {
     restart: AtomicBool,
+    /// The controller changed parameter values itself (a preset, a state).
+    values_changed: AtomicBool,
     values: Vec<(u32, AtomicU64)>,
 }
 struct Host {
@@ -316,8 +318,23 @@ impl IComponentHandlerTrait for Host {
             kInvalidArgument
         }
     }
-    unsafe fn restartComponent(&self, _: i32) -> tresult {
-        self.shared.restart.store(true, Ordering::Release);
+    /// Only a change the live surface cannot absorb needs explicit recovery:
+    /// a reload, new buses, a new latency or a new MIDI controller map. New
+    /// parameter values are read back; new titles or a remapped parameter ID
+    /// table (a migration aid hosts consult for saved automation) change no
+    /// identity a node holds. Instruments raise those routinely.
+    unsafe fn restartComponent(&self, flags: i32) -> tresult {
+        const RELOAD: i32 = 1;
+        const IO: i32 = 1 << 1;
+        const VALUES: i32 = 1 << 2;
+        const LATENCY: i32 = 1 << 3;
+        const MIDI_CC: i32 = 1 << 5;
+        if flags & (RELOAD | IO | LATENCY | MIDI_CC) != 0 {
+            self.shared.restart.store(true, Ordering::Release);
+        }
+        if flags & VALUES != 0 {
+            self.shared.values_changed.store(true, Ordering::Release);
+        }
         kResultOk
     }
 }
@@ -499,6 +516,7 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         let component: ComPtr<IComponent> = create(factory, &class.cid)?;
         let shared = Arc::new(Shared {
             restart: AtomicBool::new(false),
+            values_changed: AtomicBool::new(false),
             values: (0..MAX_PARAMETERS)
                 .map(|_| (u32::MAX, AtomicU64::new(0)))
                 .collect(),
@@ -586,6 +604,7 @@ pub(crate) fn load(path: &Path, id: &str) -> Result<Box<dyn FormatInstance>, Str
         let parameters = instance.parameters()?;
         let shared = Arc::new(Shared {
             restart: AtomicBool::new(false),
+            values_changed: AtomicBool::new(false),
             values: parameters
                 .iter()
                 .map(|p| {
@@ -1065,6 +1084,9 @@ impl FormatInstance for Instance {
                     let _ = self.editor(EditorCommand::Resize { width, height });
                 }
             }
+        }
+        if self.shared.values_changed.swap(false, Ordering::AcqRel) {
+            self.refresh_values();
         }
         for (id, value) in &self.shared.values {
             unsafe {

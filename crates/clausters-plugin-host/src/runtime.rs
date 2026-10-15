@@ -22,6 +22,12 @@ use std::time::Duration;
 
 /// A scan/load/admin request may take this long before its helper is killed.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Loading or restoring a plugin may take this long: an instrument reading its
+/// samples or wavetables takes seconds, which an administrative request does not.
+pub const LOAD_TIMEOUT: Duration = Duration::from_secs(30);
+/// A processing thread with no job for this long polls at `IDLE_POLL`.
+const IDLE_AFTER: Duration = Duration::from_millis(200);
+const IDLE_POLL: Duration = Duration::from_millis(1);
 /// Most candidate binaries inspected in one scan.
 pub const MAX_CANDIDATES: usize = 128;
 static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -137,8 +143,12 @@ impl Helper {
         })
     }
     fn request(&mut self, request: Request) -> Result<Response, String> {
+        self.request_within(request, self.timeout)
+    }
+    /// A request that may take longer than administration: loading a plugin.
+    fn request_within(&mut self, request: Request, timeout: Duration) -> Result<Response, String> {
         self.socket
-            .set_read_timeout(Some(self.timeout))
+            .set_read_timeout(Some(timeout))
             .map_err(|e| e.to_string())?;
         protocol::send(&mut self.socket, &request)?;
         let result = self.read()?;
@@ -165,10 +175,13 @@ pub fn probe(
 ) -> Result<PluginInfo, String> {
     let path = path.canonicalize().map_err(|e| e.to_string())?;
     let mut helper = Helper::spawn(executable, timeout)?;
-    let Response::Metadata(info) = helper.request(Request::Probe {
-        path: path.to_string_lossy().into_owned(),
-        id: id.into(),
-    })?
+    let Response::Metadata(info) = helper.request_within(
+        Request::Probe {
+            path: path.to_string_lossy().into_owned(),
+            id: id.into(),
+        },
+        LOAD_TIMEOUT.max(timeout),
+    )?
     else {
         return Err("invalid plugin probe response".into());
     };
@@ -213,13 +226,16 @@ impl Instance {
         let mapping = Mapping::create(config)?;
         let mut helper = Helper::spawn(executable, timeout)?;
         let path = path.canonicalize().map_err(|e| e.to_string())?;
-        let response = helper.request(Request::Load {
-            path: path.to_string_lossy().into_owned(),
-            id: id.into(),
-            segment: mapping.path().to_string_lossy().into_owned(),
-            generation: config.generation,
-            state: state.map(<[u8]>::to_vec),
-        })?;
+        let response = helper.request_within(
+            Request::Load {
+                path: path.to_string_lossy().into_owned(),
+                id: id.into(),
+                segment: mapping.path().to_string_lossy().into_owned(),
+                generation: config.generation,
+                state: state.map(<[u8]>::to_vec),
+            },
+            LOAD_TIMEOUT.max(timeout),
+        )?;
         let Response::Metadata(metadata) = response else {
             return Err("invalid plugin load response".into());
         };
@@ -706,6 +722,11 @@ fn audio_worker(
             let _ = ack_tx.send(start);
             let mut paused = false;
             let mut pause_requested = false;
+            // Poll fast while jobs flow; an instance nobody has published to
+            // for a while (a spare waiting for its node) polls slowly. The
+            // first job after that waits at most one slow period, well inside
+            // the pipeline's depth.
+            let mut last_job = std::time::Instant::now();
             loop {
                 if consumer.view().stopping() || consumer.view().failure() != 0 {
                     break;
@@ -727,6 +748,7 @@ fn audio_worker(
                     continue;
                 }
                 if let Some(mut slot) = consumer.next_job() {
+                    last_job = std::time::Instant::now();
                     let job = *slot.job();
                     let (input, output) = slot.audio();
                     output.fill(0.0);
@@ -802,7 +824,11 @@ fn audio_worker(
                         pause_requested = false;
                         let _ = ack_tx.send(Ok(()));
                     }
-                    std::thread::sleep(Duration::from_micros(50));
+                    std::thread::sleep(if last_job.elapsed() < IDLE_AFTER {
+                        Duration::from_micros(50)
+                    } else {
+                        IDLE_POLL
+                    });
                 }
             }
             let _ = finish_tx.send(processor.stop());
@@ -834,12 +860,15 @@ impl Loaded {
         }
         Ok(info)
     }
+    /// Saving is a main-thread call both formats allow while the processor
+    /// runs, so the audio thread keeps processing. Loading pauses it: a
+    /// load may reconfigure the processor.
     fn state(&mut self, bytes: Option<Vec<u8>>) -> Result<Response, String> {
-        self.worker.control(AudioControl::Pause)?;
-        let result = match bytes {
-            Some(bytes) => self.instance.load_state(&bytes).map(|_| Response::Ok),
-            None => self.instance.save_state().map(Response::State),
+        let Some(bytes) = bytes else {
+            return self.instance.save_state().map(Response::State);
         };
+        self.worker.control(AudioControl::Pause)?;
+        let result = self.instance.load_state(&bytes).map(|_| Response::Ok);
         let metadata = self.metadata();
         let resume = self.worker.control(AudioControl::Resume);
         metadata?;
@@ -894,6 +923,21 @@ pub unsafe fn helper_main(fd: i32) -> Result<(), String> {
         }
         if count == 0 {
             continue;
+        }
+        // The parent closing its end is the normal end of a helper whose
+        // owner was dropped without a shutdown request, not an error.
+        let mut byte = 0u8;
+        // SAFETY: a one-byte non-consuming read into a live stack byte.
+        let peeked = unsafe {
+            libc::recv(
+                socket.as_raw_fd(),
+                (&mut byte as *mut u8).cast(),
+                1,
+                libc::MSG_PEEK | libc::MSG_DONTWAIT,
+            )
+        };
+        if peeked == 0 {
+            return Ok(());
         }
         socket
             .set_read_timeout(Some(DEFAULT_TIMEOUT))
@@ -956,6 +1000,9 @@ fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, Str
                     worker,
                 };
                 let metadata = plugin.metadata()?;
+                // A restart a plugin asked for while it was being loaded and
+                // activated is answered by the metadata just read.
+                let _ = plugin.instance.restart_requested();
                 *loaded = Some(plugin);
                 Ok(Response::Metadata(Box::new(metadata)))
             }

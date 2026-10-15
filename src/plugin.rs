@@ -186,6 +186,21 @@ impl PluginDef {
         }
         Ok(instance)
     }
+    /// The same recipe carrying `state` as its initial state: the image a
+    /// node's restart restores after a save, without probing the plugin again
+    /// (a save changes no surface).
+    pub fn with_state(&self, state: Vec<u8>) -> Self {
+        Self {
+            reference: PluginReference {
+                state,
+                ..self.reference.clone()
+            },
+            info: self.info.clone(),
+            names: self.names.clone(),
+            defaults: self.defaults.clone(),
+            initial_state: true,
+        }
+    }
     pub fn control_index(&self, name: &str) -> Option<u32> {
         self.names.iter().position(|n| n == name).map(|n| n as u32)
     }
@@ -228,7 +243,8 @@ impl PluginAdmin {
     pub fn abort(&self) {
         self.phase.store(3, Ordering::Release);
     }
-    /// Capture after the callback has stopped submitting jobs at a block boundary.
+    /// Wait until the callback has stopped submitting jobs at a block boundary,
+    /// before a state load replaces this generation.
     pub fn wait_boundary(&self) -> Result<(), String> {
         let start = std::time::Instant::now();
         while self.phase.load(Ordering::Acquire) != 2 {
@@ -252,9 +268,12 @@ impl PluginAdmin {
             .map_err(|_| "plugin control poisoned")?
             .editor(command)
     }
-    /// Capture after quiescence and after the helper drains accepted jobs.
-    pub fn capture(&self) -> Result<Vec<u8>, String> {
-        self.wait_boundary()?;
+    /// Capture the live state while the instance keeps processing: saving
+    /// is a main-thread call both formats allow during processing.
+    pub fn save(&self) -> Result<Vec<u8>, String> {
+        if self.pending() {
+            return Err("plugin state operation already pending".into());
+        }
         self.control
             .lock()
             .map_err(|_| "plugin state control poisoned")?
@@ -400,6 +419,10 @@ impl PluginSynth {
             deferred: [Event::default(); HELD_NOTES],
             deferred_count: 0,
         })
+    }
+    /// Pipeline delay of this instance, in engine blocks.
+    pub fn depth(&self) -> u32 {
+        self.audio.depth()
     }
     /// Administrative handle for this live generation, never shared by a def.
     pub fn administration(&self) -> Arc<PluginAdmin> {
@@ -1099,6 +1122,39 @@ mod offline_tests {
         }
         assert_eq!(synth.deferred_count, 0);
         assert!(synth.notes.iter().all(Option::is_none));
+    }
+
+    /// `/synth_new` takes the def's spare -- the very instance, already
+    /// running -- and asks for the next; a spare of a replaced def is not
+    /// taken and is handed back.
+    #[test]
+    fn a_new_node_takes_the_spare_and_a_replaced_def_drops_it() {
+        use crate::osc::translate::CmdTranslator;
+        let def = instrument("spare");
+        let translator = {
+            let mut t = CmdTranslator::new(48000.0);
+            t.plugin_defs.insert("keys".into(), Arc::clone(&def));
+            t
+        };
+        let spare = Box::new(PluginSynth::new(Arc::clone(&def), 48000.0, 0).unwrap());
+        let generation = spare.incarnation();
+        assert!(
+            translator
+                .offer_spare("keys".into(), Arc::clone(&def), spare)
+                .is_none()
+        );
+        assert!(translator.has_spare("keys"));
+        let (synth, _) = translator.make_synth("keys").unwrap();
+        assert_eq!(synth.incarnation(), generation);
+        assert!(!translator.has_spare("keys"));
+        assert_eq!(translator.take_spare_requests(), ["keys"]);
+        // Without a spare the node is still built, synchronously.
+        let (other, _) = translator.make_synth("keys").unwrap();
+        assert_ne!(other.incarnation(), generation);
+        // A spare built for a def that has since been replaced is refused.
+        let old = instrument("spare-old");
+        let stale = Box::new(PluginSynth::new(Arc::clone(&old), 48000.0, 0).unwrap());
+        assert!(translator.offer_spare("keys".into(), old, stale).is_some());
     }
 
     /// A 2048-frame device callback runs 32 blocks back to back: a result due

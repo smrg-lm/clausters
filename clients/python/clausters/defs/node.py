@@ -225,9 +225,10 @@ class Node:
     def save_plugin_state(self, *, timeout: float = 10.0) -> bytes:
         """Capture this live plugin's opaque state for loading or recovery.
 
-        Blocking, live servers only. The node is silent during the operation;
-        its helper is replaced and held notes are cleared. State is independent
-        of the def and other instances. Missing/duplicate chunks raise an error.
+        Blocking, live servers only. The node keeps playing while it is
+        captured, held notes included. State is independent of the def and
+        other instances, and becomes this node's recovery image for
+        `restart_plugin()`. Missing/duplicate chunks raise an error.
         """
         from ..errors import CommandError
         server = self._server()

@@ -142,7 +142,8 @@ impl OscServer {
     /// submitted counts as targets and is answered with `/server_sync.reply id` once all
     /// async pipelines (NRT buffers, Faust compiles, plugin scans) have drained up to them --
     /// i.e. every async command received before this `/server_sync` has finished.
-    /// Each pipeline completes FIFO, so the counters are a sufficient barrier.
+    /// Each pipeline (and each plugin worker) completes FIFO, so the counters
+    /// are a sufficient barrier.
     pub(in crate::osc::server) fn handle_server_sync(
         &mut self,
         mut args: Args,
@@ -154,7 +155,7 @@ impl OscServer {
             id,
             nrt_target: self.nrt_submitted,
             faust_target: self.faust_submitted,
-            plugin_target: self.plugin_submitted,
+            plugin_target: self.plugin_targets(),
         });
         self.resolve_syncs(); // answer at once if nothing is outstanding
         Ok(())
@@ -168,15 +169,17 @@ impl OscServer {
         }
         let (nrt, faust) = (self.nrt_drained, self.faust_drained);
         let mut ready = Vec::new();
-        self.pending_syncs.retain(|p| {
+        let mut syncs = std::mem::take(&mut self.pending_syncs);
+        syncs.retain(|p| {
             let done = nrt >= p.nrt_target
                 && faust >= p.faust_target
-                && self.plugin_drained >= p.plugin_target;
+                && self.plugin_reached(&p.plugin_target);
             if done {
                 ready.push((p.client, p.id));
             }
             !done
         });
+        self.pending_syncs = syncs;
         for (client, id) in ready {
             self.reply(client, "/server_sync.reply", vec![OscType::Int(id)]);
         }

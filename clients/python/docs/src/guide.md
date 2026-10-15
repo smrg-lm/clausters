@@ -136,8 +136,9 @@ The installed Linux wheel includes the matching helper beside its server.
 for completion and raise on failure. The image is independent of its def and
 other instances, and becomes that node's recovery image for
 `node.restart_plugin()`. Keep the bytes yourself for use after a server boot.
-Capture/load are silent during preparation and clear held notes; routing and
-maps survive, and load takes the loaded values for unmapped parameters.
+A capture does not interrupt the node: it keeps playing, held notes
+included. A load is silent during preparation and clears held notes; routing and
+maps survive, and it takes the loaded values for unmapped parameters.
 Metadata is refreshed safely; incompatible port/control identities fail.
 Use TCP or IPC for state images too large for one UDP datagram, and issue one
 capture at a time per connection. Offline renders carry initial bytes in the

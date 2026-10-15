@@ -343,8 +343,9 @@ restart replace the helper and close its editor; reopen it afterward.
 `Uint8Array`; `await node.loadPluginState(state)` loads it into a live node.
 The image belongs to that node, independently of its def and other instances,
 and becomes its recovery image for `await node.restartPlugin()`. Keep the
-bytes yourself for use after a server boot. Capture/load are silent during
-preparation and clear held notes; routing and maps survive, and load takes the
+bytes yourself for use after a server boot. A capture does not interrupt the
+node: it keeps playing, held notes included. A load is silent during
+preparation and clears held notes; routing and maps survive, and it takes the
 loaded values for unmapped parameters. Metadata is refreshed safely;
 incompatible port/control identities fail. Use a stream carrier for large
 images and issue one capture at a time per connection. Offline renders carry

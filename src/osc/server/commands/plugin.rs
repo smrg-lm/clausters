@@ -1,276 +1,368 @@
-//! Native plugin discovery, always outside the network/audio threads.
+//! Native plugin discovery and administration, always outside the
+//! network/audio threads.
+//!
+//! Three workers, so that no kind of request waits behind another: **scan**
+//! (a discovery can take minutes), **build** (probing a def, preparing a
+//! node's spare instance, restarting a node, loading a state -- each starts a
+//! helper and loads a plugin, which can take seconds) and **control** (the
+//! editor and a state capture, which a running helper answers at once).
 use super::super::*;
 
 #[cfg(all(
     any(feature = "plugin-clap", feature = "plugin-vst3"),
     target_os = "linux"
 ))]
-pub(in crate::osc::server) struct ScanWorker {
-    sender: std::sync::mpsc::SyncSender<ScanJob>,
-    receiver: std::sync::mpsc::Receiver<ScanResult>,
-    cancelled: Arc<std::sync::atomic::AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-#[cfg(all(
-    any(feature = "plugin-clap", feature = "plugin-vst3"),
-    target_os = "linux"
-))]
-struct ScanRequest {
-    dirs: Vec<std::path::PathBuf>,
-    cache: Option<std::path::PathBuf>,
-    client: ClientId,
-}
-#[cfg(all(
-    any(feature = "plugin-clap", feature = "plugin-vst3"),
-    target_os = "linux"
-))]
-struct ScanReply {
-    client: ClientId,
-    result: Result<Vec<clausters_plugin_host::format::ScanEntry>, String>,
-}
-#[cfg(all(
-    any(feature = "plugin-clap", feature = "plugin-vst3"),
-    target_os = "linux"
-))]
-enum ScanJob {
-    Editor {
-        id: i32,
-        expected: u64,
-        admin: Arc<crate::plugin::PluginAdmin>,
-        command: clausters_plugin_host::format::EditorCommand,
-        address: &'static str,
-        client: ClientId,
-    },
-    Scan(ScanRequest),
-    Def {
-        name: String,
-        reference: crate::plugin::PluginReference,
-        sample_rate: f32,
-        client: ClientId,
-        ticket: u64,
-    },
-    State {
-        id: i32,
-        expected: u64,
-        def: Arc<crate::plugin::PluginDef>,
-        admin: Arc<crate::plugin::PluginAdmin>,
-        bytes: Option<Vec<u8>>,
-        sample_rate: f32,
-        device_frames: u32,
-        client: ClientId,
-    },
-    Restart {
-        id: i32,
-        expected: u64,
-        def: Arc<crate::plugin::PluginDef>,
-        sample_rate: f32,
-        device_frames: u32,
-        client: ClientId,
-    },
-}
-#[cfg(all(
-    any(feature = "plugin-clap", feature = "plugin-vst3"),
-    target_os = "linux"
-))]
-struct PreparedState {
-    def: Arc<crate::plugin::PluginDef>,
-    synth: Box<crate::plugin::PluginSynth>,
-    bytes: Vec<u8>,
-}
-#[cfg(all(
-    any(feature = "plugin-clap", feature = "plugin-vst3"),
-    target_os = "linux"
-))]
-enum ScanResult {
-    Editor {
-        id: i32,
-        expected: u64,
-        result: Result<clausters_plugin_host::format::EditorState, String>,
-        address: &'static str,
-        client: ClientId,
-    },
-    Scan(ScanReply),
-    Def {
-        name: String,
-        result: Result<Box<crate::plugin::PluginDef>, String>,
-        client: ClientId,
-        ticket: u64,
-    },
-    State {
-        id: i32,
-        expected: u64,
-        prior: Arc<crate::plugin::PluginDef>,
-        admin: Arc<crate::plugin::PluginAdmin>,
-        loading: bool,
-        result: Result<PreparedState, String>,
-        client: ClientId,
-    },
-    Restart {
-        id: i32,
-        expected: u64,
-        def: Arc<crate::plugin::PluginDef>,
-        result: Result<Box<crate::plugin::PluginSynth>, String>,
-        client: ClientId,
-    },
-}
-#[cfg(all(
-    any(feature = "plugin-clap", feature = "plugin-vst3"),
-    target_os = "linux"
-))]
-impl ScanWorker {
-    pub(in crate::osc::server) fn spawn(waker: Option<crate::osc::wake::Waker>) -> Self {
-        let (sender, incoming) = std::sync::mpsc::sync_channel::<ScanJob>(4);
-        let (outgoing, receiver) = std::sync::mpsc::sync_channel(4);
-        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let stop = Arc::clone(&cancelled);
-        // At most four accepted jobs exist, enforced by submitted/drained counts.
-        // No audio callback submits discovery or owns this worker/channel.
-        let thread = std::thread::Builder::new()
-            .name("plugin-scan".into())
-            .spawn(move || {
-                while !stop.load(Ordering::Acquire) {
-                    let job = match incoming.recv_timeout(Duration::from_millis(50)) {
-                        Ok(job) => job,
-                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                    };
-                    let result = match job {
-                        ScanJob::Editor {
-                            id,
-                            expected,
-                            admin,
-                            command,
-                            address,
-                            client,
-                        } => ScanResult::Editor {
-                            id,
-                            expected,
-                            result: admin.editor(command),
-                            address,
-                            client,
-                        },
-                        ScanJob::Scan(job) => {
-                            let result = (|| {
-                                let helper = clausters_plugin_host::runtime::helper_path()?;
-                                let entries = clausters_plugin_host::runtime::scan_cancellable(
-                                    &helper,
-                                    &job.dirs,
-                                    clausters_plugin_host::runtime::DEFAULT_TIMEOUT,
-                                    &stop,
-                                )?;
-                                if let Some(dir) = &job.cache {
-                                    clausters_plugin_host::runtime::cache(dir, &entries)?;
-                                }
-                                Ok(entries)
-                            })();
-                            ScanResult::Scan(ScanReply {
-                                client: job.client,
-                                result,
-                            })
-                        }
-                        ScanJob::Def {
-                            name,
-                            reference,
-                            sample_rate,
-                            client,
-                            ticket,
-                        } => ScanResult::Def {
-                            name,
-                            result: crate::plugin::PluginDef::probe(reference, sample_rate)
-                                .map(Box::new),
-                            client,
-                            ticket,
-                        },
-                        ScanJob::State {
-                            id,
-                            expected,
-                            def,
-                            admin,
-                            bytes,
-                            sample_rate,
-                            device_frames,
-                            client,
-                        } => {
-                            let loading = bytes.is_some();
-                            let result = (|| {
-                                let state = match bytes {
-                                    Some(bytes) => {
-                                        admin.wait_boundary()?;
-                                        bytes
-                                    }
-                                    None => admin.capture()?,
-                                };
-                                let mut reference = def.reference.clone();
-                                reference.state = state.clone();
-                                let refreshed =
-                                    crate::plugin::PluginDef::probe_state(reference, sample_rate)?;
-                                if refreshed.names != def.names {
-                                    return Err(
-                                        "plugin state changed its control identities".into()
-                                    );
-                                }
-                                let refreshed = Arc::new(refreshed);
-                                let mut synth = crate::plugin::PluginSynth::new(
-                                    Arc::clone(&refreshed),
-                                    sample_rate,
-                                    device_frames,
-                                )?;
-                                if loading {
-                                    synth.loaded_state();
-                                }
-                                Ok(PreparedState {
-                                    def: refreshed,
-                                    synth: Box::new(synth),
-                                    bytes: state,
-                                })
-                            })();
-                            ScanResult::State {
-                                id,
-                                expected,
-                                prior: def,
-                                admin,
-                                loading,
-                                result,
-                                client,
-                            }
-                        }
-                        ScanJob::Restart {
-                            id,
-                            expected,
-                            def,
-                            sample_rate,
-                            device_frames,
-                            client,
-                        } => {
-                            let result = crate::plugin::PluginSynth::new(
-                                Arc::clone(&def),
-                                sample_rate,
-                                device_frames,
-                            )
-                            .map(Box::new);
-                            ScanResult::Restart {
-                                id,
-                                expected,
-                                def,
-                                result,
-                                client,
-                            }
-                        }
-                    };
-                    if outgoing.try_send(result).is_err() {
-                        break;
+mod workers {
+    use super::*;
+
+    /// Most jobs a worker holds, accepted or finished and not yet drained;
+    /// its result channel has the same capacity, so a result never waits.
+    const QUEUE: usize = 4;
+
+    pub(in crate::osc::server) struct ScanRequest {
+        pub dirs: Vec<std::path::PathBuf>,
+        pub cache: Option<std::path::PathBuf>,
+        pub client: ClientId,
+    }
+    pub(in crate::osc::server) struct ScanReply {
+        pub client: ClientId,
+        pub result: Result<Vec<clausters_plugin_host::format::ScanEntry>, String>,
+    }
+    pub(in crate::osc::server) enum PluginJob {
+        Scan(ScanRequest),
+        Editor {
+            id: i32,
+            expected: u64,
+            admin: Arc<crate::plugin::PluginAdmin>,
+            command: clausters_plugin_host::format::EditorCommand,
+            address: &'static str,
+            client: ClientId,
+        },
+        Save {
+            id: i32,
+            expected: u64,
+            def: Arc<crate::plugin::PluginDef>,
+            admin: Arc<crate::plugin::PluginAdmin>,
+            client: ClientId,
+        },
+        Def {
+            name: String,
+            reference: crate::plugin::PluginReference,
+            sample_rate: f32,
+            client: ClientId,
+            ticket: u64,
+        },
+        Load {
+            id: i32,
+            expected: u64,
+            def: Arc<crate::plugin::PluginDef>,
+            admin: Arc<crate::plugin::PluginAdmin>,
+            bytes: Vec<u8>,
+            sample_rate: f32,
+            device_frames: u32,
+            client: ClientId,
+        },
+        Restart {
+            id: i32,
+            expected: u64,
+            def: Arc<crate::plugin::PluginDef>,
+            sample_rate: f32,
+            device_frames: u32,
+            client: ClientId,
+        },
+        Spare {
+            name: String,
+            def: Arc<crate::plugin::PluginDef>,
+            sample_rate: f32,
+            device_frames: u32,
+        },
+    }
+    pub(in crate::osc::server) struct PreparedState {
+        pub def: Arc<crate::plugin::PluginDef>,
+        pub synth: Box<crate::plugin::PluginSynth>,
+    }
+    pub(in crate::osc::server) enum PluginResult {
+        Scan(ScanReply),
+        Editor {
+            id: i32,
+            expected: u64,
+            result: Result<clausters_plugin_host::format::EditorState, String>,
+            address: &'static str,
+            client: ClientId,
+        },
+        Save {
+            id: i32,
+            expected: u64,
+            def: Arc<crate::plugin::PluginDef>,
+            result: Result<Vec<u8>, String>,
+            client: ClientId,
+        },
+        Def {
+            name: String,
+            result: Result<Box<crate::plugin::PluginDef>, String>,
+            client: ClientId,
+            ticket: u64,
+        },
+        Load {
+            id: i32,
+            expected: u64,
+            prior: Arc<crate::plugin::PluginDef>,
+            admin: Arc<crate::plugin::PluginAdmin>,
+            result: Result<PreparedState, String>,
+            client: ClientId,
+        },
+        Restart {
+            id: i32,
+            expected: u64,
+            def: Arc<crate::plugin::PluginDef>,
+            result: Result<Box<crate::plugin::PluginSynth>, String>,
+            client: ClientId,
+        },
+        Spare {
+            name: String,
+            def: Arc<crate::plugin::PluginDef>,
+            result: Result<Box<crate::plugin::PluginSynth>, String>,
+        },
+    }
+    impl PluginResult {
+        /// A spare is the server's own preparation: no `/server_sync` waits
+        /// for it.
+        fn counted(&self) -> bool {
+            !matches!(self, Self::Spare { .. })
+        }
+    }
+
+    fn run(job: PluginJob, stop: &std::sync::atomic::AtomicBool) -> PluginResult {
+        match job {
+            PluginJob::Scan(job) => {
+                let result = (|| {
+                    let helper = clausters_plugin_host::runtime::helper_path()?;
+                    let entries = clausters_plugin_host::runtime::scan_cancellable(
+                        &helper,
+                        &job.dirs,
+                        clausters_plugin_host::runtime::DEFAULT_TIMEOUT,
+                        stop,
+                    )?;
+                    if let Some(dir) = &job.cache {
+                        clausters_plugin_host::runtime::cache(dir, &entries)?;
                     }
-                    if let Some(waker) = &waker {
-                        waker.wake();
+                    Ok(entries)
+                })();
+                PluginResult::Scan(ScanReply {
+                    client: job.client,
+                    result,
+                })
+            }
+            PluginJob::Editor {
+                id,
+                expected,
+                admin,
+                command,
+                address,
+                client,
+            } => PluginResult::Editor {
+                id,
+                expected,
+                result: admin.editor(command),
+                address,
+                client,
+            },
+            PluginJob::Save {
+                id,
+                expected,
+                def,
+                admin,
+                client,
+            } => PluginResult::Save {
+                id,
+                expected,
+                def,
+                result: admin.save(),
+                client,
+            },
+            PluginJob::Def {
+                name,
+                reference,
+                sample_rate,
+                client,
+                ticket,
+            } => PluginResult::Def {
+                name,
+                result: crate::plugin::PluginDef::probe(reference, sample_rate).map(Box::new),
+                client,
+                ticket,
+            },
+            PluginJob::Load {
+                id,
+                expected,
+                def,
+                admin,
+                bytes,
+                sample_rate,
+                device_frames,
+                client,
+            } => {
+                let result = (|| {
+                    admin.wait_boundary()?;
+                    let mut reference = def.reference.clone();
+                    reference.state = bytes;
+                    let refreshed = crate::plugin::PluginDef::probe_state(reference, sample_rate)?;
+                    if refreshed.names != def.names {
+                        return Err("plugin state changed its control identities".into());
                     }
+                    let refreshed = Arc::new(refreshed);
+                    let mut synth = crate::plugin::PluginSynth::new(
+                        Arc::clone(&refreshed),
+                        sample_rate,
+                        device_frames,
+                    )?;
+                    synth.loaded_state();
+                    Ok(PreparedState {
+                        def: refreshed,
+                        synth: Box::new(synth),
+                    })
+                })();
+                PluginResult::Load {
+                    id,
+                    expected,
+                    prior: def,
+                    admin,
+                    result,
+                    client,
                 }
-            })
-            .expect("spawn plugin discovery worker");
-        Self {
-            sender,
-            receiver,
-            cancelled,
-            thread: Some(thread),
+            }
+            PluginJob::Restart {
+                id,
+                expected,
+                def,
+                sample_rate,
+                device_frames,
+                client,
+            } => PluginResult::Restart {
+                id,
+                expected,
+                result: crate::plugin::PluginSynth::new(
+                    Arc::clone(&def),
+                    sample_rate,
+                    device_frames,
+                )
+                .map(Box::new),
+                def,
+                client,
+            },
+            PluginJob::Spare {
+                name,
+                def,
+                sample_rate,
+                device_frames,
+            } => PluginResult::Spare {
+                name,
+                result: crate::plugin::PluginSynth::new(
+                    Arc::clone(&def),
+                    sample_rate,
+                    device_frames,
+                )
+                .map(Box::new),
+                def,
+            },
+        }
+    }
+
+    /// One worker thread with its bounded queue. `submitted`/`drained` count
+    /// the jobs a `/server_sync` waits for; each worker completes in order,
+    /// so per-worker counts are a sufficient barrier.
+    pub(in crate::osc::server) struct PluginWorker {
+        sender: std::sync::mpsc::SyncSender<PluginJob>,
+        receiver: std::sync::mpsc::Receiver<PluginResult>,
+        cancelled: Arc<std::sync::atomic::AtomicBool>,
+        thread: Option<std::thread::JoinHandle<()>>,
+        in_flight: usize,
+        pub submitted: u64,
+        pub drained: u64,
+    }
+    impl PluginWorker {
+        fn spawn(name: &str, waker: Option<crate::osc::wake::Waker>) -> Self {
+            let (sender, incoming) = std::sync::mpsc::sync_channel::<PluginJob>(QUEUE);
+            let (outgoing, receiver) = std::sync::mpsc::sync_channel(QUEUE);
+            let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = Arc::clone(&cancelled);
+            // No audio callback submits a job or owns this worker or channel.
+            let thread = std::thread::Builder::new()
+                .name(format!("plugin-{name}"))
+                .spawn(move || {
+                    while !stop.load(Ordering::Acquire) {
+                        let job = match incoming.recv_timeout(Duration::from_millis(50)) {
+                            Ok(job) => job,
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                        };
+                        if outgoing.try_send(run(job, &stop)).is_err() {
+                            break;
+                        }
+                        if let Some(waker) = &waker {
+                            waker.wake();
+                        }
+                    }
+                })
+                .expect("spawn plugin worker");
+            Self {
+                sender,
+                receiver,
+                cancelled,
+                thread: Some(thread),
+                in_flight: 0,
+                submitted: 0,
+                drained: 0,
+            }
+        }
+        /// Queue a job, or refuse it while the worker holds `QUEUE` of them.
+        pub fn submit(&mut self, job: PluginJob) -> Result<(), &'static str> {
+            if self.in_flight >= QUEUE {
+                return Err("plugin worker queue full");
+            }
+            let counted = !matches!(job, PluginJob::Spare { .. });
+            self.sender
+                .try_send(job)
+                .map_err(|_| "plugin worker unavailable")?;
+            self.in_flight += 1;
+            if counted {
+                self.submitted += 1;
+            }
+            Ok(())
+        }
+        pub fn try_recv(&mut self) -> Option<PluginResult> {
+            let result = self.receiver.try_recv().ok()?;
+            self.in_flight -= 1;
+            if result.counted() {
+                self.drained += 1;
+            }
+            Some(result)
+        }
+    }
+    impl Drop for PluginWorker {
+        fn drop(&mut self) {
+            self.cancelled.store(true, Ordering::Release);
+            if let Some(thread) = self.thread.take() {
+                let _ = thread.join();
+            }
+        }
+    }
+
+    pub(in crate::osc::server) struct PluginWorkers {
+        pub scan: PluginWorker,
+        pub build: PluginWorker,
+        pub control: PluginWorker,
+    }
+    impl PluginWorkers {
+        pub fn spawn(waker: Option<crate::osc::wake::Waker>) -> Self {
+            Self {
+                scan: PluginWorker::spawn("scan", waker.clone()),
+                build: PluginWorker::spawn("build", waker.clone()),
+                control: PluginWorker::spawn("control", waker),
+            }
+        }
+        pub fn all(&mut self) -> [&mut PluginWorker; 3] {
+            [&mut self.scan, &mut self.build, &mut self.control]
         }
     }
 }
@@ -278,15 +370,53 @@ impl ScanWorker {
     any(feature = "plugin-clap", feature = "plugin-vst3"),
     target_os = "linux"
 ))]
-impl Drop for ScanWorker {
-    fn drop(&mut self) {
-        self.cancelled.store(true, Ordering::Release);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+pub(in crate::osc::server) use workers::PluginWorkers;
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
+use workers::{PluginJob, PluginResult, PreparedState, ScanRequest};
+
+impl OscServer {
+    /// What a `/server_sync` issued now waits for, per plugin worker.
+    pub(in crate::osc::server) fn plugin_targets(&self) -> [u64; 3] {
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
+        {
+            let w = &self.plugin_workers;
+            [w.scan.submitted, w.build.submitted, w.control.submitted]
+        }
+        #[cfg(not(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        )))]
+        {
+            [0; 3]
         }
     }
-}
-impl OscServer {
+    /// Whether every plugin job a sync waits for has finished.
+    pub(in crate::osc::server) fn plugin_reached(&self, targets: &[u64; 3]) -> bool {
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
+        {
+            let w = &self.plugin_workers;
+            w.scan.drained >= targets[0]
+                && w.build.drained >= targets[1]
+                && w.control.drained >= targets[2]
+        }
+        #[cfg(not(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        )))]
+        {
+            let _ = targets;
+            true
+        }
+    }
     pub(in crate::osc::server) fn handle_plugin_scan(
         &mut self,
         args: Args,
@@ -310,23 +440,18 @@ impl OscServer {
             if dirs.is_empty() {
                 dirs = clausters_plugin_host::runtime::default_dirs();
             }
-            if self.plugin_submitted - self.plugin_drained >= 4 {
-                return Err("plugin scan queue full".into());
-            }
             let cache = self
                 .store
                 .as_ref()
                 .and_then(|s| s.defs_dir().parent())
                 .map(std::path::Path::to_path_buf);
-            self.plugin_scanner
-                .sender
-                .try_send(ScanJob::Scan(ScanRequest {
+            self.plugin_workers
+                .scan
+                .submit(PluginJob::Scan(ScanRequest {
                     dirs,
                     cache,
                     client: from,
-                }))
-                .map_err(|_| "plugin scan worker unavailable")?;
-            self.plugin_submitted += 1;
+                }))?;
             Ok(())
         }
         #[cfg(target_arch = "wasm32")]
@@ -361,23 +486,17 @@ impl OscServer {
             };
             let reference = serde_json::from_slice(crate::osc::args::json_payload(&args[1..])?)
                 .map_err(|e| format!("invalid plugin reference: {e}"))?;
-            if self.plugin_submitted - self.plugin_drained >= 4 {
-                return Err("plugin worker queue full".into());
-            }
-            let ticket = self.plugin_submitted + 1;
-            self.plugin_scanner
-                .sender
-                .try_send(ScanJob::Def {
-                    name: name.clone(),
-                    reference,
-                    sample_rate: self.handle.sample_rate,
-                    client: from,
-                    ticket,
-                })
-                .map_err(|_| "plugin worker unavailable")?;
+            let ticket = self.plugin_tickets + 1;
+            self.plugin_workers.build.submit(PluginJob::Def {
+                name: name.clone(),
+                reference,
+                sample_rate: self.handle.sample_rate,
+                client: from,
+                ticket,
+            })?;
+            self.plugin_tickets = ticket;
             self.claim_def_name(name, DefKind::Plugin);
             self.plugin_claims.insert(name.clone(), ticket);
-            self.plugin_submitted += 1;
             Ok(())
         }
         #[cfg(not(all(
@@ -429,9 +548,6 @@ impl OscServer {
             if admin.pending() {
                 return Err("plugin state operation already pending".into());
             }
-            if self.plugin_submitted - self.plugin_drained >= 4 {
-                return Err("plugin worker queue full".into());
-            }
             let command = match address {
                 "/plugin_openEditor" => EditorCommand::Open,
                 "/plugin_closeEditor" => EditorCommand::Close,
@@ -441,18 +557,15 @@ impl OscServer {
                 }
                 _ => EditorCommand::Query,
             };
-            self.plugin_scanner
-                .sender
-                .try_send(ScanJob::Editor {
-                    id,
-                    expected: *expected,
-                    admin: Arc::clone(admin),
-                    command,
-                    address,
-                    client: from,
-                })
-                .map_err(|_| "plugin worker unavailable")?;
-            self.plugin_submitted += 1;
+            let job = PluginJob::Editor {
+                id,
+                expected: *expected,
+                admin: Arc::clone(admin),
+                command,
+                address,
+                client: from,
+            };
+            self.plugin_workers.control.submit(job)?;
             Ok(())
         }
         #[cfg(not(all(
@@ -486,21 +599,15 @@ impl OscServer {
             if admin.pending() {
                 return Err("plugin state operation already pending".into());
             }
-            if self.plugin_submitted - self.plugin_drained >= 4 {
-                return Err("plugin worker queue full".into());
-            }
-            self.plugin_scanner
-                .sender
-                .try_send(ScanJob::Restart {
-                    id,
-                    expected: *expected,
-                    def: Arc::clone(def),
-                    sample_rate: self.handle.sample_rate,
-                    device_frames: self.translator.device_frames(),
-                    client: from,
-                })
-                .map_err(|_| "plugin worker unavailable")?;
-            self.plugin_submitted += 1;
+            let job = PluginJob::Restart {
+                id,
+                expected: *expected,
+                def: Arc::clone(def),
+                sample_rate: self.handle.sample_rate,
+                device_frames: self.translator.device_frames(),
+                client: from,
+            };
+            self.plugin_workers.build.submit(job)?;
             Ok(())
         }
         #[cfg(not(all(
@@ -549,29 +656,37 @@ impl OscServer {
             if !def.info.state {
                 return Err("plugin has no state extension".into());
             }
-            if self.plugin_submitted - self.plugin_drained >= 4 {
-                return Err("plugin worker queue full".into());
-            }
-            admin.reserve()?;
-            if self
-                .plugin_scanner
-                .sender
-                .try_send(ScanJob::State {
+            let (def, expected, admin) = (Arc::clone(def), *expected, Arc::clone(admin));
+            let Some(bytes) = bytes else {
+                // A capture keeps the node playing: the control worker asks
+                // the running helper, and nothing is swapped.
+                if admin.pending() {
+                    return Err("plugin state operation already pending".into());
+                }
+                self.plugin_workers.control.submit(PluginJob::Save {
                     id,
-                    expected: *expected,
-                    def: Arc::clone(def),
-                    admin: Arc::clone(admin),
-                    bytes,
-                    sample_rate: self.handle.sample_rate,
-                    device_frames: self.translator.device_frames(),
+                    expected,
+                    def,
+                    admin,
                     client: from,
-                })
-                .is_err()
-            {
+                })?;
+                return Ok(());
+            };
+            admin.reserve()?;
+            let job = PluginJob::Load {
+                id,
+                expected,
+                def,
+                admin: Arc::clone(&admin),
+                bytes,
+                sample_rate: self.handle.sample_rate,
+                device_frames: self.translator.device_frames(),
+                client: from,
+            };
+            if let Err(error) = self.plugin_workers.build.submit(job) {
                 admin.abort();
-                return Err("plugin worker unavailable".into());
+                return Err(error.into());
             }
-            self.plugin_submitted += 1;
             Ok(())
         }
         #[cfg(not(all(
@@ -583,15 +698,98 @@ impl OscServer {
             Err("server built without native plugin support".into())
         }
     }
+    /// Whether node `id` is still the generation a job was submitted for.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    fn plugin_current(
+        &self,
+        id: i32,
+        expected: u64,
+        def: Option<&Arc<crate::plugin::PluginDef>>,
+    ) -> bool {
+        matches!(
+            self.translator.node_defs.get(&id),
+            Some(crate::osc::translate::NodeDef::Plugin(current, generation, ..))
+                if *generation == expected && def.is_none_or(|def| Arc::ptr_eq(current, def))
+        )
+    }
+    /// Swap a prepared instance into node `id` at a block boundary.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    fn install_plugin_generation(
+        &mut self,
+        id: i32,
+        expected: u64,
+        def: Arc<crate::plugin::PluginDef>,
+        synth: Box<crate::plugin::PluginSynth>,
+    ) -> Result<(), &'static str> {
+        let generation = crate::node::SynthNode::incarnation(synth.as_ref());
+        let admin = synth.administration();
+        self.send_all([Cmd::RestartSynth {
+            id,
+            expected,
+            synth,
+        }])
+        .map_err(|_| "command FIFO full")?;
+        self.translator.retire_plugin_generation(id, expected);
+        self.translator.node_defs.insert(
+            id,
+            crate::osc::translate::NodeDef::Plugin(def, generation, admin),
+        );
+        Ok(())
+    }
+    /// Ask the build worker for a spare of every def a `/synth_new` drew
+    /// from (and of `also`), and release the spares of defs that are gone.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    fn refill_plugin_spares(&mut self, also: Option<String>) {
+        drop(self.translator.stale_spares());
+        for name in self
+            .translator
+            .take_spare_requests()
+            .into_iter()
+            .chain(also)
+        {
+            if self.translator.has_spare(&name) || self.plugin_spares_building.contains(&name) {
+                continue;
+            }
+            let Some(def) = self.translator.plugin_defs.get(&name) else {
+                continue;
+            };
+            let job = PluginJob::Spare {
+                name: name.clone(),
+                def: Arc::clone(def),
+                sample_rate: self.handle.sample_rate,
+                device_frames: self.translator.device_frames(),
+            };
+            // A full queue skips the spare: the next /synth_new builds its
+            // instance itself and asks again.
+            if self.plugin_workers.build.submit(job).is_ok() {
+                self.plugin_spares_building.insert(name);
+            }
+        }
+    }
     #[cfg(all(
         any(feature = "plugin-clap", feature = "plugin-vst3"),
         target_os = "linux"
     ))]
     pub(in crate::osc::server) fn collect_plugin_results(&mut self) {
-        while let Ok(result) = self.plugin_scanner.receiver.try_recv() {
-            self.plugin_drained += 1;
-            let result = match result {
-                ScanResult::Editor {
+        let mut results = Vec::new();
+        for worker in self.plugin_workers.all() {
+            while let Some(result) = worker.try_recv() {
+                results.push(result);
+            }
+        }
+        let mut installed = None;
+        for result in results {
+            match result {
+                PluginResult::Editor {
                     id,
                     expected,
                     result,
@@ -599,28 +797,104 @@ impl OscServer {
                     client,
                 } => {
                     if self.translator.mirror.get(id).is_none()
-                        || !matches!(self.translator.node_defs.get(&id), Some(crate::osc::translate::NodeDef::Plugin(_, generation, _)) if *generation == expected)
+                        || !self.plugin_current(id, expected, None)
                     {
                         self.fail(client, address, "plugin node no longer exists");
-                    } else {
-                        match result {
-                            Ok(state) => self.done_with(
-                                client,
-                                address,
-                                vec![
-                                    OscType::Int(id),
-                                    OscType::String(
-                                        serde_json::to_string(&state).expect("editor state JSON"),
-                                    ),
-                                ],
-                            ),
-                            Err(error) => self.fail(client, address, error),
-                        }
+                        continue;
                     }
-                    continue;
+                    match result {
+                        Ok(state) => self.done_with(
+                            client,
+                            address,
+                            vec![
+                                OscType::Int(id),
+                                OscType::String(
+                                    serde_json::to_string(&state).expect("editor state JSON"),
+                                ),
+                            ],
+                        ),
+                        Err(error) => self.fail(client, address, error),
+                    }
                 }
-                ScanResult::Scan(result) => result,
-                ScanResult::Def {
+                PluginResult::Save {
+                    id,
+                    expected,
+                    def,
+                    result,
+                    client,
+                } => {
+                    const COMMAND: &str = "/plugin_saveState";
+                    let bytes = match result {
+                        Ok(bytes) if self.plugin_current(id, expected, Some(&def)) => bytes,
+                        Ok(_) => {
+                            self.fail(client, COMMAND, "plugin node no longer exists");
+                            continue;
+                        }
+                        Err(error) => {
+                            self.fail(client, COMMAND, error);
+                            continue;
+                        }
+                    };
+                    // The image is the node's recovery point: a restart
+                    // restores it. The recipe on disk does not change.
+                    if let Some(crate::osc::translate::NodeDef::Plugin(current, ..)) =
+                        self.translator.node_defs.get_mut(&id)
+                    {
+                        *current = Arc::new(current.with_state(bytes.clone()));
+                    }
+                    let chunks = bytes.len().div_ceil(6144).max(1);
+                    for chunk in 0..chunks {
+                        let start = chunk * 6144;
+                        self.reply(
+                            client,
+                            "/plugin_saveState.reply",
+                            vec![
+                                OscType::Int(id),
+                                OscType::Int(chunk as i32),
+                                OscType::Int(chunks as i32),
+                                OscType::Blob(bytes[start..bytes.len().min(start + 6144)].to_vec()),
+                            ],
+                        );
+                    }
+                    self.done_with(client, COMMAND, vec![OscType::Int(id)]);
+                }
+                PluginResult::Scan(result) => match result.result {
+                    Err(error) => self.fail(result.client, "/plugin_scan", error),
+                    Ok(entries) => {
+                        let count = entries.len() as i32;
+                        self.reply(
+                            result.client,
+                            "/plugin_scan.reply",
+                            vec![
+                                OscType::Int(-1),
+                                OscType::Int(count),
+                                OscType::Int(0),
+                                OscType::Int(0),
+                                OscType::Blob(Vec::new()),
+                            ],
+                        );
+                        for (index, entry) in entries.into_iter().enumerate() {
+                            let bytes =
+                                serde_json::to_vec(&entry).expect("validated plugin metadata JSON");
+                            let chunks = bytes.len().div_ceil(6144);
+                            for (chunk, bytes) in bytes.chunks(6144).enumerate() {
+                                self.reply(
+                                    result.client,
+                                    "/plugin_scan.reply",
+                                    vec![
+                                        OscType::Int(index as i32),
+                                        OscType::Int(count),
+                                        OscType::Int(chunk as i32),
+                                        OscType::Int(chunks as i32),
+                                        OscType::Blob(bytes.to_vec()),
+                                    ],
+                                );
+                            }
+                        }
+                        self.done(result.client, "/plugin_scan");
+                    }
+                },
+                PluginResult::Def {
                     name,
                     result,
                     client,
@@ -649,179 +923,98 @@ impl OscServer {
                             self.done_with(
                                 client,
                                 "/def_send",
-                                vec![OscType::String("plugin".into()), OscType::String(name)],
+                                vec![
+                                    OscType::String("plugin".into()),
+                                    OscType::String(name.clone()),
+                                ],
                             );
+                            // A def just sent is about to be played: start its
+                            // first instance now rather than on /synth_new.
+                            installed = Some(name);
                         }
                         Err(error) => self.fail(client, "/def_send", error),
                     }
-                    continue;
                 }
-                ScanResult::State {
+                PluginResult::Load {
                     id,
                     expected,
                     prior,
                     admin,
-                    loading,
                     result,
                     client,
                 } => {
-                    let command = if loading {
-                        "/plugin_loadState"
-                    } else {
-                        "/plugin_saveState"
-                    };
-                    let current = matches!(self.translator.node_defs.get(&id), Some(crate::osc::translate::NodeDef::Plugin(def, generation, ..)) if *generation == expected && Arc::ptr_eq(def, &prior));
+                    const COMMAND: &str = "/plugin_loadState";
                     let result = result.and_then(|value| {
-                        if current {
+                        if self.plugin_current(id, expected, Some(&prior)) {
                             Ok(value)
                         } else {
                             Err("plugin node no longer exists".into())
                         }
                     });
                     match result {
-                        Ok(PreparedState { def, synth, bytes }) => {
-                            let generation = crate::node::SynthNode::incarnation(synth.as_ref());
-                            let next_admin = synth.administration();
-                            if self
-                                .send_all([Cmd::RestartSynth {
-                                    id,
-                                    expected,
-                                    synth,
-                                }])
-                                .is_err()
+                        Ok(PreparedState { def, synth }) => {
+                            let values: Vec<f32> = def
+                                .defaults
+                                .iter()
+                                .take(def.info.parameters.len())
+                                .copied()
+                                .collect();
+                            if let Err(error) =
+                                self.install_plugin_generation(id, expected, def, synth)
                             {
                                 admin.abort();
-                                self.fail(client, command, "command FIFO full");
-                            } else {
-                                self.translator.retire_plugin_generation(id, expected);
-                                if loading {
-                                    for (index, value) in def
-                                        .defaults
-                                        .iter()
-                                        .take(def.info.parameters.len())
-                                        .enumerate()
-                                    {
-                                        let mapped = matches!(self.translator.mirror.get(id).map(|node| &node.body), Some(crate::osc::graph::MirrorBody::Synth { maps, .. }) if maps.iter().any(|(control, ..)| *control == index as u32));
-                                        if !mapped {
-                                            self.translator.mirror.set_control(
-                                                id,
-                                                index as u32,
-                                                *value,
-                                            );
-                                        }
-                                    }
-                                }
-                                self.translator.node_defs.insert(
-                                    id,
-                                    crate::osc::translate::NodeDef::Plugin(
-                                        def, generation, next_admin,
-                                    ),
-                                );
-                                if !loading {
-                                    let chunks = bytes.len().div_ceil(6144).max(1);
-                                    for chunk in 0..chunks {
-                                        let start = chunk * 6144;
-                                        self.reply(
-                                            client,
-                                            "/plugin_saveState.reply",
-                                            vec![
-                                                OscType::Int(id),
-                                                OscType::Int(chunk as i32),
-                                                OscType::Int(chunks as i32),
-                                                OscType::Blob(
-                                                    bytes[start..bytes.len().min(start + 6144)]
-                                                        .to_vec(),
-                                                ),
-                                            ],
-                                        );
-                                    }
-                                }
-                                self.done_with(client, command, vec![OscType::Int(id)]);
+                                self.fail(client, COMMAND, error);
+                                continue;
                             }
+                            // A load takes the loaded parameter values, except
+                            // where a control is mapped.
+                            for (index, value) in values.into_iter().enumerate() {
+                                let mapped = matches!(self.translator.mirror.get(id).map(|node| &node.body), Some(crate::osc::graph::MirrorBody::Synth { maps, .. }) if maps.iter().any(|(control, ..)| *control == index as u32));
+                                if !mapped {
+                                    self.translator.mirror.set_control(id, index as u32, value);
+                                }
+                            }
+                            self.done_with(client, COMMAND, vec![OscType::Int(id)]);
                         }
                         Err(error) => {
                             admin.abort();
-                            self.fail(client, command, error);
+                            self.fail(client, COMMAND, error);
                         }
                     }
-                    continue;
                 }
-                ScanResult::Restart {
+                PluginResult::Restart {
                     id,
                     expected,
                     def,
                     result,
                     client,
                 } => {
-                    let current = matches!(self.translator.node_defs.get(&id), Some(crate::osc::translate::NodeDef::Plugin(current, generation, ..)) if *generation == expected && Arc::ptr_eq(current, &def));
-                    if !current {
-                        self.fail(client, "/plugin_restart", "plugin node no longer exists");
+                    const COMMAND: &str = "/plugin_restart";
+                    if !self.plugin_current(id, expected, Some(&def)) {
+                        self.fail(client, COMMAND, "plugin node no longer exists");
                         continue;
                     }
-                    match result {
-                        Ok(synth) => {
-                            let generation = crate::node::SynthNode::incarnation(synth.as_ref());
-                            let admin = synth.administration();
-                            if self
-                                .send_all([Cmd::RestartSynth {
-                                    id,
-                                    expected,
-                                    synth,
-                                }])
-                                .is_err()
-                            {
-                                self.fail(client, "/plugin_restart", "command FIFO full");
-                            } else {
-                                self.translator.retire_plugin_generation(id, expected);
-                                self.translator.node_defs.insert(
-                                    id,
-                                    crate::osc::translate::NodeDef::Plugin(def, generation, admin),
-                                );
-                                self.done_with(client, "/plugin_restart", vec![OscType::Int(id)]);
-                            }
-                        }
-                        Err(error) => self.fail(client, "/plugin_restart", error),
+                    match result.and_then(|synth| {
+                        self.install_plugin_generation(id, expected, def, synth)
+                            .map_err(String::from)
+                    }) {
+                        Ok(()) => self.done_with(client, COMMAND, vec![OscType::Int(id)]),
+                        Err(error) => self.fail(client, COMMAND, error),
                     }
-                    continue;
                 }
-            };
-            match result.result {
-                Err(error) => self.fail(result.client, "/plugin_scan", error),
-                Ok(entries) => {
-                    let count = entries.len() as i32;
-                    self.reply(
-                        result.client,
-                        "/plugin_scan.reply",
-                        vec![
-                            OscType::Int(-1),
-                            OscType::Int(count),
-                            OscType::Int(0),
-                            OscType::Int(0),
-                            OscType::Blob(Vec::new()),
-                        ],
-                    );
-                    for (index, entry) in entries.into_iter().enumerate() {
-                        let bytes =
-                            serde_json::to_vec(&entry).expect("validated plugin metadata JSON");
-                        let chunks = bytes.len().div_ceil(6144);
-                        for (chunk, bytes) in bytes.chunks(6144).enumerate() {
-                            self.reply(
-                                result.client,
-                                "/plugin_scan.reply",
-                                vec![
-                                    OscType::Int(index as i32),
-                                    OscType::Int(count),
-                                    OscType::Int(chunk as i32),
-                                    OscType::Int(chunks as i32),
-                                    OscType::Blob(bytes.to_vec()),
-                                ],
-                            );
-                        }
+                PluginResult::Spare { name, def, result } => {
+                    self.plugin_spares_building.remove(&name);
+                    match result {
+                        Ok(synth) => drop(self.translator.offer_spare(name, def, synth)),
+                        Err(error) => tracing::warn!(
+                            target: crate::logging::OSC_TARGET,
+                            "plugin def {name}: spare instance failed: {error}"
+                        ),
                     }
-                    self.done(result.client, "/plugin_scan");
                 }
             }
         }
+        self.refill_plugin_spares(installed);
         self.resolve_syncs();
     }
 }

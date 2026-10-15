@@ -167,8 +167,11 @@ impl HostPosixFdImpl for Main {
 }
 impl HostParamsImplMainThread for Main {
     fn rescan(&self, flags: ParamRescanFlags) {
-        // Structural metadata changes require explicit recovery; values already return through events.
-        if flags.bits() & !1 != 0 {
+        // Only CLAP_PARAM_RESCAN_ALL changes the parameter list or ranges a node
+        // holds, and that requires explicit recovery. Values already return
+        // through events; text and info (names, modules, hidden) are not
+        // identities.
+        if flags.bits() & ParamRescanFlags::ALL.bits() != 0 {
             self.signals.restart.store(true, Ordering::Release);
         }
     }

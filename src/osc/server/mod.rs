@@ -291,14 +291,24 @@ pub struct OscServer {
         any(feature = "plugin-clap", feature = "plugin-vst3"),
         target_os = "linux"
     ))]
-    plugin_scanner: commands::plugin::ScanWorker,
+    plugin_workers: commands::plugin::PluginWorkers,
     #[cfg(all(
         any(feature = "plugin-clap", feature = "plugin-vst3"),
         target_os = "linux"
     ))]
     plugin_claims: std::collections::HashMap<String, u64>,
-    plugin_submitted: u64,
-    plugin_drained: u64,
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    /// Last ticket handed to a plugin `/def_send`; a later one supersedes it.
+    plugin_tickets: u64,
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    /// Defs whose spare instance the build worker is preparing.
+    plugin_spares_building: std::collections::HashSet<String>,
     pending_syncs: Vec<PendingSync>,
     /// Each transport's network-side state -- its grid, its rolling state, its
     /// bindings -- indexed by transport id and sized at boot (`--transports`).
@@ -469,7 +479,7 @@ struct PendingSync {
     id: i32,
     nrt_target: u64,
     faust_target: u64,
-    plugin_target: u64,
+    plugin_target: [u64; 3],
 }
 
 /// Where the server reads time from. `Wall` is the native default: streams

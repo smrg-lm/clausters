@@ -255,6 +255,19 @@ impl NodeDef {
     }
 }
 
+/// A def's spare instance, keyed by def name, with the def it was built for.
+#[cfg(all(
+    any(feature = "plugin-clap", feature = "plugin-vst3"),
+    target_os = "linux"
+))]
+type PluginSpares = HashMap<
+    String,
+    (
+        Arc<crate::plugin::PluginDef>,
+        Box<crate::plugin::PluginSynth>,
+    ),
+>;
+
 pub struct CmdTranslator {
     latency: HashMap<i32, usize>,
     compensation_identity: HashMap<i32, u64>,
@@ -323,6 +336,19 @@ pub struct CmdTranslator {
     /// The live engine's counters, read for the device callback length a new
     /// plugin pipeline must cover; `None` reads as no callback yet.
     pub(crate) device: Option<Arc<crate::server::engine::Counters>>,
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    /// One ready instance per plugin def, built off the network thread, so a
+    /// `/synth_new` takes a running helper instead of starting one.
+    plugin_spares: std::cell::RefCell<PluginSpares>,
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    /// Defs whose spare a `/synth_new` just took, for the server to rebuild.
+    spare_requests: std::cell::RefCell<Vec<String>>,
     #[cfg(all(
         any(feature = "plugin-clap", feature = "plugin-vst3"),
         target_os = "linux"
@@ -463,6 +489,16 @@ impl CmdTranslator {
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
             ))]
+            plugin_spares: Default::default(),
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
+            spare_requests: Default::default(),
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             plugin_note_queues: HashMap::new(),
             #[cfg(all(
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
@@ -548,11 +584,23 @@ impl CmdTranslator {
             let synth = if self.offline_plugins {
                 crate::plugin::PluginSynth::offline(Arc::clone(def), self.sample_rate)?
             } else {
-                crate::plugin::PluginSynth::new(
-                    Arc::clone(def),
-                    self.sample_rate,
-                    self.device_frames(),
-                )?
+                let depth = def.live_depth(self.device_frames());
+                // A spare of a def since replaced, or sized for a shorter
+                // callback than the device now runs, is not this def's.
+                let spare = self
+                    .plugin_spares
+                    .borrow_mut()
+                    .remove(name)
+                    .filter(|(of, spare)| Arc::ptr_eq(of, def) && spare.depth() >= depth);
+                self.spare_requests.borrow_mut().push(name.to_string());
+                match spare {
+                    Some((_, synth)) => *synth,
+                    None => crate::plugin::PluginSynth::new(
+                        Arc::clone(def),
+                        self.sample_rate,
+                        self.device_frames(),
+                    )?,
+                }
             };
             let generation = synth.incarnation();
             let admin = synth.administration();
@@ -562,6 +610,71 @@ impl CmdTranslator {
             ));
         }
         Err(format!("SynthDef not found: {name}"))
+    }
+
+    /// Defs whose spare was taken since the last call.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    pub(crate) fn take_spare_requests(&self) -> Vec<String> {
+        std::mem::take(&mut self.spare_requests.borrow_mut())
+    }
+
+    /// Whether `name` has a spare waiting.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    pub(crate) fn has_spare(&self, name: &str) -> bool {
+        self.plugin_spares.borrow().contains_key(name)
+    }
+
+    /// Keep a spare built for `def` while `def` is still the one under
+    /// `name`; otherwise it is handed back, for the caller to drop.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    pub(crate) fn offer_spare(
+        &self,
+        name: String,
+        def: Arc<crate::plugin::PluginDef>,
+        synth: Box<crate::plugin::PluginSynth>,
+    ) -> Option<Box<crate::plugin::PluginSynth>> {
+        let current = self
+            .plugin_defs
+            .get(&name)
+            .is_some_and(|d| Arc::ptr_eq(d, &def));
+        let mut spares = self.plugin_spares.borrow_mut();
+        if !current || spares.contains_key(&name) {
+            return Some(synth);
+        }
+        spares.insert(name, (def, synth));
+        None
+    }
+
+    /// Hand back the spares whose def was freed or replaced.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    pub(crate) fn stale_spares(&self) -> Vec<Box<crate::plugin::PluginSynth>> {
+        let mut spares = self.plugin_spares.borrow_mut();
+        let stale: Vec<String> = spares
+            .iter()
+            .filter(|(name, (def, _))| {
+                !self
+                    .plugin_defs
+                    .get(*name)
+                    .is_some_and(|d| Arc::ptr_eq(d, def))
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        stale
+            .iter()
+            .filter_map(|name| spares.remove(name).map(|(_, synth)| synth))
+            .collect()
     }
 
     /// The longest device callback the live engine has run, in frames.
