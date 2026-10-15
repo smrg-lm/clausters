@@ -2935,19 +2935,20 @@ where it came from).
 
 ## Found by use: the running list of fixes
 
-- ⬜ **The embedded engine runs without the SIGXCPU guard** *(found
+- ✅ **The embedded engine runs without the SIGXCPU guard** *(found
   2026-10-15, by the first audit: the Python suite's embed tests were killed by
   SIGXCPU in the PipeWire callback, on a debug build sharing ten CPUs with
-  other compilations, and not on an ordinary machine)*. RTKit grants the audio
-  thread real-time scheduling under `RLIMIT_RTTIME`, and the binary arms
-  `server::rt::install_sigxcpu_guard` so a thread past that budget is demoted
-  instead of killed (M24). The guard is a process-wide signal disposition, so
-  the library never installs it, and an embedded engine (the Python and FFI
-  embed, a GUI host's standalone server) runs under the same watchdog with the
-  default disposition: an overloaded process dies with a core dump. What is
-  open is whether the embed offers the guard to its host (an opt-in the
-  process owner calls, since a library must not take a signal from it), and a
-  run that confirms the guard is what the audit's process lacked.
+  other compilations, and not on an ordinary machine; fixed 2026-10-15)*.
+  RTKit grants the audio thread real-time scheduling under `RLIMIT_RTTIME`, and
+  the binary arms `server::rt::install_sigxcpu_guard` so a thread past that
+  budget is demoted instead of killed (M24). The library never armed it, since
+  a signal disposition is process-wide, so an embedded engine died with a core
+  dump under the same overload. The embed now arms it through
+  `server::rt::adopt_sigxcpu_guard`, which replaces only the default
+  disposition and leaves one the host process set. Confirmed by lowering the
+  soft `RLIMIT_RTTIME` of a Python process running the embed: without the guard
+  it died of SIGXCPU at once; with it the audio thread was demoted and the
+  process kept running past 800 nodes at 117% average load.
 
 - ⬜ **Every stored plugin def is probed again at boot, before the server
   answers** *(found 2026-10-14, running the plugin examples against the default

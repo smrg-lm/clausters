@@ -690,6 +690,11 @@ impl Clausters {
         use crate::osc::server::{OscServer, ServerInfo};
 
         let segment = Segment::in_memory();
+        // The audio callback runs under RTKit's RLIMIT_RTTIME watchdog here
+        // too; arm the SIGXCPU guard unless the host process already decided
+        // what that signal does.
+        #[cfg(feature = "rtprio")]
+        crate::server::rt::adopt_sigxcpu_guard();
         // Embedded hosts follow the device's default rate (None); they can
         // resample on their side if they need a specific rate. Default bus
         // counts (the in-memory segment is sized to match).

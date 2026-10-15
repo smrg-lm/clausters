@@ -110,11 +110,6 @@ already carry it.
   heavy instrument loads it on every boot. What is open is restoring a stored
   plugin def without loading the plugin until a node asks for it.
 
-- ⬜ **The embedded engine runs without the SIGXCPU guard** *(root `PLAN.md`,
-  Found by use)*. An overloaded embedded engine is killed by RTKit's watchdog
-  where the binary's is demoted. What is open is whether the embed offers the
-  guard to the process that hosts it.
-
 - ⬜ **A notebook example that writes files cannot run cell by cell in an
   interactive session** *(`clients/python/PLAN.md`, Found by use)*. The output
   directory is resolved from `__file__`, which a cell-by-cell session does not

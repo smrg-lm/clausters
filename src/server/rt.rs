@@ -15,7 +15,9 @@
 //!   between cycles -- makes the kernel raise SIGXCPU, which by default kills
 //!   the process with a core dump. [`install_sigxcpu_guard`] replaces that
 //!   with a demotion of the audio thread back to SCHED_OTHER: the audio
-//!   degrades, the server survives.
+//!   degrades, the server survives. An embedded server arms it through
+//!   [`adopt_sigxcpu_guard`], which leaves a disposition the host process
+//!   chose in place.
 //!
 //! Linux only; every entry point is a documented no-op elsewhere. The CPU
 //! meter is deliberately *not* here: it is portable and RT-safe, and lives in
@@ -179,8 +181,9 @@ pub fn pin_workers(_cpus: &[usize]) {
 /// signal's default disposition kills the process with a core dump. The
 /// handler instead demotes the audio thread back to SCHED_OTHER -- the audio
 /// degrades, the server survives (a restart re-promotes it). Call once at
-/// boot, before the audio stream exists; a signal disposition is
-/// process-global, which is why the *binary* installs it, not the library.
+/// boot, before the audio stream exists. A signal disposition is
+/// process-global, so the server binary installs it unconditionally and an
+/// embedded server goes through [`adopt_sigxcpu_guard`] instead.
 #[cfg(target_os = "linux")]
 pub fn install_sigxcpu_guard() {
     // SAFETY: replacing the disposition of a signal only RTKit's watchdog
@@ -196,6 +199,27 @@ pub fn install_sigxcpu_guard() {
 
 #[cfg(not(target_os = "linux"))]
 pub fn install_sigxcpu_guard() {}
+
+/// The embedded server's form of [`install_sigxcpu_guard`]: installs the
+/// guard only while SIGXCPU still has its default disposition. The process
+/// belongs to whoever embeds the server, so a handler it set (or an
+/// explicit ignore) is left alone; what is replaced is only the default,
+/// which would kill that process with a core dump.
+#[cfg(target_os = "linux")]
+pub fn adopt_sigxcpu_guard() {
+    // SAFETY: a query of the current disposition into a zeroed struct.
+    let default = unsafe {
+        let mut old: libc::sigaction = std::mem::zeroed();
+        libc::sigaction(libc::SIGXCPU, std::ptr::null(), &mut old) == 0
+            && old.sa_sigaction == libc::SIG_DFL
+    };
+    if default {
+        install_sigxcpu_guard();
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn adopt_sigxcpu_guard() {}
 
 /// The guard itself. Async-signal-safe only: raw syscalls, no allocation, no
 /// locks, no formatting. The kernel delivers `RLIMIT_RTTIME`'s SIGXCPU to the
