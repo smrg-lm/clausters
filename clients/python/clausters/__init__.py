@@ -120,7 +120,6 @@ from .defs import (
     PluginDef,
     GraphDef,
     Group,
-    Node,
     Server,
     ServerOptions,
     Synth,
@@ -159,7 +158,6 @@ __all__ = [
     # the server's resources: nodes, definitions, buses, buffers
     "Synth",
     "Group",
-    "Node",
     "AddAction",
     "SynthDef",
     "FaustDef",
