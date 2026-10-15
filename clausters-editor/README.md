@@ -150,7 +150,9 @@ paths. The menu entry does not show up in the applications menu, because
   the indentation, the panels, the open files and File → Open Recent's list are
   kept by the window itself, between sessions. The window's
   size and place on the screen come back as they were left
-  (`.window-state.json`, in the same folder).
+  (`.window-state.json`, in the same folder; on Linux the size is in
+  `.window-size.json`, read and set through GTK, since the plugin's reading
+  counts the window's decoration and grew it on every launch).
 - `CLAUSTERS_EDITOR_PYTHON=/path/python` forces an interpreter (it takes precedence over
   the environment).
 - **Completions, signatures and hover help** come from
@@ -197,6 +199,7 @@ src-tauri/
   src/pkgdocs.rs           the books the session's packages register (clausters_editor.docs)
   src/fonts.rs             installed monospaced fonts
   src/config.rs            persistent configuration
+  src/window_size.rs       the window's size on Linux, through GTK
   about.toml, about.hbs    the licenses `cargo about` accepts, and how it writes the crates' notices
   src/envs.rs              virtual environments (create, install, choose, delete)
 docs/                      Markdown documentation (bundled with the package)

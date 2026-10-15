@@ -6,6 +6,8 @@ mod files;
 mod fonts;
 mod pkgdocs;
 mod session;
+#[cfg(target_os = "linux")]
+mod window_size;
 
 use tauri::{Manager, RunEvent};
 
@@ -22,13 +24,22 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // The window comes back where it was left: its size, its place on the
         // screen, maximized or not. The panels inside it are the page's own
-        // settings (settings.svelte.ts).
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // settings (settings.svelte.ts). On Linux the size is kept by
+        // `window_size` instead, which says why.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(window_state_flags())
+                .build(),
+        )
         .manage(Session::default())
         .manage(cli)
         .setup(|app| {
             let config = config::load(app.handle());
             app.manage(ConfigState(std::sync::Mutex::new(config)));
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                window_size::manage(&window);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -60,4 +71,14 @@ pub fn run() {
                 app.state::<Session>().kill();
             }
         });
+}
+
+/// What the window-state plugin keeps: everything, but the size on Linux.
+fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    let all = tauri_plugin_window_state::StateFlags::all();
+    if cfg!(target_os = "linux") {
+        all - tauri_plugin_window_state::StateFlags::SIZE
+    } else {
+        all
+    }
 }

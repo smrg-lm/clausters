@@ -567,6 +567,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "fontdb",
+ "gtk",
  "libc",
  "serde",
  "serde_json",

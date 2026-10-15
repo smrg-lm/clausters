@@ -35,6 +35,11 @@ clap = { version = "4.6.7", features = ["derive"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# The window's size, read and set through GTK itself (src/window_size.rs): the
+# version tauri's own runtime links.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 # The binary ships without its symbols: 16.6 MB -> 11 MB, for the Python
 # package as for the installer.
 [profile.release]
