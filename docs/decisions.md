@@ -404,6 +404,20 @@ A two-step decision worth recording because it reversed:
   the callback must fit its **worst** block. An RT-scheduled callback is the
   standard operating mode of every production Linux audio client, so the default
   came back, kept safe by the guard.
+- **Then the watchdog's limit was set back where it was assumed to be
+  (2026-10-15):** a measurement on a real device found the soft
+  `RLIMIT_RTTIME` at *one buffer* — 2.67 ms at 128 frames — not RTKit's
+  200 ms. cpal's real-time promotion sets it to the buffer's duration while
+  asking RTKit (which requires the process to hold a limit no larger than its
+  own), and renews it whenever the quantum changes. At that value the guard
+  fired on a single callback that overran its period by a scheduler tick, at
+  35% average load, and demoted the thread until restart: one late buffer
+  degraded every buffer after it. The callback now raises the soft limit to
+  half the hard one after each promotion (`server::rt::lift_rttime`); half,
+  because at soft = hard the kernel's SIGKILL and SIGXCPU come due on the
+  same tick and the kill is checked first, which would leave the guard no
+  turn. The watchdog is then what it was meant to be, a limit on a thread
+  that has stopped yielding.
 
 ## Editor y-axis navigation: gestures on the ruler strip, props in display units
 

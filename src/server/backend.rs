@@ -486,12 +486,12 @@ where
         config,
         move |data: &mut [T], _| {
             // One-shot pinning/diagnostic of this thread (cold after boot).
+            let frames = data.len() / adapter.engine.channels().max(1);
             #[cfg(feature = "rtprio")]
-            adapter.rt_setup.on_callback();
+            adapter.rt_setup.on_callback(frames);
             // Subnormals in decaying DSP state are 10-100x slower: keep the
             // callback thread in flush-to-zero mode (see dsp::denormals).
             crate::dsp::denormals::flush_to_zero();
-            let frames = data.len() / adapter.engine.channels().max(1);
             adapter.engine.note_device_callback(frames);
             adapter.stamp(frames);
             for s in data.iter_mut() {

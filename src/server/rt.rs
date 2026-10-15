@@ -66,19 +66,32 @@ const DIAG_AT_CALLBACK: u32 = 64;
 
 /// One-shot per-stream setup running *on* the callback thread: tid + optional
 /// CPU pin on the first callback, scheduling diagnostic at
-/// `DIAG_AT_CALLBACK`. All cold paths (a syscall each, once); after that
-/// [`RtSetup::on_callback`] is a single compare per callback.
+/// `DIAG_AT_CALLBACK`, and [`lift_rttime`] after each promotion (the first
+/// callback and every change of the frame count). All cold paths; after
+/// that [`RtSetup::on_callback`] is two compares per callback.
 pub struct RtSetup {
     calls: u32,
+    frames: usize,
 }
 
 impl RtSetup {
     pub fn new() -> Self {
-        Self { calls: 0 }
+        Self {
+            calls: 0,
+            frames: 0,
+        }
     }
 
+    /// Runs on every callback of `frames` frames. cpal promotes the thread
+    /// before the callback, on the first cycle and again whenever the device
+    /// quantum changes, and each promotion leaves `RLIMIT_RTTIME` at one
+    /// buffer: [`lift_rttime`] runs after each of them.
     #[inline]
-    pub fn on_callback(&mut self) {
+    pub fn on_callback(&mut self, frames: usize) {
+        if frames != self.frames {
+            self.frames = frames;
+            lift_rttime();
+        }
         if self.calls > DIAG_AT_CALLBACK {
             return;
         }
@@ -175,9 +188,46 @@ pub fn pin_workers(_cpus: &[usize]) {
     tracing::warn!("--pin is only supported on Linux");
 }
 
+/// Raises the soft `RLIMIT_RTTIME` back to half of the hard one.
+///
+/// To obtain real-time scheduling from RTKit a process must hold an
+/// `RLIMIT_RTTIME` no larger than RTKit's own maximum (200 ms by default),
+/// and the promotion cpal uses sets the soft limit to the duration of *one
+/// buffer* while doing so -- 2.67 ms at 128 frames and 48 kHz. Left there, a
+/// single callback that overruns its period by a scheduler tick raises
+/// SIGXCPU, and the guard demotes the thread for the rest of the process's
+/// life: one late buffer degrades every buffer after it. The watchdog is
+/// meant for a thread that has stopped yielding, so the soft limit goes back
+/// to half the hard one -- 100 ms under RTKit's default -- which leaves the
+/// guard room to demote the thread before the hard limit's SIGKILL. Raising
+/// a soft limit up to the hard one needs no privilege. One syscall, run only
+/// after a promotion.
+#[cfg(target_os = "linux")]
+pub fn lift_rttime() {
+    // SAFETY: reads and writes the process's own resource limit through a
+    // struct on the stack.
+    unsafe {
+        let mut limit: libc::rlimit = std::mem::zeroed();
+        if libc::getrlimit(libc::RLIMIT_RTTIME, &mut limit) != 0
+            || limit.rlim_max == libc::RLIM_INFINITY
+        {
+            return;
+        }
+        let soft = limit.rlim_max / 2;
+        if limit.rlim_cur < soft {
+            limit.rlim_cur = soft;
+            libc::setrlimit(libc::RLIMIT_RTTIME, &limit);
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn lift_rttime() {}
+
 /// Installs the SIGXCPU guard. RTKit grants real-time scheduling under an
-/// `RLIMIT_RTTIME` watchdog (~200 ms of *continuous* RT CPU without
-/// blocking); a server driven past sustained 100% load trips it, and the
+/// `RLIMIT_RTTIME` watchdog (the soft limit [`lift_rttime`] keeps at 100 ms
+/// of *continuous* RT CPU without blocking); a server driven past sustained
+/// 100% load trips it, and the
 /// signal's default disposition kills the process with a core dump. The
 /// handler instead demotes the audio thread back to SCHED_OTHER -- the audio
 /// degrades, the server survives (a restart re-promotes it). Call once at
