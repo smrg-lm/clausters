@@ -101,7 +101,8 @@ install_app() {
 Type=Application
 Name=$APP
 Comment=Python editor with an interactive session
-Exec=$BIN
+Exec=$BIN %F
+MimeType=text/x-python;text/x-python3;
 Icon=$APP
 Terminal=false
 Categories=Development;IDE;

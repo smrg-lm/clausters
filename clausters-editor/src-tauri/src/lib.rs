@@ -1,3 +1,4 @@
+mod cli;
 mod config;
 mod envs;
 mod files;
@@ -12,6 +13,9 @@ use session::Session;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before anything opens: `--help`, `--version` and a bad argument print and
+    // exit here, with no window.
+    let cli = <cli::Cli as clap::Parser>::parse();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -20,12 +24,14 @@ pub fn run() {
         // settings (settings.svelte.ts).
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(Session::default())
+        .manage(cli)
         .setup(|app| {
             let config = config::load(app.handle());
             app.manage(ConfigState(std::sync::Mutex::new(config)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            cli::cli_files,
             session::py_eval,
             session::py_query,
             session::py_restart,

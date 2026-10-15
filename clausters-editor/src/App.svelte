@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import * as Resizable from "$lib/components/ui/resizable";
   import { Button } from "$lib/components/ui/button";
@@ -407,8 +408,19 @@
         const files = lastFiles[id];
         if (files) await editors[id]?.restore(files);
       }
-      editors[activeEditor]?.focus();
     }
+    // The files named on the command line, after the restored ones: the last
+    // one is on screen.
+    try {
+      const files = await invoke<{ path: string; exists: boolean }[]>("cli_files");
+      for (const f of files) {
+        if (f.exists) await editor().openPath(f.path);
+        else editor().openMissing(f.path);
+      }
+    } catch {
+      // outside Tauri
+    }
+    editors[activeEditor]?.focus();
     await initSession();
     await startSession();
   });

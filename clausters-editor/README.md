@@ -26,6 +26,15 @@ npm run tauri dev      # development, with hot reload
 npm run tauri build    # binary and packages in src-tauri/target/release/bundle
 ```
 
+The application takes files to open and a few options; none of them opens a
+window when it only answers:
+
+```sh
+clausters-editor script.py other.py   # opens each file in a tab (a new one is created on saving)
+clausters-editor --help               # the options, without opening the editor
+clausters-editor --version
+```
+
 ## Installing for the user
 
 ```sh

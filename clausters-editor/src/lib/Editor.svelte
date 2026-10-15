@@ -256,6 +256,16 @@
     }
   }
 
+  /** Opens a tab for `path`, a file that does not exist yet: empty, and created
+   *  where it says when it is saved. */
+  export function openMissing(path: string) {
+    if (showPath(path) || openElsewhere(path)) return;
+    const previous = active;
+    const replace = isBlank(previous);
+    addTab(path, basename(path), "");
+    if (replace) closeAt(previous);
+  }
+
   export async function saveFile(saveAs = false) {
     const t = tabs[active];
     let path = t.path;
