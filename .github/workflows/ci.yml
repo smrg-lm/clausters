@@ -50,17 +50,21 @@ jobs:
         include:
           - host_features: clap
             server_features: plugin-clap
+            cache: clap
           - host_features: vst3
             server_features: plugin-vst3
+            cache: vst3
+          # A cache key cannot contain commas, so each row names its own.
           - host_features: clap,vst3,rtprio
             server_features: plugin-clap,plugin-vst3
+            cache: clap-vst3-rtprio
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libdbus-1-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          key: plugins-${{ matrix.host_features }}
+          key: plugins-${{ matrix.cache }}
       - run: bash third_party/prepare-clap.sh
       - run: bash third_party/prepare-vst3-fixture.sh
       - run: cargo fetch --locked --manifest-path crates/clausters-plugin-host/tests/fixtures/vst3/Cargo.toml
