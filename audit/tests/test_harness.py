@@ -39,6 +39,17 @@ class HarnessTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-m", "Synthetic fixture")
         self.base = self.git("rev-parse", "HEAD")
+        # The harness checks the reviewed tool profile; these tests check the
+        # harness, so they run against the versions this machine has.
+        profile = self.root / "versions.json"
+        selected = [{"name": name, "command": argv, "version_output": audit.command(argv)}
+                    for name, argv in (("python", ["python3", "--version"]),
+                                       ("git", ["git", "--version"]))]
+        audit.write(profile, {"format_version": 1, "status": "pinned",
+                              "profile": "synthetic", "selected_tools": selected})
+        tool_profile = patch.object(audit, "TOOL_PROFILE", profile)
+        tool_profile.start()
+        self.addCleanup(tool_profile.stop)
 
     def tearDown(self):
         self.temporary.cleanup()

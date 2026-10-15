@@ -90,8 +90,12 @@ def external(path):
     return path
 
 
+# The reviewed tool profile; the contract tests point it at a synthetic one.
+TOOL_PROFILE = AUDIT / "tools/versions.json"
+
+
 def tools():
-    expected = read(AUDIT / "tools/versions.json")["selected_tools"]
+    expected = read(TOOL_PROFILE)["selected_tools"]
     found = []
     for tool in expected:
         executable = shutil.which(tool["command"][0])
