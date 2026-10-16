@@ -2424,15 +2424,34 @@ Further formats/platforms are checkbox entries under Future directions. Document
 
 ## Future directions (a design that is not a fix)
 
-- ⬜ **A measured bound on what one block drains** *(named 2026-10-15, by the
-  first audit)*. `Engine::drain_commands` applies every command in the FIFO at
-  the start of a block, and the network thread can refill it while it does, so
-  the FIFO's capacity bounds what is queued at once and not the work one block
-  takes. It is scsynth's model, the producer is far slower than the drain, and
-  no late block has been traced to it. Capping the commands per block would
-  delay immediate commands to later blocks, which changes their timing, so the
-  first step is a measurement: sustained command production against the CPU
-  meter's late-block count. A policy is designed only if that shows a cost.
+- ✅ **A measured bound on what one block drains** *(named 2026-10-15, by the
+  first audit; measured and closed the same day, no policy)*.
+  `Engine::drain_commands` applies every command in the FIFO at the start of a
+  block, and the network thread can refill it while it does, so the FIFO's
+  capacity bounds what is queued at once and not the work one block takes.
+  Capping the commands per block would delay immediate commands to later
+  blocks, so it was measured first: a drain-instrumented release server on the
+  real device, a background load of silent nodes, and ten-second phases of
+  single `/node_set` messages, immediate bundles of 32 and 128 of them, and
+  `/synth_new` + `/node_free` pairs, from paced rates up to four unpaced
+  senders.
+
+  - **The producer is the bound, not the drain.** The network thread applied
+    at most about 21 000 commands a second at quantum 128 and 66 000 at
+    quantum 1024; everything sent beyond that was lost before decoding.
+  - **The busiest block drained 1306 commands in 74 µs** (quantum 1024,
+    where a callback's gap accumulates them), and 57 in 54 µs at quantum 128;
+    the costliest kind, `/synth_new` with its free, peaked at 165 µs. A
+    64-frame block lasts 1333 µs.
+  - **No late block in any phase** at either quantum.
+
+  The FIFO holds 8192 commands (its capacity is raised to `--max-nodes`); full
+  of the costliest kind it would take about 1.8 ms to drain, but at the
+  measured production that takes an audio thread stalled for over 100 ms, a
+  stall that has already broken the audio on its own. So no bound is added. If
+  one is ever needed, the first candidate changes no timing: drain only what
+  the FIFO held when the block started, so a refill during the drain waits one
+  block, as if it had arrived a moment later.
 
 - ⬜ **Per-output and intra-SynthDef latency** — general server compensation
   consumes one declared latency per opaque synth and aligns its bus paths.

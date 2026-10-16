@@ -329,8 +329,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   are built (its `keys` scopes), and nesting is what is left of them.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; generating the
-  builders from the catalog instead of contrasting against them; a measured
-  bound on what one block drains), the GUI's (a
+  builders from the catalog instead of contrasting against them), the GUI's (a
   steady goniometer; a Tauri wrapper, only a possibility; a key in a tip; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
   that could make tracks), the web client's (a node
