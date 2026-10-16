@@ -1052,6 +1052,20 @@ export class Editor<S = unknown> implements Adopting {
         return true;
     }
 
+    /**
+     * **Write the window's picture to `path`** as a PNG, and resolve to the
+     * path -- {@link GuiHost.capture} on this editor's window, which waits for
+     * the turns before it: what a verb or a gesture edited is in the picture.
+     *
+     * Rejects with no window open, since there is nothing to draw.
+     */
+    async capture(path: string, timeout = 5.0): Promise<string> {
+        if (this.host === null || this.windowId === null) {
+            throw new Error("capture() needs the editor's window open");
+        }
+        return this.host.capture(this.windowId, path, timeout);
+    }
+
     /** The whole of what the window's view holds, in view -- the window's `view_all` ({@link Editor.verb}). */
     viewAll(): boolean {
         return this.verb("view_all");

@@ -29,7 +29,7 @@ from ..log import log as _package_log
 from .guidef import to_json, view as _view
 from .handle import WindowHandle
 from .ids import GuiIdAllocator
-from ..errors import ReplyTimeout
+from ..errors import CaptureError, ReplyTimeout
 
 #: What this client sent the GUI host and what came back (`clausters.log`).
 #: Silent unless asked.
@@ -663,6 +663,76 @@ class GuiHost:
         """
         self._send("/gui_verb", int(getattr(id, "id", id)), str(verb))
 
+    def capture(self, id, path, timeout: float = 5.0) -> str:
+        """``/gui_capture <id> <path>`` -- write the picture of window ``id``
+        (an id or a handle) to ``path`` as a PNG, and answer the path once the
+        file is whole.
+
+        The picture is the screen's: the host draws the window's frame with the
+        same render the window is drawn with, into a texture of the window's
+        size, and reads it back. Live views -- a meter, a playhead -- are where
+        they are at the moment the host handles it.
+
+        **It waits for the turns before it.** A verb or a gesture that edits
+        goes to the window's owner, and the owner's corrections come back as
+        ``/gui_set``s; a picture asked for at once could show the window before
+        they arrived. So this first asks the host a question and waits for the
+        answer, which comes after every event the host sent before it -- by
+        then the owner has applied them all and sent what they answered -- and
+        only then asks for the picture.
+
+        A path means what it means to every verb that takes one: a path on the
+        host's disk, relative to its working directory unless absolute -- the
+        script's own when the host was booted from it. Raises `clausters.errors.CaptureError` when the host
+        says it wrote nothing, and `clausters.errors.ReplyTimeout` when it does
+        not answer within ``timeout`` seconds. Called from the event loop's own
+        thread -- inside a callback -- it would wait for what that thread has to
+        deliver, so it raises `RuntimeError` instead.
+        """
+        if self._loop is not None and self._loop.is_current():
+            raise RuntimeError(
+                "capture() from the event loop's own thread would wait for what "
+                "this thread is the one to deliver -- call it from the script")
+        window = int(getattr(id, "id", id))
+        path = str(path)
+        # The turns before it: the answer to a question comes after every event
+        # the host sent before, so once it is here the owner has had them all.
+        self._send("/gui_query", window)
+        self._answer("/gui_info", timeout)
+        self._send("/gui_capture", window, path)
+        _, args = self._answer("/gui_captured", timeout)
+        if len(args) > 2:
+            raise CaptureError(f"window {window}: {path}: {args[2]}")
+        return path
+
+    def _answer(self, want: str, timeout: float):
+        """The next ``want`` reply as ``(addr, args)``, delivering every event
+        that arrives before it; `clausters.errors.ReplyTimeout` past
+        ``timeout``.
+
+        With the loop running the replies come through its slot and the events
+        are already being delivered; without it the socket is read here, and
+        the events met on the way are delivered as the loop would."""
+        deadline = time.monotonic() + timeout
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise ReplyTimeout(f"no {want} within {timeout}s")
+            if self.looping:
+                try:
+                    addr, args = self._replies.get(timeout=left)
+                except queue.Empty:
+                    continue
+            else:
+                msg = self.poll(min(left, _WAIT_STEP))
+                if msg is None:
+                    continue
+                addr, args = msg
+            if addr == want:
+                return addr, args
+            if addr not in _HostSource.REPLIES:
+                self.deliver(addr, args)
+
     def head_clock(self, id, which: str, transport: int = 0):
         """``/gui_headClock <id> <which> [transport]`` -- which counter the
         playheads of ``id`` are drawn from: a window, or a widget and every view
@@ -1236,7 +1306,7 @@ class _HostSource:
 
     #: The addresses that answer a question somebody asked, rather than
     #: reporting something that happened.
-    REPLIES = ("/gui_info",)
+    REPLIES = ("/gui_info", "/gui_captured")
 
     def __init__(self, host):
         self.host = host

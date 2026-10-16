@@ -216,6 +216,7 @@ export interface InitOutput {
     readonly clausters_mpe_zone_messages: (a: number, b: number, c: number, d: number) => number;
     readonly wasm_bindgen_81359cce184157ee___convert__closures_____invoke___wasm_bindgen_81359cce184157ee___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_81359cce184157ee___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_81359cce184157ee___convert__closures_____invoke___js_sys_c14acf7f6b6651bc___Array__web_sys_d316aa7147dd0c10___features__gen_ResizeObserver__ResizeObserver______true_: (a: number, b: number, c: any, d: any) => void;
+    readonly wasm_bindgen_81359cce184157ee___convert__closures_____invoke___js_sys_c14acf7f6b6651bc___Function_fn_wasm_bindgen_81359cce184157ee___JsValue_____wasm_bindgen_81359cce184157ee___sys__Undefined___js_sys_c14acf7f6b6651bc___Function_fn_wasm_bindgen_81359cce184157ee___JsValue_____wasm_bindgen_81359cce184157ee___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
     readonly wasm_bindgen_81359cce184157ee___convert__closures_____invoke___wasm_bindgen_81359cce184157ee___JsValue______true_: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_81359cce184157ee___convert__closures_____invoke___wasm_bindgen_81359cce184157ee___JsValue______true__1_: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_81359cce184157ee___convert__closures_____invoke___wasm_bindgen_81359cce184157ee___JsValue______true__1__4: (a: number, b: number, c: any) => void;

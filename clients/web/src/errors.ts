@@ -15,6 +15,11 @@ export class ClaustersError extends Error {
 /** A server command was answered with a `/fail` reply. */
 export class CommandError extends ClaustersError {}
 
+/**
+ * The GUI host answered a window's capture with the reason it wrote no file.
+ */
+export class CaptureError extends ClaustersError {}
+
 /** No reply arrived within the timeout. */
 export class ReplyTimeout extends ClaustersError {}
 

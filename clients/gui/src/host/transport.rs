@@ -127,6 +127,13 @@ fn handle(
             HostEffect::CloseWindow(id) => diag::info!("gui_free {id}: window closed (headless)"),
             // nothing to repaint headless
             HostEffect::Redraw(_) | HostEffect::RedrawLive(_) => {}
+            HostEffect::Capture { window, path } => send_reply(
+                socket,
+                tcp,
+                ws,
+                from,
+                super::captured(window, &path, Some("this front draws nothing")),
+            ),
             // A verb needs no picture: performed with a context of no size,
             // and what it edits told to the client that asked.
             HostEffect::Perform { window, verb } => {

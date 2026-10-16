@@ -34,6 +34,13 @@ The verbs arrive through the window's event loop, as a gesture does, so what
 a verb edited is in the sequence a moment after the call returns rather than
 when it does.
 
+**The window, as a picture**: ``picture("tidy")`` writes what the window
+shows to ``clients/python/examples/out/window_verbs_tidy.png``
+(``editor.capture``), and the run leaves that one behind. It is drawn with the
+render the screen is drawn with, after the turns before it -- what the verbs
+edited is in it -- so ``again()`` and then ``picture("again")`` is the second
+picture of the pair.
+
 Run it as a script, or step through the cells::
 
     pip install -e clients/python
@@ -44,6 +51,7 @@ It self-launches the audio server and the GUI host, and needs a display.
 """
 
 # %%
+import os
 import sys
 
 from clausters import Session
@@ -131,13 +139,34 @@ def back():
     editor.paste()
 
 
+# %% [markdown]
+# ## The window, as a picture
+#
+# `capture` writes what the window shows as a PNG: drawn with the render the
+# screen is drawn with, into a picture of the window's size, after the turns
+# before it -- so what the verbs above edited is in it, which is how a change
+# is looked at without somebody in front of the screen.
+
+# %%
+OUT = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, "out"))
+
+
+def picture(name):
+    """The window as it is now, as ``out/window_verbs_<name>.png``."""
+    os.makedirs(OUT, exist_ok=True)
+    return editor.capture(os.path.join(OUT, f"window_verbs_{name}.png"))
+
+
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         tidy()
+        print(f"the window, quantized: {picture('tidy')}")
         editor.wait()
     finally:
         session.close()
 else:
     print("tidy() quantizes the notes, again() repeats them, clear() cuts them, "
-          "back() pastes them; session.close() to end")
+          "back() pastes them, picture(name) writes the window as a PNG; "
+          "session.close() to end")

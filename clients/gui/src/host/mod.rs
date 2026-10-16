@@ -122,6 +122,8 @@ pub mod files;
 pub mod menu;
 pub mod menubar;
 pub mod popup;
+// A window's picture as a file, for `/gui_capture`.
+pub mod png;
 
 // Where values and samples come from, on the agnostic side of the seam: the
 // per-frame bus reads and the buffer-fetch conversation. Their I/O ends are in
@@ -242,6 +244,7 @@ pub use guidef::GuiNode;
 pub use registry::Registry;
 pub(crate) use takes::{buffer_views, span_to_read_back, stream_report};
 pub use widget::{Widget, WidgetKind};
+pub use wire::captured;
 
 /// Where a request reached the host and where its replies go. The `/gui_*`
 /// *encoding* is transport-independent, so client identity is too: every
@@ -651,6 +654,31 @@ pub const GUI_CLOCK: &str = "/gui_headClock";
 /// What the verb edits reaches the owner as the same `/gui_event` the window
 /// would send, so the answer arrives the way a gesture's does.
 pub const GUI_VERB: &str = "/gui_verb";
+/// `/gui_capture <window> <path>` -- write the window's picture to `path` as
+/// a PNG, and answer [`GUI_CAPTURED`] once the file is whole.
+///
+/// **The picture is the screen's, by construction**: the frame is drawn with
+/// the one `frame::render` the window is drawn with, into a texture of the
+/// window's size rather than into its surface, and read back. A capture path
+/// of its own would be a second picture to keep in agreement with the first.
+/// The frame is a whole one whatever the window last drew, and the live
+/// layers in it -- a meter, a playhead -- are where they are at the moment
+/// the capture is handled.
+///
+/// It is drawn after everything the host has received before it, so a
+/// script that asked for a verb and then for a picture gets the picture of
+/// the verb done -- as far as the host is concerned. An edit that goes to the
+/// window's owner comes back as corrections, and waiting for those is the
+/// client's: its `capture` waits until the turns it has outstanding are
+/// answered before it asks.
+///
+/// A **path** means what it means to every verb that takes one: a path on the
+/// disk natively, relative to the host's working directory unless absolute,
+/// and a path in the page's own storage in a tab.
+pub const GUI_CAPTURE: &str = "/gui_capture";
+/// `/gui_captured <window> <path> [reason]` -- the answer to a
+/// [`GUI_CAPTURE`]: the file is whole, or, with a reason, it was not written.
+pub const GUI_CAPTURED: &str = "/gui_captured";
 pub const GUI_INFO: &str = "/gui_info";
 pub const GUI_EVENT: &str = "/gui_event";
 pub const GUI_CLOSED: &str = "/gui_closed";
@@ -686,6 +714,10 @@ pub enum HostEffect {
     /// front performs it through the gesture machine with that window's
     /// context, as a tool would, and carries out what it does.
     Perform { window: i32, verb: String },
+    /// `/gui_capture` asked for the picture of the window rooted at `window`
+    /// at `path`: the front draws a whole frame of it offscreen, writes the
+    /// PNG and answers [`GUI_CAPTURED`] to the client that asked.
+    Capture { window: i32, path: String },
 }
 
 /// The widget-protocol interpreter (transport- and GPU-agnostic). See

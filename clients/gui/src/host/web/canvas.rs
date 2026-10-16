@@ -419,6 +419,20 @@ impl WebApp {
     /// scopes their tick-fed histories); the node tree stays empty until a
     /// browser node-tree path exists.
     pub(super) fn draw(&mut self, def: i32) {
+        self.draw_into(def, false);
+    }
+
+    /// **The picture of canvas `def`, drawn offscreen** (`/gui_capture`): a
+    /// whole frame through the same path the screen's takes, copied into a
+    /// buffer on its way back.
+    pub(super) fn capture_frame(&mut self, def: i32) -> Result<frame::Readback, String> {
+        self.draw_into(def, true)
+            .unwrap_or_else(|| Err("no canvas holds that window".into()))
+    }
+
+    /// One frame of canvas `def`: onto the page, or -- `capture` -- into a
+    /// texture read back, which is always a whole one.
+    fn draw_into(&mut self, def: i32, capture: bool) -> Option<Result<frame::Readback, String>> {
         // **First, whatever was told to read itself again.** A `reload` is the
         // element forgetting what it resolved, so a fill that ran before the
         // reload was served would fill from nothing and leave the stale picture
@@ -426,7 +440,7 @@ impl WebApp {
         self.reload_bulk(def);
         // What this frame was asked for: the canvas' picture, or only what
         // moves over the one it kept.
-        let whole = self.canvases.get(&def).is_none_or(CanvasSlot::whole_wanted);
+        let whole = capture || self.canvases.get(&def).is_none_or(CanvasSlot::whole_wanted);
         // Whatever an element has for its slot reaches the card before the
         // frame that draws it -- a canvas with nothing live in it never ticks.
         if whole
@@ -445,12 +459,8 @@ impl WebApp {
         let timelines = self.host.timelines();
         let statuses = self.host.statuses();
         let theme = &self.host.theme;
-        let Some(tree) = self.host.window_def(def) else {
-            return;
-        };
-        let Some(slot) = self.canvases.get_mut(&def) else {
-            return;
-        };
+        let tree = self.host.window_def(def)?;
+        let slot = self.canvases.get_mut(&def)?;
         let inputs = frame::FrameInputs {
             metrics: self.host.metrics_for(def),
             world: World {
@@ -472,7 +482,7 @@ impl WebApp {
             popups: self.host.popups(def),
         };
         let Some(render) = slot.render.as_mut() else {
-            return;
+            return capture.then(|| Err("the canvas has no GPU yet".into()));
         };
         // **A `canvas` widget needs a view before the frame can draw it.** The
         // frame only ever looks one up; building it is the front's, and the
@@ -493,6 +503,19 @@ impl WebApp {
                     CanvasView::new(&render.gpu.device, render.gpu.target(), &source),
                 );
             }
+        }
+        if capture {
+            return Some(frame::capture(
+                &mut render.gpu,
+                &mut render.renderers,
+                &mut render.batches,
+                &mut render.waveforms,
+                &mut render.spectrograms,
+                &mut render.canvases,
+                tree,
+                &inputs,
+                theme,
+            ));
         }
         frame::render(
             &mut render.gpu,
@@ -515,6 +538,7 @@ impl WebApp {
         // map the samples, so it reads exactly that span back -- which is what
         // makes the picture resolve to the sample here as it does natively.
         self.fetch_wanted_spans(def);
+        None
     }
 
     /// Schedules a repaint of one canvas through winit's redraw request

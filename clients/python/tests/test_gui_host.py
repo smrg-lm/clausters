@@ -272,6 +272,56 @@ def test_verb_names_a_window_and_a_verb():
     assert host._osc.sent == [("/gui_verb", 7, "split"), ("/gui_verb", 8, "select_all")]
 
 
+class _Answering(_Recorder):
+    """A carrier that answers: what it was told to answer each address with,
+    as encoded datagrams, after recording what was sent."""
+
+    def __init__(self, answers):
+        super().__init__()
+        self.answers = answers
+        self.inbox = []
+
+    def send_msg(self, target, *args):
+        super().send_msg(target, *args)
+        from clausters.base import _osclib
+
+        for addr, reply in self.answers.get(args[0], []):
+            self.inbox.append(_osclib.message(addr, *reply))
+
+    def recv(self, timeout=0.0):
+        return self.inbox.pop(0) if self.inbox else None
+
+
+def test_capture_waits_for_the_turns_before_it():
+    """A capture asks a question first and waits for its answer, delivering
+    the events that come before it -- an owner's turns -- and only then asks
+    for the picture; the answer is the path."""
+    host = GuiHost(interface=_Answering({
+        "/gui_query": [("/gui_event", [12, 3, 0, "value", 0.5]),
+                       ("/gui_info", [7, "window"])],
+        "/gui_capture": [("/gui_captured", [7, "shot.png"])],
+    }))
+    seen = []
+    host.subscribe(lambda addr, args: seen.append((addr, host._osc.sent[-1][0])))
+    assert host.capture(7, "shot.png") == "shot.png"
+    assert [m[0] for m in host._osc.sent] == ["/gui_query", "/gui_capture"]
+    assert host._osc.sent[1] == ("/gui_capture", 7, "shot.png")
+    # The event was delivered while the question was the last thing sent.
+    assert seen == [("/gui_event", "/gui_query")]
+
+
+def test_capture_raises_the_reason_the_host_gives():
+    """A host that wrote nothing says why, and the call raises it."""
+    from clausters.errors import CaptureError
+
+    host = GuiHost(interface=_Answering({
+        "/gui_query": [("/gui_info", [7, "window"])],
+        "/gui_capture": [("/gui_captured", [7, "shot.png", "no such window"])],
+    }))
+    with pytest.raises(CaptureError, match="no such window"):
+        host.capture(7, "shot.png")
+
+
 # ---- attach: the host this handle did not start -------------------------
 
 def test_attach_refuses_an_address_nobody_answers():

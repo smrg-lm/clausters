@@ -100,6 +100,45 @@ pub(super) async fn list_opfs(path: &str) -> Result<Listing, String> {
     ))
 }
 
+/// **Writes `bytes` as `path`** in the page's storage, replacing whatever was
+/// there and creating the directories above it -- what the web client's
+/// `writeFile` does, on the main thread the host runs on, where the writable
+/// stream is the way in (a synchronous handle exists only in a worker).
+pub(super) async fn write_opfs(path: &str, bytes: &[u8]) -> Result<(), String> {
+    let mut segments = parts(path)?;
+    let Some(name) = segments.pop() else {
+        return Err("an empty path names no file".into());
+    };
+    let navigator = field(&js_sys::global(), "navigator");
+    let storage = field(&navigator, "storage");
+    if storage.is_undefined() {
+        return Err("this page has no storage to write".into());
+    }
+    let create = js_sys::Object::new();
+    Reflect::set(&create, &JsValue::from_str("create"), &JsValue::TRUE)
+        .map_err(|e| js_err("create", e))?;
+    let mut dir = call(&storage, "getDirectory", &[]).await?;
+    for segment in &segments {
+        dir = call(
+            &dir,
+            "getDirectoryHandle",
+            &[JsValue::from_str(segment), create.clone().into()],
+        )
+        .await?;
+    }
+    let file = call(
+        &dir,
+        "getFileHandle",
+        &[JsValue::from_str(&name), create.into()],
+    )
+    .await?;
+    let stream = call(&file, "createWritable", &[]).await?;
+    let data = js_sys::Uint8Array::from(bytes);
+    call(&stream, "write", &[data.into()]).await?;
+    call(&stream, "close", &[]).await?;
+    Ok(())
+}
+
 /// Lists one directory and hands the answer back through the proxy.
 pub(super) async fn fetch_listing(host: HostId, def_id: i32, widget_id: i32, asked: String) {
     let result = list_opfs(&asked).await;

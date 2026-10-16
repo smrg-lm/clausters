@@ -29,7 +29,7 @@ import { encodeImmediateBundle } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { WsConnection } from "../base/connection.ts";
 import { AppClock } from "../base/appclock.ts";
-import { ReplyTimeout } from "../errors.ts";
+import { CaptureError, ReplyTimeout } from "../errors.ts";
 import { formatNumber } from "../defs/info.ts";
 import { toJson, view, View } from "./guidef.ts";
 import type { Source } from "./guidef.ts";
@@ -787,6 +787,48 @@ export class GuiHost {
     verb(id: number | { id: number }, verb: string): void {
         const target = typeof id === "number" ? id : id.id;
         this.send("/gui_verb", ["i", target], verb);
+    }
+
+    /**
+     * `/gui_capture <id> <path>` -- write the picture of window `id` (an id or
+     * a handle) to `path` as a PNG, and resolve to the path once the file is
+     * whole.
+     *
+     * The picture is the screen's: the host draws the window's frame with the
+     * same render the window is drawn with, into a texture of the window's
+     * size, and reads it back. Live views -- a meter, a playhead -- are where
+     * they are at the moment the host handles it. A path means what it means
+     * to every verb that takes one: in a page, a path in the page's own
+     * storage; against a native host, a path on its disk.
+     *
+     * **It waits for the turns before it.** A verb or a gesture that edits
+     * goes to the window's owner, and the owner's corrections come back as
+     * `/gui_set`s; a picture asked for at once could show the window before
+     * they arrived. So this first asks the host a question and waits for the
+     * answer, which comes after every event the host sent before it -- by then
+     * the owner has applied them all and sent what they answered -- and only
+     * then asks for the picture.
+     *
+     * Rejects with `CaptureError` when the host says it wrote nothing, and with
+     * `ReplyTimeout` when it does not answer within `timeout` seconds.
+     */
+    async capture(id: number | { id: number }, path: string, timeout = 5.0): Promise<string> {
+        const window = typeof id === "number" ? id : id.id;
+        await this.query(window, timeout);
+        const reply = this.awaitReply(
+            (msg) =>
+                msg.addr === "/gui_captured" &&
+                Number(msg.args[0]) === window &&
+                String(msg.args[1]) === path,
+            timeout,
+            `/gui_captured for window ${window}`,
+        );
+        this.send("/gui_capture", ["i", window], path);
+        const args = (await reply).args;
+        if (args.length > 2) {
+            throw new CaptureError(`window ${window}: ${path}: ${String(args[2])}`);
+        }
+        return path;
     }
 
     /**

@@ -527,6 +527,42 @@ fn window_def_opens_a_window_and_stores_the_typed_def() {
     );
 }
 
+/// **A capture names a window and a path**: the host hands a window it has
+/// to the front, which holds the GPU, and answers one it has not at once,
+/// with the reason -- so a client waiting on the answer is never left
+/// waiting on nothing.
+#[test]
+fn a_capture_goes_to_the_front_or_is_answered_with_why_not() {
+    let mut host = Host::new();
+    host.handle_packet(def_msg(1, TREE), from());
+    let capture = |host: &mut Host, window: i32| {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_CAPTURE.into(),
+                args: vec![OscType::Int(window), OscType::String("shot.png".into())],
+            }),
+            from(),
+        )
+    };
+    let effects = capture(&mut host, 1);
+    let [HostEffect::Capture { window, path }] = &effects[..] else {
+        panic!("the front is asked to draw it: {effects:?}");
+    };
+    assert_eq!((*window, path.as_str()), (1, "shot.png"));
+
+    let answered = replies(capture(&mut host, 99));
+    assert_eq!(answered.len(), 1);
+    assert_eq!(answered[0].addr, GUI_CAPTURED);
+    assert_eq!(
+        answered[0].args,
+        vec![
+            OscType::Int(99),
+            OscType::String("shot.png".into()),
+            OscType::String("no such window".into()),
+        ]
+    );
+}
+
 /// A host antialiases what it draws unless it is told not to.
 #[test]
 fn a_host_draws_with_four_samples_unless_told() {

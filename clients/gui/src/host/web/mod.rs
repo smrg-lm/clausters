@@ -56,6 +56,7 @@ use super::{BusSource, ClientId, Host, HostEffect, ServerLink};
 mod bridge;
 mod bulk;
 mod canvas;
+mod capture;
 mod compose;
 mod files;
 mod input;
@@ -186,6 +187,13 @@ enum WebEvent {
         widget_id: i32,
         asked: String,
         result: Result<crate::host::files::Listing, String>,
+    },
+    /// A window's capture was written into the page's storage, or was not
+    /// (`capture`): what is left is to say so.
+    Captured {
+        def_id: i32,
+        path: String,
+        result: Result<(), String>,
     },
     /// The MSAA sample count canvases attached from here on are drawn with
     /// (the browser form of the native `[gui] msaa`).
@@ -392,6 +400,7 @@ impl WebApp {
                     }
                 }
                 HostEffect::Perform { window, verb } => self.perform_verb(window, &verb),
+                HostEffect::Capture { window, path } => self.capture(window, path),
             }
         }
     }
@@ -799,6 +808,11 @@ impl WebApp {
                 asked,
                 result,
             } => self.on_listed(def_id, widget_id, &asked, result),
+            WebEvent::Captured {
+                def_id,
+                path,
+                result,
+            } => self.queue(super::captured(def_id, &path, result.err().as_deref())),
             #[cfg(feature = "midi")]
             WebEvent::Midi(bytes) => self.on_midi(&bytes),
             #[cfg(feature = "midi")]

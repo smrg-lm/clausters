@@ -57,6 +57,7 @@ impl Host {
             GUI_KEYS => self.on_keys(&msg.args, from, effects),
             GUI_CLOCK => self.on_clock(&msg.args, from, effects),
             GUI_VERB => self.on_verb(&msg.args, from, effects),
+            GUI_CAPTURE => self.on_capture(&msg.args, from, effects),
             _other => diag::debug!("{from}: ignoring unhandled address {_other}"),
         }
     }
@@ -241,6 +242,34 @@ impl Host {
         effects.push(HostEffect::Perform {
             window,
             verb: verb.to_string(),
+        });
+    }
+
+    /// `/gui_capture <window> <path>` -- the picture of the window rooted at
+    /// `window` ([`GUI_CAPTURE`]). The host checks the window is there and
+    /// hands the capture to the front, which holds the window's GPU; a window
+    /// it does not have is answered at once, with the reason.
+    pub(super) fn on_capture(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let (Some(window), Some(path)) = (int_arg(args, 0), string_arg(args, 1)) else {
+            return diag::warn!("{from}: {GUI_CAPTURE} needs a window id and a path");
+        };
+        if self.window_def(window).is_none() {
+            diag::warn!("{from}: {GUI_CAPTURE} {window} {path}: no such window");
+            effects.push(HostEffect::Reply(captured(
+                window,
+                path,
+                Some("no such window"),
+            )));
+            return;
+        }
+        effects.push(HostEffect::Capture {
+            window,
+            path: path.to_string(),
         });
     }
 
@@ -491,5 +520,18 @@ pub(super) fn scalar_arg(v: &Value) -> Option<OscType> {
         Value::Number(n) => Some(OscType::Float(n.as_f64()? as f32)),
         Value::String(s) => Some(OscType::String(s.clone())),
         _ => None,
+    }
+}
+
+/// The [`GUI_CAPTURED`] answer: the window, the path, and the reason when the
+/// file was not written.
+pub fn captured(window: i32, path: &str, failed: Option<&str>) -> OscMessage {
+    let mut args = vec![OscType::Int(window), OscType::String(path.to_string())];
+    if let Some(reason) = failed {
+        args.push(OscType::String(reason.to_string()));
+    }
+    OscMessage {
+        addr: GUI_CAPTURED.to_string(),
+        args,
     }
 }

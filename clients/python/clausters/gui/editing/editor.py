@@ -823,6 +823,19 @@ class Editor:
         self._host.verb(self._window, str(name))
         return True
 
+    def capture(self, path, timeout: float = 5.0) -> str:
+        """**Write the window's picture to ``path``** as a PNG, and answer the
+        path -- `clausters.gui.host.GuiHost.capture` on this editor's window,
+        which waits for the turns before it: what a verb or a gesture edited is
+        in the picture.
+
+        Raises `RuntimeError` with no window open, since there is nothing to
+        draw.
+        """
+        if self._host is None or self._window is None:
+            raise RuntimeError("capture() needs the editor's window open")
+        return self._host.capture(self._window, path, timeout)
+
     def view_all(self) -> bool:
         """The whole of what the window's view holds, in view -- the window's ``view_all`` (`verb`)."""
         return self.verb("view_all")

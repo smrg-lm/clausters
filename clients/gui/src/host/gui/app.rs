@@ -146,6 +146,12 @@ impl WindowState {
     }
 }
 
+/// What a client asked of a window before it was open.
+pub(super) enum Asked {
+    Verb(String),
+    Capture { path: String, from: ClientId },
+}
+
 pub(super) struct App {
     pub(super) host: Host,
     pub(super) socket: Arc<UdpSocket>,
@@ -164,10 +170,11 @@ pub(super) struct App {
     pub(super) inflight: Arc<Inflight>,
     /// Window opens requested before the first `resumed`, flushed on resume.
     pub(super) pending: Vec<(i32, ClientId)>,
-    /// `/gui_verb`s asked of a window still in `pending`, performed once it
-    /// opens: a script that opens a window and asks it for a verb at once
-    /// must not lose the verb to the event loop's start.
-    pub(super) pending_verbs: Vec<(i32, String)>,
+    /// What was asked of a window still in `pending` -- a `/gui_verb`, a
+    /// `/gui_capture` -- done once it opens, in the order it was asked: a
+    /// script that opens a window and asks it for a verb and a picture at
+    /// once must not lose either to the event loop's start.
+    pub(super) pending_asks: Vec<(i32, Asked)>,
     pub(super) resumed: bool,
     /// The last whole second the playhead clock was logged at, so the debug
     /// line is one a second rather than one a frame.
@@ -239,7 +246,7 @@ impl App {
             ws_conns: HashMap::new(),
             inflight,
             pending: Vec::new(),
-            pending_verbs: Vec::new(),
+            pending_asks: Vec::new(),
             resumed: false,
             head_said: u64::MAX,
             started: Instant::now(),
@@ -410,6 +417,7 @@ impl App {
                     }
                 }
                 HostEffect::Perform { window, verb } => self.perform_verb(window, &verb),
+                HostEffect::Capture { window, path } => self.capture(window, path, from),
             }
         }
     }
@@ -490,13 +498,27 @@ impl App {
     /// the same code the browser front drives -- here fed the live inputs (the
     /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
+        self.draw(def_id, false);
+    }
+
+    /// **The picture of window `def_id`, drawn offscreen** (`/gui_capture`):
+    /// a whole frame through the same path the screen's takes, read back.
+    pub(super) fn capture_frame(&mut self, def_id: i32) -> Result<frame::Readback, String> {
+        self.draw(def_id, true)
+            .unwrap_or_else(|| Err("no window is open for it".into()))
+    }
+
+    /// One frame of window `def_id`: onto the screen, or -- `capture` -- into
+    /// a texture read back, which is always a whole one.
+    fn draw(&mut self, def_id: i32, capture: bool) -> Option<Result<frame::Readback, String>> {
         tracing::trace!("rendering window {def_id}");
         // What this frame was asked for: the window's picture, or only what
         // moves over the one it kept.
-        let whole = self
-            .windows
-            .get(&def_id)
-            .is_none_or(|ws| ws.batches.whole_wanted());
+        let whole = capture
+            || self
+                .windows
+                .get(&def_id)
+                .is_none_or(|ws| ws.batches.whole_wanted());
         // Whatever an element has for its slot reaches the card before the
         // frame that draws it.
         if whole {
@@ -505,9 +527,7 @@ impl App {
         let server_attached = self.host.server().is_some();
         // Disjoint field borrows: the tree (host), the bus (shm), the node trees,
         // and the window's GPU resources are separate fields of `self`.
-        let Some(tree) = self.host.window_def(def_id) else {
-            return;
-        };
+        let tree = self.host.window_def(def_id)?;
         let cursor = self.windows.get(&def_id).and_then(|w| w.cursor);
         // Held for the length of the frame it feeds: the log is the host's, and
         // a front that copied it would be a second log.
@@ -552,9 +572,20 @@ impl App {
             status: statuses.get(&def_id),
             popups: self.host.popups(def_id),
         };
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return;
-        };
+        let ws = self.windows.get_mut(&def_id)?;
+        if capture {
+            return Some(frame::capture(
+                &mut ws.gpu,
+                &mut ws.renderers,
+                &mut ws.batches,
+                &mut ws.waveforms,
+                &mut ws.spectrograms,
+                &mut ws.canvases,
+                tree,
+                &inputs,
+                &self.host.theme,
+            ));
+        }
         // Timed only when somebody is reading it: what a window's frames
         // come to, said once a second under `debug`.
         let timed = tracing::enabled!(tracing::Level::DEBUG).then(Instant::now);
@@ -573,6 +604,7 @@ impl App {
         if let Some(started) = timed {
             ws.frames.count(def_id, drawn, started.elapsed());
         }
+        None
     }
 }
 
@@ -582,8 +614,11 @@ impl ApplicationHandler<UserEvent> for App {
         for (id, origin) in std::mem::take(&mut self.pending) {
             self.open_window(event_loop, id, origin);
         }
-        for (id, verb) in std::mem::take(&mut self.pending_verbs) {
-            self.perform_verb(id, &verb);
+        for (id, asked) in std::mem::take(&mut self.pending_asks) {
+            match asked {
+                Asked::Verb(verb) => self.perform_verb(id, &verb),
+                Asked::Capture { path, from } => self.capture(id, path, from),
+            }
         }
         // Standalone: a GuiDef pre-loaded into the host before the loop started
         // (no `/gui_def` over the wire) is opened now. Its events have no script

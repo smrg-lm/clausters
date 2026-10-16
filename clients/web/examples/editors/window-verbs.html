@@ -57,6 +57,12 @@ switch.
 The verbs arrive through the window's event loop, as a gesture does, so what
 a verb edited is in the sequence a moment after the call returns rather than
 when it does.
+<b>The window, as a picture</b>: <code>picture("tidy")</code> writes what the
+window shows to <code>/out/window_verbs_tidy.png</code> in the page's own
+storage (<code>editor.capture</code>), and the page leaves that one behind. It
+is drawn with the render the screen is drawn with, after the turns before it
+-- what the verbs edited is in it -- so <b>again</b> and then <b>picture</b>
+is the second picture of the pair.
 
 Run <code>./build.sh</code> in <code>clients/web</code> first, serve the
 directory (<code>python3 -m http.server</code>) and open this page. It boots
@@ -68,6 +74,7 @@ the audio engine in the page, so the server a script would launch is
       <button id="again" disabled>again</button>
       <button id="clear" disabled>clear</button>
       <button id="back" disabled>back</button>
+      <button id="picture" disabled>picture</button>
       <pre id="log"></pre>
     </main>
     <script type="module">
@@ -137,6 +144,17 @@ the audio engine in the page, so the server a script would launch is
           editor.paste();
         }
 
+        // The window, as a picture: `capture` writes what the window shows as
+        // a PNG, drawn with the render the screen is drawn with, into a
+        // picture of the window's size, after the turns before it -- so what
+        // the verbs above edited is in it, which is how a change is looked at
+        // without somebody in front of the screen. A path in a page is in its
+        // own storage.
+        let pictures = 0;
+        function picture(name) {
+          return editor.capture(`/out/window_verbs_${name}.png`);
+        }
+
         $("again").disabled = false;
         $("again").onclick = () => again();
         $("clear").disabled = false;
@@ -146,9 +164,14 @@ the audio engine in the page, so the server a script would launch is
         // The script's ending runs `tidy()` once and waits for the window;
         // here the page runs it once and its button runs it again.
         tidy();
+        log(`the window, quantized: ${await picture("tidy")}`);
         $("tidy").disabled = false;
         $("tidy").onclick = () => tidy();
-        log("tidy() quantizes the notes, again() repeats them, clear() cuts them, back() pastes them");
+        $("picture").disabled = false;
+        $("picture").onclick = async () =>
+          log(`the window: ${await picture(`${++pictures}`)}`);
+        log("tidy() quantizes the notes, again() repeats them, clear() cuts them, "
+          + "back() pastes them, picture(name) writes the window as a PNG");
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

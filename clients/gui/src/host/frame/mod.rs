@@ -1136,6 +1136,41 @@ pub(crate) fn render(
     let target = frame
         .texture
         .create_view(&wgpu::TextureViewDescriptor::default());
+    let encoder = encode_pass(
+        gpu,
+        renderers,
+        batches,
+        spectrograms,
+        canvases,
+        theme,
+        &target,
+    );
+    gpu.queue.submit(std::iter::once(encoder.finish()));
+    // The winit present contract: lets winit attach the compositor frame
+    // callback to this commit, so later `request_redraw`s are delivered (and
+    // throttled) correctly -- without it, Wayland redraw delivery can stall on
+    // an unfocused or covered window until the compositor repaints it anyway.
+    gpu.window.pre_present_notify();
+    frame.present();
+    batches.asked.drawn();
+    drawn
+}
+
+/// **The one render pass a window's frame is**, into `target`: the batches
+/// as they stand, the heavy views between them, resolved out of the
+/// multisampled attachment when the window has one. The screen's frame and a
+/// capture's are this pass into two textures, which is what keeps a capture
+/// the screen's picture.
+fn encode_pass(
+    gpu: &Gpu,
+    renderers: &mut Renderers,
+    batches: &Batches,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
+    canvases: &HashMap<i32, CanvasView>,
+    theme: &Theme,
+    target: &wgpu::TextureView,
+) -> wgpu::CommandEncoder {
+    let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1143,11 +1178,11 @@ pub(crate) fn render(
         });
     // Antialiasing is a property of the **attachment**, so it is the whole of
     // what MSAA changes here: with it on, every pipeline draws into the
-    // multisampled texture and the GPU resolves that into the surface as the
+    // multisampled texture and the GPU resolves that into the target as the
     // pass ends. One flag, one texture per window, nothing per widget.
     let (attachment, resolve_target) = match gpu.msaa_view() {
-        Some(ms) => (ms, Some(&target)),
-        None => (&target, None),
+        Some(ms) => (ms, Some(target)),
+        None => (target, None),
     };
     let fb = (fb_w, fb_h);
     {
@@ -1180,15 +1215,178 @@ pub(crate) fn render(
         }
         batches.top.draw(&mut pass);
     }
+    encoder
+}
+
+/// **A window's picture on its way back from the card**: the frame copied
+/// into a buffer the CPU can map, and what it takes to read it as pixels.
+///
+/// Reading it is two steps because a page cannot block on the card: the
+/// buffer is asked to be mapped as the copy is made ([`capture`]), and once
+/// the card has said it is ([`ready`](Self::ready)) it is read
+/// ([`pixels`](Self::pixels)). A native front waits between the two
+/// ([`wait`](Self::wait)); a page asks again on its next tick.
+pub(crate) struct Readback {
+    buffer: wgpu::Buffer,
+    width: u32,
+    height: u32,
+    /// The bytes of one row in the buffer: a copy's rows are aligned to
+    /// [`wgpu::COPY_BYTES_PER_ROW_ALIGNMENT`].
+    stride: u32,
+    /// Whether the texture's channels are blue first.
+    bgra: bool,
+    /// What the card said about the mapping, once it has.
+    mapped: Arc<std::sync::Mutex<Option<Result<(), String>>>>,
+}
+
+impl Readback {
+    /// What the card has said about the mapping: `None` until it has.
+    pub(crate) fn ready(&self) -> Option<Result<(), String>> {
+        self.mapped.lock().ok().and_then(|slot| slot.clone())
+    }
+
+    /// **Blocks until the card has answered** (native only: a page's card
+    /// answers on the browser's own loop).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn wait(&self, device: &wgpu::Device) -> Result<(), String> {
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| e.to_string())?;
+        self.ready()
+            .unwrap_or_else(|| Err("the card did not map the capture".into()))
+    }
+
+    /// The picture, as `(width, height, rgba)` rows top to bottom -- once
+    /// [`ready`](Self::ready) said the mapping succeeded.
+    pub(crate) fn pixels(&self) -> (u32, u32, Vec<u8>) {
+        let row = self.width as usize * 4;
+        let mut out = Vec::with_capacity(row * self.height as usize);
+        {
+            let view = self.buffer.slice(..).get_mapped_range();
+            for line in view.chunks(self.stride as usize).take(self.height as usize) {
+                out.extend_from_slice(&line[..row]);
+            }
+        }
+        self.buffer.unmap();
+        for px in out.as_chunks_mut::<4>().0 {
+            if self.bgra {
+                px.swap(0, 2);
+            }
+            // The surface is opaque: what a theme's alpha would leave in the
+            // texture is not what the screen shows.
+            px[3] = 255;
+        }
+        (self.width, self.height, out)
+    }
+}
+
+/// **The picture of a window, drawn offscreen**: a whole frame of `tree` laid
+/// out and drawn into the window's batches ([`draw_whole`]), the one pass
+/// ([`encode_pass`]) encoded into a texture of the window's size instead of
+/// its surface, and that texture copied into a buffer asked to be mapped.
+///
+/// Nothing is presented and the window's next frame is what it would have
+/// been: the batches hold the tree as it stands, which is what a frame keeps
+/// anyway, and what the window was asked to draw is still asked.
+#[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
+pub(crate) fn capture(
+    gpu: &mut Gpu,
+    renderers: &mut Renderers,
+    batches: &mut Batches,
+    waveforms: &mut HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &mut HashMap<SlotAt, SpectrogramSlot>,
+    canvases: &mut HashMap<i32, CanvasView>,
+    tree: &Widget,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) -> Result<Readback, String> {
+    let theme = tree.theme.as_deref().unwrap_or(theme);
+    let format = gpu.config.format;
+    let bgra = match format {
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => true,
+        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => false,
+        other => return Err(format!("cannot read back a {other:?} window")),
+    };
+    draw_whole(
+        gpu,
+        renderers,
+        batches,
+        waveforms,
+        spectrograms,
+        canvases,
+        tree,
+        inputs,
+        theme,
+    );
+    let (width, height) = (gpu.config.width.max(1), gpu.config.height.max(1));
+    let size = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("gui capture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = encode_pass(
+        gpu,
+        renderers,
+        batches,
+        spectrograms,
+        canvases,
+        theme,
+        &target,
+    );
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+    let stride = (width * 4).div_ceil(align) * align;
+    let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("gui capture readback"),
+        size: u64::from(stride) * u64::from(height),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(stride),
+                rows_per_image: Some(height),
+            },
+        },
+        size,
+    );
     gpu.queue.submit(std::iter::once(encoder.finish()));
-    // The winit present contract: lets winit attach the compositor frame
-    // callback to this commit, so later `request_redraw`s are delivered (and
-    // throttled) correctly -- without it, Wayland redraw delivery can stall on
-    // an unfocused or covered window until the compositor repaints it anyway.
-    gpu.window.pre_present_notify();
-    frame.present();
-    batches.asked.drawn();
-    drawn
+    let mapped = Arc::new(std::sync::Mutex::new(None));
+    let answer = Arc::clone(&mapped);
+    buffer
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            if let Ok(mut slot) = answer.lock() {
+                *slot = Some(result.map_err(|e| e.to_string()));
+            }
+        });
+    Ok(Readback {
+        buffer,
+        width,
+        height,
+        stride,
+        bgra,
+        mapped,
+    })
 }
 
 /// **A whole frame's picture**, into the batches: the tree laid out, every

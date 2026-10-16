@@ -80,6 +80,11 @@ class CommandError(ClaustersError, RuntimeError):
     """A server command was answered with a ``/fail`` reply."""
 
 
+class CaptureError(ClaustersError, RuntimeError):
+    """The GUI host answered a window's capture with the reason it wrote no
+    file."""
+
+
 class SegmentError(ClaustersError, ValueError):
     """The shared-memory segment is not a valid clausters segment."""
 

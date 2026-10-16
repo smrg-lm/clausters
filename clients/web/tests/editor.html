@@ -28,7 +28,9 @@
       Chrome): ?smoke=1 auto-runs. A decoded file reaches a server buffer
       through `Buffer.load` (fetch + decodeAudioData + the carrier's bulk
       install), the host draws it from `buffer:` -- which makes it fetch the
-      samples with /buffer_query + /buffer_getRange over its client leg -- and the transport
+      samples with /buffer_query + /buffer_getRange over its client leg -- and
+      captures the window into the page's storage, read back as a PNG of the
+      window's size with something drawn in it; then the transport
       is asserted **audibly** on an analyser: silent, then sounding under play,
       silent again under pause with the node still in the tree, sounding after
       resume, and gone after stop.
@@ -75,6 +77,55 @@
           view.setInt16(44 + i * 2, Math.round(s * 32767), true);
         }
         return URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      }
+
+      /**
+       * A capture read back out of the page's storage: its size from the
+       * header, and how many colors its pixels hold -- the host writes its
+       * PNGs uncompressed, so the scanlines are the stored blocks' bytes.
+       */
+      async function readPng(path) {
+        let dir = await navigator.storage.getDirectory();
+        const parts = path.split("/").filter((p) => p.length > 0);
+        const name = parts.pop();
+        for (const part of parts) dir = await dir.getDirectoryHandle(part);
+        const bytes = new Uint8Array(
+          await (await (await dir.getFileHandle(name)).getFile()).arrayBuffer());
+        const view = new DataView(bytes.buffer);
+        const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        if (!signature.every((b, i) => bytes[i] === b)) throw new Error(`${path} is no PNG`);
+        let at = 8, width = 0, height = 0;
+        const idat = [];
+        while (at < bytes.length) {
+          const len = view.getUint32(at);
+          const kind = String.fromCharCode(...bytes.slice(at + 4, at + 8));
+          if (kind === "IHDR") {
+            width = view.getUint32(at + 8);
+            height = view.getUint32(at + 12);
+          }
+          if (kind === "IDAT") idat.push(bytes.subarray(at + 8, at + 8 + len));
+          at += 12 + len;
+        }
+        const z = new Uint8Array(idat.reduce((n, part) => n + part.length, 0));
+        idat.reduce((n, part) => (z.set(part, n), n + part.length), 0);
+        const raw = new Uint8Array((width * 4 + 1) * height);
+        for (let i = 2, filled = 0; ;) {
+          const last = z[i] & 1;
+          const n = z[i + 1] | (z[i + 2] << 8);
+          raw.set(z.subarray(i + 5, i + 5 + n), filled);
+          filled += n;
+          i += 5 + n;
+          if (last) break;
+        }
+        const colors = new Set();
+        const row = width * 4 + 1;
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const p = y * row + 1 + x * 4;
+            colors.add((raw[p] << 16) | (raw[p + 1] << 8) | raw[p + 2]);
+          }
+        }
+        return { width, height, colors: colors.size };
       }
 
       async function run() {
@@ -146,6 +197,18 @@
         }
         log(`the host holds ${wave.type}/${wave.props.view} on buffer ${wave.props.buffer}`);
 
+        // ---- the window's picture, into the page's storage ----
+        const shot = await host.capture(win, "/captures/editor.png");
+        const picture = await readPng(shot);
+        if (picture.width < 100 || picture.height < 100) {
+          throw new Error(`a capture of ${picture.width}x${picture.height}`);
+        }
+        if (picture.colors < 16) {
+          throw new Error(`the capture holds ${picture.colors} colors: nothing drawn`);
+        }
+        log(`captured ${picture.width}x${picture.height} into ${shot}, `
+          + `${picture.colors} colors`);
+
         // ---- the transport, asserted on the analyser ----
         const silent = await peak(150);
         if (silent > 0.01) throw new Error(`not silent before play (${silent})`);
@@ -197,7 +260,7 @@
         region.free();
         await server.sync();
 
-        verdict(`PASS: buffer ${buffer.bufnum} loaded and drawn, transport `
+        verdict(`PASS: buffer ${buffer.bufnum} loaded, drawn and captured, transport `
           + `play ${playing.toFixed(2)} -> pause ${pausedPeak.toFixed(2)} `
           + `-> resume ${resumed.toFixed(2)} -> stop ${stopped.toFixed(2)}, `
           + `selection ${looping.toFixed(2)}`);

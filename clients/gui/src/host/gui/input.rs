@@ -118,7 +118,8 @@ impl App {
     /// performed through the window's own machine, as its tool would.
     pub(super) fn perform_verb(&mut self, def_id: i32, verb: &str) {
         if !self.windows.contains_key(&def_id) && self.pending.iter().any(|(id, _)| *id == def_id) {
-            self.pending_verbs.push((def_id, verb.to_string()));
+            self.pending_asks
+                .push((def_id, super::app::Asked::Verb(verb.to_string())));
             return;
         }
         let ctx = self.gesture_ctx(def_id);

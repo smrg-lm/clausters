@@ -67,6 +67,21 @@ in the structure a moment after the call returns. A verb needs a window: with
 none open, `verb` answers `false`. `docs/verbs.md` in the repository lists
 every verb with the member that asks for it.
 
+**A window's picture** is asked for the same way: `editor.capture(path)`
+writes what the window shows as a PNG and answers the path once the file is
+whole. It is drawn with the render the screen is drawn with, so it is the
+screen's picture, and it waits for the turns before it, so what a verb or a
+gesture edited is in it:
+
+```javascript
+editor.selectAll();
+editor.quantize();
+await editor.capture("/out/tidy.png"); // the window, as a PNG
+```
+
+The path is in the page's own storage in a tab, and on the host's disk
+against a native host. With no window open the call rejects.
+
 **What a quantize, a drag and a paste land on is a grid in beats**, a
 sixteenth until you choose another: `editor.grid = 1.0` for whole beats, `0`
 for none. It is read through the structure's tempo map, so a line is a beat
