@@ -5029,6 +5029,12 @@ sound.
   the rest of that log. Checked by forcing a hang at `status` and at `clock`.
   What is left: read the next CI timeout and fix what it names.
 
+  **Watched 2026-10-15; not reproduced.** No CI run since the instrumentation
+  has timed out in this case (the three `web smokes` failures of 2026-10-15
+  were the job cancelled by the process-group reap, since fixed), and twenty
+  runs of the case in a row pass locally. The entry stays open on the same
+  terms: the next timeout's output names the step.
+
 
 - ⬜ **The example-pair audit misreads the persistent plugin pair** *(found
   2026-10-14)*. `scripts/audit-example-pairs.py plugins/persistent` maps Python's
