@@ -202,10 +202,7 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
 
 - ✅ **C54 — A timeline plays what is under the cursor, and an edit reaches the
   pass that is running** *(closed 2026-10-03; opened 2026-09-08 by the user, after hearing a clip
-  dragged while the line was about to reach it: "hay que revisar la
-  implementacion del sistema de reproduccion de las lineas temporales editables
-  de los clientes ... los elementos estan en una cola temporal, cuando el cursor
-  llega estan o no estan")*. `seq.timeline` was written for a **static** score
+  dragged while the line was about to reach it: "the implementation of the clients' playback system for editable timelines has to be reviewed ... the elements are in a time queue; when the cursor arrives they are there or they are not")*. `seq.timeline` was written for a **static** score
   seeked at its boundaries (`C16`), and it is used by an editor that rewrites it
   **by hand while it plays**. That is the mismatch, and every symptom below is
   one of its three faces rather than three defects.
@@ -353,7 +350,7 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   sequence, not a timeline.
 
 
-- ✅ **C55 — One allocation and one applier, in Rust, for every endpoint** *(decided 2026-09-13 by the user, after the standalone host's third copy of the op applier went silent: "si resulta ser una 3 implementación, lo mejor sería tomar la implementación del cliente python y pasarla a rust para que todos usen la única y misma" — and, asked who hands out the numbers, "los allocators también a Rust")*.
+- ✅ **C55 — One allocation and one applier, in Rust, for every endpoint** *(decided 2026-09-13 by the user, after the standalone host's third copy of the op applier went silent: "if it turns out to be a third implementation, the best would be to take the Python client's implementation and move it to Rust so everyone uses the one and only same one" — and, asked who hands out the numbers, "the allocators to Rust too")*.
 
   **What is written three times today.** The *numbers* a client allocates — node ids, audio and control buses, buffers — and the *applying* of the instance's `Op`s (a handle table, the encoding to OSC, and what has to wait for what) live once per endpoint:
 
@@ -2603,9 +2600,9 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 - ✅ **`edit(curve)` could not be told the value range, so an amplitude
   envelope's zero was unreachable by hand** *(found 2026-09-21 by the user, by
-  ear, drawing in `editors/edit_env`: "estoy poniendo la curva en cero al
-  principio pero igual suena", then "nunca llega a cero, tampoco al final";
-  fixed the same day)*. A view with no declared axis derives one --
+  ear, drawing in `editors/edit_env`: "I am setting the curve to zero at the
+  start but it still sounds", then "it never reaches zero, not at the end
+  either"; fixed the same day)*. A view with no declared axis derives one --
   `envshape::curve_range`, the break-points' own range with a tenth of headroom
   -- so a curve over `0..1` was drawn against **-0.1 .. 1.1**: the floor of the
   field was -0.1 and zero sat 8.3% up it. Dragging to the floor gives a small
@@ -2650,10 +2647,10 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 - ✅ **`seq.Automation` is three things fused, and one of them is a second
   implementation of what the crate already plays** *(found 2026-09-20 by the
   user, asking for the module to go into quarantine beside `form`, which is
-  where it came from: "fue un error dejar la clase Automation porque se pisa con
-  la nueva clase Automation del editor multipista"; fixed the same day)*. The
-  class carries three
-  unrelated responsibilities, and only the third is its own:
+  where it came from: "it was a mistake to keep the Automation class, because it
+  clashes with the multitrack editor's new Automation class"; fixed the same
+  day)*. The class carries three unrelated responsibilities, and only the third
+  is its own:
 
   1. **The curve** — `self.env`, an `Env`. Built with `points_to_env`, read with
      `env_to_points`, measured with `sum(env.times)`. Borrowed whole.
@@ -2834,10 +2831,10 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   is in no structured reply").
 
 - ✅ **The multitrack example is a driver with an editor in it, and it should be
-  `edit_multitrack.py`** *(the user, 2026-09-10: "el ejemplo multitrack_audio.py
-  no sirve más como está. Había que rehacerlo con edit y sin todos los callbacks
-  manuales que tiene ... debería llamarse `edit_multitrack.py` y ser casi tan
-  simple como `edit_samples.py`")*.
+  `edit_multitrack.py`** *(the user, 2026-09-10: "the multitrack_audio.py
+  example is no longer any good as it is. It had to be redone with edit and
+  without all the manual callbacks it has ... it should be called
+  `edit_multitrack.py` and be almost as simple as `edit_samples.py`")*.
 
   `examples/editors/multitrack_audio.py` opens the piece with `edit` already —
   what is wrong is everything around it. `sound_the_piece` is a hand-written
@@ -2864,8 +2861,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   family (`edit_samples`, `edit_curve`, `edit_notes`, `edit_multitrack`).
 
   **Done 2026-09-10, and the verb went where the user said it belonged**
-  *("La aplicación **es** el editor que se usa con el verbo edit, no es algo que
-  hay que construir en un ejemplo distinto")*. The driver is now the editor's
+  *("The application **is** the editor used with the edit verb, it is not something to build in a separate example")*. The driver is now the editor's
   own half — `gui.editing.playback` in both clients: the reader def, one resident
   node per box in a group the server's transport governs, the mixer's rules over
   a track's mute/solo/level, and the transport with its row of three widgets,
@@ -2889,7 +2885,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 - ✅ **`form.Element` is a word two layers spend on different things, and one
   of them is frozen** *(found 2026-09-08 by the user, reading the multitrack
-  widget: "Element es un termino que se usa en form"; renamed 2026-10-07)*. `clausters.form.Element`
+  widget: "Element is a term used in form"; renamed 2026-10-07)*. `clausters.form.Element`
   is a thin adornment over an event, a timeline, a buffer or a pattern — an
   onset and a duration, and nothing else. The GUI host's `Element` is the leaf
   of a widget tree, one object implementing one trait (`clients/gui`'s K track,
@@ -2958,13 +2954,13 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   doubling at beat 1 and finds the free three beats later, where the scalar
   said two.
 
-- ✅ **Nothing fundamental holds the tempo map, so every structure that needs
-  it reaches for a scalar** *(found 2026-09-05 by the user, reading the
-  tempo-map prop that had just been wired through to the host: "que el tempo lo
-  tenga el editor es un problema. El editor representa acciones de edición
-  sobre el contenido, no el contenido" -- and, on the first draft of this entry,
-  "Form es un módulo secundario que se hace sobre las estructuras fundamentales:
-  TempoClock, Timeline, Env, Automation")*.
+- ✅ **Nothing fundamental holds the tempo map, so every structure that needs it
+  reaches for a scalar** *(found 2026-09-05 by the user, reading the tempo-map
+  prop that had just been wired through to the host: "the editor holding the
+  tempo is a problem. The editor represents editing actions on the contents, not
+  the contents" -- and, on the first draft of this entry, "Form is a secondary
+  module built on the fundamental structures: TempoClock, Timeline, Env,
+  Automation")*.
 
   `Editor.tempo_map` is where a piece's tempo actually lives today: the
   constructor takes one or builds `TempoMap(tempo)`, `Editor.tempo` is a reading
@@ -3817,11 +3813,11 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 - ✅ **A curve opens on no axis at all: the values flatten and the time
   rescales** *(found 2026-09-04, by eye, while running the throwaway prototype
   for `C52` over `examples/editors/edit_curve.py`'s own curve; the second
-  symptom reported by the user on the acceptance pass — "el último punto parece
-  que hace autofit y cambia su posición con respecto a los demás")*. The example
-  builds a cutoff automation from 200 to 4000 Hz, `edit`s it, and after a few
-  drags the curve read back is `[0.0, 0.446, ..., 0.523, ..., 0.909, ...]` —
-  every value inside `[0, 1]`, and the frequencies gone.
+  symptom reported by the user on the acceptance pass — "the last point seems to
+  autofit and changes its position relative to the others")*. The example builds
+  a cutoff automation from 200 to 4000 Hz, `edit`s it, and after a few drags the
+  curve read back is `[0.0, 0.446, ..., 0.523, ..., 0.909, ...]` — every value
+  inside `[0, 1]`, and the frequencies gone.
 
   **One cause, two symptoms, and it is that the view declares no space.**
   `PointsView.build` (`gui/editing/points.py`) builds
@@ -3865,13 +3861,12 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   the fix: it is a display choice for a range nothing has asked for yet.
 
 - ✅ **A clip that would not move, and the edit said it had** *(reported
-  2026-09-03 by the user -- "no responde quiere decir que no se puede mover y no
-  se puede hacer split; la selección anda, los grip se muestran" -- and found
-  the same day by the lead they gave with it, a clip composed by a join; fixed
-  the same day)*. The reproduction is `join`, then **undo**, then drag the clip
-  the undo put back: the editor answers `True`, the crate applies the intent,
-  and the clip stays exactly where it was. Nothing is refused, so nothing has a
-  reason to show.
+  2026-09-03 by the user -- "not responding means it cannot be moved and cannot
+  be split; selection works, the grips show" -- and found the same day by the
+  lead they gave with it, a clip composed by a join; fixed the same day)*. The
+  reproduction is `join`, then **undo**, then drag the clip the undo put back:
+  the editor answers `True`, the crate applies the intent, and the clip stays
+  exactly where it was. Nothing is refused, so nothing has a reason to show.
 
   The index maps a node id to **the object** an intent writes to, and
   `_set_placements` restores a placement by `add`ing it again -- a *new* handle
@@ -3900,14 +3895,14 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   the two doors that replace one are the lane change and this restore, both now
   keyed on the node.
 
-- ✅ **A window onto notes is a window while the session lasts and a copy once
-  it is written** *(found 2026-09-03 by the user, right after the split shipped:
-  "cuando se hace un split de un pianoroll, sigue siendo una ventana a los datos
-  originales?" -- read the two roads in the document and they were not the same
-  road; fixed the same day, the direction being the user's)*. Live, the two
-  halves of a split shared one `Timeline`. In the document they did not: the
-  notes were written twice, both halves claimed the same node ids, and reopening
-  gave each half a timeline of its own.
+- ✅ **A window onto notes is a window while the session lasts and a copy once it
+  is written** *(found 2026-09-03 by the user, right after the split shipped:
+  "when a piano roll is split, is it still a window onto the original data?" --
+  read the two roads in the document and they were not the same road; fixed the
+  same day, the direction being the user's)*. Live, the two halves of a split
+  shared one `Timeline`. In the document they did not: the notes were written
+  twice, both halves claimed the same node ids, and reopening gave each half a
+  timeline of its own.
 
   **Fixed by making the document able to say what the client already meant.**
   The crate learned a second kind of window (`SegmentSource::Node`) and a place
@@ -4470,13 +4465,13 @@ work, where a pending item reads as done.)*
 
   **Fixed in both places, because the example is not the only writer that can do this.** The example builds its table by walking the composition it is about to save (`takes_of`), which is the only source of truth for what material a tree currently holds. And `to_session` **refuses** a session whose document names a source the table does not cover, naming the ids: the table is caller data — what a location *means* is the caller's — but whether it covers the tree is checkable here, and it is the difference between an error at the moment of saving and a silent hole two opens later. A composition with no material still needs no table.
 
-- ✅ **An element reads one thing, so two fragments over different material cannot be joined** *(named 2026-08-18 building the clip's join verb, which is where the model ran out; closed the same day, the user having said what the answer is: "lee los segmentos correspondientes a distintos buffers como si fuera un mismo buffer — tiene que tener una estructura de datos que referencie varios archivos y posiciones")*. The arrangement's elements each wrapped **one** object, so a join over one buffer worked (windows that continue each other) and a join over two had nothing to become.
+- ✅ **An element reads one thing, so two fragments over different material cannot be joined** *(named 2026-08-18 building the clip's join verb, which is where the model ran out; closed the same day, the user having said what the answer is: "it reads the segments belonging to different buffers as if they were one buffer -- it has to have a data structure that references several files and positions")*. The arrangement's elements each wrapped **one** object, so a join over one buffer worked (windows that continue each other) and a join over two had nothing to become.
 
   **`Segments` is that structure**: a list of `(buffer, start, duration)` read back to back — which buffer, which frame, how long. It is **not a sixth primitive**: it is the `Vector` primitive (a list at constant time) assembled from more than one window, and it keeps every property that made a window worth having. Nothing is copied, so cutting it apart gives back the windows it was made of; it plays as one thing (one event per segment, one instrument, each with its own window); it draws as one clip (one take per segment, over its own stretch of it — which is what the clip's wire change made sayable); and it saves and reopens with each segment naming its own source.
 
   Two things fell out of it and are worth keeping. The join's shape is a fact about the **material**, not a mode: one run of one buffer joins back into the single window it was cut from, which is what makes a join the inverse of a split rather than a pile of wrappers. And the **head of a cut is not rebuilt** — it is the element it was, with its placement shortened — so lengthening it again brings the other segment back, exactly as lengthening a trimmed take brings its frames back. That is the placement rule the whole layer rests on, holding over assembled material.
 
-- ✅ **`Group` names two different things in one package, and one of them is the server's** *(named 2026-08-17 by the user while the round-trip entry was being taken: "Group ya está tomado por el servidor y difiere de form")*. `clausters.Group` is a **node-tree group** — a server resource with an id, a target and an add action — and `clausters.form.Group` is the arrangement's **composite element**, a set of placed members with a concrete or logical kind. Both are exported from the package (`clausters/__init__.py` and `clausters/form/__init__.py`), so a script that imports from both gets one name silently shadowing the other, and prose about "a group" has to say which every time.
+- ✅ **`Group` names two different things in one package, and one of them is the server's** *(named 2026-08-17 by the user while the round-trip entry was being taken: "Group is already taken by the server and differs from form")*. `clausters.Group` is a **node-tree group** — a server resource with an id, a target and an add action — and `clausters.form.Group` is the arrangement's **composite element**, a set of placed members with a concrete or logical kind. Both are exported from the package (`clausters/__init__.py` and `clausters/form/__init__.py`), so a script that imports from both gets one name silently shadowing the other, and prose about "a group" has to say which every time.
 
   **It is the arrangement's that should move**, not the server's: the server's name is scsynth's and is what every `/group_*` command, every reply and every book page already calls that thing. The document's own word for the arrangement one is **`set`** (`Body::Set`, with a `grouping` that is concrete or logical — and the crate already recorded why the discriminant is called `grouping` rather than `kind`), so the format has a name for it that nothing else in the project uses.
 
@@ -4486,7 +4481,7 @@ work, where a pending item reads as done.)*
 
   The rename reaches **every end of every wire in one commit** — the Python classes and the `form/group.py` module (now `form/aggregate.py`), `Body::Event`/`Buffer`/`Set` in `clausters-document`, the `kind` strings of the saved format, the C ABI's fixtures, the GUI host, the parity vectors, both books and this plan. The saved format changed with no compatibility shim, which is what pre-1.0 buys. Recorded in `docs/decisions.md`, including where `Clang` comes from (Tenney's gestalt unit) and why neither SuperCollider's `Klang` UGen nor the C compiler is an objection to it.
 
-- ✅ **A document's node ids are minted per conversion and stamped on the object, so two compositions number from 1 and collide** *(found 2026-08-17, checking the user's report that "en los ejemplos hay un problema recurrente con los ids"; the report was right and the cause is not the examples)*. `_Ids` (`clients/python/clausters/form/document.py`) numbers one conversion: it walks the root, takes `next` past the **maximum** id already stamped, and writes each assignment onto the element object as `_doc_id` (`ID_ATTR`). Two properties follow and only the first is intended. A second conversion of the same tree gives every node the same number, which is what the history rests on — an entry recorded against one conversion still names the right thing in the next. But numbering starts at **1 for every root**, so two arrangements built in one script both hold ids 1, 2, 3, and an element authored in one and used in the other carries a number a *different* element already holds. Measured, with no object shared between the two trees:
+- ✅ **A document's node ids are minted per conversion and stamped on the object, so two compositions number from 1 and collide** *(found 2026-08-17, checking the user's report that "in the examples there is a recurring problem with the ids"; the report was right and the cause is not the examples)*. `_Ids` (`clients/python/clausters/form/document.py`) numbers one conversion: it walks the root, takes `next` past the **maximum** id already stamped, and writes each assignment onto the element object as `_doc_id` (`ID_ATTR`). Two properties follow and only the first is intended. A second conversion of the same tree gives every node the same number, which is what the history rests on — an entry recorded against one conversion still names the right thing in the next. But numbering starts at **1 for every root**, so two arrangements built in one script both hold ids 1, 2, 3, and an element authored in one and used in the other carries a number a *different* element already holds. Measured, with no object shared between the two trees:
 
   ```
   t1 = Group([(0.0, a), (1.0, b)])  ->  ids 1, 2, 3   (a = 2)
@@ -4518,7 +4513,7 @@ work, where a pending item reads as done.)*
 
 - ✅ **Play did nothing after a pass ran out** *(found the same day, same example)*. The transport **parks at the end** of a pass (`clausters.gui.transport.update`), which is what lets a pause resume where the music got to — so `at` is the end of the piece and a bare `play` starts there and sounds nothing until a `stop` rewinds. Correct as a transport and a puzzle as a button: the example's play handler rewinds when the transport is parked at the extent (`gui_daw.py` then, `composer.py` since the two merged on 2026-08-17). Left in the client rather than "fixed": a transport that silently rewound would make `play` and `stop` the same button, and the parking is what a pause is built on.
 
-- ✅ **Undo works for clips and for nothing inside one** *(found 2026-08-17 by the user: "undo/redo anda para clips, no para los elementos internos de los clips")*. Only the placement route goes through the crate's log: a note edit rewrites the timeline and a break-point edit rewrites the `Env`, both straight onto the arrangement, so neither leaves an entry and neither can be stepped back. Both *are* nodes of the document — that is what makes a note addressable at all — so the vocabulary is already there: the roll's edit is a `SetMembers` and the curve's a `Configure`.
+- ✅ **Undo works for clips and for nothing inside one** *(found 2026-08-17 by the user: "undo/redo works for clips, not for the clips' inner elements")*. Only the placement route goes through the crate's log: a note edit rewrites the timeline and a break-point edit rewrites the `Env`, both straight onto the arrangement, so neither leaves an entry and neither can be stepped back. Both *are* nodes of the document — that is what makes a note addressable at all — so the vocabulary is already there: the roll's edit is a `SetMembers` and the curve's a `Configure`.
 
   **It was implemented and then reverted the same day**, which is the finding worth keeping. Routing the two through the log took: minting **ids** for notes the payload cannot identify (the roll sends the resulting list, so order is the only information there is); putting the curve's break-points **into the document** at all, since a leaf's config named the automation and nothing else and there was therefore no previous value to invert; and teaching `_adopt` — the redo path, which adopts the whole document instead of replaying intents — to read a set's members and a leaf's config back out of it. All three are **reconciliation between two trees**, and they only exist because `clausters.form` is a parallel Python model that `_history` re-derives the document from on every edit. Building more of that is building on the thing that has to go.
 
@@ -4528,9 +4523,9 @@ work, where a pending item reads as done.)*
 
   **So this waits for the one-tree refactor** — the open note at the foot of O12 (`crates/clausters-document/PLAN.md`): the editor holds one `Document` handle for the window's life and `clausters.form` becomes accessors over the crate's tree. The cost argument that deferred it is gone (an edit is 0.008 ms). Undo of what is inside a clip is then the ordinary case rather than a fourth reconciliation path, and it is what should force the refactor.
 
-- ✅ **A redo moved the model and told the host to keep drawing the old position** *(found 2026-08-17 by the user: "al hacer redo no se actualiza lo que se ve y solo se actualiza al volver a hacer undo" — and, from the same cause, an undo queue that looked far shorter than it is; this is the **placement** history, the only one there is — see the entry above)*. Undo and redo reach the arrangement by different routes and only one of them kept the **drawn record**: an undo projects the crate's inverses through `_project`, which updates `_Placed.offset/.dur`, while a redo adopts the whole document through `_adopt`, which moved the handles and left the registry behind. A correction is read straight out of that registry (`_resync`), so every redo answered with the position the clip had *before* it — and the picture only caught up on the next undo, one step behind the history. The two paths now share `_redrawn`, which is the same reasoning `_project` already carried in its docstring, applied to the other route. The budget was never the issue (256 entries; twenty drags undo and redo exactly twenty times) — the log was right the whole way and the answer was wrong.
+- ✅ **A redo moved the model and told the host to keep drawing the old position** *(found 2026-08-17 by the user: "on redo what is shown does not update, and it only updates on undoing again" — and, from the same cause, an undo queue that looked far shorter than it is; this is the **placement** history, the only one there is — see the entry above)*. Undo and redo reach the arrangement by different routes and only one of them kept the **drawn record**: an undo projects the crate's inverses through `_project`, which updates `_Placed.offset/.dur`, while a redo adopts the whole document through `_adopt`, which moved the handles and left the registry behind. A correction is read straight out of that registry (`_resync`), so every redo answered with the position the clip had *before* it — and the picture only caught up on the next undo, one step behind the history. The two paths now share `_redrawn`, which is the same reasoning `_project` already carried in its docstring, applied to the other route. The budget was never the issue (256 entries; twenty drags undo and redo exactly twenty times) — the log was right the whole way and the answer was wrong.
 
-- ✅ **The curve on screen and the sweep in the air drifted apart from the first edit** *(found 2026-08-17 by the user, dragging a break-point in `composer.py`: "el glissando se escucha siempre igual")*. An `Automation`'s `Env` is its source of truth, and what the lane synth actually reads is the **control buffer** `prepare` fills — once, at setup. So the edit-back rewrote the envelope, the next render scheduled the new curve, and the synth went on reading the old samples. `Automation.refill` is the missing door (non-blocking by default: it is called from a UI loop, and the fill is one command the server applies ahead of the synth that reads it), and `Editor._apply_points` calls it on every break-point edit — which is what the example's own claim, *the curve you draw is the curve you hear*, always said.
+- ✅ **The curve on screen and the sweep in the air drifted apart from the first edit** *(found 2026-08-17 by the user, dragging a break-point in `composer.py`: "the glissando always sounds the same")*. An `Automation`'s `Env` is its source of truth, and what the lane synth actually reads is the **control buffer** `prepare` fills — once, at setup. So the edit-back rewrote the envelope, the next render scheduled the new curve, and the synth went on reading the old samples. `Automation.refill` is the missing door (non-blocking by default: it is called from a UI loop, and the fill is one command the server applies ahead of the synth that reads it), and `Editor._apply_points` calls it on every break-point edit — which is what the example's own claim, *the curve you draw is the curve you hear*, always said.
 
 - ✅ **A drag pressed play: `follow` started a pass instead of following one** *(found 2026-08-17 by the user, dragging clips in `composer.py` after the merge: letting go of a drag started the piece)*. `Editor._follow_render` re-scheduled whenever `follow` was on and a destination existed — and a destination outlives a pass, since it is what the *first* play left behind. So every edit made after the first play started a fresh pass, from a stopped transport or from one parked at the end of the piece. What `follow` means is **what is sounding follows the edit**; starting sound is a transport action, and a window that plays itself is the thing the example's own comments rule out on the other route (nothing renders until play is pressed). The guard now also asks whether the transport is playing, and an edit made while stopped does what an edit made before the first play always did: it marks the composition, and the next play re-reads it.
 
@@ -5016,12 +5011,12 @@ work, where a pending item reads as done.)*
   timebase over a **closed** reader. Same fix, same rule.
 
 - ✅ **A unit or a shape is a string, not a constant to import** *(found
-  2026-08-31 by the user: "no se sabe dónde viven esas constantes y son simples
-  opciones")*. `set_tempo(unit=…, curve=…)` and `TempoMap.env` took `BEATS` /
-  `SECONDS` / `LINEAR` / `EXPONENTIAL`, which meant importing a name to pass an
-  option — and the web client's entry point did not export them at all, so the
-  same call could not be written the same way in both. **Fixed**: they are
-  plain strings, the way `Env`'s `curve="lin"` and the editor's
+  2026-08-31 by the user: "nobody knows where those constants live, and they
+  are simple options")*. `set_tempo(unit=…, curve=…)` and `TempoMap.env` took
+  `BEATS` / `SECONDS` / `LINEAR` / `EXPONENTIAL`, which meant importing a name
+  to pass an option — and the web client's entry point did not export them at
+  all, so the same call could not be written the same way in both. **Fixed**:
+  they are plain strings, the way `Env`'s `curve="lin"` and the editor's
   `ruler="beats"` already were. `"beats"`, `"seconds"` (`"secs"`), `"linear"`
   (`"lin"`), `"exponential"` (`"exp"`), or a numeric curvature. The constants
   stay as the canonical *values* `duration_unit` answers with, and left both
@@ -5093,12 +5088,12 @@ work, where a pending item reads as done.)*
   did not catch it. **Fixed** by taking `query_info().nominal_sample_rate`,
   which is the one spelling the page twin also has.
 
-  **The whole class is closed now** *(2026-08-31, "corregilos todos, no
-  terminamos nunca con las divergencias")*. Nine files asked the sample rate two
-  ways: seven Python examples read `server.options.sample_rate` while their page
-  twins read `queryInfo().nominalSampleRate`, and the two `notation/score` pages
-  read the audio context's own `raw.context.sampleRate` — the same number by a
-  third door. All of them now ask `query_info().nominal_sample_rate` /
+  **The whole class is closed now** *(2026-08-31, "fix them all, we never finish
+  with the divergences")*. Nine files asked the sample rate two ways: seven
+  Python examples read `server.options.sample_rate` while their page twins read
+  `queryInfo().nominalSampleRate`, and the two `notation/score` pages read the
+  audio context's own `raw.context.sampleRate` — the same number by a third
+  door. All of them now ask `query_info().nominal_sample_rate` /
   `queryInfo().nominalSampleRate`, which is the one spelling both clients have:
   a page's engine is not a process anyone launched with flags, so the web
   `Server` has no `options` at all.
@@ -5390,13 +5385,12 @@ work, where a pending item reads as done.)*
   copies that drift. And **polytempo**: a canon at three tempi is three maps,
   each named — unrepresentable while a piece can only have "the" map.
 
-  **Corrected and shipped** *(2026-09-01, by the user: "una Timeline necesita
-  de un reloj para ejecutarse y un reloj tiene un TimeMap; se debería poder
-  guardar el reloj con su timemap")*. The entry named the wrong object. A
-  `Timeline` does not run by itself — it is played **on a clock** — and several
-  timelines on one clock is the grouping that means something. So what an
-  arrangement refers to is the **clock**, and a `TempoId` was a name for the
-  wrong thing.
+  **Corrected and shipped** *(2026-09-01, by the user: "a Timeline needs a
+  clock to run and a clock has a TimeMap; it should be possible to save the
+  clock with its time map")*. The entry named the wrong object. A `Timeline`
+  does not run by itself — it is played **on a clock** — and several timelines
+  on one clock is the grouping that means something. So what an arrangement
+  refers to is the **clock**, and a `TempoId` was a name for the wrong thing.
 
   What persists of a clock is exactly two things, which is what makes it a
   sane unit: its **name** and its **map**. Its position is transport, its queue
@@ -5443,11 +5437,11 @@ work, where a pending item reads as done.)*
   100 bps, `beats()` at that wake reads 3.0214 and the routine reads 3.
 
 - ✅ **Three places call beats what is measured in seconds** *(found 2026-08-30
-  by the user, from "el tiempo concreto o se mide en muestras o se mide en
-  segundos, los beats son una abstracción impuesta")*. Beats are the
-  `TempoClock`'s unit, and storing something in beats says *its seconds follow
-  the tempo* — right for a note, wrong for anything whose seconds are already
-  fixed. Three fixes, one finding to measure, and a prose pass:
+  by the user, from "concrete time is measured either in samples or in
+  seconds; beats are an imposed abstraction")*. Beats are the `TempoClock`'s
+  unit, and storing something in beats says *its seconds follow the tempo* —
+  right for a note, wrong for anything whose seconds are already fixed. Three
+  fixes, one finding to measure, and a prose pass:
 
   1. **`Automation` calls the seconds of an `Env` beats.** `Env` documents
      `times` as "the segment `times` **in seconds**"; `Automation.from_points`
@@ -5543,9 +5537,10 @@ work, where a pending item reads as done.)*
   - **Discrete contents** (events, notes) have values only *at* instants, so
     there is nothing at a moment between two of them. The pass starts at the
     **next** event, and one whose onset the line has already gone past is
-    **not** recovered: *"el note on quedo despues del paso del cursor y no se
-    recupera"*. A held note is not resurrected by being dropped under the
-    cursor, because the thing that would have started it already happened.
+    **not** recovered: *"the note-on ended up after the cursor passed and is
+    not recovered"*. A held note is not resurrected by being dropped under
+    the cursor, because the thing that would have started it already
+    happened.
 
   That asymmetry is the design, not a shortcut: a sampled signal can be entered
   anywhere and an event cannot be half-triggered. It also says what the missing
@@ -5610,9 +5605,9 @@ work, where a pending item reads as done.)*
 
 - ✅ **Half the editors a hand can use have no history, because they edit
   through the raw event** *(found 2026-09-07 by the user, by eye, in
-  `editors/pianoroll` and then `editors/bpf`: "ctrl+z / ctrl+shift+z no hace
-  nada", twice)*. Counted over the examples that let a hand edit a structure,
-  it is four and four:
+  `editors/pianoroll` and then `editors/bpf`: "ctrl+z / ctrl+shift+z does
+  nothing", twice)*. Counted over the examples that let a hand edit a
+  structure, it is four and four:
 
   | through `edit()`, with a history | through `on_event`, with none |
   |---|---|
@@ -5687,9 +5682,9 @@ work, where a pending item reads as done.)*
   fundamental holds the tempo map").
 
 - ✅ **"piece" names no structure, yet it names types, variables, a wire word
-  and prose** *(found 2026-09-17 by the user, reviewing the tempo entry: "no
-  hay definida una estructura que sea 'la pieza'", and on `PiecePlayback`: "el
-  nombre debería referir a la estructura de datos")*. No structure is *the
+  and prose** *(found 2026-09-17 by the user, reviewing the tempo entry:
+  "there is no structure defined that is 'the piece'", and on `PiecePlayback`:
+  "the name should refer to the data structure")*. No structure is *the
   piece*: a `Timeline` need not be one and a `Multitrack` is a document. The
   word still stands for whichever structure a module happened to hold, some
   three thousand times across Rust, Python and TypeScript, so a reader has to
@@ -5758,7 +5753,7 @@ work, where a pending item reads as done.)*
   operators, a window of widgets) stay.
 
 - ✅ **A catalogue view whose facts do not read is drawn as a bare widget, and
-  says nothing** *(found 2026-09-17 by the user: "notes no muestra nada", on
+  says nothing** *(found 2026-09-17 by the user: "notes shows nothing", on
   `editors/edit_notes`)*. The roll's marker lane is `time label` pairs, and the
   crate's `Roll` typed it as numbers, so a timeline holding one `OscItem` failed
   to deserialize and `catalogue::props` answered `None`. Both clients turn that
@@ -5776,9 +5771,9 @@ work, where a pending item reads as done.)*
   v68), and `_native.view_props` and the page's `View.catalogue` raise it.
 
 - ✅ **A frozen clock keeps waking its routines, so the resume bursts and then
-  falls silent** *(found 2026-09-18 by the user, on `transport/freeze`: "al
-  retomar ejecuta varios eventos juntos, luego un silencio y sigue con el
-  resto")*. `TempoClock.freeze` held the beat that `beats` reports, but the
+  falls silent** *(found 2026-09-18 by the user, on `transport/freeze`: "on
+  resuming it runs several events together, then a silence, and goes on with
+  the rest")*. `TempoClock.freeze` held the beat that `beats` reports, but the
   real-time driver never read it: `_run_rt` (the page's `pump`) kept measuring
   each queued beat against the unshifted origin and woke it on time. The three
   seconds of events went out stamped into the server's frozen queue, which
@@ -6161,9 +6156,8 @@ than being ticked here.
   `O21`).
 
 - ✅ **One tempo verb: an extent in either unit, and a shape written in one
-  call** *(designed and shipped 2026-08-31, from the user's "calcular el tempo
-  en segundos y beats" and "agregar una envolvente en vez de encadenar
-  llamadas")*.
+  call** *(designed and shipped 2026-08-31, from the user's "compute the tempo
+  in seconds and beats" and "add an envelope instead of chaining calls")*.
 
   **`set_tempo` absorbed `ramp_tempo`**, which is gone with no alias: a step is
   its one-point case and a ramp its two-point case. `set_tempo(2.0)`,
@@ -6216,7 +6210,7 @@ than being ticked here.
   `src/base/time.ts`: the tempo per shape, `K` per shape, `Δb = Δt/K`, and which
   inverses are closed.
 
-- ⬜ **The mapping exists and is private to the `Editor`, so every example that
+- ✅ **The mapping exists and is private to the `Editor`, so every example that
   plays writes a worse one** *(named 2026-08-30 by the user, from
   `examples/editors/pianoroll` in both clients — first as "nothing maps a drawn
   structure onto something that sounds", then narrowed the same day by reading
@@ -6285,6 +6279,16 @@ than being ticked here.
   `Pmono`) exist (`C73e`), so the pattern-side half is answered; the roll's
   notes to a `Timeline` are still `NotesEditor`'s and private.
 
+  *Closed 2026-10-16, re-reading the roadmap.* What was left is answered by
+  the notes editor's playback moving into the shared crate
+  (`clausters_editing::notes_playback`, `crates/clausters-apps/PLAN.md`
+  `X3`): a roll's notes are an `EventSequence`, and `clausters.play` of one
+  (`play` in the web client) loads it as an event lane on a transport of its
+  own -- polyphonic, seekable, the same steps the editor runs. Nothing is
+  private to an editor any more, and `editors/pianoroll` went with the bare
+  `pianoroll` builder (`crates/clausters-apps/PLAN.md`, "A roll with no
+  sequence: whether the bare `pianoroll` stays").
+
 - ✅ **A tempo map and an automation are one structure read two ways** *(a
   design, worked out with the user on 2026-09-01 while settling where a tempo
   map lives; read with the entry below, which is the same question from the
@@ -6326,13 +6330,13 @@ than being ticked here.
   two breakpoints; the whole-list type needs its own, which is the kind of
   decision that ends up in three books, so it is not made here.
 
-  **Narrowed and done** *(2026-09-01, by the user: "hay que unificar las
-  implementaciones de las operaciones iguales, partes, pero `Env` y `EnvGen` no
-  deben cambiar")*. The unified *type* above is more than the problem needs and
-  is not being built. What was actually duplicated is one function and one
-  number: `warp::curve_terms` and `tempomap::curvature_terms` computed the same
-  bend coefficients `(a, lo + a, e^c)` from the same algebra, each beside its
-  own copy of sclang's `0.001` flatness threshold. A bend is a bend whether it
+  **Narrowed and done** *(2026-09-01, by the user: "the implementations of the
+  same operations have to be unified, parts, but `Env` and `EnvGen` must not
+  change")*. The unified *type* above is more than the problem needs and is not
+  being built. What was actually duplicated is one function and one number:
+  `warp::curve_terms` and `tempomap::curvature_terms` computed the same bend
+  coefficients `(a, lo + a, e^c)` from the same algebra, each beside its own
+  copy of sclang's `0.001` flatness threshold. A bend is a bend whether it
   bends a filter sweep or an accelerando.
 
   It is one formula now, and **still two precisions**, which is the part that

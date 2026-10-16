@@ -106,6 +106,25 @@ already carry it.
   reports the step it stopped at and the page's console; what is open is the
   diagnosis, from the next timeout's output.
 
+- ⬜ **The example-pair audit misreads the persistent plugin pair**
+  *(`clients/web/PLAN.md`, Found by use)*. The pair is correct; the extractor
+  counts a platform's boot and a language's array calls as client API.
+
+- ⬜ **A control mapped to a bus reads back what was last set on it** and
+  **A FaustDef's `[unit:...]` and `[scale:log]` metadata are not read**
+  *(root `PLAN.md`, Found by use)*. Both found building `J12`, both seen in
+  the generic editor a node opens.
+
+- ⬜ **A `nodetree` in a page never refreshes**, **The host's wasm exports
+  the MIDI crate's C ABI, which no page calls**, and **A press in a
+  multitrack lands off its mark again at a density of 0.8 — seen only in the
+  automated browser** *(`clients/gui/PLAN.md`, Found by use)*. Three
+  differences between the native host and the page.
+
+- ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
+  session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
+  by use)*. **Related:** `T10` writes the file this one points at.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and
@@ -142,6 +161,14 @@ a person saw it work.
   folds coming and going, the Hann pulses, the breath -- has not been heard in
   either. **Related:** the arc's measurements are in the plan.
 
+- ⬜ **Nobody has looked at a score box on the multitrack** *(`clients/gui/PLAN.md`,
+  `N9`)*. Built 2026-10-06 and not closed: it closes with the eye pass over
+  `editors/edit_multitrack`.
+
+- ⬜ **Nobody has looked at `custom_element`** *(`clients/gui/PLAN.md`,
+  `K16c`)*. It compiles against the public surface and opens; what it draws
+  and what a press does are still to be looked at by eye.
+
 ## 3. Milestones left hanging
 
 Numbered milestones whose track is otherwise closed. Each is owned and written in
@@ -160,10 +187,8 @@ its plan; the plan is where its acceptance is read.
   chosen them; no longer invisible, since the score editor opens a foreign
   file, lays it out in runs at its page breaks and changes its rhythms.
   **`N9`** — a score as a box of the multitrack, drawn the way a box of notes
-  is drawn as a piano roll. **Related:** `N9` is built -- the reading it
-  draws its notes with landed first, as "From the roll to the score"
-  (`crates/clausters-apps/PLAN.md`) -- and what is left of it is the eye pass
-  over `editors/edit_multitrack`, and what its entry lists as left open.
+  is drawn as a piano roll; built, and what is left of it is the eye pass in
+  section 2 and what its entry lists as left open.
 
 - ⬜ **The applications after the multitrack, `X2`-`X6`, the score editor
   continued, `X11`, and the multitrack continued, `X9`**
@@ -274,14 +299,7 @@ its plan; the plan is where its acceptance is read.
   a deliberate floor rather than an oversight — it is what keeps operational
   transformation and CRDTs out of a design that does not have the problem they
   solve. **Related:** "Staleness per node rather than per document" in the same
-  list is its seam, and buys nothing until this exists.
-
-- ⬜ **The mapping exists and is private to the `Editor`, so every example that
-  plays writes a worse one** *(`clients/python/PLAN.md`, Future directions)*. A
-  design, not a fix. The public verb it asked for is answered — a `Timeline`
-  plays itself and seeks — and one thing stands: the roll's notes → timeline
-  conversion is private to the notes editor (`ppar` and `pvoice`, the
-  pattern-side question, shipped with `C73e`).
+  list is its seam, and gives nothing until this exists.
 
 - ⬜ **`G43` — text is shaped**, `G43a` and `G43b` *(`clients/gui/PLAN.md`,
   "G43 — Text is shaped: every script a field accepts is drawn right")*. A
@@ -316,23 +334,29 @@ Named, not enumerated: each is written where it belongs and is read there.
   are built (its `keys` scopes), and nesting is what is left of them.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; generating the
-  builders from the catalog instead of contrasting against them), the GUI's (a
-  steady goniometer; a Tauri wrapper, only a possibility; a key in a tip; the page's clipboard
+  builders from the catalog instead of contrasting against them; per-output
+  and intra-SynthDef latency; the def selector over persistent plugin
+  bindings; what an effect is, behind `mt.fx`; the mixer's free routing,
+  pre- or post-fader sends, tracks wider than stereo and a silent track that
+  costs nothing; MIDI 2.0 from outside the server; a GraphDef that carries
+  its buffers; plugin formats and platforms after the Linux reference host;
+  a generic editor that carries the node's own verbs), the GUI's (a steady
+  goniometer; a Tauri wrapper, only a possibility; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
-  that could make tracks), the web client's (a node
-  target, type-safe GuiDef/def schemas, a remote-server standalone page), the
-  Python client's three open questions, the document crate's (an
-  interpreter inside a standalone host; a region's level on the top of its
-  fade trapezoid), and the applications' (time-stretch from a clip's
-  edge; what a bare window leaves to its
-  handle; a box of notes that chooses its synth;
-  effects in preview and several files in one
-  audio editor; whether a roll with no sequence stays; a roll's tempo and
-  barlines as parameters; the score editor's
-  editing rules as modules; what a score editor's hand expects and this one
-  has not; dynamics as a model of the instrument and of hearing; a glissando
-  that arrives without a new attack). Every one of them carries its own checkbox in its own
-  plan.
+  that could make tracks), the web client's (type-safe GuiDef/def schemas, a
+  remote-server standalone page, native plugins and the in-page engine), the
+  Python client's three open questions, the document crate's (an interpreter
+  inside a standalone host; a region's level on the top of its fade
+  trapezoid; what replaces the refused join over overlapping boxes; the host
+  keeping the pile; a master in the multitrack's view; and, among its open
+  decisions, what a version means across a load), and the applications'
+  (time-stretch from a clip's edge; what a bare window leaves to its handle;
+  a box of notes that chooses its synth; effects in preview and several files
+  in one audio editor; a roll's tempo and barlines as parameters; the score
+  editor's editing rules as modules; what a score editor's hand expects and
+  this one has not; dynamics as a model of the instrument and of hearing; a
+  glissando that arrives without a new attack). Every one of them carries its
+  own checkbox in its own plan.
 
 ---
 

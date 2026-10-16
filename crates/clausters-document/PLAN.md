@@ -1314,9 +1314,7 @@ against, not work: what turned into work is in them, named.*
   box is a window onto one buffer (`clients/gui/PLAN.md`, "Found by use").
 
   **None of the three needs a new mechanism, the chain least of all** *(the user,
-  2026-09-08: "el ruteo y las cadenas se hacen con buses y synthdef/faustdef del
-  servidor en grupos del servidor, debe ser lo mas simple de todo, ya corre de
-  por si, ya esta en el arbol y esta el mecanismo de buses automaticos")*. A
+  2026-09-08: "routing and chains are done with buses and the server's synthdefs/faustdefs in the server's groups; it should be the simplest thing of all, it already runs by itself, it is already in the tree and the automatic bus mechanism is there")*. A
   track's chain is a **GraphDef**: `/def_send graph` declares the members and
   their wiring, `/graph_new` instantiates them as an **auto-sorted group** whose
   execution order follows the bus connections, with the **private buses allocated
@@ -1335,8 +1333,8 @@ against, not work: what turned into work is in them, named.*
   holds rather than an enumeration the format has to close.
 
   **A chain a hand adds to and takes from is an auto-sorted group, and that is
-  the spelling a track uses** *(the user, 2026-09-08: "graph def puede ser una
-  cadena de efectos a la que se le agregan o quitan defs como si fueran
+  the spelling a track uses** *(the user, 2026-09-08: "a graph def can be an
+  effect chain that defs are added to or removed from as if they were
   plugins")*. Yes - and the two spellings differ on exactly that, which is what
   picks between them. A **GraphDef instance** is atomic: the only verbs over one
   are `/graph_new` and `/node_free`, so inserting a plugin means re-sending the
@@ -1345,13 +1343,13 @@ against, not work: what turned into work is in them, named.*
   hand - one synth per effect, private buses, and the **same** bus-connection
   DAG recomputing the execution order - except that `/synth_new` and
   `/node_free` add and remove one member while it sounds, and the sort re-orders
-  around it with no bookkeeping. So a track's chain is an auto-sorted group;
-  a GraphDef is what a *fixed* instrument is, where atomic instantiation and a
+  around it with no bookkeeping. So a track's chain is an auto-sorted group; a
+  GraphDef is what a *fixed* instrument is, where atomic instantiation and a
   named port surface are the point. Neither needs anything built.
 
-  **And the tracks run in parallel for free** *(the user, 2026-09-08: "incluso
-  hay procesamiento en paralelo")*. The same bus-connection analysis that orders
-  an auto-sorted group also powers `/group_parallel groupID 1`, which runs a
+  **And the tracks run in parallel for free** *(the user, 2026-09-08: "there is
+  even parallel processing")*. The same bus-connection analysis that orders an
+  auto-sorted group also powers `/group_parallel groupID 1`, which runs a
   group's **independent** children on several cores (`--workers N`),
   bit-identically to the sequential result. A multitrack's tracks are exactly
   that -- independent children of the piece's group, joined only where they meet
@@ -1539,7 +1537,7 @@ The order is leaves before trunk: a projection is a function of a structure and 
 
   **What it deliberately does not do yet**: a gap between fragments (silence) and an overlap (a mix) are the two cases `/buffer_stitch` does not express, and they wait for the server's half. The refusal for those two stays, and now says which.
 
-- ✅ **O32 - The applications crate: the multitrack application, once, in Rust.** *(Closed 2026-09-14: the by-ear half of its acceptance was checked when `O33` closed, and a join made by a hand plays what it joined since the fixes of 2026-09-14 in `clients/gui/PLAN.md`, "Found by use". The window is held **by role** rather than by id: which id an allocator hands out is each client's own, as step 6 records.)* *(Decided 2026-09-13 by the user, after the by-ear check of the standalone host following `C56` (`clients/python/PLAN.md`): no ruler, no transport buttons, a space bar that logs a roll and sounds nothing, and a join that stitches an empty buffer -- "Yo pasaría todo el ejemplo de Python a Rust. La regla se compone, no es parte del widget multitrack", "el standalone tiene que hacer la composición que hace el cliente Python en el ejemplo edit_multipista".)* This is how `O30` is delivered, and `O30`'s acceptance is this milestone's.
+- ✅ **O32 - The applications crate: the multitrack application, once, in Rust.** *(Closed 2026-09-14: the by-ear half of its acceptance was checked when `O33` closed, and a join made by a hand plays what it joined since the fixes of 2026-09-14 in `clients/gui/PLAN.md`, "Found by use". The window is held **by role** rather than by id: which id an allocator hands out is each client's own, as step 6 records.)* *(Decided 2026-09-13 by the user, after the by-ear check of the standalone host following `C56` (`clients/python/PLAN.md`): no ruler, no transport buttons, a space bar that logs a roll and sounds nothing, and a join that stitches an empty buffer -- "I would move the whole Python example to Rust. The rule is composed, it is not part of the multitrack widget", "the standalone has to do the composition the Python client does in the edit_multitrack example".)* This is how `O30` is delivered, and `O30`'s acceptance is this milestone's.
 
   **What is still written twice after `O25`-`O29` and `C55`/`C56`.** Every projection, the conversation, the applier and the playback control are single. What is not is the **application** that calls them: `MultitrackEditor` (`clients/python/clausters/gui/editing/multitrack.py`, `editor.py`, and its port in `clients/web/src/gui/editing/`) composes the window -- a `timeruler` linked to the multitrack, the row of rewind, play/pause and stop, the clock, the status line -- and wires every event of that window to a verb: a click on the ruler places the mark and cues, the buttons and the space bar drive the transport, undo, redo, save, entering a clip, minting a source for a join. The standalone host does none of it through that code. It has its own partial composition (`clients/gui/src/host/document/tree.rs`, `draw_ruled`, which has no ruler and no buttons), its own owner and its own key bindings (`host/document.rs`, `host/instance.rs`), so a defect fixed in the Python application never reaches it, and every one the by-ear check found had already been fixed there.
 
@@ -1578,7 +1576,7 @@ The order is leaves before trunk: a projection is a function of a structure and 
 
   **Acceptance:** `edit_multitrack.py`, the page `edit-multitrack.html` and `clausters-gui --session` open the same window -- the same widget ids -- and answer the same gestures with the same document and the same messages to the server, held by a recorded exchange replayed against the crate; in the standalone host the space bar sounds the piece, the ruler places the mark, and a join plays what it joined; the Python and TypeScript `MultitrackEditor` hold no composition and no event wiring.
 
-- ✅ **O33 - The multitrack application is carried out once, too.** *(Closed 2026-09-13, by ear in the standalone host on the session the multitrack example writes: the space bar and the transport row sound the piece, the ruler's mark cues and stop returns to it, the join a session opens with plays what it joined, a split and its undo and redo answer as a client's editor does. Joins made by a hand still fail in cases of their own -- `clients/gui/PLAN.md`, "Found by use" -- which are not what this milestone was about.)* *(Decided 2026-09-13 by the user, after the by-ear check `O32` was left open for: the standalone host opened the same piece as `clients/python/examples/editors/edit_multitrack.py` and looked the same, and neither the space bar nor the transport row made a sound — "es un claro ejemplo de implementar las cosas dos veces y mal".)*
+- ✅ **O33 - The multitrack application is carried out once, too.** *(Closed 2026-09-13, by ear in the standalone host on the session the multitrack example writes: the space bar and the transport row sound the piece, the ruler's mark cues and stop returns to it, the join a session opens with plays what it joined, a split and its undo and redo answer as a client's editor does. Joins made by a hand still fail in cases of their own -- `clients/gui/PLAN.md`, "Found by use" -- which are not what this milestone was about.)* *(Decided 2026-09-13 by the user, after the by-ear check `O32` was left open for: the standalone host opened the same piece as `clients/python/examples/editors/edit_multitrack.py` and looked the same, and neither the space bar nor the transport row made a sound — "it is a clear example of implementing things twice, and badly".)*
 
   **What `O32` did not reach.** The editor's *decisions* are one: the window, what a gesture means, what the transport is asked to do. What **carries them out** is still written per endpoint, and it is exactly where the standalone host fails. The by-ear run's log shows it: every press reached the host's editor and the transport rolled and froze (`the piece is rolling` / `frozen`), and nothing sounded; and opening the session sent a join's `/buffer_stitch` before the reads it is made of had finished (`part 0: buffer 1 is not allocated`), so the join drew empty and its `/buffer_attach` on the player failed.
 
@@ -1668,7 +1666,7 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
 
   **The rest, done 2026-10-08.** *The default's verb*: both clients set it as `Multitrack.default_fade` (`defaultFade` in TS), a `Fade` or none, through the same `setdefaults` edit. *A box of notes fades*: its voice bus enters its clip through the reader's own envelope (`mixer::input_def` takes `at`, `span` and the fades, handed by the plan as `PlannedClip::edges`), silent outside the box as a reader's gate is, and its `fade:` layer is drawn and edited as a box of samples' is. *A fade dragged shorter than its overlap*: **only an edge on the default is stretched** (`TakeLane::edges`) — an edge the region states, which a drag writes, is the region's word and is kept, shorter or longer than the overlap, while the other region's edge, still on the default, goes on covering it. Heard in `a_box_of_notes_fades_at_its_own_edges`. What stays open of fades is in the two entries below about the curve heard at a seam and the switch's reach.
 
-- ✅ **A join takes its clips' fades, and invents none** *(raised by the user 2026-09-12, on the first working join: "le agregaste un cross fade al join, es algo que esta pero no se ve y deberia, puede ser una opcion de join pero tiene que estar especificada y ser configurable"; decided 2026-09-14, with the entry above)*. `O31` fades every seam **where the material is cut** -- 10 ms, `picture::SEAM`, and nothing where two parts read on from each other -- and neither half was asked for. It is **not seen**: the fade is in the source and a box is drawn as a window onto a source, so the picture shows a join and not the shape of its seams, where a region's own fades are drawn where they are. And it is **not stated**: 10 ms is a number this crate chose in a place with no vocabulary for choosing one.
+- ✅ **A join takes its clips' fades, and invents none** *(raised by the user 2026-09-12, on the first working join: "you added a cross fade to the join; it is something that is there but cannot be seen, and it should; it can be a join option, but it has to be specified and configurable"; decided 2026-09-14, with the entry above)*. `O31` fades every seam **where the material is cut** -- 10 ms, `picture::SEAM`, and nothing where two parts read on from each other -- and neither half was asked for. It is **not seen**: the fade is in the source and a box is drawn as a window onto a source, so the picture shows a join and not the shape of its seams, where a region's own fades are drawn where they are. And it is **not stated**: 10 ms is a number this crate chose in a place with no vocabulary for choosing one.
 
   **The rule as it stands today, written down so it can be found and changed** *(`crates/clausters-document/src/multitrack/picture.rs`, `SEAM` and `read_join`)*:
 
@@ -1737,17 +1735,17 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   `form` inside the multitrack document, filed under "Found by use" ("A
   composite region is `form`'s tree inside the multitrack").
 
-- ⬜ **The multitrack has no master in its view** *(the user, 2026-09-24,
-  hearing the master's freeze fixed: "No hay vúmetro de master, nunca hubo
-  mixer o pista master")*. The master is on the server -- a strip, a meter slot
+- ⬜ **The multitrack has no master in its view** *(the user, 2026-09-24, hearing
+  the master's freeze fixed: "There is no master meter; there never was a mixer
+  or a master track")*. The master is on the server -- a strip, a meter slot
   (`mixer::METER_SLOT` on the multitrack's graph) and its way out -- and nothing
   above it: no endpoint fills the master's meter slot, the view draws no master
-  row or mixer, and the master's gain is the playback's `gain` argument, set
-  by nobody a hand reaches. What a master is in the document (a track of its
-  own, or the multitrack's own strip), where it is drawn (a row under the
-  tracks, a mixer view) and which of its controls are automated is the design;
-  the meter is the smallest part of it, since the slot and the rule for its
-  buses are already the tracks'.
+  row or mixer, and the master's gain is the playback's `gain` argument, set by
+  nobody a hand reaches. What a master is in the document (a track of its own,
+  or the multitrack's own strip), where it is drawn (a row under the tracks, a
+  mixer view) and which of its controls are automated is the design; the meter
+  is the smallest part of it, since the slot and the rule for its buses are
+  already the tracks'.
 
 - ⬜ **The top of a box's fade trapezoid is the region's level** *(proposed
   2026-10-08 by the user)*. The trapezoid's middle segment, between its two
@@ -1818,19 +1816,20 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
 - ✅ **A composite region is `form`'s tree inside the multitrack** *(found
   2026-09-17 by the user, while the scores phase asked which map converts the
-  beats inside a region: "Un composito no existe en un multipista porque no hay
-  nodos como en el modulo form. El multipista es un modelo completamente
-  distinto.")*. `multitrack::Content::Composite { node }` places a general-tree
-  `Node` as one region, and both clients bind it (`Content.composite`); only
-  tests use it, and `MultitrackPlayback` skips it. It is what is left of the
-  arrangement that was `clausters.form`'s, and it let a region appear to hold
-  beats -- a `Sequence`, a `Clang`, an `Aggregate` -- in a document whose
-  regions are sources placed in seconds. **To do:** remove `Composite` from the
-  multitrack document, or move it to another kind of document if the `form`
-  module is taken up again; the logic can live in an editor specific to `form`,
-  never in the multitrack. The same pass reviews the window onto a node
-  (`SegmentSource::Node`, a window onto a node of `Document::content`), which
-  has the same origin, and the migration of a session that saved either.
+  beats inside a region: "A composite does not exist in a multitrack because
+  there are no nodes as in the form module. The multitrack is a completely
+  different model.")*. `multitrack::Content::Composite { node }` places a
+  general-tree `Node` as one region, and both clients bind it
+  (`Content.composite`); only tests use it, and `MultitrackPlayback` skips it.
+  It is what is left of the arrangement that was `clausters.form`'s, and it let
+  a region appear to hold beats -- a `Sequence`, a `Clang`, an `Aggregate` --
+  in a document whose regions are sources placed in seconds. **To do:** remove
+  `Composite` from the multitrack document, or move it to another kind of
+  document if the `form` module is taken up again; the logic can live in an
+  editor specific to `form`, never in the multitrack. The same pass reviews the
+  window onto a node (`SegmentSource::Node`, a window onto a node of
+  `Document::content`), which has the same origin, and the migration of a
+  session that saved either.
 
   **Removed 2026-10-07.** `Content::Composite` is gone from the crate and
   `Content.composite` from both clients. A region's fill is a window, or one
@@ -1868,7 +1867,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
 - ✅ **Boxes that met on a sample stopped meeting once the multitrack was in seconds** *(found 2026-09-17 by the user, the day it landed: a snap that sometimes missed, a join refused, and in the editor example)*. The projection crossed a length on its own (`dur / rate`) and an end as `(at + dur) / rate`, which differ in the last bit for most sample counts, so a box's end and the next box's start stopped being equal and `read_join` -- comparing seconds against `f64::EPSILON` -- saw a gap. Beats had hidden it by computing a length as the difference of two converted positions. **Fixed** by one rule for every crossing, in the core (`tempoclock::secs_to_samples_over`/`samples_to_secs_over`): a position lands on a whole sample and a length is the difference of its two ends; a join asks where boxes meet in samples at the view's rate. The host also reported positions as `f32`, which holds a whole sample only up to 2^24 (under six minutes at 48 kHz); the `clips` and `points` reports are doubles now. Held by `halves_placed_at_any_sample_draw_back_there_and_join` and the core's `a_span_crosses_as_the_difference_of_its_ends`.
 
-- ✅ **A box drawn a different length than its samples** *(reported 2026-09-17 by the user, with a screenshot, in the same message as the entry above: "la visual de las muestras no coincide con la longitud de la caja de los clips como antes")*. In `clients/python/examples/editors/edit_multitrack.py`, the box's picture and its span no longer agree. Not reproduced: the gestures that led there are not known yet, and nothing in the crossing fix above explains a difference that large.
+- ✅ **A box drawn a different length than its samples** *(reported 2026-09-17 by the user, with a screenshot, in the same message as the entry above: "the drawing of the samples does not match the length of the clips' box as before")*. In `clients/python/examples/editors/edit_multitrack.py`, the box's picture and its span no longer agree. Not reproduced: the gestures that led there are not known yet, and nothing in the crossing fix above explains a difference that large.
 
   **Gone, confirmed by the user 2026-09-22; read the path before closing it.**
   The whole path, since it is spread over four places and this entry is what
@@ -1915,9 +1914,9 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
   **Decided: neither.** The user's model: a region is a view onto its **whole** source, so a trim hides and pulling the edge back shows (and sounds) again what it hid; keeping the duration equal to what the box shows would throw that away. A join is the more specific case: it turns boxes, trimmed or not, into one box whose source is exactly the sum of its segments, so its edges cannot be pulled past them. So `SegmentRef::duration`, in a region's window, is **how much of the source the window reaches** -- the whole take, or the sum of a join's segments -- and never what the box shows; a trim or a split moves `start`, position and length and leaves it alone, and `start + duration` is not the end of anything that plays. That is what trims already wrote; what did not follow it was `picture::read` minting a box a hand made with what the box showed, and it now writes the source's length where the caller knows it (`reach_of`, from the table's frames). The total length of a take is the **source's** fact and lives in the source table (`Source.frames`), not repeated in each segment -- a segment stays `{source, range}`, read-only, and finds its take's length by id, which is also what a file read with `DiskIn` will need, with no buffer to ask. A standalone host now writes that length down once its takes are mapped (`Owner::learn_lengths`), into both its take table and the session it saves; a client states it with `Source.shaped`, as the multitrack example does. Held by `a_new_box_windows_its_whole_source`.
 
-- ✅ **A second join left an empty box, because a source the piece stopped naming is still a source** *(found 2026-09-12 by the user: "cortando varios segmentos, redimensionandolos, barajandolos y seleccionandolos todos, al hacer join queda un clip vacio"; fixed the same day)*. `fresh_source` minted off the **piece** alone — the largest source id any region windows, plus one — which is how every other id here is minted and is wrong for this one. A source stops being named by the piece the moment nothing windows it (an undo, a box deleted, a joined box cut back up) while the client still holds the buffer it made for it. So the next join was handed an id that already had samples behind it: the client saw an id it knew, made nothing, and the box became a window onto **the previous join** — or onto a buffer that had since been freed, which is the empty box.
+- ✅ **A second join left an empty box, because a source the piece stopped naming is still a source** *(found 2026-09-12 by the user: "cutting several segments, resizing them, shuffling them and selecting them all, on join an empty clip is left"; fixed the same day)*. `fresh_source` minted off the **piece** alone — the largest source id any region windows, plus one — which is how every other id here is minted and is wrong for this one. A source stops being named by the piece the moment nothing windows it (an undo, a box deleted, a joined box cut back up) while the client still holds the buffer it made for it. So the next join was handed an id that already had samples behind it: the client saw an id it knew, made nothing, and the box became a window onto **the previous join** — or onto a buffer that had since been freed, which is the empty box.
 
-  The piece cannot see the table, so the table says: `Buffers::taken` is the question "which sources do you hold samples for", defaulted to none so a caller with no table is still one, and the mint clears the piece **and** it. The user put the rule in one line while it was being fixed — *"los clips con join deberian crear nuevas instancias de segments, la implementacion asi deberia ser simple"* — and that is what makes it simple: a join never reuses, so nothing has to reason about whether two joins are the same join. A **redo** naming the same id is not reuse; it is the same edit.
+  The piece cannot see the table, so the table says: `Buffers::taken` is the question "which sources do you hold samples for", defaulted to none so a caller with no table is still one, and the mint clears the piece **and** it. The user put the rule in one line while it was being fixed — *"joined clips should create new instances of segments; the implementation that way should be simple"* — and that is what makes it simple: a join never reuses, so nothing has to reason about whether two joins are the same join. A **redo** naming the same id is not reuse; it is the same edit.
 
   **The same pass closed the other half of the shape.** `read_join` *skipped* a name it could not resolve and joined the rest, which would leave that box where it was, under the box now spanning over it. It refuses instead. Every bug this seam has produced has been a verb quietly acting on less than it was given.
 
@@ -1935,8 +1934,8 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
 - ✅ **A window could only be onto samples, so a cut over notes was a copy**
   *(found 2026-09-03 by the user, on the split over notes that shipped the same
-  day: "cuando se hace un split de un pianoroll, sigue siendo una ventana a los
-  datos originales?" -- it was, until it was written down; fixed the same day)*.
+  day: "when a piano roll is split, is it still a window onto the original
+  data?" -- it was, until it was written down; fixed the same day)*.
   `SegmentRef.source` was a `SourceRef` and nothing else, so the only contents a
   window could be onto was samples. That is enough while what a window reads
   lives *outside* the document -- two windows are two references and nothing is
@@ -2043,7 +2042,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
   **Neither is a Python-side bug to patch there**: both need the document format to carry something it does not carry today (a node's name; what an aggregate *is* to a view), which is this crate, its schema and both clients. Recorded rather than folded into the example, and it is what the example's "open it again" step is really testing — *the same composition by identity*, which today holds for the ids and not for the shape.
 
-  **What an eye pass measured, 2026-08-17** *(reopening `composer.py`'s four-lane piece)*: the take clips keep their waveform and the automation clip its curve, and **both roll bodies are gone** — the melody's because a `Track` comes back as an `Aggregate` of clangs (no aggregate is a roll any more), the pattern lane's because a frozen generator has no rendering to draw. The user reads it as "el pianoroll no está más", which is the same defect at the size a real piece shows it.
+  **What an eye pass measured, 2026-08-17** *(reopening `composer.py`'s four-lane piece)*: the take clips keep their waveform and the automation clip its curve, and **both roll bodies are gone** — the melody's because a `Track` comes back as an `Aggregate` of clangs (no aggregate is a roll any more), the pattern lane's because a frozen generator has no rendering to draw. The user reads it as "the piano roll is gone", which is the same defect at the size a real piece shows it.
 
   **The server already answers the naming half, and the document should copy it rather than invent one** *(pointed out by the user 2026-08-17: the server's groups carry a label too)*. `docs/schemas.md` states it as a rule worth reusing verbatim: **a name is a referenceable label, not a new identity** — the id remains what every command addresses and every reply reports, and the name is a second way to *refer* to the same group. A group is **born named** (the string rides in the creating message, so the label travels at the moment the writer knows what it is building), renaming is its own verb, an empty name clears it, and a refused label refuses the creation rather than leaving an anonymous group behind. And it buys navigation for free: every group contributes one path segment — **its name if it has one, its decimal id if it does not** — so `/mixer/drums` and `/1000/drums` both resolve and nothing is unreachable for being anonymous. That fallback is exactly what a document needs in order to grow names without making them mandatory or making them an identity, and both clients already speak it (`Group("mixer")`, `group.rename(...)`, `Server.group_at(...)`). The remaining half is the one the server has no opinion on: what an aggregate *is* to a view, which is this format's own question.
 

@@ -3000,7 +3000,7 @@ What deliberately stays out: DR14 and the other publisher-specific scores (they 
 
   It began as a *lane of layers* — one non-navigable signal element per measure, sharing the lane's axis — which is what A2's "a stack is a placement" implied, and it cost two host additions before the picture was still wrong. **Every view of a signal paints its own field before it draws**, so two of them on one rectangle are not layers: the second is a lid. The stack moved inside the element (`measure: "peak rms"`), the two additions were reverted, and A2's decision entry now records what was believed, why it fails and which tests let it through. Three defects the example turned up on the way: `Editor.poll` drained the host without routing to the handles' `on_event` (so **no** example driven by it had working buttons), a take played 20 dB down because a note's default `amp` overrode the def's (`Buffer.to_event` now states `amp` beside the `legato` it already stated), and the level body was measured over whatever a pixel covered — see the `⬜` entry in "Found by use" for what is still open there.
 
-- ✅ **H9 — A picture reads the span it is looking at, wherever it is running.** *(opened 2026-08-19 by the user, on the rule the whole platform seam is judged by: "el comportamiento debería ser idéntico entre la ventana nativa y el canvas del navegador. Supongo que era por los detalles de implementación que difieren." It was — and a detail of implementation is exactly what may differ, so this is the milestone that stops it showing.)*
+- ✅ **H9 — A picture reads the span it is looking at, wherever it is running.** *(opened 2026-08-19 by the user, on the rule the whole platform seam is judged by: "the behavior should be identical between the native window and the browser's canvas. I suppose it was because of implementation details that differ." It was — and a detail of implementation is exactly what may differ, so this is the milestone that stops it showing.)*
 
   **What is different today, and why it is not acceptable.** A native host **maps** the server's memory, so a view reads the cells themselves and zooms to the sample with nothing asked of anybody. A page maps nothing: after H8's stream it holds the *overview* of a take (min/max/energy per bucket) and its own copy of the samples, which for a take recorded in the server is silence. So the two draw the same picture down to one bucket and then diverge — the native one keeps resolving, the page stops. That is a **route** difference (mapping versus a wire) surfacing as a **behaviour** difference, which is the one thing the platform seam is supposed to prevent.
 
@@ -3152,7 +3152,7 @@ What deliberately stays out: DR14 and the other publisher-specific scores (they 
 
   **Who creates the segment, and who attaches — the question S19 turned from a detail into the deciding one** *(named 2026-08-17 by the user, asking how the processes ended up arranged)*. The material now lives in regions the **segment** indexes, so whoever owns the segment owns the material, and the three processes cannot all create one. Today only one shape exists: `clausters --shm <path>` **creates and truncates** it (`Segment::create_full`), so the RT server is always the owner — which is backwards for an editor, since the process that may be killed and restarted would be the one holding what the others are editing.
 
-  **"Killable" is a resilience property and not an operating mode, which this entry had blurred** *(corrected 2026-08-17 by the user: "un editor de audio tiene que mantener sus dispositivos de entrada salida para grabar y reproducir, de lo contrario no se puede rutear con jack")*. The RT server is the process that **holds the devices** — `cpal`'s default output *and input* — so it is not "the player" but the only one that can **record** at all, and under JACK or PipeWire its ports and the connections a person made to them are state that lives with the process. Attaching to a segment restores the *material*; it restores no port, no name and no patch. So a restart is **recovery**, not a routine: the design must let the editor survive an RT server dying, and must not be built as though restarting one were free.
+  **"Killable" is a resilience property and not an operating mode, which this entry had blurred** *(corrected 2026-08-17 by the user: "an audio editor has to keep its input/output devices to record and play, otherwise it cannot be routed with JACK")*. The RT server is the process that **holds the devices** — `cpal`'s default output *and input* — so it is not "the player" but the only one that can **record** at all, and under JACK or PipeWire its ports and the connections a person made to them are state that lives with the process. Attaching to a segment restores the *material*; it restores no port, no name and no patch. So a restart is **recovery**, not a routine: the design must let the editor survive an RT server dying, and must not be built as though restarting one were free.
 
   Two things follow and neither is decided here. A recovery is only cheap if the ports come back **with the same names**, so a patchbay or a session manager can reconnect — today the device is `cpal`'s default and nothing names anything, which is fine for one process and not for one that is expected to return. And **capture** belongs to whoever has the input device, so a session that renders and edits cannot record: the split is not "the RT server plays and the on-demand one works", it is *the RT server owns the devices* and the on-demand one owns nothing but computation.
 
@@ -3176,7 +3176,7 @@ What deliberately stays out: DR14 and the other publisher-specific scores (they 
 
   **What it left standing**, and neither is hidden: a session that created its segment removes it on the way out, but a session **killed** (rather than closed) leaves the segment and its regions behind — 230 MB for a ten-minute stereo take — because `Drop` does not run on a signal. And the first defect the mapping turned up was the host mirror's own: it had been moved to ABI v9 by its number while its size check still demanded a segment with no buffer directory, so it refused every real v9 segment. That is what the mirror test now exists to catch.
 
-- ✅ **H7 — The picture reads the material, and a write costs its span** *(opened 2026-08-18 by the user, on the entry H6 left behind: "es importante, hay que hacerlo". H6's own record says what it did not do — "the widget still holds its own array and its pyramid is built over that" — and this is that half.)* Depends on nothing that is not already shipped: S18, S19 and H6 are what make it a change to `WaveformData` rather than a new data path.
+- ✅ **H7 — The picture reads the material, and a write costs its span** *(opened 2026-08-18 by the user, on the entry H6 left behind: "it is important, it has to be done". H6's own record says what it did not do — "the widget still holds its own array and its pyramid is built over that" — and this is that half.)* Depends on nothing that is not already shipped: S18, S19 and H6 are what make it a change to `WaveformData` rather than a new data path.
 
   **What is true today, measured against the code rather than remembered.** `place_mapped_buffer` maps the take and then hands the picture `take.read_all().into()` (`src/host/gui/serverleg.rs:61`), a `Vec<f32>` over every cell (`src/host/material.rs:182`); `WaveformData` keeps that as `Arc<[f32]>` per channel and builds the pyramid over it (`src/waveform.rs:34`). So the mapping is used as a *transport* and the widget owns a second copy of the material — 230 MB of it for a ten-minute stereo take. The cost the entry named is the opening read, and reading the write path turns up a second one it did not: a stroke copies the material **again**, twice. `SignalElement::write_samples` clones the body and calls `WaveformData::write_range`, which does `channel.samples.to_vec()` before patching the span (`src/waveform.rs:161`), and then the same function copies the element's own interleaved `samples` whole to write one strided run (`src/host/elements/signal/bulk.rs:213`). Both are O(material) per gesture, on the frame's thread, over samples that are **already written** — the store into the cells happened before any of this (`Host::write_material`, `src/host/mod.rs:1690`). That is the reverse of what S18 established on the server: a write costs the samples it names.
 
@@ -4424,8 +4424,8 @@ Following the project rule: code + tests, a clear commit message (the record of 
   state, or the cut is gone the moment the piece is saved and reopened.
 
   **Asked for a second time, in the smallest case there is** *(2026-09-12, the
-  user: "hice exactamente los pasos que te describi, se deberia poder, haciendo
-  zoom veo que no hay ninguna superposicion")*. Not a shuffled take this time
+  user: "I did exactly the steps I described to you, it should be possible;
+  zooming in I see there is no overlap at all")*. Not a shuffled take this time
   but **one cut, two halves, swapped** -- which is the same feature at its
   minimum and settles that this is not an edge case somebody wandered into. It
   also shows what the refusal costs while the feature is missing: the two boxes
@@ -4446,9 +4446,9 @@ Following the project rule: code + tests, a clear commit message (the record of 
   it (a span of silence; a span the server mixes), and so does the crossfade at
   every seam.
 
-  **Taken as a milestone** *(2026-09-12, the user: "hacelo y anotalo como
-  milestone hecho porque es lo que habia que hacer cuando hicimos los
-  segmentos")*: `crates/clausters-document/PLAN.md`, `O31` -- a join over
+  **Taken as a milestone** *(2026-09-12, the user: "do it and record it as a
+  milestone done, because it is what had to be done when we made the
+  segments")*: `crates/clausters-document/PLAN.md`, `O31` -- a join over
   fragments mints a source, and the source is segments, recorded in the
   session's source table as a `Location`. The server's half, which the same
   message named and this entry had lost, is the root `PLAN.md` entry "A long
@@ -4465,7 +4465,7 @@ Following the project rule: code + tests, a clear commit message (the record of 
   (`crates/clausters-document/PLAN.md`, "A join takes its clips' fades, and
   invents none").
 
-- ✅ **The whole interaction vocabulary is provisional, and it is decided after the other two applications exist, not before** *(stated by the user 2026-09-12, while asking for the multitrack example's last three gestures: "estas reglas que te estoy pidiendo pueden cambiar despues. Luego, cuando hayamos hecho las otras aplicaciones vamos a tener que refactorizar y definir muchas cosas de la interaccion, cosas que no estan decididas")*.
+- ✅ **The whole interaction vocabulary is provisional, and it is decided after the other two applications exist, not before** *(stated by the user 2026-09-12, while asking for the multitrack example's last three gestures: "these rules I am asking you for may change later. Then, once we have made the other applications, we will have to refactor and define many things about the interaction, things that are not decided")*.
 
   **This is the frame every entry below sits in**, and it is written here once so no individual gesture has to argue for itself. The multitrack is the first of the three applications over one document; the audio editor and the score editor are not built. What a hand does — which key, which modifier, which button, what a double click means, what a verb makes rather than asks about — is being settled **by use, in one application**, and a vocabulary settled in one application is a vocabulary that has been tested against one third of the problem. So these rules are the current answer and not the design, and the refactor that replaces them is expected work rather than a failure of this one.
 
@@ -4488,11 +4488,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 **Ordering — what is left of it.** The original decision staged the widget-deepening arc first, the timeline and notation views after it, and packaging plus the in-browser audio engine deliberately last. Three quarters of that is spent: the deepening arc landed (G18-G21), the timeline converged as G22 and notation as G31, and the engine shipped as the server's B track — which also settled the `Transport`/`ServerLink` seam the ordering was keeping open, since `ServerLink::Page` is that variant. What still binds is the other half of the same sentence: **packaging stays last**, because it changes how the system ships and not what the system can show, and it keeps constraining design in the meantime — the web frontend must stay Tauri-wrappable.
 
-- ✅ **A clip carries one automation, and the definition asks for several** *(named 2026-08-18 closing the clip's interaction rules — the user's statement of what a clip holds says "se pueden superponer varias automatizaciones en el mismo espacio como líneas de distintos colores", and only one is editable at a time; closed the same day with the wire change the join needed)*. The interaction half was already general — a layer is addressed by its position in the stack, `points:1` is the name a second curve answers to, and one-edited-at-a-time is what makes several of them legible. What was missing was that a clip's contents were **props** (`points`, singular), so a second curve could not be *said*.
+- ✅ **A clip carries one automation, and the definition asks for several** *(named 2026-08-18 closing the clip's interaction rules — the user's statement of what a clip holds says "several automations can be superimposed in the same space, as lines of different colors", and only one is editable at a time; closed the same day with the wire change the join needed)*. The interaction half was already general — a layer is addressed by its position in the stack, `points:1` is the name a second curve answers to, and one-edited-at-a-time is what makes several of them legible. What was missing was that a clip's contents were **props** (`points`, singular), so a second curve could not be *said*.
 
   **A clip's contents are children now**, one node per body, and its flat props are the shorthand for one of each. So two automations are two `curve` children, each with its own `color`, drawn in declaration order and named `points` and `points:1` — and a body being a node is also what gives it a colour to carry, which the prop form had nowhere to put. The same change is what lets a take be several segments, which is the other half of the question: it was one missing thing, not two.
 
-- ✅ **A view of a server buffer has two ways of getting its material, and what chooses between them is the wrong question** *(named 2026-08-19 by the user, on reading H9: "por qué hay dos tipos de vista distinta para hacer lo mismo?" — and it was not marked here before they asked, which is the part worth recording)*.
+- ✅ **A view of a server buffer has two ways of getting its material, and what chooses between them is the wrong question** *(named 2026-08-19 by the user, on reading H9: "why are there two different kinds of view to do the same thing?" — and it was not marked here before they asked, which is the part worth recording)*.
 
   **What is true.** There is one view and one `WaveformData`: the drawing has never had two forms. What has two forms is how the material arrives.
 
@@ -4511,7 +4511,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
   It is written down in the two places a reader would look — `docs/architecture.md` (the host's bulk path) and `docs/gui-protocol.md` (under `fills`, saying what it does *not* decide) — because the question this entry records was asked of the code and the code did not answer it.
 
-- ✅ **A column is its own quad, and a signal that steps shows what that costs** *(named 2026-08-20 by the user, on a lane drawing a square wave: "no dibuja lineas verticales y las horizontales no son rectas" — deferred the same day, to be looked at another way rather than patched)*. The trace is **one quad per pixel column, from that column's lowest sample to its highest**, and nothing joins one column to the next. Measured on the lane that raised it, at a minute across 1250 columns (2304 samples a column, nine buckets): of eleven transitions, **ten** draw as a tall column — the column holds both levels, which is what a vertical *is* here — and the eleventh draws none, because it falls on a column boundary and each side is a separate quad. And 1239 columns come out flat to within a hundredth of full scale: a constant run has no height at all and is inked at the trace's minimum weight, so a value that drifts by less than a pixel per column reads as a line that steps.
+- ✅ **A column is its own quad, and a signal that steps shows what that costs** *(named 2026-08-20 by the user, on a lane drawing a square wave: "it does not draw vertical lines and the horizontal ones are not straight" — deferred the same day, to be looked at another way rather than patched)*. The trace is **one quad per pixel column, from that column's lowest sample to its highest**, and nothing joins one column to the next. Measured on the lane that raised it, at a minute across 1250 columns (2304 samples a column, nine buckets): of eleven transitions, **ten** draw as a tall column — the column holds both levels, which is what a vertical *is* here — and the eleventh draws none, because it falls on a column boundary and each side is a separate quad. And 1239 columns come out flat to within a hundredth of full scale: a constant run has no height at all and is inked at the trace's minimum weight, so a value that drifts by less than a pixel per column reads as a line that steps.
 
   Both are the rule working as written — **the picture is a measurement of the column, and the minimum ink keeps a flat stretch visible** — and both are only ever seen on a signal that is exactly a step, which is why they surfaced on a synthetic square wave and not on audio. What is open is whether that is the right rule at a *discontinuity*: the signal does pass through the values between two columns, so a trace that stretched each column to meet its neighbour would be drawing something true and would close both gaps at once. That is a change to what a column claims, so it is a design and not a fix, and it is the one the user asked to come back to.
 
@@ -4533,7 +4533,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 - ✅ **Time-stretch: an edge that changes the material rather than the window** *(named 2026-08-18 with the clip's window, which is what made it nameable; moved 2026-10-04 by the user to the multitrack application, `crates/clausters-apps/PLAN.md`, Future directions, where it stays open)*. An edge drag is a **trim** and the material stands still; a multitrack's other answer is to change the material's *length* — resampling it, or stretching it at pitch — which is a **rendering on demand** (an NRT pass over the source, its result a new take) and not a placement edit. Everything it needs is now stated: `fit` is the prop that draws a placement's span over the whole of its material, which is exactly the picture such a stretch produces, and the window says which segment is being stretched. What is undecided is the rest of it: which gesture asks for it (a modifier on the edge, a verb like the split's), what the client does with the result (a new source, or a source that remembers it was stretched), and whether the drawing shows the stretch before the render lands. Deliberately not part of the interaction rules: they had to say what an edge drag *is*, and they do.
 
-- ⬜ **The audio editor's layers: the view is the next container, and it is the richer one** *(named 2026-08-18 by the user while the clip's rules closed, in two notes: "el concepto vale también para la edición de audio", and then what that means in detail — this is a design to think through and build, not a gap to patch)*.
+- ⬜ **The audio editor's layers: the view is the next container, and it is the richer one** *(named 2026-08-18 by the user while the clip's rules closed, in two notes: "the concept also holds for audio editing", and then what that means in detail — this is a design to think through and build, not a gap to patch)*.
 
   **The mechanism is done and general**: one layer edited at a time, the stack read off whatever children fill a role, the active layer a field of the `Widget` node, `hidden` for what is drawn — none of it names a widget type, and a `clip` proved it. What the audio editor needs is the **contents**, and the user's description says they are of two kinds that the design already separates and must keep separating:
 
@@ -4544,7 +4544,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
   What has to be decided before any of it is built: whether a view's contents become bodies of the container the way a clip's are (which is what would let the whole rule apply unchanged, and what `at`/`dur`/`start` on a body already allow); what a **preview** is on the wire (a layer drawn from material the host does not hold, since the processed signal is the owner's); and how a `BodyRole` set that is closed and belongs to the container grows to carry a spectrogram, a marker list and a parameter envelope. The A track's **A6 — the layer stack becomes explicit** is where it lands.
 
-- ⬜ **The layer stack is one container's, and an audio editor's view has one too** *(named 2026-08-18, closing the clip's interaction rules — the user said the same day that the principle is not the clip's: "el concepto vale también para la edición de audio", and for the **visualization** layers with it)*. `host::layers` was written general on purpose — the stack is whatever children fill a body role, the active layer is a field of the `Widget` node, nothing in the module names a widget type — but the only container that layers editable things today is the `clip`. A dedicated audio editor's view is the next: material, a selection over it, an automation over both, and later a spectral layer, all on one rectangle with one of them in hand. What it needs is not the rule, which is settled and shipped, but the **contents**: a signal view whose automation is a body rather than a widget beside it, and a `BodyRole` set that stops being three (the set is closed and belongs to the container, which is the right shape and the thing that has to grow). The A track's **A6 — the layer stack becomes explicit** is where that lands, and it now has a mechanism to be explicit *with*.
+- ⬜ **The layer stack is one container's, and an audio editor's view has one too** *(named 2026-08-18, closing the clip's interaction rules — the user said the same day that the principle is not the clip's: "the concept also holds for audio editing", and for the **visualization** layers with it)*. `host::layers` was written general on purpose — the stack is whatever children fill a body role, the active layer is a field of the `Widget` node, nothing in the module names a widget type — but the only container that layers editable things today is the `clip`. A dedicated audio editor's view is the next: material, a selection over it, an automation over both, and later a spectral layer, all on one rectangle with one of them in hand. What it needs is not the rule, which is settled and shipped, but the **contents**: a signal view whose automation is a body rather than a widget beside it, and a `BodyRole` set that stops being three (the set is closed and belongs to the container, which is the right shape and the thing that has to grow). The A track's **A6 — the layer stack becomes explicit** is where that lands, and it now has a mechanism to be explicit *with*.
 
 - ⬜ **Many channels are drawn and not yet readable, and a take cannot be created empty** *(both named by the user, 2026-08-16, once a four-channel session opened: the two halves of "a view is made from what the file has")*. **Drawing** scales already — a clip and an editor both stack a lane per channel, whatever the count, and an ambisonic file draws all sixteen. **Reading** them does not: the editor pane is built as tall as its channel count with a cap, so past three or four lanes they thin out, and nothing scrolls, folds or selects among them. That is the design: a pane with its own vertical scroll, lanes that collapse to a summary, or a channel picker — and whichever it is, the *clip* has the same problem in a lane a third of the height. **Creating** is the other half and does not exist at all: a session draws material that came from a file, so there is no way to make an **empty take of N channels** and start drawing into it. The pieces are all there — `/buffer_alloc` makes the buffer, the document already spells a source with no file (`Location::Volatile`), and the write path is channel-addressed since the server's S16 — so what is missing is the gesture and what a session does with a source that has nowhere to be saved yet.
 
@@ -4576,7 +4576,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
   **Closed 2026-08-27**, found by the user typing Spanish into `oscsend` in the
   manual review — which is the day the entry said it would become a milestone,
-  and it arrived as "no se pueden poner acentos" rather than as a decision to
+  and it arrived as "accents cannot be typed" rather than as a decision to
   schedule. Both mechanisms are in, each on its own platform's terms, and the
   entry's guess about which was which was right:
 
@@ -4714,11 +4714,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   for one of them; the hit-test entry in "Found by use" is what made the
   question concrete, since it is a press on a staff that raised it.
 
-- ✅ **An insert does not carry the ties the document was read with**
-  *(found 2026-09-07, reading `notation/score_editor`'s log during the visual
-  review's second sitting; moved here from "Found by use" the same day, at the
-  user's call: "no tiene sentido que estemos solucionando bugs que son cosas no
-  implementadas")*. The page engraves clean when it opens. After the first
+- ✅ **An insert does not carry the ties the document was read with** *(found
+  2026-09-07, reading `notation/score_editor`'s log during the visual review's
+  second sitting; moved here from "Found by use" the same day, at the user's
+  call: "it makes no sense for us to be fixing bugs that are things not
+  implemented")*. The page engraves clean when it opens. After the first
   inserted note the engraver starts reporting
 
       [Warning] Unable to match @tie of note 'n24-2', skipping it
@@ -4764,10 +4764,10 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 - ✅ **One cursor, it is the transport's, and the content never moves it**
   *(the user, 2026-09-07, dictated after the paste and playhead entries in
-  "Found by use" turned out to be two halves of one question; "puede que esto
-  cambie el comportamiento de los ejemplos pero tiene que estar bien hecho del
-  lado del host". **The host's half done 2026-09-08**; what sounds under the
-  cursor is the client's and stays open -- see the end of this entry)*.
+  "Found by use" turned out to be two halves of one question; "this may change
+  the behavior of the examples, but it has to be done right on the host's
+  side". **The host's half done 2026-09-08**; what sounds under the cursor is
+  the client's and stays open -- see the end of this entry)*.
 
   **Superseded in part by `G35.1`, 2026-09-09**: the half that is still true is
   *the content never moves it*. The "one" turned out to be two — a **position
@@ -4881,16 +4881,16 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   **Related:** `O24`. This is what a multitrack's transport *is*, and doing it
   before the application is taking it off the application's first day.
 
-- ✅ **Messages are not the roll's to edit, and nothing else edits them**
-  *(the user, 2026-09-07, after the markers lane was made read-only: "mensajes
-  (no eventos) OSC podrian tener otro widget con linea temporal especial pero
-  no es parte del roll")*. A `Timeline` holds three kinds of item and only one
-  of them has a pitch: an `Event` is a note, an `OscItem` is `(addr, *args)`
-  and a `MidiItem` is raw bytes. The roll is the editor of the first --
-  its grid *is* pitch × time -- and the other two are drawn under it as
-  markers, read-only, because the flag is a lossy view: the address as a label,
-  the arguments not drawn. So a hand can place a message in time by
-  programming (`timeline.add(beat, OscItem(addr, ...))`) and by no other means.
+- ✅ **Messages are not the roll's to edit, and nothing else edits them** *(the
+  user, 2026-09-07, after the markers lane was made read-only: "OSC messages
+  (not events) could have another widget with a special timeline, but it is not
+  part of the roll")*. A `Timeline` holds three kinds of item and only one of
+  them has a pitch: an `Event` is a note, an `OscItem` is `(addr, *args)` and a
+  `MidiItem` is raw bytes. The roll is the editor of the first -- its grid *is*
+  pitch × time -- and the other two are drawn under it as markers, read-only,
+  because the flag is a lossy view: the address as a label, the arguments not
+  drawn. So a hand can place a message in time by programming
+  (`timeline.add(beat, OscItem(addr, ...))`) and by no other means.
 
   **What a real editor of messages would be is not a roll, and was never
   designed.** It is multidimensional in a way the grid cannot hold: an address,
@@ -4929,13 +4929,13 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 - ✅ **A press on a score means what its context says, not what is under it**
   *(the user, 2026-09-07, after the staff-line fix and the regression that
-  followed it: "para que el editor de partituras funcione correctamente vamos a
-  tener que agregar reglas de edición segun el contexto en el que se produce un
-  clic y no solo el lugar o elemento especifico")*. The host answers a press by
-  asking **what is under the pointer** and nothing else: a sounding element if
-  there is one, otherwise the tightest box, with one exception now carved out
-  for the staff's own lines on a page that takes entry. That is a rule about
-  *place*, and a score editor is not driven by place alone.
+  followed it: "for the score editor to work correctly we will have to add
+  editing rules according to the context a click happens in, and not only the
+  specific place or element")*. The host answers a press by asking **what is
+  under the pointer** and nothing else: a sounding element if there is one,
+  otherwise the tightest box, with one exception now carved out for the staff's
+  own lines on a page that takes entry. That is a rule about *place*, and a
+  score editor is not driven by place alone.
 
   The day this was written is the argument for it. Three passes over one press
   — the noteheads' fix, the staff lines', and the regression between them that
@@ -5055,7 +5055,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 - ✅ **A box cut in two dotted the same sample at the end of one half and the start of the other** *(found 2026-09-17 by the user, same session)*. The sample regime reaches the sample just past each edge so the line crosses it, and dotted it too: the sample on a view's right edge is the first one after the view, so the first half drew the second half's first sample. A dot now marks only the samples of a half-open view. Held by `the_sample_on_the_right_edge_is_the_next_views`.
 
-- ✅ **A box's edges on the multitrack are drawn on a sample, where a selection's are drawn between two** *(asked 2026-09-17 by the user: "la selección de muestras visualmente posiciona los márgenes entre los espacios anterior y posterior en el editor de audio. Eso acá debería ser posible también?")*. A selection's band runs from half a sample before its first sample to half a sample after its last (`selection::span_x`), so a one-sample selection is one sample wide. A box `[k0, k1)` is drawn from `x(k0)` to `x(k1)`, so zoomed to the sample its edges sit on the dots of its first sample and of the next box's first. Drawing the box by the same half-sample rule would put a cut between the two samples it separates. It reaches the box rectangle, its hit testing and edge drags, the local view its contents and layer are drawn in, and its fades; the position cursor and the playhead stay on the sample.
+- ✅ **A box's edges on the multitrack are drawn on a sample, where a selection's are drawn between two** *(asked 2026-09-17 by the user: "the selection of samples visually places the margins between the spaces before and after in the audio editor. Should that be possible here too?")*. A selection's band runs from half a sample before its first sample to half a sample after its last (`selection::span_x`), so a one-sample selection is one sample wide. A box `[k0, k1)` is drawn from `x(k0)` to `x(k1)`, so zoomed to the sample its edges sit on the dots of its first sample and of the next box's first. Drawing the box by the same half-sample rule would put a cut between the two samples it separates. It reaches the box rectangle, its hit testing and edge drags, the local view its contents and layer are drawn in, and its fades; the position cursor and the playhead stay on the sample.
   *(Closed 2026-10-04 by the user: resolved when the editors moved into the applications, `crates/clausters-apps/PLAN.md`.)*
 
 - ✅ **Try cubic instead of straight segments where the samples are joined** *(asked 2026-09-15 by the user, after `A3`)*. Straight segments remain in two places: above the dots' zoom, where a column under two samples wide measures the line between samples (`line_column`), and at the dots' zoom when a view draws `measure: "peak"` without the `signal` layer. The user wants to try a cubic (Catmull-Rom or Hermite) there so the joined samples do not read as polylines. Two constraints go with it: a cubic is smooth but is still not the signal (its overshoots are its own, not the inter-sample peaks), so it belongs only to the sample layer and never replaces `signal`; and `line_column` and the joined segments must use the same curve, or the picture changes character again at the dots' crossing.
@@ -5142,11 +5142,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
   **What is not general yet, and why.** A **join** is local in a roll and asked of the owner in a multitrack, because a join over material is the document's to refuse (a gap it cannot state as silence, an overlap it cannot state as a mix). And `copy`/`paste` still carry the holder's own JSON, since the carrier *is* the prop each one accepts. Both wait on the same thing the third copy will need: the structures layer below.
 
-- ✅ **A join did nothing, and said nothing, because the correction renamed the half the hand was holding** *(found 2026-09-12 by the user: "j para join no hace nada, no loguea en la barra de estado, nada")*. The third time this seam broke, and the first time from *this* side. The host mints the tail of a split (`a 2`) and the document mints its id, so the correction that answers a minted name calls the same box something else -- which is the whole point of the correction. The `clips` arm re-found the hand **by name**, so exactly that box was let go; `join_held` then had one box where the hand held two, and a join that joins nothing emits nothing, so the key looked dead.
+- ✅ **A join did nothing, and said nothing, because the correction renamed the half the hand was holding** *(found 2026-09-12 by the user: "j for join does nothing, logs nothing in the status bar, nothing")*. The third time this seam broke, and the first time from *this* side. The host mints the tail of a split (`a 2`) and the document mints its id, so the correction that answers a minted name calls the same box something else -- which is the whole point of the correction. The `clips` arm re-found the hand **by name**, so exactly that box was let go; `join_held` then had one box where the hand held two, and a join that joins nothing emits nothing, so the key looked dead.
 
   Fixed by a second pass: name first, then **where it is** -- same lane, same offset within a frame, each box claimed once. The piece placed the half exactly where this widget said, so the place is an identity the rename cannot touch. `a_split_survives_the_correction_that_renames_its_half_and_joins` walks the whole round trip (cut, correction, join) rather than the halves separately, which is why the two earlier fixes each passed and the path still failed.
 
-- ✅ **And a verb that acted on nothing still said nothing** *(found 2026-09-12 by the user, reporting the same key a second time: "toco ctrl-j pero no hace nada. Siguen separados")*. The report that closed the entry above named this as still open, and the second report is what settles that a correct refusal nobody is told about cannot be left as one: it is indistinguishable from a key that does not work, and the person at the window has no way to tell the two apart -- so the same key gets reported again, correctly.
+- ✅ **And a verb that acted on nothing still said nothing** *(found 2026-09-12 by the user, reporting the same key a second time: "I press ctrl-j but it does nothing. They are still apart")*. The report that closed the entry above named this as still open, and the second report is what settles that a correct refusal nobody is told about cannot be left as one: it is indistinguishable from a key that does not work, and the person at the window has no way to tell the two apart -- so the same key gets reported again, correctly.
 
   The gesture in the report is the **refused case by design**: two halves of a cut, the tail moved in front of the head and snapped there. They touch and they read one source, but they do not read on from each other, and one window over both would play the source straight through material the boxes skip ("Join over fragments" is the other half of this). The verb was right to refuse; the silence was the defect.
 
@@ -5154,11 +5154,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
   **Still open, and smaller than it looked**: `Ctrl`+`J` is not a binding -- the three verbs all guard on `!ctrl`, so the clipboard family keeps `Ctrl`+letter -- and a modifier that means nothing is swallowed by nothing and says nothing either. Which keys these are is the unsettled question already filed as "A shortcut is the application's, not the widget's".
 
-- ✅ **The automation toggle flipped a flag nothing draws from** *(found 2026-09-12 by the user, reported three times: "el boton A no funciona", "la A sigue sin ocultar ni mostrar", "al crear un track y activa A no hace nada, al crear otro track aparece la automatizacion del anterior")*.
+- ✅ **The automation toggle flipped a flag nothing draws from** *(found 2026-09-12 by the user, reported three times: "the A button does not work", "the A still neither hides nor shows", "on creating a track and activating A nothing happens; on creating another track the previous one's automation appears")*.
 
   The stack is built from `hidden`, which is the **owner's** answer about which curves are not shown. The press flipped the lane's own `curves` flag and emitted the `lanes` report, and the owner wrote `visible` onto the automations -- but the owner answers with the whole picture only when a **name** changes, and hiding a curve changes none. So a press that only hid or showed stated nothing anybody draws from, and the row stayed exactly where it was.
 
-  It read as three different bugs because of the one case that *does* change a name: the first press on a bare track **mints** a gain curve, which is answered, so that press appeared to work and every press after it appeared not to. And a press whose answer was withheld was carried back by the next gesture that did add a row, which is the "al crear otro track aparece la automatizacion del anterior" report -- the same silence, one gesture later.
+  It read as three different bugs because of the one case that *does* change a name: the first press on a bare track **mints** a gain curve, which is answered, so that press appeared to work and every press after it appeared not to. And a press whose answer was withheld was carried back by the next gesture that did add a row, which is the "on creating another track the previous one's automation appears" report -- the same silence, one gesture later.
 
   Fixed by saying it in both places the press already touches: the flag and this lane's entries in `hidden` move together, so the picture changes under the hand the way a dragged clip does and the owner's next correction confirms it. `the_toggle_hides_the_row_and_shows_it_again` presses twice and reads the stack, which is the assertion the earlier tests were missing: they each proved one leg of the path -- the gesture emits, the crate creates, the element accepts the correction -- and the path they proved was never the one that failed.
 
@@ -5444,7 +5444,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   its page twin seed three and print what comes back.
 
   **It is sized against the numbers it stands among** *(found 2026-09-04 by the
-  user, looking at the example: "se ven bien muy chicos")*. It was drawn at
+  user, looking at the example: "they look fine, very small")*. It was drawn at
   `micro_scale` -- the size a roll's OSC flags use, in a lane of their own -- and
   its arrow was a fixed nine pixels: a full step under the tick labels it sits
   beside, and a number that stopped meaning anything at another density. Both
@@ -5544,8 +5544,8 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   test data that could not express it.
 
   **The first cut of the rule was too wide, shipped, and was caught by eye
-  within the hour**: *"no es posible seleccionar ligaduras, p, mp y otros
-  elementos, ahora siempre agrega notas"*. It asked whether the pick **sounds**,
+  within the hour**: *"it is not possible to select slurs, p, mp and other
+  elements, now it always adds notes"*. It asked whether the pick **sounds**,
   and `elements` names notes and rests -- so a slur, a hairpin, a dynamic and a
   beam, which sound nothing and are elements of the score all the same, became
   blank paper and every press on one wrote a note. *Sounding* and *being the
@@ -5568,15 +5568,15 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   needs to know what a press is *for* before it decides what it landed on.
 
 - ✅ **A paste lands on a cursor no hand can place** *(found 2026-09-07 by the
-  user, by eye, in `editors/pianoroll`: "al pegar deberia hacerlo a partir del
-  cursor, de lo contrario no hay referencia de donde pegar")*. `Ctrl`+`V` over a
-  roll pastes the block at `self.step`, and so does the cut that shares the
-  comment: *"a paste has no pointer, and the cursor is where the roll is being
-  written"*. The diagnosis is right -- a key gesture has no pointer to read --
-  and the cursor chosen is written in exactly one place in the whole element:
-  it is **advanced** when a live note is entered by step, and no gesture ever
-  sets it. So for anyone who is not step-recording it is 0, every paste lands at
-  the beginning whatever the eye was on, and there is no way to aim one.
+  user, by eye, in `editors/pianoroll`: "pasting should do it from the cursor,
+  otherwise there is no reference for where to paste")*. `Ctrl`+`V` over a roll
+  pastes the block at `self.step`, and so does the cut that shares the comment:
+  *"a paste has no pointer, and the cursor is where the roll is being written"*.
+  The diagnosis is right -- a key gesture has no pointer to read -- and the
+  cursor chosen is written in exactly one place in the whole element: it is
+  **advanced** when a live note is entered by step, and no gesture ever sets it.
+  So for anyone who is not step-recording it is 0, every paste lands at the
+  beginning whatever the eye was on, and there is no way to aim one.
 
   What it wants is a cursor a hand can put somewhere and see -- the roll already
   answers `locate`, and a window already has a position -- rather than a second
@@ -5619,15 +5619,15 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   of its own. It cannot stay a value only one client notices.
 
   **Fixed 2026-09-07 by removing the gesture, which is what the widget was
-  built with** *(the user, reading the model back with me: "el piano roll esta
-  para editar eventos que siempre tienen freq/degree/midinote ... los
-  marcadores no son editables, son de solo lectura, creo que esa fue la
-  decision original")*. It was. `G24a` recorded it -- *"OSC events (which have
-  no pitch) draw as flags in a separate lane below it"* -- and `G24c` recorded
-  it again -- *"display-only for now: the `(time, label)` marker is a lossy
-  view of the message, so writing it back would drop the args"*. The
-  add/remove/move press was added against both and **nothing tested this lane's
-  editing at all**, which is how a gesture contradicts a decision and stays.
+  built with** *(the user, reading the model back with me: "the piano roll is
+  there to edit events that always have freq/degree/midinote ... the markers
+  are not editable, they are read-only, I think that was the original
+  decision")*. It was. `G24a` recorded it -- *"OSC events (which have no pitch)
+  draw as flags in a separate lane below it"* -- and `G24c` recorded it again
+  -- *"display-only for now: the `(time, label)` marker is a lossy view of the
+  message, so writing it back would drop the args"*. The add/remove/move press
+  was added against both and **nothing tested this lane's editing at all**,
+  which is how a gesture contradicts a decision and stays.
 
   So the lane shows and does not write. A `Ctrl` press -- the one that meant to
   edit -- is refused out loud and consumed; every other press there goes back
@@ -5643,25 +5643,25 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   wrong was a roll claiming to edit it through a label.
 
   **And "the OSC lane" is a name only this repository uses** *(the user, asking
-  what it was, 2026-09-07: "¿Cual es el carril OSC? ... en un piano roll solo
-  hay carriles de notas, carril de velocidades, carril de marcadores")*. A roll
-  has a notes lane, a velocity lane and a **markers lane**; the host calls the
-  third one after what a marker *is* (`osc_lane` in the theme, `OscMark` in the
-  model, "the roll's OSC lane" in the docstring) and the reader calls it after
-  what it shows. Both are right and only one is on screen, so the name to use
-  in prose, in a theme role and in an example is the reader's -- the same rule
-  that makes a buffer a buffer and its contents samples. The internal type may
-  keep saying what a marker sends; a lane is called the markers lane. Worth
-  doing with whatever answers the question above, since both touch the same
-  lane in both clients.
+  what it was, 2026-09-07: "Which is the OSC lane? ... in a piano roll there
+  are only note lanes, a velocity lane, a marker lane")*. A roll has a notes
+  lane, a velocity lane and a **markers lane**; the host calls the third one
+  after what a marker *is* (`osc_lane` in the theme, `OscMark` in the model,
+  "the roll's OSC lane" in the docstring) and the reader calls it after what it
+  shows. Both are right and only one is on screen, so the name to use in prose,
+  in a theme role and in an example is the reader's -- the same rule that makes
+  a buffer a buffer and its contents samples. The internal type may keep saying
+  what a marker sends; a lane is called the markers lane. Worth doing with
+  whatever answers the question above, since both touch the same lane in both
+  clients.
 
 - ✅ **An undo leaves the pencil dead, and a dead pencil draws a selection**
-  *(found 2026-09-07 by the user, by eye, in `editors/edit_samples`: "hice
-  undo/redo y no me dejó dibujar más")*. Reproduced with a trace. One stroke
-  lands, `Ctrl+Z` and `Ctrl+Shift+Z` walk the history, and from then on
-  **`Alt`+drag and `Ctrl`+drag both arrive at the client as `selection`** --
-  54 of them in the sitting's log, and not one `draw`, `sample` or `refused`.
-  It lasts for the rest of the session.
+  *(found 2026-09-07 by the user, by eye, in `editors/edit_samples`: "I did
+  undo/redo and it did not let me draw any more")*. Reproduced with a trace.
+  One stroke lands, `Ctrl+Z` and `Ctrl+Shift+Z` walk the history, and from
+  then on **`Alt`+drag and `Ctrl`+drag both arrive at the client as
+  `selection`** -- 54 of them in the sitting's log, and not one `draw`,
+  `sample` or `refused`. It lasts for the rest of the session.
 
   The chain is four calls and each one is doing what it says:
 
@@ -5704,7 +5704,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   fine. A fill with no data returns `None`, meaning *nothing new for the slot*,
   so the GPU kept the picture it already had. The picture on screen stopped
   being the buffer's while the element behind it held nothing -- the user's own
-  reading, *"undo/redo corrompe el estado"*, and a better description than the
+  reading, *"undo/redo corrupts the state"*, and a better description than the
   one this entry was filed under.
 
   The pass now exists on both fronts, and what makes it affordable is that the
@@ -5772,13 +5772,13 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   rather than the code's.
 
 - ✅ **The pencil drew before the samples were drawn, and wrote hundreds at a
-  time** *(found and fixed 2026-09-07, by the user, by eye: "me esta dejando
-  editar la forma de onda antes de que se vean los discos de las muestras, y se
-  puede editar una cantidad muy grande por vez")*. Two numbers for one rule.
-  The gate refused where a pixel was more than one sample; the trace puts its
-  sample dots on at three radii of spacing (`graphics::signal::trace::
-  dots_fit`), which is twelve pixels a sample at the default density. Between
-  the two a stroke was allowed over a picture with no dots in it.
+  time** *(found and fixed 2026-09-07, by the user, by eye: "it is letting me
+  edit the waveform before the samples' disks show, and a very large amount can
+  be edited at once")*. Two numbers for one rule. The gate refused where a
+  pixel was more than one sample; the trace puts its sample dots on at three
+  radii of spacing (`graphics::signal::trace:: dots_fit`), which is twelve
+  pixels a sample at the default density. Between the two a stroke was allowed
+  over a picture with no dots in it.
 
   The two halves of the report are one gap: the samples were not being shown
   one by one, **and** a drag across the body wrote every sample it crossed --
@@ -6323,10 +6323,10 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   standalone door taking its body-shaped branch), which is exactly why it
   survived: two doors that look alike and only one of them wired.
   `a_clip_body_draws_the_line` now goes through the one a clip uses.
-- ✅ **One `editable` for two bodies, so a read-only roll locked the curve
-  over it** *(found 2026-08-22 by the user, looking at the composer example:
-  "no se pueden editar el lane bass y sweep")*. A simultaneous aggregate draws
-  as one clip with its members' bodies **layered**, and both bodies read **one
+- ✅ **One `editable` for two bodies, so a read-only roll locked the curve over
+  it** *(found 2026-08-22 by the user, looking at the composer example: "the
+  bass and sweep lanes cannot be edited")*. A simultaneous aggregate draws as
+  one clip with its members' bodies **layered**, and both bodies read **one
   props map** — so the roll's `editable: false`, which is correct (a `Clang`'s
   notes are a rendering), reached `curve::body` as well. The envelope drew and
   refused every press. The clip stayed draggable throughout, which is exactly
@@ -6342,22 +6342,22 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   `docs/gui-protocol.md`.
 
 - ✅ **A curve jumped under the hand editing it** *(found 2026-08-22 by the
-  user, dragging the composer's envelope: "al mover el punto o la línea de la
-  envolvente el dibujo salta de posición")*. A break-point's place on screen is
-  its value **against the clip's value axis**, and both clients derived that
-  axis from the break-points on every redraw (`_curve_range`: their own range
-  plus a tenth of headroom). So an edit rescaled the picture: dragging one
-  point moved *every other one*, and the point under the cursor was the only
-  one that appeared to stay put. Nothing in the host was wrong — it drew what
-  it was given, twice, correctly. The axis is now **remembered** per
-  `Automation`, screen state exactly as the edit layer is, and widened only on
-  the side that stopped holding the data (a script's replacement, an undo of a
-  taller curve); never narrowed, so a point dragged down and back up leaves the
-  drawing where it was. In both clients, with the test in both.
+  user, dragging the composer's envelope: "on moving the envelope's point or
+  line, the drawing jumps position")*. A break-point's place on screen is its
+  value **against the clip's value axis**, and both clients derived that axis
+  from the break-points on every redraw (`_curve_range`: their own range plus a
+  tenth of headroom). So an edit rescaled the picture: dragging one point moved
+  *every other one*, and the point under the cursor was the only one that
+  appeared to stay put. Nothing in the host was wrong — it drew what it was
+  given, twice, correctly. The axis is now **remembered** per `Automation`,
+  screen state exactly as the edit layer is, and widened only on the side that
+  stopped holding the data (a script's replacement, an undo of a taller curve);
+  never narrowed, so a point dragged down and back up leaves the drawing where
+  it was. In both clients, with the test in both.
 
 - ✅ **A gesture reported a value per frame, so a drag was a hundred edits and
   all but the first were refused** *(found 2026-08-22 by the user, dragging the
-  composer's envelope: the point teleported, the segment "tiembla en el lugar",
+  composer's envelope: the point teleported, the segment "it trembles in place",
   and it started as soon as the pointer left the window and came back)*. A clip,
   a roll and a curve each emitted their whole edit-back on **every drag step**.
   Two things follow, and the second is the one that showed: an undo history of a
@@ -6391,14 +6391,14 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   is the carrier's, and is not what this entry fixed.)*
 
 - ✅ **A bent segment drifted out of phase with the hand** *(found 2026-08-22 by
-  the user, right after the release-only rule landed: "al salir el cursor del
-  area sigue sumando, se pierde el offset original y se desfasa el cursor del
-  movimiento — esto ya paso con otros elementos graficos")*. The bend was
-  **incremental**: each step measured from the last, re-anchored every frame,
-  which the comment defended as "like a knob". A curve is not a knob — a knob is
-  dragged under a locked pointer with nothing on screen to stay level with,
-  while a segment is a shape the hand is pointing at — and the relative form
-  drifts twice over. The clamp **eats motion**: drag past the limit and the
+  the user, right after the release-only rule landed: "when the cursor leaves
+  the area it keeps adding up, the original offset is lost and the cursor drifts
+  from the movement -- this already happened with other graphic elements")*. The
+  bend was **incremental**: each step measured from the last, re-anchored every
+  frame, which the comment defended as "like a knob". A curve is not a knob — a
+  knob is dragged under a locked pointer with nothing on screen to stay level
+  with, while a segment is a shape the hand is pointing at — and the relative
+  form drifts twice over. The clamp **eats motion**: drag past the limit and the
   steps spent beyond it are swallowed, so coming back leaves the bend short by
   however far it went. And a pointer that has left the element keeps
   accumulating whatever motion still arrives, so the shape is out of phase from
@@ -6424,20 +6424,20 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 - ✅ **A browser delivered a press per frame, so every gesture re-anchored
   itself** *(found 2026-08-22 by the user, after the bend was made absolute:
-  fixed on the desktop, unchanged in the page — "me extrana que suceda solo en
-  una de las dos plataformas porque la implementacion DEBE SER LA MISMA", which
-  is exactly right and is what found it)*. Winit's web backend turns any
-  `pointermove` **carrying a button** into a synthesized `MouseInput` whose
-  state is *pressed* while that button is down (`window_target.rs`: `let state =
-  if buttons.contains(button.into()) { Pressed } else { Released }`), and
-  `PointerEvent.button` is `-1` on a plain move only where a browser follows the
-  spec. So a drag arrived as a **fresh press on every frame**, the front took
-  each one, and every press-time decision was re-run: a bend's origin, a note's
-  press time, a clip's grab sample, all re-anchored to wherever the pointer had
-  got to. That is the incremental drift the absolute forms were written to end,
-  coming back through the door beside them — and it is why the page kept
-  behaving like the code before the fix while the desktop, whose stream cannot
-  repeat a press, behaved like the code after it.
+  fixed on the desktop, unchanged in the page — "I find it odd that it happens
+  on only one of the two platforms, because the implementation MUST BE THE
+  SAME", which is exactly right and is what found it)*. Winit's web backend
+  turns any `pointermove` **carrying a button** into a synthesized `MouseInput`
+  whose state is *pressed* while that button is down (`window_target.rs`: `let
+  state = if buttons.contains(button.into()) { Pressed } else { Released }`),
+  and `PointerEvent.button` is `-1` on a plain move only where a browser follows
+  the spec. So a drag arrived as a **fresh press on every frame**, the front
+  took each one, and every press-time decision was re-run: a bend's origin, a
+  note's press time, a clip's grab sample, all re-anchored to wherever the
+  pointer had got to. That is the incremental drift the absolute forms were
+  written to end, coming back through the door beside them — and it is why the
+  page kept behaving like the code before the fix while the desktop, whose
+  stream cannot repeat a press, behaved like the code after it.
 
   Fixed in the **machine** rather than in the browser front (`Gestures::press`
   returns early while a drag is in flight), because the single-pointer rule --
@@ -6450,9 +6450,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   *click* as a bare press and now release first, which is what a click is.
 
 - ✅ **An acknowledgement should not be lost to saturation** *(the user's own
-  note, 2026-08-22, taken while the release-only rule was landing: "igualmente
-  los acks no deberian fallar por saturacion. Eso hay que verlo despues
-  tambien")*. **No acknowledgement was ever lost.** Both legs are reliable and
+  note, 2026-08-22, taken while the release-only rule was landing: "anyway the acks should not fail from saturation. That has to be looked at later too")*. **No acknowledgement was ever lost.** Both legs are reliable and
   neither drops: natively the host speaks TCP by default and a page's carrier is
   two in-process queues with no bound. What the note saw was an edit **refused**,
   and the refusal was the staleness check turning the round trip's own latency
@@ -6487,17 +6485,17 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   route, the case that can touch anything, still raises the floor.
 
 - ✅ **Undo is not one behaviour: it answers some gestures and not others**
-  *(found 2026-08-22 by the user, in `gui_composer`: "achicar un clip pianoroll
-  con el agarre del clip no responde a undo", and "el contenido de los clips
-  (envolvente) y el cambio de duracion por agarre del clip no vuelven"; then,
-  on the shape of the fix: "undo/redo sucede en el host que muestra el arreglo y
-  se tiene que reflejar en el documento y las estructuras de datos instanciadas
-  del cliente ... la edicion de muestras tambien responde a undo/redo. Esto es
-  algo de bajo nivel que puede afectar distintos tipos de componentes y
-  estructuras de datos en distintos contextos")*. Every route already recorded
-  an intent through the crate's log, and the crate was right in every case
-  measured — the document stepped back correctly each time. What was wrong is
-  the **projection**: writing an intent back onto the instantiated data, three
+  *(found 2026-08-22 by the user, in `gui_composer`: "shrinking a piano-roll
+  clip by the clip's grip does not respond to undo", and "the clips' contents
+  (envelope) and the change of duration by the clip's grip do not come back";
+  then, on the shape of the fix: "undo/redo happens in the host that shows the
+  arrangement and has to be reflected in the document and in the client's
+  instantiated data structures ... editing samples also responds to undo/redo.
+  This is something low-level that can affect different kinds of components and
+  data structures in different contexts")*. Every route already recorded an
+  intent through the crate's log, and the crate was right in every case measured
+  — the document stepped back correctly each time. What was wrong is the
+  **projection**: writing an intent back onto the instantiated data, three
   implementations read the same thing wrong in the same way.
 
   **The rule, now stated as one** (`docs/decisions.md`, "An intent states the
@@ -6635,11 +6633,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   reasoning about it.
 
 - ✅ **The other drags that accumulate per frame** *(named 2026-08-22 by the
-  user while the curve's bend was fixed: "esto ya paso con otros elementos
-  graficos")*. The entry asked for a reading rather than a change — "read each
-  one and say which it is, rather than assuming the shape from the file it sits
-  in" — and the reading is the answer. **No drag was accumulating wrongly.**
-  Every continuous drag in the host is one of the two correct forms:
+  user while the curve's bend was fixed: "this already happened with other
+  graphic elements")*. The entry asked for a reading rather than a change —
+  "read each one and say which it is, rather than assuming the shape from the
+  file it sits in" — and the reading is the answer. **No drag was accumulating
+  wrongly.** Every continuous drag in the host is one of the two correct forms:
 
   - **Absolute, the groove snapshotted at the press** — `control.rs`'s `Track`,
     which is the slider. A position inside the rectangle *is* the value, and the
@@ -6750,19 +6748,19 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   reported with was measured with this burn underneath it, so it needs looking
   at again by eye, on a real GPU, now that a still page is still.
 
-- ✅ **A drag beside the graph swept a marquee over nothing** *(found
-  2026-08-22 by the user, on the patcher's Def view: "al costado (fuera) del
-  recuadro que contiene las cajas arrastrar selecciona")*. The patcher draws a
-  **labelled panel that hugs its laid-out boxes** — deliberately, so every box
-  is inside it whatever rect the widget got — while its press claimed the whole
-  widget rect, which a `scroll` workspace never sizes below the window. So the
-  paper at the sides *looked* like the workspace and *acted* like the canvas: a
-  drag there swept a selection instead of panning. It is the defect a knob's
-  cell corners and a checkbox's air had, and it has the same fix — the element
-  answers with a `hit_area`, and what can be grabbed is exactly what is drawn.
-  A press outside the panel now falls through to the workspace, which pans it.
-  Found in a page and fixed in the host, so both fronts get it: the rule was
-  never the browser's.
+- ✅ **A drag beside the graph swept a marquee over nothing** *(found 2026-08-22
+  by the user, on the patcher's Def view: "beside (outside) the frame that
+  holds the boxes, dragging selects")*. The patcher draws a **labelled panel
+  that hugs its laid-out boxes** — deliberately, so every box is inside it
+  whatever rect the widget got — while its press claimed the whole widget rect,
+  which a `scroll` workspace never sizes below the window. So the paper at the
+  sides *looked* like the workspace and *acted* like the canvas: a drag there
+  swept a selection instead of panning. It is the defect a knob's cell corners
+  and a checkbox's air had, and it has the same fix — the element answers with
+  a `hit_area`, and what can be grabbed is exactly what is drawn. A press
+  outside the panel now falls through to the workspace, which pans it. Found in
+  a page and fixed in the host, so both fronts get it: the rule was never the
+  browser's.
 
   **And the edge is taken exactly**, which the first fix did not do: the machine
   adds a few pixels of hit slop to every shape an element declares, so the
@@ -6801,7 +6799,7 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ✅ **The wheel zooms faster in a page than in a window, and the conversion is written three times** *(found 2026-08-20 by the user, comparing the two twins side by side: "la rueda hace zoom más rápido que en nativo")*. The host's own arithmetic is not what differs — `native.rs`, `host/gui/app.rs` and `host/web/input.rs` each carry the identical two lines, `LineDelta(_, y) => y` and `PixelDelta(p) => p.y / 50.0`. What differs is what winit hands each shell: a wheel click on X11/Wayland arrives as `LineDelta(0, ±1)`, one step, while a browser sends a `WheelEvent` at `DOM_DELTA_PIXEL` with a `deltaY` of about a hundred per click, which the same divisor turns into **two**. So the input is not normalized per shell, and the `/50` is calibrated for the native trackpad.
+- ✅ **The wheel zooms faster in a page than in a window, and the conversion is written three times** *(found 2026-08-20 by the user, comparing the two twins side by side: "the wheel zooms faster than in native")*. The host's own arithmetic is not what differs — `native.rs`, `host/gui/app.rs` and `host/web/input.rs` each carry the identical two lines, `LineDelta(_, y) => y` and `PixelDelta(p) => p.y / 50.0`. What differs is what winit hands each shell: a wheel click on X11/Wayland arrives as `LineDelta(0, ±1)`, one step, while a browser sends a `WheelEvent` at `DOM_DELTA_PIXEL` with a `deltaY` of about a hundred per click, which the same divisor turns into **two**. So the input is not normalized per shell, and the `/50` is calibrated for the native trackpad.
 
   **Fixed 2026-08-21, and the measurement turned up a second axis the entry did
   not have.** Reading winit's web backend rather than a browser: at
@@ -6914,7 +6912,7 @@ finished work, where a pending item reads as done.
 
   **A download that is working lands something on every reply**, and that is the difference the fix keys on: a span refused for the same buffer without anything having landed in between counts, and after two seconds' worth of frames the stale fetch is dropped so the next ask starts a new one. A slow conversation is never restarted, because progress resets the count.
 
-- ✅ **A page cannot zoom to the sample while a take records, and behind the frontier it could** *(found 2026-08-20 by the user, comparing the two twins: "funciona igual con la diferencia de que en nativo se puede hacer zoom a la muestra mientras se graba")*. Natively the fine regime asks for nothing — the samples are the mapped cells, so any zoom is current with nothing told to it, and `fills` only decides how far the lane draws. In a page `fills` does a second thing: while it is set the view asks for **no span at all** (`frame::missing_span` returns `None` the moment there is a frontier), so a recording can only be drawn at the bucket the stream reports.
+- ✅ **A page cannot zoom to the sample while a take records, and behind the frontier it could** *(found 2026-08-20 by the user, comparing the two twins: "it works the same, with the difference that in native you can zoom to the sample while recording")*. Natively the fine regime asks for nothing — the samples are the mapped cells, so any zoom is current with nothing told to it, and `fills` only decides how far the lane draws. In a page `fills` does a second thing: while it is set the view asks for **no span at all** (`frame::missing_span` returns `None` the moment there is a frontier), so a recording can only be drawn at the bucket the stream reports.
 
   **The reason written down is stronger than it needs to be.** `docs/gui-protocol.md` says a take still being written asks for nothing because "there is nothing past the frontier to read, and behind it the next block would make a run stale" — the first half holds always, the second only for the run *at* the frontier. A span entirely behind it is final: a recorder writes forward and does not come back. So the condition wants to be the span's position rather than the take's state — everything below `written`, less a margin for the block being written — and the machinery it would use is the one that is already there (`want_span`, `set_window`, and now a bounded number of them in flight).
 
@@ -7020,9 +7018,9 @@ finished work, where a pending item reads as done.
 
   What it would take is a `WaveformData` that reads the mapped region rather than owning a `Vec` — which touches the peak pyramid's source, the LOD crossfade and the browser's own path (a page has no mapping and must keep the owned copy), so it is a design over `waveform`/`peaks` and not a change to the material module.
 
-  **Taken as a milestone, 2026-08-18: it is H7**, on the user's "es importante, hay que hacerlo". Reading the write path while staging it found the other half of the same defect — a stroke copies the material twice more, over samples already written — and the placement question the design was waiting on has an answer with three callers behind it. **Fixed by H7 the same day**, which is where the record of the fix is: the copy is gone in both directions, and the one that remains per stroke is the pyramid's, which is the sharing invariant rather than the material.
+  **Taken as a milestone, 2026-08-18: it is H7**, on the user's "it is important, it has to be done". Reading the write path while staging it found the other half of the same defect — a stroke copies the material twice more, over samples already written — and the placement question the design was waiting on has an answer with three callers behind it. **Fixed by H7 the same day**, which is where the record of the fix is: the copy is gone in both directions, and the one that remains per stroke is the pyramid's, which is the sharing invariant rather than the material.
 
-- ✅ **A reopened session draws less on every redefine, while the model is intact** *(found 2026-08-17 by the user, pressing save then open in `composer.py`: a clip's contents go, then the clip, and on the second cycle the takes' waveforms too — "pero siguen sonando con play")*. The last clause is the diagnosis: what is played is the arrangement, and it is right. The **model round-trips** — measured over three save/open generations of that same four-lane piece, and again in-process against a live server: the tree the editor hands the host after `Editor.load` carries the take clips' `buffer`, the curve's `points` and the surviving rolls' `notes`. So the tree sent is correct and what is drawn from it is not, which puts this in the host's **redefine** path rather than in the client.
+- ✅ **A reopened session draws less on every redefine, while the model is intact** *(found 2026-08-17 by the user, pressing save then open in `composer.py`: a clip's contents go, then the clip, and on the second cycle the takes' waveforms too — "but they keep sounding with play")*. The last clause is the diagnosis: what is played is the arrangement, and it is right. The **model round-trips** — measured over three save/open generations of that same four-lane piece, and again in-process against a live server: the tree the editor hands the host after `Editor.load` carries the take clips' `buffer`, the curve's `points` and the surviving rolls' `notes`. So the tree sent is correct and what is drawn from it is not, which puts this in the host's **redefine** path rather than in the client.
 
   Where to look, and why the shape is familiar: `/gui_def` on an already-defined root recycles ids and takes fresh ones, and this host has been bitten there twice already — a redraw dropping the handlers bound to the recycled ids (fixed in the client), and a buffer fetch that never completed because nothing woke the window (fixed here). A picture that degrades *per redefine* rather than per session smells like state kept against the old ids — a fetch keyed by a widget id that no longer draws that material, or a body's cached samples surviving into a widget that is now something else. **Not diagnosed further**, deliberately: it needs the window and a host-side trace, and guessing at it from the client is what the two earlier fixes already show costs a day.
 
@@ -7032,7 +7030,7 @@ finished work, where a pending item reads as done.
 
   **What would reopen this**: a save/open pass on the fixed example that still loses drawing. The evidence above says the host redraws what it is handed; it says nothing about a tree that is handed less. **Run by hand 2026-08-17, three save/open cycles over the four-lane piece: nothing was lost** — every lane keeps its label, its body and its material through all three, which is the acceptance this diagnosis was owed.
 
-- ✅ **A clip has two levels of editing and no interaction rules between them** *(opened 2026-08-17 by the user, after three attempts at the read-only body kept altering what the clip itself does: "estás enredando el código ... hay que poner reglas de interacción que no tenemos definidas". The attempts were reverted; what they were missing is written here.)*
+- ✅ **A clip has two levels of editing and no interaction rules between them** *(opened 2026-08-17 by the user, after three attempts at the read-only body kept altering what the clip itself does: "you are tangling the code ... we need to set interaction rules we have not defined". The attempts were reverted; what they were missing is written here.)*
 
   **The two levels, in the user's own terms.** A clip as a **rectangle** — where it sits, how long it is — and its **internal elements** — the notes, the break-points, the samples it holds. They are different things to edit and they are edited by hands that mean different things, and the host has no rule saying which one a press belongs to. Every attempt to add one (a read-only body, a pinned placement, a contested pixel) landed in the same place: the rectangle's own behaviour changed, because the detection of the *internal* objects and the rectangle's parts are racing each other.
 
@@ -7060,9 +7058,9 @@ finished work, where a pending item reads as done.
 
   What shipped with it: `layer` and `hidden` on the wire (and in both clients' builders), the `"layer"` payload, the split (`e`) and join (`j`) verbs as intents, and the client half — the arrangement's `Vector` carrying its window, a trim recorded as **one** edit so one undo reverses it, and a join refusing by name the case the model cannot express (an element reading several segments).
 
-- ✅ **A read-only clip body has no way to say so, so every drag on one flickers** *(found 2026-08-17 by the user, dragging notes on a pattern lane's clip in `composer.py`: "no se pueden editar visualmente las notas, parpadean, saltan y vuelven a su lugar original")*. The refusal itself is correct and is the acknowledgement working as designed — a `Sequence` over a pattern is forward-only, its notes are a *rendering* of an algorithm, and what comes back is the notes as they still are, which the host adopts by the ordinary drop-and-adopt rule (the client now sends a **reason** with it, `clients/python/PLAN.md`). What is missing is earlier than the refusal: **nothing in the protocol tells a widget its body is read-only**, so the roll offers the drag, draws it for its whole duration and then unwinds it. The user reads that as a broken editor rather than as material that cannot be edited here.
+- ✅ **A read-only clip body has no way to say so, so every drag on one flickers** *(found 2026-08-17 by the user, dragging notes on a pattern lane's clip in `composer.py`: "the notes cannot be edited visually, they flicker, jump and go back to their original place")*. The refusal itself is correct and is the acknowledgement working as designed — a `Sequence` over a pattern is forward-only, its notes are a *rendering* of an algorithm, and what comes back is the notes as they still are, which the host adopts by the ordinary drop-and-adopt rule (the client now sends a **reason** with it, `clients/python/PLAN.md`). What is missing is earlier than the refusal: **nothing in the protocol tells a widget its body is read-only**, so the roll offers the drag, draws it for its whole duration and then unwinds it. The user reads that as a broken editor rather than as material that cannot be edited here.
 
-  **The user's verdict on seeing it, 2026-08-17: "si el comportamiento de rechazo es correcto no se deberían poder mover los rectángulos que representan notas."** That is the acceptance, stated better than the entry had it: the picture must not follow a hand that cannot edit. It covers a second body the same way — a clip holding one placed **event** has no editable timeline either (its position is the placement's, so the clip is what moves), and today its note offers the same drag and unwinds it.
+  **The user's verdict on seeing it, 2026-08-17: "if the refusal behavior is correct, the rectangles that represent notes should not be movable."** That is the acceptance, stated better than the entry had it: the picture must not follow a hand that cannot edit. It covers a second body the same way — a clip holding one placed **event** has no editable timeline either (its position is the placement's, so the clip is what moves), and today its note offers the same drag and unwinds it.
 
   The pieces to build it with already exist and the shape is **not** decided here. `signal` carries `editable` as one of its capabilities, so a body-level capability is the established vocabulary rather than a new idea; the draw mode landed the other half — a refusal that is **visible** *and* consumes the press — so a host has somewhere to put the answer. What has to be settled with it: whether the capability is a prop of `clip` (and then of the `notes`/`points` bodies it can carry), what a refused press *looks like* so it reads as "not here" rather than as a dead widget, and whether the same prop covers the case of an editable body inside a locked lane. It touches the host, `docs/gui-protocol.md`, `docs/gui-props.md` and both clients' builders, so it is a milestone rather than a fix — recorded here because the eye pass found it and the roadmap has no entry for it.
 
@@ -7088,9 +7086,9 @@ finished work, where a pending item reads as done.
 
   **What it says about the tests, which is the part worth keeping:** every one of these verbs *is* tested, and every test drives the host's own `key`/`history` entry points — past the layer that turns a physical press into a letter. So the suite could not see it and no amount of it would have, which is exactly the seam the examples exist to cover.
 
-  **What it got wrong** *(found 2026-08-27 by the user, typing into `oscsend.py` in the manual review: "no se pueden poner acentos, solo ascii minuscula"; fixed the same day)*. The paragraph above says the text path's dead keys and IME behaviour are untouched, and they were not: `key_without_modifiers` was asked on **every** key, and it drops `Shift` as readily as `Ctrl`. So a field on the native front could hold no capital and no composed letter — `A` arrived as `a` and `A` with an accent as `a` — and the widget looked like it only spoke lowercase ASCII. It is asked only when Ctrl or Alt is down now, which is the only case it was ever for; everything a person types comes off `logical_key`, shifted and composed. The seam this sat in is the same one the entry names: the layer that turns a press into a letter has no test, because a `winit::KeyEvent` cannot be built outside winit, and the suite enters below it.
+  **What it got wrong** *(found 2026-08-27 by the user, typing into `oscsend.py` in the manual review: "accents cannot be typed, only lowercase ASCII"; fixed the same day)*. The paragraph above says the text path's dead keys and IME behaviour are untouched, and they were not: `key_without_modifiers` was asked on **every** key, and it drops `Shift` as readily as `Ctrl`. So a field on the native front could hold no capital and no composed letter — `A` arrived as `a` and `A` with an accent as `a` — and the widget looked like it only spoke lowercase ASCII. It is asked only when Ctrl or Alt is down now, which is the only case it was ever for; everything a person types comes off `logical_key`, shifted and composed. The seam this sat in is the same one the entry names: the layer that turns a press into a letter has no test, because a `winit::KeyEvent` cannot be built outside winit, and the suite enters below it.
 
-- ✅ **A sweep to the first or last sample left the pointer over nothing, and the copy answered nothing — silently** *(found 2026-08-15 by the user, in the same `editor.py` pass, right after the copy started working: "funciona salvo para las selecciones que incluyen el principio y el final del buffer"; fixed the same day)*. A block operation is addressed to what is under the pointer, which is right whenever there *is* something under it — and a drag out to either end of the material parks the pointer in the window's margin, or off the window entirely, where `CursorLeft` has already left it at `(-1, -1)`. `hit` found nothing, `clipboard_key` returned `None`, and nothing was emitted: not even a refusal, over a selection drawn on screen. Moving the pointer back into the middle made the same Ctrl+C work, which is how the addressee was identified rather than the extremes.
+- ✅ **A sweep to the first or last sample left the pointer over nothing, and the copy answered nothing — silently** *(found 2026-08-15 by the user, in the same `editor.py` pass, right after the copy started working: "it works except for the selections that include the beginning and the end of the buffer"; fixed the same day)*. A block operation is addressed to what is under the pointer, which is right whenever there *is* something under it — and a drag out to either end of the material parks the pointer in the window's margin, or off the window entirely, where `CursorLeft` has already left it at `(-1, -1)`. `hit` found nothing, `clipboard_key` returned `None`, and nothing was emitted: not even a refusal, over a selection drawn on screen. Moving the pointer back into the middle made the same Ctrl+C work, which is how the addressee was identified rather than the extremes.
 
   **The pointer still names the addressee whenever it is over a view** — the D4 decision is unchanged — and the *selection* names it when the pointer does not (`Host::selection_addressee`). Between several views carrying one, **the last selection made wins**: it is the only ordering a window has over its views, and every selection goes through one door (`set_timeline_selection`, whether a sweep, a `/gui_set` or an edit-back wrote it), so recording it is one line and it is never inferred. A selection cleared gives the title up, so nothing is addressed by accident.
 
@@ -7161,7 +7159,7 @@ finished work, where a pending item reads as done.
 
 - ✅ **A take drew nothing in its clip: an element drawn as a body reached its own drawing** *(found 2026-08-12, by eye on `gui_multitrack` opening the visual pass; fixed the same day)*. The three lanes of files came up as empty frames with a line across the middle. The line is what named the cause: it is the baseline `draw_take` puts down before the trace, so the data was there and the trace was not — the element was drawing, and drawing the wrong picture. A clip's body is an element like any other, and the frame hands it its container's axis on `Ctx::time`; the roll and the curve read it, and the signal element did not — so it fell through to `plot::draw`, which reads the **inline samples** and rules its own axes. A bulk take has no inline samples (it has its pyramid), so the plot had nothing to read, and `SignalElement::draw_body` — the body drawing the model documents, with the trace against the clip's span and no chrome of its own — was reachable from nobody. The fix is the missing fork, ahead of the presentations: placed on somebody else's axis, a stored non-navigable signal draws as a body. What let it survive is that the two shapes agree wherever a take is a sketch — an inline `data` clip drew *something* through the plot, which is what the tests and the older examples carry — so only a mapped take, the case the wire exists for, showed it. The regression test is exactly that case: a pyramid, zero samples in the tree, and one column per pixel of the clip demanded (36 vertices without the fix — the baseline alone — over 704 pixels).
 
-- ✅ **A rectangle over a waveform is not what a drag means** *(found 2026-08-14 by the user, by eye on the D3 pass: "el tipo de selección está invertido... sobre la forma de onda se puede hacer selección espectral (rectángulo arbitrario) y abajo está el espectrograma donde se puede hacer solo selección temporal"; fixed the same day)*. D3 shipped the value band on the **plain drag**, so a sweep over a waveform came back as a rectangle while the spectrogram beside it — the picture that actually has two measured axes — came back with a stripe. Nothing was swapped in the code, and that is what made it worth fixing rather than explaining: the reading is right even though the wiring is. A drag over a waveform means *this stretch of time* in every editor there has ever been, and a marquee that also cuts a band of amplitudes out of it answers a question nobody asked.
+- ✅ **A rectangle over a waveform is not what a drag means** *(found 2026-08-14 by the user, by eye on the D3 pass: "the kind of selection is inverted... over the waveform a spectral selection (an arbitrary rectangle) can be made, and below is the spectrogram, where only a time selection can be made"; fixed the same day)*. D3 shipped the value band on the **plain drag**, so a sweep over a waveform came back as a rectangle while the spectrogram beside it — the picture that actually has two measured axes — came back with a stripe. Nothing was swapped in the code, and that is what made it worth fixing rather than explaining: the reading is right even though the wiring is. A drag over a waveform means *this stretch of time* in every editor there has ever been, and a marquee that also cuts a band of amplitudes out of it answers a question nobody asked.
 
   **Fixed by making it a step**, which is the track's own first decision applied to itself: a mode is a gesture plan, not a state the host decides. `select` sweeps the span; **`select_box`** sweeps the span restricted on the second axis, and it **declines** where the picture measures only time — so `"select_box select"` is one binding that draws a rectangle where there is one to draw and the plain span where there is not, and the day D5 gives a spectrogram its bin range that same binding answers there with nothing rewired. The user's own note settles what D5 has to preserve: *both* selections belong on a spectrogram, the temporal sweep and the bins rectangle, which is exactly what a two-step plan per modifier already expresses. `editor.py` binds it on Ctrl and says in its header what each view does with it.
 
@@ -7593,9 +7591,8 @@ finished work, where a pending item reads as done.
   **window manager's own chrome** — a resize border, the title bar — and the
   clip jumps to the beginning of the axis, at the exact pixel the pointer
   leaves the content. The user had seen the same thing on a knob and said what
-  it was: *"lo de las coordenadas mal sobre el chrome de la ventana ya había
-  pasado con los knob. Este es un problema que hay que solucionar de manera
-  general."*
+  it was: *"the wrong coordinates over the window's chrome had already happened
+  with the knobs. This is a problem that has to be solved in a general way."*
 
   The desktop front kept the pointer as a pair and wrote `(-1.0, -1.0)` into it
   on `CursorLeft` — a **sentinel for *not here*, stored in the field that means
@@ -7826,15 +7823,15 @@ finished work, where a pending item reads as done.
 
 - ✅ **The browser host's space bar never reaches `play_key`** *(fixed 2026-09-14: the page's key path answers the space bar among the window's keys, after a focused field and the widget under the cursor, as the native one does -- the take under the pointer, or the window's `play` over nothing, which is also what it does before a pointer has been over the canvas at all, since a piece is the window's. Reading the two key paths side by side found `Ctrl`+`S` missing from the page too, and it tells the window `save` now, as a desktop window does. Unchecked in a tab until the page is run by hand.)* *(found 2026-09-13, moving a piece's transport into the applications crate)*. The native front routes a space to `play_key`, which plays the take under the pointer or, over nothing a take answers for, tells the window `play` — what a multitrack editor reads as play/pause. The browser front maps the key to `HostKey::Char(' ')` for a focused field and stops (`host/web/input.rs`), so in a page the space bar neither plays a take nor reaches a script's editor. The host is one host compiled twice, and a key that does something in a window and nothing in a tab is the divergence that rule forbids: the page's key path should reach the same `play_key`.
 
-- ✅ **A join made in a standalone host stitched an empty buffer** *(found 2026-09-13 by the user, by ear: "Join crea un clip vacío que falla al estirarlo hacia la derecha"; the log said `buffer 4: 0 frames`)*. The entry that closed a join's source "at edit time" made it on the wrong server: `mint_sources` sent `/buffer_stitch` to the **player**, while the picture reads the **session**, which owns the takes. The player could sound it; the session had no such buffer, so the box drew empty and its edge had no length to stop at. A host with two servers now stitches in the session and attaches the join on the player once that stitch is done, which is the order a session's open already followed. Held by `a_stitch_done_in_the_session_is_attached_once`; the two sends themselves have no test, because nothing here fakes a server link.
+- ✅ **A join made in a standalone host stitched an empty buffer** *(found 2026-09-13 by the user, by ear: "Join creates an empty clip that fails when stretched to the right"; the log said `buffer 4: 0 frames`)*. The entry that closed a join's source "at edit time" made it on the wrong server: `mint_sources` sent `/buffer_stitch` to the **player**, while the picture reads the **session**, which owns the takes. The player could sound it; the session had no such buffer, so the box drew empty and its edge had no length to stop at. A host with two servers now stitches in the session and attaches the join on the player once that stitch is done, which is the order a session's open already followed. Held by `a_stitch_done_in_the_session_is_attached_once`; the two sends themselves have no test, because nothing here fakes a server link.
 
 - ✅ **A standalone host stopped hearing its player 200 ms after it booted, so a piece never sounded** *(found 2026-09-13, diagnosing the by-ear check `O32` was left open for: the space bar and the transport row logged `the piece is rolling` and nothing sounded)*. `await_player` waits for a spawned player with a 200 ms read timeout on the leg's socket, and that socket is an `Arc` the reply thread shares; the timeout stayed on, and `server_reply_loop` returned on any error but a refused connection. So the first 200 ms of quiet ended the thread, the piece's step queue was left held behind a `/done` nobody would deliver, and `/transport_play` -- which waits for its own `/done` -- sat behind it. The player had the whole graph, in the governed group, stopped at 0; `/proc` showed no `clausters-gui-server` thread. Now the probe takes its timeout off when it is done, and the loop reads a timeout as a quiet socket rather than a closed one. It was not a stale binary, and it is not what `crates/clausters-document/PLAN.md` `O33` is about, though it is what that milestone's log line showed: a host's reply path that can die unseen is exactly what one step runner fed by the same delivery everywhere would not have.
 
-- ✅ **A standalone host's head never swept, and its meters never moved** *(found 2026-09-13 by the user, by eye, once the piece sounded: "Aún no está el cursor de reproducción solo el posicionamiento. Aún no están los vúmetros")*. Two things a client does on every turn that the host's window never got.
+- ✅ **A standalone host's head never swept, and its meters never moved** *(found 2026-09-13 by the user, by eye, once the piece sounded: "There is no play cursor yet, only the positioning. The meters are not there yet")*. Two things a client does on every turn that the host's window never got.
   - **The anchor.** A linked timeline group is seeded by its **first** member's def-time props, and the multitrack editor's window puts the ruler first and stated `playhead_at` only on the piece -- so the group opened parked, and only the clients' `Transport`, which sets the anchor with a `/gui_set` after the window is open, ever swept it. The window (`clausters_apps::multitrack`) now states the anchor on the ruler too, so every endpoint opens it anchored and the client's later set is a restatement. Held by `a_piece_window_opens_with_its_head_anchored`.
   - **The meters.** The window is composed before anything sounds, and a client hands its editor the meters' buses in every `sync`; the host never did, so the strips had no bus to read. `sound_piece` now tells the editor and sets the piece's `meters` when they change. Held by `a_sounding_piece_tells_its_window_where_the_meters_are`. It is one more thing the host hands its editor by a path of its own, which is `crates/clausters-document/PLAN.md` `O33`'s third point.
 
-- ✅ **A bent envelope was drawn bent and heard straight** *(found 2026-09-13 by the user, in `clients/python/examples/editors/edit_multitrack.py`: "Se puede editar pero no surte efecto")*. `nodes::plan` sampled every curve's table linearly between break-points and never read a point's `data`, a choice written down on the grounds that `data` is opaque to the document. But the multitrack editor had already settled what `shape` and `curve` mean there -- its projection draws them and its reading writes them -- so the only thing left not reading them was the sound. The table now takes each segment's shape from its first point through `clausters_core::envshape::shape_value`, which is what the host draws the curve with; a point with no shape stays linear. Held by `a_curve_is_sampled_with_the_shape_its_points_state`.
+- ✅ **A bent envelope was drawn bent and heard straight** *(found 2026-09-13 by the user, in `clients/python/examples/editors/edit_multitrack.py`: "It can be edited but it has no effect")*. `nodes::plan` sampled every curve's table linearly between break-points and never read a point's `data`, a choice written down on the grounds that `data` is opaque to the document. But the multitrack editor had already settled what `shape` and `curve` mean there -- its projection draws them and its reading writes them -- so the only thing left not reading them was the sound. The table now takes each segment's shape from its first point through `clausters_core::envshape::shape_value`, which is what the host draws the curve with; a point with no shape stays linear. Held by `a_curve_is_sampled_with_the_shape_its_points_state`.
 
 - ✅ **In a standalone host a bent envelope straightened itself** *(found 2026-09-13 by the user: in the standalone the curve would not bend, while in the Python example it did)*. The multitrack hands each curve its points as one `f64` run (`parse_points` in `elements/multitrack/props.rs`), so a shape reaches the curve as `5.0`, and the curve parsed a shape with `as_i64`, which a float fails: it read linear. A client never noticed, because its host keeps the bend it drew and nothing sends the points again after an acknowledged edit; the standalone host redraws the whole piece after every applied edit (`adopt`), so each bend came back straight -- drawn straight and, since the document had the shape, heard bent. The curve now reads a float shape as the shape it names. *(The first attempt made the projection write an integer, which changed nothing: the float was made inside the host.)* Held by `a_shape_written_as_a_float_is_that_shape`.
 
@@ -7842,17 +7839,17 @@ finished work, where a pending item reads as done.
 
 - ✅ **A standalone host never corrected a name it minted, and took the piece's counter for the conversation's version** *(found 2026-09-13, replaying the multitrack editor's recorded exchange against the host)*. After a split the host mints the new box's name and the document mints its id; a client's editor answers with the piece whole when the two differ (`settle`, after every changed turn), and the host never asked, so its window went on naming the box by the word it made up. And the version the host stated back was `piece.version`, which moves once per document edit, where a client's editor states the history's counter: a split is two edits and one turn, so from the first split on the two disagreed, and a gesture would have been refused as overtaken. The host now settles after each changed turn and keeps the conversation's version apart (`Owner::conversed`). Held by `the_recorded_exchange_is_answered_the_same_by_the_host`.
 
-- ✅ **A joined box sounded and drew empty until it was moved to another track** *(found 2026-09-13 by the user, right after the join's parts were fixed: "no mostró la forma de onda en el clip resultante pero reprodujo correctamente el contenido. Al cambiar el clip de track apareció")*. Measured, not guessed: a temporary log of what each clip is drawn from read `source=-1 take=false` for the joined box after `j`, and `source=8 take=true` after the move. Following both turns through `answer_piece` gave the cause. Each turn hands the editor the host's buffer table first; the join's source enters that table only afterwards, in `mint_sources`; `adopt` projects the piece from the owner and draws the box right, and then the editor's `settle` -- which answers the join because the box names changed -- pushed the whole piece again, projected with the editor's table from **before** the source was minted, so the box went back to no buffer. The playback reads the owner's table, which is why it sounded. A move to another track starts its turn by handing the table over again, now with the source in it, which is why that fixed the picture. It was introduced the same day, when the host's settle was wired; a client's editor is handed its table before every call (`_sync_core`). The host now hands the editor the current table before `settle` and before a step's `resync_all`. Held by `a_joined_box_is_drawn_over_the_buffer_its_source_was_made_in`.
+- ✅ **A joined box sounded and drew empty until it was moved to another track** *(found 2026-09-13 by the user, right after the join's parts were fixed: "it did not show the waveform in the resulting clip but played the contents correctly. On moving the clip to another track it appeared")*. Measured, not guessed: a temporary log of what each clip is drawn from read `source=-1 take=false` for the joined box after `j`, and `source=8 take=true` after the move. Following both turns through `answer_piece` gave the cause. Each turn hands the editor the host's buffer table first; the join's source enters that table only afterwards, in `mint_sources`; `adopt` projects the piece from the owner and draws the box right, and then the editor's `settle` -- which answers the join because the box names changed -- pushed the whole piece again, projected with the editor's table from **before** the source was minted, so the box went back to no buffer. The playback reads the owner's table, which is why it sounded. A move to another track starts its turn by handing the table over again, now with the source in it, which is why that fixed the picture. It was introduced the same day, when the host's settle was wired; a client's editor is handed its table before every call (`_sync_core`). The host now hands the editor the current table before `settle` and before a step's `resync_all`. Held by `a_joined_box_is_drawn_over_the_buffer_its_source_was_made_in`.
 
-- ✅ **Joining cuts of joins nested sources until the server refused one** *(found 2026-09-13 by the user, "venía andando todo bien, fue juntando recortes de varios clips... hasta que el último join que hice falló"; the log said `/buffer_stitch: part 0: sources are stitched more than 4 deep`)*. A join minted a source whose parts named the sources of the boxes it joined, and a box over a join names that join -- so joining cuts of joins built a join of joins, one level per join, until the fifth. The user stated the model this breaks: *"los segmentos no deberían anidarse como estructura de datos, son punteros de dos dimensiones a un buffer o archivo, como un memory view { sample, length }, join une segmentos creando un nuevo objeto segmentos [ { buf, sample, length }, ... ]. No puede haber recursividad, los objetos deben ser de solo lectura."* Now `read_join` reads a box over a join **through** to the takes that join is made of, cut to the span the box shows, so every source a join mints is one flat list of spans of takes however many joins it was made over. The multitrack editor keeps the segments of each join it mints (and a standalone host hands it the session's), which is all it needs: a join is read-only and never edited, so what it was made of is what it is. Held by `a_join_over_a_joined_box_names_only_takes`. The refusal it produced also left a hollow box, which is the entry below.
+- ✅ **Joining cuts of joins nested sources until the server refused one** *(found 2026-09-13 by the user, "everything was going well, it kept joining cuts from several clips... until the last join I made failed"; the log said `/buffer_stitch: part 0: sources are stitched more than 4 deep`)*. A join minted a source whose parts named the sources of the boxes it joined, and a box over a join names that join -- so joining cuts of joins built a join of joins, one level per join, until the fifth. The user stated the model this breaks: *"segments should not nest as a data structure, they are two-dimensional pointers into a buffer or a file, like a memory view { sample, length }; join joins segments creating a new segments object [ { buf, sample, length }, ... ]. There can be no recursion, the objects must be read-only."* Now `read_join` reads a box over a join **through** to the takes that join is made of, cut to the span the box shows, so every source a join mints is one flat list of spans of takes however many joins it was made over. The multitrack editor keeps the segments of each join it mints (and a standalone host hands it the session's), which is all it needs: a join is read-only and never edited, so what it was made of is what it is. Held by `a_join_over_a_joined_box_names_only_takes`. The refusal it produced also left a hollow box, which is the entry below.
 
 - ✅ **A stitch the server refuses still leaves a minted source behind** *(found 2026-09-13, diagnosing the join below; fixed the same day, see the note at its end)*. Both endpoints commit the source a join minted before the server has made it: the standalone host writes it into the session and the take table in `mint_sources` and pushes the stitch, and the Python client sends `Buffer.stitch(..., wait=False)`. When the server refuses (`/fail`), the piece already holds a box that is a window onto a source with no buffer -- drawn empty, silent, and fetched forever by the picture -- and nothing says why. A join whose parts cannot be made should be refused as an edit, with its reason, rather than applied and left hollow: either `sources::stitch` answers a part past its take as unmakeable before anything is recorded, or the endpoints undo the join when the stitch fails.
 
   **Fixed 2026-09-13 the first way, in the shared crate rather than in `sources::stitch`**, since by the time a stitch is built the join is already recorded. A trim is not bounded by its take, so a box can play past the end of its samples, and `read_join` is the first place the box and the take's length meet: it now refuses such a join as an edit, "one of these boxes reads past the end of its take" (one frame over is the rounding of seconds to frames, and is cut). The length comes through the table every caller already hands the editor: `Buffers::frames`, read by `projection::lengths` from an entry's `frames` (a zero means unknown, and an unknown length checks nothing, as before). Both clients' `sync` now send `Sources.held()`, which already carried it, and the standalone host hands its takes' frames with `set_lengths`. Python's `held()` reads `frames` only where it is a number, since a timeline's is not. Held by `a_join_past_the_end_of_a_take_is_refused` and `a_table_states_the_lengths_it_knows` in `clausters-editing`; the host's own join test had stated a take shorter than its boxes read, and now states the four seconds they do. A stitch the server refuses for any other reason still leaves the source unmade; none is reachable from an editor's own join now that joins are flat and bounded.
 
-- ✅ **A join over more than two segments at once fails** *(the count was not the cause; diagnosed and fixed the same day -- see the note at its end)* *(found 2026-09-13 by the user, in `clients/python/examples/editors/edit_multitrack.py`, checking the step runner: "falla join cuando se unen más de dos segmentos a la vez")*. A join of two fragments works, reordered or not; selecting three or more and pressing `j` does not. Not diagnosed yet: whether the refusal is the hand's (`why_not_joined`), the document's (`edit::join_regions` over a run whose parts are not all consecutive), or the stitch the minted source becomes, is the first question.
+- ✅ **A join over more than two segments at once fails** *(the count was not the cause; diagnosed and fixed the same day -- see the note at its end)* *(found 2026-09-13 by the user, in `clients/python/examples/editors/edit_multitrack.py`, checking the step runner: "join fails when more than two segments are joined at once")*. A join of two fragments works, reordered or not; selecting three or more and pressing `j` does not. Not diagnosed yet: whether the refusal is the hand's (`why_not_joined`), the document's (`edit::join_regions` over a run whose parts are not all consecutive), or the stitch the minted source becomes, is the first question.
 
-  *Reported again the same day, in the standalone host after `O33` closed: "sigue habiendo problemas de join sin contenido". Joins made by a hand can still come out as a box with no contents. Whether that is this defect or another one is part of the diagnosis; the join a session opens with now plays what it joined.*
+  *Reported again the same day, in the standalone host after `O33` closed: "there are still problems with joins without contents". Joins made by a hand can still come out as a box with no contents. Whether that is this defect or another one is part of the diagnosis; the join a session opens with now plays what it joined.*
 
   **Diagnosed, 2026-09-13, from the host's own log and the code, not by trying.** The count was never the cause; a join over three boxes is simply likelier to include a trimmed one. The log said it: `/buffer_stitch: part 0: buffer 1 has 96000 frames and the part asks for 134434`. A trim reported by a hand slides a box's window start and **leaves its duration as the piece had it** (`picture::read`, on purpose: the report says how long a box is, not how much of the source is behind it), so a left-hand trim of 0.8 s on a box over a two-second take left a window claiming 0.8 s to 2.8 s -- and a split leaves its left half the same way. Nothing heard or drawn reads `window.duration`, so none of that showed, until `read_join` built each part out of it: the part asked for samples the take does not have, the server refused the whole stitch, and the joined box was a window onto a source nobody made (the entry above). `read_join` now takes each span from what the box **shows** -- its length from its start, through the piece's tempo map -- and the joined box is as long as those spans. Held by `a_trimmed_box_joins_as_what_it_shows` in `clausters-editing`. What is left of the chain is filed on its own: a refused stitch still leaves a minted source (above), the picture fetches every take on every repaint (below), and what `window.duration` means after a trim (`crates/clausters-document/PLAN.md`, "Found by use").
 
@@ -7957,9 +7954,9 @@ finished work, where a pending item reads as done.
   inside a box instead of a "`clip` roll".
 
 - ✅ **The audio editor showed no play cursor, and space paused instead of
-  stopping** *(found 2026-09-24 by the user, in `edit_audio.py`: "no puedo
-  saber dónde está el cursor"; fixed the same day)*. The take monitor rolled
-  the transport and drew nothing of it, so where the sound was could only be
+  stopping** *(found 2026-09-24 by the user, in `edit_audio.py`: "I cannot
+  tell where the cursor is"; fixed the same day)*. The take monitor rolled the
+  transport and drew nothing of it, so where the sound was could only be
   guessed; and a second press paused where the pass stood, so the next press
   continued from there rather than from the mark. Now the monitor anchors the
   view's play cursor to the transport's position (the host draws it from the
@@ -7978,16 +7975,17 @@ finished work, where a pending item reads as done.
   the position back on the mark, so the line stands there.
 
 - ✅ **Space did nothing in a freshly opened audio editor until the mouse
-  moved** *(found 2026-09-24 by the user: "al abrir la ventana el cursor está
-  pero tocar barra no hace nada hasta que no se cambia de posición con el
-  mouse"; fixed the same day)*. The monitor's keys were addressed to the view
-  under the pointer, and a window that has just opened has no pointer: it is
-  unknown until it moves, so the native front skipped the take gesture and
-  sent the multitrack's window verb, which an audio editor does not answer.
-  Now space, Home and End with no pointer — or over nothing — reach the
-  window's **one** take, when the window has a single timeline view and it
-  draws samples; a window of several views (a multitrack, its ruler, its take
-  panes) is still addressed by pointing. Both fronts.
+  moved** *(found 2026-09-24 by the user: "on opening the window the cursor
+  is there, but pressing the space bar does nothing until the position is
+  changed with the mouse"; fixed the same day)*. The monitor's keys were
+  addressed to the view under the pointer, and a window that has just opened
+  has no pointer: it is unknown until it moves, so the native front skipped
+  the take gesture and sent the multitrack's window verb, which an audio
+  editor does not answer. Now space, Home and End with no pointer — or over
+  nothing — reach the window's **one** take, when the window has a single
+  timeline view and it draws samples; a window of several views (a
+  multitrack, its ruler, its take panes) is still addressed by pointing. Both
+  fronts.
 
 - ✅ **A mono take was heard in the left ear only** *(found 2026-09-24 by the
   user in `edit_audio.py`, who took it for a regression; it was not — the
@@ -8374,9 +8372,9 @@ module of its own.
 
   **Fixed 2026-10-04, decided by the user: `Ctrl` is the platform's command key.** The two fronts read one rule (`winit_keys::command`): on a Mac the host's Ctrl is Command -- natively when built for macOS, in a page when the browser says it runs on one -- and Control is the modifier the host has no name for, as the logo key is elsewhere; a key pressed with that one reaches nothing, so Control+E is not a bare `e`. It holds for every gesture qualified by Ctrl, not only the keys, which is how a desktop toolkit maps it there. A file may spell it `Cmd`, and a menu on a Mac shows `Cmd+Z`.
 
-- ✅ **The host's text was half again the size of a desktop's, and every symbol looked small beside it** *(found 2026-10-05, the user looking at the score editor: "aún con 130% el texto está muy grande ... hay que buscar las proporciones", and then pointing at the text of the page the window was mounted in)*. The default `text_size` was 2: capitals 14 logical pixels high, the whole cell, where a browser's default text has capitals of 11 to 12 and an interface's 9 to 10 -- and with no air in its line, since the line *was* the capitals. **Fixed 2026-10-05: the default is 1.5**, capitals three quarters of the cell, and **a line is the cell**: `size::line_box` no longer shrinks with the text, so a label is as high as a control and a table's rows keep their pitch. Nothing else in the table moved but the two roles measured in characters (`header_w`, eight characters, 96 -> 72). It is the size of every window, not the score editor's; a script that wants the old one says `text_size: 2`. `docs/decisions.md`, "Text is three quarters of its line".
+- ✅ **The host's text was half again the size of a desktop's, and every symbol looked small beside it** *(found 2026-10-05, the user looking at the score editor: "even at 130% the text is too big ... the proportions have to be found", and then pointing at the text of the page the window was mounted in)*. The default `text_size` was 2: capitals 14 logical pixels high, the whole cell, where a browser's default text has capitals of 11 to 12 and an interface's 9 to 10 -- and with no air in its line, since the line *was* the capitals. **Fixed 2026-10-05: the default is 1.5**, capitals three quarters of the cell, and **a line is the cell**: `size::line_box` no longer shrinks with the text, so a label is as high as a control and a table's rows keep their pitch. Nothing else in the table moved but the two roles measured in characters (`header_w`, eight characters, 96 -> 72). It is the size of every window, not the score editor's; a script that wants the old one says `text_size: 2`. `docs/decisions.md`, "Text is three quarters of its line".
 
-- ✅ **An outline glyph was a character-wide cell, and a thin stroke was lost in it** *(the same day; the user: "se deforma el sostenido de la barra de herramientas, le falta una línea")*. A window's outlines (`font::outline`) were centred in the bitmap's cell and stepped by its nominal advance, and a music font's uprights -- 17 units of 1000 -- are half a pixel at an icon's size: with no antialiasing a fill that thin lands between pixel centres and is not drawn. **Fixed**: an outline steps by its own width (never under the cell), and under the size where such a stroke is a pixel its edges are drawn over the fill, as wide as what it is short of one (`outline::HINT`); a single character wider than the box it is centred in is drawn across it instead of cut to an ellipsis (`font::text_centered`).
+- ✅ **An outline glyph was a character-wide cell, and a thin stroke was lost in it** *(the same day; the user: "the sharp in the toolbar is deformed, it is missing a line")*. A window's outlines (`font::outline`) were centred in the bitmap's cell and stepped by its nominal advance, and a music font's uprights -- 17 units of 1000 -- are half a pixel at an icon's size: with no antialiasing a fill that thin lands between pixel centres and is not drawn. **Fixed**: an outline steps by its own width (never under the cell), and under the size where such a stroke is a pixel its edges are drawn over the fill, as wide as what it is short of one (`outline::HINT`); a single character wider than the box it is centred in is drawn across it instead of cut to an ellipsis (`font::text_centered`).
 
 - ✅ **A page's text was drawn at 1.4 times the size it was laid out for** *(the same day)*. The `score` element took the font size the engraver names -- the em -- for the height of the host's line of capitals. Fixed (`graphics::score::CAP_PER_EM`); the record is in `crates/clausters-apps/PLAN.md`, "Two lines of the page's head run into each other".
 
@@ -8384,13 +8382,13 @@ module of its own.
 
 - ✅ **An element could not be told the focus had left it** *(the same day, building the score's in-place text edit)*. A field delivers on every key, so nothing ever needed to end an edit; an element that holds one until it is done had no way to learn that a press went to a tool. **Fixed**: `Element::blur`, called from the one door that moves the focus (`gestures::focus::set`), and whatever it answers is reported like a key's answer.
 
-- ✅ **A widget's text is not on whole pixels at a fractional display factor** *(found 2026-10-05)*. The table's text roles are quantized when a window resolves them, and a widget's own `text_size` deliberately was not ("the number it sent, scaled"): at a factor of 1.25 the default 1.5 is 1.875 font pixels to the cell pixel, and the bitmap face's own pixels came out unequal. **Fixed 2026-10-05** (the user: "solucioná el problema del escalado"): the bitmap face is drawn at the whole step nearest the size asked (`font::bitmap_pixel`; 1.5 the one half step), centred in the cell that size measures, so every measurement is what it was and no layout moves. A real face never had the grid.
+- ✅ **A widget's text is not on whole pixels at a fractional display factor** *(found 2026-10-05)*. The table's text roles are quantized when a window resolves them, and a widget's own `text_size` deliberately was not ("the number it sent, scaled"): at a factor of 1.25 the default 1.5 is 1.875 font pixels to the cell pixel, and the bitmap face's own pixels came out unequal. **Fixed 2026-10-05** (the user: "fix the scaling problem"): the bitmap face is drawn at the whole step nearest the size asked (`font::bitmap_pixel`; 1.5 the one half step), centred in the cell that size measures, so every measurement is what it was and no layout moves. A real face never had the grid.
 
-- ✅ **A window draws with the built-in face unless a script hands one over** *(found 2026-10-05; the user: "el font integrado es muy malo")*. The rasterizer was a feature (`font-atlas`), compiled into the web build and not into the host the Python package stages, and it shipped no face. **Decided and done 2026-10-05, reversing the earlier decision** (the user: "Revertí todas mis decisiones ... fueron hechas para un momento específico del desarrollo. Agregale rasterizado"): `font-atlas` is a default feature, and the crate carries the face -- a subset of DejaVu Sans, 238 KB, in `assets/fonts/` with its license and the script that makes it -- which each shell loads as it starts (`Host::load_default_face`). The same text in a native window and in a page, with nothing to find and nothing to fetch; the implicit search of the system's faces is removed, and `--font` and `/gui_font` still name another. The bitmap face is the floor: a build without the feature, a host with no face loaded (every test's). `docs/decisions.md`, "A host draws with a face it carries, and antialiased".
+- ✅ **A window draws with the built-in face unless a script hands one over** *(found 2026-10-05; the user: "the built-in font is very bad")*. The rasterizer was a feature (`font-atlas`), compiled into the web build and not into the host the Python package stages, and it shipped no face. **Decided and done 2026-10-05, reversing the earlier decision** (the user: "I reverted all my decisions ... they were made for a specific moment of the development. Add rasterization to it"): `font-atlas` is a default feature, and the crate carries the face -- a subset of DejaVu Sans, 238 KB, in `assets/fonts/` with its license and the script that makes it -- which each shell loads as it starts (`Host::load_default_face`). The same text in a native window and in a page, with nothing to find and nothing to fetch; the implicit search of the system's faces is removed, and `--font` and `/gui_font` still name another. The bitmap face is the floor: a build without the feature, a host with no face loaded (every test's). `docs/decisions.md`, "A host draws with a face it carries, and antialiased".
 
 - ✅ **Nothing is antialiased by default** *(found 2026-10-05)*. `--msaa` existed and defaulted to 1. **Done 2026-10-05, reversing the earlier default** (the user: "Agregale ... antialiasing"): `host::DEFAULT_MSAA` is 4, for the native host and the page alike; `--msaa 1` / `[gui] msaa` / `GuiBridge.msaa(1)` turn it off. The stroke hint of an outline glyph stays: four samples make a half-pixel stroke a half-grey one, and the hint makes it a pixel.
 
-- ✅ **An editor's window was repainted thirty times a second for as long as it was open** *(found 2026-10-05, measuring what the three above cost; the user: "comprobá la performance, optimizá lo que se pueda sin perder calidad de imagen")*. Measured on the score editor's page in a browser, main-thread time as a share of one core: **17.0 % at rest and 16.5 % playing**, the same, because a playhead anchored at 0 on a transport's position declares a clock and the tick repainted every window that declared one -- whether or not the transport rolled. Three things, none of which changes a pixel:
+- ✅ **An editor's window was repainted thirty times a second for as long as it was open** *(found 2026-10-05, measuring what the three above cost; the user: "check the performance, optimize whatever can be optimized without losing image quality")*. Measured on the score editor's page in a browser, main-thread time as a share of one core: **17.0 % at rest and 16.5 % playing**, the same, because a playhead anchored at 0 on a transport's position declares a clock and the tick repainted every window that declared one -- whether or not the transport rolled. Three things, none of which changes a pixel:
   - **A window that shows a playhead and nothing fed live is repainted when its counter moves** (`Host::playheads_moved`, `live::tree_is_fed`), in both shells. At rest: 17.0 % -> **3.0 %**, part of it the measuring loop's own.
   - **A page keeps the fills it tessellated** (`graphics::score::Fills`): one fill to a glyph per octave of zoom, where every placement of every glyph was read from its path and tessellated on every frame. One render of the example's page, native release: 0.446 ms -> **0.094 ms**.
   - **A triangle wholly inside its clip is not walked round it**, and one wholly outside is dropped by its corners' sides (`Mesh::tri`): the profile's largest single function while playing.

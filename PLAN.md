@@ -231,7 +231,7 @@ completed items lives in the git history.)
 
 - ✅ **M33 — A group is called something** *(done 2026-08-01)* — a group was addressable only by the id its client happened to allocate, which is enough for a node tree and not enough for a console: a DAW channel, a console group, a send are all *named* things, and a client building them out of groups had no way to say which was which. **`/group_new` takes an optional name per group** and **`/group_name groupID name`** renames one: a **referenceable label on top of the id** — the id remains the identity every command addresses and every reply reports, the name is a second way to refer to the same group — unique among siblings, cleared by an empty name, changed by the same command. The label makes the tree navigable by **path**: every group contributes a segment (its name, or its **decimal id** when unnamed, so nothing falls out of addressing), the root is `/`, and **`/group_query <path>`** resolves one to its id, replying `-1` when nothing answers (absence is a state, the `/node_query` rule). A path is never accepted where a node id goes — resolve once, then command by id — which keeps the ~25 node commands' parsing and their hot path untouched. Three rules the server enforces: unique among siblings, never all digits (an unnamed group answers to its id), no `/` (the server composes the path). A name carried by `/group_new` is judged **before** the group exists, against the group it would land in, so a refused label refuses the creation rather than leaving an anonymous group behind. Reported everywhere a node is: `/node_query.reply` after `headID, tailID`, `/group_dumpGraph` quoted next to the id, `/group_queryTree.reply` giving every node the uniform shape `id, count, name`, and the **`/node_start`/`/node_end` notifications** as a last argument — so a client watching the tree learns which channel came up or went away, and for a death there is no query left to make (the mirror keeps a departing group's name as a bounded **epitaph**, since it drops the entry at translation while the death notice waits on the engine). The shapes follow the feature rather than scsynth's, which is not a cost: nothing but our own clients speaks this protocol, and the packages move together. **The name lives only in the network-side `TreeMirror`**: `node::Group` grew no field, no `Cmd` reaches the engine, and the audio thread never sees a name, so the feature has no RT cost by construction. Ports in both clients (`Group("mixer")` / `Group.new(server, {name})`, `rename`, `Server.group_at` / `groupAt`, and the tree/node parsers), `examples/mixer_paths.py`, rationale in `docs/decisions.md`.
 
-- ✅ **M34 — Where the server's time goes, and it is not the operating system's answer** *(opened 2026-09-15 by the user, asking how to measure the server's CPU use per thread, and then -- reading the first sketch -- rejecting the name it had: "por que le pusiste threads de nombre al metodo de la api?". The rejection is the milestone's shape and not a detail, so it is recorded first.)*
+- ✅ **M34 — Where the server's time goes, and it is not the operating system's answer** *(opened 2026-09-15 by the user, asking how to measure the server's CPU use per thread, and then -- reading the first sketch -- rejecting the name it had: "why did you name the API method threads?". The rejection is the milestone's shape and not a detail, so it is recorded first.)*
 
   **What was missing.** `/server_status` reports one CPU figure, the audio thread's per-block load (M24). That answers *is the server keeping up* and not *what is it spending the time on*, which is the question a session that has grown heavy actually asks: a FaustDef compiling, a soundfile loading, a burst of commands and the DSP itself all cost real time, and only one of them is in that number. Outside the process the answer exists -- the threads are named (`clausters-dsp-N`, `faust-compiler`, `nrt`, `diskin`), so `top -H`, `pidstat -t` and `perf` read it -- but that is Linux's answer, not the server's, and no client can ask for it.
 
@@ -429,9 +429,7 @@ Cargo feature: every build has both clocks and both queues.
   **Acceptance:** a locate while stopped moves the published position, and the graph reads the new one on play; a reader following the position renders the same samples as the same span expressed in a score and rendered in batch (T1's own technique, over a seeded def, deliberately not block-aligned); loop points wrap with no client in the loop and no discontinuity at the seam; the elapsed clock stays monotonic across a locate and `/sched_atTransport` behaves exactly as before; `tests/rt_safety.rs` stays green. **The packages move together**: `/transport_query.reply` gains the position **appended** (so a client reading only the older fields keeps working), `/transport_loop` and whatever the locate grows get their builders in both clients, and `docs/schemas.md` plus `docs/sample-clock.md` carry the two-quantity distinction — which is the part most likely to be misread, since one of them is called "the transport clock" and is not the piece's time.
 
 - ✅ **T7 — The transport stops at an end mark** *(done 2026-09-24; asked for by the user
-  2026-09-24, out of the audio editor: "al llegar al final del archivo la
-  reproducción tiene que parar y el cursor de reproducción vuelve a la posición
-  del cursor de posicionamiento"; taken before T6, which then carries it per
+  2026-09-24, out of the audio editor: "on reaching the end of the file, playback has to stop and the play cursor goes back to where the position cursor is"; taken before T6, which then carries it per
   transport)*. The transport rolls until something stops it, so a take played
   without a loop plays on past its end forever, and a multitrack past its last
   clip. What says where a pass ends has to be the engine's, for T5's reason:
@@ -555,10 +553,7 @@ Cargo feature: every build has both clocks and both queues.
   clock, in the same pass.
 
 - ✅ **T8 — The transport plays event lanes** *(done 2026-09-28; opened the same day by the
-  user, out of the notes editor: "Pianoroll con midi/osc events debería correr
-  con el transport del servidor, de lo contrario estaríamos duplicando
-  funcionalidad. Pianoroll contiene datos concretos de la misma manera que los
-  clips de audio.")*. A take plays on the transport because its reader
+  user, out of the notes editor: "A piano roll with MIDI/OSC events should run on the server's transport, otherwise we would be duplicating functionality. A piano roll holds concrete data the same way audio clips do.")*. A take plays on the transport because its reader
   *follows* the position — a `BufRd` on `TransportPos` seeks on a locate,
   wraps on a loop and holds on a stop, with nothing sent per pass. A sequence
   of notes is data of the same kind and plays by other means today: the notes
@@ -938,7 +933,7 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
   **Found while checking it by ear:** an `EnvGen` retriggered mid-envelope restarts from its **initial level** rather than gliding from where it was, so a re-cue is a step in two places at once (the reader's jump and the envelope's). `examples/buffer_writing.py` therefore fires grains shorter than the gap between triggers, which puts both steps in silence — the general rule for anything driven by a trigger, and the reason the example says it out loud.
 
-- ✅ **S18 — A buffer write writes the samples it names** *(opened 2026-08-17 by the user, reading S14 against the write path: "ahora, luego de implementadas las ugens que escriben en buffers, una escritura de muestras no cuesta el buffer entero". The observation is exact, and what it turns up is a **correctness** defect as well as a cost one.)*
+- ✅ **S18 — A buffer write writes the samples it names** *(opened 2026-08-17 by the user, reading S14 against the write path: "now, with the UGens that write into buffers implemented, a write of samples does not cost the whole buffer". The observation is exact, and what it turns up is a **correctness** defect as well as a cost one.)*
 
   **The substrate moved and the command set did not.** S12 decided the write path around a premise it stated in one sentence — *"the RT pool buffer stays immutable and replaceable exactly as `src/dsp/buffer.rs` says"* — and S14 rewrote that very module one day later: contents are mutable, every sample is an atomic cell any thread may write, and `set_at` is the door. `BufWr` and `RecordBuf` write through it from the **audio thread** every block. But every OSC write still copies: `NrtJob::Set`, `Fill`, `Edit`, `Gen` and `Read` all do `to_vec()` → lay the run in → `Buffer::new` → install a fresh `Arc` (`src/server/nrt.rs`), justified in a comment by an argument the other module already answered — *"the audio thread therefore never sees a half-written buffer (which a per-sample write could show it)"* — while S14's module doc states the opposite as the intended semantics, scsynth's own: *a reader crossing a writer sees some old samples and some new, never half of one*, and that is what a looper crossing its own write head has always sounded like.
 
@@ -983,7 +978,7 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
   **What the replacing commands keep**, said in `docs/schemas.md` beside the rest: a recording crossing a `/buffer_read` or a `/buffer_gen` is replaced along with everything else, because replacing the material is what those commands *are*. The race this milestone closes is the one where a command claimed to touch a span and took the whole buffer with it.
 
-- ✅ **S19 — The material lives in the shared segment, and a local peer edits it without a message** *(opened 2026-08-17 by the user, naming the target: "que el cliente gui pueda funcionar como una aplicación autónoma con procesamiento NRT a demanda y RT como procesos separados", and then the consequence — "para un server embebido o por shm esto puede incluso ahorrar mensajes de ida y vuelta")*. Depends on **S18**: it is the same write, moved across a process boundary, and doing it while the write path still copies would mean two designs.
+- ✅ **S19 — The material lives in the shared segment, and a local peer edits it without a message** *(opened 2026-08-17 by the user, naming the target: "that the GUI client can work as a standalone application, with on-demand NRT processing and RT as separate processes", and then the consequence — "for an embedded server or over shm this can even save round-trip messages")*. Depends on **S18**: it is the same write, moved across a process boundary, and doing it while the write path still copies would mean two designs.
 
   **What the segment carries today and what it does not** (`src/server/ipc.rs`): the versioned header, the sample clock, the transport clock and position, the 1024 control buses **as the very words the engine reads** (a peer's write is live on the next block, no command involved), the audio taps, the audio-bus region, and the two OSC rings. **Buffers are not in it.** So the one kind of data an editor is made of is the one kind that still crosses as messages: a take reaches the host as `/buffer_get` replies or as a mapped *file*, and an edit goes back as a `/buffer_setRange` blob.
 
@@ -1035,7 +1030,7 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
   Two rules were added on top of what shipped, both in `docs/decisions.md`: a peer writes **material and announces the span** (`/buffer_touch` → `/buffer_touched`, so a client that cannot map anything — a page above all — still learns a take changed), and a segment has **one owner** (see the entry below).
 
-- ✅ **S20 — A buffer publishes what was written into it** *(opened 2026-08-18 by the user, asking how a live view of a recording can be implemented on every platform, and naming the means: "si es necesario, aunque sea volátil, se pueden usar archivos en disco como hace los editores multipista")*. The server half of the GUI host's **H8**, and the two are read together the way S19 and H6 were. It needs S14 (a buffer's cells are written in place, block by block) and S19 (the material is a region beside the segment).
+- ✅ **S20 — A buffer publishes what was written into it** *(opened 2026-08-18 by the user, asking how a live view of a recording can be implemented on every platform, and naming the means: "if needed, even if volatile, files on disk can be used, as multitrack editors do")*. The server half of the GUI host's **H8**, and the two are read together the way S19 and H6 were. It needs S14 (a buffer's cells are written in place, block by block) and S19 (the material is a region beside the segment).
 
   **The gap, stated exactly.** A peer that edits shared material announces the span it wrote (`/buffer_touch` → `/buffer_touched`, S19), so every other picture of that take can follow. **The engine announces nothing**: `RecordBuf` and `BufWr` fill cells from the audio thread, block after block, and no message is due for that — correctly, since a message per block is the one thing the audio thread must never send. So the one edit that *arrives continuously* is the one nothing can watch, and a take being recorded is drawn only by re-reading it, which is the cost the whole S18/S19 line exists to remove. A scope shows the signal going past; it does not show the take filling up, which is what a multitrack draws while it records.
 
@@ -2723,8 +2718,8 @@ where it came from).
   for a stall not being a live server's.
 
   **And a join has to be able to name a file, which is the half this entry was
-  missing** *(the user, 2026-09-12, reading the document's `O31`: "los editores
-  multipista leen de archivos, aca ademas leemos de buffers en el servidor")*.
+  missing** *(the user, 2026-09-12, reading the document's `O31`: "multitrack
+  editors read from files; here we also read from buffers on the server")*.
   `/buffer_stitch` takes `srcBufnum` for every part, so a join is a join over
   **pool buffers** and nothing else -- which is the same 110 MB per take this
   entry opens with, now arriving through the one feature built to avoid copying
@@ -3052,21 +3047,20 @@ tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
 - ✅ **A lane's notes froze with the transport, and a stop cut their releases**
-  *(the user, 2026-09-29, playing `edit_notes`: "El transporte corta el sonido
-  antes de terminar de tocar la última nota", and "Al posicionar el cursor y
-  hacer play toca un fragmento de la última nota de la reproducción
-  anterior")*. `T8` made a lane's notes in the governed group, so a stop froze
-  them: the end mark, on the last note's end, froze the voice as its release
-  began, and the release was never heard; and a voice frozen mid-release
-  thawed on the next play and finished its release there, wherever the
-  position now was. Freezing is right for a reader, which continues from the
-  sample it read; a voice is not one.
-  **Fixed 2026-09-29**: a stop -- `/transport_stop` and the end mark alike --
-  releases what the lanes sound, as a DAW's stop sends its note-offs, and the
-  notes are made in a group the transport does not govern (the group that
-  follows it, for the notes editor and the multitrack), so their releases ring
-  out. A play does not bring a released note back. `/lane_new` says to give it
-  such a group.
+  *(the user, 2026-09-29, playing `edit_notes`: "The transport cuts the sound
+  before the last note finishes playing", and "Placing the cursor and pressing
+  play plays a fragment of the last note of the previous playback")*. `T8`
+  made a lane's notes in the governed group, so a stop froze them: the end
+  mark, on the last note's end, froze the voice as its release began, and the
+  release was never heard; and a voice frozen mid-release thawed on the next
+  play and finished its release there, wherever the position now was. Freezing
+  is right for a reader, which continues from the sample it read; a voice is
+  not one. **Fixed 2026-09-29**: a stop -- `/transport_stop` and the end mark
+  alike -- releases what the lanes sound, as a DAW's stop sends its note-offs,
+  and the notes are made in a group the transport does not govern (the group
+  that follows it, for the notes editor and the multitrack), so their releases
+  ring out. A play does not bring a released note back. `/lane_new` says to
+  give it such a group.
 
 - ✅ **A group's sort mode is in no structured reply** *(found 2026-09-18 while
   giving both clients the manual ordering verbs, whose docstrings have to say
@@ -3724,7 +3718,7 @@ finished work, where a pending item reads as done.
 
   **What attaching does *not* restore, and it is the reason this is not merely plumbing** *(the user's, 2026-08-17)*: an audio editor keeps its input and output devices, and under JACK or PipeWire the ports it publishes and the connections a person made to them live with the **process**. A server that attaches to a segment gets the material back and gets no port, no name and no patch — so restarting one is *recovery*, not a routine, and a design that treats an RT server as disposable is a design that drops the user's routing every time. Two consequences worth naming before they are discovered by ear: a recovery is only cheap if the ports return **with the same names** (today the device is `cpal`'s default and nothing names anything, which is fine for one process and not for one expected to come back), and **capture** belongs to whoever holds the input device — so an on-demand session cannot record, and the split is not "RT plays, on-demand works" but *RT owns the devices*. With it the arrangement H6 wants becomes expressible — the editor (or the on-demand session it opens) creates the segment and owns the material, and every server *attaches* — and its acceptance stops being a diagram: killing the RT server and starting another against the same segment leaves the material where it was.
 
-- ✅ **The editor's server is supposed to be the on-demand one, and the host boots a full RT server instead** *(found 2026-08-17 by the user, reading S19's wiring against what the plans already say: "pensé que en la documentación y los planes había quedado que esto de la edición de archivos se hacía con el server NRT en modo a demanda")*. It had. **S12** states it as a settled decision — *"the performer is the NRT server (S13): a client drives that mode, it does not call the core functions itself"*, which is what keeps *one place performs audio processing and it is the server* true — and S13 built the mode. What nobody checked since is the practice: the `standalone` host boots `clausters::embed::Clausters::open`, which starts a **full server: audio device, engine and ring**. So every destructive edit H3/H4 make is performed by an RT server that also happens to be playing, and the on-demand session — the thing designed for exactly this — is reachable only from Rust that constructs an `NrtSession` directly.
+- ✅ **The editor's server is supposed to be the on-demand one, and the host boots a full RT server instead** *(found 2026-08-17 by the user, reading S19's wiring against what the plans already say: "I thought the documentation and the plans had settled that this file editing was done with the NRT server in on-demand mode")*. It had. **S12** states it as a settled decision — *"the performer is the NRT server (S13): a client drives that mode, it does not call the core functions itself"*, which is what keeps *one place performs audio processing and it is the server* true — and S13 built the mode. What nobody checked since is the practice: the `standalone` host boots `clausters::embed::Clausters::open`, which starts a **full server: audio device, engine and ring**. So every destructive edit H3/H4 make is performed by an RT server that also happens to be playing, and the on-demand session — the thing designed for exactly this — is reachable only from Rust that constructs an `NrtSession` directly.
 
   **It is not a mistake anyone made; it is a door nobody built.** S13 said so on the way out: *"a client still cannot reach a session, so the builders and the example wait for whatever gives one a door"*. The host used the only embed there was.
 

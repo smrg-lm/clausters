@@ -9544,7 +9544,7 @@ code on the page's side, left as a future direction.
 ## Text is three quarters of its line, and a symbol is twice a word
 
 *(2026-10-05, with the user, who asked for the proportions rather than a
-number: "hay que buscar las proporciones, yo no las conozco".)* The host's
+number: "the proportions have to be found, I do not know them".)* The host's
 default `text_size` was 2, which writes capitals 14 logical pixels high -- the
 whole of the cell every size role is derived from. Two things followed from
 that one number. Text was half again the size of the text around it: a
@@ -9576,8 +9576,8 @@ says `text_size: 2`.
 
 ## A host draws with a face it carries, and antialiased
 
-*(2026-10-05, the user, reversing three earlier calls at once: "fueron hechas
-para un momento específico del desarrollo".)* Three things were settings a
+*(2026-10-05, the user, reversing three earlier calls at once: "they were made
+for a specific moment of the development".)* Three things were settings a
 build or a launch had to ask for, each decided when the host drew meters and
 waveforms and the cost of a default was the whole question: the rasterizer was
 an optional feature with no face behind it ("The crate embeds no typeface,

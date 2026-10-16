@@ -1758,21 +1758,21 @@ opened it.
     2026-10-05: the editing examples are gathered into one.)* `notation/
     score.py` (a drag and an undo), `notation/score_editor.py` (every verb)
     and `notation/compose.py` (the operators, now the Transform menu) become
-    **one example** that opens the application, in both clients; the
-    others go with the script-side editor they assembled. `score_from_data.py`
-    renders a timeline into a score rather than editing one, and stays. *(Done
+    **one example** that opens the application, in both clients; the others go
+    with the script-side editor they assembled. `score_from_data.py` renders a
+    timeline into a score rather than editing one, and stays. *(Done
     2026-10-05. `notation/score_editor.py` and `notation/score-editor.html`
     are the one example: a document opened and read, operated on with the
-    model's operators, opened in the application, a verb called on it from
-    the script, the score saved, and its render opened as a roll. The script's
-    own rows of buttons are gone *(the user: "quitale los botones del chrome
-    viejo que quedaron abajo de todo y no se usan")* -- the window is the
+    model's operators, opened in the application, a verb called on it from the
+    script, the score saved, and its render opened as a roll. The script's own
+    rows of buttons are gone *(the user: "remove the old chrome's buttons that
+    were left at the very bottom and are not used")* -- the window is the
     application's whole. `notation/score.py` and `notation/compose.py`, with
     their pages, went with the script-side editor and the operator walk they
     were. The pair audits call for call. Both books' chapter on composition
     gained a section of its own for the score editor -- the page, the window,
-    the verbs, the paper and the page's text, playing, the file, the render
-    -- where the steps before this one had each added a sentence to one
+    the verbs, the paper and the page's text, playing, the file, the render --
+    where the steps before this one had each added a sentence to one
     paragraph.)*
 
   **Open, each decided at its step:** whether a spanner's end can also be
@@ -2167,9 +2167,9 @@ opened it.
   *(Done 2026-09-24; the standalone half of the multitrack's switch is
   deferred to "Future directions", below, by the user's decision.)*
   *(Asked for by the user 2026-09-24, out of the audio editor example; the
-  key is the user's: "usá la tecla L, aún no vamos a hacer chrome para las
-  apps y es mejor que el demo quede limpio".)* Needs `T7` (`PLAN.md`), the
-  transport's end mark.
+  key is the user's: "use the L key; we are not going to make chrome for
+  the apps yet, and it is better for the demo to stay clean".)* Needs `T7`
+  (`PLAN.md`), the transport's end mark.
 
   **The audio editor.** Unless the editor is looping, a pass stops at the end
   and the play cursor goes back to the position cursor: the end of the take,
@@ -2231,10 +2231,7 @@ opened it.
     `crates/clausters-document/PLAN.md`'s `O21`(a) -- whether a region is one
     object or two, the slot and what fills it -- since if it is two, swapping
     what fills a slot while keeping the slot is a copy by construction.)*
-    *(named 2026-09-03 by the user, reading the window/copy question above: "crear
-    una nueva secuencia a partir de un clip o un segmento de un clip clonado, ahí
-    sí el contenido del nuevo clip sería una copia de los datos en otra
-    estructura")*. Today the arrangement has one way of making a second thing out
+    *(named 2026-09-03 by the user, reading the window/copy question above: "create a new sequence from a clip or a segment of a cloned clip; there, yes, the new clip's contents would be a copy of the data in another structure")*. Today the arrangement has one way of making a second thing out
     of a first, and it is a **window**: a split, a trim and a join all refer, and
     nothing is copied. The verb that is missing is the other one, and it is a
     **deliberate act rather than a side effect** -- take this clip, or this stretch
@@ -2488,23 +2485,22 @@ Every entry carries a checkbox.
   stretch before the render lands.
 
 - ✅ **The applications' window chrome in standalone** *(recorded 2026-09-24,
-  the user: "para poder correr las aplicaciones del host en standalone se va
-  a necesitar que la ventana tenga chrome y no está implementado aún")*. A
-  standalone host runs the applications with no client beside it, so whatever
-  a script would set — a switch, a mode, a setting — has to be reachable from
-  the window itself, and today the windows have no chrome for it. The audio
-  editor's loop is a key and a status line precisely because there is none
-  (X8). What the chrome is, and which of it is the application's rather than
-  the widget's, is the design. *(2026-10-04: the elements it is composed from
-  exist in the host — a window's menu bar, a context menu, tools, tips, tabs,
-  sections and a dialog (`G37`–`G40`, `clients/gui/PLAN.md`; the
-  `panels/chrome` example holds one of each). Which entries an application puts
-  in them is still this entry's.)*
-  *(2026-10-06, the user, with the score editor the one application that has
-  chrome: an application run standalone has its chrome, since that is how it
-  is handled there; run from a client it is optional -- the entry below -- so
-  what this entry designs for each remaining application is the standalone
-  window, and a client opening it bare is part of the acceptance.)*
+  the user: "to be able to run the host's applications standalone, the window
+  will need to have chrome, and that is not implemented yet")*. A standalone
+  host runs the applications with no client beside it, so whatever a script
+  would set — a switch, a mode, a setting — has to be reachable from the window
+  itself, and today the windows have no chrome for it. The audio editor's loop
+  is a key and a status line precisely because there is none (X8). What the
+  chrome is, and which of it is the application's rather than the widget's, is
+  the design. *(2026-10-04: the elements it is composed from exist in the host
+  — a window's menu bar, a context menu, tools, tips, tabs, sections and a
+  dialog (`G37`–`G40`, `clients/gui/PLAN.md`; the `panels/chrome` example holds
+  one of each). Which entries an application puts in them is still this
+  entry's.)* *(2026-10-06, the user, with the score editor the one application
+  that has chrome: an application run standalone has its chrome, since that is
+  how it is handled there; run from a client it is optional -- the entry below
+  -- so what this entry designs for each remaining application is the
+  standalone window, and a client opening it bare is part of the acceptance.)*
 
   **Done 2026-10-06** for the audio, multitrack and notes editors, with the
   score editor as the model and the field's menu conventions (the user asked
@@ -2651,8 +2647,7 @@ Every entry carries a checkbox.
   roll drawn with no sequence has any use (a multitrack's had none: an edit
   has nowhere to live), and so whether the builder and those two examples go,
   as the bare `multitrack` did, or stay as a view.
-  *(Decided by the user 2026-10-07: it goes -- "es código viejo que ya no se
-  usa así". Removed from both clients in one commit: the `pianoroll` builder
+  *(Decided by the user 2026-10-07: it goes -- "it is old code that is no longer used that way". Removed from both clients in one commit: the `pianoroll` builder
   and its model name `notes`, the curve-point helper only it called, the two
   editor examples and their pages, and the roll column of `panels/gestures`,
   which now shows the table over a ruler and a waveform. The host's `notes`
@@ -2816,19 +2811,18 @@ wrong.
   was played, in the picture the moment the edge moves, and a note that
   starts before the window is not drawn, as it is not heard.
 - ✅ **The notes editor's playback does the transport's work** *(found
-  2026-09-28, writing `X3.9`'s sound; the user: "Pianoroll con midi/osc events
-  debería correr con el transport del servidor, de lo contrario estaríamos
-  duplicando funcionalidad")*. `X3.8` stamps every event on the transport's
+  2026-09-28, writing `X3.9`'s sound; the user: "A piano roll with MIDI/OSC
+  events should run on the server's transport, otherwise we would be
+  duplicating functionality")*. `X3.8` stamps every event on the transport's
   clock (`/sched_atTransport`) and plans again from the crate on every play,
   locate and edit, with the client querying the clock first: a second
   implementation of what the transport does for a take, and wrong across a
   loop, since the clock does not wrap. A roll holds concrete data as a clip of
   audio does, so it plays on the server's transport: `PLAN.md`, `T8`, the
   event lane, which the notes editor and the multitrack's notes regions move
-  onto. `clausters_editing::notes_playback` is what goes.
-  **Fixed 2026-09-28 by `T8`**: the playback is an event lane on its
-  transport, an edit is the lane's new data (`update`), and nothing asks for
-  the transport's clock.
+  onto. `clausters_editing::notes_playback` is what goes. **Fixed 2026-09-28
+  by `T8`**: the playback is an event lane on its transport, an edit is the
+  lane's new data (`update`), and nothing asks for the transport's clock.
 
 - ✅ **A roll's edit made every note new** *(the user's log of `edit_notes`,
   2026-09-29: the notes came back with ids #53 to #56, each with a
@@ -2853,50 +2847,50 @@ wrong.
 
 - ✅ **Where a pass ends, and the space bar** *(the user, 2026-09-29, trying
   `edit_notes`: the roll should be able to play to the last note's end or
-  roll on as the multitrack does, better the second; "Para el multipista se
-  puede aplicar la misma regla que el roll para el final de lo que existe o
-  se puede utilizar un marcador de fin"; and "la barra sea play y stop para
-  que el cabezal de reproducción vuelva a posicionarse sobre el cabezal de
-  posición")*. The notes editor marked its sequence's end on every play, the
-  multitrack had a switch, and the space bar paused both.
-  **Done 2026-09-29**: `clausters_editing::playback::End` -- open (the
-  default), the contents, or an end marker -- is how both playbacks say where
-  a pass ends (`Playback.end` and `NotesEditor.end` in both clients; core ABI
-  77), and the space bar is play/stop over both windows, a stop going back to
-  the position cursor. The end marker is a number from a script; drawing it
-  and placing it by hand is open.
+  roll on as the multitrack does, better the second; "For the multitrack the
+  same rule as the roll's can be applied for the end of what exists, or an
+  end marker can be used"; and "the space bar should be play and stop, so
+  that the play head goes back to the position head")*. The notes editor
+  marked its sequence's end on every play, the multitrack had a switch, and
+  the space bar paused both. **Done 2026-09-29**:
+  `clausters_editing::playback::End` -- open (the default), the contents, or
+  an end marker -- is how both playbacks say where a pass ends
+  (`Playback.end` and `NotesEditor.end` in both clients; core ABI 77), and
+  the space bar is play/stop over both windows, a stop going back to the
+  position cursor. The end marker is a number from a script; drawing it and
+  placing it by hand is open.
 
 - ✅ **A roll navigates only the window it opened on, and a note in hertz
   grows with the zoom** *(the user, 2026-09-29, trying `edit_notes`: the roll
   should scroll to octaves outside its range as the piano widget does, MIDI 0
   to 127 and hertz past MIDI 127, opening on the contents with a margin; and
-  "al hacer zoom in vertical con la representación frecuencial no cambie el
-  ancho de las cajas", since a box's frequency is at the middle of its height
+  "zooming in vertically with the frequency representation should not change
+  the boxes' width", since a box's frequency is at the middle of its height
   and nothing says so)*. The crate sent the window fitted to the notes as the
   roll's compass, so nothing past it could be reached; and a note was a
-  semitone row high in hertz too.
-  **Fixed 2026-09-29**: the compass is the domain's whole range (MIDI 0 to
-  127; the hertz domain from MIDI note 0 to 20 kHz) and the fitted window is
-  the slice the view opens on (`axes.y.start`/`len`); a wheel over the
-  keyboard scrolls the window, a tenth of it a notch, and Ctrl and the wheel
-  zoom it (`OnAxis::wheel_pans_y`, the roll's alone). In hertz a note is a
-  bar of a fixed height with a line at its centre (`pianoroll::note_height`).
-  Home and End place the cursor over a roll and a multitrack too.
+  semitone row high in hertz too. **Fixed 2026-09-29**: the compass is the
+  domain's whole range (MIDI 0 to 127; the hertz domain from MIDI note 0 to
+  20 kHz) and the fitted window is the slice the view opens on
+  (`axes.y.start`/`len`); a wheel over the keyboard scrolls the window, a
+  tenth of it a notch, and Ctrl and the wheel zoom it
+  (`OnAxis::wheel_pans_y`, the roll's alone). In hertz a note is a bar of a
+  fixed height with a line at its centre (`pianoroll::note_height`). Home and
+  End place the cursor over a roll and a multitrack too.
 
 - ✅ **A time range over a roll and a multitrack** *(the user, 2026-09-29:
-  "Al multipista y el roll hay que agregarle la capacidad de poder marcar un
-  rango temporal como en el editor de audio", with a modifier since the plain
-  drag selects notes and boxes, and anywhere on the view; Alt chosen, an Alt
-  click still toggling, and the range played as the audio editor plays
-  one)*. **Done 2026-09-29**: the host's `range` gesture step sweeps the
-  time range alone and hands a press that never moved to the element as a
-  click; a roll and a multitrack give it Alt. The range is kept by the
-  editor (beats for a roll, seconds for a multitrack) and the space bar plays
-  it as the audio editor does -- from its start to its end, back to the
-  position cursor, and the loop switch `L` over it or over everything
-  (`play_pass` on both playbacks, `clausters_editing_playback_play_pass`;
-  `play(range=, looping=)` in both clients). The standalone host plays the
-  same, and learns from the engine when a pass stopped on its end mark.
+  "The multitrack and the roll need the ability to mark a time range, as in
+  the audio editor", with a modifier since the plain drag selects notes and
+  boxes, and anywhere on the view; Alt chosen, an Alt click still toggling,
+  and the range played as the audio editor plays one)*. **Done 2026-09-29**:
+  the host's `range` gesture step sweeps the time range alone and hands a
+  press that never moved to the element as a click; a roll and a multitrack
+  give it Alt. The range is kept by the editor (beats for a roll, seconds for
+  a multitrack) and the space bar plays it as the audio editor does -- from
+  its start to its end, back to the position cursor, and the loop switch `L`
+  over it or over everything (`play_pass` on both playbacks,
+  `clausters_editing_playback_play_pass`; `play(range=, looping=)` in both
+  clients). The standalone host plays the same, and learns from the engine
+  when a pass stopped on its end mark.
 
 - ✅ **Two windows of one role over one structure draw on one widget**
   *(found 2026-09-28, extending `edit_notes` with a roll in hertz beside the
@@ -2920,20 +2914,20 @@ wrong.
   sequence by each call, so it never finds one.
 
 - ✅ **The roll has no play cursor, and its ruler places nothing** *(the
-  user, 2026-09-28, trying `X3.9`: "El roll no tiene cursor de reproducción
-  o no funciona, no se puede posicionar, no hay cursor que avance con el
-  tiempo")*. `X3.7` and `X3.8` gave the notes editor a window and a playback
+  user, 2026-09-28, trying `X3.9`: "The roll has no play cursor or it does
+  not work, it cannot be positioned, there is no cursor advancing with
+  time")*. `X3.7` and `X3.8` gave the notes editor a window and a playback
   and never joined the two: the roll's axis anchored no playhead, the editor
   asked the host for no clock, and a click on the ruler reached the crate as
   a tag it did not read, so no cursor was kept and a play always started
-  from the top. The audio editor had all three.
-  **Fixed 2026-09-28**: the roll anchors its playhead at 0 and the editor
-  asks for the notes transport's position when it opens (both clients, and
-  the standalone host's roll window); the ruler's `locate` is the outcome's
-  `locate`, a beat of the sequence, which the editor keeps as its cursor and
-  cues a stopped transport on (`NotesPlayback::cue`). The standalone host's
-  roll also plays now -- the space bar, a cue, an edit heard from either
-  window -- where before it drew and edited only.
+  from the top. The audio editor had all three. **Fixed 2026-09-28**: the
+  roll anchors its playhead at 0 and the editor asks for the notes
+  transport's position when it opens (both clients, and the standalone
+  host's roll window); the ruler's `locate` is the outcome's `locate`, a
+  beat of the sequence, which the editor keeps as its cursor and cues a
+  stopped transport on (`NotesPlayback::cue`). The standalone host's roll
+  also plays now -- the space bar, a cue, an edit heard from either window
+  -- where before it drew and edited only.
 
 - ✅ **The play cursor of a take at another rate than the engine's runs
   ahead** *(found building X7, 2026-09-24)*. The audio editor's playback
@@ -3158,7 +3152,7 @@ wrong.
   is in the host's face.
 
 - ✅ **The symbols of the toolbar and the palettes cannot be read** *(the
-  same look, and the user's own: "no se entiende bien qué es cada glifo")*.
+  same look, and the user's own: "it is not clear what each glyph is")*.
   Four things, in the toolbar and the palettes alike:
   - **They are drawn too small.** An outline is drawn in the body text's
     cell, which is right for a letter and small for an articulation dot, an
@@ -3214,16 +3208,16 @@ wrong.
   "From the roll to the score".
 
 - ✅ **The score's page was in no window** *(found 2026-10-05, the user's
-  first look at `notation/score_editor`: "No se ve, ni puede crear, ni abrir
-  la partitura")*. The crate wrote the container the page sits in as
-  `"type": "scroll"`, a name the wire dropped when it took the model's
-  (`plane`). The host builds a type it does not know as nothing and a leaf
-  carries no children, so the page was never placed -- while every message
-  to its id was still answered by the editor, which is why the host's tests
-  (they deliver to the id) and both clients' (they read the tree) all
-  passed. Fixed by the name, and pinned where the two meet: the host's test
-  of the window it opens now refuses a tree with an unknown type in it and
-  asks that the page be found in the window.
+  first look at `notation/score_editor`: "It is not shown, and the score can
+  be neither created nor opened")*. The crate wrote the container the page
+  sits in as `"type": "scroll"`, a name the wire dropped when it took the
+  model's (`plane`). The host builds a type it does not know as nothing and
+  a leaf carries no children, so the page was never placed -- while every
+  message to its id was still answered by the editor, which is why the
+  host's tests (they deliver to the id) and both clients' (they read the
+  tree) all passed. Fixed by the name, and pinned where the two meet: the
+  host's test of the window it opens now refuses a tree with an unknown type
+  in it and asks that the page be found in the window.
 
 - ✅ **A written system break was laid out as if it were not there** *(the
   same look)*. The page view asked the engraver for `breaks: auto`, on a note
@@ -3264,8 +3258,8 @@ wrong.
   beam across a barline, which are lines between two notes and have no end a
   page could stand in for.
 
-- ✅ **The example's page had no play cursor** *(the same look: "Tampoco se
-  ve el cursor de reproducción")*. Two causes. The example opened the editor
+- ✅ **The example's page had no play cursor** *(the same look: "The play
+  cursor cannot be seen either")*. Two causes. The example opened the editor
   on the ambient host, which stands alone: the cursor is the position of the
   score's transport, and only a host that is a client of the server reads
   one. The page had `session.gui()` and the script did not; closing `X5.9`
@@ -3276,18 +3270,17 @@ wrong.
   height, a staff's stem room on one staff and three times it on a grand
   staff; it is a measure of the staff now (`notation::cursors::stem_room`).
 
-- ✅ **Writing notes has no cursor, and a note written pushes the rest
-  along** *(found 2026-10-05, the user's first sitting at the page: "Tiene que
-  haber cursor de edición ... Las alturas que se ingresan no pueden desplazar
-  a las demás ni dentro del compás ni entre compases")*. Today a press on
-  empty staff, with `entry` on, calls `notation::edit::insert`, whose own doc
-  says what is wrong with it here: "everything after it moves later by its
-  value". So a note written into finished music shifts every note after it
-  in the bar and re-bars the ones after that; the place it goes is wherever
-  the pointer fell, after the nearest item; and the same press selects and
-  drags when it lands on a note, so writing and moving are one gesture told
-  apart by a pixel. What it is to be is the settled principle of notation
-  programs:
+- ✅ **Writing notes has no cursor, and a note written pushes the rest along**
+  *(found 2026-10-05, the user's first sitting at the page: "There has to be
+  an edit cursor ... The pitches entered cannot displace the others, neither
+  within the bar nor across bars")*. Today a press on empty staff, with
+  `entry` on, calls `notation::edit::insert`, whose own doc says what is wrong
+  with it here: "everything after it moves later by its value". So a note
+  written into finished music shifts every note after it in the bar and
+  re-bars the ones after that; the place it goes is wherever the pointer fell,
+  after the nearest item; and the same press selects and drags when it lands
+  on a note, so writing and moving are one gesture told apart by a pixel. What
+  it is to be is the settled principle of notation programs:
   - **Note entry is a mode with a cursor.** Entering it puts an **edit
     cursor** on a staff, at a time and in a voice, drawn on the page; pitches
     are entered *at the cursor*, and outside the mode nothing is written.
