@@ -60,7 +60,13 @@ for (const vector of vectors.events) {
         }
         assert.deepEqual(keys, vector.keys);
         assert.equal(event.midinote(), vector.midinote);
-        assert.equal(event.freq(), vector.freq);
+        // Native and wasm powf may differ by a final rounding step. The
+        // pitch and event keys above remain exact; frequency is numerical.
+        assert.ok(
+            Math.abs(event.freq() - vector.freq) <=
+                2 * Number.EPSILON * Math.max(1, Math.abs(vector.freq)),
+            `frequency ${event.freq()} != ${vector.freq}`,
+        );
         assert.equal(event.amp(), vector.amp);
         assert.equal(event.velocity(), vector.velocity);
         assert.equal(event.delta(), vector.delta);

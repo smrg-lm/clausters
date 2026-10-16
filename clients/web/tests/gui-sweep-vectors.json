@@ -701,6 +701,15 @@
  },
  {
   "builder": "knob",
+  "option": "warp",
+  "value": "q",
+  "tree": {
+   "type": "knob",
+   "warp": "q"
+  }
+ },
+ {
+  "builder": "knob",
   "option": "value",
   "value": 3.5,
   "tree": {
@@ -1251,6 +1260,15 @@
   "tree": {
    "type": "number",
    "step": 3.5
+  }
+ },
+ {
+  "builder": "number",
+  "option": "warp",
+  "value": "q",
+  "tree": {
+   "type": "number",
+   "warp": "q"
   }
  },
  {
@@ -2954,6 +2972,15 @@
   "tree": {
    "type": "slider",
    "step": 3.5
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "warp",
+  "value": "q",
+  "tree": {
+   "type": "slider",
+   "warp": "q"
   }
  },
  {
