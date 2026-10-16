@@ -21,12 +21,13 @@
 //! As in the multitrack's window, the one widget id is a running host's fact
 //! and comes in as an argument.
 
+use clausters_document::view::layers::Stack;
 use serde_json::{Map, Value, json};
 
 use clausters_document::view::catalogue::{self, Waveform};
 
-/// **The measures a signal view can stack**, in the order a reader thinks of
-/// them: what the signal reached, and what it held inside that.
+/// **The audio editor's default stack**: what the signal reached, and
+/// what it held inside that. Other layers use the shared view vocabulary.
 pub const MEASURES: [&str; 2] = ["peak", "rms"];
 
 /// **A measure stack, checked.**
@@ -35,19 +36,13 @@ pub const MEASURES: [&str; 2] = ["peak", "rms"];
 /// appear, and an empty one is a picture that measures nothing: both are
 /// refused, with the reason.
 pub fn measures<S: AsRef<str>>(stack: &[S]) -> Result<Vec<String>, String> {
-    let known = MEASURES.join(", ");
-    let mut out = Vec::with_capacity(stack.len());
-    for name in stack {
-        let name = name.as_ref();
-        if !MEASURES.contains(&name) {
-            return Err(format!("unknown measure '{name}' (one of {known})"));
-        }
-        out.push(name.to_string());
-    }
-    if out.is_empty() {
-        return Err(format!("a signal view measures something (one of {known})"));
-    }
-    Ok(out)
+    let value = json!(stack.iter().map(AsRef::as_ref).collect::<Vec<_>>());
+    let checked = Stack::checked(&value)?;
+    Ok(checked
+        .layers()
+        .iter()
+        .map(|layer| layer.paint.name().to_string())
+        .collect())
 }
 
 /// What the header of a take is labelled: its name, or the buffer it is in when
@@ -68,8 +63,8 @@ pub struct Window<'a> {
     /// The take's name, when it has one.
     pub name: Option<&'a str>,
     /// What the picture measures, innermost last, already checked
-    /// ([`measures`]).
-    pub layers: &'a [String],
+    /// (the shared layer validator).
+    pub layers: &'a Stack,
     /// The rate the axis reads its numbers with.
     pub rate: f64,
     /// The id of the take's widget.
@@ -107,7 +102,7 @@ pub fn window(w: &Window<'_>) -> Value {
     let mut picture = catalogue::waveform(&Waveform {
         buffer: Some(w.buffer),
         channels: Some(w.channels.max(1)),
-        measure: w.layers.join(" "),
+        measure: w.layers.to_wire(),
         ruler: "time".into(),
         sample_rate: w.rate,
         label: label(w.name, w.buffer),
@@ -157,6 +152,10 @@ pub fn window(w: &Window<'_>) -> Value {
         // **The space bar and `L` are the application's**: it plays its own
         // take through its own playback, so the host's monitor stays out.
         "plays": true,
+        "keys": [clausters_editing::verbs::AUDIO_SCOPE],
+        "verbs": clausters_editing::verbs::declaration(&[(
+            clausters_editing::verbs::AUDIO_SCOPE, clausters_editing::verbs::AUDIO,
+        )]),
         "children": body,
     });
     if !w.bare {
@@ -189,13 +188,12 @@ pub fn props(_widget: i32) -> Map<String, Value> {
 /// [`measures`] over JSON: `{"stack": [...]}` answers `{"layers": [...]}`, or
 /// `{"error"}` naming what is wrong.
 pub fn measures_json(request: &str) -> String {
-    let stack: Vec<String> = serde_json::from_str::<Value>(request)
+    let stack = serde_json::from_str::<Value>(request)
         .ok()
         .and_then(|r| r.get("stack").cloned())
-        .and_then(|s| serde_json::from_value(s).ok())
-        .unwrap_or_default();
-    match measures(&stack) {
-        Ok(layers) => json!({ "layers": layers }).to_string(),
+        .unwrap_or(Value::Null);
+    match Stack::checked(&stack) {
+        Ok(layers) => json!({ "layers": layers.to_value() }).to_string(),
         Err(error) => json!({ "error": error }).to_string(),
     }
 }
@@ -205,7 +203,7 @@ mod tests {
     use super::*;
 
     fn compose(name: Option<&str>) -> Value {
-        let layers = vec!["peak".to_string(), "rms".to_string()];
+        let layers = Stack::checked(&json!(["peak", "rms"])).unwrap();
         window(&Window {
             buffer: 3,
             channels: 2,
@@ -227,6 +225,13 @@ mod tests {
         let def = compose(Some("glide"));
         assert_eq!(def["type"], "window");
         assert_eq!(def["flow"], "col");
+        assert_eq!(def["keys"], json!(["audio"]));
+        assert_eq!(def["verbs"]["audio"]["view_wave"]["keys"], json!(["W"]));
+        assert_eq!(
+            def["verbs"]["audio"]["view_spectrogram"]["keys"],
+            json!(["S"])
+        );
+        assert_eq!(def["verbs"]["audio"]["view_both"]["keys"], json!(["B"]));
         assert_eq!(
             (def["w"].clone(), def["h"].clone()),
             (json!(1000), json!(520))

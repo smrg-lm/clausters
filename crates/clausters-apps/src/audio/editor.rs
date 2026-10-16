@@ -22,6 +22,7 @@ use clausters_document::clipboard::{Clipboard, Content};
 use clausters_document::parts::{self, PARTS};
 use clausters_document::session::{Location, Part, Source};
 use clausters_document::view::NOT_AN_EDIT;
+use clausters_document::view::layers::Stack;
 use clausters_document::{Lifetime, Opaque, Range, SourceId, SourceRef};
 use clausters_editing::apply::{Step, steps_json};
 use clausters_editing::audio_playback::{Pass, space};
@@ -30,7 +31,7 @@ use clausters_editing::load::stitch_message;
 use clausters_editing::samples;
 use clausters_editing::sources::{Held, stitch};
 
-use crate::samples::{MEASURES, MeterAt, Window, measures, props, window};
+use crate::samples::{MEASURES, MeterAt, Window, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, number, text};
 
 /// The most values one write carries when the caller has not said.
@@ -42,6 +43,9 @@ pub const DEFAULT_CHUNK: usize = 8192;
 pub struct Outcome {
     /// What kind of turn the message was.
     pub turn: Kind,
+    /// A view change, also returned when no window is open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layers: Option<Value>,
     /// What to send the host, `silent` for nothing.
     pub answer: Option<Answer>,
     /// The stamp a [`Kind::Step`] is answered with.
@@ -132,6 +136,20 @@ impl Converse for AudioEditor {
     fn window_verb(&mut self, message: &Message, args: &[Value], out: &mut Outcome) -> bool {
         if message.addr != "/gui_event" || !message.is_window {
             return false;
+        }
+        if matches!(
+            message.tag.as_str(),
+            "view_wave" | "view_spectrogram" | "view_both"
+        ) {
+            out.turn = Kind::Route;
+            let (reason, corrections) = self.gesture(message.widget, &message.tag, &[], out);
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                reason,
+                corrections,
+            ));
+            return true;
         }
         // **Ctrl+S over the window is a save**, the window's own verb: it names
         // no widget, changes nothing the history holds, and is answered with
@@ -241,7 +259,7 @@ pub struct AudioEditor {
     spilled: BTreeSet<i64>,
     chunk: usize,
     name: Option<String>,
-    layers: Vec<String>,
+    layers: Stack,
     title: String,
     size: (i64, i64),
     /// Whether the window is composed with no chrome ([`Window::bare`]).
@@ -309,7 +327,7 @@ impl AudioEditor {
             spilled: BTreeSet::new(),
             chunk: DEFAULT_CHUNK,
             name: None,
-            layers: measures(layers)?,
+            layers: Stack::checked(&json!(layers))?,
             title: "Audio".into(),
             size: (1000, 520),
             bare: false,
@@ -345,15 +363,55 @@ impl AudioEditor {
         parts::length(&self.list).unwrap_or(0)
     }
 
-    /// What the picture measures, innermost last.
-    pub fn layers(&self) -> &[String] {
-        &self.layers
+    /// The canonical array of layers, back to front.
+    pub fn layers(&self) -> Value {
+        self.layers.to_value()
     }
 
-    /// Measure the picture by `stack` instead, or say why not.
+    /// Set a stack of names, through the shared validator.
     pub fn set_layers(&mut self, stack: &[String]) -> Result<(), String> {
-        self.layers = measures(stack)?;
+        self.layers = Stack::checked(&json!(stack))?;
         Ok(())
+    }
+
+    fn layer_corrections(&self) -> Vec<Correction> {
+        self.widget
+            .into_iter()
+            .map(|widget| Correction {
+                widget: i64::from(widget),
+                props: json!({"layers": self.layers.to_wire()}),
+            })
+            .collect()
+    }
+
+    fn layer_verb(&mut self, verb: &str, request: &Value) -> Result<Outcome, String> {
+        let next = match verb {
+            "layers" => match request.get("stack") {
+                Some(stack) => Stack::checked(stack)?,
+                None => self.layers.clone(),
+            },
+            "view_wave" => Stack::checked(&json!(["peak", "rms"]))?,
+            "view_spectrogram" => Stack::checked(&json!(["spectrogram"]))?,
+            "view_both" => Stack::checked(&json!([
+                "spectrogram", {"draw": "peak", "y": "box"},
+                {"draw": "rms", "y": "box", "alpha": 0.6}
+            ]))?,
+            _ => self.layers.edit(
+                request
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+                verb,
+                request.get("alpha").and_then(Value::as_f64),
+            )?,
+        };
+        self.layers = next;
+        Ok(Outcome {
+            turn: Kind::Route,
+            layers: Some(self.layers()),
+            answer: Some(conversation::answer(0, 0, None, self.layer_corrections())),
+            ..Outcome::default()
+        })
     }
 
     /// **The takes this editor cannot let go of**: the one it opened, which is
@@ -745,6 +803,15 @@ impl AudioEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if matches!(tag, "view_wave" | "view_spectrogram" | "view_both") {
+            return match self.layer_verb(tag, &Value::Null) {
+                Ok(view) => {
+                    out.layers = view.layers;
+                    (None, self.layer_corrections())
+                }
+                Err(reason) => (Some(reason), Vec::new()),
+            };
+        }
         if NOT_AN_EDIT.contains(&tag) {
             self.observe(tag, values, out);
             return (None, Vec::new());
@@ -1128,7 +1195,7 @@ struct Facts {
     scratch: Option<String>,
     #[serde(deserialize_with = "present")]
     name: Option<Option<String>>,
-    layers: Option<Vec<String>>,
+    layers: Option<Value>,
     title: Option<String>,
     w: Option<i64>,
     h: Option<i64>,
@@ -1222,19 +1289,19 @@ impl AudioEditor {
 pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     let facts: Facts =
         serde_json::from_str(request).map_err(|e| format!("not an audio editor request: {e}"))?;
-    let layers = facts
-        .layers
-        .clone()
-        .unwrap_or_else(|| MEASURES.iter().map(|m| m.to_string()).collect());
+    let layers = facts.layers.clone().unwrap_or_else(|| json!(MEASURES));
+    let stack = Stack::checked(&layers)?;
+    let names: Vec<String> = MEASURES.iter().map(|name| name.to_string()).collect();
     let mut editor = AudioEditor::new(
         facts.take.unwrap_or(0),
         facts.frames.unwrap_or(0),
         facts.channels.unwrap_or(1),
         facts.rate.unwrap_or(0.0),
         facts.display.unwrap_or(0),
-        &layers,
+        &names,
         facts.version.unwrap_or(0),
     )?;
+    editor.layers = stack;
     editor.adopt(Facts {
         layers: None,
         take: None,
@@ -1252,7 +1319,11 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   meter writes.
 ///   Answers `{"spare"}`, how many it holds now -- a turn takes one for a
 ///   stroke or a paste and two for a mix, so a caller keeps it topped up.
-/// - `layers` -- `stack`, optional: `{"layers", "measure"}` or `{"error"}`.
+/// - `layers` -- `stack`, optional: a layer array or word list. Answers an
+///   outcome with the canonical `layers` and a correction, or `{"error"}`.
+/// - `show_layer`, `hide_layer`, `solo_layer` -- `name`: change a layer;
+///   solo toggles without changing visibility. `layer_alpha` also takes `alpha`.
+/// - `view_wave`, `view_spectrogram`, `view_both`: replace the visual stack.
 /// - `window` -- `widget`, and `meter`, the id the level meter is drawn
 ///   under: the window, as a GuiDef.
 /// - `props` -- `widget`: the correction.
@@ -1299,14 +1370,23 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             }
             json!({ "spare": editor.spare.len() }).to_string()
         }
-        "layers" => {
-            if let Some(stack) = request.get("stack") {
-                let stack: Vec<String> = serde_json::from_value(stack.clone()).unwrap_or_default();
-                if let Err(error) = editor.set_layers(&stack) {
-                    return json!({ "error": error }).to_string();
+        verb @ ("layers" | "show_layer" | "hide_layer" | "solo_layer" | "layer_alpha"
+        | "view_wave" | "view_spectrogram" | "view_both") => {
+            match editor.layer_verb(verb, &request) {
+                Ok(mut outcome) => {
+                    outcome.version = version;
+                    outcome.answer = Some(conversation::answer(
+                        0,
+                        version,
+                        None,
+                        editor.layer_corrections(),
+                    ));
+                    let mut value = serde_json::to_value(outcome).unwrap();
+                    value["measure"] = json!(editor.layers.to_wire());
+                    value.to_string()
                 }
+                Err(error) => json!({"error": error}).to_string(),
             }
-            json!({ "layers": editor.layers(), "measure": editor.layers().join(" ") }).to_string()
         }
         "window" => editor
             .window(
@@ -1380,3 +1460,79 @@ pub const DOMAIN: &str = PARTS;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod layer_tests {
+    use super::*;
+
+    fn call(editor: &mut AudioEditor, value: Value) -> Value {
+        serde_json::from_str(&call_json(editor, &value.to_string())).unwrap()
+    }
+
+    #[test]
+    fn presets_correct_the_open_picture_without_editing_the_take() {
+        let mut editor = new_json(r#"{"take":1,"frames":1000}"#).unwrap();
+        editor.window(17, None);
+        for verb in ["view_spectrogram", "view_both", "view_wave"] {
+            let out = call(&mut editor, json!({"verb":verb,"version":8}));
+            assert_eq!(out["turn"], "route");
+            assert_eq!(out["changed"], false);
+            assert_eq!(out["answer"]["docVersion"], 8);
+            assert_eq!(out["answer"]["corrections"][0]["widget"], 17);
+            let stack = Stack::checked(&out["layers"]).unwrap();
+            assert_eq!(
+                out["answer"]["corrections"][0]["props"]["layers"],
+                stack.to_wire()
+            );
+            assert!(stack.axis_domain().is_ok());
+        }
+        assert_eq!(editor.length(), 1000);
+    }
+
+    #[test]
+    fn object_layers_and_their_settings_survive_changes_and_refusals() {
+        let mut editor =
+            new_json(r#"{"layers":["spectrogram",{"draw":"peak","y":"box","alpha":0.4}]}"#)
+                .unwrap();
+        call(&mut editor, json!({"verb":"hide_layer","name":"peak"}));
+        assert_eq!(editor.layers()[1]["visible"], false);
+        call(&mut editor, json!({"verb":"show_layer","name":"peak"}));
+        assert_eq!(editor.layers()[1]["alpha"], 0.4);
+        assert_eq!(editor.layers()[1]["y"], "box");
+        let before = editor.layers();
+        let out = call(
+            &mut editor,
+            json!({"verb":"layers","stack":["spectrogram","peak"]}),
+        );
+        assert!(out["error"].as_str().unwrap().contains("different domains"));
+        assert_eq!(editor.layers(), before);
+        assert!(
+            call(
+                &mut editor,
+                json!({"verb":"layer_alpha","name":"peak","alpha":2})
+            )
+            .get("error")
+            .is_some()
+        );
+        assert_eq!(editor.layers(), before);
+        call(&mut editor, json!({"verb":"solo_layer","name":"peak"}));
+        assert_eq!(editor.layers()[1]["solo"], true);
+        call(&mut editor, json!({"verb":"solo_layer","name":"peak"}));
+        assert_eq!(editor.layers(), before);
+    }
+
+    #[test]
+    fn menu_events_use_the_same_preset_and_keep_the_stamp() {
+        let mut editor = new_json(r#"{"take":1,"frames":1000,"window":90}"#).unwrap();
+        editor.window(17, None);
+        let event = Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(17), json!(7), json!(0), json!("view_both")],
+        };
+        let out = editor.event(&event, 3);
+        assert_eq!(out.layers, Some(Stack::checked(&json!(["spectrogram", {"draw":"peak","y":"box"}, {"draw":"rms","y":"box","alpha":0.6}])).unwrap().to_value()));
+        let answer = serde_json::to_value(out.answer.unwrap()).unwrap();
+        assert_eq!(answer["seq"], 7);
+        assert_eq!(answer["docVersion"], 3);
+    }
+}

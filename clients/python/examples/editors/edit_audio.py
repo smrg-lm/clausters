@@ -18,6 +18,9 @@ samples. The takes a stroke or a paste made are kept while an undo or a redo
 can still reach them and freed when neither can -- ``history_bytes`` below caps
 what only the history holds, and the oldest entries go first past it.
 
+The View menu chooses waveform (W), spectrogram (S) or both (B). Call ``wave()``,
+``spectrogram()`` and ``both()`` from a cell to make the same changes.
+
 What to do in the window: **drag** to select, then **Ctrl+X** to cut,
 **Ctrl+C** to copy, **Ctrl+V** to paste at the cursor and
 **Ctrl+Shift+V** to mix there. **Click** to put the position cursor down --
@@ -90,6 +93,29 @@ take = Buffer.from_samples(samples, 1, rate, server=server)
 # %%
 session.gui()          # the host wired to this session's server
 editor = edit(take, title="take", history_bytes=64 * 1024 * 1024)
+
+# %% [markdown]
+# ## Read the same take through different layers
+#
+# View -> Waveform (W), Spectrogram (S), or Spectrogram and waveform (B) calls the same
+# verbs as these functions. The mixed view keeps the frequency ruler and puts
+# peak and RMS in their own amplitude boxes, with one selection and playhead.
+
+# %%
+def wave():
+    """Show the peak and RMS waveform."""
+    editor.view_wave()
+
+
+def spectrogram():
+    """Show the take's time-frequency picture."""
+    editor.view_spectrogram()
+
+
+def both():
+    """Show the spectrogram under the waveform."""
+    editor.view_both()
+
 
 # %% [markdown]
 # ## Hear it, and read what it is made of

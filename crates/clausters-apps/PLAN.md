@@ -2274,6 +2274,8 @@ opened it.
     a copied timeline, for notes) — and the choice it names between windows and
     copies is now a choice about sources rather than about `form`'s tree.
 
+- ⬜ **X12 - Audio visualization layers from the View menu.** Opened 2026-10-16. Move the signal stack vocabulary, object form and axis-domain validation to `clausters_document::view::layers`; host and applications share it. Keep host forward-compatible parsing and validate authored stacks strictly. Add `show_layer`, `hide_layer`, `solo_layer`, `layer_alpha`, `view_wave`, `view_spectrogram` and `view_both` to the existing JSON call door. Both clients apply the returned `Outcome`; the existing `layers` setter follows that same path. View menu presets choose waveform, spectrogram and both, using box coordinates for amplitude over frequency. Acceptance: application verb and menu-event tests, client tests, paired example capture sequence, clean formatting/clippy, web build/tests and docs. No new wire prop or exported symbol. The editable-body container and envelopes remain separate work under O24 and the GUI Future-directions entries.
+
 ## Definition of done (per milestone)
 
 The project rule: code plus tests, a clear commit message, this file's checkbox,

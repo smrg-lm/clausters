@@ -94,7 +94,8 @@ pub(crate) fn glyph(code: &str) -> String {
 fn scope(app: App) -> &'static [Verb] {
     match app {
         App::Multitrack => verbs::MULTITRACK,
-        App::Audio | App::Notes => &[],
+        App::Audio => verbs::AUDIO,
+        App::Notes => &[],
     }
 }
 
@@ -148,6 +149,14 @@ pub fn menu(app: App, saves: bool) -> Value {
     }
 
     let mut view = vec![entry(app, "view_all")];
+    if app == App::Audio {
+        view.extend([
+            sep(),
+            entry(app, "view_wave"),
+            entry(app, "view_spectrogram"),
+            entry(app, "view_both"),
+        ]);
+    }
     if app != App::Audio {
         // the snap-to-grid switch: a take has no grid
         view.push(entry(app, "snap"));

@@ -90,6 +90,8 @@ a frame, its `duration` seconds); `editor.select(segment)` marks one and
 `editor.unselect()` marks nothing. In an audio editor the samples marked and the
 transport's `span` are one range, so setting either sets both.
 
+The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`). The same actions are `editor.view_wave()`, `editor.view_spectrogram()` and `editor.view_both()`. `editor.layers` accepts names (`peak`, `rms`, `signal`, `momentary`, `short`, `spectrogram`) or objects with `draw`, `visible`, `solo`, `alpha` and `y`. `show_layer(name)` and `hide_layer(name)` preserve a layer's place and settings; `solo_layer(name)` toggles solo, and `layer_alpha(name, alpha)` sets its opacity in `[0, 1]`. A frequency layer and an amplitude layer cannot both claim the vertical axis: the mixed preset puts peak and RMS on `y: "box"`. Changing visualization leaves the take and its history intact.
+
 ```python
 from clausters.gui import edit
 

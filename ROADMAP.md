@@ -267,6 +267,8 @@ its plan; the plan is where its acceptance is read.
   shared machine; the eye pass is part of closing it) plus the third persistence
   option the host grew while the track was paused.
 
+- ⬜ **X12 — Audio visualization layers from the View menu** (`crates/clausters-apps/PLAN.md`).
+
 - ⬜ **The audio editor's layers: the view is the next container, and it is the
   richer one** *(`clients/gui/PLAN.md`, Future directions)*. Not a milestone —
   **a track's worth**, and the one the user asked to have thought through and

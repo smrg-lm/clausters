@@ -427,3 +427,31 @@ def test_the_take_s_transport_plays_its_span_and_keeps_the_switch():
     assert transport.span is None and editor.selected is None
     editor.apply("/gui_event", [wid, 9, 0, "selection", 20, 40])
     assert transport.span == (20 / SR, 60 / SR), "a sweep is the transport's span"
+
+
+def test_visual_layers_use_shared_outcomes_for_calls_and_menu_events():
+    editor = AudioEditor(FakeBuffer(), context=Editing())
+    host = FakeHost()
+    editor.open(host)
+    editor.view_both()
+    assert editor.layers[0] == "spectrogram"
+    assert editor.layers[1]["y"] == "box"
+    assert host.acks[-1][1][0][1].get("layers")
+    editor.hide_layer("peak")
+    assert editor.layers[1]["visible"] is False
+    editor.show_layer("peak")
+    editor.layer_alpha("peak", 0.3)
+    editor.solo_layer("peak")
+    assert editor.layers[1]["alpha"] == 0.3
+    assert editor.layers[1]["solo"] is True
+    editor.solo_layer("peak")
+    editor.view_wave()
+    assert editor.layers == ("peak", "rms")
+    editor.view_spectrogram()
+    before = editor.layers
+    with pytest.raises(ValueError, match="different domains"):
+        editor.show_layer("peak")
+    assert editor.layers == before
+    wid = next(iter(editor.view.widgets))
+    editor.apply("/gui_event", [wid, 1, 0, "view_both"])
+    assert editor.layers[1]["y"] == "box"

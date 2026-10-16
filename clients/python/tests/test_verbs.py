@@ -32,7 +32,7 @@ WEB = ROOT / "clients/web/src"
 sys.path.insert(0, str(ROOT / "clients/python"))
 
 #: Each scope of the table, by the constant that holds its rows.
-SCOPES = {"WINDOW": "window", "MULTITRACK": "multitrack", "SCORE": "score",
+SCOPES = {"AUDIO": "audio", "WINDOW": "window", "MULTITRACK": "multitrack", "SCORE": "score",
           "NOTE_ENTRY": "note_entry"}
 
 #: Where each class a row may name lives, in each client.

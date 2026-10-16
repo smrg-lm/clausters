@@ -52,6 +52,7 @@
 //! two steps away.
 
 pub mod catalogue;
+pub mod layers;
 
 use std::collections::BTreeMap;
 

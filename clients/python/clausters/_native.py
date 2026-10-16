@@ -2342,7 +2342,7 @@ def samples_measures(stack) -> tuple:
         ValueError: a measure nobody draws, or an empty stack, with the reason.
     """
     answer = _read_json(lib().clausters_apps_samples_measures,
-                        {"stack": [str(name) for name in stack]})
+                        {"stack": stack if isinstance(stack, str) else list(stack)})
     if not isinstance(answer, dict) or "error" in answer:
         raise ValueError((answer or {}).get("error", "not a measure stack"))
     return tuple(answer["layers"])

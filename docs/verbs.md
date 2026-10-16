@@ -62,6 +62,9 @@ The verdict is one of three:
 | `window` | `delete` | `Editor.delete` | `Editor.delete` | **api** |
 | `window` | `select_all` | `Editor.select_all` | `Editor.selectAll` | **api** |
 | `window` | `keys` | — | — | **n/a** — the window's key sheet, a page of the window itself rather than an act on what it holds; `verb("keys")` shows it |
+| `audio` | `view_wave` | `AudioEditor.view_wave` | `AudioEditor.viewWave` | **api** |
+| `audio` | `view_spectrogram` | `AudioEditor.view_spectrogram` | `AudioEditor.viewSpectrogram` | **api** |
+| `audio` | `view_both` | `AudioEditor.view_both` | `AudioEditor.viewBoth` | **api** |
 | `multitrack` | `pause` | `MultitrackEditor.pause` | `MultitrackEditor.pause` | **api** |
 | `multitrack` | `stop` | `MultitrackEditor.stop` | `MultitrackEditor.stop` | **api** |
 | `multitrack` | `stop_at_end` | `MultitrackEditor.stop_at_end` | `MultitrackEditor.stopAtEnd` | **api** |

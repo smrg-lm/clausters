@@ -16,6 +16,7 @@
 
 import type { Buffer } from "../../defs/buffer.ts";
 import { samplesMeasures } from "../../core/clausters_core_web.js";
+import type { SignalLayer, SignalLayers } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import type { Editor } from "./editor.ts";
@@ -28,23 +29,25 @@ interface TakeWindow {
 }
 
 /**
- * The measures a signal view can stack, in the order a reader thinks of them:
- * what the signal reached, and what it held inside that.
+ * The editor's default stack: what the signal reached and held inside it.
+ * Other visual layers are validated by the shared Rust view vocabulary.
  */
 export const MEASURES = ["peak", "rms"] as const;
 
-/** One of the measures above. */
-export type Measure = (typeof MEASURES)[number];
+/** A visual layer name or its settings, in the existing signal wire form. */
+export type Measure = string | SignalLayer;
 
 /**
- * A measure stack as an array, or a `RangeError` naming what is wrong.
+ * A visual layer stack as an array, or a `RangeError` naming what is wrong.
  *
  * A stack is written by hand, so a silent typo is a layer that quietly does not
  * appear, and an empty one is a picture that measures nothing. The check is the
  * crate's (`samplesMeasures`).
  */
-export function measures(stack: Iterable<string>): Measure[] {
-    const answer = JSON.parse(samplesMeasures(JSON.stringify({ stack: [...stack].map(String) }))) as {
+export function measures(stack: SignalLayers | Iterable<Measure>): Measure[] {
+    const answer = JSON.parse(samplesMeasures(JSON.stringify({
+        stack: typeof stack === "string" ? stack : [...stack],
+    }))) as {
         layers?: Measure[];
         error?: string;
     };
@@ -97,7 +100,7 @@ export class SamplesView extends View<Buffer> {
     /** What the picture measures, innermost last. */
     layers: Measure[];
 
-    constructor(layers: Iterable<string> = MEASURES) {
+    constructor(layers: SignalLayers | Iterable<Measure> = MEASURES) {
         super();
         this.layers = measures(layers);
     }

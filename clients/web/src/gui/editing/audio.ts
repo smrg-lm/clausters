@@ -60,6 +60,7 @@ const SPARE = 2;
 /** What one turn of the core came to. */
 interface Outcome {
     turn?: string;
+    layers?: Measure[];
     /** Whether to close the window, by the crate's rule for every editor. */
     close?: boolean;
     answer?: Answer;
@@ -756,6 +757,7 @@ export class AudioEditor extends Editor<Buffer> {
      */
     private take(outcome: Outcome): boolean {
         if (outcome.turn === undefined || outcome.turn === "nothing") return false;
+        if (outcome.layers !== undefined) (this.view as SamplesView).layers = outcome.layers;
         const changed = outcome.changed === true;
         // **The steps are this page's to carry out**: a new take made where the
         // turn needed one and the join stitched over the list -- or, for a save
@@ -823,29 +825,45 @@ export class AudioEditor extends Editor<Buffer> {
     }
 
     /**
-     * What the picture measures -- `["peak", "rms"]` for the editor's view,
-     * `["peak"]` for the bare envelope.
-     *
-     * **Assigning it on an open view sends one message.** The measure is a live
-     * `/gui_set` prop, so the body appears and disappears over the peaks with
-     * the picture, the axis, the zoom, the selection and the playhead all
-     * exactly where they were.
+     * Visual layers, back to front: names or objects with draw, visible,
+     * solo, alpha and y. Use y: "box" for amplitude over a frequency axis.
+     * Assignment applies the shared application's outcome to the open view.
      */
     get layers(): Measure[] {
         return [...(this.view as SamplesView).layers];
     }
 
-    set layers(stack: Iterable<string>) {
-        const answer = this.coreCall("layers", { stack: [...stack].map(String) });
-        if (typeof answer.error === "string") throw new RangeError(answer.error);
-        const view = this.view as SamplesView;
-        view.layers = answer.layers as Measure[];
-        if (this.host !== null && this.window !== null) {
-            for (const wid of view.widgets.keys()) {
-                void this.host.set(wid, { measure: String(answer.measure) });
-            }
-        }
+    set layers(stack: string | Iterable<Measure>) {
+        this.viewLayers("layers", { stack: typeof stack === "string" ? stack : [...stack] });
     }
+
+    private viewLayers(verb: string, args: Record<string, unknown> = {}): void {
+        const outcome = this.coreCall(verb, { version: this.editing.version, ...args });
+        if (typeof outcome.error === "string") throw new RangeError(outcome.error);
+        this.take(outcome as Outcome);
+    }
+
+    /** Show a visual layer, appending it if absent. */
+    showLayer(name: string): void { this.viewLayers("show_layer", { name }); }
+
+    /** Hide a visual layer, keeping its place and settings. */
+    hideLayer(name: string): void { this.viewLayers("hide_layer", { name }); }
+
+    /** Toggle solo; only visible soloed layers are drawn. */
+    soloLayer(name: string): void { this.viewLayers("solo_layer", { name }); }
+
+    /** Set a layer's opacity between zero and one. */
+    layerAlpha(name: string, alpha: number): void { this.viewLayers("layer_alpha", { name, alpha }); }
+
+    /** Show the peak and RMS waveform. */
+    viewWave(): void { this.viewLayers("view_wave"); }
+
+    /** Show the spectrogram with the frequency axis. */
+    viewSpectrogram(): void { this.viewLayers("view_spectrogram"); }
+
+    /** Show the spectrogram with peak and RMS in their own boxes. */
+    viewBoth(): void { this.viewLayers("view_both"); }
+
 }
 
 marking(AudioEditor);
@@ -853,7 +871,7 @@ marking(AudioEditor);
 /** {@link AudioEditor}'s options: the generic ones, the measures and the limit. */
 export interface AudioEditorOptions extends GenericEditorOptions<Buffer> {
     /** What the picture measures. Defaults to {@link MEASURES}. */
-    layers?: readonly string[];
+    layers?: string | readonly Measure[];
     /** The most bytes of takes only the history may hold; absent for no limit. */
     historyBytes?: number | null;
     /**

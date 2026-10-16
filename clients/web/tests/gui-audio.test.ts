@@ -469,3 +469,30 @@ test("the take's transport plays its span and keeps the switch", async () => {
     assert.deepEqual(transport.span, [20 / SR, 60 / SR], "a sweep is the transport's span");
 });
 
+
+
+test("visual layers use shared outcomes for calls and menu events", async () => {
+    const editor = new AudioEditor(new FakeBuffer() as never, { sampleRate: SR, context: new Editing() });
+    const host = new FakeHost();
+    await editor.open(host as never);
+    editor.viewBoth();
+    assert.equal(editor.layers[0], "spectrogram");
+    assert.equal((editor.layers[1] as unknown as {y: string}).y, "box");
+    editor.hideLayer("peak");
+    assert.equal((editor.layers[1] as {visible: boolean}).visible, false);
+    editor.showLayer("peak");
+    editor.layerAlpha("peak", 0.3);
+    editor.soloLayer("peak");
+    assert.equal((editor.layers[1] as {alpha: number}).alpha, 0.3);
+    assert.equal((editor.layers[1] as {solo: boolean}).solo, true);
+    editor.soloLayer("peak");
+    editor.viewWave();
+    assert.deepEqual(editor.layers, ["peak", "rms"]);
+    editor.viewSpectrogram();
+    const before = editor.layers;
+    assert.throws(() => editor.showLayer("peak"), /different domains/);
+    assert.deepEqual(editor.layers, before);
+    const wid = [...editor.view!.widgets.keys()][0]!;
+    editor.apply("/gui_event", [wid, 1, 0, "view_both"]);
+    assert.equal((editor.layers[1] as unknown as {y: string}).y, "box");
+});

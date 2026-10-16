@@ -78,6 +78,16 @@ pub const WINDOW: &[Verb] = &[
     verb("keys", &["F1"], "Keyboard shortcuts"),
 ];
 
+/// The audio window's key scope.
+pub const AUDIO_SCOPE: &str = "audio";
+
+/// Audio view presets; menu commands share the application's JSON verbs.
+pub const AUDIO: &[Verb] = &[
+    verb("view_wave", &["W"], "Waveform"),
+    verb("view_spectrogram", &["S"], "Spectrogram"),
+    verb("view_both", &["B"], "Spectrogram and waveform"),
+];
+
 /// The multitrack window's scope.
 pub const MULTITRACK_SCOPE: &str = "multitrack";
 
@@ -224,7 +234,7 @@ mod tests {
     /// A scope names each verb once, with words of its own.
     #[test]
     fn every_scope_names_each_verb_once_with_its_words() {
-        for rows in [WINDOW, MULTITRACK, SCORE, NOTE_ENTRY] {
+        for rows in [WINDOW, AUDIO, MULTITRACK, SCORE, NOTE_ENTRY] {
             for (i, v) in rows.iter().enumerate() {
                 assert!(!v.label.is_empty(), "{} has no words", v.name);
                 assert!(

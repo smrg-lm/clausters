@@ -18,13 +18,13 @@ from ... import _native
 from .view import View
 
 
-#: The measures a signal view can stack, in the order a reader thinks of them:
-#: what the signal reached, and what it held inside that.
+#: The editor's default stack: what the signal reached and held inside it.
+#: Other visual layers are validated by the shared Rust view vocabulary.
 MEASURES = ("peak", "rms")
 
 
 def measures(stack) -> tuple:
-    """A measure stack as a tuple, or a `ValueError` naming what is wrong.
+    """A visual layer stack as a tuple, or a `ValueError` naming what is wrong.
 
     A stack is written by hand, so a silent typo is a layer that quietly does
     not appear, and an empty one is a picture that measures nothing. The check

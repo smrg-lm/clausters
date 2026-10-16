@@ -159,7 +159,17 @@ impl SignalElement {
             "layers" | "measure" => match super::Stack::parse(v) {
                 Some(stack) => match stack.axis_domain() {
                     Ok(_) => {
+                        let texture = self.is_texture_view();
+                        let traces = self.draws_traces();
                         self.layers = stack;
+                        // A newly enabled picture needs its existing loader
+                        // and fill paths again. Opacity and axis changes only
+                        // change uniforms; they do not rebuild the analysis.
+                        if (self.is_texture_view() && !texture) || (self.draws_traces() && !traces)
+                        {
+                            self.reread();
+                            self.slot_dirty = true;
+                        }
                         true
                     }
                     Err(why) => {

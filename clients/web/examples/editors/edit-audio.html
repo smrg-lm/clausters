@@ -36,6 +36,9 @@ samples. The takes a stroke or a paste made are kept while an undo or a redo can
 still reach them and freed when neither can -- <code>historyBytes</code> caps
 what only the history holds, and the oldest entries go first past it.
 
+The View menu chooses waveform (W), spectrogram (S) or both (B). The three buttons below
+call the same verbs as the menu.
+
 <b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
 <b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
 there. <b>Click</b> to put the position cursor down --
@@ -63,6 +66,9 @@ edit back into the buffer it was opened from, and
       <button id="run">open the take</button>
       <div id="stage"></div>
       <div>
+        <button id="wave" disabled>waveform</button>
+        <button id="spectrogram" disabled>spectrogram</button>
+        <button id="both" disabled>both</button>
         <button id="play" disabled>play the take</button>
         <button id="parts" disabled>what it is made of</button>
       </div>
@@ -113,6 +119,15 @@ edit back into the buffer it was opened from, and
         const editor = await gui.edit(take, {
           title: "take", historyBytes: 64 * 1024 * 1024, stage: $("stage"),
         });
+
+        // The same take through different layers. The mixed view keeps the
+        // frequency ruler and puts peak and RMS in their own amplitude boxes.
+        $("wave").disabled = false;
+        $("wave").onclick = () => editor.viewWave();
+        $("spectrogram").disabled = false;
+        $("spectrogram").onclick = () => editor.viewSpectrogram();
+        $("both").disabled = false;
+        $("both").onclick = () => editor.viewBoth();
 
         // `editor.buffer` is the join the window draws: the take as the edits
         // have left it, which `play` reads like any other buffer.

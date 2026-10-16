@@ -168,6 +168,44 @@ mod tests {
         assert!(stfts[0].n_frames() > 1, "one column per hop of the samples");
     }
 
+    #[test]
+    fn enabling_a_texture_after_a_trace_was_filled_runs_the_same_analysis() {
+        use crate::host::widget::element::Element;
+        let samples = vec![0.25; 1024];
+        let mut trace = element(
+            &serde_json::json!({
+                "id":1, "type":"signal", "view":"trace", "navigable":1,
+                "data":samples, "window_size":256, "hop":128
+            })
+            .to_string(),
+        );
+        assert!(!trace.fill().is_empty());
+        assert!(trace.fill().is_empty());
+        assert!(trace.set("layers", &serde_json::json!(["spectrogram"])));
+        assert!(matches!(&trace.fill()[..], [SlotFill::Texture(_)]));
+        assert!(trace.fill().is_empty());
+        assert!(trace.set(
+            "layers",
+            &serde_json::json!([
+                {"draw":"spectrogram", "alpha":0.5}
+            ])
+        ));
+        assert!(
+            trace.fill().is_empty(),
+            "alpha never recomputes the analysis"
+        );
+    }
+
+    #[test]
+    fn enabling_a_different_bulk_picture_reuses_the_reload_door() {
+        use crate::host::widget::element::Element;
+        let mut trace =
+            element(r#"{"id":1,"type":"signal","view":"trace","navigable":1,"buffer":3}"#);
+        trace.reload_asked = false;
+        assert!(trace.set("layers", &serde_json::json!(["spectrogram"])));
+        assert!(trace.reload_asked, "the loader must resolve the new form");
+    }
+
     /// A fill is a *taking*: the second ask costs nothing, which is what keeps
     /// a tick that changed no picture at zero uploads.
     #[test]

@@ -541,6 +541,8 @@ class AudioEditor(Marking, Editor):
         the take changed."""
         if outcome.get("turn") in (None, "nothing"):
             return False
+        if "layers" in outcome:
+            self.view.layers = tuple(outcome["layers"])
         changed = bool(outcome.get("changed"))
         # **The steps are this client's to carry out**: a new take made where
         # the turn needed one and the join stitched over the list -- or, for a
@@ -588,25 +590,51 @@ class AudioEditor(Marking, Editor):
 
     @property
     def layers(self) -> tuple:
-        """What the picture measures -- `("peak", "rms")` for the editor's
-        view, `("peak",)` for the bare envelope.
+        """Visual layers, back to front: names or objects with `draw`,
+        `visible`, `solo`, `alpha` and `y`. Two different domains cannot share
+        the vertical axis; use `y="box"` for the overlaid amplitude layer.
 
-        **Assigning it on an open view sends one message.** The measure is a
-        live `/gui_set` prop, so the body appears and disappears over the peaks
-        with the picture, the axis, the zoom, the selection and the playhead all
-        exactly where they were.
+        Assignment applies the shared application's outcome to the open view.
         """
         return self.view.layers
 
     @layers.setter
     def layers(self, stack) -> None:
-        answer = self._call("layers", stack=[str(name) for name in stack])
-        if "error" in answer:
-            raise ValueError(answer["error"])
-        self.view.layers = tuple(answer["layers"])
-        if self._host is not None and self._window is not None:
-            for wid in self.view.widgets:
-                self._host.set(wid, measure=answer["measure"])
+        self._view_layers("layers", stack=stack if isinstance(stack, str) else list(stack))
+
+    def _view_layers(self, verb: str, **args) -> None:
+        outcome = self._call(verb, version=self._editing.version, **args)
+        if "error" in outcome:
+            raise ValueError(outcome["error"])
+        self._take(outcome)
+
+    def show_layer(self, name: str) -> None:
+        """Show a visual layer, appending it if absent."""
+        self._view_layers("show_layer", name=name)
+
+    def hide_layer(self, name: str) -> None:
+        """Hide a visual layer, keeping its place and settings."""
+        self._view_layers("hide_layer", name=name)
+
+    def solo_layer(self, name: str) -> None:
+        """Toggle a layer's solo; only visible soloed layers are drawn."""
+        self._view_layers("solo_layer", name=name)
+
+    def layer_alpha(self, name: str, alpha: float) -> None:
+        """Set a layer's opacity between zero and one."""
+        self._view_layers("layer_alpha", name=name, alpha=alpha)
+
+    def view_wave(self) -> None:
+        """Show the peak and RMS waveform."""
+        self._view_layers("view_wave")
+
+    def view_spectrogram(self) -> None:
+        """Show the spectrogram with the frequency axis."""
+        self._view_layers("view_spectrogram")
+
+    def view_both(self) -> None:
+        """Show the spectrogram with peak and RMS in their own boxes."""
+        self._view_layers("view_both")
 
 
 def is_take(structure) -> bool:

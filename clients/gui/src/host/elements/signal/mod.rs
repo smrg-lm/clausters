@@ -537,7 +537,7 @@ impl SignalElement {
         editor.ruler = p.ruler;
         SignalElement {
             presentation: p.presentation,
-            layers: Stack::of_presentation(p.presentation),
+            layers: crate::host::graphics::signal::layers::of_presentation(p.presentation),
             fills: false,
             written: 0,
             pending: None,
