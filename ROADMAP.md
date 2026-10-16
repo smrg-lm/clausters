@@ -288,13 +288,6 @@ its plan; the plan is where its acceptance is read.
   conversion is private to the notes editor (`ppar` and `pvoice`, the
   pattern-side question, shipped with `C73e`).
 
-- ⬜ **The V track — the host seen and driven by a script**, `V1`-`V5`
-  *(`clients/gui/PLAN.md`, "V track — development: the host seen and driven
-  by a script")*. A development track: `/gui_capture` and `/gui_pointer`, so
-  a change is checked from captured pictures rather than by a person at the
-  screen (`V1`, `V2`), and the same from a headless host with no window
-  shown (`V3`-`V5`), which can be taken on its own.
-
 - ⬜ **`G43` — text is shaped**, `G43a` and `G43b` *(`clients/gui/PLAN.md`,
   "G43 — Text is shaped: every script a field accepts is drawn right")*. A
   field accepts every script since composed input closed, and the host draws
