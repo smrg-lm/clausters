@@ -116,7 +116,10 @@ impl Converse for AudioEditor {
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
-        self.widget.is_some_and(|w| i64::from(w) == widget)
+        self.widget
+            .into_iter()
+            .chain(self.pane)
+            .any(|w| i64::from(w) == widget)
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -139,7 +142,7 @@ impl Converse for AudioEditor {
         }
         if matches!(
             message.tag.as_str(),
-            "view_wave" | "view_spectrogram" | "view_both"
+            "view_wave" | "view_spectrogram" | "view_both" | "layer_take"
         ) {
             out.turn = Kind::Route;
             let (reason, corrections) = self.gesture(message.widget, &message.tag, &[], out);
@@ -266,6 +269,8 @@ pub struct AudioEditor {
     bare: bool,
     window: Option<i32>,
     widget: Option<i32>,
+    pane: Option<i32>,
+    edit_layer: String,
     /// Where the position cursor stands, in frames of the take, once placed.
     cursor: Option<u64>,
     /// The selection, as a half-open span of frames, while there is one.
@@ -333,6 +338,8 @@ impl AudioEditor {
             bare: false,
             window: None,
             widget: None,
+            pane: None,
+            edit_layer: "take".into(),
             cursor: None,
             selection: None,
             meters: None,
@@ -372,6 +379,21 @@ impl AudioEditor {
     pub fn set_layers(&mut self, stack: &[String]) -> Result<(), String> {
         self.layers = Stack::checked(&json!(stack))?;
         Ok(())
+    }
+
+    fn edit_layer(&mut self, name: &str) -> Result<Vec<Correction>, String> {
+        if !matches!(name, "take" | "placement") {
+            return Err(format!("this pane has no '{name}' body"));
+        }
+        self.edit_layer = name.into();
+        Ok(self
+            .pane
+            .into_iter()
+            .map(|id| Correction {
+                widget: i64::from(id),
+                props: json!({"layer": name}),
+            })
+            .collect())
     }
 
     fn layer_corrections(&self) -> Vec<Correction> {
@@ -694,6 +716,8 @@ impl AudioEditor {
             layers: &self.layers,
             rate: self.rate,
             widget,
+            pane: self.pane,
+            layer: &self.edit_layer,
             title: &self.title,
             size: self.size,
             meter,
@@ -803,7 +827,27 @@ impl AudioEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        if matches!(tag, "view_wave" | "view_spectrogram" | "view_both") {
+        if tag == "layer" {
+            return match values
+                .first()
+                .and_then(Value::as_str)
+                .map(|name| self.edit_layer(name))
+            {
+                Some(Ok(corrections)) => (None, corrections),
+                Some(Err(reason)) => (Some(reason), Vec::new()),
+                None => (Some("layer needs a body name".into()), Vec::new()),
+            };
+        }
+        if tag == "layer_take" {
+            return match self.edit_layer("take") {
+                Ok(corrections) => (None, corrections),
+                Err(reason) => (Some(reason), Vec::new()),
+            };
+        }
+        if matches!(
+            tag,
+            "view_wave" | "view_spectrogram" | "view_both" | "layer_take"
+        ) {
             return match self.layer_verb(tag, &Value::Null) {
                 Ok(view) => {
                     out.layers = view.layers;
@@ -1324,8 +1368,9 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// - `show_layer`, `hide_layer`, `solo_layer` -- `name`: change a layer;
 ///   solo toggles without changing visibility. `layer_alpha` also takes `alpha`.
 /// - `view_wave`, `view_spectrogram`, `view_both`: replace the visual stack.
-/// - `window` -- `widget`, and `meter`, the id the level meter is drawn
-///   under: the window, as a GuiDef.
+/// - `layer` -- optional `name`: the active edit body and its correction.
+/// - `window` -- `widget`, optional `pane` and `meter`, the ids of the axis
+///   container and level meter: the window, as a GuiDef.
 /// - `props` -- `widget`: the correction.
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
 /// - `apply` -- `payload`: `{"steps"}` for a list the history handed back, or
@@ -1388,15 +1433,33 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 Err(error) => json!({"error": error}).to_string(),
             }
         }
-        "window" => editor
-            .window(
-                widget,
-                request
-                    .get("meter")
-                    .and_then(Value::as_i64)
-                    .map(|m| m as i32),
-            )
-            .to_string(),
+        verb @ ("layer" | "layer_take") => {
+            let name = if verb == "layer_take" {
+                Some("take")
+            } else {
+                request.get("name").and_then(Value::as_str)
+            };
+            match name.map(|name| editor.edit_layer(name)).transpose() {
+                Ok(corrections) => json!({"turn": "route", "layer": editor.edit_layer,
+                    "answer": conversation::answer(0, version, None, corrections.unwrap_or_default())}).to_string(),
+                Err(error) => json!({"error": error}).to_string(),
+            }
+        }
+        "window" => {
+            editor.pane = request
+                .get("pane")
+                .and_then(Value::as_i64)
+                .map(|n| n as i32);
+            editor
+                .window(
+                    widget,
+                    request
+                        .get("meter")
+                        .and_then(Value::as_i64)
+                        .map(|m| m as i32),
+                )
+                .to_string()
+        }
         "props" => Value::Object(props(widget)).to_string(),
         "open" => match editor.open() {
             Ok(steps) => json!({ "steps": steps }).to_string(),
@@ -1467,6 +1530,36 @@ mod layer_tests {
 
     fn call(editor: &mut AudioEditor, value: Value) -> Value {
         serde_json::from_str(&call_json(editor, &value.to_string())).unwrap()
+    }
+
+    #[test]
+    fn edit_body_calls_and_menu_verbs_correct_the_pane_without_editing_samples() {
+        let mut editor = new_json(r#"{"take":1,"frames":1000}"#).unwrap();
+        editor.bare = true;
+        let tree = call(&mut editor, json!({"verb":"window","widget":17,"pane":18}));
+        assert_eq!(tree["children"][0]["type"], "pane");
+        let out = call(
+            &mut editor,
+            json!({"verb":"layer","name":"placement","version":4}),
+        );
+        assert_eq!(out["answer"]["corrections"][0]["widget"], 18);
+        assert_eq!(
+            out["answer"]["corrections"][0]["props"]["layer"],
+            "placement"
+        );
+        assert_eq!(out["answer"]["docVersion"], 4);
+        assert_eq!(
+            call(&mut editor, json!({"verb":"layer_take"}))["layer"],
+            "take"
+        );
+        assert!(
+            call(&mut editor, json!({"verb":"layer","name":"points"}))
+                .get("error")
+                .is_some()
+        );
+        assert_eq!(call(&mut editor, json!({"verb":"layer"}))["layer"], "take");
+        assert_eq!(editor.length(), 1000);
+        assert_eq!(editor.layers(), json!(["peak", "rms"]));
     }
 
     #[test]

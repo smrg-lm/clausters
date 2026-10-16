@@ -28,6 +28,7 @@ pub(super) struct RulerItem {
     pub(super) ink: Ink,
     pub(super) theme: Option<Arc<Theme>>,
     pub(super) editor: EditorProps,
+    pub(super) body: Option<Rect>,
 }
 
 pub(super) struct SpectralBodyItem {
@@ -99,6 +100,7 @@ pub(super) struct TimelineItem {
     /// it has not changed and must not be re-summarized to show an edit that
     /// nobody has applied yet.
     pub(super) pending: Option<crate::host::widget::element::PendingEdit>,
+    pub(super) axis_owned: bool,
     /// How much of the samples exists, for a take being written into as it is
     /// drawn (`fills`); `None` when all of it does.
     pub(super) written: Option<u64>,
@@ -159,15 +161,39 @@ pub(super) fn collect_widgets(
         match &p.widget.kind {
             WidgetKind::Panel { group, .. } => draw_group(mesh, p, group, m, th),
             WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => mesh.rect(p.rect, th.panel),
-            WidgetKind::TimeRuler { editor, .. } => {
+            WidgetKind::TimeRuler { editor, .. } | WidgetKind::Pane { editor, .. } => {
+                let body = match &p.widget.kind {
+                    WidgetKind::Pane { label, .. } => {
+                        super::super::graphics::meters::label_strip(
+                            &mut Draw::new(mesh, m, th),
+                            label.as_deref(),
+                            p.rect,
+                        );
+                        let body =
+                            super::timeline_body(p.rect, editor, label.is_some(), p.indent, m);
+                        mesh.rect(body, th.view_field);
+                        Some(body)
+                    }
+                    _ => None,
+                };
                 ruler_items.push(RulerItem {
                     id: p.widget.id.unwrap_or(-1),
-                    rect: p.rect,
+                    rect: if matches!(p.widget.kind, WidgetKind::Pane { .. }) {
+                        let h = if editor.ruler == super::Ruler::Off {
+                            0.0
+                        } else {
+                            m.ruler_h.min(p.rect.h)
+                        };
+                        Rect::new(p.rect.x, p.rect.y + p.rect.h - h, p.rect.w, h)
+                    } else {
+                        p.rect
+                    },
                     indent: p.indent,
                     clip: p.clip,
                     ink,
                     theme: p.widget.theme.clone(),
                     editor: editor.clone(),
+                    body,
                 });
             }
             // A registered element draws straight into the window's one mesh
@@ -187,18 +213,26 @@ pub(super) fn collect_widgets(
                     // handed a picture of it, which is what makes one element
                     // both a standalone view and a lane's content.
                     time: p.widget.id.zip(p.widget.kind.editor()).and_then(|(id, e)| {
-                        inputs.world.timelines.space_of(
+                        let mut time = inputs.world.timelines.space_of(
                             id,
                             e.link,
                             Some(inputs.world.clocks.at(Some(id))),
-                        )
+                        )?;
+                        if let Some((owner, index)) = p.pane(placed) {
+                            time.active = crate::host::layers::child_is_active(owner, index);
+                        }
+                        Some(time)
                     }),
                     focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
                     hovered: p.widget.id.is_some()
                         && p.widget.id == inputs.popups.and_then(|o| o.hover),
                     clock: inputs.world.clocks.at(p.widget.id),
                 };
-                el.draw(&mut Draw::new(mesh, m, th), &ctx);
+                // Curves above a sampled body draw in the overlay pass, so
+                // a texture never paints over the annotation.
+                if p.pane(placed).is_none() || el.slotted().is_some() {
+                    el.draw(&mut Draw::new(mesh, m, th), &ctx);
+                }
                 // ...and, for a view the shared mesh cannot carry, what its
                 // claimed slot draws this frame. The set of slots is closed and
                 // is the frame's, so this match is over pipelines the window
@@ -248,6 +282,7 @@ pub(super) fn collect_widgets(
                                 look,
                                 editor: editor.clone(),
                                 pending: el.pending_edit().cloned(),
+                                axis_owned: p.pane(placed).is_none(),
                                 written: el.samples().and_then(Samples::written),
                             });
                         }

@@ -477,6 +477,7 @@ A node saying `type: "menu"` is an unknown type, like every retired name.
 | `layout` | 0 | children arranged by **`flow`** — `row`, `col`, `grid`, `free` or **`stack`** (one child at a time, the one at `index`) — plus `margin`, `gap`, `cols`, `hug`, `theme`, and what the container shows of itself: `title`, `frame`, `collapsed`, `split`, `pack`, `modal` (see [Container chrome](#container-chrome-groups-dividers-scroll-bars-and-a-dialog)) | `panel`, `box`, `stack` |
 | `plane` | 2, **locked to one scale** | a pannable, zoomable plane in content units: `axis`, `zoom`, `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`, `bars`; with `boxes`/`cords`, the patcher | `scroll`, `patch` |
 | `field` | 2, **independent** | the **free-standing time ruler** of a navigation group: an `axes` pair and nothing placed on it. It was three things told apart by what was on them — a track, a clip, this — and the first two are `multitrack` props now: a track cannot sit in a void, so it is always inside the view that owns it | `timeruler` |
+| `pane` | shared time, body-specific vertical | [superimposed edit bodies](#a-pane-and-its-edit-bodies), `axes`, `link`, `layer`, `hidden`, `label` | `pane` |
 
 `flow` is what the catalog spelled `layout`, on **every** container that has
 an arrangement: the model spends the word `layout` on the container itself.
@@ -989,6 +990,7 @@ script actually names these. The catalog itself:
 | Type | What it is | Notable properties |
 |---|---|---|
 | `window` | A top-level window (a GuiDef root). It carries the host's **status bar** along its bottom edge unless `status` is off — see the section below. **`plays`** says the window's owner plays it: the space bar is then the window's own `play` verb — `/gui_event <window> <seq> <version> "play" <loop>`, the loop switch `L` riding beside it as `1` or `0` — whatever the pointer is over, and the host's own take monitor stays out. Off by default: the space bar over a take is then the monitor's, and over anything else the same verb. **`L` switches the loop and tells the window**: `/gui_event <window> <seq> <version> "loop" <loop>`, the switch's new state, so an owner playing the window changes the pass in progress — looping over the time range a sweep left, or going on to its end — from where it stands, and a stopped one reads the switch on its next play; a take the monitor is playing follows the switch at once. **Home and End** place the position cursor at the start of what is under the pointer and at its end — a take's last frame, a roll's last note, a multitrack's last region — and report it as the `"locate"` a click on the ruler reports, so the owner cues its transport there. **`keys`** names the key table's scopes in force in the window (a list of names, or one), read before its own rows — see "The keys are a table". **`verbs`** declares the scopes the window's application brings — `{"scope": {"verb": chords or {"keys": chords, "label": "words"}}}` — laid into the key table under what the user bound (see "The keys are a table"). **`ask_close`** says the window's owner is asked before it closes: its close mark reports `"close"` (above) instead of closing it, and the owner frees it. Off by default: an owner sets it where the window is the only holder of the work — a standalone host's — since a client keeps what it edits whatever becomes of the window. **`main`** names the element (by id) the window's commands address when nothing holds the focus — a menu entry's verb, a tool's, a key's | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols`, `hug`, `status`, `plays`, `keys`, `verbs`, `ask_close`, `main`, `theme` |
+| `pane` | A time axis with superimposed signal and curve bodies. One body is in hand at a time; a signal's visualization stack stays inside that body. | `axes`, `link`, `layer`, `hidden`, `label`, `children` |
 | `panel` | A nestable container | `layout`, `margin`, `gap`, `cols`, `hug`, `theme`; `title`, `frame`, `collapsed`, `split`, `pack`, `modal` |
 | `stack` | A container showing **one child at a time**, the one at `index`: it fills the container, and the hidden pages are neither laid out nor drawn while keeping their place in the tree (so a heavy view keeps its GPU slot and its bus reads across a switch). An `index` outside the children shows nothing — a blank page, not a clamped one. Tabs, a pager and a waveform/spectrogram switch are this plus a control bound to `index` | `index`, `margin`, `hug`, `theme` |
 | `scroll` | The **2D workspace**: a container whose children live in a virtual content area seen through a panning, zooming window. General first — the default is the free plane; the constrained scroll views degenerate from it by configuration | `axis` (`both`/`x`/`y`), `zoom` (0 disables the wheel zoom and the wheel then pans along the axis; `"ctrl"` keeps both — the wheel pans, Shift pans x, and **Ctrl** with the wheel zooms — which is what a page of text or of music wants), `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`, plus `layout` (default `free` here), `margin`, `gap`, `cols`, `theme` |
@@ -1303,3 +1305,21 @@ the answer is one message away, and retiring it first would show the old pitch
 for a frame. Replacing the page keeps the widget's own chrome (`playhead`,
 `playhead_at`, `sample_rate`, `selected`), so the edited note stays selected
 across the round trip; MEI ids survive an edit, so it is still the same id.
+
+### A pane and its edit bodies
+
+`pane` superimposes its child bodies on one time axis. Its `axes.x` owns the
+horizontal ruler, navigation window, selection, position cursor and playhead.
+Children join the pane's `link` group (the pane's id when no link is named).
+The ruler and label reserve space once, outside the bodies. Each body keeps
+its own vertical scale; a signal's visual `layers` remain inside that signal.
+
+`layer` chooses the editable body by role: `take`, `points`, `notes`, with
+`:1`, `:2`, etc. for repeated roles. `placement` leaves the pane itself in
+hand. A press on editable contents in that state selects the body and reports
+`layer <name>`; an active body keeps subsequent presses. Only the active,
+visible body receives edits. `hidden` is a space-separated list of body names;
+an empty string shows all bodies. Both properties accept live `/gui_set`.
+Children have ordinary widget ids, so their existing edit payloads and buffer
+fetches keep their existing addresses. An unknown layer name is refused. A gesture already captured by a body
+settles on that body when released, as it does for other host elements.

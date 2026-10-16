@@ -87,8 +87,9 @@ function floats(blob: unknown): number[] {
 }
 
 /**
- * One `waveform`: the take on its own axis, drawn by the host straight from the
- * server buffer.
+ * A pane holding the take's signal body, drawn by the host straight from
+ * the server buffer. Visual measures remain a prop of that body; the pane
+ * owns the time axis, ruler, selection and playhead.
  *
  * **The window is the application's**, composed in the shared crate
  * (`EditingCore`): the waveform, the gesture plan a take is edited with (a
@@ -108,9 +109,10 @@ export class SamplesView extends View<Buffer> {
     build(editor: Editor<Buffer>): GuiNode {
         const wid = this.widget(editor, "waveform", editor.structure);
         const meter = this.widget(editor, "meter", editor.structure);
+        const pane = this.widget(editor, "pane", editor.structure);
         const ed = editor as unknown as TakeWindow;
         ed.syncCore();
-        const tree = ed.coreCall("window", { widget: wid, meter }) as unknown as GuiNode;
+        const tree = ed.coreCall("window", { widget: wid, meter, pane }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
         // rather than composed in the crate.
         tree.children = [...(tree.children ?? []), ...editor.extra];

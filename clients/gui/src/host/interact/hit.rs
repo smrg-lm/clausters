@@ -50,6 +50,12 @@ pub(crate) fn hit(
             // A disabled widget is out of the hand's reach: the press goes to
             // what is around it, exactly as it would over empty space.
             && p.widget.live
+            && p.parent.is_none_or(|parent| {
+                let owner = placed[parent].widget;
+                !matches!(owner.kind, WidgetKind::Pane { .. })
+                    || owner.children.iter().position(|c| std::ptr::eq(c, p.widget))
+                        .is_some_and(|index| crate::host::layers::child_is_active(owner, index))
+            })
             && !matches!(
                 p.widget.kind,
                 WidgetKind::Window { .. } | WidgetKind::Panel { .. } | WidgetKind::Stack { .. }
@@ -220,6 +226,10 @@ fn time_axis(
         WidgetKind::TimeRuler { .. } => {
             (super::super::frame::ruler_strip_body(p.rect, indent), false)
         }
+        WidgetKind::Pane { editor, label } => (
+            super::super::frame::timeline_body(p.rect, editor, label.is_some(), indent, metrics),
+            false,
+        ),
         // Every other member answers for itself: where the axis lies inside
         // its rect and whether it offers a vertical surface beside it. Only a
         // leaf whose picture is not "the rect minus its chrome" overrides the

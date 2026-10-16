@@ -9,7 +9,11 @@ use super::*;
 
 /// Applies one `/gui_set` key/value to `widget` -- its kind's own keys.
 pub(super) fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
-    apply_kind(&mut widget.kind, key, v)
+    let applied = apply_kind(&mut widget.kind, key, v);
+    if applied {
+        widget.bind_pane();
+    }
+    applied
 }
 
 /// Applies one `/gui_set` key/value to `kind`, returning whether the key was one
@@ -81,7 +85,13 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // joins it to the lanes. Without this arm a `/gui_set` of any of them
         // was recorded in the registry and never reached the drawing -- a
         // script could not change the unit of the strip it had just built.
-        WidgetKind::TimeRuler { editor } => editor.apply(key, v),
+        WidgetKind::Pane { label, .. } if key == "label" => v
+            .as_str()
+            .map(|text| {
+                *label = (!text.is_empty()).then(|| text.to_string());
+            })
+            .is_some(),
+        WidgetKind::TimeRuler { editor } | WidgetKind::Pane { editor, .. } => editor.apply(key, v),
         WidgetKind::Custom(el) => el.set(key, v),
         _ => false,
     }

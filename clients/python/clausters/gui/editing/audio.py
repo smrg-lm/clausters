@@ -608,6 +608,15 @@ class AudioEditor(Marking, Editor):
             raise ValueError(outcome["error"])
         self._take(outcome)
 
+    @property
+    def layer(self) -> str:
+        """The active edit body, separate from the take's visual layers."""
+        return self._call("layer")["layer"]
+
+    @layer.setter
+    def layer(self, name: str) -> None:
+        self._view_layers("layer", name=name)
+
     def show_layer(self, name: str) -> None:
         """Show a visual layer, appending it if absent."""
         self._view_layers("show_layer", name=name)

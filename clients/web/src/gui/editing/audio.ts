@@ -843,6 +843,10 @@ export class AudioEditor extends Editor<Buffer> {
         this.take(outcome as Outcome);
     }
 
+    /** The active edit body, separate from the take's visual layers. */
+    get layer(): string { return this.coreCall("layer").layer as string; }
+    set layer(name: string) { this.viewLayers("layer", { name }); }
+
     /** Show a visual layer, appending it if absent. */
     showLayer(name: string): void { this.viewLayers("show_layer", { name }); }
 

@@ -10372,3 +10372,17 @@ another form, so it is built from those instead:
   the conventional range of a name (`freq`, `amp`, `pan`) and then on one
   around the default. The fields live in a control's `display`, never as
   attributes, because `min` and `max` on a signal are the binary operators.
+
+## The pane owns the time axis, its bodies own their vertical scales (2026-10-16)
+
+The audio editor needs annotations above a signal without giving either body
+ownership of the other's axis. An ordinary layout panel can overlap children,
+but each child still owns its ruler and receives presses independently. Adding
+editor semantics to every layout panel would change the meaning of a layout.
+
+A `pane` is therefore an axis container. It reuses the timeline group and the
+existing body-role selector. Its ruler, selection and playhead are shared;
+its active visible body receives edits. Signal visual layers stay inside the
+take body: peak, RMS and spectrogram are pictures of samples, while a curve
+is an independently editable structure. The distinction keeps one signal
+analysis and one implementation of each curve gesture.

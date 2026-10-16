@@ -86,6 +86,10 @@ pub(super) fn build_kind(
         // -- a lane, a clip placed on its parent's axis, or this -- and the
         // first two are `multitrack` props now: a lane cannot sit in a
         // void, so it is always inside the view that owns it.
+        "pane" => WidgetKind::Pane {
+            editor: EditorProps::parse(props, RulerY::Off),
+            label: label(props),
+        },
         "field" => WidgetKind::TimeRuler {
             editor: EditorProps::parse_ruler(props),
         },

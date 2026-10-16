@@ -21,6 +21,7 @@ use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::effects::*;
 use super::nav::*;
 use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
+use clausters_core::osc::OscType;
 
 /// The reasons the two sample-editing arms give, written once because both give
 /// them and a reason spelled twice is a reason that will be spelled two ways.
@@ -147,12 +148,61 @@ impl Gestures {
         if self.chrome_press(host, ctx, cx, cy, &mut out) {
             return out;
         }
-        let Some(hit) = hit(host, ctx, cx, cy) else {
+        let Some(mut hit) = hit(host, ctx, cx, cy) else {
             // A press on empty space drops the focus (a caret disappears).
             focus::on_press(host, &mut out, ctx, None);
             self.pan_sole_axis(host, ctx, cx);
             return out;
         };
+        // With no body in hand, pointing at editable contents selects the
+        // existing role address. Once selected, only that body takes presses.
+        if matches!(hit.kind, WidgetKind::Pane { .. }) {
+            let metrics = host.metrics_for(ctx.def_id).at(hit.scale);
+            let time = hit
+                .kind
+                .editor()
+                .and_then(|e| host.timelines().space_of(hit.id, e.link, None));
+            let rect = match &hit.kind {
+                WidgetKind::Pane { editor, label } => crate::host::frame::timeline_body(
+                    hit.rect,
+                    editor,
+                    label.is_some(),
+                    0.0,
+                    &metrics,
+                ),
+                _ => hit.rect,
+            };
+            let at = element::At::widget(hit.id, rect, hit.scale, hit.indent);
+            let input = element::input(&metrics, ctx, at, time);
+            let layer = host
+                .window_def(ctx.def_id)
+                .and_then(|tree| tree.find(hit.id))
+                .filter(|w| crate::host::layers::active(w) == crate::host::layers::Layer::Placement)
+                .map(|w| crate::host::layers::under_pointer(w, (cx, cy), &input));
+            if let Some(layer @ crate::host::layers::Layer::Content(_)) = layer {
+                let name = {
+                    let widget = host
+                        .window_def_mut(ctx.def_id)
+                        .unwrap()
+                        .find_mut(hit.id)
+                        .unwrap();
+                    crate::host::layers::Selection::of(widget)
+                        .unwrap()
+                        .set(layer);
+                    layer.name(widget)
+                };
+                emit(
+                    host,
+                    &mut out,
+                    ctx.def_id,
+                    hit.id,
+                    vec![OscType::String("layer".into()), OscType::String(name)],
+                );
+                if let Some(body) = super::nav::hit(host, ctx, cx, cy) {
+                    hit = body;
+                }
+            }
+        }
         // The focus follows the press: onto a widget that takes one, off
         // whatever held it otherwise. It is asked of the widget rather than
         // matched on its kind, so a registered element is a stop like any other.

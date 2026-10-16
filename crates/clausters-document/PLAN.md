@@ -1213,6 +1213,16 @@ against, not work: what turned into work is in them, named.*
   That is the design question this milestone opens, and it is what makes the
   audio editor more than a waveform with a selection.
 
+  **The pane owns the axis** *(decided with the user 2026-10-16; X13 in the
+  applications plan)*. The host's `pane` container carries the existing axis
+  props and layers existing signal and curve bodies. Horizontal navigation,
+  selection and playback position belong to its timeline group; a body's
+  vertical scale remains its own. The active edit body is named by its role
+  through `layer`, and `hidden` excludes bodies from drawing and editing. The
+  signal's visual stack stays inside the take body. An ordinary layout panel
+  remains a layout: it has no measuring axis to own or edit routing to resolve.
+
+
   **The multitrack editor plays through the server's transport, and computes no
   time at all** *(decided 2026-09-08, taken as the milestone's first leg)*. This
   is not a new decision - `docs/architecture.md`, "Playback time in a session:

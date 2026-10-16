@@ -155,6 +155,8 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "view_wave"),
             entry(app, "view_spectrogram"),
             entry(app, "view_both"),
+            sep(),
+            entry(app, "layer_take"),
         ]);
     }
     if app != App::Audio {

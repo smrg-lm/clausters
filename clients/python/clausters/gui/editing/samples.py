@@ -58,9 +58,9 @@ def _floats(blob) -> list:
 
 
 class SamplesView(View):
-    """One `clausters.gui.guidef.waveform`: the take on its own axis, drawn by
-    the host straight from the server buffer, with the measures it stacks as a
-    prop of that one widget (see the module docstring).
+    """A pane holding the take's signal body, drawn by the host straight from
+    the server buffer. Visual measures remain a prop of that body; the pane
+    owns the time axis, ruler, selection and playhead.
 
     **The window is the application's**, composed in the shared crate
     (`clausters._native.EditingCore`): the waveform, the gesture plan a
@@ -77,8 +77,9 @@ class SamplesView(View):
     def build(self, editor) -> dict:
         wid = self.widget(editor, "waveform", editor.structure)
         meter = self.widget(editor, "meter", editor.structure)
+        pane = self.widget(editor, "pane", editor.structure)
         editor._sync_core()
-        tree = editor._call("window", widget=wid, meter=meter)
+        tree = editor._call("window", widget=wid, meter=meter, pane=pane)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]

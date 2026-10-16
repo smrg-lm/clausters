@@ -66,7 +66,8 @@ edit back into the buffer it was opened from, and
       <button id="run">open the take</button>
       <div id="stage"></div>
       <div>
-        <button id="wave" disabled>waveform</button>
+        <button id="take-layer" disabled>Edit take</button>
+    <button id="wave" disabled>waveform</button>
         <button id="spectrogram" disabled>spectrogram</button>
         <button id="both" disabled>both</button>
         <button id="play" disabled>play the take</button>
@@ -112,7 +113,7 @@ edit back into the buffer it was opened from, and
         const take = await Buffer.fromSamples(samples, 1, rate, { server });
 
         await session.gui();
-        // One verb. A `Buffer` opens in the audio editor: one `waveform` over
+        // One verb. A `Buffer` opens in the audio editor: a pane holding
         // the join it owns. The buffer is not written while you edit -- every
         // edit is a new list of parts over a copy of it and over the takes the
         // edits made -- until you save.
@@ -122,7 +123,9 @@ edit back into the buffer it was opened from, and
 
         // The same take through different layers. The mixed view keeps the
         // frequency ruler and puts peak and RMS in their own amplitude boxes.
+        $("take-layer").disabled = false;
         $("wave").disabled = false;
+        $("take-layer").onclick = () => { editor.layer = "take"; };
         $("wave").onclick = () => editor.viewWave();
         $("spectrogram").disabled = false;
         $("spectrogram").onclick = () => editor.viewSpectrogram();

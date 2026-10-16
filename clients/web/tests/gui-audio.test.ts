@@ -189,7 +189,7 @@ test("the window draws a join over a private copy of the take", async () => {
 
 test("the window opens with both cursors on the transport clock", async () => {
     const [editor, host] = await opened(new FakeBuffer());
-    const take = picture(host.trees[0]) as unknown as {
+    const take = host.trees[0]!.children![1]!.children![0]! as unknown as {
         axes: { x: Record<string, unknown> };
     };
     assert.equal(take.axes.x.cursor, 0, "the position cursor, placed");
@@ -495,4 +495,23 @@ test("visual layers use shared outcomes for calls and menu events", async () => 
     const wid = [...editor.view!.widgets.keys()][0]!;
     editor.apply("/gui_event", [wid, 1, 0, "view_both"]);
     assert.equal((editor.layers[1] as unknown as {y: string}).y, "box");
+});
+
+test("the edit layer is the pane body and not the visual stack", async () => {
+    const editor = new AudioEditor(new FakeBuffer() as never, { sampleRate: SR, context: new Editing() });
+    const host = new FakeHost();
+    await editor.open(host as unknown as GuiHost);
+    const pane = host.trees[0]!.children![1]!.children![0]!;
+    assert.equal(pane.type, "pane");
+    assert.equal(pane.children![0]!.id, picture(host.trees[0]).id);
+    assert.equal((pane.axes as any).x.unit, "time");
+    assert.equal(editor.layer, "take");
+    editor.layer = "placement";
+    assert.equal(editor.layer, "placement");
+    await settle();
+    assert.deepEqual(host.acks.at(-1)![1], [[pane.id, { layer: "placement" }]]);
+    editor.layer = "take";
+    assert.deepEqual(editor.layers, ["peak", "rms"]);
+    assert.throws(() => { editor.layer = "points"; }, /no 'points' body/);
+    assert.equal(editor.layer, "take");
 });

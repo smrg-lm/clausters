@@ -1140,6 +1140,7 @@ fn the_enum_is_the_containers_plus_the_two_that_are_not_widgets() {
             "Stack",
             "Scroll",
             "TimeRuler",
+            "Pane",
             // ...and the two that are not a kind of widget at all: whatever
             // this build renders through the trait, and whatever it does not
             // recognize (laid out, never painted).

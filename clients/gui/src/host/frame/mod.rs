@@ -2192,6 +2192,22 @@ mod tests {
         )
     }
 
+    #[test]
+    fn a_panes_playhead_moves_without_a_signal_body() {
+        let json = r#"{"type":"window","children":[
+            {"type":"pane","id":10,"layer":"points","sample_rate":1,"playhead_at":0,
+             "children":[{"type":"curve","id":11,"duration":100,
+                "points":[0,0.2,1,0,100,0.8,1,0]}]}]}"#;
+        let still = picture_at(json, 0.0, 0.0);
+        let moved = picture_at(json, 20.0, 0.0);
+        assert!(still.base.near(&moved.base, 0.0));
+        assert!(still.over.near(&moved.over, 0.0));
+        assert!(
+            !still.live.near(&moved.live, LIVE_SLACK),
+            "the pane draws its own head without a signal slot"
+        );
+    }
+
     /// A window of everything a clock or a level moves that is drawn into
     /// the mesh: a roll and a page, each anchored, a metered multitrack, a
     /// meter, a sweeping bar and a clock's reading beside them.

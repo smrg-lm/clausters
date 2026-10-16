@@ -54,7 +54,11 @@ impl Widget {
     /// that says it does ([`OnAxis::navigates_time`]),
     /// or one of the containers placed on that axis.
     pub fn is_timeline(&self) -> bool {
-        self.kind.navigates_time() || matches!(self.kind, WidgetKind::TimeRuler { .. })
+        self.kind.navigates_time()
+            || matches!(
+                self.kind,
+                WidgetKind::TimeRuler { .. } | WidgetKind::Pane { .. }
+            )
     }
 
     /// Whether this tree contains a widget whose overlay follows the pointer --
@@ -409,7 +413,7 @@ impl WidgetKind {
     pub fn editor(&self) -> Option<&EditorProps> {
         match self {
             WidgetKind::Custom(el) => el.on_axis()?.editor(),
-            WidgetKind::TimeRuler { editor, .. } => Some(editor),
+            WidgetKind::TimeRuler { editor, .. } | WidgetKind::Pane { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -419,7 +423,7 @@ impl WidgetKind {
     pub fn editor_mut(&mut self) -> Option<&mut EditorProps> {
         match self {
             WidgetKind::Custom(el) => el.on_axis_mut()?.editor_mut(),
-            WidgetKind::TimeRuler { editor, .. } => Some(editor),
+            WidgetKind::TimeRuler { editor, .. } | WidgetKind::Pane { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -630,6 +634,12 @@ impl Widget {
     /// ([`WidgetKind::info`]).
     pub fn info(&self) -> Vec<(String, Value)> {
         let mut info = self.kind.info();
+        if !crate::host::layers::stack(self).is_empty() {
+            info.push((
+                "layer".into(),
+                Value::from(crate::host::layers::active(self).name(self)),
+            ));
+        }
         // A menu's checks are flipped by the hand that picks them, so the tree
         // reads back as it stands now rather than as it was sent.
         // A non-scalar rides as the JSON string its `/gui_set` accepts.

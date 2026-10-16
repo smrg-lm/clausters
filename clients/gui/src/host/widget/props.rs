@@ -1120,6 +1120,12 @@ impl GestureMap {
             // span are one selection there (the datum is the frame), so the
             // ruler is another hand onto the selection the view already has.
             WidgetKind::TimeRuler { .. } => (&[Pan], &[Pan], &[Marker], &[Select]),
+            WidgetKind::Pane { .. } => (
+                &[Element, Select],
+                &[Pan],
+                &[Element, Select],
+                &[Element, Select],
+            ),
             // A workspace claims nothing: whatever no element and no inner
             // container took pans the plane.
             WidgetKind::Scroll { .. } => (

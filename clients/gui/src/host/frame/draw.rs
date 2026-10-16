@@ -16,6 +16,16 @@ use crate::host::menubar;
 use crate::host::popup;
 use crate::host::widget::{Marker, Naming, RulerDir};
 
+/// A position line on a time axis, shared by panes and standalone views.
+fn draw_time_line(d: &mut Draw, body: Rect, nav: &View, pos: Option<f64>, color: [f32; 4]) {
+    let Some(pos) = pos.filter(|p| *p >= nav.start && *p <= nav.start + nav.len) else {
+        return;
+    };
+    let x = sample_to_x(pos, nav, body);
+    d.mesh
+        .rect(Rect::new(x, body.y, d.m.trace_w, body.h), color);
+}
+
 /// Draws the time-ruler strip under `body` for the visible `nav` window
 /// (aligned with the body, so its ticks sit under the samples they label even
 /// when a vertical ruler indents the body).
@@ -308,15 +318,17 @@ pub(super) fn draw_editor_overlay(
     // restricted in value it is the rectangle the hand drew and not a
     // full-height wash, or the picture would say the whole signal is selected
     // where the selection holds a band of it.
-    selection::draw_span(
-        &mut Draw::new(mesh, m, theme),
-        body,
-        nav,
-        chrome.selection(),
-        channels,
-        item.editor.value_range(),
-        sweep_axis(&item.editor, vertical),
-    );
+    if item.axis_owned {
+        selection::draw_span(
+            &mut Draw::new(mesh, m, theme),
+            body,
+            nav,
+            chrome.selection(),
+            channels,
+            item.editor.value_range(),
+            sweep_axis(&item.editor, vertical),
+        );
+    }
     // **The edit the hand is making, drawn over the picture and marked as
     // pending.** The samples under it has not changed -- the host owns no data
     // -- so this is the one thing on screen that is not what the document says.
@@ -375,12 +387,14 @@ pub(super) fn draw_editor_overlay(
     // is drawn here. The playhead is where the music is, and it is drawn over
     // it on the window's live layer ([`draw_timeline_heads`]): it is the one
     // part of this view a clock moves.
-    if let Some(pos) = chrome.cursor()
-        && pos >= nav.start
-        && pos <= nav.start + nav.len
-    {
-        let x = sample_to_x(pos, nav, body);
-        mesh.rect(Rect::new(x, body.y, m.trace_w, body.h), theme.cursor);
+    if item.axis_owned {
+        draw_time_line(
+            &mut Draw::new(mesh, m, theme),
+            body,
+            nav,
+            chrome.cursor(),
+            theme.cursor,
+        );
     }
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
     // vertical unit / frequency scale), in the body's bottom-right corner --
@@ -484,7 +498,9 @@ pub(super) fn draw_timeline_meshes(
         // **One field, painted once, for the whole stack** -- which is the whole
         // reason the layers are inside one element: a second picture here would
         // be a lid on the first rather than a layer over it.
-        mesh.rect(body, th.view_field);
+        if item.axis_owned {
+            mesh.rect(body, th.view_field);
+        }
         let look = &item.look;
         // What each kind of layer draws from. A stack may name a picture whose
         // data has not landed yet (or cannot: a peaks cache holds no spectrum),
@@ -736,6 +752,9 @@ pub(super) fn draw_timeline_heads(
 ) {
     let m = inputs.metrics;
     for item in &collected.timeline_items {
+        if !item.axis_owned {
+            continue;
+        }
         // The axis' extent, as the picture under this line read it.
         let Some(total) = waveforms
             .get(&(item.id, item.key))
@@ -749,19 +768,30 @@ pub(super) fn draw_timeline_heads(
             continue;
         };
         let chrome = chrome_for(inputs, item.id, &item.editor, || View::full(total));
-        let nav = &chrome.nav;
-        let Some(pos) = chrome.head_at(inputs.world.clocks.at(Some(item.id))) else {
-            continue;
-        };
-        if pos < nav.start || pos > nav.start + nav.len {
-            continue;
-        }
         let th = item.theme.as_deref().unwrap_or(theme);
         mesh.set_clip(item.clip);
         mesh.set_ink(item.ink);
-        let x = sample_to_x(pos, nav, item.body);
-        mesh.rect(
-            Rect::new(x, item.body.y, m.trace_w, item.body.h),
+        draw_time_line(
+            &mut Draw::new(mesh, m, th),
+            item.body,
+            &chrome.nav,
+            chrome.head_at(inputs.world.clocks.at(Some(item.id))),
+            th.playhead,
+        );
+    }
+    for item in &collected.ruler_items {
+        let Some(body) = item.body else {
+            continue;
+        };
+        let chrome = chrome_for(inputs, item.id, &item.editor, || View::full(1));
+        let th = item.theme.as_deref().unwrap_or(theme);
+        mesh.set_clip(item.clip);
+        mesh.set_ink(item.ink);
+        draw_time_line(
+            &mut Draw::new(mesh, m, th),
+            body,
+            &chrome.nav,
+            chrome.head_at(inputs.world.clocks.at(Some(item.id))),
             th.playhead,
         );
     }
@@ -846,6 +876,35 @@ pub(super) fn draw_element_overlays(
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         selection::draw_rect(&mut Draw::new(over, m, th), rect);
     }
+    for p in placed {
+        let WidgetKind::Pane { editor, label } = &p.widget.kind else {
+            continue;
+        };
+        let Some(id) = p.widget.id else {
+            continue;
+        };
+        let body = super::timeline_body(p.rect, editor, label.is_some(), p.indent, &p.metrics);
+        let chrome = chrome_for(inputs, id, editor, || View::full(1));
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
+        over.set_clip(p.clip);
+        over.set_ink(super::ink_of(p));
+        selection::draw_span(
+            &mut Draw::new(over, &p.metrics, th),
+            body,
+            &chrome.nav,
+            chrome.selection(),
+            1,
+            None,
+            selection::Vertical::Whole,
+        );
+        draw_time_line(
+            &mut Draw::new(over, &p.metrics, th),
+            body,
+            &chrome.nav,
+            chrome.cursor(),
+            th.cursor,
+        );
+    }
     // **What each element draws over the pictures**
     // ([`Element::draw_over`](super::super::widget::Element::draw_over)): a
     // stored plot's hover readout. Every element is asked, and the default
@@ -859,22 +918,33 @@ pub(super) fn draw_element_overlays(
         over.set_clip(p.clip);
         over.set_ink(super::ink_of(p));
         let th = p.widget.theme.as_deref().unwrap_or(theme);
-        el.draw_over(
-            &mut Draw::new(over, m, th),
-            &Ctx {
-                world: &inputs.world,
-                metrics: m,
-                rect: p.rect,
-                indent: p.indent,
-                clip: p.clip,
-                scale: p.scale,
-                time: None,
-                focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
-                hovered: p.widget.id.is_some()
-                    && p.widget.id == inputs.popups.and_then(|o| o.hover),
-                clock: inputs.world.clocks.at(p.widget.id),
-            },
-        );
+        let mut time = p.widget.id.zip(p.widget.kind.editor()).and_then(|(id, e)| {
+            inputs
+                .world
+                .timelines
+                .space_of(id, e.link, Some(inputs.world.clocks.at(Some(id))))
+        });
+        if let Some((owner, index)) = p.pane(placed)
+            && let Some(time) = &mut time
+        {
+            time.active = crate::host::layers::child_is_active(owner, index);
+        }
+        let ctx = Ctx {
+            world: &inputs.world,
+            metrics: m,
+            rect: p.rect,
+            indent: p.indent,
+            clip: p.clip,
+            scale: p.scale,
+            time,
+            focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
+            hovered: p.widget.id.is_some() && p.widget.id == inputs.popups.and_then(|o| o.hover),
+            clock: inputs.world.clocks.at(p.widget.id),
+        };
+        if p.pane(placed).is_some() && el.slotted().is_none() {
+            el.draw(&mut Draw::new(over, &p.metrics, th), &ctx);
+        }
+        el.draw_over(&mut Draw::new(over, &p.metrics, th), &ctx);
     }
     over.set_clip(None);
 }

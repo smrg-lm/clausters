@@ -3966,3 +3966,108 @@ fn a_marker_is_named_where_it_is_put() {
     assert!(has_emit_tag(&effects, 60, "markers"));
     assert_eq!(markers_of(&host, 60), (vec!["/go".to_string()], None));
 }
+
+fn layered_pane_host() -> Host {
+    host_from(
+        r#"{"type":"window","margin":0,"children":[
+        {"id":10,"type":"pane","layer":"points","axes":{"x":{"unit":"samples"}},"children":[
+            {"id":11,"type":"curve","duration":100,"points":[0,0.2,1,0,50,0.2,1,0,100,0.2,1,0]},
+            {"id":12,"type":"curve","duration":100,"points":[0,0.8,1,0,50,0.8,1,0,100,0.8,1,0]}
+        ]}] }"#,
+    )
+}
+
+#[test]
+fn pane_routes_a_press_to_the_active_body_below_another_body() {
+    let mut host = layered_pane_host();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let rect = placed_rect(&host, &ctx, 11);
+    let x = f64::from(rect.x + rect.w * 0.5);
+    let y = f64::from(rect.y + rect.h * 0.8);
+    let target = hit(&host, &ctx, x, y).unwrap();
+    assert_eq!(
+        target.id, 11,
+        "the later curve must not intercept the active body's press"
+    );
+    assert_eq!(host.timeline_key(10), host.timeline_key(11));
+    assert_eq!(host.timeline_key(10), host.timeline_key(12));
+    let mut gestures = Gestures::default();
+    gestures.press(&mut host, &ctx, x, y);
+    gestures.drag_to(&mut host, &ctx, x, y - 20.0);
+    let effects = gestures.release(&mut host, &ctx, x, y - 20.0);
+    assert!(has_emit_tag(&effects, 11, "points"), "{effects:?}");
+    assert!(!has_emit_tag(&effects, 12, "points"));
+    set_prop(&mut host, 10, "layer", "points:1");
+    assert_eq!(hit(&host, &ctx, x, y).unwrap().id, 12);
+}
+
+#[test]
+fn pane_hides_a_body_from_drawing_and_editing_and_keeps_its_ruler() {
+    let mut host = layered_pane_host();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let pane = placed_rect(&host, &ctx, 10);
+    let body = placed_rect(&host, &ctx, 11);
+    assert!(body.h < pane.h, "one ruler strip is reserved by the pane");
+    assert_eq!(body, placed_rect(&host, &ctx, 12));
+    set_prop(&mut host, 10, "hidden", "points");
+    let placed = host.layout_window(1, 600, 400).unwrap();
+    assert!(!placed.iter().any(|p| p.widget.id == Some(11)));
+    assert_eq!(hit(&host, &ctx, 300.0, 200.0).unwrap().id, 10);
+    set_prop(&mut host, 10, "layer", "points:1");
+    assert_eq!(hit(&host, &ctx, 300.0, 200.0).unwrap().id, 12);
+    set_prop(&mut host, 10, "hidden", "");
+    assert!(
+        host.layout_window(1, 600, 400)
+            .unwrap()
+            .iter()
+            .any(|p| p.widget.id == Some(11))
+    );
+}
+
+#[test]
+fn pane_can_select_contents_from_placement_and_reports_the_existing_layer_payload() {
+    let mut host = layered_pane_host();
+    set_prop(&mut host, 10, "layer", "placement");
+    let ctx = GestureCtx::new(1, 600, 400);
+    let rect = placed_rect(&host, &ctx, 12);
+    let x = f64::from(rect.x + rect.w * 0.5);
+    let y = f64::from(rect.y + rect.h * 0.2);
+    let effects = Gestures::default().press(&mut host, &ctx, x, y);
+    assert!(has_emit_tag(&effects, 10, "layer"));
+    assert_eq!(
+        host.window_def(1).unwrap().find(10).unwrap().layer,
+        crate::host::layers::Layer::Content(1)
+    );
+}
+
+#[test]
+fn a_curve_over_a_signal_edits_on_the_panes_shared_gutter() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+        {"id":10,"type":"pane","layer":"points","children":[
+            {"id":11,"type":"signal","view":"trace","navigable":1,"data":[0,1,0,-1]},
+            {"id":12,"type":"curve","duration":100,"points":[0,0.2,1,0,50,0.2,1,0,100,0.2,1,0]}
+        ]}]}"#,
+    );
+    let ctx = GestureCtx::new(1, 600, 400);
+    let rect = placed_rect(&host, &ctx, 12);
+    let hit = hit(&host, &ctx, 300.0, 200.0).unwrap();
+    let (_, axis) = interact::time_of(&hit.chain).unwrap();
+    assert!(axis.body.x > rect.x, "the signal reserves a value ruler");
+    let x = f64::from(axis.body.x + axis.body.w * 0.5);
+    let y = f64::from(rect.y + rect.h * 0.8);
+    let mut gestures = Gestures::default();
+    gestures.press(&mut host, &ctx, x, y);
+    gestures.drag_to(&mut host, &ctx, x, y - 20.0);
+    let effects = gestures.release(&mut host, &ctx, x, y - 20.0);
+    let args = emitted_args(&effects, 12).expect("the active curve reports its points");
+    let value = match &args[6] {
+        OscType::Float(v) => f64::from(*v),
+        OscType::Double(v) => *v,
+        other => panic!("expected a point value, got {other:?}"),
+    };
+    assert!(
+        value > 0.2,
+        "the point moved; the segment beside it was not bent: {args:?}"
+    );
+}

@@ -234,7 +234,7 @@ impl Curve {
         time: Option<crate::host::widget::element::TimeSpace>,
     ) -> Axes {
         let field = if self.body {
-            rect
+            crate::host::frame::timeline_body(rect, &self.editor, false, indent, m)
         } else {
             self.regions(rect, indent, m).field
         };
@@ -524,6 +524,10 @@ impl Element for Curve {
             }
             _ => false,
         }
+    }
+
+    fn set_body(&mut self) {
+        self.body = true;
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {

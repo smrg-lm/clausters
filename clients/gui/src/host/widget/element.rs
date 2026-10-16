@@ -1699,6 +1699,9 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// Places this element inside a layered container; no wire prop is added.
+    fn set_body(&mut self) {}
+
     /// The [`BodyRole`] this element fills when a container holds it as one of
     /// its bodies, or `None` (the default) for an element that is only ever
     /// itself.

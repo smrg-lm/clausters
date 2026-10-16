@@ -172,7 +172,8 @@ def test_the_window_draws_a_join_over_a_private_copy_of_the_take():
 
 def test_the_window_opens_with_both_cursors_on_the_transport_clock():
     editor, host, _wid, _context = opened(FakeBuffer())
-    take = picture(host.trees[0])
+    take = host.trees[0]["children"][1]["children"][0]
+    assert take["type"] == "pane"
     assert take["axes"]["x"]["cursor"] == 0.0, "the position cursor, placed"
     assert take["axes"]["x"]["playhead_at"] == 0.0, "the play cursor, anchored"
     assert host.clock == "transport", "drawn from the transport's position"
@@ -455,3 +456,20 @@ def test_visual_layers_use_shared_outcomes_for_calls_and_menu_events():
     wid = next(iter(editor.view.widgets))
     editor.apply("/gui_event", [wid, 1, 0, "view_both"])
     assert editor.layers[1]["y"] == "box"
+
+
+def test_edit_layer_is_the_panes_body_and_not_the_visual_stack():
+    editor, host, wid, _context = opened(FakeBuffer())
+    pane = host.trees[0]["children"][1]["children"][0]
+    assert pane["type"] == "pane"
+    assert pane["children"][0]["id"] == wid
+    assert pane["axes"]["x"]["unit"] == "time"
+    assert editor.layer == "take"
+    editor.layer = "placement"
+    assert editor.layer == "placement"
+    assert host.acks[-1][1] == [(pane["id"], {"layer": "placement"})]
+    editor.layer = "take"
+    assert editor.layers == ("peak", "rms")
+    with pytest.raises(ValueError, match="no 'points' body"):
+        editor.layer = "points"
+    assert editor.layer == "take"

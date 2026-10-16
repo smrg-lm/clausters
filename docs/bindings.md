@@ -513,6 +513,11 @@ host composed a third, so one editor looked three ways.
 | `clausters_apps_editing_call` | `JsEditing.call` | `idiom` — **one verb of the context**, as JSON: open a multitrack or an audio editor under a key and answer its member and structure (a second member with the same key is the same structure, and a client names that structure's widgets by it), take in an `external` structure the crate does not apply, read and record a member's `event`, `step` the history, `record` an external member's entry, limit the `bytes` of takes only the history holds, reach a `member`'s own verbs, and read the `state`. A turn and a step answer the takes nothing reaches any more as `freed`, under the member whose server they are on. **C runs a verb once** across its sizing and filling calls, keeping the answer between them, because a history is not copied for a sizing pass the way an editor is; wasm returns the string |
 | `clausters_apps_samples_measures` | `samples_measures` | a **visual layer stack, checked**: names or objects (`draw`, `visible`, `solo`, `alpha`, `y`), returned in canonical array form, or the reason it is refused. The existing door also checks that different domains do not claim one axis. A stack is written by hand, so a typo is a layer that quietly does not appear. C sizes and fills a buffer where wasm returns the string |
 
+The audio member's existing JSON call door also carries `layer` (active edit
+body), and `window` accepts a caller-named `pane` id. These use the same
+correction/Outcome path as visual `layers`; no binary symbol is added.
+
+
 ## OSC
 
 | C ABI | wasm | Note |

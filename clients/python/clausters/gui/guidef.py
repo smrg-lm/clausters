@@ -214,6 +214,7 @@ __all__ = [
     "nodes",
     "keys",
     "panel",
+    "pane",
     "scroll",
     "stack",
     "label",
@@ -1183,6 +1184,18 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
 #: The root's older spelling, from before a view and a window were one node. Kept
 #: so existing trees go on reading; ``view`` is the name the documentation uses.
 window = view
+
+
+def pane(*children, axes: dict | None = None, layer: str | None = None,
+         hidden: str | None = None, id: int | None = None, **props) -> View:
+    """Bodies superimposed on one time axis, ruler, selection and playhead.
+
+    `layer` names the edit body (`take`, `points`, or `points:1` for a second
+    curve). `hidden` is a space-separated list of bodies excluded from drawing
+    and editing. The signal body's visual `layers` stay inside that body.
+    """
+    return node("pane", id=id, children=children,
+                **_drop_none(axes=axes, layer=layer, hidden=hidden), **props)
 
 
 def panel(*children, flow: str | None = None, layout: str | None = None,

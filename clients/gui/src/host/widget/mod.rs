@@ -188,6 +188,11 @@ pub enum WidgetKind {
     /// transport, as a lane's own ruler strip does. Its thickness is the `h`
     /// place prop, like any other widget's -- the builders default it.
     TimeRuler { editor: EditorProps },
+    /// A shared time axis with superimposed editable bodies.
+    Pane {
+        editor: EditorProps,
+        label: Option<String>,
+    },
     /// A **registered element**: a leaf this build renders through the
     /// [`Element`] trait rather than through an arm of this enum, built by the
     /// constructor a program registered under the wire type it answers to
@@ -482,7 +487,8 @@ impl Widget {
             WidgetKind::Window { .. }
             | WidgetKind::Panel { .. }
             | WidgetKind::Scroll { .. }
-            | WidgetKind::Stack { .. } => node
+            | WidgetKind::Stack { .. }
+            | WidgetKind::Pane { .. } => node
                 .children
                 .iter()
                 .map(|c| Self::build(None, c, blobs))
@@ -528,6 +534,7 @@ impl Widget {
                 .map(str::to_string),
             children,
         };
+        widget.bind_pane();
         // The active **edit layer**, last: it is named by what the container
         // holds, so it can only be resolved once the bodies are built. A name
         // nothing answers to leaves the placement active, the way an unknown
@@ -545,6 +552,23 @@ impl Widget {
             }
         }
         Ok(widget)
+    }
+
+    pub(super) fn bind_pane(&mut self) {
+        if let WidgetKind::Pane { editor, .. } = &mut self.kind {
+            editor.link = editor.link.or(self.id);
+            let link = editor.link;
+            for child in &mut self.children {
+                if let Some(el) = child.kind.as_element_mut() {
+                    el.set_body();
+                }
+                if let Some(axis) = child.kind.editor_mut() {
+                    axis.link = link;
+                    axis.ruler = Ruler::Off;
+                    axis.sample_rate = editor.sample_rate;
+                }
+            }
+        }
     }
 
     /// Applies a `/gui_set` of the style props (`theme`, `color`, `opacity`,
@@ -608,6 +632,26 @@ impl Widget {
     /// after it -- the same mutation point a theme goes through.
     pub fn common_apply(&mut self, key: &str, v: &Value) -> bool {
         match key {
+            "layer" => {
+                let Some(mut selection) = super::layers::Selection::of(self) else {
+                    return false;
+                };
+                let Some(layer) = v.as_str().and_then(|name| selection.parse(name)) else {
+                    return false;
+                };
+                selection.set(layer);
+                true
+            }
+            "hidden" => {
+                let Some(names) = v.as_str() else {
+                    return false;
+                };
+                let Some(mut selection) = super::layers::Selection::of(self) else {
+                    return false;
+                };
+                selection.set_hidden(names);
+                true
+            }
             "menu" => {
                 self.menu = (!v.is_null()).then(|| super::menu::parse(v));
                 true

@@ -210,6 +210,21 @@ pub struct Placed<'a> {
     pub widget: &'a Widget,
 }
 
+impl Placed<'_> {
+    /// The layered parent and this body's declaration index, when it has one.
+    pub(crate) fn pane<'a>(&self, placed: &'a [Placed<'a>]) -> Option<(&'a Widget, usize)> {
+        let owner = placed.get(self.parent?)?.widget;
+        if !matches!(owner.kind, WidgetKind::Pane { .. }) {
+            return None;
+        }
+        let index = owner
+            .children
+            .iter()
+            .position(|c| std::ptr::eq(c, self.widget))?;
+        Some((owner, index))
+    }
+}
+
 /// Lays out `root` into `area` (physical pixels), returning every widget with
 /// its rectangle. The spacing a container does not name itself comes from the
 /// host's metrics (`margin`/`gap`), so one table sizes every window; what the
@@ -383,6 +398,15 @@ fn place<'a>(
                 return;
             }
             (*layout, *flow, group.strip_h(&space.metrics))
+        }
+        WidgetKind::Pane { editor, label } => {
+            let body =
+                super::frame::timeline_body(area, editor, label.is_some(), 0.0, &space.metrics);
+            let clip = Some(clip.map_or(body, |c| c.intersect(body)));
+            for child in widget.children.iter().filter(|c| c.visible) {
+                place(body, child, clip, space, ctx, Some(me), out, None, modals);
+            }
+            return;
         }
         WidgetKind::Scroll { .. } => {
             return place_scrolled(area, widget, clip, space, ctx, me, out, modals);

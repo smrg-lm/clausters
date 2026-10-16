@@ -86,7 +86,7 @@ take = Buffer.from_samples(samples, 1, rate, server=server)
 # %% [markdown]
 # ## One verb
 #
-# A `Buffer` opens in the audio editor: one `waveform` over the join it owns.
+# A `Buffer` opens in the audio editor: a pane holding the join it owns.
 # The buffer is not written while you edit -- every edit is a new list of parts
 # over a copy of it and over the takes the edits made -- until you save.
 
@@ -102,6 +102,11 @@ editor = edit(take, title="take", history_bytes=64 * 1024 * 1024)
 # peak and RMS in their own amplitude boxes, with one selection and playhead.
 
 # %%
+def select_take():
+    """Put the take body in hand; its pane keeps the ruler and selection."""
+    editor.layer = "take"
+
+
 def wave():
     """Show the peak and RMS waveform."""
     editor.view_wave()

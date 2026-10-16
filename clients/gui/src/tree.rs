@@ -26,7 +26,7 @@
 //!
 //! **It does not mirror the widget catalog, deliberately.** There is no
 //! `knob()` returning a typed knob: a leaf is `node("knob")` with its props,
-//! and a container is one of the four below. Three reasons, recorded so this is
+//! and a container is one of those below. Three reasons, recorded so this is
 //! not later "fixed" into a fourth catalog. The props of every widget are
 //! already declared in three surfaces that a test holds together
 //! (`docs/gui-props.md` against the host, the Python builder and the web
@@ -88,8 +88,12 @@ pub fn plane() -> Node {
     node("plane")
 }
 
-/// A `field` container: the time strip -- a lane, a clip or a bare ruler,
-/// according to the props it carries.
+/// A time axis with superimposed edit bodies.
+pub fn pane() -> Node {
+    node("pane")
+}
+
+/// A `field` container: the free-standing ruler of a navigation group.
 pub fn field() -> Node {
     node("field")
 }

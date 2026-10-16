@@ -1579,6 +1579,18 @@ export function view(
 export const window = view;
 
 /**
+ * Bodies superimposed on one time axis, ruler, selection and playhead.
+ * `layer` names the editable body; `hidden` lists bodies excluded from drawing
+ * and editing. A signal body's visual `layers` stay inside that body.
+ */
+export function pane(
+    options: Props & { axes?: AxisPair; layer?: string; hidden?: string; children?: readonly GuiNode[] } = {},
+    ...children: GuiNode[]
+): GuiNode {
+    return node("pane", { ...options, children: [...(options.children ?? []), ...children] });
+}
+
+/**
  * A nestable `panel` container. As a child it takes the same place props as
  * any widget; `theme` makes it a theme group over its whole subtree.
  */

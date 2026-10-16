@@ -1,8 +1,8 @@
 //! **The window a take is drawn in**, and the measures its picture stacks --
 //! what the audio editor opens ([`crate::audio`]).
 //!
-//! One widget, the take's picture: a `waveform` over the server buffer on its
-//! own time axis, measured as a stack -- what the signal reached (`peak`) with
+//! A pane owns the time axis, with the take's signal body over the server
+//! buffer, measured as a stack -- what the signal reached (`peak`) with
 //! what it held inside that (`rms`) -- and edited with the catalogue's
 //! three-gesture plan (a drag selects, Alt draws, Ctrl grabs one sample). The
 //! picture is the catalogue's (`clausters_document::view::catalogue`); what is
@@ -18,8 +18,8 @@
 //!
 //! # The ids are the caller's
 //!
-//! As in the multitrack's window, the one widget id is a running host's fact
-//! and comes in as an argument.
+//! As in the multitrack's window, the widget ids are a running host's facts
+//! and come in as arguments.
 
 use clausters_document::view::layers::Stack;
 use serde_json::{Map, Value, json};
@@ -69,6 +69,10 @@ pub struct Window<'a> {
     pub rate: f64,
     /// The id of the take's widget.
     pub widget: i32,
+    /// The axis container id, when composed as a pane.
+    pub pane: Option<i32>,
+    /// The body currently in hand.
+    pub layer: &'a str,
     /// The window's title.
     pub title: &'a str,
     /// The window's size, in logical pixels.
@@ -118,7 +122,20 @@ pub fn window(w: &Window<'_>) -> Value {
     });
     picture.insert("id".into(), json!(w.widget));
     picture.insert("weight".into(), json!(1.0));
-    let mut children = vec![Value::Object(picture)];
+    let picture = if let Some(pane) = w.pane {
+        let axes = picture.remove("axes").unwrap_or(Value::Null);
+        let label = picture.remove("label");
+        // Only the horizontal axis moves to the pane. The body's vertical
+        // scale is still its own, including the visual stack's domain.
+        if let Some(y) = axes.get("y") {
+            picture.insert("axes".into(), json!({"y": y}));
+        }
+        json!({"type": "pane", "id": pane, "weight": 1, "layer": w.layer, "label": label,
+            "axes": {"x": axes.get("x")}, "children": [picture]})
+    } else {
+        Value::Object(picture)
+    };
+    let mut children = vec![picture];
     // **The level, beside the take**: the editor's output measured before its
     // declick, one column per channel, read off the control buses the
     // playback's meter writes. The mark that waits is the widget's own
@@ -211,6 +228,8 @@ mod tests {
             layers: &layers,
             rate: 48_000.0,
             widget: 9,
+            pane: None,
+            layer: "take",
             title: "take",
             meter: None,
             size: (1000, 520),

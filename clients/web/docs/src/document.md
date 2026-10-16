@@ -141,6 +141,14 @@ take, to play or read, and `editor.parts` what it is made of. **It plays what it
 
 The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`), also available as `editor.viewWave()`, `editor.viewSpectrogram()` and `editor.viewBoth()`. `editor.layers` accepts the same names and layer objects as the signal builders. `showLayer(name)`, `hideLayer(name)`, `soloLayer(name)` and `layerAlpha(name, alpha)` change the shared application's stack. Solo toggles without changing visibility. The mixed preset keeps the frequency axis and draws peak and RMS in their own amplitude boxes. Visualization changes leave the take and its history intact.
 
+The picture now stands in a `pane`: one time ruler, selection and playhead
+shared by its bodies. `editor.layer = "take"` puts the take body in hand, the
+same action as View → Edit take. This edit body is separate from
+`editor.layers`, which chooses pictures of the samples. `pane(...)` also
+accepts curve bodies; its `layer` property names the active body (`points`,
+`points:1`, etc.), and `hidden` excludes named bodies from drawing and editing.
+
+
 ```ts
 const editor = await gui.edit(curve, { sampleRate: 48_000, stage: element });
 
