@@ -615,12 +615,17 @@ fn producer_hot_path_can_run_with_all_syscalls_trapped() {
     unsafe { std::alloc::dealloc(memory, layout) };
 }
 
-/// The X11 editor fixture, compiled once per test process.
+/// The X11 editor fixture, compiled once per test process -- into a
+/// directory of its own, since the discovery test scans `fixtures()` while
+/// this one may still be writing.
 fn editor_fixture() -> &'static Path {
     static EDITOR: OnceLock<PathBuf> = OnceLock::new();
     EDITOR.get_or_init(|| {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let path = fixtures().join("editor.clap");
+        let dir =
+            std::env::temp_dir().join(format!("clausters-plugin-editor-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("editor.clap");
         let compiled = Command::new("cc")
             .args([
                 "-std=c11", "-O2", "-fPIC", "-shared", "-Wall", "-Wextra", "-Werror", "-I",
