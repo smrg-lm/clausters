@@ -87,6 +87,15 @@ class TimingTests(unittest.TestCase):
             (root / "Cargo.toml").write_text('[package]\nname="audit-timing-contract"\nversion="0.0.0"\nedition="2024"\n[dependencies]\nlibc="0.2"\n')
             (root / "src/lib.rs").write_text((AUDIT / "instrumentation/timing.rs.in").read_text() + RUST_TESTS)
             env = {**os.environ, "CARGO_TARGET_DIR": str(root / "target"), "CARGO_BUILD_JOBS": "2", "CARGO_INCREMENTAL": "0"}
+            # The lockfile resolves from the local registry cache when it has
+            # libc, and from the network only where it does not (a fresh CI
+            # runner); everything after runs offline against that lockfile.
+            locked = subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=120)
+            if locked.returncode:
+                fetched = subprocess.run(["cargo", "fetch"], cwd=root, env=env,
+                                         capture_output=True, text=True, timeout=300)
+                self.assertEqual(fetched.returncode, 0, fetched.stdout + fetched.stderr)
             for argv in (["cargo", "test", "--offline"], ["cargo", "clippy", "--offline", "--all-targets", "--", "-D", "warnings"]):
                 result = subprocess.run(argv, cwd=root, env=env, capture_output=True, text=True, timeout=120)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
