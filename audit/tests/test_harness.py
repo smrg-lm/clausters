@@ -482,6 +482,11 @@ class HarnessTests(unittest.TestCase):
         for cwd, expected in ((".", "target"), ("audit/fuzz", "target-fuzz")):
             result = audit.command([sys.executable, str(AUDIT / "scripts/cargo_router.py"), "--version"], work / "source" / cwd, env)
             self.assertEqual(result, str(work / expected))
+        outside = self.root / "outside"
+        outside.mkdir()
+        result = audit.command([sys.executable, str(AUDIT / "scripts/cargo_router.py"), "--version"],
+                               outside, {**env, "CARGO_TARGET_DIR": "/kept"})
+        self.assertEqual(result, "/kept")
 
     def test_pytest_file_isolation_continues_after_native_signal(self):
         fake = self.root / "fake_pytest.py"
