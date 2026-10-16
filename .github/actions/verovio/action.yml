@@ -43,6 +43,9 @@ runs:
         set -euo pipefail
         . "$GITHUB_WORKSPACE/third_party/verovio.pin"
         echo "VEROVIO_SHA=$VEROVIO_SHA" >> "$GITHUB_ENV"
+        # The image the library is built on: its glibc is what the library
+        # needs, so a library built on a newer image never reaches an older one.
+        echo "IMAGE_VERSION=$(. /etc/os-release && echo "$VERSION_ID")" >> "$GITHUB_ENV"
 
     - name: Restore the libverovio install
       id: cache
@@ -53,7 +56,7 @@ runs:
           ${{ inputs.prefix }}/lib/pkgconfig/verovio.pc
           ${{ inputs.prefix }}/include/verovio
           ${{ inputs.prefix }}/share/verovio
-        key: verovio-${{ env.VEROVIO_SHA }}-${{ hashFiles('third_party/build-verovio.sh') }}-${{ runner.os }}-v1
+        key: verovio-${{ env.VEROVIO_SHA }}-${{ hashFiles('third_party/build-verovio.sh') }}-${{ runner.os }}-${{ env.IMAGE_VERSION }}-v1
 
     - name: Build libverovio from source (vendored recipe)
       if: steps.cache.outputs.cache-hit != 'true'

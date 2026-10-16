@@ -98,7 +98,7 @@ jobs:
   # error under any configuration surfaces in the runs above.
   verify:
     name: verify the tagged commit (tests + the full feature matrix)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       # Job-scoped, and it must stay that way. Virtualized runners misreport
@@ -163,7 +163,10 @@ jobs:
     # that never packages proves only half of a release. The three jobs below
     # carry the guard themselves rather than relying on a skipped `needs:`
     # propagating -- what must not run on a dry run is stated where it would run.
-    runs-on: ubuntu-latest
+    # Pinned to the older image, not the newest: the wheel's tag is the build
+    # machine's glibc (setup.py), so this image is the oldest system the wheel
+    # installs on. Moving it is a decision about who can install, not upkeep.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -250,7 +253,7 @@ jobs:
     # registries is arbitrary; what matters is that one of them is a gate.
     needs: [build, publish-npm]
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     environment: pypi
     permissions:
       id-token: write
@@ -307,7 +310,7 @@ jobs:
     # the `pypi` environment as a trusted publisher, as `clausters` does.
     needs: [build-editor, publish-pypi]
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     environment: pypi
     permissions:
       id-token: write
@@ -328,7 +331,7 @@ jobs:
     # checks nothing out and builds nothing, so what the dry run proved is what
     # a tag publishes.
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -386,7 +389,7 @@ jobs:
     # `prepublishOnly` would run has already run there.
     needs: build-web
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     environment: npm
     permissions:
       id-token: write # provenance
@@ -410,7 +413,7 @@ jobs:
     # packages are not installable is worse than announcing it late.
     needs: [build, build-editor, publish-npm, publish-pypi, publish-pypi-editor]
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:

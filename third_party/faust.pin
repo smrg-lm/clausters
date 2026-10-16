@@ -25,7 +25,8 @@ FAUST_ORIGIN=https://github.com/smrg-lm/faust
 FAUST_SHA=9f685488554b77323374f1fa7d492c3626e6e83b
 
 # The LLVM linked into the shipped libfaust. Pinned to 18: it is Ubuntu
-# 24.04's default (so CI installs it from the distro repos, no apt.llvm.org),
+# 24.04's default and still packaged on 26.04 (so CI installs it from the
+# distro repos on either image, no apt.llvm.org),
 # and the distro build targets a baseline x86-64, which keeps the linked-in
 # LLVM portable -- it runs on any x86-64 machine, where a higher-baseline
 # upstream build could hit an illegal instruction on older CPUs. The build

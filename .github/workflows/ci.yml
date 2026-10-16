@@ -43,7 +43,7 @@ env:
 jobs:
   plugin-host:
     name: native plugin tests (${{ matrix.host_features }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -79,7 +79,7 @@ jobs:
   # `needs: libfaust`, so they start only once the cache is warm.
   libfaust:
     name: build/cache libfaust (LLVM backend)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -90,7 +90,7 @@ jobs:
   lint:
     name: fmt + clippy (workspace + gui)
     needs: libfaust
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -116,7 +116,7 @@ jobs:
 
   test:
     name: cargo test (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -157,7 +157,7 @@ jobs:
 
   gui:
     name: gui tests + wasm gates (host + engine)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -202,7 +202,7 @@ jobs:
   # script fails with a clear message if it ever stops being there.
   web:
     name: web smokes (headless Chrome)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -250,7 +250,7 @@ jobs:
   python:
     name: python client (pytest)
     needs: libfaust
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Scoped to this job: it is the only one that stages the Python package, and
     # nothing in the Rust workspace links verovio. The pinned commit lives in
     # third_party/verovio.pin, read by the .github/actions/verovio composite.
@@ -307,7 +307,7 @@ jobs:
   # only reports it after the push, on a checkout nobody is watching.
   audit:
     name: audit harness (validator + contract tests)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -322,7 +322,7 @@ jobs:
 
   docs:
     name: mdBooks (server + python + web clients)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -371,7 +371,7 @@ jobs:
   test-default:
     name: cargo test (default set + embed, faust)
     needs: libfaust
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -423,7 +423,7 @@ jobs:
   bench:
     name: cost gate (A/B against the merge base)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5

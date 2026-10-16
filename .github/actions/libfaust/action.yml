@@ -40,6 +40,9 @@ runs:
         . "$GITHUB_WORKSPACE/third_party/faust.pin"
         echo "FAUST_SHA=$FAUST_SHA" >> "$GITHUB_ENV"
         echo "FAUST_LLVM_VERSION=$FAUST_LLVM_VERSION" >> "$GITHUB_ENV"
+        # The image the library is built on: its glibc is what the library
+        # needs, so a library built on a newer image never reaches an older one.
+        echo "IMAGE_VERSION=$(. /etc/os-release && echo "$VERSION_ID")" >> "$GITHUB_ENV"
 
     - name: Restore the libfaust install
       id: cache
@@ -49,16 +52,16 @@ runs:
           ${{ inputs.prefix }}/lib/libfaust*
           ${{ inputs.prefix }}/include/faust
           ${{ inputs.prefix }}/share/faust
-        key: libfaust-${{ env.FAUST_SHA }}-llvm${{ env.FAUST_LLVM_VERSION }}-${{ hashFiles('third_party/build-faust.sh') }}-${{ runner.os }}-v4
+        key: libfaust-${{ env.FAUST_SHA }}-llvm${{ env.FAUST_LLVM_VERSION }}-${{ hashFiles('third_party/build-faust.sh') }}-${{ runner.os }}-${{ env.IMAGE_VERSION }}-v4
 
     - name: Build libfaust from source (vendored recipe)
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         set -euo pipefail
-        # The pinned LLVM (faust.pin) is Ubuntu 24.04's default, so it installs
-        # straight from the distro repos. (A pin newer than the distro's default
-        # would need the apt.llvm.org repo added here first.)
+        # The pinned LLVM (faust.pin) is in the distro repos of both images CI
+        # uses (24.04's default, still packaged on 26.04). (A pin a distro does
+        # not package would need the apt.llvm.org repo added here first.)
         sudo apt-get update
         sudo apt-get install -y cmake make g++ zlib1g-dev pkg-config "llvm-${FAUST_LLVM_VERSION}-dev"
         # One recipe, shared with local dev and release: fetch the pin, build

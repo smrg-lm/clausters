@@ -36,7 +36,7 @@ jobs:
   check:
     name: frontend + fmt + clippy + test
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: clausters-editor
@@ -117,7 +117,7 @@ jobs:
   # shipped in it.
   audit:
     name: cargo audit + npm audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: clausters-editor
