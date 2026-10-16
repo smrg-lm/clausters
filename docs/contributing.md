@@ -61,6 +61,39 @@ Some CI/sandbox environments isolate the network **between** shell invocations: 
  ./target/debug/examples/osc_ping status quit; kill $PID 2>/dev/null)
 ```
 
+## Looking at a window with nobody at the screen
+
+The examples are the manual test surface, and a window can be looked at
+without a person in front of it. `scripts/look.py` runs a Python example
+against a GUI host that shows no window — each one is drawn offscreen, so it
+works while somebody uses the machine and on one with no display — takes the
+steps it is given, and leaves a picture of every open window after each one in
+the example tree's `out/look/<example>/`:
+
+```sh
+scripts/refresh-bin.sh                       # the binaries an example launches
+.venv/bin/python scripts/look.py \
+    clients/python/examples/editors/window_verbs.py tidy again 0.5 clear
+```
+
+A step is a function the example defines, called with no arguments, or a
+number of seconds to wait. The example runs its interactive branch, the one a
+notebook takes, so the functions its cells offer are the steps. What drives it
+is the protocol any script can use: `/gui_capture` writes a window's picture
+(`editor.capture(path)`), `/gui_pointer` plays a press, a move or a release to
+it (`editor.drag(start, end)`), and a host started with `--headless` draws its
+windows offscreen on any adapter, a software one included.
+
+One picture is also kept and compared: `clients/gui/tests/references/window.png`
+is a small window of text, a slider and a roll's notes, and a test draws the
+same window offscreen and fails when a pixel moved more than two levels in a
+channel — the measured distance between a card and a software adapter, so it
+holds on any machine that has one (`docs/decisions.md`, "A capture is the same
+picture on any adapter"). A change that is meant to move it writes it again
+with `CLAUSTERS_GUI_BLESS=1 cargo test --lib -- reference_picture` in
+`clients/gui`; look at the new picture before committing it. Where no adapter
+answers the test says so and passes.
+
 ## OSC decoding
 
 All incoming OSC bytes decode through `osc::decode_packet`, the single entry point (every transport funnels through it). It is a thin wrapper over `rosc::decoder::decode_udp` — keep that one door so decoding and any future hardening stay in one place.

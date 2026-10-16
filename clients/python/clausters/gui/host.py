@@ -1126,6 +1126,13 @@ class GuiHost:
         return self._app
 
     @property
+    def windows(self) -> list:
+        """The ids of the windows this client opened and has not seen closed,
+        in ascending order -- what a script that looks at every open window
+        (`capture`) walks."""
+        return sorted(self._open)
+
+    @property
     def looping(self) -> bool:
         """Whether a loop of this host's own is draining the socket. What `poll`
         and `pump` answer to, and what a caller checks before writing a drain

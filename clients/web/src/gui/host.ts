@@ -790,6 +790,15 @@ export class GuiHost {
     }
 
     /**
+     * The ids of the windows this client opened and has not seen closed, in
+     * ascending order -- what a script that looks at every open window
+     * ({@link GuiHost.capture}) walks.
+     */
+    get windows(): number[] {
+        return [...this.opened].sort((a, b) => a - b);
+    }
+
+    /**
      * `/gui_pointer <id> <kind> <x> <y> [mods]` -- a hand played to window
      * `id` (an id or a handle): a `"press"`, a `"move"` or a `"release"` of the
      * primary button at `(x, y)`.

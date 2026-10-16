@@ -292,6 +292,19 @@ class _Answering(_Recorder):
         return self.inbox.pop(0) if self.inbox else None
 
 
+def test_windows_lists_what_is_open_and_drops_what_closed():
+    """`windows` is what a script that looks at every window walks: the ones
+    opened and not closed, in order."""
+    from clausters.gui import guidef
+
+    host = GuiHost(interface=_Recorder())
+    a = host.open(guidef.window(guidef.knob()))
+    b = host.open(guidef.window(guidef.knob()))
+    assert host.windows == sorted([int(a), int(b)])
+    host.dispatch("/gui_closed", [int(a)])
+    assert host.windows == [int(b)]
+
+
 def test_pointer_names_a_window_a_kind_and_a_point():
     """``/gui_pointer`` plays a hand to a window: the kind and the point as
     floats, and the modifiers only when some are held."""

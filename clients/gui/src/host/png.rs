@@ -128,6 +128,57 @@ fn adler32(data: &[u8]) -> u32 {
     (b << 16) | a
 }
 
+/// **Reads back a PNG this module wrote** -- stored blocks, RGBA, no filter
+/// -- as `(width, height, rgba)`; `None` for anything else. What a test reads
+/// a reference picture with: a general decoder is not needed for the one
+/// encoder there is.
+#[cfg(test)]
+pub(crate) fn decode_stored(png: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    if png.get(..8)? != SIGNATURE {
+        return None;
+    }
+    let mut at = 8;
+    let (mut width, mut height) = (0u32, 0u32);
+    let mut z = Vec::new();
+    while at + 8 <= png.len() {
+        let len = u32::from_be_bytes(png[at..at + 4].try_into().ok()?) as usize;
+        let kind = &png[at + 4..at + 8];
+        let data = png.get(at + 8..at + 8 + len)?;
+        match kind {
+            b"IHDR" => {
+                width = u32::from_be_bytes(data.get(..4)?.try_into().ok()?);
+                height = u32::from_be_bytes(data.get(4..8)?.try_into().ok()?);
+                if data.get(8..)? != [8, 6, 0, 0, 0] {
+                    return None;
+                }
+            }
+            b"IDAT" => z.extend_from_slice(data),
+            _ => {}
+        }
+        at += 12 + len;
+    }
+    let mut raw = Vec::new();
+    let mut i = 2;
+    loop {
+        let last = *z.get(i)? & 1 == 1;
+        let n = u16::from_le_bytes([*z.get(i + 1)?, *z.get(i + 2)?]) as usize;
+        raw.extend_from_slice(z.get(i + 5..i + 5 + n)?);
+        i += 5 + n;
+        if last {
+            break;
+        }
+    }
+    let row = width as usize * 4;
+    let mut rgba = Vec::with_capacity(row * height as usize);
+    for line in raw.chunks(row + 1).take(height as usize) {
+        if line.first() != Some(&0) || line.len() != row + 1 {
+            return None;
+        }
+        rgba.extend_from_slice(&line[1..]);
+    }
+    Some((width, height, rgba))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,6 +260,16 @@ mod tests {
             expected.extend_from_slice(line);
         }
         assert_eq!(raw, expected);
+    }
+
+    /// **What this module writes, it reads back**, the reader a reference
+    /// picture is compared with.
+    #[test]
+    fn a_written_picture_decodes_to_its_pixels() {
+        let rgba: Vec<u8> = (0..300 * 200 * 4).map(|n| (n * 7) as u8).collect();
+        let png = encode_rgba(300, 200, &rgba);
+        assert_eq!(decode_stored(&png), Some((300, 200, rgba)));
+        assert_eq!(decode_stored(b"not a picture"), None);
     }
 
     /// **A picture larger than a stored block is split across several**, and

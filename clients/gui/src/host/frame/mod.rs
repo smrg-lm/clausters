@@ -1926,6 +1926,135 @@ mod tests {
         );
     }
 
+    /// **A window drawn offscreen is the picture kept beside this test**,
+    /// within two levels a channel: what a change to the drawing of text, a
+    /// slider, a knob or a roll's notes moves, it shows here. The tolerance
+    /// is the measured distance between a card and a software adapter
+    /// (`docs/decisions.md`, "A capture is the same picture on any adapter"),
+    /// so the picture holds on whatever machine runs the suite.
+    ///
+    /// A change that is meant to move it writes the picture again:
+    /// `CLAUSTERS_GUI_BLESS=1 cargo test --lib -- reference_picture`, then
+    /// look at `tests/references/window.png` before committing it. Skipped,
+    /// and said so, where no adapter answers.
+    #[test]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "font-atlas"))]
+    fn a_window_is_its_reference_picture() {
+        let Some((w, h, rgba)) = draw_reference(false) else {
+            eprintln!("no adapter on this machine: nothing to compare");
+            return;
+        };
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("references")
+            .join("window.png");
+        if std::env::var_os("CLAUSTERS_GUI_BLESS").is_some() {
+            std::fs::create_dir_all(path.parent().expect("a directory")).expect("made");
+            std::fs::write(&path, crate::host::png::encode_rgba(w, h, &rgba)).expect("written");
+            eprintln!("wrote {}", path.display());
+            return;
+        }
+        let kept = std::fs::read(&path).expect("the reference picture is kept beside the tests");
+        let (kw, kh, reference) =
+            crate::host::png::decode_stored(&kept).expect("a picture this host wrote");
+        assert_eq!((w, h), (kw, kh), "the window's size");
+        let far: Vec<(usize, u8)> = rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(reference.as_chunks::<4>().0)
+            .enumerate()
+            .filter_map(|(i, (a, b))| {
+                let d = (0..3).map(|c| a[c].abs_diff(b[c])).max().unwrap_or(0);
+                (d > 2).then_some((i, d))
+            })
+            .collect();
+        assert!(
+            far.is_empty(),
+            "{} pixels moved more than two levels, the first at ({}, {}) by {}",
+            far.len(),
+            far[0].0 % w as usize,
+            far[0].0 / w as usize,
+            far[0].1
+        );
+    }
+
+    /// The window the reference picture is of, drawn offscreen -- on a
+    /// software adapter when `software` -- as `(width, height, rgba)`.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn draw_reference(software: bool) -> Option<(u32, u32, Vec<u8>)> {
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+
+        const TREE: &str = r#"{"type":"window","w":240,"h":150,"layout":"col","children":[
+            {"id":2,"type":"label","text":"Eight bars, 0123"},
+            {"id":3,"type":"slider","value":0.37},
+            {"id":4,"type":"notes","h":70,"min":58,"max":70,
+             "sample_rate":48000.0,"notes":[0,24000,60,100,0, 18000,30000,64,100,0,
+                                            41000,12000,67,100,0]}]}"#;
+        let mut gpu = pollster::block_on(Gpu::offscreen_on(240, 150, 4, software)).ok()?;
+        let mut host = crate::host::Host::new();
+        #[cfg(feature = "font-atlas")]
+        host.load_default_face();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(TREE.into())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let mut renderers = Renderers::new(&gpu.device, gpu.target());
+        let mut batches = Batches::new(&gpu.device, gpu.target());
+        let inputs = FrameInputs {
+            metrics: host.metrics_for(1),
+            world: World {
+                timelines: host.timelines(),
+                ..World::default()
+            },
+            ..FrameInputs::default()
+        };
+        let readback = capture(
+            &mut gpu,
+            &mut renderers,
+            &mut batches,
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            host.window_def(1)?,
+            &inputs,
+            &host.theme,
+        )
+        .ok()?;
+        readback.wait(&gpu.device).ok()?;
+        Some(readback.pixels())
+    }
+
+    /// **The reference picture holds on a software adapter too**: where a
+    /// machine has one, the picture drawn on it is compared with the kept
+    /// one exactly as a card's is -- which is what makes two levels the
+    /// tolerance, rather than a number picked for one machine.
+    #[test]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "font-atlas"))]
+    fn the_reference_picture_holds_on_a_software_adapter() {
+        let (Some(card), Some(software)) = (draw_reference(false), draw_reference(true)) else {
+            eprintln!("this machine does not have both adapters");
+            return;
+        };
+        assert_eq!((card.0, card.1), (software.0, software.1));
+        let largest = card
+            .2
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(software.2.as_chunks::<4>().0)
+            .map(|(a, b)| (0..3).map(|c| a[c].abs_diff(b[c])).max().unwrap_or(0))
+            .max()
+            .unwrap_or(0);
+        assert!(largest <= 2, "the two adapters differ by {largest} levels");
+    }
+
     /// **How far a software adapter's picture is from a card's**, for the
     /// same window: text, controls with rounded ends, and a roll's notes,
     /// drawn at four samples through each adapter and compared pixel by
