@@ -37,7 +37,13 @@ class HarnessTests(unittest.TestCase):
         (self.repo / "tracked.txt").write_text("base\n")
         (self.repo / "delete.txt").write_text("remove\n")
         (self.repo / ".gitignore").write_text("ignored/\ntarget\n")
-        shutil.copytree(AUDIT, self.repo / "audit", ignore=shutil.ignore_patterns("__pycache__"))
+        # What git tracks under audit/, as `prepare` copies it: a checkout's
+        # ignored records must not reach the fixture.
+        names = subprocess.check_output(["git", "ls-files", "-z", "--", "."], cwd=AUDIT).decode().split("\0")
+        for name in filter(None, names):
+            destination = self.repo / "audit" / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(AUDIT / name, destination)
         self.git("add", ".")
         self.git("commit", "-m", "Synthetic fixture")
         self.base = self.git("rev-parse", "HEAD")
