@@ -385,7 +385,7 @@ class EventLoop:
                 if item is None:
                     continue
                 with self.lock:
-                    source.deliver(item)
+                    _call(lambda: source.deliver(item))
                 did = True
                 did |= self._deliver_all(source)
             for source in blind:
@@ -417,7 +417,7 @@ class EventLoop:
             if item is None:
                 return did
             with self.lock:
-                source.deliver(item)
+                _call(lambda: source.deliver(item))
             did = True
 
     def close(self):
@@ -441,8 +441,9 @@ class EventLoop:
 def _call(func):
     """Call one handler and survive it.
 
-    A handler that raises loses its turn and nothing else -- the same rule the
-    clock applies to a routine, and for the same reason: this thread drives
+    A handler that raises loses its turn and nothing else -- a timer's, and a
+    source's delivery, which runs the callbacks a window's events reach -- the
+    same rule the clock applies to a routine, and for the same reason: this thread drives
     every other source, and a dead one leaves a loop that reports itself running
     while draining nobody.
     """

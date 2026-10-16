@@ -100,6 +100,25 @@ def test_a_handler_that_raises_loses_its_turn_and_nothing_else(loop, capsys):
     assert "boom" in capsys.readouterr().err
 
 
+def test_a_delivery_that_raises_loses_its_item_and_nothing_else(loop, capsys):
+    """A window's callback runs in its source's delivery: one that raises must
+    leave the loop draining, or every later event -- a window's close
+    included -- goes unread."""
+    got = []
+    items = [1, 2, 3]
+
+    def deliver(item):
+        if item == 2:
+            raise TypeError("a callback of one argument handed two")
+        got.append(item)
+
+    loop.add_source(read=lambda timeout=0.0: items.pop(0) if items else None,
+                    deliver=deliver)
+    loop.iterate(0.0)
+    assert got == [1, 3]
+    assert "handed two" in capsys.readouterr().err
+
+
 def test_a_source_is_drained_until_it_has_nothing_more(loop):
     """One wake empties a burst: a source that has three items hands over all
     three in the turn it became ready, not one per turn."""

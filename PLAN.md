@@ -2953,6 +2953,22 @@ where it came from).
 
 - ⬜ **Third-party plugin formats and native platforms after the Linux reference host** *(named 2026-10-13 with the J track)*. J1-J9 deliver CLAP and VST3 on Linux. LV2, Audio Units and native hosting/editor packaging on macOS and Windows remain possible follow-up work, using the same format interface and client surface. Audio Units are platform-specific. Do not add a second client-side hosting implementation or treat a native editor running on the server as an editor running in a browser. The in-page engine question is recorded in `clients/web/PLAN.md`, **"Native plugins and the in-page engine"**.
 
+- ⬜ **A node's generic editor carries the node's own verbs** *(named
+  2026-10-16 at the user's request, after the first by-eye pass of `J12`;
+  to be studied and planned)*. Closing the editor of a node leaves the node
+  running, which is right for a plugin's editor -- it is a view of an
+  instrument that outlives it -- and leaves nothing in the window to stop a
+  node that is not one. The editor could carry the node's verbs beside its
+  controls: run and pause (`/node_run`), free (`/node_free`), and whatever
+  else the node tree admits for it. What has to be settled first: which verbs
+  a generic editor offers for which nodes (a plugin, a `Voices` instrument, a
+  graph instance, a synth a pattern owns), whether closing the window ever
+  frees the node and who decides it (the caller of `edit`, by an option, as
+  against the window), how the window shows a node that ended or was freed
+  elsewhere -- which the read-back already notices through `/node_end` -- and
+  whether the verbs are buttons the core's generator adds to the GuiDef or the
+  window's own verbs, in its key table and menu like an application's.
+
 ## Found by use: the running list of fixes
 
 - ✅ **The embedded engine runs without the SIGXCPU guard** *(found

@@ -78,7 +78,10 @@ class NodeEditor:
             tree["title"] = self._title
         self.host = _resolve_host(host, server)
         self.window = self.host.open(tree)
-        self.window["search"].on_event(self.search)
+        # A field reports its value, and also that it took the focus
+        # (`"focus" 1`): only the value is a search.
+        self.window["search"].on_event(
+            lambda *payload: len(payload) == 1 and self.search(payload[0]))
         self.window["page"].on_event(lambda index: self.show_page(int(index)))
         return self
 

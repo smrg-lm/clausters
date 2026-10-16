@@ -108,7 +108,11 @@ export class NodeEditor {
         if (this.#title !== undefined) tree.title = this.#title;
         this.host = host ?? await resolveHost(server);
         this.window = this.host.open(tree, { element: stage });
-        this.window.widget("search").onEvent((query) => this.search(String(query)));
+        // A field reports its value, and also that it took the focus
+        // (`"focus" 1`): only the value is a search.
+        this.window.widget("search").onEvent((...payload) => {
+            if (payload.length === 1) this.search(String(payload[0]));
+        });
         this.window.widget("page").onEvent((index) => this.showPage(Number(index)));
         return this;
     }

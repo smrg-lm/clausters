@@ -167,16 +167,16 @@ impl Element for Choice {
                 .as_u64()
                 .map(|n| self.index = (n as usize).min(self.options.len().saturating_sub(1)))
                 .is_some(),
+            // A list rides `/gui_set` as its JSON string, the carrier every
+            // array prop takes over the scalar wire.
             "options" => {
-                let mut props = Map::new();
-                props.insert("options".into(), v.clone());
-                self.options = parse::options(&props);
+                self.options = parse::options(&parse::as_array_props("options", v));
                 self.index = self.index.min(self.options.len().saturating_sub(1));
                 true
             }
             "view" => view_of(v).map(|view| self.view = view).is_some(),
             "values" => {
-                self.values = values_of(v);
+                self.values = values_of(&parse::as_array_props("values", v)["values"]);
                 true
             }
             "value" => v
@@ -366,6 +366,9 @@ mod tests {
         assert_eq!(c.current(), "Hall");
         let plain = from_props(&props(r#"{"options":["a","b"],"index":1}"#));
         assert_eq!(plain.value(), Some(OscType::Int(1)), "no values: the index");
+        // What `/gui_set` carries a list as: its JSON string.
+        assert!(c.set("options", &Value::from(r#"["x","y"]"#)));
+        assert_eq!(c.options, ["x", "y"]);
     }
 
     #[test]
