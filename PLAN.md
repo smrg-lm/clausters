@@ -2950,6 +2950,27 @@ where it came from).
   it died of SIGXCPU at once; with it the audio thread was demoted and the
   process kept running past 800 nodes at 117% average load.
 
+- ⬜ **The audio callback costs half again as much on some cores** *(found
+  2026-10-15, by the second audit campaign's device runs; record
+  `audit/records/2026-10-15_2558210e_02.zip`)*. On a hybrid CPU the same
+  load at quantum 128 took either ~860 us or ~1420 us per callback (server
+  CPU 37 % or 58 %), run to run and never within a run: the core the audio
+  thread lands on. Nothing chooses it today (`--pin` is opt-in and
+  experimental), so a run's headroom depends on placement. What is open is
+  whether the server should prefer a performance core for the audio thread,
+  or say which core it got in the scheduling diagnostic, so the number is
+  at least visible.
+
+- ⬜ **An isolated callback overruns its period at moderate load** *(found
+  2026-10-15, by the same campaign)*. At quantum 128 and ~35 % average load,
+  two callbacks in ~340 000 (fifteen loaded 60 s runs) ran past the 2.67 ms
+  deadline (3.03 ms and 2.69 ms), with and without the GUI host, each with a
+  late block and one or two PipeWire errors. Before `lift_rttime` one of these
+  demoted the audio thread for good; now it is one glitch. What is open is its
+  cause, which the timing histograms cannot name: a capture of what the slow
+  callback was doing (a node added, a page fault, a preemption) when it next
+  happens.
+
 - ⬜ **Every stored plugin def is probed again at boot, before the server
   answers** *(found 2026-10-14, running the plugin examples against the default
   data directory)*. Restoring `defs/plugindefs/` calls `PluginDef::probe` for

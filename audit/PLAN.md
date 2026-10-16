@@ -28,6 +28,14 @@ The archived record keeps the findings as they were reported; this is what the m
 - ✅ F01 (no per-block bound on the command drain): downgraded to a measurement to take before any policy, filed in the root `PLAN.md`, Future directions, in `f472cee0`.
 - ✅ F07 (the editor's evaluation queue has no bound): not filed. The queue is fed by hand from a local REPL, the editor has no plan of its own, and no use has shown a cost.
 
+## Second campaign: real-device audio and interference
+
+Campaign `2026-10-15_2558210e_02` (record `audit/records/2026-10-15_2558210e_02.zip`, `findings.md` inside) measured the audio callback on the device at quanta 1024 and 128 and the audio/GUI interference at 128, with a histogram patch on the server's callback and the GUI host's frame.
+
+- ✅ The soft `RLIMIT_RTTIME` was one buffer, so one late callback demoted the audio thread until restart: fixed in `4ee5b7d2`, verified by twelve runs at quantum 128.
+- ✅ Interference at 60 nodes: none systematic on the audio callback (p99 within 20 us per placement mode); the GUI host held 30 fps in every condition. Not filed.
+- ✅ The callback's cost depends on the core it lands on, and isolated overruns remain at moderate load: both filed in the root `PLAN.md`, Found by use.
+
 ## Definition of done
 
 The resources are ready when the validator and harness contract tests pass, prerequisites and execution/review commands are documented, and resources stay isolated from application dependencies. Actual application auditing is a separate action. A complete campaign requires the mandatory manual/device/target evidence for its unit; automatic collection alone cannot establish it. Full project coverage requires records for all four independent units and all component scenarios.
@@ -50,6 +58,9 @@ From the first campaign's method notes:
 - ⬜ A13: model step dependencies so independent checks still run after unrelated failures, with uniform auxiliary command receipts.
 - ⬜ A14/A15: retain independent fuzz lock provenance and accept the actual JSON-array benchmark format; add producer-contract checks.
 - ⬜ A16/A17: isolate targets between independent workspaces and formalize optional pinned fuzz-tool provisioning/seed provenance.
+- ⬜ A22: `prepare` copies ignored files into the campaign resources (`audit/records/`, the fuzzer's build directory), which made `resources.tar` 380 MB; copy what git tracks under `audit/` instead.
+- ⬜ A23: a GUI measurement must check that the window drew. An unattended screen blanks, the host then receives no frame callbacks and draws 2-3 frames a minute, which reads as no interference; the second campaign's first two sets were lost to it. Check a minimum frame rate per run and say in the procedure that the screen must stay on.
+- ⬜ A24: the second campaign's per-callback histogram patch, its representative-load rule and its frame-rate check live in a scratch driver kept in the record; promote them into the harness (an instrumentation patch with a JSONL writer, a sweep step kind) so the next device campaign does not rewrite them.
 - ✅ A19/A20/A21: search the project's own records before calling a cause unresolved or an input absent, and rank severity by evidence and cost; written into procedures/review.md.
 
 ## Future directions
