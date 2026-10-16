@@ -6,7 +6,15 @@
 //! immediately instead of round-tripping through the audio thread.
 
 use super::*;
-use clausters_core::node_editor::{Control, ControlDisplay};
+use clausters_core::node_editor::Control;
+#[cfg(any(
+    feature = "faust",
+    all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    )
+))]
+use clausters_core::node_editor::ControlDisplay;
 
 impl CmdTranslator {
     /// `/def_query.reply` arguments for `/def_query`, one vector per def -- the
@@ -19,7 +27,7 @@ impl CmdTranslator {
     /// loaded def, ordered by family then name so the reply is deterministic.
     ///
     /// Layout per def: `name, family, numControls`, then per control the same
-    /// record in every family ([`push_control`]). A **graph** def reports its
+    /// record in every family (`push_control`). A **graph** def reports its
     /// surface **ports** as its controls, each followed by `numTargets` and per
     /// target `member, control, mul, add` -- the scaling the port applies
     /// inside, so a level-1 patch can draw the port's real connections.
@@ -52,6 +60,17 @@ impl CmdTranslator {
                 OscType::Int(count as i32),
             ]
         };
+        #[cfg_attr(
+            not(any(
+                feature = "synth",
+                feature = "faust",
+                all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )
+            )),
+            allow(unused_variables)
+        )]
         let described = |family: &str, controls: Vec<Control>| {
             let mut args = head(family, controls.len());
             for control in &controls {
@@ -128,6 +147,15 @@ impl CmdTranslator {
             NodeDef::Plugin(def, ..) => self.plugin_controls(def),
             #[cfg(any(feature = "synth", feature = "faust"))]
             NodeDef::Voices(voices) => self.def_controls(&voices.inner),
+            #[cfg(not(any(
+                feature = "synth",
+                feature = "faust",
+                all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                )
+            )))]
+            _ => match *def {},
         }
     }
 

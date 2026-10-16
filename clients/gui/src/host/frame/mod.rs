@@ -1981,7 +1981,7 @@ mod tests {
 
     /// The window the reference picture is of, drawn offscreen -- on a
     /// software adapter when `software` -- as `(width, height, rgba)`.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "font-atlas"))]
     fn draw_reference(software: bool) -> Option<(u32, u32, Vec<u8>)> {
         use clausters_core::osc::{OscMessage, OscPacket, OscType};
 
