@@ -975,13 +975,18 @@ opened it.
   while a point or a segment is being edited too. The web `EditOptions` gained the `extra` the Python `edit` already
   took and the example already passed.
 
-- ⬜ **X5 - The score editor.** The third of the three applications over the
+- ✅ **X5 - The score editor.** The third of the three applications over the
   document (`crates/clausters-document/PLAN.md`, `O24`). *(Planned 2026-10-05
   with the user, after a by-eye pass over `notation/score_editor`; the user's
-  observations from that pass are the requirements below.)* ***Built
-  2026-10-05, every step `X5.0` to `X5.9`, and not closed**: it closes with
-  the user's eye and ear pass over `notation/score_editor` (the user: "cuando
-  termines reviso los resultados y debugueamos"). The first looks of that
+  observations from that pass are the requirements below.)* ***Closed
+  2026-10-15** by the user's eye and ear pass over `notation/score_editor`:
+  playback, the loop over a selected measure, an edit heard while it plays
+  and the cursor that follows it all work. The pass was a check of the work
+  done, not of every entry: what it did not reach, and what does not work yet
+  (the arpeggio tool draws nothing on a selected note), is `X11`'s.* ***Built
+  2026-10-05, every step `X5.0` to `X5.9`**, to close with the user's eye and
+  ear pass (the user asked to review the results and debug them once it was
+  done). The first looks of that
   pass are under "Found by use" -- the page that was in no window, the
   cursor, the written breaks, the symbols, the page's head, the dialogs, a
   text typed over where it is drawn, all fixed there; note entry, built as a
@@ -1782,6 +1787,12 @@ opened it.
   a foreign score's layout keeps) and `N9` (a score as a box of the
   multitrack) stay where they are; `N9`'s double click opens this
   application.
+
+- ⬜ **X11 - The score editor's options, continued.** *(Opened 2026-10-15 by
+  the user, closing `X5`.)* The editing options and resources of the score
+  editor whose behavior is not defined yet are taken up here, one by one, each
+  defined before it is fixed. The first known: the arpeggio tool, pressed with
+  a note selected, draws nothing.
 
 - ⬜ **X6 - The composed views: which heavy widgets get an application.**
   *(Raised by the user 2026-09-14: it may also be worth moving some composed
@@ -3122,7 +3133,7 @@ wrong.
   *(the same day)*. The widths of a form's captions and fields, the height of
   the footnotes' field, and the size an outline glyph is drawn at were set by
   reasoning, with the window not on screen; they are to be judged in the eye
-  pass that closes `X5`.
+  pass that closed `X5`.
   **Done 2026-10-05**, looking at the window in a browser at the user's
   display factor (1.33), with a system face and with the built-in one. A
   form's captions are 170 wide (the longest, "Bottom margin (mm)", was cut at

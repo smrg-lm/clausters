@@ -51,9 +51,10 @@ in `crates/clausters-apps`, and the undo order over both is the crate's editing
 context, in both clients and the standalone host. The applications after the
 multitrack — a buffer editor, the notes editor, the score
 editor, and which composed views get one — are milestones of
-`crates/clausters-apps/PLAN.md` (`X2`-`X6`), each opened on a question rather
+`crates/clausters-apps/PLAN.md` (`X2`-`X6`, `X11`), each opened on a question rather
 than on a design; the notes editor is done but for its recording, and the
-score editor is built and waits for its eye and ear pass.
+score editor is done, and its options whose behavior is not defined yet
+continue in `X11`.
 
 Where the work lives:
 
@@ -164,19 +165,17 @@ its plan; the plan is where its acceptance is read.
   (`crates/clausters-apps/PLAN.md`) -- and what is left of it is the eye pass
   over `editors/edit_multitrack`, and what its entry lists as left open.
 
-- ⬜ **The applications after the multitrack, `X2`-`X6`, and the multitrack
-  continued, `X9`**
+- ⬜ **The applications after the multitrack, `X2`-`X6`, the score editor
+  continued, `X11`, and the multitrack continued, `X9`**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
   what exists under it and what is open, and each opens on a decision:
   **`X2`** a buffer editor that draws a table by
   hand, where the wavetable conversion and what the hand edits are open, and
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, done but for its recording (`X3.10`), which waits for
-  `T10` and is skipped for now; **`X5`** the score editor,
-  built whole (`X5.0`-`X5.9`) and not closed: what is left of it is the eye
-  and ear pass over `notation/score_editor` — the entries it wrote under
-  "Found by use" are all closed, and what it left as design is under Future
-  directions; **`X6`** which composed views (scope, plot, waveform,
+  `T10` and is skipped for now; **`X11`** the score
+  editor's options whose behavior is not defined yet, each defined before it
+  is fixed (the first known: the arpeggio tool draws nothing); **`X6`** which composed views (scope, plot, waveform,
   spectrogram) get an application, and with it whether the heavy families
   become features a build can drop; and **`X9`**, the multitrack editor
   continued, whose first part is the clone (`X9.1`: a new sequence made from a
