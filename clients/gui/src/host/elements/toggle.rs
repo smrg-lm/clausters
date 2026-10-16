@@ -72,7 +72,20 @@ impl Toggle {
 impl Element for Toggle {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
-            "value" => parse::truthy(v).map(|b| self.value = b).is_some(),
+            // A number that is the toggle's `on` or its `off` is that state --
+            // what a value read back from a bound control arrives as -- and
+            // anything else reads as true or false.
+            "value" => match v.as_f64().map(|x| x as f32) {
+                Some(x) if x == self.on && x != self.off => {
+                    self.value = true;
+                    true
+                }
+                Some(x) if x == self.off && x != self.on => {
+                    self.value = false;
+                    true
+                }
+                _ => parse::truthy(v).map(|b| self.value = b).is_some(),
+            },
             "label" => parse::set_label(&mut self.label, v),
             "text_size" => parse::set_size(&mut self.text_size, v),
             "on" => parse::set_f(&mut self.on, v),

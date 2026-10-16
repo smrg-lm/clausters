@@ -11,6 +11,11 @@
 //! It was called `menu`, which is the name of the other thing: a tree of
 //! entries that report verbs ([`crate::host::menu`]). This one reports a
 //! value -- the index of the option -- like every other control.
+//!
+//! **Or the number the option stands for**, when it has `values`: a list of
+//! a plugin's parameter is "Room", "Hall", "Plate" over the values 0, 1, 2 --
+//! or 0, 0.5, 1 -- and what it reports, and a `value` set to it, is that
+//! number, so a binding to `/node_set` writes the parameter and not the row.
 
 use serde_json::{Map, Value};
 
@@ -41,6 +46,9 @@ pub struct Choice {
     /// ([`crate::host::graphics::choice`]). The data, the value and the event
     /// are the same in all of them.
     pub view: View,
+    /// The `values` prop: the number each option stands for, when the
+    /// choice is over numbers. Empty reports the index.
+    pub values: Vec<f64>,
     /// The option the first row of the open list stands for: `0` for a
     /// combobox's, the first gathered tab for a row of tabs that did not fit.
     list_from: usize,
@@ -66,8 +74,16 @@ fn from_props(props: &Map<String, Value>) -> Choice {
         label: parse::label(props),
         text_size: parse::text_size(props),
         view: props.get("view").and_then(view_of).unwrap_or_default(),
+        values: props.get("values").map(values_of).unwrap_or_default(),
         list_from: 0,
     }
+}
+
+/// The numbers a `values` prop lists.
+fn values_of(v: &Value) -> Vec<f64> {
+    v.as_array()
+        .map(|items| items.iter().filter_map(Value::as_f64).collect())
+        .unwrap_or_default()
 }
 
 impl Choice {
@@ -122,7 +138,25 @@ impl Choice {
             return Events::none();
         }
         self.index = to;
-        Events::value(OscType::Int(to as i32))
+        Events::value(self.reported(to))
+    }
+
+    /// What option `at` reports: the number it stands for, or its index.
+    fn reported(&self, at: usize) -> OscType {
+        match self.values.get(at) {
+            Some(v) => OscType::Float(*v as f32),
+            None => OscType::Int(at as i32),
+        }
+    }
+
+    /// The option whose number is nearest `value`, which is where a value set
+    /// from outside lands.
+    fn nearest(&self, value: f64) -> Option<usize> {
+        self.values
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| (*a - value).abs().total_cmp(&(*b - value).abs()))
+            .map(|(i, _)| i)
     }
 }
 
@@ -141,6 +175,15 @@ impl Element for Choice {
                 true
             }
             "view" => view_of(v).map(|view| self.view = view).is_some(),
+            "values" => {
+                self.values = values_of(v);
+                true
+            }
+            "value" => v
+                .as_f64()
+                .and_then(|value| self.nearest(value))
+                .map(|at| self.index = at.min(self.options.len().saturating_sub(1)))
+                .is_some(),
             "label" => parse::set_label(&mut self.label, v),
             "text_size" => parse::set_size(&mut self.text_size, v),
             _ => false,
@@ -206,7 +249,7 @@ impl Element for Choice {
     }
 
     fn value(&self) -> Option<OscType> {
-        Some(OscType::Int(self.index as i32))
+        Some(self.reported(self.index))
     }
 
     fn info(&self) -> Vec<(String, Value)> {
@@ -308,6 +351,21 @@ mod tests {
             clicks: 1,
             time: None,
         }
+    }
+
+    /// **A choice over numbers reports the number**, and a value set from
+    /// outside lands on the option nearest it.
+    #[test]
+    fn a_choice_with_values_reports_and_reads_the_number() {
+        let mut c = from_props(&props(
+            r#"{"options":["Room","Hall","Plate"],"values":[0.0,0.5,1.0]}"#,
+        ));
+        assert_eq!(c.value(), Some(OscType::Float(0.0)));
+        assert_eq!(c.choose(2), Events::value(OscType::Float(1.0)));
+        assert!(c.set("value", &Value::from(0.45)));
+        assert_eq!(c.current(), "Hall");
+        let plain = from_props(&props(r#"{"options":["a","b"],"index":1}"#));
+        assert_eq!(plain.value(), Some(OscType::Int(1)), "no values: the index");
     }
 
     #[test]

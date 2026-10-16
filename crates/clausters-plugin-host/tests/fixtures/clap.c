@@ -107,6 +107,10 @@ static bool param_info(const clap_plugin_t *p, uint32_t index, clap_param_info_t
     if (index >= param_count(p)) return false;
     *info = (clap_param_info_t){.id = 0, .flags = CLAP_PARAM_IS_AUTOMATABLE,
         .min_value = 0, .max_value = 1, .default_value = 0.5};
+#ifdef ENUM_GAIN
+    info->flags |= CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_ENUM;
+    info->max_value = 2; info->default_value = 1;
+#endif
     strcpy(info->name, "Gain"); return true;
 }
 static bool param_value(const clap_plugin_t *p, clap_id id, double *value) {
@@ -115,7 +119,13 @@ static bool param_value(const clap_plugin_t *p, clap_id id, double *value) {
 }
 static bool param_text(const clap_plugin_t *p, clap_id id, double value, char *text, uint32_t size) {
     if (id || !param_count(p) || !size) return false;
+#ifdef ENUM_GAIN
+    const char *labels[] = {"Room", "Hall", "Plate"};
+    if (value < 0 || value > 2) return false;
+    snprintf(text, size, "%s", labels[(unsigned)value]); return true;
+#else
     snprintf(text, size, "%.3f", value); return true;
+#endif
 }
 static bool param_parse(const clap_plugin_t *p, clap_id id, const char *text, double *value) {
     if (id || !param_count(p)) return false;

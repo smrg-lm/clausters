@@ -1,8 +1,8 @@
 //! Format-independent discovery, metadata, lifecycle and processing interface.
 
 pub use clausters_core::plugin_catalog::{
-    AudioPort, MAX_PARAMETERS, MAX_PLUGINS, MAX_PORTS, NOTE_CHANNELS, NotePort, Parameter,
-    PluginInfo, ScanEntry,
+    AudioPort, MAX_LABELS, MAX_PARAMETERS, MAX_PLUGINS, MAX_PORTS, NOTE_CHANNELS, NotePort,
+    Parameter, PluginInfo, ScanEntry,
 };
 use clausters_core::plugin_shm::{Config, EventList, Span};
 use serde::{Deserialize, Serialize};
@@ -72,6 +72,10 @@ pub trait FormatInstance {
     fn load_state(&mut self, bytes: &[u8]) -> Result<(), String>;
     /// Parameter query in adapter-native units on the main thread.
     fn parameter(&mut self, id: u32) -> Result<f64, String>;
+    /// Format a plain parameter value on the helper main thread.
+    fn value_text(&mut self, id: u32, value: f64) -> Result<String, String>;
+    /// Parse a parameter's display text into plain units.
+    fn text_value(&mut self, id: u32, text: &str) -> Result<f64, String>;
     /// Operate the native editor without stopping audio processing.
     fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String>;
     /// Serve requested main-thread callbacks.

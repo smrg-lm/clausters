@@ -41,6 +41,9 @@ dispatching on what the structure is -- `AudioEditor` over a
 in it and nothing else, which is what the split was for -- and the multitrack's
 two halves are the *crate's*, so the picture it draws and the report it reads
 are the same ones the standalone host draws and reads.
+A running `clausters.defs.Node` is the one structure that is not a document:
+`NodeEditor` opens its def's controls in a window the shared core generates
+and the host binds to the node, with no history (`controls`).
 
 `View` here is **not** `clausters.gui.guidef.View`, and only this one is reached
 as `clausters.gui.editing.View`: the guidef one is a tree you can open, this one
@@ -54,6 +57,7 @@ from .audio import AudioDomain, AudioEditor
 from ...history import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
+from .controls import NodeEditor
 from .edit import edit
 from .editor import Editor, not_an_edit
 from .events import NotesDomain, NotesEditor, NotesView
@@ -81,6 +85,7 @@ __all__ = [
     "MEASURES",
     "Marking",
     "NotesDomain",
+    "NodeEditor",
     "NotesEditor",
     "NotesView",
     "MultitrackDomain",

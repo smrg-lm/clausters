@@ -26,6 +26,10 @@ use super::control::{self, Track};
 pub struct Slider {
     pub range: Range,
     pub vertical: bool,
+    /// The `readout` prop: whether the number is drawn under the groove (the
+    /// default). Off gives its strip back -- for a slider whose value is read
+    /// elsewhere, as a generic node editor shows it as the server's text.
+    pub readout: bool,
     drag: Track,
 }
 
@@ -43,6 +47,7 @@ fn from_props(props: &Map<String, Value>) -> Slider {
             .get("vertical")
             .and_then(parse::truthy)
             .unwrap_or(false),
+        readout: props.get("readout").and_then(parse::truthy).unwrap_or(true),
         drag: Track::default(),
     }
 }
@@ -54,6 +59,7 @@ impl Slider {
         controls::slider_track(
             input.rect,
             self.range.label.is_some(),
+            self.readout,
             self.range.text_size * input.scale,
             input.metrics,
         )
@@ -64,6 +70,7 @@ impl Element for Slider {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
             "vertical" => parse::truthy(v).map(|b| self.vertical = b).is_some(),
+            "readout" => parse::truthy(v).map(|b| self.readout = b).is_some(),
             _ => control::set(&mut self.range, key, v),
         }
     }
@@ -74,6 +81,7 @@ impl Element for Slider {
             &self.range,
             ctx.rect,
             self.vertical,
+            self.readout,
             self.range.text_size * ctx.scale,
         );
     }
@@ -82,7 +90,10 @@ impl Element for Slider {
         if self.vertical {
             (Some(slider_across(m)), None)
         } else {
-            (None, Some(slider_thick(&self.range, m, scale)))
+            (
+                None,
+                Some(slider_thick(&self.range, self.readout, m, scale)),
+            )
         }
     }
 
@@ -98,7 +109,7 @@ impl Element for Slider {
             (
                 None,
                 Some(
-                    slider_thick(&self.range, m, scale)
+                    slider_thick(&self.range, self.readout, m, scale)
                         - controls::label_give(&self.range, m, scale),
                 ),
             )

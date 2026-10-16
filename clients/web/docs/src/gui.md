@@ -117,15 +117,20 @@ counterpart here: the option is spelled `displayList` where Python spells
 **A control widget is built from the control it drives.** `knob(freq)`,
 `slider(sd.control("amp"))`, `number`, `toggle` and `button` read the control's
 **name** and **default** off it, so the widget and the graph cannot disagree about what
-`"freq"` is; the **range is the widget's** (`knob(freq, { min: 110.0, max:
-880.0 })`), since a control is a signal in a graph and says nothing about how a
-knob is drawn. Only a Faust parameter arrives with a range, from the `hslider`
-that declared it. All three def families answer with the same `ControlInfo`
+`"freq"` is; the **range is the control's when its def declares one** (a
+Faust `hslider`'s, or a SynthDef control's: `control("freq", 440, { min: 20,
+max: 20000, warp: "exp", unit: "Hz" })`) and the widget's otherwise
+(`knob(freq, { min: 110.0, max: 880.0 })`); `warp: "exp"` travels by ratios.
+All three def families answer with the same `ControlInfo`
 shape, spelled `sd.control("freq")` where Python writes `sd["freq"]`: a class
 here cannot take a bracket without an index signature over everything else on
 it. Then the whole surface binds in one verb — `win.bind(synth)`,
 `win.unbind()`, `win.controlMap()` — and `win.widget("freq").bind(...)` is still
-there for a bus, another widget or an arbitrary address.
+there for a bus, another widget or an arbitrary address. **A binding to a
+node's control comes back**, as in the reference client: the host asks the
+server with `/synth_get` (and `/synth_getText` for a value as text), so a bound
+widget follows the control whoever changes it, and the one a hand is holding is
+left alone.
 
 The two switches spell the same thing in both clients and need no idiom of their
 own: `button(gate, { label: "hold" })` sends `on` while it is held and `off` when

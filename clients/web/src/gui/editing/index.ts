@@ -41,6 +41,10 @@
  * `Editor` with its own domain and view in it and nothing else, which is what
  * the split was for.
  *
+ * A running `Node` is the one structure that is not a document:
+ * {@link NodeEditor} opens its def's controls in a window the shared core
+ * generates and the host binds to the node, with no history.
+ *
  * {@link View} here is **not** `gui/guidef.ts`'s `View`, and only this one is
  * reached through this module: the guidef one is a tree you can open, this one is
  * the picture of a structure plus the registry that resolves an event back to it.
@@ -64,6 +68,7 @@ export type {
     Stored, Turned,
 } from "../../history.ts";
 export { Domain } from "./domain.ts";
+export { NodeEditor } from "./controls.ts";
 export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";
 export { NotesDomain, NotesEditor, NotesView } from "./events.ts";

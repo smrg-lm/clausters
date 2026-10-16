@@ -164,6 +164,11 @@ impl OscServer {
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
             ))]
+            text_reads: std::collections::HashSet::new(),
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
             plugin_tickets: 0,
             #[cfg(all(
                 any(feature = "plugin-clap", feature = "plugin-vst3"),

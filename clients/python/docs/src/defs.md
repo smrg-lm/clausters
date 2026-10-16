@@ -245,22 +245,30 @@ sd = SynthDef("voice", out(0.0, sine(freq=freq) * 0.2))
 knob(freq, min=110.0, max=880.0)     # name and default from the control
 ```
 
-**The range is the widget's**, and it is spelled there. A control is a *signal*
-in the graph and a `GraphDef` port is a name the server takes any float for;
-neither says how a knob should be drawn, and no range rides any wire — nothing
-validates a `/node_set` against one.
+**How a control is drawn** is the def's to say, or the widget's. A SynthDef
+control may declare it beside its default — a range (`min` and `max`, both or
+neither), a `step`, a `warp` (`"exp"` travels by ratios, what a frequency or a
+time wants) and a `unit`:
 
-The exception is a **FaustDef**, whose parameters arrive with a range because
-`hslider(label, init, min, max, step)` cannot be written without one and the
-compiled DSP reports it back. That is Faust's syntax showing through, not
-something this client declares — and it is why `ControlInfo` has carried
-`min`/`max`/`step` all along while only that family fills them.
+```python
+freq = control("freq", 440.0, min=20.0, max=20000.0, warp="exp", unit="Hz")
+```
+
+The def carries it to the server, which reports it back in `/def_query`, and
+both a widget built from the control and a node's generic editor
+(`edit(node)`) draw it so. It never limits the control — nothing on the server
+holds a `/node_set` to it — and a control that declares none still takes any
+float. A **FaustDef**'s parameters always arrive with a range, because
+`hslider(label, init, min, max, step)` cannot be written without one, and a
+plugin's parameters with the range, the steps and the names the plugin reports.
+`min`/`max` are not attributes of the control, since on a signal they are the
+binary operators: what a control says lives in its `display`.
 
 All three families answer with the same shape, so a GUI reads any of them alike:
 
 ```python
-sd["freq"]                  # a ControlInfo: name, default, rate
-fd["cutoff"]                # plus min/max/step, from Faust's own hslider
+sd["freq"]                  # a ControlInfo: name, default, rate, and what it declared
+fd["cutoff"]                # min/max/step, from Faust's own hslider
 gd["mix"]                   # a surface port, plus the targets it drives inside
 [knob(c, min=0.0, max=1.0) for c in sd.controls]
 ```

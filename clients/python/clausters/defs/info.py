@@ -44,12 +44,19 @@ class ControlInfo:
     different vocabulary from the calculation rates `UgenInfo` reports, which
     also include ``"ar"`` and ``"dr"``. Neither of those can be a control: an
     audio-rate value is mapped in from a bus, and a demand value is pulled by a
-    driver rather than set. A
-    FaustDef's params also carry ``min``/``max``/``step``; they are ``None`` for
-    the other families, which declare no range. On a GraphDef this describes a
-    surface **port**, and ``targets`` lists the ``(member, control, mul, add)``
-    it drives inside -- the scaling included, so a patch can draw the port's
-    real connections."""
+    driver rather than set.
+
+    The rest says **how it is drawn**, the same in every family: ``min`` and
+    ``max`` (``None`` where the def declares no range), ``step`` (zero or
+    ``None`` is continuous), ``warp`` (``"exp"`` for equal ratios over equal
+    travel, else linear) and ``unit``. A FaustDef's slider and a plugin's
+    parameter bring their range; a SynthDef's control says it where it was
+    declared (`clausters.defs.control`). A plugin parameter also has its own
+    ``label``, the ``group`` (its module) it belongs to, its ``flags`` and, for a
+    list, the ``labels`` of its steps. On a GraphDef this describes a surface
+    **port**, and ``targets`` lists the ``(member, control, mul, add)`` it
+    drives inside -- the scaling included, so a patch can draw the port's real
+    connections."""
 
     name: str
     default: float
@@ -57,6 +64,12 @@ class ControlInfo:
     min: "float | None" = None
     max: "float | None" = None
     step: "float | None" = None
+    warp: "str | None" = None
+    unit: "str | None" = None
+    label: "str | None" = None
+    group: str = ""
+    flags: int = 0
+    labels: tuple = ()
     targets: tuple = ()
 
     @property
@@ -308,19 +321,24 @@ class Tree:
 
 def parse_def_info(args) -> DefInfo:
     """One ``/def_query.reply`` reply: ``name, family, numControls`` then per control
-    ``name, default, rate`` -- plus ``min, max, step`` for a faust param, or
-    ``numTargets`` and the target tuples for a graph port."""
+    ``name, default, rate, min, max, step, warp, unit, label, group, flags,
+    numLabels, label...`` -- ``min`` equal to ``max`` where no range is declared,
+    an empty string where a text is not -- and for a graph port ``numTargets``
+    and the target tuples after it."""
     name, family, count = str(args[0]), str(args[1]), int(args[2])
     controls, i = [], 3
     for _ in range(count):
+        lo, hi, step = float(args[i + 3]), float(args[i + 4]), float(args[i + 5])
+        labels = int(args[i + 11])
         c = ControlInfo(name=str(args[i]), default=float(args[i + 1]),
-                        rate=str(args[i + 2]))
-        i += 3
-        if family in ("faust", "plugin"):
-            c.min, c.max, c.step = (float(args[i]), float(args[i + 1]),
-                                    float(args[i + 2]))
-            i += 3
-        elif family == "graph":
+                        rate=str(args[i + 2]),
+                        min=None if lo == hi else lo, max=None if lo == hi else hi,
+                        step=step or None, warp=str(args[i + 6]) or None,
+                        unit=str(args[i + 7]) or None, label=str(args[i + 8]) or None,
+                        group=str(args[i + 9]), flags=int(args[i + 10]),
+                        labels=tuple(str(a) for a in args[i + 12:i + 12 + labels]))
+        i += 12 + labels
+        if family == "graph":
             n_targets = int(args[i])
             i += 1
             targets = []

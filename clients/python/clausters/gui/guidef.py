@@ -1317,8 +1317,7 @@ def _built_from(widget: View, control) -> View:
 
 def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> dict:
     """A control's own props for a widget built from it: its name and its
-    default as the value -- plus a range only where the control genuinely has
-    one.
+    default as the value -- plus how it is drawn, where the control says.
 
     The **entry point named once**, for what a def actually knows: what the
     control is called (which is what ``/node_set`` addresses) and what it starts
@@ -1327,13 +1326,13 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
     every def family answers with (``sd["freq"]``, ``fd["cutoff"]``,
     ``gd["mix"]``).
 
-    **The range is the widget's**, and it is spelled here:
-    ``knob(freq, min=110.0, max=880.0)``. A control is a signal in a graph and a
-    port is a name the server takes any float for; neither says how a knob
-    should be drawn. The one control that arrives with a range is a **Faust**
-    parameter, because ``hslider(label, init, min, max, step)`` cannot be
-    written without one and the compiled DSP reports it back -- Faust's syntax
-    showing through, not a range this client declares.
+    **The range is the control's when it declares one** -- a FaustDef's slider
+    brings it, a SynthDef's control may say it (``control("freq", 440,
+    min=20, max=20000, warp="exp")``) -- and the widget's otherwise:
+    ``knob(freq, min=110.0, max=880.0)``. A widget that needs a range and has
+    none is refused rather than guessed at; the guessing is the generic node
+    editor's (`clausters.gui.edit` of a node), which draws every control of a
+    def and has to.
 
     Explicit keywords win: the control says what it is, the call says how to draw
     it. That includes ``name=``, which is the handle's index and is taken out of
@@ -1346,18 +1345,26 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
             f"not a def's control: {control!r} -- pass a control (from "
             "`clausters.defs.control`, or a def's `sd['freq']`) or spell "
             "min=/max=/value= yourself")
-    lo, hi = getattr(control, "range", None) or (None, None)
+    display = getattr(control, "display", None)
+    if display is not None:
+        # a graph's control: what it said about its drawing, if anything
+        lo, hi = display.get("min"), display.get("max")
+        step, warp = display.get("step"), display.get("warp")
+    else:
+        # a ControlInfo, whichever family reported it
+        lo, hi = getattr(control, "range", None) or (None, None)
+        step, warp = getattr(control, "step", None), getattr(control, "warp", None)
     if needs_range and lo is None and given.get("min") is None:
         raise ValueError(
             f"control {name!r} has no range to be drawn over -- spell one on the "
-            f"widget (knob({name}, min=..., max=...)). Only a FaustDef's parameter "
-            "brings its own, from the hslider that declared it")
+            f"widget (knob({name}, min=..., max=...)) or declare it on the "
+            f"control (control({name!r}, ..., min=..., max=...))")
     given = dict(given)
     if "name" in props:
         given["name"] = props.pop("name")
     from_control = _drop_none(name=name, label=name,
                               value=getattr(control, "default", None),
-                              min=lo, max=hi, step=getattr(control, "step", None))
+                              min=lo, max=hi, step=step, warp=warp)
     from_control.update({k: v for k, v in given.items() if v is not None})
     return from_control
 
@@ -1391,7 +1398,7 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
 
 def knob(control=None, *, label: str | None = None, min: float | None = None,
          max: float | None = None, curve: float | None = None, step: float | None = None,
-         value: float | None = None,
+         warp: str | None = None, value: float | None = None,
          text_size: float | None = None, color: str | None = None,
          id: int | None = None, **props) -> View:
     """A rotary ``knob`` over a continuous range. ``text_size`` scales its
@@ -1409,7 +1416,7 @@ def knob(control=None, *, label: str | None = None, min: float | None = None,
     ``curve`` and ``step`` say how the travel becomes the value; see `slider`,
     which spells them out."""
     extra = _drop_none(label=label, min=min, max=max, curve=curve, step=step,
-                       value=value, text_size=text_size, color=color)
+                       warp=warp, value=value, text_size=text_size, color=color)
     if control is not None:
         extra = _from_control(control, extra, props, needs_range=True)
     return _built_from(node("knob", id=id, **extra, **props), control)
@@ -1417,7 +1424,7 @@ def knob(control=None, *, label: str | None = None, min: float | None = None,
 
 def slider(control=None, *, label: str | None = None, min: float | None = None,
            max: float | None = None, curve: float | None = None, step: float | None = None,
-           value: float | None = None, vertical: bool = False,
+           warp: str | None = None, value: float | None = None, vertical: bool = False,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A continuous ``slider`` over a range. ``vertical=True`` lays it out along
@@ -1435,6 +1442,10 @@ def slider(control=None, *, label: str | None = None, min: float | None = None,
 
         slider(amp, min=0.0, max=1.0, curve=4.0)
 
+    ``warp="exp"`` travels by **ratios** instead -- halfway between 20 and
+    20000 is 632, what a frequency or a time wants -- over a positive range,
+    and wins over ``curve``.
+
     ``step`` is the grid a **drag** lands on, in the value's own units --
     ``step=1.0`` over ``0..127`` is the integers a MIDI note number wants, and
     a FaustDef's parameter arrives with the one its ``hslider`` declared. It is
@@ -1445,7 +1456,7 @@ def slider(control=None, *, label: str | None = None, min: float | None = None,
     (``value=``, or `clausters.gui.handle.WidgetHandle.set`) is drawn as sent:
     the step is a rule about the hand, not a constraint on the document."""
     extra = _drop_none(label=label, min=min, max=max, curve=curve, step=step,
-                       value=value, text_size=text_size, color=color)
+                       warp=warp, value=value, text_size=text_size, color=color)
     if control is not None:
         extra = _from_control(control, extra, props, needs_range=True)
     if vertical:
@@ -1455,7 +1466,7 @@ def slider(control=None, *, label: str | None = None, min: float | None = None,
 
 def number(control=None, *, label: str | None = None, min: float | None = None,
            max: float | None = None, curve: float | None = None, step: float | None = None,
-           value: float | None = None, stepper: bool | None = None,
+           warp: str | None = None, value: float | None = None, stepper: bool | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A draggable numeric read-out over a range. ``text_size`` scales its
@@ -1467,7 +1478,7 @@ def number(control=None, *, label: str | None = None, min: float | None = None,
     value one ``step`` each -- the same step the arrow keys take when the field
     holds the focus."""
     extra = _drop_none(label=label, min=min, max=max, curve=curve, step=step,
-                       value=value, text_size=text_size, color=color)
+                       warp=warp, value=value, text_size=text_size, color=color)
     if stepper is not None:
         extra["stepper"] = 1 if stepper else 0
     if control is not None:
@@ -1702,10 +1713,13 @@ CHOICE_VIEWS = ("combo", "radio", "segmented", "tabs", "pager", "list")
 
 
 def choice(options=(), *, index: int | None = None, label: str | None = None,
-           view: str | None = None, text_size: float | None = None,
+           view: str | None = None, values=None, text_size: float | None = None,
            color: str | None = None, id: int | None = None, **props) -> View:
     """One of several: a ``choice`` over ``options`` (a list of strings),
-    emitting the chosen ``index``.
+    emitting the chosen ``index`` -- or, with ``values`` (a number per option),
+    the number the chosen option stands for, which is what a list of a
+    plugin's parameter writes (``choice(["Room", "Hall"], values=[0.0, 1.0])``);
+    a ``value`` set on it lands on the option nearest.
 
     ``view`` is how it is presented, and nothing else about it changes -- the
     data, the value and the event are the same in all of them:
@@ -1734,6 +1748,11 @@ def choice(options=(), *, index: int | None = None, label: str | None = None,
         raise ValueError(
             f"unknown choice view {view!r}; use one of {', '.join(CHOICE_VIEWS)}")
     extra = _drop_none(index=index, label=label, view=view, text_size=text_size, color=color)
+    if values is not None:
+        values = [float(v) for v in values]
+        if len(values) != len(list(options)):
+            raise ValueError(f"{len(values)} values for {len(list(options))} options")
+        extra["values"] = values
     return node("choice", id=id, options=list(options), **extra, **props)
 
 

@@ -51,6 +51,9 @@
 // on an element's behalf, which are its own and not the element's.
 pub mod ack;
 pub mod bind;
+// The other way of a binding: what a bound widget writes, asked for and read
+// back onto it.
+pub mod readback;
 // What the host says to itself: one door for the platform log, in both builds,
 // and the debug channel that also lands on a window's status bar. The status
 // bar beside it is what the host says to the person at the window; this is the
@@ -848,6 +851,9 @@ pub struct Host {
     /// (`/gui_bind`). A bound widget bypasses the script: its value goes
     /// straight to the audio server instead of emitting a `/gui_event`.
     bindings: HashMap<i32, Binding>,
+    /// The nodes a read-back binding reads that the server has said are there
+    /// ([`readback`]).
+    read_live: std::collections::HashSet<i32>,
     /// The verbatim `/gui_def` JSON per def id -- the source of truth for
     /// persistence (a GuiDef with a `name` is saved as-is) and for replaying a
     /// `/gui_load`.
@@ -1049,6 +1055,7 @@ impl Host {
             #[cfg(unix)]
             shared_buffers: None,
             bindings: HashMap::new(),
+            read_live: Default::default(),
             def_json: HashMap::new(),
             store: None,
             timelines: timeline::TimelineGroups::default(),

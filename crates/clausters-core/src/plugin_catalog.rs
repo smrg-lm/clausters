@@ -40,6 +40,9 @@ pub const MAX_PORTS: usize = 16;
 /// controllers to parameters declares one per controller and channel -- 2048
 /// before its own -- so the bound has room for that and more.
 pub const MAX_PARAMETERS: usize = 8192;
+/// The most steps of a list whose names discovery reads
+/// ([`Parameter::labels`]); a longer one is drawn as steps with no names.
+pub const MAX_LABELS: usize = 128;
 /// The channels a note port has when the format does not say: MIDI's sixteen.
 pub const NOTE_CHANNELS: u32 = 16;
 
@@ -116,6 +119,27 @@ pub struct Parameter {
     pub step: f64,
     /// Default in the same parameter units.
     pub default: f64,
+    /// What each step of a parameter the format marks as a list is called
+    /// ("Room", "Hall"), lowest value first, read at discovery; empty for
+    /// any other parameter.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+}
+
+/// The bits of [`Parameter::flags`] the shared core reads. The vocabulary is
+/// CLAP's, and the VST3 adapter maps its own flags onto it.
+impl Parameter {
+    /// It takes whole steps only: CLAP's `IS_STEPPED`, a VST3 step count.
+    pub const STEPPED: u32 = 1;
+    /// The plugin keeps it out of a host's generic view.
+    pub const HIDDEN: u32 = 1 << 2;
+    /// The plugin reports it and nobody may write it.
+    pub const READ_ONLY: u32 = 1 << 3;
+    /// A host may automate it.
+    pub const AUTOMATABLE: u32 = 1 << 5;
+    /// Its steps are a list of named choices: CLAP's `IS_ENUM`, VST3's
+    /// `kIsList`.
+    pub const LIST: u32 = 1 << 16;
 }
 
 /// Stable reference and processing surface reported by isolated discovery.
@@ -369,6 +393,7 @@ impl PluginInfo {
             || self.id.is_empty()
             || self.path.is_empty()
             || self.parameters.len() > MAX_PARAMETERS
+            || self.parameters.iter().any(|p| p.labels.len() > MAX_LABELS)
         {
             return Err("invalid plugin metadata".into());
         }
@@ -992,6 +1017,7 @@ mod tests {
             max: 1.0,
             step: 0.0,
             default: 0.5,
+            labels: Vec::new(),
         }
     }
 

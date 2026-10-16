@@ -48,6 +48,9 @@
  
  impl IPluginBaseTrait for GainProcessor {
 -    unsafe fn initialize(&self, _context: *mut FUnknown) -> tresult {
+-        kResultOk
+-    }
+-
 +    unsafe fn initialize(&self, context: *mut FUnknown) -> tresult {
 +        assert_eq!(self.main, std::thread::current().id());
 +        let host = ComRef::from_raw(context)
@@ -58,10 +61,13 @@
 +        assert_eq!(host.getName(&mut name), kResultOk);
 +        assert_eq!(name[0], 67);
 +        self.context.set(host.into_raw());
-         kResultOk
-     }
--
++        kResultOk
++    }
      unsafe fn terminate(&self) -> tresult {
+-        kResultOk
+-    }
+-}
+-
 +        assert_eq!(self.main, std::thread::current().id());
 +        assert!(self.connection.borrow().is_none());
 +        drop(vst3::ComPtr::from_raw(
@@ -94,10 +100,9 @@
 +        kResultOk
 +    }
 +    unsafe fn notify(&self, _: *mut IMessage) -> tresult {
-         kResultOk
-     }
- }
--
++        kResultOk
++    }
++}
  impl IComponentTrait for GainProcessor {
      unsafe fn getControllerClassId(&self, class_id: *mut TUID) -> tresult {
          *class_id = GainController::CID;
@@ -154,6 +159,11 @@
      }
  
 -    unsafe fn setState(&self, _state: *mut IBStream) -> tresult {
+-        kResultOk
+-    }
+-
+-    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
+-        kResultOk
 +    unsafe fn setState(&self, state: *mut IBStream) -> tresult {
 +        assert_eq!(std::thread::current().id(), self.main);
 +        let state = ComRef::from_raw(state).unwrap();
@@ -167,11 +177,9 @@
 +            return kInvalidArgument;
 +        }
 +        self.gain.store(value, Ordering::Relaxed);
-         kResultOk
-     }
- 
--    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
--        kResultOk
++        kResultOk
++    }
++
 +    unsafe fn getState(&self, state: *mut IBStream) -> tresult {
 +        assert_eq!(std::thread::current().id(), self.main);
 +        let state = ComRef::from_raw(state).unwrap();
@@ -230,6 +238,8 @@
 -                            if result == kResultTrue {
 -                                self.gain.store(value.to_bits(), Ordering::Relaxed);
 -                            }
+-                        }
+-                        _ => {}
 +        assert_ne!(std::thread::current().id(), self.main);
 +        let data = &*data;
 +        assert_eq!(data.symbolicSampleSize, 0);
@@ -257,41 +267,10 @@
 +                    assert_eq!(queue.getPoint(point, &mut offset, &mut value), kResultOk);
 +                    if offset == sample {
 +                        self.gain.store(value.to_bits(), Ordering::Relaxed);
-+                    }
-+                }
-+            }
-+            for index in 0..events.getEventCount() {
-+                let mut event: Event = std::mem::zeroed();
-+                assert_eq!(events.getEvent(index, &mut event), kResultOk);
-+                if event.sampleOffset == sample {
-+                    assert_eq!(out_events.addEvent(&mut event), kResultOk);
-+                    if event.r#type == 4 {
-+                        let e = event.__field0.noteExpressionValue;
-+                        match e.typeId {
-+                            0 => assert_eq!(e.value, 0.25),
-+                            2 => assert!((e.value - 0.55).abs() < 1e-12),
-+                            _ => (),
-                         }
--                        _ => {}
-+                    }
-+                    match event.r#type {
-+                        0 => self.level.store(
-+                            (event.__field0.noteOn.velocity as f64).to_bits(),
-+                            Ordering::Relaxed,
-+                        ),
-+                        1 => self.level.store(0, Ordering::Relaxed),
-+                        _ => (),
                      }
                  }
              }
-+            let gain = f64::from_bits(self.gain.load(Ordering::Relaxed)) as f32;
-+            let level = f64::from_bits(self.level.load(Ordering::Relaxed)) as f32;
-+            for channel in 0..2 {
-+                let input = *(*data.inputs).__field0.channelBuffers32.add(channel);
-+                let output = *(*data.outputs).__field0.channelBuffers32.add(channel);
-+                *output.add(sample as usize) = gain * (*input.add(sample as usize) + level);
-+            }
-         }
+-        }
 -
 -        let gain = f64::from_bits(self.gain.load(Ordering::Relaxed)) as f32;
 -
@@ -329,6 +308,37 @@
 -            output_r[i] = gain * input_r[i];
 -        }
 -
++            for index in 0..events.getEventCount() {
++                let mut event: Event = std::mem::zeroed();
++                assert_eq!(events.getEvent(index, &mut event), kResultOk);
++                if event.sampleOffset == sample {
++                    assert_eq!(out_events.addEvent(&mut event), kResultOk);
++                    if event.r#type == 4 {
++                        let e = event.__field0.noteExpressionValue;
++                        match e.typeId {
++                            0 => assert_eq!(e.value, 0.25),
++                            2 => assert!((e.value - 0.55).abs() < 1e-12),
++                            _ => (),
++                        }
++                    }
++                    match event.r#type {
++                        0 => self.level.store(
++                            (event.__field0.noteOn.velocity as f64).to_bits(),
++                            Ordering::Relaxed,
++                        ),
++                        1 => self.level.store(0, Ordering::Relaxed),
++                        _ => (),
++                    }
++                }
++            }
++            let gain = f64::from_bits(self.gain.load(Ordering::Relaxed)) as f32;
++            let level = f64::from_bits(self.level.load(Ordering::Relaxed)) as f32;
++            for channel in 0..2 {
++                let input = *(*data.inputs).__field0.channelBuffers32.add(channel);
++                let output = *(*data.outputs).__field0.channelBuffers32.add(channel);
++                *output.add(sample as usize) = gain * (*input.add(sample as usize) + level);
++            }
++        }
          kResultOk
      }
  
@@ -370,6 +380,11 @@
 -    }
 -
 -    unsafe fn setState(&self, _state: *mut IBStream) -> tresult {
+-        kResultOk
+-    }
+-
+-    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
+-        kResultOk
 +    unsafe fn setComponentState(&self, state: *mut IBStream) -> tresult {
 +        let state = ComRef::from_raw(state).unwrap();
 +        let mut value = 0u64;
@@ -378,11 +393,9 @@
 +            return kInvalidArgument;
 +        }
 +        self.gain.set(f64::from_bits(value));
-         kResultOk
-     }
- 
--    unsafe fn getState(&self, _state: *mut IBStream) -> tresult {
--        kResultOk
++        kResultOk
++    }
++
 +    unsafe fn setState(&self, state: *mut IBStream) -> tresult {
 +        self.setComponentState(state)
 +    }
@@ -398,19 +411,36 @@
          1
      }
  
-@@ -381,9 +478,9 @@
+@@ -380,10 +477,10 @@
+                 copy_wstring("Gain", &mut info.title);
                  copy_wstring("Gain", &mut info.shortTitle);
                  copy_wstring("", &mut info.units);
-                 info.stepCount = 0;
+-                info.stepCount = 0;
 -                info.defaultNormalizedValue = 1.0;
++                info.stepCount = if cfg!(feature = "enumerated") { 2 } else { 0 };
 +                info.defaultNormalizedValue = 0.5;
                  info.unitId = 0;
 -                info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate as i32;
-+                info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate;
++                info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate | if cfg!(feature = "enumerated") { ParameterInfo_::ParameterFlags_::kIsList } else { 0 };
  
                  kResultOk
              }
-@@ -433,20 +530,23 @@
+@@ -401,7 +498,13 @@
+ 
+         match id {
+             0 => {
+-                let display = value_normalized.to_string();
++                let display = if cfg!(feature = "enumerated") {
++                    ["Room", "Hall", "Plate"]
++                        [(value_normalized * 2.0).round().clamp(0.0, 2.0) as usize]
++                        .to_owned()
++                } else {
++                    value_normalized.to_string()
++                };
+                 copy_wstring(&display, slice);
+                 kResultOk
+             }
+@@ -433,20 +536,23 @@
      }
  
      unsafe fn normalizedParamToPlain(&self, id: u32, value_normalized: f64) -> f64 {
@@ -436,7 +466,7 @@
          match id {
              0 => self.gain.get(),
              _ => 0.0,
-@@ -456,26 +556,74 @@
+@@ -456,26 +562,74 @@
      unsafe fn setParamNormalized(&self, id: u32, value: f64) -> tresult {
          match id {
              0 => {
@@ -514,7 +544,7 @@
  }
  
  impl IPluginFactoryTrait for Factory {
-@@ -590,3 +738,269 @@
+@@ -590,3 +744,269 @@
          .unwrap()
          .into_raw()
  }

@@ -324,6 +324,19 @@ impl App {
         }
     }
 
+    /// Asks the server for what every bound widget of the open windows writes
+    /// ([`Host::read_back_asks`]); the answers come back as replies.
+    pub(super) fn read_back(&self) {
+        let Some(server) = self.host.server() else {
+            return;
+        };
+        for msg in self.host.read_back_asks() {
+            if let Err(e) = server.send(msg) {
+                return warn!("failed to read the bound widgets back: {e}");
+            }
+        }
+    }
+
     /// Sends a `/group_queryTree <group> 1` for every group an open `nodetree` shows.
     pub(super) fn requery_node_trees(&self) {
         let Some(server) = self.host.server() else {
@@ -553,6 +566,13 @@ impl Front for App {
         ws.waveforms
             .iter()
             .filter_map(|((widget_id, _key), slot)| slot.owed.take().map(|o| (*widget_id, o)))
+            .collect()
+    }
+
+    fn held(&self) -> Vec<i32> {
+        self.windows
+            .values()
+            .filter_map(|ws| ws.gestures.holding())
             .collect()
     }
 }

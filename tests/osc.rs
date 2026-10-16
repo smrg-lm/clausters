@@ -2942,7 +2942,11 @@ fn n_setn_and_s_get_read_a_control_range() {
     let reply = server.recv_until("/node_set");
     assert_eq!(
         reply.args,
-        vec![OscType::Int(1000), OscType::Int(0), OscType::Float(550.0)]
+        vec![
+            OscType::Int(1000),
+            OscType::String("freq".into()),
+            OscType::Float(550.0)
+        ]
     );
 
     // /synth_getRange returns a whole range as (control, numControls, val...).
@@ -3728,7 +3732,8 @@ fn d_query_lists_loaded_defs_with_their_controls() {
     let def = serde_json::json!({
         "name": "introspected",
         "controls": [
-            {"name": "freq", "default": 440.0},
+            {"name": "freq", "default": 440.0, "min": 20.0, "max": 2000.0,
+             "warp": "exp", "unit": "Hz"},
             {"name": "gate", "default": 1.0, "rate": "tr"},
             {"name": "seed", "default": 7.0, "rate": "ir"}
         ],
@@ -3762,15 +3767,33 @@ fn d_query_lists_loaded_defs_with_their_controls() {
         .unwrap();
     assert_eq!(one.args[1], OscType::String("synth".into()));
     assert_eq!(one.args[2], OscType::Int(3), "three controls");
-    // Then (name, default, type) per control, in declaration order.
-    assert_eq!(one.args[3], OscType::String("freq".into()));
-    assert_eq!(one.args[4], OscType::Float(440.0));
-    assert_eq!(one.args[5], OscType::String("kr".into()));
-    assert_eq!(one.args[6], OscType::String("gate".into()));
-    assert_eq!(one.args[8], OscType::String("tr".into()));
-    assert_eq!(one.args[9], OscType::String("seed".into()));
-    assert_eq!(one.args[10], OscType::Float(7.0));
-    assert_eq!(one.args[11], OscType::String("ir".into()));
+    // Then per control, in declaration order: name, default, rate, min, max,
+    // step, warp, unit, label, group, flags and the labels of a list.
+    let s = |text: &str| OscType::String(text.into());
+    let f = OscType::Float;
+    assert_eq!(
+        one.args[3..15],
+        [
+            s("freq"),
+            f(440.0),
+            s("kr"),
+            f(20.0),
+            f(2000.0),
+            f(0.0),
+            s("exp"),
+            s("Hz"),
+            s(""),
+            s(""),
+            OscType::Int(0),
+            OscType::Int(0),
+        ]
+    );
+    // A control that declares no range reports min and max equal.
+    assert_eq!(
+        one.args[15..21],
+        [s("gate"), f(1.0), s("tr"), f(0.0), f(0.0), f(0.0)]
+    );
+    assert_eq!(one.args[27..30], [s("seed"), f(7.0), s("ir")]);
     server.quit();
 }
 
@@ -3793,6 +3816,91 @@ fn d_query_details_named_defs_and_reports_unknown_as_empty() {
     assert_eq!(infos[1].args[0], OscType::String("nonexistent".into()));
     assert_eq!(infos[1].args[1], OscType::String(String::new()));
     assert_eq!(infos[1].args[2], OscType::Int(0));
+    server.quit();
+}
+
+/// **A control reads as text and is set from text**: `/synth_getText` answers
+/// with the `/node_setText` that would write the value back, the number with
+/// the unit its def declares, and `/node_setText` reads the number with its
+/// unit or without. Text that is no value fails and changes nothing.
+#[test]
+fn a_control_reads_and_sets_as_text() {
+    let server = TestServer::spawn();
+    let def = serde_json::json!({
+        "name": "texted",
+        "controls": [{"name": "freq", "default": 440.0, "min": 20.0, "max": 2000.0,
+                      "unit": "Hz"}],
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"control": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    })
+    .to_string();
+    server.send(
+        "/def_send",
+        vec![OscType::String("synth".into()), OscType::String(def)],
+    );
+    server.recv_until("/done");
+    server.send(
+        "/synth_new",
+        vec![
+            OscType::String("texted".into()),
+            OscType::Int(1000),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let s = |text: &str| OscType::String(text.into());
+    server.send("/synth_getText", vec![OscType::Int(1000), s("freq")]);
+    let reply = server.recv_until("/node_setText");
+    assert_eq!(reply.args, [OscType::Int(1000), s("freq"), s("440 Hz")]);
+
+    server.send(
+        "/node_setText",
+        vec![OscType::Int(1000), s("freq"), s(" 880 hz")],
+    );
+    server.send("/synth_get", vec![OscType::Int(1000), OscType::Int(0)]);
+    let reply = server.recv_until("/node_set");
+    assert_eq!(
+        reply.args,
+        [OscType::Int(1000), OscType::Int(0), OscType::Float(880.0)]
+    );
+
+    server.send(
+        "/node_setText",
+        vec![OscType::Int(1000), s("freq"), s("loud")],
+    );
+    let reply = server.recv_until("/fail");
+    assert_eq!(reply.args[0], s("/node_setText"));
+    server.send("/synth_getText", vec![OscType::Int(1000), s("freq")]);
+    let reply = server.recv_until("/node_setText");
+    assert_eq!(reply.args[2], s("880 Hz"));
+    server.quit();
+}
+
+/// **A range no view can draw is refused with the def**: a SynthDef's
+/// display metadata is checked when it is sent.
+#[test]
+fn a_synthdef_with_an_impossible_range_is_refused() {
+    let server = TestServer::spawn();
+    let def = serde_json::json!({
+        "name": "reversed",
+        "controls": [{"name": "freq", "default": 440.0, "min": 2000.0, "max": 20.0}],
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"control": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    })
+    .to_string();
+    server.send(
+        "/def_send",
+        vec![OscType::String("synth".into()), OscType::String(def)],
+    );
+    let reply = server.recv_until("/fail");
+    assert!(
+        format!("{:?}", reply.args).contains("below its max"),
+        "{reply:?}"
+    );
     server.quit();
 }
 

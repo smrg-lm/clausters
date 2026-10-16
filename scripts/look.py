@@ -74,19 +74,29 @@ def main() -> int:
     sys.ps1 = "look> "
     sys.path.insert(0, str(example.parent))
 
+    import importlib
+
+    plot = importlib.import_module("clausters.plot")
+    from clausters.base.main import default_session, main as current
     from clausters.gui import ambient_host
 
     namespace = {}
     taken = 0
     written = []
 
+    def hosts() -> list:
+        """Every host an example's windows can be on, the way the visual verbs
+        resolve one: the registered host, a session's, the one they boot."""
+        found = [ambient_host(), getattr(current.current_session, "_gui", None),
+                 getattr(default_session, "_gui", None), plot._own_host]
+        return [h for i, h in enumerate(found) if h is not None and h not in found[:i]]
+
     def look(step: str) -> None:
         nonlocal taken
-        host = ambient_host()
-        windows = host.windows if host is not None else []
+        windows = [(host, window) for host in hosts() for window in host.windows]
         if not windows:
             print(f"{step}: no window is open")
-        for window in windows:
+        for host, window in windows:
             suffix = f"-{window}" if len(windows) > 1 else ""
             path = pictures / f"{taken:02d}-{step}{suffix}.png"
             written.append(host.capture(window, str(path)))
@@ -111,8 +121,8 @@ def main() -> int:
         session = namespace.get("session")
         if session is not None and hasattr(session, "close"):
             session.close()
-        elif ambient_host() is not None:
-            ambient_host().stop()
+        for host in hosts():
+            host.stop()
         shutil.rmtree(workdir, ignore_errors=True)
     for path in written:
         print(os.path.relpath(path, Path(__file__).resolve().parent.parent))

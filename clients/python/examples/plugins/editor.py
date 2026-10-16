@@ -17,7 +17,11 @@ audible default preset and an X11 editor; the parametric equalizer above is
 one. The repository CLAP gain and VST3 fixtures also work, named `gain` and
 `Clausters VST3 fixture` with `PLUGIN_PATH` at the built binary: their editors
 exercise callbacks and change gain to 0.75. Close/reopen the editor and edit
-its controls while the tones keep playing. Run as a script, Enter finishes;
+its controls while the tones keep playing. Beside it opens the effect's
+**generic editor**, drawn by the GUI host from the plugin's parameters: move a
+control in the native window and the generic one follows; drag a generic
+control and the native window follows it. A plugin of many parameters opens
+there by groups and pages, with a search field over their names. Run as a script, Enter finishes;
 cell by cell, `finish()` closes the session. Python boots the native server;
 the paired page attaches to one booted separately.
 """
@@ -26,6 +30,7 @@ import os
 import sys
 from clausters import PluginDef, Session, Synth, SynthDef
 from clausters.defs import out, sine
+from clausters.gui import edit
 
 NAME = os.environ.get("PLUGIN", "")
 PATHS = [os.environ["PLUGIN_PATH"]] if os.environ.get("PLUGIN_PATH") else []
@@ -61,9 +66,12 @@ voice.open_plugin_editor()
 print(voice.query_plugin_editor())
 voice.close_plugin_editor()
 voice.open_plugin_editor()
+# The generic editor: the same parameters, in a window of the GUI host's.
+generic = edit(voice)
 
 # %%
 def finish():
+    generic.close()
     voice.close_plugin_editor()
     voice.free()
     source.free()

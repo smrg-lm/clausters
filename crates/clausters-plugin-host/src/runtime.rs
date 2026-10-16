@@ -342,6 +342,21 @@ impl Instance {
             _ => Err("invalid plugin parameter response".into()),
         }
     }
+    /// Convert parameter text off the audio plane, without stopping processing.
+    pub fn value_text(
+        &mut self,
+        id: u32,
+        value: f64,
+        text: Option<String>,
+    ) -> Result<(f64, String), String> {
+        match self
+            .helper
+            .request(Request::ValueText { id, value, text })?
+        {
+            Response::ValueText(value, text) if value.is_finite() => Ok((value, text)),
+            _ => Err("invalid plugin parameter text response".into()),
+        }
+    }
     /// Revalidate native ports/parameters/latency; a changed layout fails this segment.
     pub fn refresh(&mut self) -> Result<(), String> {
         let Response::Metadata(info) = self.helper.request(Request::Metadata)? else {
@@ -382,6 +397,20 @@ pub struct Administration {
     socket: UnixStream,
 }
 impl Administration {
+    /// Convert values on the helper main thread while processing continues.
+    pub fn value_text(
+        &mut self,
+        id: u32,
+        value: f64,
+        text: Option<String>,
+    ) -> Result<(f64, String), String> {
+        protocol::send(&mut self.socket, &Request::ValueText { id, value, text })?;
+        match protocol::receive(&mut self.socket)? {
+            Response::ValueText(value, text) if value.is_finite() => Ok((value, text)),
+            Response::Error(error) => Err(error),
+            _ => Err("invalid plugin parameter text response".into()),
+        }
+    }
     /// Operate the native editor on main while the audio worker keeps processing.
     pub fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String> {
         protocol::send(&mut self.socket, &Request::Editor(command))?;
@@ -1203,6 +1232,15 @@ fn handle(request: Request, loaded: &mut Option<Loaded>) -> Result<Response, Str
             .as_mut()
             .ok_or("no loaded plugin")?
             .state(Some(bytes)),
+        Request::ValueText { id, value, text } => {
+            let instance = &mut loaded.as_mut().ok_or("no loaded plugin")?.instance;
+            let value = if let Some(text) = text {
+                instance.text_value(id, &text)?
+            } else {
+                value
+            };
+            Ok(Response::ValueText(value, instance.value_text(id, value)?))
+        }
         Request::Parameter(id) => Ok(Response::Parameter(
             loaded
                 .as_mut()

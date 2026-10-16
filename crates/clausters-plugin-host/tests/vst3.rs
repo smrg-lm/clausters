@@ -379,3 +379,31 @@ fn native_editor_runs_linux_timer_and_fd_callbacks_while_processing() {
     assert!(!Path::new(&format!("/proc/{pid}")).exists());
     assert!(admin.editor(EditorCommand::Query).is_err());
 }
+
+#[test]
+fn parameter_text_conversion_uses_the_controller() {
+    let mut instance =
+        Instance::load(helper(), fixture(), ID, config(901), Duration::from_secs(2)).unwrap();
+    let (value, text) = instance.value_text(0, 0.25, None).unwrap();
+    assert_eq!(value, 0.25);
+    assert_eq!(text, "0.25");
+    let (value, text) = instance.value_text(0, 0.0, Some("0.75".into())).unwrap();
+    assert_eq!(value, 0.75);
+    assert_eq!(text, "0.75");
+    assert!(instance.value_text(0, 0.0, Some("invalid".into())).is_err());
+}
+
+#[test]
+fn discovery_reads_native_vst3_enumeration_labels() {
+    let instance = Instance::load(
+        helper(),
+        vst3_fixture::enumerated_fixture(),
+        ID,
+        config(902),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let parameter = &instance.metadata().parameters[0];
+    assert_eq!(parameter.step, 0.5);
+    assert_eq!(parameter.labels, ["Room", "Hall", "Plate"]);
+}

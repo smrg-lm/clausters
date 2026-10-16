@@ -44,6 +44,11 @@ export interface ControlSpec {
     rate?: string;
     lag?: number;
     lag_down?: number;
+    min?: number;
+    max?: number;
+    step?: number;
+    warp?: "linear" | "exp";
+    unit?: string;
 }
 
 export interface UgenSpec {
@@ -155,6 +160,7 @@ export class SynthDef {
             if (c.rate !== undefined) d.rate = c.rate;
             if (c.lag !== undefined) d.lag = c.lag;
             if (c.lagDown !== undefined) d.lag_down = c.lagDown;
+            Object.assign(d, c.display);
             return d;
         };
 
@@ -291,5 +297,5 @@ export class SynthDef {
  * shape for the GUI to read, whichever family declared it.
  */
 export function controlInfo(c: Control): ControlInfo {
-    return { name: c.name, default: c.default, rate: c.rate ?? "kr" };
+    return { name: c.name, default: c.default, rate: c.rate ?? "kr", ...c.display };
 }

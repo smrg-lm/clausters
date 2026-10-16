@@ -425,8 +425,29 @@ impl FormatInstance for Clap {
                     flags: p.flags.bits(),
                     min: p.min_value,
                     max: p.max_value,
-                    step: if p.flags.bits() & 1 != 0 { 1.0 } else { 0.0 },
+                    step: if p.flags.bits() & Parameter::STEPPED != 0 {
+                        1.0
+                    } else {
+                        0.0
+                    },
                     default: p.default_value,
+                    // A list's steps are named once here, at discovery, so a
+                    // generic view shows them without asking the plugin again.
+                    labels: if p.flags.bits() & (Parameter::STEPPED | Parameter::LIST)
+                        == Parameter::STEPPED | Parameter::LIST
+                        && p.max_value - p.min_value < MAX_LABELS as f64
+                    {
+                        (0..=(p.max_value - p.min_value).round() as usize)
+                            .map(|n| {
+                                let mut text = [0u8; 256];
+                                ext.value_to_text(&handle, p.id, p.min_value + n as f64, &mut text)
+                                    .map(|v| String::from_utf8_lossy(v).into_owned())
+                                    .unwrap_or_default()
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    },
                 });
             }
         }
@@ -560,6 +581,35 @@ impl FormatInstance for Clap {
                 ClapId::from_raw(id).ok_or("invalid plugin parameter id")?,
             )
             .ok_or("unknown plugin parameter".into())
+    }
+    fn value_text(&mut self, id: u32, value: f64) -> Result<String, String> {
+        let handle = self.instance.plugin_handle();
+        let ext = handle
+            .get_extension::<PluginParams>()
+            .ok_or("plugin has no parameters")?;
+        let mut buffer = [0u8; 256];
+        ext.value_to_text(
+            &handle,
+            ClapId::from_raw(id).ok_or("invalid parameter id")?,
+            value,
+            &mut buffer,
+        )
+        .map(|v| String::from_utf8_lossy(v).into_owned())
+        .map_err(|_| "parameter text conversion failed".into())
+    }
+    fn text_value(&mut self, id: u32, text: &str) -> Result<f64, String> {
+        let handle = self.instance.plugin_handle();
+        let ext = handle
+            .get_extension::<PluginParams>()
+            .ok_or("plugin has no parameters")?;
+        let text = std::ffi::CString::new(text).map_err(|_| "parameter text contains NUL")?;
+        ext.text_to_value(
+            &handle,
+            ClapId::from_raw(id).ok_or("invalid parameter id")?,
+            &text,
+        )
+        .filter(|v| v.is_finite())
+        .ok_or("parameter text conversion failed".into())
     }
     fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String> {
         let handle = self.instance.plugin_handle();

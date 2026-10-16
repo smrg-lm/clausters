@@ -64,20 +64,26 @@ pub fn readout_h(text_size: f32, m: &Metrics) -> f32 {
 }
 
 /// A slider's **track area**: its body minus the read-out strip
-/// ([`readout_h`]), the rect the groove and the handle live in.
+/// ([`readout_h`]) when it has one, the rect the groove and the handle live in.
 ///
 /// Drawing and hit math both go through here, so a grab lands where the groove
 /// is drawn. That matters most on a *vertical* slider, whose fraction runs along
 /// the very axis the strip shortens: a body-wide hit would read the bottom of
 /// the number row as the minimum, below where the track visibly ends.
-pub fn slider_track(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) -> Rect {
+pub fn slider_track(
+    rect: Rect,
+    has_label: bool,
+    readout: bool,
+    text_size: f32,
+    m: &Metrics,
+) -> Rect {
     let body = body_rect_at(rect, has_label, text_size, m);
-    Rect::new(
-        body.x,
-        body.y,
-        body.w,
-        (body.h - readout_h(text_size, m)).max(0.0),
-    )
+    let strip = if readout {
+        readout_h(text_size, m)
+    } else {
+        0.0
+    };
+    Rect::new(body.x, body.y, body.w, (body.h - strip).max(0.0))
 }
 
 /// **The band a slider is actually drawn in**, inside its track area -- the
@@ -145,11 +151,11 @@ pub(crate) fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect, size: f
     }
 }
 
-pub fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, size: f32) {
+pub fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, readout: bool, size: f32) {
     label_strip(d, r.label.as_deref(), rect, size);
     // The groove lives in the track area, the number in the strip under it (the
     // knob's posture): the read-out is beside what it reads, never over it.
-    let body = slider_track(rect, r.label.is_some(), size, d.m);
+    let body = slider_track(rect, r.label.is_some(), readout, size, d.m);
     let (mesh, m, theme) = d.parts();
     // The track's groove, the value riding it and the handle's grip across the
     // axis: the handle is a short grip, **not** the full body span.
@@ -204,8 +210,10 @@ pub fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, size: f32) {
             theme.accent,
         );
     }
-    let readout = Rect::new(body.x, body.y + body.h, body.w, readout_h(size, m));
-    value_text(d, &fmt(r.value), readout, size);
+    if readout {
+        let strip = Rect::new(body.x, body.y + body.h, body.w, readout_h(size, m));
+        value_text(d, &fmt(r.value), strip, size);
+    }
 }
 
 /// **Where a knob's dial is**, as `(cx, cy, radius)` inside its `body` -- one
@@ -881,15 +889,16 @@ pub fn field_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
 }
 
 /// A horizontal slider's thickness: the label strip, the body inset, the
-/// handle's grip across the track and the read-out strip under it -- the same
-/// reservation the drawing makes ([`slider_track`]), so the groove
-/// gets the grip it asked for and the number gets its own row.
-pub fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
+/// handle's grip across the track and the read-out strip under it when it has
+/// one -- the same reservation the drawing makes ([`slider_track`]), so the
+/// groove gets the grip it asked for and the number gets its own row.
+pub fn slider_thick(r: &Range, readout: bool, m: &Metrics, scale: f32) -> f32 {
     let size = r.text_size * scale;
+    let strip = if readout { readout_h(size, m) } else { 0.0 };
     size::label_strip(r.label.is_some(), size, m)
         + size::body_inset(m)
         + m.handle_grip.max(m.handle_thick)
-        + readout_h(size, m)
+        + strip
 }
 
 /// A vertical slider's width: the grip across the track, inset in the body.
@@ -1051,6 +1060,7 @@ mod tests {
             min: 20.0,
             max: 20000.0,
             curve: 0.0,
+            exponential: false,
             step: 0.0,
             label: Some("cutoff".into()),
             text_size: Metrics::default().text_scale,

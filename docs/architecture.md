@@ -1561,6 +1561,33 @@ looks for:
   placement, `"wire"` for a connection. The widget tree stays the source of truth
   on the host side; the script's model remains the source of truth on the other.
 
+### A binding read back, and a node's generic editor
+
+A `/gui_bind` to the server runs one way, and `host::readback` is the other:
+for every binding of an open window whose address has a **read form**
+(`/node_set` → `/synth_get`, `/node_setText` → `/synth_getText`), the host asks
+the server at a fixed period and matches each answer to its widgets by the rule
+the binding already is — the answer *is* the binding's message, address and
+prefix. Both fronts schedule the asks (the native one on its wake-up deadlines,
+the page on an interval) and route the replies through the shared
+`Front::on_server_reply`, handing over the widget the gesture machine holds
+(`Gestures::holding`) so a drag is never pulled back. Nothing is pushed: one
+question to the server's mirror covers a `/node_set` from any client, a
+plugin's own edit and a loaded state alike.
+
+A node's **generic editor** is built on that and on nothing else new in the
+host. `clausters_core::node_editor` turns a def's controls — the record
+`/def_query` reports for every family, built on the server by one walk per def
+family (`osc::translate::queries`) — into an ordinary GuiDef whose widgets carry
+inline `bind`s to `/node_set` and whose value texts are labels bound to
+`/node_setText`; both clients call it through the core's JSON door
+(`clausters_core_node_editor`, `node_editor` in wasm), open the window, and
+answer its search field and page chooser by asking the core again and
+redefining the rows. The host draws a slider, a toggle, a choice over numbers
+(`values`) and a number; it holds no editor of its own. A plugin's value text
+is converted on its control worker (`PluginJob::Text`) and its list labels are
+read once, at discovery, into the catalog.
+
 ### The widget map
 
 Where each widget of the [catalog](gui-protocol.md#the-widget-catalog) lives —

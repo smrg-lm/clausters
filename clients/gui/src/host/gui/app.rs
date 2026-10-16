@@ -209,6 +209,8 @@ pub(super) struct App {
     pub(super) frontiers: HashMap<(i32, i32), u64>,
     /// Next scheduled re-query of the server's node tree (the `/node_set` poll).
     pub(super) next_query: Instant,
+    /// When the bound widgets are next read back ([`crate::host::readback`]).
+    pub(super) next_read_back: Instant,
     /// Next check of the write frontiers -- the recording tick, on the frame
     /// cadence and separate from the animated one because it redraws only
     /// when the samples actually grew.
@@ -268,6 +270,7 @@ impl App {
             notified: false,
             frontiers: HashMap::new(),
             next_query: Instant::now(),
+            next_read_back: Instant::now(),
             next_follow: Instant::now(),
             standalone: false,
             #[cfg(feature = "midi")]
@@ -875,6 +878,19 @@ impl App {
         if self.fetches.pending() {
             let t = now + FRAME;
             next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
+        }
+
+        // **The bound widgets read back**: what each binding writes, asked
+        // for at the host's period ([`readback`](crate::host::readback)).
+        if self.host.server().is_some() && self.host.reads_back() {
+            if now >= self.next_read_back {
+                // A node read back is let go on its `/node_end`.
+                self.ensure_notify();
+                self.read_back();
+                let period = Duration::from_millis(crate::host::readback::READ_BACK_MS.into());
+                self.next_read_back = now + period;
+            }
+            next_wake = Some(next_wake.map_or(self.next_read_back, |t| t.min(self.next_read_back)));
         }
 
         // Node-tree polling, driven from the client leg (the `/node_set` poll).

@@ -301,6 +301,13 @@ pub struct OscServer {
         any(feature = "plugin-clap", feature = "plugin-vst3"),
         target_os = "linux"
     ))]
+    /// The `/synth_getText` reads of a plugin on the control worker, by asker
+    /// and node: one at a time each (`plugin_text_read`).
+    text_reads: std::collections::HashSet<(ClientId, i32)>,
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
     /// Last ticket handed to a plugin `/def_send`; a later one supersedes it.
     plugin_tickets: u64,
     #[cfg(all(

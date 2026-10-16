@@ -317,6 +317,7 @@ and the port rule are the core's.
 | `clausters_core_plugin_catalog` | `plugin_catalog` | `idiom` — C fills a buffer from a JSON request; wasm takes the request's JSON string and returns the answer's |
 | `clausters_core_plugin_search` | `plugin_search` | `idiom` — the same |
 | `clausters_core_plugin_reference` | `plugin_reference` | `idiom` — the same |
+| `clausters_core_node_editor` | `node_editor` | `idiom` — the same |
 
 ## The document
 
@@ -1201,6 +1202,10 @@ with its ports routed. Additive.
 identified by the caller. `clausters_ids_new` takes the server's event-bus
 count after its transports, and space 5 is the event buses below the MIDI
 bindings' half. Breaking: one parameter added.
+
+**v92 a node's generic editor.** `clausters_core_node_editor`: the GuiDef of
+a node's controls, generated from their description as `/def_query`
+reports it, searched and paged. Additive.
 
 
 ## The client surface: one capability, two shapes

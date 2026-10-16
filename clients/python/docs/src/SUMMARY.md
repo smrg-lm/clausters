@@ -111,6 +111,7 @@
     - [editing](api/clausters.gui.editing.md)
       - [application](api/clausters.gui.editing.application.md)
       - [audio](api/clausters.gui.editing.audio.md)
+      - [controls](api/clausters.gui.editing.controls.md)
       - [domain](api/clausters.gui.editing.domain.md)
       - [echo](api/clausters.gui.editing.echo.md)
       - [edit](api/clausters.gui.editing.edit.md)

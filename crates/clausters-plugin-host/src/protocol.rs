@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
-pub(crate) const CONTROL_VERSION: u32 = 5;
+pub(crate) const CONTROL_VERSION: u32 = 6;
 pub(crate) const MAX_FRAME: usize = 8 * 1024 * 1024;
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Handshake {
@@ -51,6 +51,11 @@ pub(crate) enum Request {
     SaveState,
     LoadState(Vec<u8>),
     Parameter(u32),
+    ValueText {
+        id: u32,
+        value: f64,
+        text: Option<String>,
+    },
     Editor(EditorCommand),
     Shutdown,
 }
@@ -60,6 +65,7 @@ pub(crate) enum Response {
     Metadata(Box<PluginInfo>),
     State(Vec<u8>),
     Parameter(f64),
+    ValueText(f64, String),
     Editor(EditorState),
     Ok,
     Error(String),

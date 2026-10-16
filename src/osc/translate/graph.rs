@@ -989,6 +989,28 @@ impl CmdTranslator {
         }
     }
 
+    /// Whether `id` is a GraphDef instance or a voice sub-group -- a node whose
+    /// controls are its named surface.
+    pub fn is_graph(&self, id: i32) -> bool {
+        self.graph_instances.contains_key(&id) || self.graph_voices.contains_key(&id)
+    }
+
+    /// **What surface port `port` of graph `id` holds**: read from the first
+    /// member control it drives, that target's scaling (`mul`*v + `add`)
+    /// undone -- the value the `/node_set` that set it wrote. `None` for a
+    /// port the graph does not have or a member that holds no value.
+    pub fn graph_port_value(&self, id: i32, port: &str) -> Option<f32> {
+        let &(node, index, mul, add) = self
+            .graph_instances
+            .get(&id)
+            .and_then(|inst| inst.surface.get(port))
+            .or_else(|| self.graph_voices.get(&id).and_then(|v| v.surface.get(port)))?
+            .first()?;
+        let (_, controls) = self.mirror.synth_info(node)?;
+        let value = *controls.get(index as usize)?;
+        Some(if mul == 0.0 { add } else { (value - add) / mul })
+    }
+
     /// If `id` is a GraphDef instance or a voice sub-group, apply each
     /// `(port, value)` pair against its named surface and return true. Names
     /// absent from the surface are ignored -- the surface is the whole public

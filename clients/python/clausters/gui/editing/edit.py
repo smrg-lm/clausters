@@ -39,8 +39,10 @@ updates both. That is not a feature of this verb -- it is what asking the data
 for its history means, and `edit` inherits it for free.
 """
 
+from ...defs.node import Node
 from ...history import Editing
 from ...seq.timeline import Timeline
+from .controls import NodeEditor
 from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
@@ -61,7 +63,8 @@ def edit(structure, *, sample_rate: float = 0.0,
             the editor's ``sequence`` then holds; the timeline is not changed)
             a `clausters.multitrack.Multitrack` (the multitrack) or a
             `clausters.gui.notation.Score` (a symbolic score, on its page, in
-            place).
+            place) -- or a running `clausters.defs.Node`, whose def's controls
+            open in a generic editor (`clausters.gui.editing.NodeEditor`).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A
             take knows its own and needs none; anything else takes the
             ambient server's nominal rate -- the current session's, else the
@@ -97,7 +100,7 @@ def edit(structure, *, sample_rate: float = 0.0,
             the transcription's keys, which say how the sequence is read
             where its events do not (``meter``, ``key``, ``clef``,
             ``beat_unit``, ``division``, ``tuplets``, ``voices``,
-            ``dynamics``), and ``interp``.
+            ``dynamics``), and ``interp``. A node takes ``title`` only.
 
     Returns:
         The editor, **open** -- the one already open over ``structure``, when
@@ -117,6 +120,8 @@ def edit(structure, *, sample_rate: float = 0.0,
             they are -- an unopenable structure is a question about the data,
             and answering it with a bare failure teaches nothing.
     """
+    if isinstance(structure, Node):
+        return _node_editor(structure, host, open, options)
     if open:
         opened = _already_open(structure, host, options)
         if opened is not None:
@@ -158,6 +163,29 @@ def edit(structure, *, sample_rate: float = 0.0,
         )
     if open:
         editor.open(host)
+    return editor
+
+
+#: The node editors open, by server and node id: a running node's controls
+#: are the server's and not a structure with an editing context, so the editor
+#: already open over one is found here rather than among a context's views.
+_open_nodes: dict = {}
+
+
+def _node_editor(node, host, open: bool, options: dict) -> NodeEditor:
+    """The generic editor of ``node``: the one already open over it, on the
+    same host when one is named, or a new one."""
+    key = (id(node._server()), node.id)
+    for k, editor in list(_open_nodes.items()):
+        if editor.closed:
+            del _open_nodes[k]
+    current = _open_nodes.get(key)
+    if open and current is not None and (host is None or current.host is host):
+        return current
+    editor = NodeEditor(node, **options)
+    if open:
+        editor.open(host)
+        _open_nodes[key] = editor
     return editor
 
 

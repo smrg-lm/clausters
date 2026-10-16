@@ -56,6 +56,9 @@
 //!   about one, the catalog of them read into one vocabulary (kind, tags,
 //!   channels, controls by name), search, and the reference a plugin def
 //!   stores, with the port rule the server and every client check.
+//! - [`node_editor`] -- a node's generic editor: what each control of a def
+//!   becomes, the range it is drawn over and its value as text, generated as
+//!   the GuiDef any host draws for any node.
 //! - [`registry`] -- the finite-resource id registry (node ids, buses,
 //!   buffers): a bounded occupancy map where every release is reusable and
 //!   exhaustion is explicit, shared so the server's reserved ranges and every
@@ -112,6 +115,7 @@ pub mod loudness;
 pub mod measure;
 pub mod midi;
 pub mod mixer;
+pub mod node_editor;
 #[cfg(feature = "notation")]
 pub mod notation;
 pub mod numeric;

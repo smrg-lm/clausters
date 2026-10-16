@@ -1449,6 +1449,14 @@ pub fn plugin_reference(request: &str) -> String {
     plugin_door(request, clausters_core::plugin_catalog::reference_request)
 }
 
+/// JS face: a node's generic editor, `{"node", "name", "controls", "query",
+/// "page"}` in, `{"window", "contents", "pages", "page"}` out.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn node_editor(request: &str) -> String {
+    plugin_door(request, clausters_core::node_editor::editor_request)
+}
+
 /// JS face: what a voice's joins write on a page -- `pitches` (MIDI note
 /// numbers) and `joins` (flat `[from, to, from, to, ...]`) in, `{"ties": [..],
 /// "slurs": [[from, to], ..]}` out as JSON.

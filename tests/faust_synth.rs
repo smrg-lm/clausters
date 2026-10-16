@@ -439,9 +439,8 @@ mod osc {
         assert_eq!(done.args[2], OscType::String("fsine".into()));
 
         // /def_query reports the compiled def's parameter surface, which for
-        // a FaustDef carries its declared range (init/min/max/step) after the
-        // shared (name, default, rate) triple. The reserved out/in bus controls
-        // are engine plumbing and stay out of it.
+        // a FaustDef carries the range its sliders declared. The reserved
+        // out/in bus controls are engine plumbing and stay out of it.
         send("/def_query", vec![OscType::String("fsine".into())]);
         let info = recv_until("/def_query.reply");
         assert_eq!(info.args[0], OscType::String("fsine".into()));
@@ -452,8 +451,8 @@ mod osc {
         assert_eq!(info.args[5], OscType::String("kr".into()));
         assert_eq!(info.args[6], OscType::Float(0.0), "min");
         assert_eq!(info.args[7], OscType::Float(1.0), "max");
-        assert_eq!(info.args[9], OscType::String("freq".into()));
-        assert_eq!(info.args[10], OscType::Float(440.0));
+        assert_eq!(info.args[15], OscType::String("freq".into()));
+        assert_eq!(info.args[16], OscType::Float(440.0));
         recv_until("/done");
 
         // Instantiate with a named control, tick the engine, listen.

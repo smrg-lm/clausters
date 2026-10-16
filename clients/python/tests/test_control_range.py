@@ -1,16 +1,13 @@
-"""A widget is built from the control it drives, and the range is the widget's.
+"""A widget is built from the control it drives, and the control may say how
+it is drawn.
 
 What a def knows about a control is its **name** (what `/node_set` addresses)
 and its **default**; a widget built from one reads those instead of being handed
-the same strings twice. What a def does *not* know is how a knob should be
-drawn: a control is a signal in a graph and a GraphDef port is a name the server
-takes any float for, so `min`/`max` are spelled on the widget.
-
-The one control that arrives with a range is a **Faust** parameter, because
-`hslider(label, init, min, max, step)` cannot be written without one and the
-compiled DSP reports it back. That is Faust's syntax showing through, not a range
-this client declares -- which is why `ControlInfo` has carried `min`/`max`/`step`
-all along and only that family fills them.
+the same strings twice. How a knob is drawn is the control's to say only when
+its def says it: a FaustDef's slider brings its range, a SynthDef's control may
+declare one beside its default (`control("freq", 440, min=20, max=20000)`), and
+otherwise the widget spells it. The range is display: nothing on the server
+holds a `/node_set` to it.
 """
 
 import pytest
@@ -59,24 +56,29 @@ def test_a_missing_control_names_the_ones_there_are():
         sd["cutoff"]
 
 
-def test_a_control_takes_no_range_at_all():
-    """It is a signal, and a signal does not say how it is drawn. `min`/`max` on
-    a signal are the binary operators, which is the other reason: an attribute
-    of either name shadows the operator."""
-    with pytest.raises(TypeError):
-        control("x", 0.0, **{"min": 1.0, "max": 2.0})   # pyright: ignore[reportCallIssue]
-    c = control("freq", 220.0)
+def test_a_control_says_how_it_is_drawn_without_shadowing_its_operators():
+    """`min`/`max` on a signal are the binary operators, so what a control says
+    about its drawing lives in `display` and never in an attribute of either
+    name."""
+    c = control("freq", 220.0, min=20.0, max=2000.0, warp="exp", unit="Hz")
+    assert c.display == {"min": 20.0, "max": 2000.0, "warp": "exp", "unit": "Hz"}
     assert c.min(2.0).kind == "BinaryOpUGen"
     assert c.max(2.0).kind == "BinaryOpUGen"
 
 
-def test_the_range_rides_no_wire():
-    """The server takes any float for any control, so a range is a statement
-    about the surface. Sending it would be inventing a field the schema has no
-    room for."""
-    sd, _, _ = _voice()
-    for c in sd.spec()["controls"]:
-        assert set(c) <= {"name", "default", "rate", "lag", "lag_down"}
+def test_what_a_control_says_rides_its_def():
+    """The def carries the drawing to the server, which reports it back in
+    `/def_query`; a control that says nothing sends nothing."""
+    freq = control("freq", 440.0, min=30.0, max=18000.0, step=1.0, warp="exp", unit="Hz")
+    spec = SynthDef("ranged", out(0, sine(freq) * control("amp", 0.1))).spec()
+    assert spec["controls"][0] == dict(name="freq", default=440.0, min=30.0,
+                                       max=18000.0, step=1.0, warp="exp", unit="Hz")
+    assert set(spec["controls"][1]) <= {"name", "default", "rate", "lag", "lag_down"}
+
+
+def test_a_widget_starts_from_the_range_its_control_declares():
+    k = knob(control("freq", 440.0, min=20.0, max=2000.0, warp="exp"))
+    assert (k["min"], k["max"], k["warp"]) == (20.0, 2000.0, "exp")
 
 
 # ---- a widget built from a control ----

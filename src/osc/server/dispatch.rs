@@ -434,6 +434,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/node_run", OscServer::handle_via_translate),
     ("/node_set", OscServer::handle_via_translate),
     ("/node_setRange", OscServer::handle_via_translate),
+    ("/node_setText", |s, _, m, f| {
+        s.handle_node_set_text(Args::new(m), f)
+    }),
     ("/node_trace", |s, _, m, _| {
         s.handle_node_trace(Args::new(m))
     }),
@@ -508,6 +511,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     }),
     ("/synth_getRange", |s, addr, m, f| {
         s.handle_synth_get(Args::new(m), f, addr.ends_with("Range"))
+    }),
+    ("/synth_getText", |s, _, m, f| {
+        s.handle_synth_get_text(Args::new(m), f)
     }),
     ("/synth_new", OscServer::handle_via_translate),
     ("/transport_end", |s, _, m, f| {

@@ -1413,6 +1413,11 @@ pub struct Range {
     /// a client's `lincurve` run -- so a control does not feel one way here and
     /// another where the value was computed.
     pub curve: f32,
+    /// The `warp` prop is `"exp"`: equal travel is an equal **ratio**, what a
+    /// frequency or a time wants, through the core's `exp_unit`/`exp_value`
+    /// pair. It wins over `curve`, and holds only over a positive range -- one
+    /// that touches zero has no ratios and travels by `curve`.
+    pub exponential: bool,
     /// The grid a **drag** lands on, in the value's own units: `0` is
     /// continuous, `1` over `0..127` is the integers `\midinote` wants, and a
     /// Faust parameter arrives with the one its `hslider` declared. A value the
@@ -1434,6 +1439,7 @@ impl Range {
             min,
             max,
             curve: number(props, "curve", 0.0),
+            exponential: props.get("warp").and_then(Value::as_str) == Some("exp"),
             step: number(props, "step", 0.0),
             label: label(props),
             text_size: text_size(props),
@@ -1449,13 +1455,26 @@ impl Range {
     /// this read the value off a normalized axis while the write read it off
     /// the declared ends, and the handle came out mirrored.
     pub fn fraction(&self) -> f32 {
-        warp::curve_unit(self.value, self.min, self.max, self.curve).clamp(0.0, 1.0)
+        if self.ratios() {
+            warp::exp_unit(self.value, self.min, self.max).clamp(0.0, 1.0)
+        } else {
+            warp::curve_unit(self.value, self.min, self.max, self.curve).clamp(0.0, 1.0)
+        }
+    }
+
+    /// Whether it travels by ratios: exponential, over a positive range.
+    fn ratios(&self) -> bool {
+        self.exponential && self.min > 0.0 && self.max > 0.0
     }
 
     /// Sets the value from a 0..1 fraction of the range (for interaction):
     /// along the curve, then onto the step's grid.
     pub fn set_fraction(&mut self, t: f32) {
-        let v = warp::curve_value(t.clamp(0.0, 1.0), self.min, self.max, self.curve);
+        let v = if self.ratios() {
+            warp::exp_value(t.clamp(0.0, 1.0), self.min, self.max)
+        } else {
+            warp::curve_value(t.clamp(0.0, 1.0), self.min, self.max, self.curve)
+        };
         self.value = self.snap(v);
     }
 

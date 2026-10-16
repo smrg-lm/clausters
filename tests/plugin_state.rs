@@ -251,3 +251,46 @@ fn controls_answer_to_their_aliases_and_an_unconnected_input_is_silent() {
     live.send("/node_free", vec![OscType::Int(42)]);
     live.sync();
 }
+
+/// **A plugin's own words for its values**: `/synth_getText` answers what the
+/// plugin writes for a parameter, and `/node_setText` sets the parameter from
+/// what the plugin reads -- both on the control worker, the audio running.
+#[test]
+fn a_plugin_parameter_reads_and_sets_as_its_text() {
+    let live = Live::new();
+    live.send(
+        "/def_send",
+        vec![
+            OscType::String("plugin".into()),
+            OscType::String("fx".into()),
+            OscType::String(serde_json::to_string(&reference()).unwrap()),
+        ],
+    );
+    live.done("/def_send");
+    live.send(
+        "/synth_new",
+        vec![
+            OscType::String("fx".into()),
+            OscType::Int(42),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    live.sync();
+    let s = |text: &str| OscType::String(text.into());
+    let text = |live: &Live| loop {
+        let msg = live.recv();
+        if msg.addr == "/node_setText" {
+            break msg.args;
+        }
+    };
+    live.send("/synth_getText", vec![OscType::Int(42), s("param:0")]);
+    assert_eq!(text(&live), [OscType::Int(42), s("param:0"), s("0.500")]);
+    live.send(
+        "/node_setText",
+        vec![OscType::Int(42), s("param:0"), s("0.75")],
+    );
+    live.sync();
+    live.send("/synth_getText", vec![OscType::Int(42), s("param:0")]);
+    assert_eq!(text(&live), [OscType::Int(42), s("param:0"), s("0.750")]);
+}

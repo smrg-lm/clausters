@@ -158,6 +158,9 @@ enum WebEvent {
     /// coalesced, so a document that opens forty canvases in one pass asks
     /// once rather than forty times.
     SyncStreams,
+    /// Ask the server for what the bound widgets write
+    /// ([`crate::host::readback`]): the read-back interval's beat.
+    ReadBack,
     /// One inbound OSC packet from the in-page binding surface (a `/gui_*`).
     Inbound(Vec<u8>),
     /// Attach the audio-server leg to this `--ws` URL (for bound widgets).
@@ -281,6 +284,9 @@ struct WebApp {
     /// The animation tick, running while the current def has live widgets
     /// (meter/scope/canvas).
     tick: Option<Interval>,
+    /// The read-back interval, running while a server is attached and a
+    /// canvas is open ([`crate::host::readback`]).
+    read_back: Option<Interval>,
     /// How long the last tick was, for whatever advances in time.
     tick_clock: live::TickClock,
     /// Whether the first streamed `/bus_stream.reply` snapshot was logged (one line as
@@ -330,6 +336,7 @@ impl WebApp {
             stream_sync_pending: false,
             server_rate: 0.0,
             tick: None,
+            read_back: None,
             tick_clock: Default::default(),
             stream_seen: false,
             fetches: BufferFetches::default(),
@@ -459,6 +466,7 @@ impl WebApp {
         // and they wait for the end of the turn (see `schedule_stream_sync`).
         let demand = self.demand();
         self.ensure_tick(demand.animated);
+        self.ensure_read_back();
         self.schedule_stream_sync();
         // ...and a directory a newly defined chooser shows.
         self.start_listings();
@@ -559,6 +567,52 @@ impl WebApp {
             }
             (false, true) => self.tick = None,
             _ => {}
+        }
+    }
+
+    /// Starts or stops the read-back interval: running while a server is
+    /// attached and a canvas is open, at the period the native front asks at.
+    /// Each beat asks only when some bound widget is read back, so a binding
+    /// made after the tree changed is read back too.
+    fn ensure_read_back(&mut self) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let wanted = self.host.server().is_some() && !self.canvases.is_empty();
+        match (wanted, self.read_back.is_some()) {
+            (true, false) => {
+                let host = self.id;
+                let closure = Closure::<dyn FnMut()>::new(move || {
+                    if let Some(proxy) = web_proxy() {
+                        let _ = proxy.send_event(HostEvent::To(host, WebEvent::ReadBack));
+                    }
+                });
+                match window.set_interval_with_callback_and_timeout_and_arguments_0(
+                    closure.as_ref().unchecked_ref(),
+                    crate::host::readback::READ_BACK_MS as i32,
+                ) {
+                    Ok(id) => {
+                        self.read_back = Some(Interval {
+                            window,
+                            id,
+                            _closure: closure,
+                        })
+                    }
+                    Err(e) => log(&format!("cannot start reading bound widgets back: {e:?}")),
+                }
+            }
+            (false, true) => self.read_back = None,
+            _ => {}
+        }
+    }
+
+    /// One beat of the read-back: what every bound widget writes, asked for.
+    fn read_back_now(&mut self) {
+        let Some(server) = self.host.server() else {
+            return;
+        };
+        for msg in self.host.read_back_asks() {
+            let _ = server.send(msg);
         }
     }
 
@@ -800,6 +854,7 @@ impl WebApp {
             WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
             WebEvent::SyncStreams => self.sync_streams(),
             WebEvent::Tick => self.on_tick(),
+            WebEvent::ReadBack => self.read_back_now(),
             WebEvent::HostEffects => {
                 let effects = self.host.take_effects();
                 self.apply_effects(event_loop, effects);

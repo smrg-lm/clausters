@@ -169,9 +169,11 @@ controls would share is nobody's: a port's wins over a parameter's, and one
 claimed twice within ports or within parameters is dropped for all claimants.
 Queries report the native-id names. Numeric control indices refer to the
 reported control order: parameters sorted by native ID, then input ports,
-then output ports. `/def_query.reply` uses family `plugin`; each control has
-`name, default, "kr", min, max, step`, like a Faust control; a bus control's
-minimum is -1, unconnected. A stepped CLAP parameter's step is one; a stepped VST3 parameter's step is
+then output ports. `/def_query.reply` uses family `plugin`; each control is
+the record every family reports, with the parameter's own name as its label,
+its module as its group, its flags and, for a parameter the format marks as a
+list, the names of its steps; a port's group is `Buses` and its minimum -1,
+unconnected. A stepped CLAP parameter's step is one; a stepped VST3 parameter's step is
 `1 / stepCount`. Continuous parameters have step zero. Bus controls have integer steps.
 Read-only parameters cannot be written. Out-of-range parameters or exceeded
 block capacities produce silence and a per-node fault, rather than clipping
@@ -308,6 +310,8 @@ capability error.
 /node_mapAudioRange id ctl busIndex numControls...                # audio-bus range variant
 /synth_get  id ctl...                    -> /node_set id (ctl value)...        # read controls
 /synth_getRange id ctl numControls...        -> /node_set id (ctl numControls value...)...
+/node_setText id ctl text...                               # set controls from text
+/synth_getText id ctl...                 -> /node_setText id (ctl text)...     # read them as text
 /node_free id...
 /node_trace id...                                          # log a node's state (debug)
 /synth_forgetId id...                                           # acknowledged (see note)
@@ -344,7 +348,13 @@ The `-n` variants address **consecutive** controls in one message, for defs with
 
 ### Reading control values (`/synth_get`, `/synth_getRange`)
 
-`/synth_get id ctl...` is the read counterpart of `/node_set`: it replies `/node_set id (ctl value)...` with each requested control's current value (by name or index). `/synth_getRange id ctl numControls...` reads a **range**, replying `/node_set id (ctl numControls value...)...`. Values come from the server-side node mirror, so they reflect the latest `/node_set`/`/node_setRange`/`/synth_new`. An unknown node or out-of-range control replies `/fail`.
+`/synth_get id ctl...` is the read counterpart of `/node_set`: it replies `/node_set id (ctl value)...` with each requested control's current value, each control **as it was asked for** — by name or by index — so the reply is the very message a GUI widget bound to that control would send. On a **GraphDef** instance (or a voice of one) the controls are its surface **ports**, named, as `/node_set` takes them, and each reads back as the port was set: from the first member control it drives, with that port's scaling undone. `/synth_getRange id ctl numControls...` reads a **range**, replying `/node_set id (ctl numControls value...)...`. Values come from the server-side node mirror, so they reflect the latest `/node_set`/`/node_setRange`/`/synth_new`, a plugin's own edits and a loaded state; a control mapped to a bus reads what was last set on it, not what the bus carries. An unknown node or out-of-range control replies `/fail`.
+
+### A control as text (`/node_setText`, `/synth_getText`)
+
+`/synth_getText id ctl...` answers `/node_setText id (ctl text)...`: each control's current value as text, the pair `/synth_get` makes with `/node_set`. A **plugin** parameter's text is the plugin's own (CLAP's value-to-text, VST3's string-by-value: `"-6.0 dB"`, `"Hall"`), asked on the plugin's control worker and never from audio, so its answer comes after the command returns; while one read for a node and a client is on its way, another from the same client is answered by that one. Any other control's text is its number — four significant figures at most, trailing zeros dropped — with its declared unit after a space (`"440 Hz"`).
+
+`/node_setText id (ctl text)...` sets each control from text read the same way: by the plugin, in its own words, or as a number with its unit or without (`"880"`, `"880 hz"`). Text that does not read as a value replies `/fail "/node_setText"` and changes nothing.
 
 ### `/synth_forgetId` and `/node_trace`
 
@@ -572,6 +582,17 @@ A control entry may carry a **`"rate"`** (its type) and a **`"lag"`** time, both
 | `"lag_down": t` | with `"lag"`, use separate up (`lag`) and down (`lag_down`) times (an inserted `VarLag`) |
 
 Example: `{"name": "freq", "default": 440.0, "lag": 0.1}` glides over 100 ms; `{"name": "gate", "default": 0.0, "rate": "tr"}` is a one-shot trigger. Audio-rate controls are not a control type — feed an audio signal through `In`/an input bus and `/node_mapAudio` instead.
+
+A control entry may also say **how it is drawn**, which `/def_query` reports back and a node's generic editor and a widget built from the control draw it with. It never limits the control: a `/node_set` outside the range still sets it.
+
+| field | meaning |
+|---|---|
+| `"min"`, `"max"` | the range it is drawn over — both or neither, `min` below `max` |
+| `"step"` | the grid a gesture lands on; `0` or absent is continuous |
+| `"warp"` | `"linear"` (the default) or `"exp"`, equal ratios over equal travel — over a positive range |
+| `"unit"` | what the value is measured in (`"Hz"`, `"dB"`), written after it as text |
+
+Example: `{"name": "freq", "default": 440.0, "min": 20.0, "max": 20000.0, "warp": "exp", "unit": "Hz"}`. A description no view can draw — a reversed range, half a range, a negative step, an unknown warp, an exponential range touching zero — fails the `/def_send`.
 
 ### UGen catalog (built-in kinds)
 
@@ -1358,11 +1379,11 @@ They exist because the answers are not derivable client-side. The def store **pe
 
 Each of the two multi-reply queries sends **one reply message per item** — the payloads are variable-length, so an aggregate would nest badly and a large catalog would outgrow a UDP datagram — and closes the batch with `/done "<command>"`, which is how a client with no argument knows the listing ended.
 
-- **`/def_query [name...]`** → one `/def_query.reply` per def, then `/done "/def_query"`. With no argument, every loaded def of every family. Layout: `name, family, numControls`, then per control `name, default, rate`.
+- **`/def_query [name...]`** → one `/def_query.reply` per def, then `/done "/def_query"`. With no argument, every loaded def of every family. Layout: `name, family, numControls`, then per control the same record in every family: `name, default, rate, min, max, step, warp, unit, label, group, flags, numLabels, label...`.
   - `family` is `"synth"`, `"faust"` or `"graph"`; a def the server does not hold comes back with an **empty** family and no controls, rather than failing the batch (the `/buffer_query` convention for an unallocated slot).
   - `rate` is the control type the def declared — `kr`, `tr` or `ir`, the same set the [control-type table](#control-types) defines, reported under the same field name `/def_send synth` accepts it under. Note this is a **different vocabulary** from the calculation rates `/ugen_query` reports below: a control is a value pushed in from outside, so `ar` is not among them (map an audio bus with `In` + `/node_mapAudio` instead) and neither is `dr` (a demand value is *pulled* by a driver — there is nowhere for a `/node_set` to land). `tr` in turn is a behavior rather than a rate, which is why the server's own type is named `ControlType`.
-  - A **faust** def appends `min, max, step` to each entry (its params carry a declared range). The reserved `out`/`in` bus controls are engine plumbing and are not reported.
-  - A **graph** def reports its surface **ports** instead of controls: after the shared triple, each port carries `numTargets` and then per target `member, control, mul, add` — the inner controls it drives and the linear scaling it applies, so a patcher can draw the port's real connections.
+  - `min, max, step, warp, unit` are how the control is drawn: what a SynthDef control [declared](#control-types), a **faust** slider's range and step, a plugin parameter's. `min` equal to `max` (both zero) is no declared range, `step` zero is continuous, and an empty `warp` or `unit` is none. `label` is a plugin parameter's own name (empty is the control's name), `group` its module, `flags` its bits — stepped `1`, hidden `4`, read-only `8`, automatable `32`, a list `65536` — and the labels name a list's steps, lowest first; all of them empty or zero in the other families. A faust def's reserved `out`/`in` bus controls are engine plumbing and are not reported.
+  - A **graph** def reports its surface **ports** instead of controls: after a port's record, `numTargets` and then per target `member, control, mul, add` — the inner controls it drives and the linear scaling it applies, so a patcher can draw the port's real connections.
 - **`/buffer_query`** with **no argument** → one `/buffer_query.reply` listing every **allocated** buffer, four args each (`bufnum, frames, channels, sampleRate`) — the same shape the per-index form replies with, so one parser reads both. (With arguments it is the per-index query documented under [Buffers](#buffers-buffer_).) The per-index form answers **`frames = -1`** for a slot with nothing in it, the same "absent is a state" rule `/node_query` and `/def_query` follow; the listing form simply omits it.
 - **`/ugen_query [kind...]`** → one `/ugen_query.reply` per UGen, then `/done "/ugen_query"`. With no argument, the whole catalog. Layout: `name, arity, defaultRate, rates, exec, bus, needsPath, opFamily, spectral, numInputs`, then per input `name, default`.
   - `arity` is the input count, or `-1` for a **variadic** kind — whose named inputs are then its **fixed head** only (`EnvGen`'s five before the envelope array, `Dseq`'s `repeats`).

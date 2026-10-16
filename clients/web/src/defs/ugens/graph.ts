@@ -303,6 +303,22 @@ const CONTROL_RATES = new Set([
     "kr", "control", "tr", "trigger", "ir", "scalar",
 ]);
 
+/** How a control is drawn (see `Control`); every key optional. */
+export interface ControlDisplay {
+    min?: number;
+    max?: number;
+    step?: number;
+    warp?: "linear" | "exp";
+    unit?: string;
+}
+
+/** A control's options: its type, its lag and how it is drawn. */
+export interface ControlOptions extends ControlDisplay {
+    rate?: ControlRate;
+    lag?: number;
+    lagDown?: number;
+}
+
 /**
  * A named control (a `/synth_new`/`/node_set` parameter) with a default and an
  * optional **type** and **lag**, mirroring the server's control types:
@@ -315,11 +331,20 @@ const CONTROL_RATES = new Set([
  * - `lag` (seconds) -- smooth a `kr` control's changes with an implicit
  *   one-pole the server inserts; `lagDown` gives a separate downward time.
  *
+ * It may also say **how it is drawn**: a `min` and a `max` (both or neither),
+ * a `step`, a `warp` (`"linear"`, or `"exp"` for equal ratios over equal
+ * travel, a positive range) and a `unit` (`"Hz"`). They are `display`, what
+ * `edit` opens a node of the def with and what a widget built from the control
+ * starts from; they never limit the control itself, which a `/node_set`
+ * outside the range still sets.
+ *
  * Used as a UGen input it serializes to a `{"control": index}` reference;
  * the `SynthDef` gathers the controls a graph references, in first-seen
  * order.
  */
 export class Control extends SynthLeaf {
+    /** How it is drawn: the display options that were given. */
+    readonly display: ControlDisplay;
     readonly name: string;
     readonly default: number;
     readonly rate?: ControlRate;
@@ -328,9 +353,14 @@ export class Control extends SynthLeaf {
     constructor(
         name: string,
         defaultValue = 0.0,
-        options: { rate?: ControlRate; lag?: number; lagDown?: number } = {},
+        options: ControlOptions = {},
     ) {
         super();
+        const { min, max, step, warp, unit } = options;
+        const given = { min, max, step, warp, unit };
+        this.display = Object.fromEntries(
+            Object.entries(given).filter(([, value]) => value !== undefined),
+        ) as ControlDisplay;
         this.name = String(name);
         this.default = Number(defaultValue);
         this.rate = options.rate;
@@ -349,8 +379,9 @@ export class Control extends SynthLeaf {
 
     /** The full identity used to detect conflicting reuses of a name. */
     signature(): string {
+        const display = Object.entries(this.display).sort(([a], [b]) => a.localeCompare(b));
         return JSON.stringify([this.default, this.rate ?? null, this.lag ?? null,
-            this.lagDown ?? null]);
+            this.lagDown ?? null, display]);
     }
 }
 
@@ -359,15 +390,15 @@ export class Control extends SynthLeaf {
  * trigger, `"ir"` scalar, or the default `kr`); `lag` (with an optional
  * `lagDown`) smooths a `kr` control. See `Control`.
  *
- * A control declares **no range**: it is a signal in a graph, and the range a
- * knob is drawn over is the knob's (`knob(freq, { min: 110.0, max: 880.0 })`).
- * The one exception is a FaustDef, whose `hslider` declares its range inside the
- * DSP and reports it back -- see `ControlInfo`.
+ * `min`, `max`, `step`, `warp` and `unit` say how it is drawn
+ * (`control("freq", 440, { min: 20, max: 20000, warp: "exp", unit: "Hz" })`):
+ * a node's generic editor draws it so, and so does a widget built from it.
+ * They never limit the control.
  */
 export function control(
     name: string,
     defaultValue = 0.0,
-    options: { rate?: ControlRate; lag?: number; lagDown?: number } = {},
+    options: ControlOptions = {},
 ): Control {
     return new Control(name, defaultValue, options);
 }

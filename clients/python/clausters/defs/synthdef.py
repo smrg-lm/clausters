@@ -36,7 +36,8 @@ from .ugens import ChannelList, Control, Ugen
 def _control_info(c) -> ControlInfo:
     """A graph's `clausters.defs.Control` as the `ControlInfo` every def family
     answers with -- one shape for the GUI to read, whichever family declared it."""
-    return ControlInfo(name=c.name, default=c.default, rate=c.rate or "kr")
+    return ControlInfo(name=c.name, default=c.default, rate=c.rate or "kr",
+                       **c.display)
 
 
 class SynthDef:
@@ -182,6 +183,7 @@ class SynthDef:
                 d["lag"] = c.lag
             if c.lag_down is not None:
                 d["lag_down"] = c.lag_down
+            d.update(c.display)
             return d
 
         def ser_ugen(u):

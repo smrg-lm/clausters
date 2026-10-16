@@ -30,6 +30,11 @@ fn fixtures() -> &'static Path {
                     None,
                 ),
                 (
+                    "enumerated",
+                    root.join("crates/clausters-plugin-host/tests/fixtures/enumerated.c"),
+                    None,
+                ),
+                (
                     "extended",
                     root.join("crates/clausters-plugin-host/tests/fixtures/extended.c"),
                     None,
@@ -122,8 +127,11 @@ fn discovery_isolated_compatible_and_cached_with_failure_diagnostics() {
             _ => None,
         })
         .collect();
-    assert_eq!(plugins.len(), 9);
-    let gain = plugins.iter().find(|p| p.id.ends_with(".gain")).unwrap();
+    assert_eq!(plugins.len(), 15);
+    let gain = plugins
+        .iter()
+        .find(|p| p.id.ends_with(".gain") && p.path.ends_with("fixture.clap"))
+        .unwrap();
     assert_eq!(gain.inputs[0].channels, 1);
     assert_eq!(gain.parameters[0].id, 0);
     assert_eq!(gain.parameters[0].default, 0.5);
@@ -747,4 +755,24 @@ fn native_editor_reopens_resizes_and_emits_edits_while_audio_runs() {
     assert!(!segment.exists());
     assert!(!Path::new(&format!("/proc/{pid}")).exists());
     assert!(admin.editor(EditorCommand::Query).is_err());
+}
+
+#[test]
+fn parameter_text_conversion_stays_on_the_administrative_plane() {
+    let mut instance = load("fixture", "gain", false);
+    let (value, text) = instance.value_text(0, 0.25, None).unwrap();
+    assert_eq!(value, 0.25);
+    assert_eq!(text, "0.250");
+    let (value, text) = instance.value_text(0, 0.0, Some("0.75".into())).unwrap();
+    assert_eq!(value, 0.75);
+    assert_eq!(text, "0.750");
+    assert!(instance.value_text(0, 0.0, Some("invalid".into())).is_err());
+}
+
+#[test]
+fn discovery_reads_native_clap_enumeration_labels() {
+    let instance = load("enumerated", "gain", false);
+    let parameter = &instance.metadata().parameters[0];
+    assert_eq!(parameter.step, 1.0);
+    assert_eq!(parameter.labels, ["Room", "Hall", "Plate"]);
 }

@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 91
+CORE_ABI_VERSION = 92
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -562,7 +562,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_event_sustain.argtypes = [ctypes.c_double] * 4
     # Rendering an event (ABI v72): JSON in, size-then-fill out.
     for name in ("event_synth", "event_node_note", "event_midi", "event_of_midi", "articulation",
-                 "plugin_catalog", "plugin_search", "plugin_reference"):
+                 "plugin_catalog", "plugin_search", "plugin_reference", "node_editor"):
         fn = getattr(lib, f"clausters_core_{name}")
         fn.restype = ctypes.c_size_t
         fn.argtypes = [ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
@@ -3616,6 +3616,16 @@ def plugin_reference(plugin: dict, inputs, outputs, state=None) -> dict:
     payload = {"plugin": plugin, "inputs": inputs, "outputs": outputs,
                "state": None if state is None else list(state)}
     return _json_call(lib().clausters_core_plugin_reference, payload, "plugin reference")
+
+
+def node_editor(node: int, name: str, controls: list, query: str = "", page: int = 0) -> dict:
+    """The generic editor of ``node``, whose def is called ``name`` and has
+    ``controls`` (dicts as `ControlInfo.description` writes them): the window,
+    the page of controls that match ``query``, and the pages there are
+    (``clausters_core::node_editor::editor_request``)."""
+    payload = {"node": node, "name": name, "controls": controls, "query": query,
+               "page": page}
+    return _json_call(lib().clausters_core_node_editor, payload, "node editor")
 
 
 def event_midi(keys: dict, channel: int = 0) -> list:

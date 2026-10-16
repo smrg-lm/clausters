@@ -238,6 +238,41 @@ export class Node {
         this.srv().sendMsg("/node_set", ["i", this.id], ...flattenControls(controls));
     }
 
+    /**
+     * Sets controls from text (`/node_setText`): `{ cutoff: "880 Hz" }`. A
+     * plugin reads its own words for a value (`"Hall"`, `"-6 dB"`); a
+     * SynthDef's or a FaustDef's control reads a number, with its unit or
+     * without. Text that is no value fails on the server and changes nothing.
+     */
+    setText(controls: Record<string, string>): void {
+        const pairs = Object.entries(controls).flatMap(([name, text]) => [name, String(text)]);
+        this.srv().sendMsg("/node_setText", ["i", this.id], ...pairs);
+    }
+
+    /**
+     * Each control's current value **as text** (`/synth_getText`, which answers
+     * with the `/node_setText` that would write it back), by the name or the
+     * index it was asked by: the plugin's own words for it, or the number with
+     * its unit.
+     */
+    async getText(...controls: (string | number)[]): Promise<Record<string, string>> {
+        const server = this.srv();
+        const reply = server.awaitReply(
+            (msg) =>
+                (msg.addr === "/node_setText" && Number(msg.args[0]) === this.id) ||
+                (msg.addr === "/fail" && msg.args[0] === "/synth_getText"),
+            undefined,
+            `/node_setText for node ${this.id}`,
+        );
+        const asked = controls.map((c): MsgArg => (typeof c === "number" ? ["i", c] : c));
+        server.sendMsg("/synth_getText", ["i", this.id], ...asked);
+        const { addr, args } = await reply;
+        if (addr === "/fail") throw new CommandError(`/synth_getText failed: ${args.slice(1).join(" ")}`);
+        const texts: Record<string, string> = {};
+        for (let i = 1; i + 1 < args.length; i += 2) texts[String(args[i])] = String(args[i + 1]);
+        return texts;
+    }
+
     /** Maps a control to a bus (`/node_map`, or `/node_mapAudio` for an audio bus). */
     map(name: string, bus: BusLike, { audio = false } = {}): void {
         this.srv().sendMsg(

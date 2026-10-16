@@ -186,11 +186,23 @@ class Control(_Node):
       one-pole (a `lag`/`var_lag` UGen the server inserts); ``lag_down`` gives a
       separate downward time.
 
+    It may also say **how it is drawn**: a ``min`` and a ``max`` (both or
+    neither), a ``step``, a ``warp`` (``"linear"``, or ``"exp"`` for equal
+    ratios over equal travel, a positive range) and a ``unit`` (``"Hz"``). They
+    are ``display``, what `clausters.gui.edit` opens a node of the def with and
+    what a widget built from the control starts from; they never limit the
+    control itself, which a ``/node_set`` outside the range still sets.
+
     Used as a UGen input it serializes to a ``{"control": index}`` reference;
     the `SynthDef` gathers the controls a graph references, in first-seen
     order."""
 
-    def __init__(self, name, default=0.0, rate=None, lag=None, lag_down=None):
+    def __init__(self, name, default=0.0, rate=None, lag=None, lag_down=None, *,
+                 min=None, max=None, step=None, warp=None, unit=None):
+        given = {"min": min, "max": max, "step": step, "warp": warp, "unit": unit}
+        #: How it is drawn: the keys of ``min``, ``max``, ``step``, ``warp``
+        #: and ``unit`` that were given, as the def's JSON spells them.
+        self.display = {key: value for key, value in given.items() if value is not None}
         self.name = str(name)
         self.default = float(default)
         self.rate = None if rate is None else str(rate)
@@ -206,24 +218,27 @@ class Control(_Node):
 
     def _signature(self):
         """The full identity used to detect conflicting reuses of a name."""
-        return (self.default, self.rate, self.lag, self.lag_down)
+        return (self.default, self.rate, self.lag, self.lag_down,
+                tuple(sorted(self.display.items())))
 
     def __repr__(self):
         return f"Control({self.name!r}, {self.default!r})"
 
 
-def control(name, default=0.0, rate=None, lag=None, lag_down=None) -> Control:
+def control(name, default=0.0, rate=None, lag=None, lag_down=None, *,
+            min=None, max=None, step=None, warp=None, unit=None) -> Control:
     """A named control (``/synth_new``/``/node_set`` parameter). ``rate`` is its type
     (``"tr"`` trigger, ``"ir"`` scalar, or the default ``kr``); ``lag`` (with an
     optional ``lag_down``) smooths a ``kr`` control.
 
-    A control declares **no range**: it is a signal in a graph, and the range a
-    knob is drawn over is the knob's (``knob(freq, min=110.0, max=880.0)``).
-    The one exception is a FaustDef, whose ``hslider`` declares its range inside
-    the DSP and reports it back -- see `clausters.defs.info.ControlInfo`.
+    ``min``, ``max``, ``step``, ``warp`` and ``unit`` say how it is drawn
+    (``control("freq", 440, min=20, max=20000, warp="exp", unit="Hz")``): a
+    node's generic editor draws it so, and so does a widget built from it. They
+    never limit the control.
     See `Control`.
     """
-    return Control(name, default, rate=rate, lag=lag, lag_down=lag_down)
+    return Control(name, default, rate=rate, lag=lag, lag_down=lag_down,
+                   min=min, max=max, step=step, warp=warp, unit=unit)
 
 
 def _channel(m):

@@ -817,7 +817,7 @@ mod tests {
                 .expect("a horizontal slider knows it");
             let cell = Rect::new(0.0, 0.0, 200.0, h);
             let body = controls::body_rect_at(cell, labelled, size, &m);
-            let track = controls::slider_track(cell, labelled, size, &m);
+            let track = controls::slider_track(cell, labelled, true, size, &m);
             assert!(
                 track.h >= m.handle_grip,
                 "{json}: the groove lost its grip: {} < {}",

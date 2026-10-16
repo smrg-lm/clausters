@@ -8455,3 +8455,11 @@ module of its own.
   **Not verified: a real keyboard in a real browser.** Headless Chrome answers the request with "Permission to use Web MIDI API was not granted", so what ran here is the request, the refusal path and the walk from the bytes on; the listeners on a granted access have run on no device. `editors/edit-notes.html` with a keyboard plugged in is that pass.
 
 - ⬜ **The host's wasm exports the MIDI crate's C ABI, which no page calls** *(found 2026-10-07, measuring the entry above)*. `clausters-midi` declares its binding surface as `#[unsafe(no_mangle)] extern "C"` functions in the crate itself, and a `cdylib` exports every such function of every crate it links — so the host's wasm now carries `clausters_midi_write_smf`, `clausters_midi_read_clip`, the `clausters_mpe_*` handles and the rest (`clients/web/src/gui-host/clausters_gui.d.ts` lists them), with the file readers and writers they keep alive. The release wasm went from 17 563 528 to 17 819 402 bytes, 256 KB or 1.5 %, and that figure is the ceiling: part of it is the MPE decoder and the Web MIDI glue the fix needed. `clausters-core-web` links the same crate and carries the same exports for the same reason. What it takes is the C ABI behind a feature of `clausters-midi` that the two wasm crates leave off, which touches the wheel's build (`build_native.py`), the binding tests and the feature matrix — a packaging change, not a behaviour, so it is not folded into a fix.
+
+- ⬜ **A `nodetree` in a page never refreshes** *(found 2026-10-16, while
+  building the read-back of a binding)*. The native front re-queries the tree
+  of every open `nodetree` with `/group_queryTree` every 200 ms and on each
+  `/node_start`/`/node_end`; the web front sends none of it, so the same
+  element drawn in a page shows the tree as it was when it opened. The query
+  belongs beside the read-back, which both fronts already schedule from the
+  host (`host::readback`), rather than in one front.

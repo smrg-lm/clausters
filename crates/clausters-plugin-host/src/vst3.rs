@@ -725,9 +725,22 @@ impl Instance {
                 }
                 // Common metadata flag vocabulary is CLAP's; never forward VST3
                 // bit 3 (program change) as CLAP's read-only flag.
-                let flags = if p.stepCount > 0 { 1 } else { 0 }
-                    | if p.flags & 2 != 0 { 8 } else { 0 }
-                    | if p.flags & 1 != 0 { 32 } else { 0 };
+                use ParameterInfo_::ParameterFlags_::{
+                    kCanAutomate, kIsHidden, kIsList, kIsReadOnly,
+                };
+                let list = p.stepCount > 0 && p.flags & kIsList != 0;
+                let mut flags = 0;
+                for (on, flag) in [
+                    (p.stepCount > 0, Parameter::STEPPED),
+                    (p.flags & kIsReadOnly != 0, Parameter::READ_ONLY),
+                    (p.flags & kCanAutomate != 0, Parameter::AUTOMATABLE),
+                    (p.flags & kIsHidden != 0, Parameter::HIDDEN),
+                    (list, Parameter::LIST),
+                ] {
+                    if on {
+                        flags |= flag;
+                    }
+                }
                 parameters.push(Parameter {
                     id: p.id,
                     name: wide(&p.title),
@@ -741,6 +754,25 @@ impl Instance {
                         0.0
                     },
                     default: p.defaultNormalizedValue,
+                    // A list's steps are named once here, at discovery, so a
+                    // generic view shows them without asking the plugin again.
+                    labels: if list && (p.stepCount as usize) < MAX_LABELS {
+                        (0..=p.stepCount)
+                            .map(|n| {
+                                let mut text = [0u16; 128];
+                                let at = f64::from(n) / f64::from(p.stepCount);
+                                if self.controller.getParamStringByValue(p.id, at, &mut text)
+                                    == kResultOk
+                                {
+                                    wide(&text)
+                                } else {
+                                    String::new()
+                                }
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    },
                 });
             }
             Ok(parameters)
@@ -1018,6 +1050,33 @@ impl FormatInstance for Instance {
             .find(|p| p.0 == id)
             .map(|p| f64::from_bits(p.1.load(Ordering::Acquire)))
             .ok_or("unknown VST3 parameter".into())
+    }
+    fn value_text(&mut self, id: u32, value: f64) -> Result<String, String> {
+        let mut buffer = [0u16; 128];
+        unsafe {
+            ok(self
+                .controller
+                .getParamStringByValue(id, value, &mut buffer))?;
+        }
+        Ok(wide(&buffer))
+    }
+    fn text_value(&mut self, id: u32, text: &str) -> Result<f64, String> {
+        let mut buffer = [0u16; 128];
+        let chars: Vec<_> = text.encode_utf16().collect();
+        if chars.len() >= buffer.len() {
+            return Err("parameter text too long".into());
+        }
+        buffer[..chars.len()].copy_from_slice(&chars);
+        let mut value = 0.0;
+        unsafe {
+            ok(self
+                .controller
+                .getParamValueByString(id, buffer.as_mut_ptr(), &mut value))?;
+        }
+        if !value.is_finite() {
+            return Err("non-finite parameter value".into());
+        }
+        Ok(value)
     }
     fn editor(&mut self, command: EditorCommand) -> Result<EditorState, String> {
         if matches!(command, EditorCommand::Close) {

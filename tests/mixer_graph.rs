@@ -1508,3 +1508,40 @@ fn the_default_def_sounds_into_the_bus_out_names() {
         "nothing of it past a muted track: {left}, {right}"
     );
 }
+
+/// **A graph's port reads back as it was set.** `/synth_get` on a GraphDef
+/// instance answers each port named, read from the member control it drives
+/// with that port's scaling undone, as the `/node_set` that would write it --
+/// what a widget bound to a track's port reads back.
+#[test]
+fn a_graphs_port_reads_back_as_it_was_set() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    let (_multitrack, track, _clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+    let port = OscType::String(mixer::MUTE.into());
+    send(
+        &mut s,
+        "/node_set",
+        vec![OscType::Int(track), port.clone(), OscType::Float(1.0)],
+    );
+    send(
+        &mut s,
+        "/synth_get",
+        vec![OscType::Int(track), port.clone()],
+    );
+    s.settle_for(4);
+    let mut buf = vec![0u8; 1 << 16];
+    let mut answer = None;
+    while let Some(len) = s.poll_into(&mut buf) {
+        if let Ok(clausters::rosc::OscPacket::Message(m)) =
+            clausters::osc::decode_packet(&buf[..len])
+            && m.addr == "/node_set"
+        {
+            answer = Some(m.args);
+        }
+    }
+    assert_eq!(
+        answer,
+        Some(vec![OscType::Int(track), port, OscType::Float(1.0)])
+    );
+}

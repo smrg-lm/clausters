@@ -135,6 +135,44 @@ run it replaced. This client writes a stroke's samples synchronously; a page's
 buffer calls are asynchronous, so the web client queues them in order instead,
 and that is the only difference between the two.
 
+## A running node: `edit(node)`
+
+A `Synth` — of a SynthDef, a FaustDef or a plugin — is not a document, and
+`edit` opens it all the same: a window of its def's controls that nobody
+wrote, `clausters.gui.editing.NodeEditor`.
+
+```python
+freq = control("freq", 660.0, min=220.0, max=1760.0, warp="exp", unit="Hz")
+node = Synth("tone")          # of a def with that control
+editor = edit(node)
+```
+
+The editor reads the def's controls as `/def_query` reports them — the same
+record in every family — and the shared core decides what each becomes: a
+slider over the range it declares, a toggle for a control of two steps, a list
+for a plugin parameter whose steps have names, a number with arrows for one of
+more steps than a groove holds. A control that declares no range is drawn over
+the range its name conventionally has (`freq`, `amp`, `pan`, …), or else around
+its default. Hidden and read-only parameters, and controls fixed when the node
+starts (`"ir"`), are left out. Beside each control is its value as the server
+writes it: the number with its unit, or a plugin's own words for it (`-6 dB`,
+`Hall`).
+
+**The host keeps the window, not the script.** Every control is
+[bound](gui.md#values-that-never-come-back-to-the-script) to the node, so a drag
+reaches the server with no round trip through Python, and every binding is read
+back, so the window follows the node whoever changes it. A plugin of thousands
+of parameters opens by groups (its modules) and pages of sixteen, with a search
+field over the names; `editor.search("cutoff")` and `editor.show_page(2)` do the
+same from the script, and `editor.window["control:freq"]` is the widget of one
+control (`"text:freq"` its text).
+
+A running node's controls are the server's state, so nothing here enters an
+undo order. A plugin's **own** window is something else: it opens on the
+server's machine with `node.open_plugin_editor()`, and the two can be open at
+once, each following the other. To read or set a value as text from a script,
+`node.get_text("freq")` and `node.set_text({"freq": "880 Hz"})`.
+
 ## The score editor: `edit(score)`
 
 **A `Score` opens in the score editor**, `clausters.gui.editing.ScoreEditor`, and is edited **in

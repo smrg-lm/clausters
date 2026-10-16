@@ -577,15 +577,16 @@ fn def_info_reports_graph_ports_with_their_targets() {
     assert_eq!(a[0], OscType::String("chain".into()));
     assert_eq!(a[1], OscType::String("graph".into()));
     assert_eq!(a[2], OscType::Int(1), "one surface port");
-    // port name, default, rate, numTargets, then (member, control, mul, add).
+    // the port's control record (its name, default and rate first), then
+    // numTargets and (member, control, mul, add).
     assert_eq!(a[3], OscType::String("gain".into()));
     assert_eq!(a[4], OscType::Float(0.5), "the def's declared default");
     assert_eq!(a[5], OscType::String("kr".into()));
-    assert_eq!(a[6], OscType::Int(1), "one target");
-    assert_eq!(a[7], OscType::Int(0), "member 0 (gsrc)");
-    assert_eq!(a[8], OscType::String("level".into()));
-    assert_eq!(a[9], OscType::Float(1.0), "identity mul");
-    assert_eq!(a[10], OscType::Float(0.0), "identity add");
+    assert_eq!(a[15], OscType::Int(1), "one target");
+    assert_eq!(a[16], OscType::Int(0), "member 0 (gsrc)");
+    assert_eq!(a[17], OscType::String("level".into()));
+    assert_eq!(a[18], OscType::Float(1.0), "identity mul");
+    assert_eq!(a[19], OscType::Float(0.0), "identity add");
 }
 
 /// The listing form spans all three families at once: the member UGen defs and

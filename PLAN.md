@@ -2384,6 +2384,7 @@ Section added 2026-10-13, at the user's request. The earlier "dynamic plugins no
   - **Reading back is missing and is added.** `/gui_bind` runs one way. A control that changes outside the widget — the plugin's own editor, a preset or a state load (`/plugin_edit`), another client's `/node_set`, a map — must move the widget without the script relaying it: a server-to-widget direction of the binding, general to any node control, not a plugin special case. Gestures (`begin`/`end` from `/plugin_edit`) are honored so a dragged widget is not overwritten mid-drag.
   - **Value text.** A plugin converts values to display text and back (CLAP's parameter text conversion, VST3's string-by-value); a stepped parameter's labels ("Hall", "Room") are read at discovery and kept in the catalog, while continuous values are converted on demand by an administrative request on the control worker, never from audio. SynthDef and Faust controls show the value with their unit.
   - **Scale.** A plugin may declare thousands of parameters (one tested instrument declares 2295): the editor groups by module, leaves out hidden and read-only parameters where the format marks them (both do), and offers search and paging rather than one column of sliders.
+  - **As built** *(2026-10-16)*: the description is `/def_query`'s per-control record, grown for every family (range, step, warp, unit, label, group, flags, a list's labels) and built by one walk per def family; the generator is `clausters_core::node_editor`, which both clients call through the core's door and open as an ordinary GuiDef, so the window is identical from both by construction rather than by vectors; reading back is the host asking with each binding's read form (`/synth_get`, and `/synth_getText` for the value text, a label bound to `/node_setText`) rather than a stream, and the widget a hand holds is left alone, which is what a drag needs whether the other edit comes from the plugin's window or anywhere else. `docs/decisions.md`, "A node's generic editor is a GuiDef, and a binding is read back by asking".
   - **Acceptance**: the generated GuiDef identical from both clients for the fixtures and for a SynthDef and a FaustDef (parity vectors); an edit in the plugin's own editor moving the generic widget, and a drag not overwritten; value text and list labels for both formats' fixtures; a large-parameter plugin opened usably. Examples: the paired plugin examples open `edit(node)` beside the native editor, and a SynthDef instrument opens its own, checked by eye in the native host and in a page. It follows J10 (catalog, control names) and does not depend on J11.
 
 Further formats/platforms are checkbox entries under Future directions. Document inserts remain the existing `mt.fx` entry; this track provides hosting, state and engine compensation, not a separate application routing implementation.
@@ -4444,3 +4445,18 @@ should confirm before the fix.
   their own (`CmdTranslator::take_emptied_slots`), so a def need not mark its
   generator `ends` for the voice to go with its note; a slot that holds a
   nested graph is left to its `ends`, as before.
+
+- ⬜ **A control mapped to a bus reads back what was last set on it** *(found
+  2026-10-16, building `J12`)*. `/synth_get` reads the network thread's mirror
+  of a node, which holds the value a `/node_set` wrote and the map, not what
+  the bus carries; so a generic editor's knob over a mapped control stands still
+  while the control follows its bus. A control bus is an atomic the network
+  thread can read, so `/synth_get` answering the bus for a control mapped to
+  one is a small change; an audio-mapped control has no such value to read and
+  stays as it is.
+- ⬜ **A FaustDef's `[unit:...]` and `[scale:log]` metadata are not read**
+  *(found 2026-10-16, building `J12`)*. A Faust slider brings its range and
+  step to `/def_query`, and its unit and its scale stay in the DSP's metadata,
+  so a generic editor draws a frequency slider linear and with no unit. Both
+  walks that read a def's parameters (the libfaust UI glue and the compiler's
+  JSON) would read the two declarations into the control's display.

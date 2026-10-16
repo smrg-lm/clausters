@@ -311,6 +311,30 @@ class Node:
         resolve against the graph's surface, not its private members."""
         self._server().send_msg("/node_set", self.id, *_flatten_controls(controls))
 
+    def set_text(self, controls):
+        """Set controls from text (``/node_setText``): ``{"cutoff": "880 Hz"}``.
+        A plugin reads its own words for a value (``"Hall"``, ``"-6 dB"``); a
+        SynthDef's or a FaustDef's control reads a number, with its unit or
+        without. Text that is no value fails on the server and changes
+        nothing."""
+        pairs = [part for name, text in dict(controls).items() for part in (name, str(text))]
+        self._server().send_msg("/node_setText", self.id, *pairs)
+
+    def get_text(self, *controls, timeout: "float | None" = None) -> dict:
+        """Each control's current value **as text** (``/synth_getText``, which
+        answers with the ``/node_setText`` that would write it back), by the
+        name or the index it was asked by: the plugin's own words for it, or
+        the number with its unit. Blocking, RT only."""
+        def ours(args):
+            return args[0] == self.id or args[0] == "/synth_getText"
+        reply, args = self._server().request("/synth_getText", self.id, *controls,
+                                             timeout=timeout, match=ours,
+                                             expect=("/node_setText", "/fail"))
+        if reply == "/fail":
+            from ..errors import CommandError
+            raise CommandError(f"/synth_getText failed: {args}")
+        return {args[i]: str(args[i + 1]) for i in range(1, len(args) - 1, 2)}
+
     def map(self, name, bus, *, audio=False):
         """Map a control to a bus (``/node_map``, or ``/node_mapAudio`` for an audio
         bus), so the control follows whatever the bus carries."""

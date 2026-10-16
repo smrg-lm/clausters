@@ -13,3 +13,6 @@ path = "../../../../../third_party/vst3-fixture/fixture.rs"
 
 [dependencies]
 vst3 = "0.3"
+
+[features]
+enumerated = []

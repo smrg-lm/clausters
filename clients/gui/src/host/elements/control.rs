@@ -38,6 +38,7 @@ pub(super) fn set(r: &mut Range, key: &str, v: &Value) -> bool {
         "min" => parse::set_f(&mut r.min, v),
         "max" => parse::set_f(&mut r.max, v),
         "curve" => parse::set_f(&mut r.curve, v),
+        "warp" => v.as_str().map(|s| r.exponential = s == "exp").is_some(),
         "step" => parse::set_f(&mut r.step, v),
         "label" => parse::set_label(&mut r.label, v),
         "text_size" => parse::set_size(&mut r.text_size, v),
@@ -223,10 +224,22 @@ mod tests {
             min,
             max,
             curve,
+            exponential: false,
             step,
             label: None,
             text_size: 2.0,
         }
+    }
+
+    /// **An exponential control travels by ratios**: halfway is the
+    /// geometric mean, and the handle is drawn where the value is.
+    #[test]
+    fn exponential_travel_uses_equal_ratios_and_draws_its_inverse() {
+        let mut r = range(20.0, 20000.0, 0.0, 0.0);
+        r.exponential = true;
+        r.set_fraction(0.5);
+        assert!((r.value - (20.0_f32 * 20000.0).sqrt()).abs() < 0.001);
+        assert!((r.fraction() - 0.5).abs() < 1e-6);
     }
 
     #[test]

@@ -56,12 +56,24 @@ pub(crate) trait Front {
     /// The spans the last frame of window `def_id` could not draw, by widget,
     /// taken so each is asked for once.
     fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)>;
+    /// The widgets a hand is holding in this front's windows, which a value
+    /// read back must not move ([`Host::read_back`]).
+    fn held(&self) -> Vec<i32>;
 
     /// **Reads one reply from the server**: the ids and the multitrack's
     /// waiting steps hear it first, a join whose samples are there is asked
     /// for again, and a reply about a buffer lands in the trees. Answers
     /// whether it was one of the buffer replies, so a front reads the rest.
     fn on_server_reply(&mut self, from: Leg, msg: &OscMessage) -> bool {
+        // A bound widget's value, read back: the answer is the binding's own
+        // message, so it is the bindings that read it.
+        let held = self.held();
+        if let Some(roots) = self.host_mut().read_back(msg, &held) {
+            for def_id in roots {
+                self.redraw_window(def_id);
+            }
+            return true;
+        }
         self.host_mut().on_server_reply(from, msg);
         for def_id in self.host_mut().forget_stitched(msg) {
             self.redraw_window(def_id);

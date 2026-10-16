@@ -46,10 +46,24 @@ export interface ControlInfo {
     default: number;
     /** The control type the def declared: `"kr"`, `"tr"` or `"ir"`. */
     rate: string;
-    /** A Faust parameter's declared range (its UI widget's). */
+    /**
+     * How it is drawn, the same in every family: the range (absent where the
+     * def declares none), the step (absent or zero is continuous), the warp
+     * (`"exp"` for equal ratios over equal travel, else linear) and the unit.
+     */
     min?: number;
     max?: number;
     step?: number;
+    warp?: string;
+    unit?: string;
+    /** A plugin parameter's own name. */
+    label?: string;
+    /** The group it belongs to (a plugin's module); absent or empty for none. */
+    group?: string;
+    /** A plugin parameter's flags; absent or zero elsewhere. */
+    flags?: number;
+    /** What each step of a list is called, lowest first. */
+    labels?: string[];
     /** A graph def's port: the member controls it drives. */
     targets?: PortTargetInfo[];
 }
@@ -488,9 +502,11 @@ export function parseQueryTree(args: ReplyArgs): Tree {
 }
 
 /**
- * One `/def_query.reply` reply: `name, family, numControls` then per control `name,
- * default, rate` -- plus `min, max, step` for a Faust parameter, or
- * `numTargets` and the target tuples for a graph port.
+ * One `/def_query.reply` reply: `name, family, numControls` then per control
+ * `name, default, rate, min, max, step, warp, unit, label, group, flags,
+ * numLabels, label...` -- `min` equal to `max` where no range is declared, an
+ * empty string where a text is not -- and for a graph port `numTargets` and the
+ * target tuples after it.
  */
 export function parseDefInfo(args: ReplyArgs): DefInfo {
     const name = String(args[0]);
@@ -499,18 +515,24 @@ export function parseDefInfo(args: ReplyArgs): DefInfo {
     const controls: ControlInfo[] = [];
     let i = 3;
     for (let c = 0; c < count; c++) {
+        const [min, max, step] = [Number(args[i + 3]), Number(args[i + 4]), Number(args[i + 5])];
+        const text = (at: number) => String(args[at]) || undefined;
+        const labels = Number(args[i + 11]);
         const info: ControlInfo = {
             name: String(args[i]),
             default: Number(args[i + 1]),
             rate: String(args[i + 2]),
+            ...(min === max ? {} : { min, max }),
+            ...(step ? { step } : {}),
+            ...(text(i + 6) ? { warp: text(i + 6) } : {}),
+            ...(text(i + 7) ? { unit: text(i + 7) } : {}),
+            ...(text(i + 8) ? { label: text(i + 8) } : {}),
+            group: String(args[i + 9]),
+            flags: Number(args[i + 10]),
+            labels: args.slice(i + 12, i + 12 + labels).map(String),
         };
-        i += 3;
-        if ((family === "faust" || family === "plugin")) {
-            info.min = Number(args[i]);
-            info.max = Number(args[i + 1]);
-            info.step = Number(args[i + 2]);
-            i += 3;
-        } else if (family === "graph") {
+        i += 12 + labels;
+        if (family === "graph") {
             const numTargets = Number(args[i++]);
             const targets: PortTargetInfo[] = [];
             for (let t = 0; t < numTargets; t++) {

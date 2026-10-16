@@ -394,6 +394,15 @@ impl Gestures {
         self.drag.is_some()
     }
 
+    /// The widget a hand is holding, while an element holds the press -- the
+    /// one a value read back from the server must not move.
+    pub fn holding(&self) -> Option<i32> {
+        match &self.drag {
+            Some(Drag::Element { at, .. }) => Some(at.id),
+            _ => None,
+        }
+    }
+
     /// What this drag is holding, in the terms the frame draws affordances by
     /// ([`crate::host::frame::Grab`]) -- the rectangle a marquee is sweeping, or
     /// that something else has the pointer.

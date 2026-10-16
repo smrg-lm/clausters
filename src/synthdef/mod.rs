@@ -69,6 +69,9 @@ pub struct ControlSpec {
     /// smooths with `VarLag` (`lag` up, `lag_down` down).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lag_down: Option<f32>,
+    /// Optional generic editor metadata, independent of DSP limits.
+    #[serde(flatten)]
+    pub display: clausters_core::node_editor::ControlDisplay,
 }
 
 /// A control's type: scsynth's control rates for SynthDef controls. The
@@ -265,6 +268,8 @@ pub struct SynthDef {
     pub name: String,
     pub control_names: Vec<String>,
     pub control_defaults: Vec<f32>,
+    /// Display descriptions retained from the source definition.
+    pub control_display: Vec<clausters_core::node_editor::ControlDisplay>,
     /// Control types parallel to `control_names`: trigger controls the
     /// engine resets each block, scalar controls it freezes after init.
     pub control_types: Vec<ControlType>,
@@ -514,6 +519,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         control_names: spec.controls.iter().map(|c| c.name.clone()).collect(),
         control_defaults: spec.controls.iter().map(|c| c.default).collect(),
         control_types,
+        control_display: spec.controls.iter().map(|c| c.display.clone()).collect(),
         constants,
         ugens,
         num_locals,
@@ -527,6 +533,9 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
 fn parse_controls(
     spec: &SynthDefSpec,
 ) -> Result<(Vec<ControlType>, Vec<(usize, f32, Option<f32>)>), String> {
+    for control in &spec.controls {
+        control.display.validate()?;
+    }
     // Control types + lag times. `lagged` collects (control index, up
     // time, optional down time) for the compile-time Lag insertion below.
     let mut control_types = Vec::with_capacity(spec.controls.len());

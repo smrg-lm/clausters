@@ -1787,6 +1787,12 @@ export interface RangeOptions extends WidgetOptions {
      */
     curve?: number;
     /**
+     * `"exp"` travels by **ratios** instead -- halfway between 20 and 20000 is
+     * 632, what a frequency or a time wants -- over a positive range, and wins
+     * over `curve`.
+     */
+    warp?: "linear" | "exp";
+    /**
      * The grid a **drag** lands on, in the value's own units: `1` over
      * `0..127` is the integers a MIDI note number wants, and a FaustDef's
      * parameter arrives with the one its `hslider` declared. Counted from
@@ -1802,7 +1808,7 @@ export interface RangeOptions extends WidgetOptions {
 }
 
 function rangeProps(options: RangeOptions): [Props, Props] {
-    const { label: text, min, max, curve, step, value, textSize, ...rest } = options;
+    const { label: text, min, max, curve, warp, step, value, textSize, ...rest } = options;
     return [
         rest,
         drop([
@@ -1810,6 +1816,7 @@ function rangeProps(options: RangeOptions): [Props, Props] {
             ["min", min],
             ["max", max],
             ["curve", curve],
+            ["warp", warp],
             ["step", step],
             ["value", value],
             ["text_size", textSize],
@@ -1827,12 +1834,16 @@ export interface ControlLike {
     name: string;
     default: number;
     /**
-     * A `ControlInfo`'s range, which only a **Faust** parameter fills -- read
+     * A `ControlInfo`'s range, where its def declares one -- read
      * structurally, because on a graph `Control` `min`/`max` are the binary
      * operators and naming the fields here would collide with them.
      */
     range?: [number, number] | null;
+    /** What a graph `Control` said about how it is drawn. */
+    display?: { min?: number; max?: number; step?: number; warp?: string };
     step?: number | null;
+    /** A `ControlInfo`'s warp, where its def declares one. */
+    warp?: string;
     /**
      * The control type the def declared (`"kr"`, `"tr"`, `"ir"`), which
      * {@link button} reads: only a trigger returns to zero on its own, so only
@@ -1858,18 +1869,17 @@ function isControl(x: unknown): x is ControlLike {
 
 /**
  * A control's own props for a widget built from it: its name and its default as
- * the value -- plus a range only where the control genuinely has one.
+ * the value -- plus how it is drawn, where the control says.
  *
  * The **entry point named once**, for what a def actually knows: what the
  * control is called (which is what `/node_set` addresses) and what it starts at.
  *
- * **The range is the widget's**, and it is spelled on the call:
- * `knob(freq, { min: 110.0, max: 880.0 })`. A control is a signal in a graph and
- * a GraphDef port is a name the server takes any float for; neither says how a
- * knob should be drawn. The one control that arrives with a range is a **Faust**
- * parameter, because `hslider(label, init, min, max, step)` cannot be written
- * without one and the compiled DSP reports it back -- Faust's syntax showing
- * through, not a range this client declares.
+ * **The range is the control's when it declares one** -- a FaustDef's slider
+ * brings it, a SynthDef's control may say it (`control("freq", 440, { min: 20,
+ * max: 20000, warp: "exp" })`) -- and the widget's otherwise:
+ * `knob(freq, { min: 110.0, max: 880.0 })`. A widget that needs a range and
+ * has none is refused rather than guessed at; the guessing is the generic node
+ * editor's (`edit` of a node), which draws every control of a def and has to.
  *
  * Explicit options win: the control says what it is, the call says how to draw
  * it. That includes `name`, which is the handle's index -- the two are usually
@@ -1880,17 +1890,27 @@ function fromControl(
     given: Props,
     { needsRange }: { needsRange: boolean },
 ): Props {
-    // Only a number counts: on a graph `Control` `min`/`max` are the binary
-    // operators, so reading them finds a function rather than a range.
-    const info = control as { min?: unknown; max?: unknown };
-    const [lo, hi] = control.range
-        ?? (typeof info.min === "number" ? [info.min, info.max as number] : [undefined, undefined]);
+    let lo: number | undefined;
+    let hi: number | undefined;
+    let step: number | undefined;
+    let warp: string | undefined;
+    if (control.display !== undefined) {
+        // a graph's control: what it said about its drawing, if anything
+        ({ min: lo, max: hi, step, warp } = control.display);
+    } else {
+        // a ControlInfo, whichever family reported it. Only a number counts:
+        // on a graph `Control` `min`/`max` are the binary operators.
+        const info = control as { min?: unknown; max?: unknown };
+        [lo, hi] = control.range
+            ?? (typeof info.min === "number" ? [info.min, info.max as number] : [undefined, undefined]);
+        step = control.step ?? undefined;
+        warp = control.warp;
+    }
     if (needsRange && lo === undefined && given.min === undefined) {
         throw new Error(
             `control '${control.name}' has no range to be drawn over -- spell one ` +
-                `on the widget (knob(${control.name}, { min: ..., max: ... })). Only a ` +
-                "FaustDef's parameter brings its own, from the hslider that " +
-                "declared it",
+                `on the widget (knob(${control.name}, { min: ..., max: ... })) or ` +
+                `declare it on the control (control("${control.name}", ..., { min: ..., max: ... }))`,
         );
     }
     const own = drop([
@@ -1899,7 +1919,8 @@ function fromControl(
         ["value", control.default],
         ["min", lo],
         ["max", hi],
-        ["step", control.step ?? undefined],
+        ["step", step],
+        ["warp", warp],
     ]);
     for (const [key, value] of Object.entries(given)) {
         if (value !== undefined) own[key] = value;
@@ -2314,7 +2335,10 @@ export const CHOICE_VIEWS = ["combo", "radio", "segmented", "tabs", "pager", "li
 
 /**
  * One of several: a `choice` over `options` (strings), emitting the chosen
- * `index`.
+ * `index` -- or, with `values` (a number per option), the number the chosen
+ * option stands for, which is what a list of a plugin's parameter writes
+ * (`choice(["Room", "Hall"], { values: [0, 1] })`); a `value` set on it lands
+ * on the option nearest.
  *
  * `view` is how it is presented, and nothing else about it changes -- the
  * data, the value and the event are the same in all of them:
@@ -2345,20 +2369,26 @@ export function choice(
         index?: number;
         label?: string;
         view?: (typeof CHOICE_VIEWS)[number];
+        values?: readonly number[];
         textSize?: number;
     } = {},
 ): GuiNode {
-    const { index, label: text, view: look, textSize, ...others } = rest;
+    const { index, label: text, view: look, values, textSize, ...others } = rest;
     if (look !== undefined && !CHOICE_VIEWS.includes(look)) {
         throw new Error(
             `unknown choice view '${String(look)}'; use one of ${CHOICE_VIEWS.join(", ")}`,
         );
     }
+    if (values !== undefined && values.length !== options.length) {
+        throw new Error(`${values.length} values for ${options.length} options`);
+    }
     return node("choice", {
         ...others,
         options: [...options],
         ...drop([
-            ["index", index], ["label", text], ["view", look], ["text_size", textSize],
+            ["index", index], ["label", text], ["view", look],
+            ["values", values === undefined ? undefined : values.map(Number)],
+            ["text_size", textSize],
         ]),
     });
 }

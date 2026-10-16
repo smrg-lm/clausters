@@ -10,8 +10,12 @@ directories, or in the directory or binary given, and the list holds the
 effects it found that have a native editor. Choose a mono/stereo effect with
 an audible preset and an X11 editor, such as "Parametric Equalizer x8
 Stereo". The repository CLAP gain and VST3 fixtures also work. Edit the
-native window on the server's machine while the quiet tones play; Finish
-closes the session.
+native window on the server's machine while the quiet tones play. Beside it
+opens the effect's generic editor, drawn by the GUI host from the plugin's
+parameters: move a control in the native window and the generic one follows;
+drag a generic control and the native window follows it. A plugin of many
+parameters opens there by groups and pages, with a search field over their
+names. Finish closes the session.
 -->
 <label>Server <input id="url" value="ws://127.0.0.1:57112"></label><br>
 <label>Directory or binary on server (optional) <input id="path"></label>
@@ -21,6 +25,7 @@ closes the session.
 <pre id="log"></pre>
 <script type="module">
 import { PluginDef, Session, Synth, SynthDef, defs } from "../../dist/index.js";
+import { edit } from "../../dist/gui/index.js";
 const { out, sine } = defs;
 const $ = (id) => document.getElementById(id);
 const smoke = new URLSearchParams(location.search).has("smoke");
@@ -48,7 +53,7 @@ $("list").onclick = async () => {
     finally { $("list").disabled = false; }
 };
 $("open").onclick = async () => {
-    let source, voice;
+    let source, voice, generic;
     try {
         $("open").disabled = true; $("list").disabled = true;
         const server = session.server;
@@ -68,8 +73,11 @@ $("open").onclick = async () => {
         $("log").textContent = JSON.stringify(await voice.queryPluginEditor());
         await voice.closePluginEditor();
         await voice.openPluginEditor();
+        // The generic editor: the same parameters, in a window of the GUI host's.
+        generic = await edit(voice);
         $("finish").disabled = false;
         await new Promise((resolve) => { $("finish").onclick = resolve; });
+        generic.close();
         await voice.closePluginEditor();
         voice.free(); source.free(); await finish();
         $("log").textContent = "Native editor closed; session finished.";

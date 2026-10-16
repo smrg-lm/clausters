@@ -284,6 +284,7 @@ run_pages() {
     run_page client.html   # the carrier seam itself
     run_page defs.html     # the def model + Server over that carrier
     run_page gui.html      # the GuiDef builders + GuiHost, gestures and all
+    run_page node-editor.html # a node's generic editor: generated, bound, read back
     run_page seq.html      # the clock and the patterns on the engine's own clock
     run_page data.html     # the data paths: buses, taps and bulk, drawn by the script
     run_page editor.html   # the editor views host-drawn from a buffer, and a transport

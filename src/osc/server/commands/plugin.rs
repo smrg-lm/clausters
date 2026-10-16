@@ -30,7 +30,35 @@ mod workers {
         pub client: ClientId,
         pub result: Result<Vec<clausters_plugin_host::format::ScanEntry>, String>,
     }
+    /// What a `/synth_getText` or a `/node_setText` asks a plugin.
+    pub(in crate::osc::server) enum TextRequest {
+        /// Each control's value in the plugin's words: the control as it was
+        /// asked for, its parameter's native id (`None` for a port, which is
+        /// a bus number) and its value.
+        Read(Vec<(OscType, Option<u32>, f64)>),
+        /// The value the plugin reads in `text`, for one parameter.
+        Write {
+            control: OscType,
+            native: u32,
+            text: String,
+        },
+    }
+    /// What the plugin answered.
+    pub(in crate::osc::server) enum TextAnswer {
+        /// `(control, text)` per control read.
+        Read(Vec<(OscType, String)>),
+        /// The value the text was read as.
+        Write { control: OscType, value: f64 },
+    }
     pub(in crate::osc::server) enum PluginJob {
+        /// A plugin's words for its values, read or written.
+        Text {
+            id: i32,
+            expected: u64,
+            admin: Arc<crate::plugin::PluginAdmin>,
+            request: TextRequest,
+            client: ClientId,
+        },
         Scan(ScanRequest),
         Editor {
             id: i32,
@@ -84,6 +112,15 @@ mod workers {
         pub synth: Box<crate::plugin::PluginSynth>,
     }
     pub(in crate::osc::server) enum PluginResult {
+        Text {
+            id: i32,
+            expected: u64,
+            /// Whether it was a read, so its asker's slot is freed whatever
+            /// came of it.
+            reading: bool,
+            result: Result<TextAnswer, String>,
+            client: ClientId,
+        },
         Scan(ScanReply),
         Editor {
             id: i32,
@@ -161,6 +198,38 @@ mod workers {
                     result,
                 })
             }
+            PluginJob::Text {
+                id,
+                expected,
+                admin,
+                request,
+                client,
+            } => PluginResult::Text {
+                id,
+                expected,
+                reading: matches!(request, TextRequest::Read(_)),
+                result: match request {
+                    TextRequest::Read(controls) => controls
+                        .into_iter()
+                        .map(|(control, native, value)| {
+                            let text = match native {
+                                Some(native) => admin.value_text(native, value, None)?.1,
+                                None => clausters_core::node_editor::format_value(value, ""),
+                            };
+                            Ok((control, text))
+                        })
+                        .collect::<Result<_, String>>()
+                        .map(TextAnswer::Read),
+                    TextRequest::Write {
+                        control,
+                        native,
+                        text,
+                    } => admin
+                        .value_text(native, 0.0, Some(text))
+                        .map(|(value, _)| TextAnswer::Write { control, value }),
+                },
+                client,
+            },
             PluginJob::Editor {
                 id,
                 expected,
@@ -383,7 +452,7 @@ pub(in crate::osc::server) use workers::PluginWorkers;
     any(feature = "plugin-clap", feature = "plugin-vst3"),
     target_os = "linux"
 ))]
-use workers::{PluginJob, PluginResult, PreparedState, ScanRequest};
+use workers::{PluginJob, PluginResult, PreparedState, ScanRequest, TextAnswer, TextRequest};
 
 impl OscServer {
     /// What a `/server_sync` issued now waits for, per plugin worker.
@@ -522,6 +591,86 @@ impl OscServer {
             Err("server built without native plugin support".into())
         }
     }
+    /// **Reads a plugin node's controls as its text**, on the control
+    /// worker; `false` when node `id` is not a plugin. A read for the same
+    /// node and asker already on its way answers for this one too: the asker
+    /// polls, so a second is redundant, and the worker's queue is short.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    pub(in crate::osc::server) fn plugin_text_read(
+        &mut self,
+        id: i32,
+        asked: &[(OscType, u32, f64)],
+        client: ClientId,
+    ) -> Result<bool, String> {
+        let Some(crate::osc::translate::NodeDef::Plugin(def, expected, admin)) =
+            self.translator.node_defs.get(&id)
+        else {
+            return Ok(false);
+        };
+        if !self.text_reads.insert((client, id)) {
+            return Ok(true);
+        }
+        let controls = asked
+            .iter()
+            .map(|(control, index, value)| {
+                let native = def.info.parameters.get(*index as usize).map(|p| p.id);
+                (control.clone(), native, *value)
+            })
+            .collect();
+        let job = PluginJob::Text {
+            id,
+            expected: *expected,
+            admin: Arc::clone(admin),
+            request: TextRequest::Read(controls),
+            client,
+        };
+        if let Err(e) = self.plugin_workers.control.submit(job) {
+            self.text_reads.remove(&(client, id));
+            return Err(e.into());
+        }
+        Ok(true)
+    }
+
+    /// **Sets a plugin parameter from its text**, read by the plugin on the
+    /// control worker; `false` when node `id` is not a plugin or the control
+    /// is a port, whose text is a bus number like any other.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    pub(in crate::osc::server) fn plugin_text_write(
+        &mut self,
+        id: i32,
+        control: &OscType,
+        index: u32,
+        text: &str,
+        client: ClientId,
+    ) -> Result<bool, String> {
+        let Some(crate::osc::translate::NodeDef::Plugin(def, expected, admin)) =
+            self.translator.node_defs.get(&id)
+        else {
+            return Ok(false);
+        };
+        let Some(p) = def.info.parameters.get(index as usize) else {
+            return Ok(false);
+        };
+        self.plugin_workers.control.submit(PluginJob::Text {
+            id,
+            expected: *expected,
+            admin: Arc::clone(admin),
+            request: TextRequest::Write {
+                control: control.clone(),
+                native: p.id,
+                text: text.to_owned(),
+            },
+            client,
+        })?;
+        Ok(true)
+    }
+
     pub(in crate::osc::server) fn handle_plugin_editor(
         &mut self,
         mut args: Args,
@@ -803,6 +952,48 @@ impl OscServer {
         let mut installed = None;
         for result in results {
             match result {
+                PluginResult::Text {
+                    id,
+                    expected,
+                    reading,
+                    result,
+                    client,
+                } => {
+                    if reading {
+                        self.text_reads.remove(&(client, id));
+                    }
+                    // A node freed or replaced meanwhile is not answered for.
+                    if !self.plugin_current(id, expected, None) {
+                        continue;
+                    }
+                    match result {
+                        Ok(TextAnswer::Read(texts)) => {
+                            let mut args = vec![OscType::Int(id)];
+                            for (control, text) in texts {
+                                args.push(control);
+                                args.push(OscType::String(text));
+                            }
+                            self.reply(client, "/node_setText", args);
+                        }
+                        Ok(TextAnswer::Write { control, value }) => {
+                            let msg = OscMessage {
+                                addr: "/node_set".into(),
+                                args: vec![OscType::Int(id), control, OscType::Float(value as f32)],
+                            };
+                            if let Err(e) = self.handle_via_translate("/node_set", &msg, client) {
+                                self.fail(client, "/node_setText", e);
+                            }
+                        }
+                        Err(e) => {
+                            let command = if reading {
+                                "/synth_getText"
+                            } else {
+                                "/node_setText"
+                            };
+                            self.fail(client, command, e);
+                        }
+                    }
+                }
                 PluginResult::Editor {
                     id,
                     expected,

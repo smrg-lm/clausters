@@ -421,4 +421,11 @@ impl Front for WebApp {
             .filter_map(|((widget_id, _key), slot)| slot.owed.take().map(|o| (*widget_id, o)))
             .collect()
     }
+
+    fn held(&self) -> Vec<i32> {
+        self.canvases
+            .values()
+            .filter_map(|slot| slot.gestures.holding())
+            .collect()
+    }
 }

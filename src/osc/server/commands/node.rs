@@ -6,6 +6,7 @@
 //! the engine directly.
 
 use super::super::*;
+use clausters_core::node_editor;
 
 impl OscServer {
     /// Immediate form of every translator-covered command: translate (which
@@ -114,6 +115,9 @@ impl OscServer {
         ranged: bool,
     ) -> Answer {
         let id = args.int()?;
+        if !ranged && self.translator.is_graph(id) {
+            return self.graph_get(id, args, from);
+        }
         let def = self
             .translator
             .node_defs
@@ -132,27 +136,158 @@ impl OscServer {
                 .ok_or_else(|| format!("control index {index} out of range"))
         };
         // A control is named or numbered, so it is the one read `Args` cannot
-        // do on its own: resolving it needs the def.
-        let control = |args: &mut Args| -> Result<u32, String> {
+        // do on its own: resolving it needs the def. It is answered as it was
+        // asked for, so the reply is the `/node_set` a binding to that name
+        // (or that index) would send.
+        let control = |args: &mut Args| -> Result<(OscType, u32), String> {
             let arg = args.one()?;
-            control_key(arg, &def).ok_or_else(|| format!("unknown control {arg:?}"))
+            let index = control_key(arg, &def).ok_or_else(|| format!("unknown control {arg:?}"))?;
+            Ok((arg.clone(), index))
         };
         let mut out = vec![OscType::Int(id)];
         while !args.is_empty() {
-            let base = control(&mut args)?;
+            let (asked, base) = control(&mut args)?;
+            out.push(asked);
             if ranged {
                 let count = u32::try_from(args.int()?).map_err(|_| "numControls must be >= 0")?;
-                out.push(OscType::Int(base as i32));
                 out.push(OscType::Int(count as i32));
                 for offset in 0..count {
                     out.push(OscType::Float(read(base + offset)?));
                 }
             } else {
-                out.push(OscType::Int(base as i32));
                 out.push(OscType::Float(read(base)?));
             }
         }
         self.reply(from, "/node_set", out);
+        Ok(())
+    }
+
+    /// `/synth_get` on a **GraphDef instance** or one of its voices: each
+    /// surface port read back as the `/node_set` that set it wrote it
+    /// (`CmdTranslator::graph_port_value`).
+    fn graph_get(&mut self, id: i32, mut args: Args, from: ClientId) -> Answer {
+        let mut out = vec![OscType::Int(id)];
+        while !args.is_empty() {
+            let asked = args.one()?.clone();
+            let OscType::String(port) = &asked else {
+                return Err(format!("a graph's port is named, not {asked:?}"));
+            };
+            let value = self
+                .translator
+                .graph_port_value(id, port)
+                .ok_or_else(|| format!("graph {id} has no port {port:?} to read"))?;
+            out.push(asked);
+            out.push(OscType::Float(value));
+        }
+        self.reply(from, "/node_set", out);
+        Ok(())
+    }
+
+    /// `/synth_getText nodeID control...`: each control's current value **as
+    /// text** -- the plugin's own words for it (`"-6.0 dB"`, `"Hall"`), or for a
+    /// SynthDef or a FaustDef the number with its unit -- answered as
+    /// `/node_setText nodeID (control text)...`, the message that would write
+    /// it back. A plugin is asked on its control worker, never from audio, so
+    /// its answer comes later; while one for the same node and asker is on its
+    /// way, another is not started (the asker polls, and the next one will be).
+    pub(in crate::osc::server) fn handle_synth_get_text(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let id = args.int()?;
+        let controls = self
+            .translator
+            .node_controls(id)
+            .ok_or_else(|| format!("synth {id} not found"))?;
+        let (_, values) = self
+            .translator
+            .mirror
+            .synth_info(id)
+            .ok_or_else(|| format!("node {id} is not a synth"))?;
+        let def = self
+            .translator
+            .node_defs
+            .get(&id)
+            .cloned()
+            .ok_or("no def")?;
+        let mut asked = Vec::with_capacity(args.len());
+        while !args.is_empty() {
+            let arg = args.one()?;
+            let index = control_key(arg, &def).ok_or_else(|| format!("unknown control {arg:?}"))?;
+            let value = values
+                .get(index as usize)
+                .copied()
+                .ok_or_else(|| format!("control index {index} out of range"))?;
+            asked.push((arg.clone(), index, f64::from(value)));
+        }
+        #[cfg(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        ))]
+        if self.plugin_text_read(id, &asked, from)? {
+            return Ok(());
+        }
+        let mut out = vec![OscType::Int(id)];
+        for (asked, index, value) in asked {
+            let unit = controls.get(index as usize).map_or("", |c| c.unit());
+            out.push(asked);
+            out.push(OscType::String(node_editor::format_value(value, unit)));
+        }
+        self.reply(from, "/node_setText", out);
+        Ok(())
+    }
+
+    /// `/node_setText nodeID (control text)...`: sets each control from text,
+    /// read the way `/synth_getText` writes it -- by the plugin, which takes
+    /// its own words for a value, or as a number with its unit or without. Text
+    /// that does not read as a value fails and changes nothing.
+    pub(in crate::osc::server) fn handle_node_set_text(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let id = args.int()?;
+        let controls = self
+            .translator
+            .node_controls(id)
+            .ok_or_else(|| format!("synth {id} not found"))?;
+        let def = self
+            .translator
+            .node_defs
+            .get(&id)
+            .cloned()
+            .ok_or("no def")?;
+        let mut pairs = Vec::new();
+        while !args.is_empty() {
+            let arg = args.one()?.clone();
+            let index =
+                control_key(&arg, &def).ok_or_else(|| format!("unknown control {arg:?}"))?;
+            let text = args.str()?.to_owned();
+            pairs.push((arg, index, text));
+        }
+        let mut set = vec![OscType::Int(id)];
+        for (arg, index, text) in pairs {
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
+            if self.plugin_text_write(id, &arg, index, &text, from)? {
+                continue;
+            }
+            let unit = controls.get(index as usize).map_or("", |c| c.unit());
+            let value = node_editor::parse_value(&text, unit)
+                .ok_or_else(|| format!("{text:?} is not a value of {arg:?}"))?;
+            set.push(arg);
+            set.push(OscType::Float(value as f32));
+        }
+        if set.len() > 1 {
+            let msg = OscMessage {
+                addr: "/node_set".into(),
+                args: set,
+            };
+            self.handle_via_translate("/node_set", &msg, from)?;
+        }
         Ok(())
     }
 

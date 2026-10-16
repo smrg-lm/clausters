@@ -1682,6 +1682,12 @@ export function multitrackPlan(multitrack: string, sample_rate: number, sources:
 export function multitrackProps(multitrack: string, sample_rate: number, sources: string): string;
 
 /**
+ * JS face: a node's generic editor, `{"node", "name", "controls", "query",
+ * "page"}` in, `{"window", "contents", "pages", "page"}` out.
+ */
+export function node_editor(request: string): string;
+
+/**
  * JS face: the boot-derived node-id partition for a node table of
  * `max_nodes` slots -- `{clientBase, clientCapacity, autoBase, autoCapacity,
  * midiBase, midiCapacity}`, the same formula the server applies.
@@ -2188,6 +2194,7 @@ export interface InitOutput {
     readonly multitrackplayback_stop: (a: number, b: number) => [number, number];
     readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly multitrackplayback_transport: (a: number) => number;
+    readonly node_editor: (a: number, b: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly notesplayback_call: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly notesplayback_new: (a: number) => number;

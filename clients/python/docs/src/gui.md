@@ -114,12 +114,14 @@ slider(sd["amp"], min=0.0, max=1.0, label="level")   # or one off the def
 view(*[knob(c, min=0.0, max=1.0) for c in sd.controls])
 ```
 
-**The range is the widget's**: a control is a signal in the graph and says
-nothing about how a knob is drawn, so `min`/`max` are spelled here. A control
-with no range of its own says so rather than being drawn over a guess — which is
-every control but a **Faust** parameter, whose `hslider` declares one inside the
-DSP and reports it back (and a keyword still wins over it: the control says what
-it is, the call says how to draw it).
+**The range is the control's when its def declares one, and the widget's
+otherwise.** A **Faust** parameter declares it in the DSP, in the `hslider` that
+made it; a SynthDef control may declare it where the control is declared —
+`control("freq", 440.0, min=20.0, max=20000.0, warp="exp", unit="Hz")` — and a
+widget built from either starts from it. A control with no range says so rather
+than being drawn over a guess, and a keyword still wins over what the control
+says: the control says what it is, the call says how to draw it. A declared
+range is about drawing only: nothing on the server holds a `/node_set` to it.
 
 All three def families answer the same way — `sd["freq"]`, `fd["cutoff"]`,
 `gd["mix"]` — so the widget does not care which built it.
@@ -131,6 +133,9 @@ otherwise, and a control that wants both spells both:
 slider(sd["amp"], min=0.0, max=1.0, curve=4.0)        # fine at the bottom
 number(label="note", min=0.0, max=127.0, step=1.0)   # whole note numbers
 ```
+
+`warp="exp"` makes the travel **ratios** instead — halfway between 20 and
+20000 is 632 — over a positive range, and wins over `curve`.
 
 `curve` bends the range the handle travels: `0` (the default) is linear,
 negative spends most of the range on the first half of the travel and positive
@@ -148,8 +153,11 @@ parameter arrives with the step its `hslider` declared, like its range. A value
 step is a rule about the hand, not a constraint on what the script may say.
 
 There is deliberately no *named* spec (`spec="freq"` for 20..20000
-exponential). These two keywords are what one would be built out of, and a name
-that silently drew the wrong curve would be worse than no name at all.
+exponential) for a widget you build. These keywords are what one would be built
+out of, and a name that silently drew the wrong curve would be worse than no
+name at all. The one place a control's name stands in for its range is a node's
+generic editor ([`edit(node)`](document.md#a-running-node-editnode)), which has
+to draw every control of a def whether it declares a range or not.
 
 The widget's `name` becomes the control's name, which is what the handle
 addresses it by, and what [binding](#values-that-never-come-back-to-the-script) uses to
@@ -553,6 +561,18 @@ A `choice` bound to a stack's `index` *is* a tab bar: the pages flip inside the
 host, and nothing prints here while you click. A binding fires an **apply,
 never another binding**, so two widgets wired to each other settle instead of
 cascading.
+
+**A binding to a node's control comes back.** The host asks the server, a few
+times a second, for what each of its bindings to `/node_set` writes — with
+`/synth_get`, which answers with the very `/node_set` the binding would send —
+so a bound knob moves when the control changes from anywhere else: a
+`synth.set(...)` from this script, another client, a plugin's own window, a
+loaded state. The knob a hand is holding is left alone, so a drag is never
+pulled back under the pointer. A binding to `/node_setText` comes back the same
+way, as the control's value **as text** — the plugin's own words for it, or the
+number with its unit — which is how a `label` bound to it shows a value it never
+writes. A control mapped to a bus reads back what was last set on it, not what
+the bus carries.
 
 ## The signal element: every view of a signal
 

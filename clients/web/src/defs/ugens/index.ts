@@ -73,7 +73,7 @@ export {
     sum4,
 } from "./graph.ts";
 export type {
-    Channel, ChannelFan, ControlRate, OpOperand, OpResult, UgenRate } from "./graph.ts";
+    Channel, ChannelFan, ControlDisplay, ControlOptions, ControlRate, OpOperand, OpResult, UgenRate } from "./graph.ts";
 
 export {
     brownNoise,

@@ -294,6 +294,21 @@ impl PluginAdmin {
             .map_err(|_| "plugin control poisoned")?
             .editor(command)
     }
+    /// Convert values on the control worker and helper main thread.
+    pub fn value_text(
+        &self,
+        id: u32,
+        value: f64,
+        text: Option<String>,
+    ) -> Result<(f64, String), String> {
+        if self.pending() {
+            return Err("plugin state operation already pending".into());
+        }
+        self.control
+            .lock()
+            .map_err(|_| "plugin control poisoned")?
+            .value_text(id, value, text)
+    }
     /// Capture the live state while the instance keeps processing: saving
     /// is a main-thread call both formats allow during processing.
     pub fn save(&self) -> Result<Vec<u8>, String> {

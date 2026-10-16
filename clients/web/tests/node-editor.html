@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>clausters: a node's generic editor</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { margin: 16px; background: #16181b; color: #dddddd; font: 14px sans-serif; }
+      #log { white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>A running node's generic editor</h1>
+    <pre id="log">Booting...</pre>
+    <!--
+      edit(node) over the page's engine: the window the shared core generates
+      from the def's controls, bound to the node by the host. A value set from
+      this page reaches the slider and its text through the bindings' read
+      forms (/synth_get, /synth_getText), a search redefines the rows, and the
+      window is captured into the page's storage and read back.
+    -->
+    <script type="module">
+      import { loadCore, Server, Synth, SynthDef, GuiHost } from "../dist/index.js";
+      import { control, out, sine } from "../dist/defs/index.js";
+      import { edit } from "../dist/gui/index.js";
+
+      const log = document.getElementById("log");
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const assert = (ok, why) => { if (!ok) throw new Error(why); };
+
+      /** Polls `read` until it answers `want`, or fails naming `what`. */
+      async function until(read, want, what, ms = 3000) {
+        const end = performance.now() + ms;
+        let seen;
+        while (performance.now() < end) {
+          seen = await read();
+          if (seen === want) return;
+          await sleep(50);
+        }
+        throw new Error(`${what}: ${JSON.stringify(seen)}, not ${JSON.stringify(want)}`);
+      }
+
+      async function pngColors(path) {
+        let dir = await navigator.storage.getDirectory();
+        const parts = path.split("/").filter((p) => p.length > 0);
+        const name = parts.pop();
+        for (const part of parts) dir = await dir.getDirectoryHandle(part);
+        const bytes = new Uint8Array(
+          await (await (await dir.getFileHandle(name)).getFile()).arrayBuffer());
+        // Uncompressed: the pixels are the stored blocks' bytes, so the count
+        // of distinct four-byte words over the file says whether anything was
+        // drawn.
+        const words = new Set();
+        for (let i = 0; i + 4 <= bytes.length; i += 4) {
+          words.add(bytes[i] | bytes[i + 1] << 8 | bytes[i + 2] << 16 | bytes[i + 3] << 24);
+        }
+        return words.size;
+      }
+
+      try {
+        await loadCore();
+        const server = await new Server().boot();
+        const freq = control("freq", 660.0, { min: 220.0, max: 1760.0, warp: "exp", unit: "Hz" });
+        const depth = control("depth", 6.0, { min: 0.0, max: 40.0, unit: "Hz" });
+        const amp = control("amp", 0.02);
+        await new SynthDef("generic_tone", out(0, sine(freq.add(depth)).mul(amp))).send(server);
+        const node = new Synth("generic_tone", {}, { server });
+        await server.sync();
+        const host = await new GuiHost({ engine: server.engine }).boot();
+
+        const editor = await edit(node, { host });
+        const win = editor.window;
+        assert(editor.controls.length === 3, `three controls, not ${editor.controls.length}`);
+        assert(win.has("control:freq") && win.has("text:freq"), "a row per control, named by it");
+        assert(editor.controls[0].unit === "Hz", "the declared unit comes back from /def_query");
+        assert(await edit(node, { host }) === editor, "a second edit is the editor already open");
+
+        // Set from this page: the host reads the bindings back.
+        node.set({ freq: 880.0 });
+        await until(async () => (await host.query(win.widget("control:freq").id)).props.value,
+                    880, "the slider read back");
+        await until(async () => (await host.query(win.widget("text:freq").id)).props.text,
+                    "880 Hz", "the text read back");
+        const texts = await node.getText("freq");
+        assert(texts.freq === "880 Hz", `getText: ${JSON.stringify(texts)}`);
+
+        // A search redefines the rows, and the names follow.
+        editor.search("dep");
+        assert(win.has("control:depth") && !win.has("control:freq"), "the search shows depth only");
+        editor.search("");
+        assert(win.has("control:freq"), "an empty search shows them all");
+
+        const shot = await editor.capture("/captures/node-editor.png");
+        const colors = await pngColors(shot);
+        assert(colors > 4, `the capture holds ${colors} colors: nothing drawn`);
+
+        editor.close();
+        node.free();
+        log.textContent = "PASS: generated, read back, searched and captured";
+        document.title = "PASS node-editor";
+        await fetch("/smoke-verdict-PASS-node-editor");
+      } catch (error) {
+        log.textContent = `FAIL ${error.stack ?? error}`;
+        document.title = `FAIL ${error}`;
+        await fetch(`/smoke-verdict-FAIL-${encodeURIComponent(String(error))}`);
+      }
+    </script>
+  </body>
+</html>

@@ -10330,3 +10330,45 @@ runs by hand where both adapters are present
 (`clients/gui`, `cargo test --lib -- --ignored --nocapture
 software_against`), so it can be taken again when the drawing or a driver
 changes.
+
+## A node's generic editor is a GuiDef, and a binding is read back by asking (2026-10-16)
+
+A node's generic editor could have been a new widget the host expands from a
+description, with a new command that reads a control from the audio thread
+and a stream that pushes the value back. Every piece of that already existed in
+another form, so it is built from those instead:
+
+- **The window is an ordinary GuiDef.** A control widget with an inline `bind`
+  to `/node_set` is how any window writes a node; the editor is a generated one,
+  and what decides what each control becomes is one function in
+  `clausters_core::node_editor` that both clients call. The host gains no
+  element. Search and paging are the client asking the core again and
+  redefining the rows, so the host keeps no editor state either.
+- **The description is `/def_query`'s.** Its per-control record grew the
+  fields a generic view needs — range, step, warp, unit, label, group, flags and
+  a list's labels — the same record in every family, built by one walk per def
+  family that the query and the text commands share. A second command
+  describing the same controls would have been a second walk to keep in step.
+- **A binding is read back by asking, with the read form of its address.**
+  `/synth_get` answers with the `/node_set` it reads, so a reply matches its
+  widgets by the binding itself; the host asks every 200 ms for the bindings of
+  open windows. A push would have needed a subscription per node and a second
+  path for each way a value changes; the server's mirror already takes every
+  one of them — a `/node_set` from any client, a plugin's own edit, a loaded
+  state — so one question covers them all, and a window that changes nothing
+  repaints nothing. Reading the processor instead would have answered a
+  mapped control's bus value, at the cost of a command through the audio thread
+  that does not answer while the audio is not running (a page whose context is
+  suspended); a mapped control reads what was last set on it, and that gap is
+  written down.
+- **A value's text is a label bound to `/node_setText`.** A text field reports
+  every keystroke, so typing `880` into one bound to a plugin would set `8`,
+  then `88`; a label reports nothing, is read back like any binding, and the
+  writing stays with the script (`set_text`).
+- **The range is the control's when it declares one.** A SynthDef control may
+  now declare `min`/`max`/`step`/`warp`/`unit`, which overturns "the range is
+  the widget's" for a control that says it; one that does not still has none,
+  and only the generic editor, which has to draw every control, falls back on
+  the conventional range of a name (`freq`, `amp`, `pan`) and then on one
+  around the default. The fields live in a control's `display`, never as
+  attributes, because `min` and `max` on a signal are the binary operators.

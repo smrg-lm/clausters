@@ -46,6 +46,9 @@ import { AudioEditor, isTake } from "./audio.ts";
 import { ScoreEditor, isScore } from "./score.ts";
 import type { Interpretation, Transcription } from "../notation/sheet.ts";
 import { main } from "../../base/main.ts";
+import { resolveServer } from "../../defs/wire.ts";
+import { Node } from "../../defs/node.ts";
+import { NodeEditor } from "./controls.ts";
 
 /** What `edit` passes on to whichever editor the structure asks for. */
 export interface EditOptions {
@@ -233,7 +236,9 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
 /**
  * Opens `structure` in an editor of its own kind -- a `Buffer` (its samples), an
  * `Automation` (its curve), a `Timeline` (its notes), a `Multitrack` (the
- * multitrack) or a `Score` (a symbolic score, on its page, in place) -- and
+ * multitrack) or a `Score` (a symbolic score, on its page, in place), or a
+ * running `Node`, whose def's controls open in a generic editor
+ * ({@link NodeEditor}; it takes `title`, `host` and `stage` only) -- and
  * answers the open editor: the one already open over `structure`, when there
  * is one of its kind (and, for a roll, over the same axis), in which case
  * nothing is opened and the options of this call are not applied.
@@ -251,10 +256,13 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
  * an unopenable structure is a question about the data, and answering it with a
  * bare failure teaches nothing.
  */
+export async function edit(structure: Node, options?: EditOptions): Promise<NodeEditor>;
+export async function edit(structure: unknown, options?: EditOptions): Promise<Editor<never>>;
 export async function edit(
     structure: unknown,
     options: EditOptions = {},
-): Promise<Editor<never>> {
+): Promise<Editor<never> | NodeEditor> {
+    if (structure instanceof Node) return nodeEditor(structure, options);
     // **A timeline is rendered, and the roll edits what it produced**: the
     // events, as concrete data in the timeline's beats with its map. The
     // timeline itself is code and is left as it was; the sequence is the
@@ -270,6 +278,37 @@ export async function edit(
     const editor = await editorFor(opened, rest);
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
+    }
+    return editor;
+}
+
+/**
+ * The node editors open, by server and node id: a running node's controls are
+ * the server's and not a structure with an editing context, so the editor
+ * already open over one is found here rather than among a context's views.
+ */
+const openNodes = new Map<object, Map<number, NodeEditor>>();
+
+/**
+ * The generic editor of `node`: the one already open over it, on the same host
+ * when one is named, or a new one.
+ */
+async function nodeEditor(node: Node, options: EditOptions): Promise<NodeEditor> {
+    const server = resolveServer(node.server);
+    const open = openNodes.get(server) ?? new Map<number, NodeEditor>();
+    openNodes.set(server, open);
+    for (const [id, editor] of open) if (editor.closed) open.delete(id);
+    const current = open.get(node.id);
+    if (
+        options.open !== false && current !== undefined &&
+        (options.host === undefined || current.host === options.host)
+    ) {
+        return current;
+    }
+    const editor = new NodeEditor(node, { title: options.title });
+    if (options.open !== false) {
+        await editor.open(options.host, { stage: options.stage });
+        open.set(node.id, editor);
     }
     return editor;
 }

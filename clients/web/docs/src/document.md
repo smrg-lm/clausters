@@ -184,6 +184,30 @@ run it replaced. The page's buffer calls are asynchronous, so a stroke's write i
 **queued in order** rather than awaited; the Python client writes synchronously,
 and that is the only difference between the two.
 
+## A running node: `edit(node)`
+
+A `Synth` — of a SynthDef, a FaustDef or a plugin — opens in a window of its
+def's controls that nobody wrote, `editing.NodeEditor`, the reference client's
+[`edit(node)`](https://clausters-python.readthedocs.io/en/latest/document.html#a-running-node-editnode)
+call for call:
+
+```js
+const freq = control("freq", 660.0, { min: 220.0, max: 1760.0, warp: "exp", unit: "Hz" });
+const node = new Synth("tone");          // of a def with that control
+const editor = await edit(node, { stage: element });
+```
+
+The shared core decides what each control becomes — a slider over its declared
+range, a toggle, a list for a plugin parameter with named steps, a number for
+one with too many steps — and the host binds every control to the node and
+reads every binding back, so the window follows the node whoever changes it,
+with no callback in the page. A large plugin opens by groups and pages, with a
+search field; `editor.search(...)` and `editor.showPage(...)` do the same from
+the page, `editor.window.widget("control:freq")` is one control's widget, and
+`node.getText(...)`/`node.setText(...)` read and set a value as text. A plugin
+on a native server keeps its own window on the server's machine
+(`node.openPluginEditor()`), and its generic editor draws in the page.
+
 ## The score editor: `edit(score)`
 
 **A `Score` opens in the score editor**, `editing.ScoreEditor`, and is edited **in

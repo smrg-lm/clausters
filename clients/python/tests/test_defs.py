@@ -947,7 +947,8 @@ def test_defs_query_collects_until_done():
     iface = _FakeInterface()
     srv = Server(interface=iface)
     # Two /def_query.reply replies then the /done terminator that closes the batch.
-    iface.queue_reply("/def_query.reply", "one", "synth", 1, "freq", 440.0, "kr")
+    iface.queue_reply("/def_query.reply", "one", "synth", 1,
+                      "freq", 440.0, "kr", 0.0, 0.0, 0.0, "", "", "", "", 0, 0)
     iface.queue_reply("/def_query.reply", "two", "graph", 0)
     iface.queue_reply("/done", "/def_query")
 
@@ -973,24 +974,36 @@ def test_defs_query_passes_names_and_flags_unknown():
     assert infos[0].controls == []
 
 
-def test_parse_def_info_faust_ranges_and_graph_targets():
+def test_parse_def_info_reads_one_record_in_every_family():
     from clausters.defs.info import parse_def_info as _parse_def_info
 
-    # A faust param appends (min, max, step) after the shared triple...
-    faust = _parse_def_info(["f", "faust", 1, "amp", 0.2, "kr", 0.0, 1.0, 0.001])
-    assert faust.controls[0].min == 0.0 and faust.controls[0].max == 1.0
-    assert faust.controls[0].step == 0.001
+    # Every control is one record: name, default, rate, the range, the step,
+    # the warp and the unit, the label, the group, the flags and a list's
+    # labels -- an empty text and an equal min/max being "not declared".
+    synth = _parse_def_info(["s", "synth", 2,
+                             "freq", 440.0, "kr", 20.0, 2000.0, 0.0, "exp", "Hz", "", "", 0, 0,
+                             "amp", 0.1, "kr", 0.0, 0.0, 0.0, "", "", "", "", 0, 0])
+    freq, amp = synth.controls
+    assert (freq.min, freq.max, freq.warp, freq.unit) == (20.0, 2000.0, "exp", "Hz")
+    assert freq.step is None and freq.label is None and freq.group == ""
+    assert amp.range is None and amp.warp is None
+
+    plugin = _parse_def_info(["p", "plugin", 1,
+                              "param:7", 0.0, "kr", 0.0, 2.0, 1.0, "", "", "Mode", "Main",
+                              65537, 3, "Room", "Hall", "Plate"])
+    mode = plugin.controls[0]
+    assert (mode.label, mode.group, mode.flags) == ("Mode", "Main", 65537)
+    assert mode.labels == ("Room", "Hall", "Plate") and mode.step == 1.0
 
     # ...and a graph port appends its target count and the tuples it drives.
     graph = _parse_def_info(
-        ["g", "graph", 1, "gain", 0.5, "kr", 2,
+        ["g", "graph", 1, "gain", 0.5, "kr", 0.0, 0.0, 0.0, "", "", "", "", 0, 0, 2,
          0, "level", 1.0, 0.0,
          1, "amp", 0.5, 0.25]
     )
     port = graph.controls[0]
     assert port.default == 0.5
     assert port.targets == ((0, "level", 1.0, 0.0), (1, "amp", 0.5, 0.25))
-    # The other families declare no range.
     assert port.min is None
 
 
@@ -1162,7 +1175,8 @@ def test_plugin_reference_control_info_and_restart_wire(plugin_format):
     recipe = PluginDef("test", reference)
     recipe.send(srv, wait=False)
     assert iface.sent[-1] == ("/def_send", ["plugin", "test", json.dumps(reference)])
-    info = parse_def_info(["test", "plugin", 1, "param:17", 0.5, "kr", 0.0, 1.0, 0.0])
+    info = parse_def_info(["test", "plugin", 1, "param:17", 0.5, "kr", 0.0, 1.0, 0.0,
+                           "", "", "Gain", "", 0, 0])
     assert info.controls[0].range == (0.0, 1.0)
     iface._replies = [osc.message("/done", "/plugin_restart", 42)]
     node = Synth.from_id(42, "test", server=srv)

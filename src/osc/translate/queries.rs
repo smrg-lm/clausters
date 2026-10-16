@@ -6,25 +6,23 @@
 //! immediately instead of round-tripping through the audio thread.
 
 use super::*;
+use clausters_core::node_editor::{Control, ControlDisplay};
 
 impl CmdTranslator {
     /// `/def_query.reply` arguments for `/def_query`, one vector per def -- the
-    /// loaded defs and their control surface, which is what a patcher wires.
+    /// loaded defs and their control surface, which is what a patcher wires
+    /// and what a generic editor draws.
     ///
     /// With `names`, details exactly those (an unknown one comes back with an
     /// empty family and no controls, the way `/buffer_query` reports an unallocated
     /// buffer as zeros rather than failing the whole batch); with `None`, every
     /// loaded def, ordered by family then name so the reply is deterministic.
     ///
-    /// Layout per def: `name, family, numControls`, then per control
-    /// `name, default, rate` -- `rate` naming the same `kr`/`tr`/`ir` control
-    /// types a `/def_send synth` spec declares. A **faust** def appends `min, max,
-    /// step` (its params carry a range; the reserved `out`/`in` bus controls
-    /// are engine plumbing and stay out of the reported surface). A **graph**
-    /// def reports its surface **ports** instead, each followed by
-    /// `numTargets` and per target `member, control, mul, add` -- the scaling
-    /// the port applies inside, so a level-1 patch can draw the port's real
-    /// connections.
+    /// Layout per def: `name, family, numControls`, then per control the same
+    /// record in every family ([`push_control`]). A **graph** def reports its
+    /// surface **ports** as its controls, each followed by `numTargets` and per
+    /// target `member, control, mul, add` -- the scaling the port applies
+    /// inside, so a level-1 patch can draw the port's real connections.
     pub fn def_info(&self, names: Option<&[String]>) -> Vec<Vec<OscType>> {
         match names {
             Some(names) => names.iter().map(|n| self.one_def_info(n)).collect(),
@@ -47,95 +45,43 @@ impl CmdTranslator {
     }
 
     fn one_def_info(&self, name: &str) -> Vec<OscType> {
+        let head = |family: &str, count: usize| {
+            vec![
+                OscType::String(name.into()),
+                OscType::String(family.into()),
+                OscType::Int(count as i32),
+            ]
+        };
+        let described = |family: &str, controls: Vec<Control>| {
+            let mut args = head(family, controls.len());
+            for control in &controls {
+                push_control(&mut args, control);
+            }
+            args
+        };
         #[cfg(feature = "synth")]
         if let Some(def) = self.synth_defs.get(name) {
-            let mut args = vec![
-                OscType::String(name.into()),
-                OscType::String("synth".into()),
-                OscType::Int(def.control_names.len() as i32),
-            ];
-            for (i, cname) in def.control_names.iter().enumerate() {
-                args.push(OscType::String(cname.clone()));
-                args.push(OscType::Float(
-                    def.control_defaults.get(i).copied().unwrap_or(0.0),
-                ));
-                args.push(OscType::String(
-                    match def.control_types.get(i).copied().unwrap_or_default() {
-                        crate::synthdef::ControlType::Control => "kr",
-                        crate::synthdef::ControlType::Trigger => "tr",
-                        crate::synthdef::ControlType::Scalar => "ir",
-                    }
-                    .into(),
-                ));
-            }
-            return args;
+            return described("synth", synth_controls(def));
         }
         #[cfg(feature = "faust")]
         if let Some(def) = self.faust_defs.get(name) {
-            // The reserved `out`/`in` bus controls are engine plumbing, not a
-            // parameter anyone patches, so the reported surface is the UI
-            // params only. A Faust param carries its own range, appended after
-            // the shared triple.
-            let mut args = vec![
-                OscType::String(name.into()),
-                OscType::String("faust".into()),
-                OscType::Int(def.params.len() as i32),
-            ];
-            for p in &def.params {
-                args.push(OscType::String(p.name.clone()));
-                args.push(OscType::Float(p.init));
-                args.push(OscType::String("kr".into()));
-                args.push(OscType::Float(p.min));
-                args.push(OscType::Float(p.max));
-                args.push(OscType::Float(p.step));
-            }
-            return args;
+            return described("faust", faust_controls(def));
         }
         #[cfg(all(
             any(feature = "plugin-clap", feature = "plugin-vst3"),
             target_os = "linux"
         ))]
         if let Some(def) = self.plugin_defs.get(name) {
-            let mut args = vec![
-                OscType::String(name.into()),
-                OscType::String("plugin".into()),
-                OscType::Int(def.names.len() as i32),
-            ];
-            for (i, control) in def.names.iter().enumerate() {
-                let p = def.info.parameters.get(i);
-                // A port is a bus: an audio bus, or for a note input an
-                // event bus.
-                let last_bus = if i >= def.notes_control() {
-                    self.limits.event_buses as f32 - 1.0
-                } else {
-                    NUM_AUDIO_BUSES as f32 - 1.0
-                };
-                args.extend([
-                    OscType::String(control.clone()),
-                    OscType::Float(def.defaults[i]),
-                    OscType::String("kr".into()),
-                    OscType::Float(p.map_or(-1.0, |p| p.min as f32)),
-                    OscType::Float(p.map_or(last_bus, |p| p.max as f32)),
-                    OscType::Float(p.map_or(1.0, |p| p.step as f32)),
-                ]);
-            }
-            return args;
+            return described("plugin", self.plugin_controls(def));
         }
         if let Some(spec) = self.graph_defs.get(name) {
             let mut ports: Vec<&String> = spec.surface.keys().collect();
             ports.sort();
-            let mut args = vec![
-                OscType::String(name.into()),
-                OscType::String("graph".into()),
-                OscType::Int(ports.len() as i32),
-            ];
+            let mut args = head("graph", ports.len());
             for port in ports {
+                let default = spec.defaults.get(port).copied().unwrap_or(0.0);
+                push_control(&mut args, &Control::new(port.clone(), f64::from(default)));
                 let targets = &spec.surface[port];
-                args.push(OscType::String(port.clone()));
-                args.push(OscType::Float(
-                    spec.defaults.get(port).copied().unwrap_or(0.0),
-                ));
-                args.push(OscType::String("kr".into()));
                 args.push(OscType::Int(targets.len() as i32));
                 for t in targets {
                     args.push(OscType::Int(t.member as i32));
@@ -146,11 +92,93 @@ impl CmdTranslator {
             }
             return args;
         }
-        vec![
-            OscType::String(name.into()),
-            OscType::String(String::new()),
-            OscType::Int(0),
-        ]
+        head("", 0)
+    }
+
+    /// **A live node's controls, described** -- from the def it was built
+    /// with, which outlives a `/def_free` or a replacement of its name. `None`
+    /// for a node with no controls (a group, or no node at all). A `Voices`
+    /// node is described by its def; its `notes` bus is not a control a
+    /// person sets.
+    pub fn node_controls(&self, node: i32) -> Option<Vec<Control>> {
+        Some(self.def_controls(self.node_defs.get(&node)?))
+    }
+
+    #[cfg_attr(
+        not(any(
+            feature = "synth",
+            feature = "faust",
+            all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            )
+        )),
+        allow(clippy::only_used_in_recursion)
+    )]
+    fn def_controls(&self, def: &NodeDef) -> Vec<Control> {
+        match def {
+            #[cfg(feature = "synth")]
+            NodeDef::UGen(def) => synth_controls(def),
+            #[cfg(feature = "faust")]
+            NodeDef::Faust(def) => faust_controls(def),
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
+            NodeDef::Plugin(def, ..) => self.plugin_controls(def),
+            #[cfg(any(feature = "synth", feature = "faust"))]
+            NodeDef::Voices(voices) => self.def_controls(&voices.inner),
+        }
+    }
+
+    /// A plugin def's controls: its parameters as the plugin describes them
+    /// -- their own names, modules, flags and list labels -- then its ports,
+    /// which are buses (an audio bus, or for a note input an event bus) and
+    /// are grouped as such.
+    #[cfg(all(
+        any(feature = "plugin-clap", feature = "plugin-vst3"),
+        target_os = "linux"
+    ))]
+    fn plugin_controls(&self, def: &crate::plugin::PluginDef) -> Vec<Control> {
+        def.names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let default = f64::from(def.defaults[i]);
+                match def.info.parameters.get(i) {
+                    Some(p) => Control {
+                        display: ControlDisplay {
+                            min: Some(p.min),
+                            max: Some(p.max),
+                            step: Some(p.step),
+                            ..ControlDisplay::default()
+                        },
+                        label: Some(p.name.clone()),
+                        group: p.module.clone(),
+                        flags: p.flags,
+                        labels: p.labels.clone(),
+                        ..Control::new(name.clone(), default)
+                    },
+                    None => {
+                        let last = if i >= def.notes_control() {
+                            self.limits.event_buses as f64 - 1.0
+                        } else {
+                            NUM_AUDIO_BUSES as f64 - 1.0
+                        };
+                        Control {
+                            display: ControlDisplay {
+                                min: Some(-1.0),
+                                max: Some(last),
+                                step: Some(1.0),
+                                ..ControlDisplay::default()
+                            },
+                            group: "Buses".into(),
+                            ..Control::new(name.clone(), default)
+                        }
+                    }
+                }
+            })
+            .collect()
     }
 
     /// `/buffer_query.reply` arguments for an argument-less `/buffer_query`: every
@@ -409,4 +437,72 @@ fn bus_list(buses: impl Iterator<Item = usize>) -> String {
         return "-".into();
     }
     buses.join(",")
+}
+
+/// A SynthDef's controls: a name, a default, a rate, and the range, step,
+/// warp and unit the spec declared beside each, when it did.
+#[cfg(feature = "synth")]
+fn synth_controls(def: &SynthDef) -> Vec<Control> {
+    def.control_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let rate = match def.control_types.get(i).copied().unwrap_or_default() {
+                crate::synthdef::ControlType::Control => "kr",
+                crate::synthdef::ControlType::Trigger => "tr",
+                crate::synthdef::ControlType::Scalar => "ir",
+            };
+            Control {
+                rate: rate.into(),
+                display: def.control_display.get(i).cloned().unwrap_or_default(),
+                ..Control::new(name.clone(), f64::from(def.control_defaults[i]))
+            }
+        })
+        .collect()
+}
+
+/// A FaustDef's controls: its UI parameters, each with the range and step
+/// its slider declared. The reserved `out`/`in` bus controls are engine
+/// plumbing and stay out of the reported surface.
+#[cfg(feature = "faust")]
+fn faust_controls(def: &FaustDef) -> Vec<Control> {
+    def.params
+        .iter()
+        .map(|p| Control {
+            display: ControlDisplay {
+                min: Some(f64::from(p.min)),
+                max: Some(f64::from(p.max)),
+                step: Some(f64::from(p.step)),
+                ..ControlDisplay::default()
+            },
+            ..Control::new(p.name.clone(), f64::from(p.init))
+        })
+        .collect()
+}
+
+/// **One control's record in `/def_query.reply`**, the same in every family:
+/// `name, default, rate, min, max, step, warp, unit, label, group, flags,
+/// numLabels, label...`. A def that declares no range reports `min` and `max`
+/// equal (both zero); `step` zero is continuous; an empty `warp` is linear, an
+/// empty `unit` none, an empty `label` the name and an empty `group` none.
+/// `flags` are a plugin parameter's ([`clausters_core::plugin_catalog::Parameter`]'s
+/// bits) and zero elsewhere, and the labels name a list's steps.
+fn push_control(args: &mut Vec<OscType>, c: &Control) {
+    let (min, max) = c.display.min.zip(c.display.max).unwrap_or((0.0, 0.0));
+    let text = |s: &Option<String>| OscType::String(s.clone().unwrap_or_default());
+    args.extend([
+        OscType::String(c.name.clone()),
+        OscType::Float(c.default as f32),
+        OscType::String(c.rate.clone()),
+        OscType::Float(min as f32),
+        OscType::Float(max as f32),
+        OscType::Float(c.display.step.unwrap_or(0.0) as f32),
+        text(&c.display.warp),
+        text(&c.display.unit),
+        text(&c.label),
+        OscType::String(c.group.clone()),
+        OscType::Int(c.flags as i32),
+        OscType::Int(c.labels.len() as i32),
+    ]);
+    args.extend(c.labels.iter().cloned().map(OscType::String));
 }

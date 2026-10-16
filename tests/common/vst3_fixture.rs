@@ -5,18 +5,37 @@ use std::{
     sync::OnceLock,
 };
 pub fn fixture() -> &'static Path {
+    variant(false)
+}
+/// The same independently loaded fixture with a native three-value enumeration.
+// This shared module is also included by suites that only need the plain variant.
+#[allow(dead_code)]
+pub fn enumerated_fixture() -> &'static Path {
+    variant(true)
+}
+fn variant(enumerated: bool) -> &'static Path {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(|| {
+    static ENUMERATED: OnceLock<PathBuf> = OnceLock::new();
+    let path = if enumerated { &ENUMERATED } else { &PATH };
+    path.get_or_init(|| {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
         let root = if manifest.join("tests/fixtures/vst3").is_dir() {
             manifest.to_owned()
         } else {
             manifest.join("crates/clausters-plugin-host")
         };
-        let target =
-            std::env::temp_dir().join(format!("clausters-vst3-test-{}", std::process::id()));
-        let output = Command::new("cargo")
-            .args(["build", "--offline", "--manifest-path"])
+        let target = std::env::temp_dir().join(format!(
+            "clausters-vst3-test-{}-{enumerated}",
+            std::process::id()
+        ));
+        let mut command = Command::new("cargo");
+        if enumerated {
+            command.args(["build", "--offline", "--features", "enumerated"]);
+        } else {
+            command.args(["build", "--offline"]);
+        }
+        let output = command
+            .args(["--manifest-path"])
             .arg(root.join("tests/fixtures/vst3/Cargo.toml"))
             .arg("--target-dir")
             .arg(&target)
