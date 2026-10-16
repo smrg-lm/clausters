@@ -222,11 +222,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`J12` — a node's generic editor** *(`PLAN.md`, "J track")*. Written
-  against `J10`'s catalog and controls named by port: it draws an editor for
-  any node in the host (`edit(node)`), with values read back from the
-  server.
-
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
   sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening

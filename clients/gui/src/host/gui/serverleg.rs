@@ -330,7 +330,8 @@ impl App {
         let Some(server) = self.host.server() else {
             return;
         };
-        for msg in self.host.read_back_asks() {
+        let open: Vec<i32> = self.windows.keys().copied().collect();
+        for msg in self.host.read_back_asks(&open) {
             if let Err(e) = server.send(msg) {
                 return warn!("failed to read the bound widgets back: {e}");
             }

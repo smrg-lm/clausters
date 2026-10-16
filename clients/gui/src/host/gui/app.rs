@@ -882,7 +882,11 @@ impl App {
 
         // **The bound widgets read back**: what each binding writes, asked
         // for at the host's period ([`readback`](crate::host::readback)).
-        if self.host.server().is_some() && self.host.reads_back() {
+        if self.host.server().is_some()
+            && self
+                .host
+                .reads_back(&self.windows.keys().copied().collect::<Vec<_>>())
+        {
             if now >= self.next_read_back {
                 // A node read back is let go on its `/node_end`.
                 self.ensure_notify();

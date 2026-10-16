@@ -55,10 +55,25 @@ pub fn read_form(addr: &str) -> Option<&'static str> {
 }
 
 impl Host {
-    /// Whether some open widget has a binding that is read back -- what makes
-    /// a front keep asking.
-    pub fn reads_back(&self) -> bool {
-        self.read_backs().next().is_some()
+    /// Whether some widget of the windows open in a front (`open`, their
+    /// ids) has a binding that is read back -- what makes the front keep
+    /// asking.
+    pub fn reads_back(&self, open: &[i32]) -> bool {
+        self.read_backs_in(open).next().is_some()
+    }
+
+    /// [`read_backs`](Self::read_backs) of the windows in `open` only: a
+    /// window the user closed keeps its def in the host until its owner frees
+    /// it, and is read back by nobody meanwhile.
+    fn read_backs_in<'a>(
+        &'a self,
+        open: &'a [i32],
+    ) -> impl Iterator<Item = (i32, &'static str, i32, &'a OscType)> {
+        self.read_backs().filter(move |(id, ..)| {
+            self.registry
+                .root_of(*id)
+                .is_some_and(|root| open.contains(&root))
+        })
     }
 
     /// The bindings that are read back, as `(widget, read form, node,
@@ -78,13 +93,14 @@ impl Host {
         })
     }
 
-    /// **The questions one read-back pass asks**: per read form and node, the
-    /// controls its bindings write, each once, in batches.
-    pub fn read_back_asks(&self) -> Vec<OscMessage> {
+    /// **The questions one read-back pass asks** for the windows in `open`:
+    /// per read form and node, the controls its bindings write, each once, in
+    /// batches.
+    pub fn read_back_asks(&self, open: &[i32]) -> Vec<OscMessage> {
         let mut asked: BTreeMap<(&'static str, i32), Vec<OscType>> = BTreeMap::new();
         // In widget order, so a pass asks the same questions in the same
         // order whatever order the bindings were made in.
-        let mut bound: Vec<_> = self.read_backs().collect();
+        let mut bound: Vec<_> = self.read_backs_in(open).collect();
         bound.sort_by_key(|(id, ..)| *id);
         for (_, read, node, control) in bound {
             let controls = asked.entry((read, node)).or_default();
@@ -294,12 +310,16 @@ mod tests {
         let s = |t: &str| OscType::String(t.into());
         // Not known to be there: the node is asked about, not read.
         let query = msg("/node_query", vec![OscType::Int(1000)]);
-        assert_eq!(host.read_back_asks(), std::slice::from_ref(&query));
+        assert_eq!(host.read_back_asks(&[1]), std::slice::from_ref(&query));
         let absent = (0..5)
             .map(|i| OscType::Int(if i == 0 { 1000 } else { -1 }))
             .collect();
         assert_eq!(host.read_back(&msg("/node_query.reply", absent), &[]), None);
-        assert_eq!(host.read_back_asks(), [query], "absent: asked about again");
+        assert_eq!(
+            host.read_back_asks(&[1]),
+            [query],
+            "absent: asked about again"
+        );
         let there = vec![
             OscType::Int(1000),
             OscType::Int(0),
@@ -308,7 +328,7 @@ mod tests {
             OscType::Int(0),
         ];
         host.read_back(&msg("/node_query.reply", there), &[]);
-        let asks = host.read_back_asks();
+        let asks = host.read_back_asks(&[1]);
         assert_eq!(
             asks,
             [
@@ -316,10 +336,14 @@ mod tests {
                 msg("/synth_getText", vec![OscType::Int(1000), s("freq")]),
             ]
         );
-        assert!(host.reads_back());
+        assert!(host.reads_back(&[1]));
+        assert!(
+            !host.reads_back(&[]),
+            "a window closed is read back by nobody"
+        );
         host.read_back(&msg("/node_end", vec![OscType::Int(1000)]), &[]);
         assert_eq!(
-            host.read_back_asks().len(),
+            host.read_back_asks(&[1]).len(),
             1,
             "ended: asked about, not read"
         );

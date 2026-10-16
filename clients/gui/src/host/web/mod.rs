@@ -611,7 +611,8 @@ impl WebApp {
         let Some(server) = self.host.server() else {
             return;
         };
-        for msg in self.host.read_back_asks() {
+        let open: Vec<i32> = self.canvases.keys().copied().collect();
+        for msg in self.host.read_back_asks(&open) {
             let _ = server.send(msg);
         }
     }
