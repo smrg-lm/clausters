@@ -7,12 +7,31 @@
   "acceptance": "Build precedes test; node/browser suite must execute and hidden skips prevent acceptance. Explicit API/example parity and browser performance review required.",
   "steps": [
     {
+      "id": "web-assets",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "{python}",
+        "{audit}/scripts/audit.py",
+        "preflight-web",
+        "--source",
+        "{source}"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 30,
+      "depends_on": []
+    },
+    {
       "id": "web-native-server",
       "kind": "command",
       "required": true,
       "argv": [
         "cargo",
         "build",
+        "--message-format=json",
         "--locked",
         "--offline"
       ],
@@ -20,7 +39,11 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [
+        "web-assets"
+      ],
+      "profile": "debug"
     },
     {
       "id": "web-native-gui",
@@ -29,6 +52,7 @@
       "argv": [
         "cargo",
         "build",
+        "--message-format=json",
         "--locked",
         "--offline",
         "--bin",
@@ -38,7 +62,11 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [
+        "web-assets"
+      ],
+      "profile": "debug"
     },
     {
       "id": "web-build",
@@ -52,7 +80,18 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [
+        "web-assets"
+      ],
+      "profile": "debug",
+      "preflight": "web",
+      "generated_outputs": [
+        "clients/web/src/core/clausters_core_web.d.ts",
+        "clients/web/src/engine/clausters_web.d.ts",
+        "clients/web/src/gui-host/clausters_gui.d.ts",
+        "clients/web/src/nrt/clausters_nrt_web.d.ts"
+      ]
     },
     {
       "id": "web-tests",
@@ -66,13 +105,20 @@
       "parser": "node-tests",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [
+        "web-native-server",
+        "web-native-gui",
+        "web-build"
+      ],
+      "profile": "debug"
     },
     {
       "id": "web-review",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/clients.md. Compare API and example calls side by side against the Python reference, check binding vectors, Worker/OPFS paths, scheduling and browser timing/allocations. Retain browser/version/flags and unsupported cases."
+      "instructions": "Follow procedures/clients.md. Compare API and example calls side by side against the Python reference, check binding vectors, Worker/OPFS paths, scheduling and browser timing/allocations. Retain browser/version/flags and unsupported cases.",
+      "depends_on": []
     }
   ]
 }

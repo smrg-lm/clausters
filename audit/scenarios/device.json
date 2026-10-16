@@ -1,0 +1,102 @@
+{
+  "format_version": 1,
+  "id": "device",
+  "status": "ready",
+  "unit": "components",
+  "scope": "Linux instrumented real-device sweep; screen must stay on. Run only on a reserved machine with --patch.",
+  "steps": [
+    {
+      "id": "device-server",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--message-format=json",
+        "--release",
+        "--locked",
+        "--offline"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600,
+      "depends_on": [],
+      "profile": "release"
+    },
+    {
+      "id": "device-gui",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--message-format=json",
+        "--release",
+        "--locked",
+        "--offline",
+        "--bin",
+        "clausters-gui"
+      ],
+      "cwd": "clients/gui",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600,
+      "depends_on": [],
+      "profile": "release"
+    },
+    {
+      "id": "device-sweep",
+      "kind": "sweep",
+      "required": true,
+      "argv": [
+        "{client_python}",
+        "{audit}/scripts/device_driver.py",
+        "--server",
+        "{target}/release/clausters",
+        "--gui-bin",
+        "{gui_target}/release/clausters-gui",
+        "--gui",
+        "--source",
+        "--screen-on",
+        "--nodes",
+        "{level}",
+        "--capture",
+        "{capture}"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 3,
+      "warmup": 0,
+      "timeout_seconds": 180,
+      "depends_on": [
+        "device-server",
+        "device-gui"
+      ],
+      "levels": [
+        0,
+        20,
+        40,
+        60,
+        80,
+        100,
+        120,
+        150
+      ],
+      "gui": true,
+      "screen_on": true,
+      "min_fps": 20,
+      "representative_cpu": 35,
+      "stop_peak_cpu": 90,
+      "profile": "release"
+    },
+    {
+      "id": "device-review",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/combined.md. Sweep selects load only. Attach paired audio-only, GUI-only, combined and uninstrumented controls at the same selected load; record quantum, rate, renderer/driver, screenshot, screen-on confirmation, slow-capture overhead and exclusions."
+    }
+  ]
+}

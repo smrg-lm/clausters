@@ -12,6 +12,7 @@ from pathlib import Path
 import platform
 import re
 import shutil
+import shlex
 import signal
 import statistics
 import subprocess
@@ -21,6 +22,9 @@ import tempfile
 import time
 import tomllib
 import venv
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from controls import policy_environment, validate_policy, target_for, web_preflight, receipt_environment, validate_build_contract
 
 AUDIT = Path(__file__).resolve().parents[1]
 REPO = AUDIT.parent
@@ -131,6 +135,7 @@ def inspect_environment():
     environment = {"format_version": 1, "captured_at_utc": now(), "identity": stable,
                    "memory": contents("/proc/meminfo"),
                    "load": contents("/proc/loadavg"),
+                   "process_limits": contents("/proc/self/limits"),
                    "affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
                    "governor": contents("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"),
                    "unavailable_fields_with_reasons": [
@@ -157,11 +162,11 @@ def package_inventory(source):
 
 
 def link_targets(source, target):
-    for relative in (".", "clients/gui", "clausters-editor/src-tauri"):
+    for relative in (".", "clients/gui"):
         parent = source / relative
         link = parent / "target"
         if parent.is_dir() and not link.exists() and not link.is_symlink():
-            link.symlink_to(target, target_is_directory=True)
+            link.symlink_to(target_for(target, relative), target_is_directory=True)
 
 
 def crate_inventory(source):
@@ -172,17 +177,21 @@ def crate_inventory(source):
         if not path.exists():
             continue
         with path.open("rb") as stream:
-            package = tomllib.load(stream).get("package")
+            data = tomllib.load(stream)
+            package = data.get("package")
         if package:
             result.append({"manifest": name, "package": package["name"], "sha256": digest(path),
-                           "unit": "editor" if Path(name).parts[0] == "clausters-editor" else "components"})
+                           "unit": "editor" if Path(name).parts[0] == "clausters-editor" else "components",
+                           "declared_features": sorted(data.get("features", {}))})
     return result
 
 
-def prepare(work, revision):
+def prepare(work, revision, policy=None):
+    policy = validate_policy(policy or {})
     work = external(work)
     work.mkdir(parents=True, exist_ok=False)
     with locked(work):
+        policy_environment(policy, work)
         selected_tools = tools()
         source = command(["git", "rev-parse", f"{revision}^{{commit}}"], REPO)
         resources = command(["git", "rev-parse", "HEAD"], REPO)
@@ -194,7 +203,23 @@ def prepare(work, revision):
         link_targets(checkout, work / "target")
         venv.EnvBuilder(with_pip=False).create(work / "tools/python")
         # A copy of all runner resources survives later edits to the audit branch.
-        shutil.copytree(AUDIT, work / "resources", ignore=shutil.ignore_patterns("__pycache__", ".local"))
+        resource_names = subprocess.check_output(
+            ["git", "ls-files", "-z", "--", "audit/"], cwd=REPO).decode().split("\0")
+        for name in filter(None, resource_names):
+            relative = Path(name).relative_to("audit")
+            original = AUDIT / relative
+            if original.is_symlink():
+                raise ValueError("Audit resources cannot contain symlinks")
+            destination = work / "resources" / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(original, destination)
+        router = work / "tools/router/cargo"
+        router.parent.mkdir(parents=True)
+        router.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable) + " " +
+                          shlex.quote(str(work / "resources/scripts/cargo_router.py")) + ' "$@"\n')
+        router.chmod(0o755)
+        if command(["git", "status", "--porcelain"], checkout):
+            raise ValueError("Preparation produced unignored files")
         source_archive = work / "source.tar"
         subprocess.run(["git", "archive", "--format=tar", f"--output={source_archive}", source],
                        cwd=checkout, check=True)
@@ -204,7 +229,8 @@ def prepare(work, revision):
         reproduction_inputs = [{"name": "source.tar", "path": str(source_archive), "sha256": digest(source_archive)},
                                {"name": "resources.tar", "path": str(resource_archive), "sha256": digest(resource_archive)}]
         write(work / "prepared.json", {"format_version": 1, "reproduction_inputs": reproduction_inputs, "source_commit": source,
-              "audit_resources_commit": resources, "prepared_at_utc": now(),
+              "audit_resources_commit": resources, "prepared_at_utc": now(), "policy": policy,
+              "resource_files": {str(p.relative_to(work / "resources")): digest(p) for p in sorted((work / "resources").rglob("*")) if p.is_file()},
               "tools": selected_tools, "source": str(checkout), "crates": crate_inventory(checkout), "packages": package_inventory(checkout),
               "lockfiles": {str(p.relative_to(checkout)): digest(p)
                             for p in [checkout / n for n in ("Cargo.lock", "clients/gui/Cargo.lock", "clausters-editor/src-tauri/Cargo.lock", "clients/web/package-lock.json", "clausters-editor/package-lock.json", "clients/python/pyproject.toml")] if p.exists()}})
@@ -213,13 +239,16 @@ def prepare(work, revision):
 
 def setup_unit(work, unit, wheelhouse=None):
     work = Path(work).resolve()
-    read(work / "prepared.json")
+    prepared = read(work / "prepared.json")
     with locked(work):
         env = {**os.environ, "CARGO_TARGET_DIR": str(work / "target"),
                "CARGO_NET_OFFLINE": "true", "npm_config_cache": str(work / "tools/npm-cache"),
                "npm_config_offline": "true"}
+        env.update(policy_environment(prepared.get("policy", {}), work))
         tools()
         source = work / "source"
+        env.update(AUDIT_SOURCE=str(source), AUDIT_TARGET=str(work / "target"), AUDIT_REAL_CARGO=shutil.which("cargo") or "cargo")
+        env["PATH"] = str(work / "tools/router") + os.pathsep + env["PATH"]
         for key in list(env):
             if key.upper().startswith("PIP_"):
                 del env[key]
@@ -247,13 +276,14 @@ def setup_unit(work, unit, wheelhouse=None):
             for parent in (source, source / "clients/gui"):
                 link = parent / "target"
                 if not link.exists() and not link.is_symlink():
-                    link.symlink_to(work / "target", target_is_directory=True)
+                    link.symlink_to(target_for(work / "target", str(parent.relative_to(source))), target_is_directory=True)
         receipt = []
         directory = work / "setup" / unit
         directory.mkdir(parents=True, exist_ok=False)
         for index, (argv, cwd) in enumerate(commands):
+            env.update(policy_environment(prepared.get("policy", {}), work))
             outcome = execute(argv, cwd, env, 1800, directory / f"{index}.stdout", directory / f"{index}.stderr")
-            receipt.append({"argv": argv, "cwd": str(cwd), **outcome})
+            receipt.append({"argv": argv, "cwd": str(cwd), "environment": receipt_environment(env), **outcome})
             write(directory / "receipt.json", receipt)
             if outcome["status"] != "passed":
                 raise ValueError(f"Unit setup failed; inspect {directory}")
@@ -273,15 +303,31 @@ def validate_scenario(value):
     for step in value["steps"]:
         if not re.fullmatch(r"[a-z][a-z0-9_-]*", step.get("id", "")) or step["id"] in names:
             raise ValueError("Step IDs must be unique safe names")
+        dependencies = step.get("depends_on", [])
+        if not isinstance(dependencies, list) or any(d not in names for d in dependencies):
+            raise ValueError("Dependencies must name earlier steps (no cycles or unknown IDs)")
         names.add(step["id"])
+        for filename in step.get("generated_outputs", []) + step.get("retain_outputs", []):
+            if not isinstance(filename, str) or Path(filename).is_absolute() or ".." in Path(filename).parts:
+                raise ValueError("Output paths must be source-relative")
+        if step.get("isolate") not in {None, "pytest-file"}:
+            raise ValueError("Unknown isolation mode")
+        if step.get("profile", "debug") not in {"debug", "release"}:
+            raise ValueError("Unsupported profile")
+        if step.get("features") is not None and (not isinstance(step["features"], list) or
+                not all(isinstance(f, str) and re.fullmatch(r"[a-zA-Z0-9_/-]+", f) for f in step["features"])):
+            raise ValueError("Invalid features")
         cwd = Path(step.get("cwd", "."))
         if cwd.is_absolute() or ".." in cwd.parts:
             raise ValueError("Command cwd must be relative and cannot traverse parents")
-        if step.get("kind") not in {"command", "manual"}:
+        if step.get("kind") not in {"command", "manual", "sweep"}:
             raise ValueError("Unknown step kind")
         if not isinstance(step.get("required"), bool):
             raise ValueError("Step needs an explicit required flag")
-        if step["kind"] == "command":
+        if step["kind"] in {"command", "sweep"}:
+            if step["kind"] == "sweep":
+                from device import validate_sweep
+                validate_sweep(step)
             argv = step.get("argv")
             if not isinstance(argv, list) or not argv or not all(isinstance(x, str) for x in argv):
                 raise ValueError("Commands must be nonempty argument arrays")
@@ -295,19 +341,37 @@ def validate_scenario(value):
 
 
 def execute(argv, cwd, env, timeout, stdout_path, stderr_path):
+    if env.get("AUDIT_CPUS"):
+        argv = ["taskset", "--cpu-list", env["AUDIT_CPUS"], *argv]
     started = time.perf_counter_ns()
-    status, code = "error", None
+    disk_before = shutil.disk_usage(stdout_path.parent).free
+    if disk_before < float(env.get("AUDIT_DISK_FLOOR_GIB", 0)) * 1024 ** 3:
+        raise ValueError("Free disk space is below campaign floor")
+    status, code, termination = "error", None, None
     with stdout_path.open("wb") as out, stderr_path.open("wb") as err:
-        process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=out, stderr=err,
-                                   start_new_session=True)
         try:
-            code = process.wait(timeout=timeout)
-            status = "passed" if code == 0 else "failed"
-        except (subprocess.TimeoutExpired, KeyboardInterrupt):
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
-            status = "error"
-    return {"status": status, "exit_code": code,
+            process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=out, stderr=err,
+                                       start_new_session=True)
+        except OSError as exc:
+            err.write(str(exc).encode())
+            termination = "launch-error"
+        else:
+            try:
+                code = process.wait(timeout=timeout)
+                status = "passed" if code == 0 else "failed"
+            except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+                os.killpg(process.pid, signal.SIGKILL)
+                code = process.wait()
+                termination = "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "interrupted"
+    output = stdout_path.read_text(errors="replace") + "\n" + stderr_path.read_text(errors="replace")
+    tests = re.findall(r"(?:test [^\n]+ \.{3}|[^\n ]+::[^\n]+)", output)
+    return {"status": status, "exit_code": code, "effective_argv": argv,
+            "termination": termination,
+            "disk_before_bytes": disk_before,
+            "disk_after_bytes": shutil.disk_usage(stdout_path.parent).free,
+            "signal": signal.Signals(-code).name if code is not None and code < 0 else None,
+            "last_test": tests[-1] if tests else None,
+            "subprocess_signals": re.findall(r"isolated signal: (SIG[A-Z0-9]+)", output),
             "elapsed_seconds": (time.perf_counter_ns() - started) / 1e9}
 
 
@@ -321,12 +385,13 @@ def metric(name, unit, value, direction="descriptive"):
     return {"name": name, "unit": unit, "value": value, "direction": direction}
 
 
-def parse_metrics(parser, output):
+def parse_metrics(parser, output, allow_failed=False):
     if parser == "rust-tests":
-        counts = re.findall(r"test result: ok\. (\d+) passed", output)
-        if not counts or sum(map(int, counts)) == 0:
+        counts = re.findall(r"test result: (?:ok|FAILED)\. (\d+) passed", output)
+        if not counts or (sum(map(int, counts)) == 0 and not allow_failed):
             raise ValueError("No passing Rust tests observed; empty suite is not acceptance")
-        return [metric("tests_passed", "count", sum(map(int, counts)))]
+        return [metric("tests_passed", "count", sum(map(int, counts))),
+                metric("tests_failed", "count", sum(map(int, re.findall(r"(\d+) failed", output))))]
     if parser in {"pytest", "node-tests"}:
         if parser == "pytest":
             passed = re.findall(r"(\d+) passed", output)
@@ -334,12 +399,20 @@ def parse_metrics(parser, output):
         else:
             passed = re.findall(r"(?:#|\u2139)\s+pass\s+(\d+)", output)
             skipped = re.findall(r"(?:#|\u2139)\s+(?:skipped|todo|cancelled)\s+(\d+)", output)
-        if not passed or sum(map(int, passed)) == 0:
+        if (not passed or sum(map(int, passed)) == 0) and not allow_failed:
             raise ValueError("No passing tests observed")
         return [metric("tests_passed", "count", sum(map(int, passed))),
-                metric("tests_skipped", "count", sum(map(int, skipped)))]
+                metric("tests_skipped", "count", sum(map(int, skipped))),
+                metric("tests_failed", "count", sum(map(int, re.findall(r"(\d+) failed", output))))]
     if parser == "bench":
-        rows = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+        try:
+            rows = json.loads(output)
+            if isinstance(rows, dict):
+                rows = [rows]
+        except ValueError:
+            rows = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError("Benchmark must emit an array of records or JSONL records")
         if not rows:
             raise ValueError("Benchmark produced no JSON records")
         result = []
@@ -412,6 +485,9 @@ def run_campaign(work, scenario_path, name, patch=None):
     prepared = read(work / "prepared.json")
     if digest(AUDIT / "scripts/audit.py") != digest(work / "resources/scripts/audit.py"):
         raise ValueError("Run using the prepared resources/scripts/audit.py snapshot")
+    for filename, expected in prepared.get("resource_files", {}).items():
+        if filename.startswith(("scripts/", "instrumentation/")) and digest(AUDIT / filename) != expected:
+            raise ValueError("Run using the complete prepared resource snapshot: " + filename)
     scenario = read(scenario_path)
     validate_scenario(scenario)
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", name):
@@ -449,7 +525,8 @@ def run_campaign(work, scenario_path, name, patch=None):
         write(campaign / "environment.json", environment)
         write(campaign / "scenarios" / (scenario["id"] + ".json"), scenario)
         compatibility = {"scenario": scenario, "environment": environment["identity"],
-                         "governor": environment["governor"], "affinity": environment["affinity"]}
+                         "governor": environment["governor"], "affinity": environment["affinity"],
+                         "policy": prepared.get("policy", {})}
         manifest = {**prepared, "campaign_id": name, "status": "running",
                     "started_at_utc": now(), "finished_at_utc": None,
                     "compatibility": compatibility, "commands": [],
@@ -457,6 +534,7 @@ def run_campaign(work, scenario_path, name, patch=None):
         write(campaign / "manifest.json", manifest)
         (campaign / "findings.md").write_text("# Findings\n\nNo findings reviewed yet.\n")
         substitutions = {"source": str(source), "target": str(work / "target"),
+                         "gui_target": str(work / "target-gui"),
                          "work": str(work), "audit": str(work / "resources"),
                          "python": str(work / "tools/python/bin/python"),
                          "client_python": str(work / "tools/client-python/bin/python")}
@@ -465,32 +543,42 @@ def run_campaign(work, scenario_path, name, patch=None):
         for key in list(env):
             if key.startswith("CLAUSTERS_"):
                 del env[key]
+        env.update(policy_environment(prepared.get("policy", {}), work))
         env.update({"CARGO_TARGET_DIR": str(work / "target"), "PYTHONDONTWRITEBYTECODE": "1",
                     "CARGO_NET_OFFLINE": "true", "npm_config_offline": "true",
                     "npm_config_cache": str(work / "tools/npm-cache"),
                     "PYTHONPATH": str(source / "clients/python")})
-        env["PATH"] = str(work / "tools/client-python/bin") + os.pathsep + str(work / "tools/cargo/bin") + os.pathsep + env["PATH"]
+        env.update(AUDIT_SOURCE=str(source), AUDIT_TARGET=str(work / "target"), AUDIT_REAL_CARGO=shutil.which("cargo") or "cargo")
+        env["PATH"] = str(work / "tools/router") + os.pathsep + str(work / "tools/client-python/bin") + os.pathsep + str(work / "tools/cargo/bin") + os.pathsep + env["PATH"]
         if scenario.get("unit") == "python":
             env["CLAUSTERS_REQUIRE_COMPLETE"] = "1"
         manifest["build_environment"] = {key: env.get(key) for key in (
-            "RUSTFLAGS", "RUSTDOCFLAGS", "CC", "CXX", "FAUST_PREFIX", "VEROVIO_PREFIX", "RUSTUP_TOOLCHAIN")}
+            "RUSTFLAGS", "RUSTDOCFLAGS", "CC", "CXX", "FAUST_PREFIX", "VEROVIO_PREFIX", "RUSTUP_TOOLCHAIN",
+            "CARGO_BUILD_JOBS", "RUST_TEST_THREADS", "CARGO_INCREMENTAL", "BINDGEN_EXTRA_CLANG_ARGS", "LIBCLANG_PATH")}
         input_names = set(prepared["lockfiles"]) | {item["manifest"] for item in manifest["crates"] + manifest["packages"]}
         locked_inputs = {name: digest(source / name) for name in sorted(input_names) if (source / name).is_file()}
         manifest["effective_lockfiles"] = locked_inputs
         checks = []
-        failed_dependency = False
         for step in scenario["steps"]:
             if step["kind"] == "manual":
                 checks.append({"step": step["id"], "required": step["required"], "status": "skipped",
                                "reason": step["instructions"]})
                 write(campaign / "results/checks.json", checks)
                 continue
-            if failed_dependency:
+            if any(not any(c["step"] == dependency and c["status"] == "passed" for c in checks)
+                   or any(c["step"] == dependency and c["status"] != "passed" for c in checks)
+                   for dependency in step.get("depends_on", [])):
                 checks.append({"step": step["id"], "required": step["required"], "status": "skipped",
-                               "reason": "Earlier prerequisite failed or skipped; stale outputs must not be measured"})
+                               "reason": "Declared prerequisite failed or skipped; stale outputs must not be measured"})
                 write(campaign / "results/checks.json", checks)
                 continue
-            argv = [expand(arg, substitutions) for arg in step["argv"]]
+            step_env = env.copy()
+            target = target_for(work / "target", step.get("workspace", step.get("cwd", ".")))
+            step_env["CARGO_TARGET_DIR"] = str(target)
+            step_substitutions = {**substitutions, "target": str(target), "output": str(campaign / "evidence" / step["id"])}
+            argv = [expand(arg, step_substitutions) for arg in step["argv"]]
+            if step.get("isolate") == "pytest-file":
+                argv = [sys.executable, str(AUDIT / "scripts/isolate_pytest.py"), *argv]
             cwd = safe_child(source, step.get("cwd", ".")) if step.get("cwd", ".") != "." else source
             if not cwd.is_dir():
                 checks.append({"step": step["id"], "required": step["required"],
@@ -501,9 +589,20 @@ def run_campaign(work, scenario_path, name, patch=None):
                 prefix = f"{step['id']}-{index}"
                 stdout = campaign / "logs" / (prefix + ".stdout")
                 stderr = campaign / "logs" / (prefix + ".stderr")
-                entry = {"step": step["id"], "repetition": index, "argv": argv, "cwd": str(cwd), "started_at_utc": now()}
+                entry = {"step": step["id"], "repetition": index, "argv": argv, "cwd": str(cwd), "started_at_utc": now(), "environment": receipt_environment(step_env),
+                         "workspace": step.get("workspace", step.get("cwd", ".")),
+                         "profile": step.get("profile", "debug"), "target_dir": str(target)}
                 try:
-                    outcome = execute(argv, cwd, env, step["timeout_seconds"], stdout, stderr)
+                    step_env.update(policy_environment(prepared.get("policy", {}), work))
+                    entry["environment"] = receipt_environment(step_env)
+                    validate_build_contract(step, source)
+                    if step.get("preflight") == "web":
+                        write(campaign / "evidence/web-assets.json", web_preflight(source))
+                    if step["kind"] == "sweep":
+                        from device import execute_sweep
+                        outcome = execute_sweep(step, argv, cwd, step_env, campaign, index, execute)
+                    else:
+                        outcome = execute(argv, cwd, step_env, step["timeout_seconds"], stdout, stderr)
                     entry.update(outcome)
                     executable = shutil.which(argv[0], path=env["PATH"])
                     if executable:
@@ -514,25 +613,61 @@ def run_campaign(work, scenario_path, name, patch=None):
                     if changed:
                         raise ValueError("Build changed a recorded manifest/lockfile: " + ", ".join(changed))
                     measured = []
-                    if outcome["status"] == "passed":
-                        measured = parse_metrics(step["parser"], stdout.read_text(errors="replace"))
+                    output = stdout.read_text(errors="replace")
+                    if step["parser"] in {"rust-tests", "pytest", "node-tests"}:
+                        output += "\n" + stderr.read_text(errors="replace")
+                    try:
+                        measured = parse_metrics(step["parser"], output, allow_failed=outcome["status"] != "passed")
+                    except ValueError:
+                        if outcome["status"] == "passed":
+                            raise
+                    entry["observed_metrics"] = measured
+                    artifacts = []
+                    for line in output.splitlines():
+                        try:
+                            item = json.loads(line)
+                        except ValueError:
+                            continue
+                        if isinstance(item, dict) and item.get("reason") == "compiler-artifact":
+                            artifacts.append({key: item.get(key) for key in (
+                                "package_id", "manifest_path", "target", "features", "profile", "executable", "filenames", "fresh")})
+                    entry["compiled_targets"] = artifacts
+                    if index >= 0 and outcome["status"] != "passed" and measured:
+                        append_rows(campaign, [{**m, "step": step["id"], "repetition": index} for m in measured])
                     if index >= 0 and outcome["status"] == "passed":
                         measured += [metric("command_wall_seconds", "seconds", outcome["elapsed_seconds"])]
                         append_rows(campaign, [{**m, "step": step["id"], "repetition": index} for m in measured])
                     reason = "Exit status and parser assertions" if outcome["status"] == "passed" else "Command failed or timed out; inspect logs"
-                    if any(m["name"] == "tests_skipped" and m["value"] > 0 for m in measured):
+                    if entry["status"] == "passed" and any(m["name"] == "tests_skipped" and m["value"] > 0 for m in measured):
                         entry["status"] = "skipped"
                         reason = "Suite skipped tests; inspect logs and complete prerequisites instead of accepting partial coverage"
                 except (OSError, ValueError, KeyError) as exc:
-                    entry.update({"status": "error", "exit_code": None})
+                    entry["status"] = "error"
+                    entry.setdefault("exit_code", None)
                     reason = str(exc)
+                generated = step.get("generated_outputs", [])
+                if generated:
+                    for filename in generated:
+                        safe_child(source, filename)
+                    diff = subprocess.check_output(["git", "diff", "--binary", "--", *generated], cwd=source)
+                    (campaign / "evidence" / f"{prefix}-generated.patch").write_bytes(diff)
+                    for filename in generated:
+                        original = subprocess.check_output(["git", "show", f":{filename}"], cwd=source)
+                        (source / filename).write_bytes(original)
+                for filename in step.get("retain_outputs", []):
+                    original = safe_child(source, filename)
+                    if original.is_file():
+                        destination = campaign / "evidence" / prefix / filename
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(original, destination)
+                        if filename.endswith("Cargo.lock"):
+                            locked_inputs[filename] = digest(original)
                 manifest["commands"].append(entry)
                 checks.append({"step": step["id"], "repetition": index,
                                "required": step["required"], "status": entry["status"], "reason": reason})
                 write(campaign / "manifest.json", manifest)
                 write(campaign / "results/checks.json", checks)
                 if entry["status"] != "passed":
-                    failed_dependency = True
                     break
         refresh(campaign)
     print(campaign)
@@ -657,6 +792,24 @@ def attach(run, step_id, evidence):
     for key in ("operator", "procedure", "configuration", "limitations", "reason"):
         if not payload.get(key):
             raise ValueError(f"Manual evidence requires {key}")
+    if payload["status"] == "passed" and step_id in {"gui-device", "combined-device", "device-review"}:
+        if payload.get("screen_on") is not True:
+            raise ValueError("GUI evidence requires screen_on=true throughout capture")
+        gui_runs = payload.get("gui_runs", [])
+        if not gui_runs:
+            raise ValueError("GUI evidence needs per-run frames and elapsed_seconds")
+        for trial in gui_runs:
+            frames, elapsed = trial.get("frames"), trial.get("elapsed_seconds")
+            if (type(frames) is not int or frames < 0 or isinstance(elapsed, bool)
+                    or not isinstance(elapsed, (int, float)) or not math.isfinite(elapsed)
+                    or elapsed <= 0 or frames / elapsed < 20):
+                raise ValueError("GUI run did not draw at least 20 fps; keep screen on")
+    if payload["status"] == "passed" and step_id in {"gui-device", "combined-device", "device-review", "web-review"}:
+        renderer = payload.get("renderer", {})
+        if renderer.get("kind") not in {"software", "hardware"} or not all(renderer.get(k) for k in ("adapter", "driver", "backend")):
+            raise ValueError("Rendering evidence needs kind, adapter, driver and backend identity")
+        if renderer["kind"] == "software" and payload.get("physical_gpu_acceptance"):
+            raise ValueError("Software acceptance cannot establish physical GPU measurements")
     if step_id == "crate-review":
         inventory = {item["manifest"] for item in read(run / "manifest.json")["crates"] if item["unit"] == "components"}
         coverage = payload.get("crate_coverage", {})
@@ -758,7 +911,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("doctor")
+    p = sub.add_parser("preflight-web"); p.add_argument("--source", required=True)
+    p = sub.add_parser("setup-fuzz"); p.add_argument("--work", required=True); p.add_argument("--cargo-fuzz", required=True)
     p = sub.add_parser("prepare"); p.add_argument("--work", required=True); p.add_argument("--revision", required=True)
+    p.add_argument("--cpus", help="Allowed logical CPUs, e.g. 0-3,8")
+    p.add_argument("--jobs", type=int)
+    p.add_argument("--disk-floor-gib", type=float, default=0)
+    p.add_argument("--incremental", action="store_true", help="Enable incremental builds (default off)")
     p = sub.add_parser("setup-unit"); p.add_argument("--work", required=True); p.add_argument("--unit", choices=("python", "web", "editor"), required=True); p.add_argument("--wheelhouse")
     p = sub.add_parser("run"); p.add_argument("--work", required=True); p.add_argument("--scenario", required=True); p.add_argument("--name", required=True); p.add_argument("--patch")
     p = sub.add_parser("export-patch"); p.add_argument("--source", required=True); p.add_argument("--base", required=True); p.add_argument("--output", required=True)
@@ -772,8 +931,13 @@ def main():
     try:
         if args.action == "doctor":
             print(json.dumps(inspect_environment(), indent=2))
+        elif args.action == "preflight-web":
+            print(json.dumps(web_preflight(Path(args.source)), indent=2))
+        elif args.action == "setup-fuzz":
+            from fuzz_tools import attest
+            print(attest(args.work, args.cargo_fuzz))
         elif args.action == "prepare":
-            prepare(args.work, args.revision)
+            prepare(args.work, args.revision, {"cpus": args.cpus, "jobs": args.jobs, "disk_floor_gib": args.disk_floor_gib, "incremental": args.incremental})
         elif args.action == "setup-unit":
             setup_unit(args.work, args.unit, args.wheelhouse)
         elif args.action == "run":

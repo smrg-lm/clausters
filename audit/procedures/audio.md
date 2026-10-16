@@ -9,3 +9,5 @@ Use a reserved machine and the prepared source commit. This is a manual required
 5. Record per-run raw samples/counters, maximum observed, quantiles with sample counts, deadline budget based on actual frames/sample rate, and separately any loopback setup/results. Review thermal/background load and repeat contaminated trials as newly identified runs, preserving exclusions.
 
 Attach audio-device evidence with exact configuration, profiler/counter versions, raw captures, commands and correctness observations. Passing means the stated procedure and correctness assertions are evidenced; first performance values are descriptive until a comparable reference and noise tolerance are accepted. If essential measurements cannot be collected, leave the required step skipped and report the campaign as partial.
+
+For a device campaign, use the reusable [instrumentation](../instrumentation/README.md) and the sweep/load rule in [the combined procedure](combined.md). Keep histogram-only and slow-callback diagnostic runs separate and retain an uninstrumented control. A missing or reset counter invalidates a capture; it is never an observed zero.

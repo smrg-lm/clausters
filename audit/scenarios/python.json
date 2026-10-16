@@ -19,7 +19,9 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [],
+      "profile": "debug"
     },
     {
       "id": "python-tests",
@@ -29,20 +31,26 @@
         "{client_python}",
         "-m",
         "pytest",
-        "-q",
-        "-ra"
+        "-ra",
+        "-v"
       ],
       "cwd": "clients/python",
       "parser": "pytest",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [
+        "python-native-artifacts"
+      ],
+      "profile": "debug",
+      "isolate": "pytest-file"
     },
     {
       "id": "python-review",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/clients.md. Review the reference API, scheduling/concurrency, native parity, package artifacts, documentation and representative call/scheduling timing. Retain interpreter/package/native-artifact identities and raw evidence."
+      "instructions": "Follow procedures/clients.md. Review the reference API, scheduling/concurrency, native parity, package artifacts, documentation and representative call/scheduling timing. Retain interpreter/package/native-artifact identities and raw evidence.",
+      "depends_on": []
     }
   ]
 }

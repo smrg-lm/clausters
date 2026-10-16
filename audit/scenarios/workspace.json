@@ -12,10 +12,14 @@
       "argv": [
         "cargo",
         "test",
+        "--message-format=json",
         "--workspace",
+        "--exclude",
+        "clausters-web",
+        "--exclude",
+        "clausters-nrt-web",
         "--locked",
         "--offline",
-        "--release",
         "--no-default-features",
         "--features",
         "synth"
@@ -24,7 +28,9 @@
       "parser": "rust-tests",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [],
+      "profile": "debug"
     },
     {
       "id": "workspace-clippy",
@@ -33,7 +39,12 @@
       "argv": [
         "cargo",
         "clippy",
+        "--message-format=json",
         "--workspace",
+        "--exclude",
+        "clausters-web",
+        "--exclude",
+        "clausters-nrt-web",
         "--all-targets",
         "--locked",
         "--offline",
@@ -48,13 +59,31 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [],
+      "profile": "debug"
+    },
+    {
+      "id": "wasm-targets",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "bash",
+        "scripts/check-wasm.sh"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600,
+      "depends_on": []
     },
     {
       "id": "crate-review",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/crates.md. Supply crate_coverage keyed by every manifest in the recorded inventory, with per-crate status, reason and retained evidence reference. Review all features/target seams, including wasm/FFI/plugin paths, fuzz and test fixture crates. Only clausters-editor is excluded."
+      "instructions": "Follow procedures/crates.md. Supply crate_coverage keyed by every manifest in the recorded inventory, with per-crate status, reason and retained evidence reference. Review all features/target seams, including wasm/FFI/plugin paths, fuzz and test fixture crates. Only clausters-editor is excluded.",
+      "depends_on": []
     }
   ],
   "unit": "components"

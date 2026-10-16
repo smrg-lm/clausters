@@ -12,16 +12,18 @@
       "argv": [
         "cargo",
         "test",
+        "--message-format=json",
         "--locked",
         "--offline",
-        "--release",
         "--lib"
       ],
       "cwd": "clients/gui",
       "parser": "rust-tests",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 1800
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "debug"
     },
     {
       "id": "build-gui",
@@ -30,6 +32,7 @@
       "argv": [
         "cargo",
         "build",
+        "--message-format=json",
         "--locked",
         "--offline",
         "--release",
@@ -40,19 +43,23 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 1800
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "release"
     },
     {
       "id": "gui-device",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/gui.md for idle/active/scaling trials and native/browser parity. Attach raw captures and screenshots with backend, physical viewport and scale. Do not report test elapsed time as frame time."
+      "instructions": "Follow procedures/gui.md for idle/active/scaling trials and native/browser parity. Attach raw captures and screenshots with backend, physical viewport and scale. Do not report test elapsed time as frame time.",
+      "depends_on": []
     },
     {
       "id": "gui-review",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/review.md for shared-rule placement, data bounds and window lifecycle; attach source-based findings and exclusions."
+      "instructions": "Follow procedures/review.md for shared-rule placement, data bounds and window lifecycle; attach source-based findings and exclusions.",
+      "depends_on": []
     }
   ],
   "unit": "components"

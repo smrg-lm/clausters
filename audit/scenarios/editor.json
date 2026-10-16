@@ -19,7 +19,9 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 1800
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "debug"
     },
     {
       "id": "editor-frontend-build",
@@ -34,7 +36,9 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 1800
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "debug"
     },
     {
       "id": "editor-fmt",
@@ -49,7 +53,9 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 1800
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "debug"
     },
     {
       "id": "editor-clippy",
@@ -58,6 +64,7 @@
       "argv": [
         "cargo",
         "clippy",
+        "--message-format=json",
         "--locked",
         "--offline",
         "--all-targets",
@@ -69,7 +76,11 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [
+        "editor-frontend-build"
+      ],
+      "profile": "debug"
     },
     {
       "id": "editor-tests",
@@ -78,6 +89,7 @@
       "argv": [
         "cargo",
         "test",
+        "--message-format=json",
         "--locked",
         "--offline"
       ],
@@ -85,13 +97,18 @@
       "parser": "rust-tests",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 3600
+      "timeout_seconds": 3600,
+      "depends_on": [
+        "editor-frontend-build"
+      ],
+      "profile": "debug"
     },
     {
       "id": "editor-review",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/editor.md. Include the editor Rust manifest in coverage, UI/session/recovery, Python package and notices --check with cargo-about 0.9.2. Retain separate performance and license evidence."
+      "instructions": "Follow procedures/editor.md. Include the editor Rust manifest in coverage, UI/session/recovery, Python package and notices --check with cargo-about 0.9.2. Retain separate performance and license evidence.",
+      "depends_on": []
     }
   ]
 }

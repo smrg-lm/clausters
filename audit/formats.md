@@ -45,3 +45,15 @@ Failed or partial audits are valid historical evidence too. To retain them after
 
 
 Each executed command records the resolved executable hash when available. Effective lockfile/declaration hashes are captured after applying any declared instrumentation and checked after each command; an unexpected change becomes an error and blocks downstream measurements. Builders that do not expose --locked cannot silently change the recorded dependency inputs.
+
+
+## Extended step and device contracts
+
+A command may declare `depends_on` (earlier IDs), `profile` (`debug` or `release`), `features` (matching Cargo arguments), `workspace`, `preflight: "web"`, `isolate: "pytest-file"`, `generated_outputs` or `retain_outputs` (safe source-relative paths). Steps without dependencies are independent. Command receipts include environment build controls, workspace/target, signal, last visible test, disk observations and observed metrics even on a failed suite. Environment capture uses a build-variable allowlist, excluding unrelated inherited credentials.
+
+A `sweep` step has command fields plus increasing integer `levels`, `representative_cpu` (default 35), `stop_peak_cpu` (90), `gui`, `screen_on` and `min_fps` (20). Its argv must include `{level}` and `{capture}`; the driver writes one raw JSON capture to the latter path. Each level gets separate stdout/stderr, a command receipt and raw timing files under evidence/. A positive exit alone cannot pass: the capture must contain observed callbacks, finite CPU counters, monotonic late/deadline counters and, for GUI, enough drawn frames. The sweep receipt retains the representative level and the stopping reason. The expanded `{gui_target}` names the separate GUI target; `{target}` names the step's own workspace target.
+
+The supplied device driver writes `capture.start`, `capture.end` and `capture.samples`; endpoints contain `status` (monotonic `t`, cumulative `late_blocks`), `server_timing` and optional `gui_timing`. Timing snapshots carry cumulative `duration.count` and `over_deadline`; samples carry `status.avg_cpu` and `status.peak_cpu`. See instrumentation/README.md for histograms and bounded slow-event publication. Invalid captures remain failed evidence and cannot select a representative load.
+
+
+Cargo command scenarios request JSON build messages. Each command's `compiled_targets` retains the producer's package/manifest, target name/kind/source path, enabled features, compiler profile, filenames, executable and cache freshness. The dynamic crate inventory also retains declared feature names. These identify exactly which crate/target configuration a command compiled; test suite output and the per-manifest manual coverage still establish what actually ran or was reviewed. A compiled artifact alone does not establish test execution.

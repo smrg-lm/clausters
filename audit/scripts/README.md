@@ -15,3 +15,16 @@ For Linux process-only observation, run sample_process.py --pid PID --seconds 60
 
 
 Failed or partial audits are valid historical evidence too. To retain them after review, use `seal RECORD --reviewer NAME --preserve-incomplete --reason "WHY COVERAGE/FAILURES ARE RETAINED"`, then verify/archive normally. This explicit mode keeps status failed/partial and review_outcome=evidence-only, sets quality_accepted=false, and never makes the record an accepted performance baseline. It does not bypass raw-data, patch or hash integrity checks. Default sealing still requires complete passing coverage.
+
+
+`prepare --cpus 0-9 --jobs 10 --disk-floor-gib 150` records a campaign policy. CPU IDs must belong to the runner's allowed affinity; jobs must be positive and disk floors finite/nonnegative. Defaults keep the inherited CPU allocation, disable incremental compilation and impose no extra disk floor. `--incremental` is an explicit opt-in. `taskset` applies the declared affinity to every command and its descendants; Cargo jobs and Rust test threads inherit the job count. Setup/build/run receipts retain the effective policy and disk samples. The same policy belongs in comparison compatibility.
+
+Preparation copies only Git-tracked `audit/` resources. Ignored archives, fuzz targets and caches never enter resources.tar. Server, GUI, editor and fuzz have independent external targets; only the server and GUI get literal-path symlinks because their builders require them. The Cargo router also handles nested builder calls and `--manifest-path`; the editor's directory-only target ignore never sees an unnecessary symlink.
+
+Native Python tests run verbosely in one subprocess per collected file. Collection failure is a prerequisite failure; a native signal in one file is retained and other files still run. Signal names, last visible test and observed suite counts survive failed commands; counts do not change a failed verdict into a pass. Isolation is for the default discovery suite used in python.json, not arbitrary positional pytest selections.
+
+The benchmark parser accepts the producer's pretty-printed JSON array (nullable values and descriptive diagnostic rows) as well as legacy JSONL. `peak_block` remains microseconds. Generated tracked declarations named in `generated_outputs` are saved as binary-capable patches and restored from the recorded index only in the disposable measurement checkout, so a repeat run starts clean. Other changes remain visible and block a later run. `retain_outputs` copies generated locks/artifacts into per-step evidence; a newly retained Cargo.lock becomes immutable for later steps.
+
+`web-build` preflights all six Faust/Verovio runtime assets before compiling. Its receipt retains content hashes and the source pin hashes. These identify the input bytes; they do not establish how an external cached binary was built. Supply pinned source/build receipts separately before claiming reproducible vendor provenance.
+
+`setup-fuzz --work WORK --cargo-fuzz WORK/tools/cargo/bin/cargo-fuzz` verifies explicitly provisioned cargo-fuzz 0.13.2 and nightly-2026-10-15, then records executable identity, rustc version and versioned seed hashes. It installs nothing and remains optional for stable lint. Follow ../fuzz/README.md for isolated provisioning and retain all installation receipts.

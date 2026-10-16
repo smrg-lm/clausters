@@ -1,0 +1,59 @@
+{
+  "format_version": 1,
+  "id": "fuzz",
+  "status": "ready",
+  "unit": "components",
+  "scope": "Independent fuzzer workspace; stable lint is not sanitizer coverage.",
+  "steps": [
+    {
+      "id": "fuzz-lock",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "cwd": "audit/fuzz",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 900,
+      "depends_on": [],
+      "retain_outputs": [
+        "audit/fuzz/Cargo.lock"
+      ]
+    },
+    {
+      "id": "fuzz-lint",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "clippy",
+        "--message-format=json",
+        "--all-targets",
+        "--locked",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "audit/fuzz",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 900,
+      "depends_on": [
+        "fuzz-lock"
+      ],
+      "retain_outputs": []
+    },
+    {
+      "id": "fuzz-sanitizer",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow ../fuzz/README.md; retain pinned nightly/cargo-fuzz versions, seed/corpus hashes and crash artifacts. Stable lint cannot pass this step."
+    }
+  ]
+}

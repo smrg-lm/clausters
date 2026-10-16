@@ -1,0 +1,338 @@
+//! Audit instrumentation, measurement only (applied to disposable clones): timing histograms
+//! of a periodic callback, kept in preallocated atomics so recording from a
+//! real-time thread neither allocates nor locks, and written as JSON by a
+//! separate thread to the path named by an environment variable.
+
+use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::{
+    OnceLock,
+    atomic::Ordering::{Acquire, Release},
+};
+use std::time::{Duration, Instant};
+
+/// Bucket width and count: 10 us buckets up to 81.92 ms; the last bucket
+/// also holds everything longer, and `max` keeps the true maximum.
+pub const BUCKET_NS: u64 = 10_000;
+pub const BUCKETS: usize = 8192;
+
+pub struct Hist {
+    buckets: [AtomicU64; BUCKETS],
+    count: AtomicU64,
+    sum_ns: AtomicU64,
+    max_ns: AtomicU64,
+}
+
+impl Hist {
+    pub const fn new() -> Self {
+        Self {
+            buckets: [const { AtomicU64::new(0) }; BUCKETS],
+            count: AtomicU64::new(0),
+            sum_ns: AtomicU64::new(0),
+            max_ns: AtomicU64::new(0),
+        }
+    }
+
+    pub fn add(&self, ns: u64) {
+        let i = ((ns / BUCKET_NS) as usize).min(BUCKETS - 1);
+        self.buckets[i].fetch_add(1, Relaxed);
+        self.count.fetch_add(1, Relaxed);
+        self.sum_ns.fetch_add(ns, Relaxed);
+        self.max_ns.fetch_max(ns, Relaxed);
+    }
+
+    fn json(&self) -> String {
+        let mut b = String::new();
+        for (i, c) in self.buckets.iter().enumerate() {
+            let c = c.load(Relaxed);
+            if c > 0 {
+                if !b.is_empty() {
+                    b.push(',');
+                }
+                b.push_str(&format!("[{i},{c}]"));
+            }
+        }
+        format!(
+            "{{\"bucket_ns\":{BUCKET_NS},\"count\":{},\"sum_ns\":{},\"max_ns\":{},\"buckets\":[{b}]}}",
+            self.count.load(Relaxed),
+            self.sum_ns.load(Relaxed),
+            self.max_ns.load(Relaxed)
+        )
+    }
+}
+
+impl Default for Hist {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct Timing {
+    pub duration: Hist,
+    pub interval: Hist,
+    last_ns: AtomicU64,
+    frames_min: AtomicU64,
+    frames_max: AtomicU64,
+    frames_sum: AtomicU64,
+    over_deadline: AtomicU64,
+    rate: AtomicU64,
+}
+
+impl Timing {
+    pub const fn new() -> Self {
+        Self {
+            duration: Hist::new(),
+            interval: Hist::new(),
+            last_ns: AtomicU64::new(0),
+            frames_min: AtomicU64::new(u64::MAX),
+            frames_max: AtomicU64::new(0),
+            frames_sum: AtomicU64::new(0),
+            over_deadline: AtomicU64::new(0),
+            rate: AtomicU64::new(0),
+        }
+    }
+
+    /// The device rate, for the per-callback deadline (`frames / rate`).
+    pub fn set_rate(&self, rate: u32) {
+        self.rate.store(rate as u64, Relaxed);
+    }
+
+    /// Records one callback that began at `start` and covered `frames`
+    /// (`0` when frames are not meaningful, as for a GUI frame).
+    pub fn record(&self, epoch: Instant, start: Instant, frames: u64) {
+        let end = Instant::now();
+        let dur = end.duration_since(start).as_nanos() as u64;
+        self.duration.add(dur);
+        let at = start.duration_since(epoch).as_nanos() as u64 + 1;
+        let prev = self.last_ns.swap(at, Relaxed);
+        if prev != 0 {
+            self.interval.add(at.saturating_sub(prev));
+        }
+        if frames > 0 {
+            self.frames_min.fetch_min(frames, Relaxed);
+            self.frames_max.fetch_max(frames, Relaxed);
+            self.frames_sum.fetch_add(frames, Relaxed);
+            let rate = self.rate.load(Relaxed);
+            if rate > 0 && dur > frames * 1_000_000_000 / rate {
+                self.over_deadline.fetch_add(1, Relaxed);
+            }
+        }
+    }
+
+    fn json(&self) -> String {
+        format!(
+            "{{\"rate\":{},\"frames_min\":{},\"frames_max\":{},\"frames_sum\":{},\"over_deadline\":{},\"duration\":{},\"interval\":{}}}",
+            self.rate.load(Relaxed),
+            self.frames_min.load(Relaxed),
+            self.frames_max.load(Relaxed),
+            self.frames_sum.load(Relaxed),
+            self.over_deadline.load(Relaxed),
+            self.duration.json(),
+            self.interval.json()
+        )
+    }
+}
+
+impl Default for Timing {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub static TIMING: Timing = Timing::new();
+static EPOCH: OnceLock<Instant> = OnceLock::new();
+
+/// The base instant; called once off the real-time thread before recording.
+pub fn epoch() -> Instant {
+    *EPOCH.get_or_init(Instant::now)
+}
+
+/// Starts the writer thread when `var` names a path: a cumulative snapshot
+/// every 250 ms, written to a temporary file and renamed into place.
+pub fn start_writer(var: &str) {
+    let _ = epoch();
+    let Some(path) = std::env::var_os(var) else {
+        return;
+    };
+    static STARTED: OnceLock<()> = OnceLock::new();
+    if STARTED.set(()).is_err() {
+        return;
+    }
+    let path = std::path::PathBuf::from(path);
+    std::thread::spawn(move || {
+        let tmp = path.with_extension("tmp");
+        loop {
+            let body = TIMING.json();
+            if let Ok(mut log) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path.with_extension("jsonl"))
+            {
+                let _ = writeln!(log, "{body}");
+            }
+            if std::fs::write(&tmp, body).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    });
+}
+
+// --- Slow-callback capture (second pass) -----------------------------------
+
+/// Commands applied by the engine and blocks it metered, cumulative; the
+/// longest block of the current callback, reset at each callback's start.
+pub static APPLIED: AtomicU64 = AtomicU64::new(0);
+pub static BLOCKS: AtomicU64 = AtomicU64::new(0);
+pub static BLOCK_MAX_NS: AtomicU64 = AtomicU64::new(0);
+/// Callbacks started on each CPU.
+pub static CPU_COUNTS: [AtomicU64; 64] = [const { AtomicU64::new(0) }; 64];
+
+const SLOW_FIELDS: usize = 14;
+const SLOW_SLOTS: usize = 1024;
+static SLOW: [[AtomicU64; SLOW_FIELDS]; SLOW_SLOTS] =
+    [const { [const { AtomicU64::new(0) }; SLOW_FIELDS] }; SLOW_SLOTS];
+static READY: [AtomicU64; SLOW_SLOTS] = [const { AtomicU64::new(0) }; SLOW_SLOTS];
+static SLOW_N: AtomicU64 = AtomicU64::new(0);
+static SLOW_NS: AtomicU64 = AtomicU64::new(u64::MAX);
+static PREV_START: AtomicU64 = AtomicU64::new(0);
+
+pub struct Before {
+    start: Instant,
+    cpu: i32,
+    ru: libc::rusage,
+    applied: u64,
+    blocks: u64,
+}
+
+fn rusage_thread() -> libc::rusage {
+    // SAFETY: fills a zeroed struct for the calling thread.
+    unsafe {
+        let mut ru: libc::rusage = std::mem::zeroed();
+        libc::getrusage(libc::RUSAGE_THREAD, &mut ru);
+        ru
+    }
+}
+
+/// Taken at the start of every callback.
+pub fn before(start: Instant) -> Before {
+    BLOCK_MAX_NS.store(0, Relaxed);
+    // SAFETY: sched_getcpu takes no arguments.
+    let cpu = if SLOW_NS.load(Relaxed) == u64::MAX {
+        -1
+    } else {
+        unsafe { libc::sched_getcpu() }
+    };
+    if (0..64).contains(&cpu) {
+        CPU_COUNTS[cpu as usize].fetch_add(1, Relaxed);
+    }
+    Before {
+        start,
+        cpu,
+        ru: if cpu < 0 {
+            unsafe { std::mem::zeroed() }
+        } else {
+            rusage_thread()
+        },
+        applied: APPLIED.load(Relaxed),
+        blocks: BLOCKS.load(Relaxed),
+    }
+}
+
+/// Taken at the end of every callback; keeps an event when it was slow.
+pub fn after(epoch: Instant, b: &Before, frames: u64) {
+    if SLOW_NS.load(Relaxed) == u64::MAX {
+        return;
+    }
+    let dur = b.start.elapsed().as_nanos() as u64;
+    let at = b.start.duration_since(epoch).as_nanos() as u64;
+    let prev = PREV_START.swap(at, Relaxed);
+    if dur < SLOW_NS.load(Relaxed) {
+        return;
+    }
+    let ru = rusage_thread();
+    // SAFETY: as in `before`.
+    let cpu_end = unsafe { libc::sched_getcpu() };
+    let i = SLOW_N.fetch_add(1, Relaxed) as usize;
+    if i >= SLOW_SLOTS {
+        return;
+    }
+    let v: [u64; SLOW_FIELDS] = [
+        at,
+        dur,
+        frames,
+        b.cpu as u64,
+        cpu_end as u64,
+        (ru.ru_minflt - b.ru.ru_minflt) as u64,
+        (ru.ru_majflt - b.ru.ru_majflt) as u64,
+        (ru.ru_nvcsw - b.ru.ru_nvcsw) as u64,
+        (ru.ru_nivcsw - b.ru.ru_nivcsw) as u64,
+        if prev == 0 { 0 } else { at - prev },
+        APPLIED.load(Relaxed) - b.applied,
+        BLOCKS.load(Relaxed) - b.blocks,
+        BLOCK_MAX_NS.load(Relaxed),
+        ((ru.ru_utime.tv_sec - b.ru.ru_utime.tv_sec) * 1_000_000
+            + (ru.ru_utime.tv_usec - b.ru.ru_utime.tv_usec)
+            + (ru.ru_stime.tv_sec - b.ru.ru_stime.tv_sec) * 1_000_000
+            + (ru.ru_stime.tv_usec - b.ru.ru_stime.tv_usec)) as u64,
+    ];
+    for (slot, x) in SLOW[i].iter().zip(v) {
+        slot.store(x, Relaxed);
+    }
+    READY[i].store(1, Release);
+}
+
+pub fn slow_json() -> String {
+    let n = READY.iter().take_while(|r| r.load(Acquire) == 1).count();
+    let mut out = String::from(
+        "{\"fields\":[\"at_ns\",\"dur_ns\",\"frames\",\"cpu_start\",\"cpu_end\",\"minflt\",\"majflt\",\"nvcsw\",\"nivcsw\",\"interval_ns\",\"applied\",\"blocks\",\"block_max_ns\",\"cpu_time_us\"],\"events\":[",
+    );
+    for (k, row) in SLOW.iter().take(n).enumerate() {
+        if k > 0 {
+            out.push(',');
+        }
+        let vals: Vec<String> = row.iter().map(|x| x.load(Relaxed).to_string()).collect();
+        out.push_str(&format!("[{}]", vals.join(",")));
+    }
+    let cpus: Vec<String> = CPU_COUNTS
+        .iter()
+        .map(|x| x.load(Relaxed).to_string())
+        .collect();
+    out.push_str(&format!(
+        "],\"total\":{},\"cpu_counts\":[{}]}}",
+        SLOW_N.load(Relaxed),
+        cpus.join(",")
+    ));
+    out
+}
+
+/// Reads the threshold and starts the slow-event writer.
+pub fn start_slow_writer() {
+    if let Some(us) = std::env::var("CLAUSTERS_AUDIT_SLOW_US")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        SLOW_NS.store(us.saturating_mul(1000), Relaxed);
+    }
+    let Some(path) = std::env::var_os("CLAUSTERS_AUDIT_SLOW") else {
+        return;
+    };
+    let path = std::path::PathBuf::from(path);
+    std::thread::spawn(move || {
+        let tmp = path.with_extension("tmp");
+        loop {
+            let body = slow_json();
+            if let Ok(mut log) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path.with_extension("jsonl"))
+            {
+                let _ = writeln!(log, "{body}");
+            }
+            if std::fs::write(&tmp, body).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    });
+}

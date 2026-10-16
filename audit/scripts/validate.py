@@ -24,7 +24,7 @@ def main():
             for target in re.findall(r"\]\(([^)]+)\)", path.read_text()):
                 if "://" not in target and not (path.parent / target.split("#")[0]).exists():
                     raise ValueError(f"Broken local link: {path}: {target}")
-        for name in ("audio", "gui", "combined", "workspace", "python", "web", "editor"):
+        for name in ("audio", "gui", "combined", "workspace", "python", "web", "editor", "fuzz", "device"):
             value = json.loads((ROOT / "scenarios" / (name + ".json")).read_text())
             validate_scenario(value)
             if value["id"] != name:

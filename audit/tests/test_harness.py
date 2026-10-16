@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -36,6 +37,7 @@ class HarnessTests(unittest.TestCase):
         (self.repo / "tracked.txt").write_text("base\n")
         (self.repo / "delete.txt").write_text("remove\n")
         (self.repo / ".gitignore").write_text("ignored/\ntarget\n")
+        shutil.copytree(AUDIT, self.repo / "audit", ignore=shutil.ignore_patterns("__pycache__"))
         self.git("add", ".")
         self.git("commit", "-m", "Synthetic fixture")
         self.base = self.git("rev-parse", "HEAD")
@@ -164,7 +166,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(rows[0]["unit"], "microseconds")
         for output in ("# pass 3\n# skipped 1", "\u2139 pass 3\n\u2139 skipped 1"):
             rows = audit.parse_metrics("node-tests", output)
-            self.assertEqual([row["value"] for row in rows], [3, 1])
+            self.assertEqual([row["value"] for row in rows], [3, 1, 0])
 
     def test_subprocess_timeout_and_nonzero_exit(self):
         for code, timeout, expected in (("raise SystemExit(7)", 10, "failed"),
@@ -241,7 +243,7 @@ class HarnessTests(unittest.TestCase):
         package.write_text('[project]\nname = "clausters"\nversion = "0.0.0"\n'.replace("\\n", "\n"))
         self.git("add", ".")
         inventory = audit.crate_inventory(self.repo)
-        self.assertEqual(len(inventory), 3)
+        self.assertEqual(len(inventory), 4)
         editor = next(row for row in inventory if row["package"] == "clausters-editor")
         self.assertEqual(editor["unit"], "editor")
         self.assertEqual(audit.package_inventory(self.repo)[0]["unit"], "python")
@@ -263,7 +265,7 @@ class HarnessTests(unittest.TestCase):
         run = work / "runs/coverage"
         with self.assertRaises(ValueError):
             audit.attach(run, "crate-review", evidence)
-        payload["crate_coverage"] = {"Cargo.toml": {"status": "passed", "reason": "synthetic", "evidence": "review.md"}}
+        payload["crate_coverage"] = {name: {"status": "passed", "reason": "synthetic", "evidence": "review.md"} for name in ("Cargo.toml", "audit/fuzz/Cargo.toml")}
         audit.write(evidence, payload)
         audit.attach(run, "crate-review", evidence)
         audit.seal_record(run, "test")
@@ -324,6 +326,241 @@ class HarnessTests(unittest.TestCase):
         checks = audit.read(work / "runs/manifest-drift/results/checks.json")
         self.assertEqual(checks[0]["status"], "error")
         self.assertIn("manifest/lockfile", checks[0]["reason"])
+
+
+    def test_tracked_resources_only_and_directory_ignore_targets(self):
+        editor = self.repo / "clausters-editor/src-tauri"
+        editor.mkdir(parents=True)
+        (editor.parent / ".gitignore").write_text("/src-tauri/target/\n")
+        (self.repo / ".gitignore").write_text("target\naudit/records/\naudit/fuzz/target/\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "Real directory ignore contracts")
+        ignored = self.repo / "audit/records/large.bin"
+        ignored.parent.mkdir()
+        ignored.write_bytes(b"x" * 100000)
+        # The source repository owns the resource list, even when an ignored
+        # resource exists beside tracked files in the runner's directory.
+        with patch.object(audit, "AUDIT", self.repo / "audit"):
+            work = self.prepare()
+        self.assertFalse((work / "source/clausters-editor/src-tauri/target").exists())
+        self.assertFalse((work / "resources/records").exists())
+        with tarfile.open(work / "resources.tar") as archive:
+            self.assertFalse(any("large.bin" in n for n in archive.getnames()))
+        self.assertEqual(audit.command(["git", "status", "--porcelain"], work / "source"), "")
+
+    def test_dependencies_keep_independent_checks_and_block_transitive_outputs(self):
+        work = self.prepare()
+        scenario = self.scenario()
+        first = scenario["steps"][0]
+        first.update(argv=[sys.executable, "-c", "raise SystemExit(1)"], repetitions=1, warmup=0, parser="exit")
+        import copy
+        independent = copy.deepcopy(first)
+        independent.update(id="independent", argv=[sys.executable, "-c", "print('ok')"])
+        blocked = copy.deepcopy(independent)
+        blocked.update(id="blocked", depends_on=[first["id"]])
+        downstream = copy.deepcopy(blocked)
+        downstream.update(id="downstream", depends_on=["blocked"])
+        scenario["steps"] += [independent, blocked, downstream]
+        path = self.root / "dag.json"
+        audit.write(path, scenario)
+        self.assertEqual(audit.run_campaign(work, path, "dag"), 1)
+        checks = audit.read(work / "runs/dag/results/checks.json")
+        self.assertEqual([c["status"] for c in checks], ["failed", "passed", "skipped", "skipped"])
+        for deps in (["unknown"], ["known-data"]):
+            invalid = self.scenario()
+            invalid["steps"][0]["depends_on"] = deps
+            with self.assertRaises(ValueError):
+                audit.validate_scenario(invalid)
+
+    def test_benchmark_producer_array_contract(self):
+        # emit_json in examples/bench.rs emits these four fields, nullable
+        # numbers, and a pretty-printed top-level array, not JSONL.
+        output = '[\n {"name":"Sine","x_real_time":2.0000,"peak_block":15.2500,"gated":true},\n {"name":"diagnostic","x_real_time":null,"peak_block":20.0000,"gated":false}\n]\n'
+        rows = audit.parse_metrics("bench", output)
+        self.assertEqual(rows[1]["unit"], "microseconds")
+        self.assertEqual(rows[1]["value"], 15.25)
+        self.assertEqual(rows[2]["direction"], "descriptive")
+        for invalid in ('[]', '[null]', '[{"name":"bad","peak_block":NaN}]'):
+            with self.assertRaises(ValueError):
+                audit.parse_metrics("bench", invalid)
+
+    def test_failed_suite_retains_counts_signal_and_last_test(self):
+        work = self.prepare()
+        scenario = self.scenario()
+        scenario["steps"][0].update(argv=[sys.executable, "-c", "import os,signal; print('test failed_case ... FAILED', flush=True); print('test result: FAILED. 1310 passed; 1 failed', flush=True); os.kill(os.getpid(),signal.SIGTERM)"], parser="rust-tests", repetitions=1, warmup=0)
+        path = self.root / "failure.json"
+        audit.write(path, scenario)
+        self.assertEqual(audit.run_campaign(work, path, "crash"), 1)
+        run = work / "runs/crash"
+        entry = audit.read(run / "manifest.json")["commands"][0]
+        self.assertEqual(entry["signal"], "SIGTERM")
+        self.assertIn("failed_case", entry["last_test"])
+        rows = audit.read(run / "results/summary.json")
+        self.assertEqual(next(r for r in rows if r["name"] == "tests_passed")["median"], 1310)
+
+    def test_policy_profiles_and_workspace_targets(self):
+        import controls
+        for value in ({"jobs": 0}, {"jobs": -1}, {"cpus": "3-1"}, {"disk_floor_gib": float("nan")}):
+            with self.assertRaises(ValueError):
+                controls.validate_policy(value)
+        with self.assertRaises(ValueError):
+            controls.policy_environment({"disk_floor_gib": 1e30}, self.root)
+        self.assertEqual(controls.policy_environment({}, self.root)["CARGO_INCREMENTAL"], "0")
+        paths = {controls.target_for(self.root / "target", name) for name in (".", "clients/gui", "audit/fuzz", "clausters-editor/src-tauri")}
+        self.assertEqual(len(paths), 4)
+        with self.assertRaises(ValueError):
+            controls.validate_build_contract({"argv": ["cargo", "test", "--release"], "profile": "debug"}, self.repo)
+        with self.assertRaises(ValueError):
+            controls.validate_build_contract({"argv": ["cargo", "test", "--features", "missing"]}, self.repo)
+
+    def test_web_preflight_missing_assets_and_content_identity(self):
+        import controls
+        with self.assertRaisesRegex(ValueError, "Missing web vendor"):
+            controls.web_preflight(self.repo)
+        names = ("verovio/verovio.js", "verovio/verovio.wasm", "faust/libfaust-wasm.js", "faust/libfaust-wasm.wasm", "faust/libfaust-wasm.data", "faust/version")
+        for name in names:
+            p = self.repo / "clients/web/vendor" / name
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("synthetic")
+        for name in ("faust.pin", "verovio.pin"):
+            p = self.repo / "third_party" / name
+            p.parent.mkdir(exist_ok=True)
+            p.write_text("synthetic pin")
+        receipt = controls.web_preflight(self.repo)
+        self.assertEqual(len(receipt["assets"]), 6)
+        p.write_text("changed pin")
+        self.assertNotEqual(receipt, controls.web_preflight(self.repo))
+
+    def test_generated_diffs_survive_repeated_runs_without_checkout_drift(self):
+        work = self.prepare()
+        scenario = self.scenario()
+        scenario["steps"][0].update(argv=[sys.executable, "-c", "from pathlib import Path; Path('tracked.txt').write_text('generated')"], parser="exit", repetitions=1, warmup=0, generated_outputs=["tracked.txt"])
+        path = self.root / "generated.json"
+        audit.write(path, scenario)
+        for name in ("gen-one", "gen-two"):
+            self.assertEqual(audit.run_campaign(work, path, name), 0)
+            diff = work / "runs" / name / "evidence/known-data-0-generated.patch"
+            self.assertIn("generated", diff.read_text())
+            self.assertEqual(audit.command(["git", "status", "--porcelain"], work / "source"), "")
+
+    def test_device_fps_missing_callbacks_and_safety_limits(self):
+        import device
+        def capture(cpu=30, frames=1800):
+            def point(t, count):
+                return {"status": {"t": t, "late_blocks": 0}, "server_timing": {"duration": {"count": 100 + count}, "over_deadline": 0}, "gui_timing": {"duration": {"count": count}}}
+            return {"start": point(0, 0), "end": point(60, frames), "samples": [{"status": {"avg_cpu": cpu, "peak_cpu": 50}}]}
+        self.assertEqual(device.assess_capture(capture(), True)["fps"], 30)
+        for frames in (0, 3, 1000):
+            with self.assertRaises(ValueError):
+                device.assess_capture(capture(frames=frames), True)
+        scenario = self.scenario()
+        scenario["steps"][0].update(kind="sweep", levels=[0, 20], gui=True, screen_on=False,
+                                     argv=["driver", "{level}", "{capture}"])
+        with self.assertRaises(ValueError):
+            audit.validate_scenario(scenario)
+        scenario["steps"][0]["screen_on"] = True
+        audit.validate_scenario(scenario)
+        folder = self.root / "campaign"
+        (folder / "evidence").mkdir(parents=True)
+        (folder / "logs").mkdir()
+        def driver(argv, cwd, env, timeout, stdout, stderr):
+            stdout.write_text(""); stderr.write_text("")
+            data = capture(cpu=20 if argv[1] == "0" else 50)
+            audit.write(argv[2], {"capture": data})
+            return {"status": "passed", "exit_code": 0, "elapsed_seconds": .1}
+        result = device.execute_sweep(scenario["steps"][0], scenario["steps"][0]["argv"], self.repo, {}, folder, 0, driver)
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(audit.read(folder / "evidence/known-data-0/receipt.json")["representative_level"], 0)
+
+
+    def test_cargo_router_routes_nested_workspace_invocations(self):
+        work = self.prepare()
+        fake = self.root / "fake-cargo"
+        fake.write_text('#!/bin/sh\nprintf "%s" "$CARGO_TARGET_DIR"\n')
+        fake.chmod(0o755)
+        env = {**os.environ, "AUDIT_SOURCE": str(work / "source"), "AUDIT_TARGET": str(work / "target"), "AUDIT_REAL_CARGO": str(fake)}
+        for cwd, expected in ((".", "target"), ("audit/fuzz", "target-fuzz")):
+            result = audit.command([sys.executable, str(AUDIT / "scripts/cargo_router.py"), "--version"], work / "source" / cwd, env)
+            self.assertEqual(result, str(work / expected))
+
+    def test_pytest_file_isolation_continues_after_native_signal(self):
+        fake = self.root / "fake_pytest.py"
+        fake.write_text("import sys,os,signal\nif '--collect-only' in sys.argv:\n print('test_a.py::one\\ntest_b.py::two')\nelif sys.argv[-1] == 'test_a.py':\n os.kill(os.getpid(),signal.SIGTERM)\nelse:\n print('test_b.py::two PASSED\\n1 passed')\n")
+        result = subprocess.run([sys.executable, str(AUDIT / "scripts/isolate_pytest.py"), sys.executable, str(fake)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("SIGTERM", result.stdout)
+        self.assertIn("test_b.py::two PASSED", result.stdout)
+
+    def test_manual_gui_evidence_cannot_accept_blanked_screen(self):
+        work = self.prepare()
+        scenario = self.scenario(manual=True)
+        scenario["steps"][-1]["id"] = "gui-device"
+        path = self.root / "gui.json"
+        audit.write(path, scenario)
+        audit.run_campaign(work, path, "gui")
+        artifact = self.root / "screen.txt"
+        artifact.write_text("synthetic")
+        payload = {"status": "passed", "operator": "test", "procedure": "test", "configuration": "test", "limitations": "synthetic", "reason": "test", "artifacts": [str(artifact)]}
+        evidence = self.root / "gui-evidence.json"
+        run = work / "runs/gui"
+        for extra in ({}, {"screen_on": True}, {"screen_on": True, "gui_runs": [{"frames": 3, "elapsed_seconds": 60}]}):
+            audit.write(evidence, {**payload, **extra})
+            with self.assertRaises(ValueError):
+                audit.attach(run, "gui-device", evidence)
+        audit.write(evidence, {**payload, "screen_on": True, "gui_runs": [{"frames": 1800, "elapsed_seconds": 60}], "renderer": {"kind": "hardware", "adapter": "synthetic", "driver": "synthetic", "backend": "synthetic"}})
+        audit.attach(run, "gui-device", evidence)
+        audit.seal_record(run, "test")
+
+
+    @unittest.skipUnless(shutil.which("rustc"), "Rust compiler unavailable")
+    def test_parser_against_executed_benchmark_json_emitter(self):
+        source = (AUDIT.parent / "examples/bench.rs").read_text()
+        # Compile the producer's actual record/emitter code without its DSP
+        # workload, so a format change cannot leave a synthetic fixture green.
+        fragment = source[source.index("struct Record {"):source.index("const SAMPLE_RATE:")]
+        program = self.root / "producer.rs"
+        program.write_text(fragment + '\nfn main() { record("actual", Some(2.0), Some(15.25), true); record("diagnostic", None, Some(20.0), false); emit_json(); }\n')
+        binary = self.root / "producer"
+        subprocess.run(["rustc", "--edition=2024", "-A", "dead_code", "-A", "unused_macros", str(program), "-o", str(binary)], check=True, capture_output=True)
+        output = audit.command([str(binary), "--json"])
+        rows = audit.parse_metrics("bench", output)
+        self.assertEqual([r["value"] for r in rows], [2.0, 15.25, 20.0])
+        self.assertEqual(rows[-1]["direction"], "descriptive")
+
+    def test_optional_fuzz_tools_are_pinned_and_seeds_attested(self):
+        import fuzz_tools
+        work = self.prepare()
+        binary = work / "tools/cargo/bin/cargo-fuzz"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("synthetic tool bytes")
+        real_command = audit.command
+        def fake_command(argv, *args):
+            if argv[0] == str(binary):
+                return "cargo-fuzz 0.13.2"
+            if argv[0] == "rustup":
+                self.assertEqual(argv[2], "nightly-2026-10-15")
+                return "rustc synthetic pinned nightly"
+            return real_command(argv, *args)
+        with patch("audit.command", side_effect=fake_command):
+            path = fuzz_tools.attest(work, binary)
+        receipt = audit.read(path)
+        self.assertEqual(receipt["sha256"], audit.digest(binary))
+        self.assertEqual(len(receipt["seeds"]), 4)
+        self.assertEqual(receipt["cargo_fuzz"], "cargo-fuzz 0.13.2")
+
+
+    def test_per_target_compiler_evidence_is_retained(self):
+        work = self.prepare()
+        scenario = self.scenario()
+        artifact = {"reason": "compiler-artifact", "package_id": "synthetic#0.0.0", "manifest_path": "Cargo.toml", "target": {"name": "synthetic", "kind": ["lib"]}, "features": ["synth"], "profile": {"test": True}, "filenames": ["synthetic-test"], "fresh": False}
+        text = json.dumps(artifact) + "\ntest result: ok. 2 passed; 0 failed"
+        scenario["steps"][0].update(argv=[sys.executable, "-c", "print(" + repr(text) + ")"], parser="rust-tests", repetitions=1, warmup=0)
+        path = self.root / "targets.json"
+        audit.write(path, scenario)
+        self.assertEqual(audit.run_campaign(work, path, "targets"), 0)
+        entry = audit.read(work / "runs/targets/manifest.json")["commands"][0]
+        self.assertEqual(entry["compiled_targets"][0]["features"], ["synth"])
+        self.assertEqual(entry["compiled_targets"][0]["target"]["kind"], ["lib"])
 
 
 if __name__ == "__main__":

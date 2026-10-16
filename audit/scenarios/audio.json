@@ -12,9 +12,9 @@
       "argv": [
         "cargo",
         "test",
+        "--message-format=json",
         "--locked",
         "--offline",
-        "--release",
         "--no-default-features",
         "--features",
         "synth",
@@ -30,10 +30,12 @@
         "subjects"
       ],
       "cwd": ".",
-      "parser": "exit",
+      "parser": "rust-tests",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 1800
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "debug"
     },
     {
       "id": "build-dsp-benchmark",
@@ -42,6 +44,7 @@
       "argv": [
         "cargo",
         "build",
+        "--message-format=json",
         "--locked",
         "--offline",
         "--release",
@@ -55,7 +58,9 @@
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
-      "timeout_seconds": 1800
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "release"
     },
     {
       "id": "dsp-throughput",
@@ -69,19 +74,25 @@
       "parser": "bench",
       "repetitions": 3,
       "warmup": 1,
-      "timeout_seconds": 1200
+      "timeout_seconds": 1200,
+      "depends_on": [
+        "build-dsp-benchmark"
+      ],
+      "profile": "release"
     },
     {
       "id": "audio-device",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/audio.md. Retain device/backend configuration, callback deadlines/xruns and correctness evidence. Include feature-family coverage and unsupported configurations. Offline throughput alone cannot pass this step."
+      "instructions": "Follow procedures/audio.md. Retain device/backend configuration, callback deadlines/xruns and correctness evidence. Include feature-family coverage and unsupported configurations. Offline throughput alone cannot pass this step.",
+      "depends_on": []
     },
     {
       "id": "audio-review",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/review.md for RT bounds, queue overflow, unsafe/FFI and lifecycle review; attach file/line evidence against the source commit."
+      "instructions": "Follow procedures/review.md for RT bounds, queue overflow, unsafe/FFI and lifecycle review; attach file/line evidence against the source commit.",
+      "depends_on": []
     }
   ],
   "unit": "components"

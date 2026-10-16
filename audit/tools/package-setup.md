@@ -34,3 +34,6 @@ python3 /tmp/clausters-editor-audit/resources/scripts/audit.py run --work /tmp/c
 ```
 
 No library is added, removed or updated by the audit. Use npm run notices -- --check; do not regenerate licenses to hide drift. If tests execute zero cases, the campaign records an error and requires a reviewed scenario revision or real test coverage; zero tests are not evidence of correctness.
+
+
+Before the web build, explicitly provision `vendor/verovio/{verovio.js,verovio.wasm}` and `vendor/faust/{libfaust-wasm.js,libfaust-wasm.wasm,libfaust-wasm.data,version}` in the disposable source. Build them from the selected source's third_party pins or copy a reviewed cache with retained source/build receipts. The harness checks presence, nonempty bytes and hashes before a web build; it never downloads or rebuilds them implicitly. Generated declaration diffs are retained by web-build, so repeat runs do not mistake builder output for intentional instrumentation.

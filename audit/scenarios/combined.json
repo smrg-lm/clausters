@@ -9,7 +9,8 @@
       "id": "combined-device",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/combined.md. Capture three paired repetitions of audio-only, GUI-only and simultaneous activity, with common configuration and raw evidence. State all unavailable metrics and coverage exclusions; skipped required checks prevent sealing."
+      "instructions": "Follow procedures/combined.md. Capture three paired repetitions of audio-only, GUI-only and simultaneous activity, with common configuration and raw evidence. State all unavailable metrics and coverage exclusions; skipped required checks prevent sealing.",
+      "depends_on": []
     }
   ],
   "unit": "components"

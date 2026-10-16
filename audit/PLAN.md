@@ -49,18 +49,18 @@ The resources are ready when the validator and harness contract tests pass, prer
 
 From the first campaign's method notes:
 
-- ⬜ A01: remove the unnecessary editor target symlink and test real directory-only ignore patterns during preparation.
-- ⬜ A02/A03: publish debug correctness scenarios and target-aware workspace selection, with profile/feature validation.
-- ⬜ A04/A05: preflight web vendor assets and retain generated-source diffs as build outputs for repeat runs.
-- ⬜ A06/A07: collect signal names, last-test identity and counts from failed suites; support subprocess isolation for native tests.
-- ⬜ A08/A09: promote campaign CPU-affinity/jobs and disk-floor/nonincremental controls into the reusable CLI and validate them.
-- ⬜ A10/A12: preserve per-crate/target evidence and renderer identity; distinguish software acceptance from real GPU/presentation measurements.
-- ⬜ A13: model step dependencies so independent checks still run after unrelated failures, with uniform auxiliary command receipts.
-- ⬜ A14/A15: retain independent fuzz lock provenance and accept the actual JSON-array benchmark format; add producer-contract checks.
-- ⬜ A16/A17: isolate targets between independent workspaces and formalize optional pinned fuzz-tool provisioning/seed provenance.
-- ⬜ A22: `prepare` copies ignored files into the campaign resources (`audit/records/`, the fuzzer's build directory), which made `resources.tar` 380 MB; copy what git tracks under `audit/` instead.
-- ⬜ A23: a GUI measurement must check that the window drew. An unattended screen blanks, the host then receives no frame callbacks and draws 2-3 frames a minute, which reads as no interference; the second campaign's first two sets were lost to it. Check a minimum frame rate per run and say in the procedure that the screen must stay on.
-- ⬜ A24: the second campaign's per-callback histogram patch and slow-callback capture (faults, context switches, commands, core per event), its representative-load rule and its frame-rate check live in a scratch driver kept in the record; promote them into the harness (an instrumentation patch with a JSONL writer, a sweep step kind) so the next device campaign does not rewrite them.
+- ✅ A01: remove the unnecessary editor target symlink and test real directory-only ignore patterns during preparation.
+- ✅ A02/A03: publish debug correctness scenarios and target-aware workspace selection, with profile/feature validation.
+- ✅ A04/A05: preflight web vendor assets and retain generated-source diffs as build outputs for repeat runs.
+- ✅ A06/A07: collect signal names, last-test identity and counts from failed suites; support subprocess isolation for native tests.
+- ✅ A08/A09: promote campaign CPU-affinity/jobs and disk-floor/nonincremental controls into the reusable CLI and validate them.
+- ✅ A10/A12: preserve per-crate/target evidence and renderer identity; distinguish software acceptance from real GPU/presentation measurements.
+- ✅ A13: model step dependencies so independent checks still run after unrelated failures, with uniform auxiliary command receipts.
+- ✅ A14/A15: retain independent fuzz lock provenance and accept the actual JSON-array benchmark format; add producer-contract checks.
+- ✅ A16/A17: isolate targets between independent workspaces and formalize optional pinned fuzz-tool provisioning/seed provenance.
+- ✅ A22: `prepare` copies ignored files into the campaign resources (`audit/records/`, the fuzzer's build directory), which made `resources.tar` 380 MB; copy what git tracks under `audit/` instead.
+- ✅ A23: a GUI measurement must check that the window drew. An unattended screen blanks, the host then receives no frame callbacks and draws 2-3 frames a minute, which reads as no interference; the second campaign's first two sets were lost to it. Check a minimum frame rate per run and say in the procedure that the screen must stay on.
+- ✅ A24: the second campaign's per-callback histogram patch and slow-callback capture (faults, context switches, commands, core per event), its representative-load rule and its frame-rate check live in a scratch driver kept in the record; promote them into the harness (an instrumentation patch with a JSONL writer, a sweep step kind) so the next device campaign does not rewrite them.
 - ✅ A19/A20/A21: search the project's own records before calling a cause unresolved or an input absent, and rank severity by evidence and cost; written into procedures/review.md.
 
 ## Future directions
