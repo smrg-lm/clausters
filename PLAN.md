@@ -2950,7 +2950,7 @@ where it came from).
   it died of SIGXCPU at once; with it the audio thread was demoted and the
   process kept running past 800 nodes at 117% average load.
 
-- ⬜ **The audio callback costs half again as much on the efficiency cores**
+- ✅ **The audio callback costs half again as much on the efficiency cores**
   *(found 2026-10-15, by the second audit campaign's device runs; record
   `audit/records/2026-10-15_2558210e_02.zip`)*. On a hybrid CPU (performance
   cores 0-11, efficiency cores 12-19) the same load at quantum 128 ran at 32 %
@@ -2965,9 +2965,12 @@ where it came from).
   no context switch and no command applied, so the margin is the core's speed
   and nothing else. The two overruns seen earlier (3.03 ms and 2.69 ms, in
   ~340 000 callbacks) were not reproduced, and one PipeWire error came with no
-  slow callback of the server's. What is open is whether the server should
-  prefer a performance core for the audio thread, or at least report the core
-  in the scheduling diagnostic so the number is visible.
+  slow callback of the server's. The boot diagnostic now names the CPU the
+  audio thread is on and, on a hybrid CPU, whether it is one of the fastest;
+  `--pin fast` restricts the audio thread and the workers to those cores
+  (`server::rt::fastest_cpus`), which held the same load at 32 % in three of
+  three runs. It stays opt-in, decided with the maintainer: it changes how the
+  server shares the machine, and the default keeps the kernel's choice.
 
 - ⬜ **Every stored plugin def is probed again at boot, before the server
   answers** *(found 2026-10-14, running the plugin examples against the default

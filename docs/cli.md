@@ -68,7 +68,7 @@ resolved here, since a name can answer with several.
 | `--client-name` | name | cpal's own | What the server calls itself to the audio graph, so its ports come back under the same name after a restart and a patchbay can reconnect them. PipeWire reads it from the environment (the only door cpal leaves open); under JACK use `--device`. |
 | `--list-devices` | flag | off | Print every host and device this build can see — the names the three flags above take — and exit. |
 | `--workers` | count | `0` | DSP worker threads for [parallel groups](parallel.md); `0` lets the server choose. Also accepted by `--nrt`. |
-| `--pin` | cpu[,cpu…] | off | CPU affinity: the first for the audio callback thread, the rest round-robin over the workers. Linux, experimental, and only in a build with the `rtprio` feature. |
+| `--pin` | cpu[,cpu…] or `fast` | off | CPU affinity: the first for the audio callback thread, the rest round-robin over the workers. `fast` keeps the audio thread and the workers on the fastest cores of a hybrid CPU (the performance cores), where the same load costs about two thirds of what it costs on an efficiency core; the boot log says which CPU the audio thread is on. Linux, experimental, and only in a build with the `rtprio` feature. |
 
 ### Boot-time capacities
 

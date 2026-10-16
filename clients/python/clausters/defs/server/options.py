@@ -167,8 +167,9 @@ class ServerOptions:
     #: can reconnect them.
     client_name: "str | None" = None
     #: CPU affinity list (``--pin``): first CPU for the audio callback, the
-    #: rest round-robin over the DSP workers. Experimental, Linux only, and
-    #: only accepted by a server built with the ``rtprio`` feature.
+    #: rest round-robin over the DSP workers; ``"fast"`` keeps them all on the
+    #: fastest cores of a hybrid CPU. Experimental, Linux only, and only
+    #: accepted by a server built with the ``rtprio`` feature.
     pin: "tuple | list | str | None" = None
 
     def args(self) -> list[str]:

@@ -74,7 +74,8 @@ usage:
       --pin <cpu[,cpu..]>  CPU affinity (Linux, experimental; needs a build
                            with the `rtprio` feature): first CPU for the audio
                            callback thread, the rest round-robin over the DSP
-                           workers
+                           workers; `--pin fast` keeps the audio thread and
+                           the workers on the fastest cores of a hybrid CPU
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
@@ -381,10 +382,15 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut list_devices = false;
     // `--pin`: CPU affinity list -- first CPU for the audio callback thread,
-    // the rest round-robin over the DSP workers. Experimental, Linux only,
-    // and only in `rtprio` builds (see `server::rt`).
+    // the rest round-robin over the DSP workers -- or `fast`, the fastest
+    // cores for all of them. Experimental, Linux only, and only in `rtprio`
+    // builds (see `server::rt`).
     #[cfg(feature = "rtprio")]
     let mut pin: Vec<usize> = Vec::new();
+    #[cfg(feature = "rtprio")]
+    let mut pin_fast = false;
+    #[cfg(feature = "rtprio")]
+    let mut pin_fast_set: Vec<usize> = Vec::new();
     // Boot-time pool sizes, config over the compiled defaults (clamped later in
     // the engine). Each is a slab built once at startup.
     let mut limits = Limits::default();
@@ -522,6 +528,12 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(feature = "rtprio")]
             "--pin" => {
                 let value = flag_value("--pin", "a value", &mut it)?;
+                if value == "fast" {
+                    pin_fast = true;
+                    pin.clear();
+                    continue;
+                }
+                pin_fast = false;
                 let cpus: Result<Vec<usize>, _> =
                     value.split(',').map(|c| c.trim().parse()).collect();
                 pin = cpus.map_err(|e| format!("--pin: {e}"))?;
@@ -614,8 +626,20 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "rtprio")]
     {
         clausters::server::rt::install_sigxcpu_guard();
-        if let Some(&cpu) = pin.first() {
-            clausters::server::rt::request_audio_pin(cpu);
+        if pin_fast {
+            match clausters::server::rt::fastest_cpus() {
+                Some((fast, why)) => {
+                    tracing::info!(
+                        "--pin fast: {why}, CPUs {}",
+                        clausters::server::rt::cpu_list(&fast)
+                    );
+                    clausters::server::rt::request_audio_pin(&fast);
+                    pin_fast_set = fast;
+                }
+                None => tracing::info!("--pin fast: the CPUs do not differ; nothing pinned"),
+            }
+        } else if let Some(&cpu) = pin.first() {
+            clausters::server::rt::request_audio_pin(&[cpu]);
         }
     }
     let (backend, handle) = clausters::server::backend::start(
@@ -634,7 +658,11 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // got once it has run.
     #[cfg(feature = "rtprio")]
     {
-        if pin.len() > 1 {
+        if !pin_fast_set.is_empty() {
+            if workers > 0 {
+                clausters::server::rt::pin_workers_within(&pin_fast_set);
+            }
+        } else if pin.len() > 1 {
             clausters::server::rt::pin_workers(&pin[1..]);
         }
         clausters::server::rt::spawn_diag_report();

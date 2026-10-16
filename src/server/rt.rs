@@ -10,6 +10,8 @@
 //! - **CPU affinity** (`--pin`): [`request_audio_pin`] for the callback
 //!   thread (it pins itself on its first callback -- the thread is spawned
 //!   deep inside cpal/PipeWire) and [`pin_workers`] for the DSP workers;
+//!   `--pin fast` gives both the set [`fastest_cpus`] finds, and the
+//!   diagnostic says which CPU the callback runs on;
 //! - the **SIGXCPU guard**: RTKit imposes `RLIMIT_RTTIME` on the thread it
 //!   promotes, so sustained >100% load -- where the callback no longer sleeps
 //!   between cycles -- makes the kernel raise SIGXCPU, which by default kills
@@ -23,12 +25,17 @@
 //! meter is deliberately *not* here: it is portable and RT-safe, and lives in
 //! `Engine::process_block` unconditionally.
 
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 
-/// CPU requested for the audio callback thread (`--pin`, first value); `-1`
-/// = no pin. Written by the binary *before* the backend starts, read by
-/// [`RtSetup`] on the thread's first callback.
-static PIN_AUDIO: AtomicI32 = AtomicI32::new(-1);
+/// CPUs the audio callback thread may run on (`--pin`), a bit per CPU over
+/// the first 1024; all clear = no pin. Written by the binary *before* the
+/// backend starts, read by [`RtSetup`] on the thread's first callback.
+static PIN_AUDIO: [AtomicU64; 16] = [const { AtomicU64::new(0) }; 16];
+
+/// The CPU the audio callback ran on when the diagnostic was read (`-1`
+/// until then).
+#[cfg(target_os = "linux")]
+static AUDIO_CPU: AtomicI32 = AtomicI32::new(-1);
 
 /// Kernel tid of the audio callback thread, published on its first callback
 /// (`0` until then) -- the thread the SIGXCPU guard demotes.
@@ -53,10 +60,13 @@ static PRIORITY: AtomicI32 = AtomicI32::new(0);
 #[cfg(target_os = "linux")]
 const SCHED_RESET_ON_FORK: i32 = 0x4000_0000;
 
-/// Requests that the audio callback thread pin itself to `cpu` on its first
-/// callback (`--pin`, first value). Call before the backend starts.
-pub fn request_audio_pin(cpu: usize) {
-    PIN_AUDIO.store(cpu as i32, Ordering::Relaxed);
+/// Requests that the audio callback thread restrict itself to `cpus` on its
+/// first callback (`--pin`: its first value, or the fastest cores for
+/// `--pin fast`). CPUs past 1023 are ignored. Call before the backend starts.
+pub fn request_audio_pin(cpus: &[usize]) {
+    for &cpu in cpus.iter().filter(|&&c| c < 1024) {
+        PIN_AUDIO[cpu / 64].fetch_or(1 << (cpu % 64), Ordering::Relaxed);
+    }
 }
 
 /// Callback number at which the scheduling diagnostic is read: late enough
@@ -110,10 +120,18 @@ impl RtSetup {
         // calling thread (tid 0).
         unsafe {
             AUDIO_TID.store(libc::syscall(libc::SYS_gettid) as i32, Ordering::Relaxed);
-            let cpu = PIN_AUDIO.load(Ordering::Relaxed);
-            if cpu >= 0 {
-                let mut set: libc::cpu_set_t = std::mem::zeroed();
-                libc::CPU_SET(cpu as usize, &mut set);
+            let mut set: libc::cpu_set_t = std::mem::zeroed();
+            let mut any = false;
+            for (word, bits) in PIN_AUDIO.iter().enumerate() {
+                let bits = bits.load(Ordering::Relaxed);
+                for bit in 0..64 {
+                    if bits & (1 << bit) != 0 {
+                        libc::CPU_SET(word * 64 + bit, &mut set);
+                        any = true;
+                    }
+                }
+            }
+            if any {
                 libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &set);
             }
         }
@@ -123,6 +141,7 @@ impl RtSetup {
     fn publish_diag(&self) {
         // SAFETY: read-only scheduling queries on the calling thread (tid 0).
         unsafe {
+            AUDIO_CPU.store(libc::sched_getcpu(), Ordering::Relaxed);
             let policy = libc::sched_getscheduler(0);
             let mut param: libc::sched_param = std::mem::zeroed();
             libc::sched_getparam(0, &mut param);
@@ -150,6 +169,18 @@ impl Default for RtSetup {
 /// are logged and ignored -- pinning is a tuning aid, never a boot blocker.
 #[cfg(target_os = "linux")]
 pub fn pin_workers(cpus: &[usize]) {
+    pin_worker_threads(cpus, false);
+}
+
+/// Restricts every `clausters-dsp-N` worker to the whole of `cpus` (`--pin
+/// fast`), leaving the kernel to balance them within it.
+#[cfg(target_os = "linux")]
+pub fn pin_workers_within(cpus: &[usize]) {
+    pin_worker_threads(cpus, true);
+}
+
+#[cfg(target_os = "linux")]
+fn pin_worker_threads(cpus: &[usize], within: bool) {
     let entries = match std::fs::read_dir("/proc/self/task") {
         Ok(entries) => entries,
         Err(e) => return tracing::warn!("--pin: cannot scan threads: {e}"),
@@ -168,17 +199,24 @@ pub fn pin_workers(cpus: &[usize]) {
         return;
     }
     for (i, tid) in tids.iter().enumerate() {
-        let cpu = cpus[i % cpus.len()];
+        let chosen: &[usize] = if within {
+            cpus
+        } else {
+            std::slice::from_ref(&cpus[i % cpus.len()])
+        };
         // SAFETY: plain affinity syscall on one of our own thread ids.
         let rc = unsafe {
             let mut set: libc::cpu_set_t = std::mem::zeroed();
-            libc::CPU_SET(cpu, &mut set);
+            for &cpu in chosen {
+                libc::CPU_SET(cpu, &mut set);
+            }
             libc::sched_setaffinity(*tid, std::mem::size_of::<libc::cpu_set_t>(), &set)
         };
+        let named = cpu_list(chosen);
         if rc == 0 {
-            tracing::info!("pinned DSP worker (tid {tid}) to CPU {cpu}");
+            tracing::info!("pinned DSP worker (tid {tid}) to CPU {named}");
         } else {
-            tracing::warn!("--pin: could not pin tid {tid} to CPU {cpu}");
+            tracing::warn!("--pin: could not pin tid {tid} to CPU {named}");
         }
     }
 }
@@ -186,6 +224,99 @@ pub fn pin_workers(cpus: &[usize]) {
 #[cfg(not(target_os = "linux"))]
 pub fn pin_workers(_cpus: &[usize]) {
     tracing::warn!("--pin is only supported on Linux");
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn pin_workers_within(_cpus: &[usize]) {
+    tracing::warn!("--pin is only supported on Linux");
+}
+
+/// `0,1,4-7`: a CPU list the way the kernel writes one.
+pub fn cpu_list(cpus: &[usize]) -> String {
+    let mut sorted = cpus.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut parts = Vec::new();
+    let mut i = 0;
+    while i < sorted.len() {
+        let mut j = i;
+        while j + 1 < sorted.len() && sorted[j + 1] == sorted[j] + 1 {
+            j += 1;
+        }
+        parts.push(if i == j {
+            sorted[i].to_string()
+        } else {
+            format!("{}-{}", sorted[i], sorted[j])
+        });
+        i = j + 1;
+    }
+    parts.join(",")
+}
+
+/// Parses a kernel CPU list (`0-11`, `0,2,4-7`).
+#[cfg(any(target_os = "linux", test))]
+fn parse_cpu_list(text: &str) -> Option<Vec<usize>> {
+    let mut cpus = Vec::new();
+    for part in text.trim().split(',').filter(|p| !p.is_empty()) {
+        match part.split_once('-') {
+            Some((a, b)) => cpus.extend(a.parse::<usize>().ok()?..=b.parse::<usize>().ok()?),
+            None => cpus.push(part.parse().ok()?),
+        }
+    }
+    Some(cpus)
+}
+
+/// The machine's fastest CPUs, for `--pin fast`, and the reason they were
+/// chosen; `None` when nothing says the CPUs differ.
+///
+/// On a hybrid CPU the kernel's real-time scheduler places a SCHED_FIFO/RR
+/// thread for latency, not for the core's speed, so the audio thread lands
+/// on an efficiency core as readily as on a performance one -- measured at
+/// 53 % against 32 % CPU for the same load. Three sources, in order: the
+/// performance-core list Linux publishes for a hybrid x86 CPU
+/// (`/sys/devices/cpu_core/cpus`), the per-CPU capacity of an asymmetric
+/// ARM system (`cpu_capacity`, the highest kept), and the CPUs' maximum
+/// frequencies (those within 10 % of the highest).
+#[cfg(target_os = "linux")]
+pub fn fastest_cpus() -> Option<(Vec<usize>, &'static str)> {
+    let read = |path: String| std::fs::read_to_string(path).ok();
+    let online = read("/sys/devices/system/cpu/online".into()).and_then(|t| parse_cpu_list(&t))?;
+    if let Some(cores) = read("/sys/devices/cpu_core/cpus".into()).and_then(|t| parse_cpu_list(&t))
+        && !cores.is_empty()
+        && cores.len() < online.len()
+    {
+        return Some((cores, "the performance cores"));
+    }
+    let per_cpu = |file: &str| -> Option<Vec<(usize, u64)>> {
+        online
+            .iter()
+            .map(|&c| {
+                let v = read(format!("/sys/devices/system/cpu/cpu{c}/{file}"))?;
+                Some((c, v.trim().parse().ok()?))
+            })
+            .collect()
+    };
+    let keep = |values: Vec<(usize, u64)>, at_least: fn(u64) -> u64| {
+        let max = values.iter().map(|&(_, v)| v).max()?;
+        let floor = at_least(max);
+        let fast: Vec<usize> = values
+            .iter()
+            .filter(|&&(_, v)| v >= floor)
+            .map(|&(c, _)| c)
+            .collect();
+        (fast.len() < values.len()).then_some(fast)
+    };
+    if let Some(fast) = per_cpu("cpu_capacity").and_then(|v| keep(v, |max| max)) {
+        return Some((fast, "the highest-capacity cores"));
+    }
+    per_cpu("cpufreq/cpuinfo_max_freq")
+        .and_then(|v| keep(v, |max| max - max / 10))
+        .map(|fast| (fast, "the cores with the highest maximum frequency"))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn fastest_cpus() -> Option<(Vec<usize>, &'static str)> {
+    None
 }
 
 /// Raises the soft `RLIMIT_RTTIME` back to half of the hard one.
@@ -329,6 +460,7 @@ pub fn spawn_diag_report() {
                         "audio thread is real-time: {name} priority {}",
                         PRIORITY.load(Ordering::Relaxed)
                     );
+                    report_core();
                 }
             }
             return;
@@ -337,5 +469,48 @@ pub fn spawn_diag_report() {
     });
 }
 
+/// Says which CPU the audio callback was on and, on a machine whose cores
+/// differ, whether it is one of the fast ones: the same load costs half
+/// again as much on an efficiency core, and nothing else makes that visible.
+#[cfg(target_os = "linux")]
+fn report_core() {
+    let cpu = AUDIO_CPU.load(Ordering::Relaxed);
+    if cpu < 0 {
+        return;
+    }
+    let pinned = PIN_AUDIO.iter().any(|w| w.load(Ordering::Relaxed) != 0);
+    match fastest_cpus() {
+        Some((fast, _)) if fast.contains(&(cpu as usize)) => {
+            tracing::info!(
+                "audio thread on CPU {cpu}, one of the fastest ({})",
+                cpu_list(&fast)
+            );
+        }
+        Some((fast, _)) if !pinned => tracing::info!(
+            "audio thread on CPU {cpu}, a slower core of this hybrid CPU (the fastest are \
+             {}); `--pin fast` keeps it on those",
+            cpu_list(&fast)
+        ),
+        _ => tracing::info!("audio thread on CPU {cpu}"),
+    }
+}
+
 #[cfg(not(target_os = "linux"))]
 pub fn spawn_diag_report() {}
+
+#[cfg(test)]
+mod tests {
+    use super::{cpu_list, parse_cpu_list};
+
+    #[test]
+    fn a_cpu_list_reads_and_writes_the_kernel_spelling() {
+        assert_eq!(
+            parse_cpu_list("0-3,6,8-9\n"),
+            Some(vec![0, 1, 2, 3, 6, 8, 9])
+        );
+        assert_eq!(parse_cpu_list("12"), Some(vec![12]));
+        assert_eq!(parse_cpu_list("0-x"), None);
+        assert_eq!(cpu_list(&[9, 0, 1, 2, 3, 6, 8]), "0-3,6,8-9");
+        assert_eq!(cpu_list(&[4]), "4");
+    }
+}
