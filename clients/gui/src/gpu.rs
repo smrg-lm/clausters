@@ -31,6 +31,15 @@ pub(crate) struct Gpu {
     /// into this and resolves into the surface texture. Sized with the surface,
     /// so it is rebuilt on every [`resize`](Self::resize).
     msaa: Option<wgpu::TextureView>,
+    /// Which adapter this draws on, as a person reads it: its name, its kind
+    /// and its backend.
+    pub(crate) adapter: String,
+}
+
+/// An adapter as a person reads it: its name, its kind (a card, a software
+/// one) and its backend.
+fn describe(info: &wgpu::AdapterInfo) -> String {
+    format!("{} ({:?}, {:?})", info.name, info.device_type, info.backend)
 }
 
 impl Gpu {
@@ -111,6 +120,7 @@ impl Gpu {
             config,
             samples,
             msaa: None,
+            adapter: describe(&adapter.get_info()),
         };
         gpu.rebuild_msaa();
         Ok(gpu)
@@ -128,29 +138,38 @@ impl Gpu {
     /// edges a multisample smooths).
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) async fn offscreen(width: u32, height: u32, samples: u32) -> Result<Self, String> {
+        Self::offscreen_on(width, height, samples, false).await
+    }
+
+    /// [`offscreen`](Self::offscreen), on a **software** adapter when
+    /// `software` is set: the one a machine with no card has, asked for on a
+    /// machine that has one -- what compares the two pictures.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) async fn offscreen_on(
+        width: u32,
+        height: u32,
+        samples: u32,
+        software: bool,
+    ) -> Result<Self, String> {
         let instance = new_instance().await;
         let mut options = wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             compatible_surface: None,
-            force_fallback_adapter: false,
+            force_fallback_adapter: software,
         };
         let adapter = match instance.request_adapter(&options).await {
             Ok(adapter) => adapter,
-            Err(_) => {
+            Err(_) if !software => {
                 options.force_fallback_adapter = true;
                 instance
                     .request_adapter(&options)
                     .await
                     .map_err(|e| format!("no GPU adapter, not even a software one ({e})"))?
             }
+            Err(e) => return Err(format!("no software adapter ({e})")),
         };
-        let info = adapter.get_info();
-        tracing::info!(
-            "offscreen GPU: {} ({:?}, {:?} backend)",
-            info.name,
-            info.device_type,
-            info.backend
-        );
+        let described = describe(&adapter.get_info());
+        tracing::info!("offscreen GPU: {described}");
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("clausters-gui offscreen device"),
@@ -189,6 +208,7 @@ impl Gpu {
             config,
             samples,
             msaa: None,
+            adapter: described,
         };
         gpu.rebuild_msaa();
         Ok(gpu)

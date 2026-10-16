@@ -132,8 +132,8 @@ impl App {
                 let batches = Batches::new(&gpu.device, gpu.target());
                 if gpu.window().is_none() {
                     info!(
-                        "gui_def {id}: opened window \"{title}\" offscreen at {}x{}",
-                        gpu.config.width, gpu.config.height
+                        "gui_def {id}: opened window \"{title}\" offscreen at {}x{} on {}",
+                        gpu.config.width, gpu.config.height, gpu.adapter
                     );
                 }
                 (gpu, renderers, batches, None)
@@ -249,7 +249,10 @@ impl App {
         // window nobody can read off a screenshot: a desktop that
         // ignores what was asked of it (an X11-only override under
         // Wayland, say) looks exactly like a host that ignored it.
-        info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
+        info!(
+            "gui_def {id}: opened window \"{title}\" at scale {ui_scale} on {}",
+            gpu.adapter
+        );
         Some(gpu)
     }
 

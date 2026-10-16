@@ -10304,3 +10304,29 @@ Three choices that are not obvious from the code:
   closes its gate when the def has one), the clients no longer send it, and a
   program change is the reading node's to interpret, so `/midi_map` refuses
   `progN`.
+
+## A capture is the same picture on any adapter, within two levels (2026-10-16)
+
+A window drawn offscreen and read back (`/gui_capture`) was measured on the
+two adapters a machine can draw a headless host's windows with -- an
+integrated card and the software one a machine with no card has (llvmpipe,
+over Vulkan) -- for one window of text in the host's own typeface, a slider,
+a knob and a roll's notes, at four samples and at one:
+
+- **one adapter against itself, two runs:** identical, byte for byte;
+- **the card against the software adapter:** about a third of the pixels
+  differ (33% at four samples, 28% at one), and **none by more than two
+  levels of 255** in any channel -- one level with the embedded bitmap face,
+  two with the typeface's antialiased glyphs.
+
+So a picture is the same picture wherever it is drawn: the difference is
+rounding, not geometry, and no eye sees it. What it settles is how a picture
+is compared. **Byte for byte holds only on one adapter**, which is the case a
+person re-running a check on their own machine is in; a reference kept in the
+repository and checked on whatever machine runs the suite is compared
+**within two levels per channel**, which holds across both and still catches
+anything that moved a line or changed a color. The measurement is a test that
+runs by hand where both adapters are present
+(`clients/gui`, `cargo test --lib -- --ignored --nocapture
+software_against`), so it can be taken again when the drawing or a driver
+changes.

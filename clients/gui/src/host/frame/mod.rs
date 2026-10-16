@@ -1926,6 +1926,97 @@ mod tests {
         );
     }
 
+    /// **How far a software adapter's picture is from a card's**, for the
+    /// same window: text, controls with rounded ends, and a roll's notes,
+    /// drawn at four samples through each adapter and compared pixel by
+    /// pixel. A measurement, run by hand on a machine that has both:
+    /// `cargo test --lib -- --ignored --nocapture software_against`.
+    #[test]
+    #[ignore = "a measurement; needs a card and a software adapter"]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn software_against_hardware() {
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+
+        const TREE: &str = r#"{"type":"window","w":480,"h":320,"layout":"col","children":[
+            {"id":2,"type":"label","text":"The quick brown fox, 0123456789"},
+            {"id":3,"type":"slider","value":0.37},
+            {"id":4,"type":"knob","value":0.62,"h":90},
+            {"id":5,"type":"notes","h":140,"min":48,"max":72,
+             "sample_rate":48000.0,"notes":[0,24000,60,100,0, 18000,30000,64,100,0,
+                                            41000,12000,67,100,0]}]}"#;
+        let draw = |software: bool, samples: u32| -> Option<(String, Vec<u8>)> {
+            let mut gpu =
+                pollster::block_on(Gpu::offscreen_on(480, 320, samples, software)).ok()?;
+            let mut host = crate::host::Host::new();
+            // Text through the typeface where the build rasterizes one.
+            #[cfg(feature = "font-atlas")]
+            host.load_default_face();
+            host.handle_packet(
+                OscPacket::Message(OscMessage {
+                    addr: crate::host::GUI_DEF.into(),
+                    args: vec![OscType::Int(1), OscType::String(TREE.into())],
+                }),
+                crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                    std::net::Ipv4Addr::LOCALHOST,
+                    9000,
+                ))),
+            );
+            let mut renderers = Renderers::new(&gpu.device, gpu.target());
+            let mut batches = Batches::new(&gpu.device, gpu.target());
+            let inputs = FrameInputs {
+                metrics: host.metrics_for(1),
+                world: World {
+                    timelines: host.timelines(),
+                    ..World::default()
+                },
+                ..FrameInputs::default()
+            };
+            let readback = capture(
+                &mut gpu,
+                &mut renderers,
+                &mut batches,
+                &mut HashMap::new(),
+                &mut HashMap::new(),
+                &mut HashMap::new(),
+                host.window_def(1)?,
+                &inputs,
+                &host.theme,
+            )
+            .ok()?;
+            readback.wait(&gpu.device).ok()?;
+            let name = format!("{}, {}x", gpu.adapter, gpu.target().samples);
+            Some((name, readback.pixels().2))
+        };
+        let compare = |what: &str, a: &[u8], b: &[u8]| {
+            let mut differ = 0usize;
+            let mut largest = 0u8;
+            for (pa, pb) in a.as_chunks::<4>().0.iter().zip(b.as_chunks::<4>().0) {
+                let d = (0..3).map(|c| pa[c].abs_diff(pb[c])).max().unwrap_or(0);
+                differ += usize::from(d > 0);
+                largest = largest.max(d);
+            }
+            let total = a.len() / 4;
+            eprintln!(
+                "{what}: {differ} of {total} pixels differ ({:.2}%), by at most {largest}",
+                100.0 * differ as f64 / total as f64,
+            );
+        };
+        for samples in [4, 1] {
+            let (Some((card, a)), Some((software, b))) =
+                (draw(false, samples), draw(true, samples))
+            else {
+                eprintln!("this machine does not have both adapters");
+                return;
+            };
+            eprintln!("card: {card}\nsoftware: {software}");
+            compare("card against software", &a, &b);
+            if let (Some((_, a2)), Some((_, b2))) = (draw(false, samples), draw(true, samples)) {
+                compare("card against itself", &a, &a2);
+                compare("software against itself", &b, &b2);
+            }
+        }
+    }
+
     /// The picture of window 1 of a host holding `json`, with every playhead
     /// reading `clock` and the control buses reading `level`.
     fn picture_at(json: &str, clock: f64, level: f32) -> Picture {
