@@ -105,14 +105,10 @@ already carry it.
   reports the step it stopped at and the page's console; what is open is the
   diagnosis, from the next timeout's output.
 
-- ⬜ **The audio callback costs half again as much on some cores** *(root
-  `PLAN.md`, Found by use)*. The same load ran at ~860 or ~1420 us per
-  callback depending on the core; what is open is preferring a core or at
-  least reporting it.
-
-- ⬜ **An isolated callback overruns its period at moderate load** *(root
-  `PLAN.md`, Found by use)*. Two in ~340 000 at 35 % load; what is open is a
-  capture of what the slow callback was doing.
+- ⬜ **The audio callback costs half again as much on the efficiency cores**
+  *(root `PLAN.md`, Found by use)*. 32 % against 53 % for the same load, and
+  the thread migrates between the two kinds; what is open is preferring a
+  performance core or at least reporting the core.
 
 - ⬜ **Every stored plugin def is probed again at boot, before the server
   answers** *(root `PLAN.md`, Found by use)*. A data directory that has seen a
