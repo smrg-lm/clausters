@@ -752,7 +752,7 @@ impl WebApp {
                 let Some(slot) = self.canvases.get_mut(&def_id) else {
                     return; // detached while the device was coming up
                 };
-                let size = gpu.window.inner_size();
+                let size = gpu.window().map(|w| w.inner_size()).unwrap_or_default();
                 let (w, h) = if size.width > 0 && size.height > 0 {
                     (size.width, size.height)
                 } else {

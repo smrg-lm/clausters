@@ -700,9 +700,10 @@ pub const GUI_CLOSED: &str = "/gui_closed";
 /// What handling a packet asks the host's *front* to do, beyond mutating the
 /// host's own state. The protocol logic stays transport- and GPU-agnostic and
 /// *returns* these, so the caller decides how to act: the windowed front opens
-/// and closes OS windows and sends replies; the headless front sends replies and
-/// logs the window effects (no display). That keeps the logic unit-testable
-/// without a socket or a GPU.
+/// and closes OS windows and sends replies; the headless front opens the same
+/// windows offscreen and never shows them, or -- with no adapter at all --
+/// sends replies and logs the window effects. That keeps the logic
+/// unit-testable without a socket or a GPU.
 #[derive(Debug)]
 pub enum HostEffect {
     /// Send this message back to the requesting client.

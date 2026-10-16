@@ -3,8 +3,10 @@
 //! Starts the GUI host's server front (UDP + TCP, one port) and, optionally,
 //! its client leg to the audio server, then runs the `/gui_*` protocol. By default it opens windows
 //! (winit + wgpu): a `window`-rooted GuiDef instantiates an OS window hosting the
-//! renderers. With `--headless` it runs the protocol with no display -- for
-//! tests, automation and machines with no GPU. Drive it from a language client
+//! renderers. With `--headless` it shows none: each window is drawn offscreen,
+//! to be captured and played to, on any adapter a software one included --
+//! and with none at all it runs the protocol alone, for tests, automation and
+//! machines with no GPU. Drive it from a language client
 //! over OSC -- see `clients/python/examples/views/window.py` (windowed) and
 //! `skeleton.py` (protocol only).
 
@@ -156,8 +158,11 @@ usage:
                             One multisampled attachment per window and nothing
                             per widget; a count this GPU does not offer for the
                             surface format falls back to 1 with a warning.
-      --headless            run the protocol with no display (tests / no GPU);
-                            the default opens windows (winit + wgpu)
+      --headless            show no window: draw each one offscreen, to be
+                            captured and played to (/gui_capture, /gui_pointer),
+                            on any adapter, a software one included; with none,
+                            run the protocol alone. The default opens windows
+                            (winit + wgpu)
   -v, -vv, -vvv             log verbosity: warn (default) -> info -> debug ->
                             trace; -q for errors only. RUST_LOG overrides it.
 
@@ -611,7 +616,19 @@ fn run(args: &[String]) -> Result<(), String> {
 
     let mode = if headless { "headless" } else { "windowed" };
     tracing::info!("clausters-gui host listening on udp://{local} ({mode}; script -> host)");
-    if headless {
+    // **A headless host draws its windows offscreen** where an adapter
+    // answers, a software one included: the same host as the windowed one,
+    // whose windows are never shown and are captured and played to. With
+    // none it runs the protocol alone, as it always did.
+    let offscreen = headless
+        && match gui::can_draw_offscreen() {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!("headless: {e}; running the protocol and drawing nothing");
+                false
+            }
+        };
+    if headless && !offscreen {
         if shm.is_some() {
             tracing::warn!("--shm has no effect headless (meters need a window)");
         }
@@ -661,7 +678,12 @@ fn run(args: &[String]) -> Result<(), String> {
         };
         #[cfg(not(unix))]
         let bus = gui::open_shm(shm);
-        gui::run(
+        let run = if offscreen {
+            gui::run_headless
+        } else {
+            gui::run
+        };
+        run(
             host,
             Arc::new(socket),
             bus,
@@ -678,9 +700,9 @@ fn run(args: &[String]) -> Result<(), String> {
 fn load_face(host: &mut Host, path: Option<String>, headless: bool) {
     #[cfg(feature = "font-atlas")]
     {
-        if headless {
-            return; // nothing draws; a face would be read for nobody
-        }
+        // A headless host draws too -- offscreen, for its captures -- so it
+        // reads its face like any other.
+        let _ = headless;
         // the host's own first: it is what draws if the named one cannot
         host.load_default_face();
         if let Some(path) = &path {

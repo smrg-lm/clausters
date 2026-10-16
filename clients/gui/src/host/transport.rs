@@ -65,7 +65,8 @@ fn waker(socket: &UdpSocket) -> io::Result<Waker> {
     Waker::to(clausters_net::loopback(socket.local_addr()?))
 }
 
-/// Runs the **headless** server front until an unrecoverable socket error:
+/// Runs the **protocol-only** server front -- what `--headless` runs on a
+/// machine where no adapter answers -- until an unrecoverable socket error:
 /// receive a packet (a UDP datagram, or a framed TCP request drained after the
 /// wake datagram), decode it, let `host` interpret it, send each reply back
 /// to the sender over its own transport. Single-threaded, like the audio

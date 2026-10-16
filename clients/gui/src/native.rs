@@ -106,13 +106,14 @@ impl State {
         );
         self.painter
             .upload(&self.gpu.device, &self.gpu.queue, &mesh, w, h);
-        let frame = match self.gpu.surface.get_current_texture() {
+        let Some(surface) = self.gpu.surface() else {
+            return;
+        };
+        let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f)
             | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             _ => {
-                self.gpu
-                    .surface
-                    .configure(&self.gpu.device, &self.gpu.config);
+                surface.configure(&self.gpu.device, &self.gpu.config);
                 return;
             }
         };
@@ -186,7 +187,7 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 state.gpu.resize(size.width, size.height);
-                state.gpu.window.request_redraw();
+                state.gpu.request_redraw();
             }
             WindowEvent::ModifiersChanged(mods) => {
                 let new_shift = mods.state().shift_key();
@@ -213,7 +214,7 @@ impl ApplicationHandler for App {
                         true
                     };
                     if redraw {
-                        state.gpu.window.request_redraw();
+                        state.gpu.request_redraw();
                     }
                 }
             }
@@ -234,7 +235,8 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => WheelDelta::Lines(y as f64),
                     MouseScrollDelta::PixelDelta(p) => WheelDelta::Pixels(p.y),
                 };
-                let steps = Wheel::NATIVE.steps(delta, state.gpu.window.scale_factor());
+                let steps = Wheel::NATIVE
+                    .steps(delta, state.gpu.window().map_or(1.0, |w| w.scale_factor()));
                 let factor = 0.85f64.powf(steps);
                 let redraw = if state.shift {
                     // anchor measured from the bottom for the frequency axis.
@@ -246,7 +248,7 @@ impl ApplicationHandler for App {
                     true
                 };
                 if redraw {
-                    state.gpu.window.request_redraw();
+                    state.gpu.request_redraw();
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -254,13 +256,13 @@ impl ApplicationHandler for App {
                     Key::Named(NamedKey::Escape) => event_loop.exit(),
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         state.view = View::full(total);
-                        state.gpu.window.request_redraw();
+                        state.gpu.request_redraw();
                     }
                     Key::Character(ref c) => {
                         if let Some(ch) = c.chars().next()
                             && state.view_obj.on_char(ch)
                         {
-                            state.gpu.window.request_redraw();
+                            state.gpu.request_redraw();
                         }
                     }
                     _ => {}

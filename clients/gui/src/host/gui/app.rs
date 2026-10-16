@@ -34,7 +34,7 @@ use crate::host::world::World;
 use crate::host::{BusSource, ClientId, Host, HostEffect};
 use crate::view::Renderers;
 
-use super::{FRAME, NODETREE_POLL, PLACEHOLDER_ORIGIN, UserEvent};
+use super::{FRAME, Loop, NODETREE_POLL, PLACEHOLDER_ORIGIN, UserEvent};
 
 /// One open window: its GPU surface, the per-waveform slots, the painter, the
 /// script address its events go to, the pointer/drag state, and the per-`scope`
@@ -134,7 +134,7 @@ impl WindowState {
     /// redraw of this front is, but a tick's that found only a line moved.
     pub(super) fn repaint(&self) {
         self.batches.want_whole();
-        self.gpu.window.request_redraw();
+        self.gpu.request_redraw();
     }
 
     /// **Only what moves moved** -- a playhead's counter, a fed value, a
@@ -142,7 +142,7 @@ impl WindowState {
     /// window's picture and draw its live layers again.
     pub(super) fn repaint_live(&self) {
         self.batches.want_live();
-        self.gpu.window.request_redraw();
+        self.gpu.request_redraw();
     }
 }
 
@@ -239,10 +239,13 @@ impl App {
         socket: Arc<UdpSocket>,
         shm: Option<Arc<dyn BusSource>>,
         inflight: Arc<Inflight>,
+        headless: bool,
     ) -> Self {
         // The host's clipboard reaches the desktop's: text copied in a window
-        // pastes in any other program, and the reverse.
-        if let Some(system) = super::clipboard::Desktop::open() {
+        // pastes in any other program, and the reverse. A host with no
+        // windows on the screen keeps its own: a script copying in it while
+        // somebody works must not take what they copied.
+        if !headless && let Some(system) = super::clipboard::Desktop::open() {
             host.clipboard.attach(system);
         }
         Self {
@@ -390,18 +393,13 @@ impl App {
         })
     }
 
-    pub(super) fn apply(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        from: ClientId,
-        effects: Vec<HostEffect>,
-    ) {
+    pub(super) fn apply(&mut self, lp: Loop, from: ClientId, effects: Vec<HostEffect>) {
         for effect in effects {
             match effect {
                 HostEffect::Reply(msg) => self.send(from, msg),
                 HostEffect::OpenWindow(id) => {
                     if self.resumed {
-                        self.open_window(event_loop, id, from);
+                        self.open_window(lp, id, from);
                     } else {
                         self.pending.push((id, from));
                     }
@@ -412,7 +410,7 @@ impl App {
                     // -- a close it was asked for -- ends it, as the close
                     // mark does.
                     if self.standalone && self.windows.is_empty() {
-                        event_loop.exit();
+                        lp.exit();
                     }
                 }
                 HostEffect::Redraw(id) => {
@@ -624,11 +622,13 @@ impl App {
     }
 }
 
-impl ApplicationHandler<UserEvent> for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+impl App {
+    /// The loop has started: the windows asked for before it are opened, what
+    /// was asked of them done, and a standalone's pre-loaded windows opened.
+    pub(super) fn start(&mut self, lp: Loop) {
         self.resumed = true;
         for (id, origin) in std::mem::take(&mut self.pending) {
-            self.open_window(event_loop, id, origin);
+            self.open_window(lp, id, origin);
         }
         for (id, asked) in std::mem::take(&mut self.pending_asks) {
             match asked {
@@ -646,12 +646,13 @@ impl ApplicationHandler<UserEvent> for App {
         self.standalone = !preloaded.is_empty();
         for id in preloaded {
             if !self.windows.contains_key(&id) {
-                self.open_window(event_loop, id, standalone_origin);
+                self.open_window(lp, id, standalone_origin);
             }
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+    /// One event from the fronts' threads.
+    pub(super) fn on_event(&mut self, lp: Loop, event: UserEvent) {
         if let UserEvent::Osc { .. } | UserEvent::TcpOsc { .. } | UserEvent::WsOsc { .. } = event {
             self.inflight.release();
         }
@@ -663,7 +664,7 @@ impl ApplicationHandler<UserEvent> for App {
                 };
                 let from = ClientId::Udp(from);
                 let effects = self.host.handle_packet(packet, from);
-                self.apply(event_loop, from, effects);
+                self.apply(lp, from, effects);
             }
             UserEvent::TcpConnected { id, conn } => {
                 self.tcp_conns.insert(id, conn);
@@ -675,7 +676,7 @@ impl ApplicationHandler<UserEvent> for App {
                 };
                 let from = ClientId::Tcp(id);
                 let effects = self.host.handle_packet(packet, from);
-                self.apply(event_loop, from, effects);
+                self.apply(lp, from, effects);
             }
             UserEvent::TcpDisconnected { id } => {
                 self.tcp_conns.remove(&id);
@@ -690,7 +691,7 @@ impl ApplicationHandler<UserEvent> for App {
                 };
                 let from = ClientId::Ws(id);
                 let effects = self.host.handle_packet(packet, from);
-                self.apply(event_loop, from, effects);
+                self.apply(lp, from, effects);
             }
             UserEvent::WsDisconnected { id } => {
                 self.ws_conns.remove(&id);
@@ -713,7 +714,7 @@ impl ApplicationHandler<UserEvent> for App {
     /// ran last decided and the other's deadline was dropped -- a window
     /// following a recording *and* animating would keep only one of the two,
     /// depending on the order this function happens to be written in.
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    pub(super) fn tick(&mut self, lp: Loop) -> Option<Instant> {
         let now = Instant::now();
         let mut next_wake: Option<Instant> = None;
 
@@ -725,7 +726,7 @@ impl ApplicationHandler<UserEvent> for App {
         // gesture -- the roll a double click on a box of notes asks for.
         let effects = self.host.take_effects();
         if !effects.is_empty() {
-            self.apply(event_loop, super::PLACEHOLDER_ORIGIN, effects);
+            self.apply(lp, super::PLACEHOLDER_ORIGIN, effects);
         }
 
         // A clip drag held against a lane's edge scrolls the view under a
@@ -739,7 +740,7 @@ impl ApplicationHandler<UserEvent> for App {
             bus.transport_position(clausters_editing::apply::MULTITRACK_TRANSPORT as usize)
         }) && let Some(effect) = self.host.tick_multitrack_clock(position)
         {
-            self.apply(event_loop, super::PLACEHOLDER_ORIGIN, vec![effect]);
+            self.apply(lp, super::PLACEHOLDER_ORIGIN, vec![effect]);
         }
 
         // **What the last frame could not draw.** A view zoomed finer than its
@@ -885,7 +886,21 @@ impl ApplicationHandler<UserEvent> for App {
             next_wake = Some(next_wake.map_or(self.next_query, |t| t.min(self.next_query)));
         }
 
-        match next_wake {
+        next_wake
+    }
+}
+
+impl ApplicationHandler<UserEvent> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.start(Loop::Shown(event_loop));
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        self.on_event(Loop::Shown(event_loop), event);
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        match self.tick(Loop::Shown(event_loop)) {
             Some(t) => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }
@@ -901,7 +916,7 @@ impl ApplicationHandler<UserEvent> for App {
             return;
         };
         match event {
-            WindowEvent::CloseRequested => self.user_close(def_id, event_loop),
+            WindowEvent::CloseRequested => self.user_close(def_id, Loop::Shown(event_loop)),
             WindowEvent::Resized(size) => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.gpu.resize(size.width, size.height);
@@ -922,7 +937,10 @@ impl ApplicationHandler<UserEvent> for App {
                 if self.host.set_ui_scale(def_id, scale_factor as f32)
                     && let Some(ws) = self.windows.get_mut(&def_id)
                 {
-                    let logical = ws.gpu.window.inner_size().to_logical::<f64>(previous);
+                    let Some(window) = ws.gpu.window() else {
+                        return;
+                    };
+                    let logical = window.inner_size().to_logical::<f64>(previous);
                     let want = logical.to_physical(scale_factor);
                     if let Err(e) = inner_size_writer.request_inner_size(want) {
                         tracing::debug!("window {def_id}: keeping the size at the new scale: {e}");
@@ -1047,7 +1065,7 @@ impl ApplicationHandler<UserEvent> for App {
                 // open closes it.
                 let consumed = to_key(&pressed).is_some_and(|k| self.press_key(def_id, k));
                 if !consumed && matches!(pressed, Key::Named(NamedKey::Escape)) {
-                    self.user_close(def_id, event_loop);
+                    self.user_close(def_id, Loop::Shown(event_loop));
                 }
             }
             WindowEvent::RedrawRequested => self.render(def_id),

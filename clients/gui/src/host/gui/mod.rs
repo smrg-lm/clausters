@@ -1,6 +1,8 @@
 //! The windowed GUI host: winit + wgpu driven by the `/gui_*` protocol.
 //!
-//! This is the GPU front of the host (the headless one is [`super::transport`]).
+//! This is the GPU front of the host, with windows on the screen ([`run`]) or
+//! drawn offscreen and never shown ([`run_headless`]); the front with no GPU
+//! at all is [`super::transport`].
 //! The OSC transport runs on a **background thread** and forwards every datagram
 //! to the winit **main thread** through an [`EventLoopProxy`] (winit owns the
 //! main thread; window creation must happen there). The main thread holds the
@@ -36,7 +38,7 @@ mod windows;
 
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clausters_net::tcp::TcpConn;
 use clausters_net::ws::WsConn;
@@ -93,6 +95,44 @@ pub enum UserEvent {
     },
 }
 
+/// **Where the windows live**: winit's loop, which opens them on the screen,
+/// or none -- the headless front, which draws them offscreen and never shows
+/// them. Everything the host does with a window is the same either way; what
+/// differs is how one is opened and how the host ends.
+#[derive(Clone, Copy)]
+pub(super) enum Loop<'a> {
+    Shown(&'a winit::event_loop::ActiveEventLoop),
+    Headless(&'a std::cell::Cell<bool>),
+}
+
+impl Loop<'_> {
+    /// Ends the host: winit's loop exits, or the headless one is told to.
+    pub(super) fn exit(self) {
+        match self {
+            Loop::Shown(event_loop) => event_loop.exit(),
+            Loop::Headless(exit) => exit.set(true),
+        }
+    }
+}
+
+/// **How the fronts' threads reach the main one**: winit's proxy, or a
+/// channel the headless loop waits on. Both answer `Err` once the loop has
+/// gone, which is what ends a thread.
+#[derive(Clone)]
+enum Proxy {
+    Winit(EventLoopProxy<UserEvent>),
+    Channel(std::sync::mpsc::Sender<UserEvent>),
+}
+
+impl Proxy {
+    fn send_event(&self, event: UserEvent) -> Result<(), ()> {
+        match self {
+            Proxy::Winit(proxy) => proxy.send_event(event).map_err(|_| ()),
+            Proxy::Channel(sender) => sender.send(event).map_err(|_| ()),
+        }
+    }
+}
+
 /// Runs the windowed host: spawn the transport thread(s), then own the winit
 /// event loop on this (main) thread until the process is stopped.
 ///
@@ -119,13 +159,84 @@ pub fn run(
         .map_err(|e| format!("cannot create the window event loop ({e}); use --headless on a machine with no display"))?;
     event_loop.set_control_flow(ControlFlow::Wait);
 
-    let proxy = event_loop.create_proxy();
+    let proxy = Proxy::Winit(event_loop.create_proxy());
+    let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
+    let mut app = App::new(host, socket, bus, inflight, false);
+    event_loop.run_app(&mut app).map_err(|e| e.to_string())
+}
+
+/// **Runs the host with no display**, drawing its windows offscreen: the
+/// same host as [`run`] -- every window has its GPU, its gesture machine and
+/// its owner, so a verb, a hand played to it and a capture do what they do
+/// on the screen -- driven by a loop of its own instead of winit's, which
+/// needs a display to start.
+///
+/// The caller has made sure an adapter answers ([`can_draw_offscreen`]);
+/// without one the host runs the protocol alone (`transport::serve`).
+pub fn run_headless(
+    host: Host,
+    socket: Arc<UdpSocket>,
+    bus: Option<Arc<dyn BusSource>>,
+    tcp: Option<(SocketAddr, usize)>,
+    ws: Option<(SocketAddr, usize)>,
+) -> Result<(), String> {
+    let (sender, events) = std::sync::mpsc::channel();
+    let proxy = Proxy::Channel(sender);
+    let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
+    // The threads hold the senders; this one would keep the channel open
+    // after they are gone.
+    drop(proxy);
+    let mut app = App::new(host, socket, bus, inflight, true);
+    let exit = std::cell::Cell::new(false);
+    app.start(Loop::Headless(&exit));
+    loop {
+        let wake = app.tick(Loop::Headless(&exit));
+        if exit.get() {
+            return Ok(());
+        }
+        let event = match wake {
+            Some(at) => match events.recv_timeout(at.saturating_duration_since(Instant::now())) {
+                Ok(event) => event,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
+            },
+            None => match events.recv() {
+                Ok(event) => event,
+                Err(_) => return Ok(()),
+            },
+        };
+        app.on_event(Loop::Headless(&exit), event);
+        // Whatever else arrived meanwhile, before the next tick.
+        while let Ok(event) = events.try_recv() {
+            app.on_event(Loop::Headless(&exit), event);
+        }
+    }
+}
+
+/// Whether this machine can draw a window offscreen: an adapter answers, a
+/// software one included. What the headless front asks before it decides to
+/// draw, and the reason when it cannot.
+pub fn can_draw_offscreen() -> Result<(), String> {
+    pollster::block_on(crate::gpu::Gpu::offscreen(1, 1, 1)).map(|_| ())
+}
+
+/// **Starts the fronts' threads**: the script front's UDP reader, its TCP and
+/// WebSocket legs when asked for, and a reader per audio-server leg, each
+/// handing what it reads to the main thread through `proxy`. Answers the
+/// count the script front's frames are admitted through.
+fn spawn_fronts(
+    host: &Host,
+    socket: &Arc<UdpSocket>,
+    proxy: &Proxy,
+    tcp: Option<(SocketAddr, usize)>,
+    ws: Option<(SocketAddr, usize)>,
+) -> Result<Arc<Inflight>, String> {
     // The proxy's queue has no ceiling, so the script front bounds what it
     // hands the loop itself: every carrier admits a frame through this one
     // count, and the loop releases it when it handles the frame.
     let inflight = Arc::new(Inflight::new(clausters_net::INBOUND_QUEUE));
     // The script -> host front.
-    let recv_socket = Arc::clone(&socket);
+    let recv_socket = Arc::clone(socket);
     let script_proxy = proxy.clone();
     let udp_inflight = Arc::clone(&inflight);
     std::thread::Builder::new()
@@ -198,11 +309,10 @@ pub fn run(
             .map_err(|e| e.to_string())?;
     }
 
-    let mut app = App::new(host, socket, bus, inflight);
-    event_loop.run_app(&mut app).map_err(|e| e.to_string())
+    Ok(inflight)
 }
 
-fn transport_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>, inflight: &Inflight) {
+fn transport_loop(socket: Arc<UdpSocket>, proxy: Proxy, inflight: &Inflight) {
     let mut buf = vec![0u8; 65536];
     loop {
         match socket.recv_from(&mut buf) {
@@ -227,11 +337,7 @@ fn transport_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>, infl
 
 /// Drains the client leg's socket, forwarding the audio server's replies to the
 /// main thread (which routes `/buffer_query.reply`/`/buffer_getRange.reply` into the buffer-fetch path).
-fn server_reply_loop(
-    socket: Arc<UdpSocket>,
-    leg: crate::host::instance::Leg,
-    proxy: EventLoopProxy<UserEvent>,
-) {
+fn server_reply_loop(socket: Arc<UdpSocket>, leg: crate::host::instance::Leg, proxy: Proxy) {
     let mut buf = vec![0u8; 65536];
     loop {
         match socket.recv_from(&mut buf) {

@@ -27,7 +27,7 @@ use crate::view::Renderers;
 
 use super::app::{App, WindowState};
 use super::serverleg::tree_has_node_tree;
-use super::{NODETREE_POLL, PLACEHOLDER_ORIGIN};
+use super::{Loop, NODETREE_POLL, PLACEHOLDER_ORIGIN};
 
 /// What a `/gui_def` builds for a window that already exists: the bulk slots,
 /// the canvases, and the buffer references its fetches will fill. Named because
@@ -63,7 +63,7 @@ impl App {
     /// The title follows the new tree; the **size does not**. A declared size is
     /// what a window opens at, and re-imposing it on every redefine would take
     /// back a size the person had chosen with the mouse.
-    pub(super) fn open_window(&mut self, event_loop: &ActiveEventLoop, id: i32, origin: ClientId) {
+    pub(super) fn open_window(&mut self, lp: Loop, id: i32, origin: ClientId) {
         // Read the window metadata, releasing the host borrow before mutating
         // and before re-borrowing the tree for the waveforms.
         let Some(title) = self.host.window_def(id).and_then(|t| match &t.kind {
@@ -89,7 +89,9 @@ impl App {
         let opened = held.is_some();
         let (gpu, renderers, batches, mut state) = match held {
             Some(ws) => {
-                ws.gpu.window.set_title(&title);
+                if let Some(window) = ws.gpu.window() {
+                    window.set_title(&title);
+                }
                 ws.repaint();
                 let carried = (
                     ws.origin,
@@ -104,42 +106,36 @@ impl App {
                 (ws.gpu, ws.renderers, ws.batches, Some(carried))
             }
             None => {
-                let attrs = Window::default_attributes()
-                    .with_title(title.clone())
-                    .with_inner_size(LogicalSize::new(width as f64, height as f64));
-                let window = match event_loop.create_window(attrs) {
-                    Ok(w) => Arc::new(w),
-                    Err(e) => return warn!("gui_def {id}: cannot create window: {e}"),
-                };
-                let winit_id = window.id();
-                // The window's UI scale, the one platform reading the host
-                // cannot make itself: the shell writes it, the core resolves its
-                // size table once and the wire's logical lengths land on this
-                // display's pixels.
-                let ui_scale = window.scale_factor();
-                self.host.set_ui_scale(id, ui_scale as f32);
-                // A hugging window was sized before it had a scale, and the
-                // resolved table snaps its roles to whole pixels -- so on a
-                // fractional scale the estimate is a pixel or two under what the
-                // layout is about to draw. Ask again now that the table is the
-                // one the layout will use.
-                if let Some((w, h)) = self.host.window_size_px(id) {
-                    let _ = window.request_inner_size(PhysicalSize::new(w, h));
-                }
-                let gpu = match pollster::block_on(Gpu::new(window, self.host.msaa)) {
-                    Ok(gpu) => gpu,
-                    Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),
+                let gpu = match lp {
+                    Loop::Shown(event_loop) => {
+                        let Some(gpu) = self.show_window(event_loop, id, &title, (width, height))
+                        else {
+                            return;
+                        };
+                        gpu
+                    }
+                    // **A window drawn and never shown**: the size it declared,
+                    // at a scale of one, since there is no display to measure
+                    // it by -- and a capture of it is the window's own pixels.
+                    Loop::Headless(_) => {
+                        self.host.set_ui_scale(id, 1.0);
+                        let (w, h) = self.host.window_size_px(id).unwrap_or((width, height));
+                        match pollster::block_on(Gpu::offscreen(w, h, self.host.msaa)) {
+                            Ok(gpu) => gpu,
+                            Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),
+                        }
+                    }
                 };
                 // The window's shared pipelines come first: a spectrogram slot
                 // binds its textures against their layout.
                 let renderers = Renderers::new(&gpu.device, gpu.target());
                 let batches = Batches::new(&gpu.device, gpu.target());
-                self.by_winit.insert(winit_id, id);
-                // The scale is in the line because it is the one thing about a
-                // window nobody can read off a screenshot: a desktop that
-                // ignores what was asked of it (an X11-only override under
-                // Wayland, say) looks exactly like a host that ignored it.
-                info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
+                if gpu.window().is_none() {
+                    info!(
+                        "gui_def {id}: opened window \"{title}\" offscreen at {}x{}",
+                        gpu.config.width, gpu.config.height
+                    );
+                }
                 (gpu, renderers, batches, None)
             }
         };
@@ -203,6 +199,58 @@ impl App {
             self.requery_node_trees();
             self.next_query = Instant::now() + NODETREE_POLL;
         }
+    }
+
+    /// **An OS window for def `id`**, and the GPU drawing into it: created at
+    /// its declared logical size, told its display's scale, and sized again
+    /// once the size table resolved at that scale -- what a window on the
+    /// screen is, and an offscreen one is not.
+    fn show_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: i32,
+        title: &str,
+        (width, height): (u32, u32),
+    ) -> Option<Gpu> {
+        let attrs = Window::default_attributes()
+            .with_title(title.to_string())
+            .with_inner_size(LogicalSize::new(width as f64, height as f64));
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                warn!("gui_def {id}: cannot create window: {e}");
+                return None;
+            }
+        };
+        let winit_id = window.id();
+        // The window's UI scale, the one platform reading the host
+        // cannot make itself: the shell writes it, the core resolves its
+        // size table once and the wire's logical lengths land on this
+        // display's pixels.
+        let ui_scale = window.scale_factor();
+        self.host.set_ui_scale(id, ui_scale as f32);
+        // A hugging window was sized before it had a scale, and the
+        // resolved table snaps its roles to whole pixels -- so on a
+        // fractional scale the estimate is a pixel or two under what the
+        // layout is about to draw. Ask again now that the table is the
+        // one the layout will use.
+        if let Some((w, h)) = self.host.window_size_px(id) {
+            let _ = window.request_inner_size(PhysicalSize::new(w, h));
+        }
+        let gpu = match pollster::block_on(Gpu::new(window, self.host.msaa)) {
+            Ok(gpu) => gpu,
+            Err(e) => {
+                warn!("gui_def {id}: cannot start the GPU: {e}");
+                return None;
+            }
+        };
+        self.by_winit.insert(winit_id, id);
+        // The scale is in the line because it is the one thing about a
+        // window nobody can read off a screenshot: a desktop that
+        // ignores what was asked of it (an X11-only override under
+        // Wayland, say) looks exactly like a host that ignored it.
+        info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
+        Some(gpu)
     }
 
     /// The **def's** own resources, built against a window's GPU: the bulk
@@ -329,8 +377,10 @@ impl App {
     }
 
     pub(super) fn drop_window(&mut self, id: i32) {
-        if let Some(ws) = self.windows.remove(&id) {
-            self.by_winit.remove(&ws.gpu.window.id());
+        if let Some(ws) = self.windows.remove(&id)
+            && let Some(window) = ws.gpu.window()
+        {
+            self.by_winit.remove(&window.id());
         }
         // Drop any pending buffer wants this window had, so a finished fetch does
         // not try to fill a window that is gone (or being rebuilt).
@@ -363,7 +413,7 @@ impl App {
     ///
     /// **A window whose owner asks first is not closed here** (`ask_close`):
     /// the owner is told, and frees it once nothing is left to lose.
-    pub(super) fn user_close(&mut self, id: i32, event_loop: &ActiveEventLoop) {
+    pub(super) fn user_close(&mut self, id: i32, lp: Loop) {
         let ctx = self.gesture_ctx(id);
         if let Some(ws) = self.windows.get_mut(&id)
             && let Some(effects) = ws.gestures.close(&mut self.host, &ctx)
@@ -377,7 +427,7 @@ impl App {
         }
         self.close_by_user(id);
         if self.standalone && self.windows.is_empty() {
-            event_loop.exit();
+            lp.exit();
         }
     }
 }

@@ -162,7 +162,8 @@ pub struct GuiConfig {
     pub shm: Option<String>,
     /// Data directory for the GuiDef store (`--data-dir`).
     pub data_dir: Option<String>,
-    /// Run with no display (`--headless`).
+    /// Show no window: draw each one offscreen, or with no adapter run the
+    /// protocol alone (`--headless`).
     pub headless: Option<bool>,
     /// Path to the typeface the host draws text with (`--font`). Read only by a
     /// GUI host built with a rasterizer (the `font-atlas` feature); any other

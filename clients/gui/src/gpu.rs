@@ -12,10 +12,13 @@ use std::sync::Arc;
 
 use winit::window::Window;
 
-/// The window plus its wgpu surface, device, queue and current configuration.
+/// The window plus its wgpu surface, device, queue and current configuration
+/// -- or, **offscreen**, the device and the configuration alone: a window a
+/// headless host draws and never shows ([`Gpu::offscreen`]).
 pub(crate) struct Gpu {
-    pub(crate) window: Arc<Window>,
-    pub(crate) surface: wgpu::Surface<'static>,
+    /// The OS window and the surface its frames are presented to; `None`
+    /// offscreen, where a frame is drawn into a texture and read back.
+    shown: Option<(Arc<Window>, wgpu::Surface<'static>)>,
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
     pub(crate) config: wgpu::SurfaceConfiguration,
@@ -102,8 +105,7 @@ impl Gpu {
             1
         };
         let mut gpu = Self {
-            window,
-            surface,
+            shown: Some((window, surface)),
             device,
             queue,
             config,
@@ -112,6 +114,102 @@ impl Gpu {
         };
         gpu.rebuild_msaa();
         Ok(gpu)
+    }
+
+    /// **A window that is drawn and never shown**: a device asked for with no
+    /// surface to be compatible with, and a configuration of the window's
+    /// size that nothing presents -- what a headless host draws a window's
+    /// frame with, for a capture.
+    ///
+    /// Any adapter will do, a software one included: one with no card at all
+    /// is what a machine with no display usually has, and it is asked for
+    /// only when no other answers. What was found is logged, since a picture
+    /// drawn in software may differ from a card's in its last bits (text, the
+    /// edges a multisample smooths).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) async fn offscreen(width: u32, height: u32, samples: u32) -> Result<Self, String> {
+        let instance = new_instance().await;
+        let mut options = wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        };
+        let adapter = match instance.request_adapter(&options).await {
+            Ok(adapter) => adapter,
+            Err(_) => {
+                options.force_fallback_adapter = true;
+                instance
+                    .request_adapter(&options)
+                    .await
+                    .map_err(|e| format!("no GPU adapter, not even a software one ({e})"))?
+            }
+        };
+        let info = adapter.get_info();
+        tracing::info!(
+            "offscreen GPU: {} ({:?}, {:?} backend)",
+            info.name,
+            info.device_type,
+            info.backend
+        );
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("clausters-gui offscreen device"),
+                required_limits: device_limits(&adapter),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| format!("cannot create the GPU device: {e}"))?;
+        // The format a page's surface and most windows' take: a plain one, so
+        // the theme's numbers reach the picture as they are.
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: width.max(1),
+            height: height.max(1),
+            present_mode: wgpu::PresentMode::Fifo,
+            desired_maximum_frame_latency: 2,
+            alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+            view_formats: vec![],
+        };
+        let asked = samples.max(1);
+        let samples = if adapter
+            .get_texture_format_features(format)
+            .flags
+            .sample_count_supported(asked)
+        {
+            asked
+        } else {
+            1
+        };
+        let mut gpu = Self {
+            shown: None,
+            device,
+            queue,
+            config,
+            samples,
+            msaa: None,
+        };
+        gpu.rebuild_msaa();
+        Ok(gpu)
+    }
+
+    /// The OS window this draws into, `None` offscreen.
+    pub(crate) fn window(&self) -> Option<&Arc<Window>> {
+        self.shown.as_ref().map(|(window, _)| window)
+    }
+
+    /// The surface a frame is presented to, `None` offscreen.
+    pub(crate) fn surface(&self) -> Option<&wgpu::Surface<'static>> {
+        self.shown.as_ref().map(|(_, surface)| surface)
+    }
+
+    /// Asks the window for a frame; offscreen there is no window to ask, and
+    /// a frame is drawn when a capture wants one.
+    pub(crate) fn request_redraw(&self) {
+        if let Some(window) = self.window() {
+            window.request_redraw();
+        }
     }
 
     /// What every pipeline drawing into this window declares: its format and
@@ -133,7 +231,9 @@ impl Gpu {
         if width > 0 && height > 0 {
             self.config.width = width;
             self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
+            if let Some(surface) = self.surface() {
+                surface.configure(&self.device, &self.config);
+            }
             self.rebuild_msaa();
         }
     }

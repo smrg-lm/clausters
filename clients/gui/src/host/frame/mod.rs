@@ -1119,7 +1119,13 @@ pub(crate) fn render(
         Drawn::Whole
     };
 
-    let frame = match gpu.surface.get_current_texture() {
+    // Offscreen there is nothing to present: the batches hold the frame, and
+    // a capture draws it into a texture of its own.
+    let Some(surface) = gpu.surface() else {
+        batches.asked.drawn();
+        return drawn;
+    };
+    let frame = match surface.get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
         _ => {
             // No drawable this turn (outdated/timed-out surface -- e.g. the
@@ -1128,8 +1134,8 @@ pub(crate) fn render(
             // requested is not silently dropped and the window never shows
             // stale state once it is presentable again. What it was asked for
             // stands: the batches already hold it.
-            gpu.surface.configure(&gpu.device, &gpu.config);
-            gpu.window.request_redraw();
+            surface.configure(&gpu.device, &gpu.config);
+            gpu.request_redraw();
             return Drawn::Owed;
         }
     };
@@ -1150,7 +1156,9 @@ pub(crate) fn render(
     // callback to this commit, so later `request_redraw`s are delivered (and
     // throttled) correctly -- without it, Wayland redraw delivery can stall on
     // an unfocused or covered window until the compositor repaints it anyway.
-    gpu.window.pre_present_notify();
+    if let Some(window) = gpu.window() {
+        window.pre_present_notify();
+    }
     frame.present();
     batches.asked.drawn();
     drawn
@@ -1841,6 +1849,82 @@ pub(crate) fn framing_of(r: Rect, fb_w: u32, fb_h: u32) -> Framing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A window drawn offscreen and read back is the window's picture**:
+    /// the size of its framebuffer, the theme's background where nothing is
+    /// drawn and something else where a slider is -- through the one pass the
+    /// screen's frame takes. Skipped, and said so, on a machine where no
+    /// adapter answers at all, a software one included.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn a_window_is_drawn_offscreen_and_read_back() {
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+
+        let Ok(mut gpu) = pollster::block_on(Gpu::offscreen(320, 200, 4)) else {
+            eprintln!("no adapter on this machine: nothing to draw offscreen with");
+            return;
+        };
+        let mut host = crate::host::Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![
+                    OscType::Int(1),
+                    OscType::String(
+                        r#"{"type":"window","w":320,"h":200,"children":[
+                            {"id":2,"type":"slider","value":0.7}]}"#
+                            .into(),
+                    ),
+                ],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let mut renderers = Renderers::new(&gpu.device, gpu.target());
+        let mut batches = Batches::new(&gpu.device, gpu.target());
+        let inputs = FrameInputs {
+            metrics: host.metrics_for(1),
+            world: World {
+                timelines: host.timelines(),
+                ..World::default()
+            },
+            ..FrameInputs::default()
+        };
+        let readback = capture(
+            &mut gpu,
+            &mut renderers,
+            &mut batches,
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            host.window_def(1).expect("the window is defined"),
+            &inputs,
+            &host.theme,
+        )
+        .expect("a plain window reads back");
+        readback.wait(&gpu.device).expect("the card maps it");
+        let (w, h, rgba) = readback.pixels();
+        assert_eq!((w, h), (320, 200));
+        let background = clear_color(&host.theme);
+        let bg = [background.r, background.g, background.b].map(|c| (c * 255.0).round() as i32);
+        let differs = rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|px| (0..3).any(|c| (i32::from(px[c]) - bg[c]).abs() > 2))
+            .count();
+        assert_eq!(
+            &rgba[..3].iter().map(|&c| i32::from(c)).collect::<Vec<_>>(),
+            &bg,
+            "the corner is the background"
+        );
+        assert!(
+            differs > 500,
+            "the slider is drawn: {differs} pixels differ"
+        );
+    }
 
     /// The picture of window 1 of a host holding `json`, with every playhead
     /// reading `clock` and the control buses reading `level`.
