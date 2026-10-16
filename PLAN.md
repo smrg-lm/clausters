@@ -2972,18 +2972,15 @@ where it came from).
   three runs. It stays opt-in, decided with the maintainer: it changes how the
   server shares the machine, and the default keeps the kernel's choice.
 
-- ⬜ **Every stored plugin def is probed again at boot, before the server
-  answers** *(found 2026-10-14, running the plugin examples against the default
-  data directory)*. Restoring `defs/plugindefs/` calls `PluginDef::probe` for
-  each record on the network thread during startup: one helper per def, each
-  loading its plugin, so a data directory that has seen a heavy instrument
-  loads it on every boot whether or not anything plays it, and a missing or
-  slow binary delays the server by its timeout. The examples now send `tmp_`
-  plugin defs, which are never stored. What is open is restoring a stored
-  plugin def without loading the plugin -- its probed surface kept in the
-  record and validated on the build worker when a node first asks for it, or
-  restoration moved off the startup path -- so a stored def costs nothing
-  until it is used.
+- ✅ **Every stored plugin def is probed again at boot, before the server
+  answers** *(found 2026-10-14, fixed 2026-10-15)*. Restoring
+  `defs/plugindefs/` probed each record on the network thread during startup,
+  so a data directory that had seen a heavy instrument loaded it on every boot
+  and a missing or slow binary delayed the server by its timeout. A record now
+  keeps the surface the probe found when the def was sent; restoring rebuilds
+  the def from it without loading the plugin, and the first node's instance is
+  what checks the binary still matches. A record written before is probed once
+  and rewritten.
 
 - ✅ **Clamped audio buses in dependency analysis** *(fixed 2026-10-14)* —
   audio I/O clamps an out-of-range index to the last configured bus, while

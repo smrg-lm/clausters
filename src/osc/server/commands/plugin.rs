@@ -926,6 +926,10 @@ impl OscServer {
                                     &name,
                                     &serde_json::to_vec(&def.reference)
                                         .expect("plugin reference JSON"),
+                                    Some(
+                                        &serde_json::to_vec(&def.surface())
+                                            .expect("plugin surface JSON"),
+                                    ),
                                 )
                             {
                                 self.fail(client, "/def_send", error.to_string());

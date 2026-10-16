@@ -105,11 +105,6 @@ already carry it.
   reports the step it stopped at and the page's console; what is open is the
   diagnosis, from the next timeout's output.
 
-- ⬜ **Every stored plugin def is probed again at boot, before the server
-  answers** *(root `PLAN.md`, Found by use)*. A data directory that has seen a
-  heavy instrument loads it on every boot. What is open is restoring a stored
-  plugin def without loading the plugin until a node asks for it.
-
 - ⬜ **A notebook example that writes files cannot run cell by cell in an
   interactive session** *(`clients/python/PLAN.md`, Found by use)*. The output
   directory is resolved from `__file__`, which a cell-by-cell session does not

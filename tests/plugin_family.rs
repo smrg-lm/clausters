@@ -154,6 +154,7 @@ fn osc_family_barrier_persistence_queries_restart_and_unavailable_records() {
         .save_plugindef(
             "unavailable",
             br#"{"format":"clap","path":"/missing.clap","id":"missing","inputs":[],"outputs":[]}"#,
+            None,
         )
         .unwrap();
     let (mut engine, handle) = engine_pair(48000.0, 2);
@@ -213,7 +214,10 @@ fn osc_family_barrier_persistence_queries_restart_and_unavailable_records() {
         ]
     );
     assert_eq!(recv().addr, "/server_sync.reply");
-    assert!(directory.join("defs/plugindefs/fx.json").exists());
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(directory.join("defs/plugindefs/fx.json")).unwrap())
+            .unwrap();
+    assert!(record["surface"]["info"]["parameters"].is_array());
     send(
         "/synth_new",
         vec![
@@ -238,6 +242,86 @@ fn osc_family_barrier_persistence_queries_restart_and_unavailable_records() {
     assert!(!directory.join("defs/plugindefs/fx.json").exists());
     send("/node_free", vec![OscType::Int(42)]);
     assert_no_alloc(|| engine.process_block(&mut [0.0; 128]));
+    send("/server_quit", Vec::new());
+    assert_eq!(recv().addr, "/done");
+    thread.join().unwrap().unwrap();
+}
+
+#[test]
+fn a_stored_surface_restores_without_loading_the_plugin() {
+    use clausters::osc::server::{OscServer, ServerInfo};
+    use clausters::rosc::{OscMessage, OscPacket, OscType, encoder};
+    use clausters::server::defstore::DefStore;
+    use clausters::server::engine::engine_pair;
+    use std::net::UdpSocket;
+    let directory = fixture().parent().unwrap().join("lazy-data");
+    let store = DefStore::open(&directory).unwrap();
+    // The binary exists but holds no plugin of this id, so a probe would
+    // fail: the def is present only if restoring loaded nothing.
+    let probed = def("gain");
+    let mut reference = probed.reference.clone();
+    reference.id = "org.clausters.fixture.absent".into();
+    store
+        .save_plugindef(
+            "lazy",
+            &serde_json::to_vec(&reference).unwrap(),
+            Some(&serde_json::to_vec(&probed.surface()).unwrap()),
+        )
+        .unwrap();
+    let (_engine, handle) = engine_pair(48000.0, 2);
+    let mut server = OscServer::bind(
+        ("127.0.0.1", 0),
+        ServerInfo {
+            nominal_sample_rate: 48000.0,
+            actual_sample_rate: 48000.0,
+        },
+        handle,
+    )
+    .unwrap();
+    server.attach_store(store);
+    let address = server.local_addr().unwrap();
+    let thread = std::thread::spawn(move || server.run());
+    let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let send = |addr: &str, args| {
+        client
+            .send_to(
+                &encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: addr.into(),
+                    args,
+                }))
+                .unwrap(),
+                address,
+            )
+            .unwrap();
+    };
+    let recv = || {
+        let mut bytes = [0; 65536];
+        let n = client.recv(&mut bytes).unwrap();
+        let OscPacket::Message(msg) = clausters::osc::decode_packet(&bytes[..n]).unwrap() else {
+            panic!("message required")
+        };
+        msg
+    };
+    send("/def_query", vec![OscType::String("lazy".into())]);
+    let reply = recv();
+    assert_eq!(reply.args[1], OscType::String("plugin".into()));
+    assert!(reply.args.contains(&OscType::String("param:0".into())));
+    assert_eq!(recv().addr, "/done");
+    // The first node is what loads the plugin, and it finds none.
+    send(
+        "/synth_new",
+        vec![
+            OscType::String("lazy".into()),
+            OscType::Int(7),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let failed = recv();
+    assert_eq!(failed.addr, "/fail");
     send("/server_quit", Vec::new());
     assert_eq!(recv().addr, "/done");
     thread.join().unwrap().unwrap();

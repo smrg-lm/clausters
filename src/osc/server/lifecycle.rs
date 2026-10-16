@@ -271,9 +271,34 @@ impl OscServer {
                     serde_json::from_slice::<crate::plugin::PluginRecord>(&bytes)
                         .map_err(|e| e.to_string())
                 })
-                .and_then(|record| {
-                    crate::plugin::PluginDef::probe(record.reference, self.handle.sample_rate)
-                        .map(|def| (record.name, def))
+                .and_then(|record| match record.surface {
+                    // The probe ran when the def was sent; a node's first
+                    // instance checks the binary still matches it.
+                    Some(surface) => crate::plugin::PluginDef::restore(record.reference, surface)
+                        .map(|def| (record.name, def)),
+                    // A record from before surfaces were kept is probed once
+                    // and rewritten with the surface it reports.
+                    None => {
+                        let def = crate::plugin::PluginDef::probe(
+                            record.reference,
+                            self.handle.sample_rate,
+                        )?;
+                        let rewritten = serde_json::to_vec(&def.reference)
+                            .and_then(|reference| {
+                                Ok((reference, serde_json::to_vec(&def.surface())?))
+                            })
+                            .map_err(std::io::Error::from)
+                            .and_then(|(reference, surface)| {
+                                store.save_plugindef(&record.name, &reference, Some(&surface))
+                            });
+                        if let Err(error) = rewritten {
+                            warn!(
+                                "persisted plugin def '{}' not rewritten with its surface: {error}",
+                                path.display()
+                            );
+                        }
+                        Ok((record.name, def))
+                    }
                 });
             match loaded {
                 Ok((name, def)) => {

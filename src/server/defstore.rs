@@ -143,12 +143,24 @@ impl DefStore {
     pub fn plugindefs_dir(&self) -> &Path {
         &self.plugindefs_dir
     }
-    pub fn save_plugindef(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
-        let reference: serde_json::Value = serde_json::from_slice(bytes)
+    /// Store a plugin def's `reference` and, when it was probed, the
+    /// `surface` the probe found, so a restore need not load the plugin.
+    pub fn save_plugindef(
+        &self,
+        name: &str,
+        reference: &[u8],
+        surface: Option<&[u8]>,
+    ) -> io::Result<()> {
+        let json = |bytes| {
+            serde_json::from_slice::<serde_json::Value>(bytes)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        };
+        let mut record = serde_json::json!({ "name": name, "reference": json(reference)? });
+        if let Some(surface) = surface {
+            record["surface"] = json(surface)?;
+        }
+        let record = serde_json::to_vec(&record)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        let record =
-            serde_json::to_vec(&serde_json::json!({ "name": name, "reference": reference }))
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         atomic_write(
             &self
                 .plugindefs_dir

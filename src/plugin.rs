@@ -27,6 +27,18 @@ pub use clausters_core::plugin_catalog::{PluginReference, PortReference};
 pub struct PluginRecord {
     pub name: String,
     pub reference: PluginReference,
+    /// What the probe found, so a restored def loads no plugin until a node
+    /// asks for one. Absent from a record written before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<PluginSurface>,
+}
+/// A probed def's surface: the metadata and the control defaults the
+/// initial state gave. A node's instance is checked against it when it loads.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PluginSurface {
+    pub info: PluginInfo,
+    pub defaults: Vec<f32>,
+    pub initial_state: bool,
 }
 /// Validated reference and the control surface shared by all its live nodes.
 pub struct PluginDef {
@@ -64,7 +76,27 @@ impl PluginDef {
             &reference.id,
             DEFAULT_TIMEOUT,
         )?;
+        let mut def = Self::described(reference, info, initial_state)?;
+        let mut instance = def.instance(sample_rate, def.reference.depth)?;
+        // State can change parameter defaults, but cannot change the loaded surface.
+        def.info = instance.metadata().clone();
+        def.info.parameters.sort_by_key(|p| p.id);
+        for (i, p) in def.info.parameters.iter().enumerate() {
+            def.defaults[i] = instance.parameter(p.id)? as f32;
+        }
+        drop(instance);
+        def.aliases = def.info.control_aliases().into_iter().collect();
+        Ok(def)
+    }
+    /// The def a probe described, with each control's default before any
+    /// state is applied.
+    fn described(
+        reference: PluginReference,
+        mut info: PluginInfo,
+        initial_state: bool,
+    ) -> Result<Self, String> {
         reference.check(&info)?;
+        info.parameters.sort_by_key(|p| p.id);
         let mut def = Self {
             reference,
             info,
@@ -73,7 +105,6 @@ impl PluginDef {
             aliases: Default::default(),
             initial_state,
         };
-        def.info.parameters.sort_by_key(|p| p.id);
         for p in &def.info.parameters {
             def.names.push(format!("param:{}", p.id));
             def.defaults.push(p.default as f32);
@@ -94,14 +125,31 @@ impl PluginDef {
             def.names.push(format!("notes:{}", p.id));
             def.defaults.push(-1.0);
         }
-        let mut instance = def.instance(sample_rate, def.reference.depth)?;
-        // State can change parameter defaults, but cannot change the loaded surface.
-        def.info = instance.metadata().clone();
-        def.info.parameters.sort_by_key(|p| p.id);
-        for (i, p) in def.info.parameters.iter().enumerate() {
-            def.defaults[i] = instance.parameter(p.id)? as f32;
+        Ok(def)
+    }
+    /// What a stored record keeps of this def.
+    pub fn surface(&self) -> PluginSurface {
+        PluginSurface {
+            info: self.info.clone(),
+            defaults: self.defaults.clone(),
+            initial_state: self.initial_state,
         }
-        drop(instance);
+    }
+    /// A stored def, rebuilt from its record without loading the plugin. A
+    /// binary that has since changed its ports or parameters is found when a
+    /// node first loads an instance, which then fails.
+    pub fn restore(reference: PluginReference, surface: PluginSurface) -> Result<Self, String> {
+        if !matches!(reference.format.as_str(), "clap" | "vst3") {
+            return Err("unsupported plugin format".into());
+        }
+        if !Path::new(&reference.path).exists() {
+            return Err(format!("plugin binary {} not found", reference.path));
+        }
+        let mut def = Self::described(reference, surface.info, surface.initial_state)?;
+        if surface.defaults.len() != def.names.len() {
+            return Err("stored plugin surface does not match its controls".into());
+        }
+        def.defaults = surface.defaults;
         def.aliases = def.info.control_aliases().into_iter().collect();
         Ok(def)
     }

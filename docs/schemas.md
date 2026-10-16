@@ -177,7 +177,12 @@ Read-only parameters cannot be written. Out-of-range parameters or exceeded
 block capacities produce silence and a per-node fault, rather than clipping
 or losing automation without a report.
 
-Records in `defs/plugindefs` contain the original `name` and `reference`, including initial state. Binaries do not.
+Records in `defs/plugindefs` contain the original `name` and `reference`,
+including initial state, and the `surface` the probe found: the plugin's
+metadata and its control defaults. Binaries do not. Restoring a record at boot
+loads no plugin; the first node of the def loads it and fails if the binary no
+longer has the stored ports and parameters. A record without a `surface` is
+probed once at boot and rewritten with one.
 Unavailable records remain on disk unless `--prune-defs` is requested. A live
 node retains its recipe after `/def_free` or replacement. GraphDef members
 can name plugin defs and wire their bus controls like other single-node defs.
