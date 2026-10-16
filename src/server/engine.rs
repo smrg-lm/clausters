@@ -465,6 +465,10 @@ struct TransportState {
     /// A stop in its stopping phase: the transport still rolls, and freezes
     /// when the ramp reaches zero.
     stopping: Option<Stopping>,
+    /// It stopped on its end mark inside this block: said once the block is
+    /// published, so the network thread that hears it reads the position the
+    /// pass went back to and not the one before the jump.
+    ended: bool,
 }
 
 /// **The declick level**, as a straight line over device samples: `from` at
@@ -576,6 +580,7 @@ impl TransportState {
             fade_len: 0,
             fade: Ramp::level(0.0),
             stopping: None,
+            ended: false,
         }
     }
 
@@ -1374,6 +1379,11 @@ impl Engine {
         }
 
         self.publish_block(block_end);
+        for k in 0..self.transports.len() {
+            if std::mem::take(&mut self.transports[k].ended) {
+                self.push_garbage(Garbage::TransportEnded { transport: k });
+            }
+        }
         self.store_counters();
         self.apply_done_actions();
         self.drain_replies();
@@ -1575,7 +1585,7 @@ impl Engine {
             // sounded -- and going back is a jump, which would too.
             take_releases(&mut t.sched, &mut self.released, None);
             if ended {
-                self.push_garbage(Garbage::TransportEnded { transport: k });
+                t.ended = true;
             }
         }
         self.run_released();
