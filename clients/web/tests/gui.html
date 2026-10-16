@@ -227,6 +227,25 @@
         }
         log(`touch drag drove the engine: freq ${beforeTouch} -> ${touched}`);
 
+        // **A hand played from the script** (`/gui_pointer`): the same press,
+        // drag and release, handed to the window's gesture machine by the
+        // host rather than through the canvas' events -- so it reaches the
+        // bound knob exactly as the hand above did.
+        const beforeScripted = touched;
+        host.pointer(win, "press", 240, 120);
+        host.pointer(win, "move", 240, 90);
+        host.pointer(win, "move", 240, 50);
+        host.pointer(win, "release", 240, 50);
+        let scripted = beforeScripted;
+        for (let i = 0; i < 40 && scripted === beforeScripted; i++) {
+          await sleep(50);
+          scripted = (await synth.info()).controls.freq;
+        }
+        if (scripted === beforeScripted) {
+          throw new Error(`a scripted drag never reached the engine (freq ${scripted})`);
+        }
+        log(`scripted drag drove the engine: freq ${beforeScripted} -> ${scripted}`);
+
         // **A roll that listens paints what is played, in a page as on the
         // desktop.** The host reads the bytes of a MIDI message into a note
         // and hands it to every element that declared it reads live MIDI --
@@ -273,7 +292,8 @@
 
         synth.free();
         verdict(`PASS: page GUI carrier -- event ${JSON.stringify(events[0])}, `
-          + `bound freq ${before} -> ${after}, touch ${touched}, a played key painted, `
+          + `bound freq ${before} -> ${after}, touch ${touched}, scripted ${scripted}, `
+          + `a played key painted, `
           + `subtree freed`);
       }
 

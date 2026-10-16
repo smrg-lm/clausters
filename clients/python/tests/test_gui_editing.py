@@ -89,6 +89,11 @@ class FakeHost:
         self.subscribed: list = []
         #: What `/gui_verb` was asked for: `(window, verb)`.
         self.verbs: list = []
+        #: What `/gui_pointer` played: `(window, kind, x, y, mods)`.
+        self.pointers: list = []
+
+    def pointer(self, window, kind, x, y, mods=""):
+        self.pointers.append((window, kind, x, y, mods))
 
     def alloc_id(self) -> int:
         return self.ids.alloc()
@@ -259,6 +264,26 @@ def test_a_window_verb_is_asked_of_the_host_by_name_or_by_member():
     assert ed.verb("view_all") is True
     assert ed.select_all() is True and ed.paste() is True
     assert host.verbs == [(999, "view_all"), (999, "select_all"), (999, "paste")]
+
+
+def test_a_drag_is_a_press_the_moves_between_and_a_release():
+    """A scripted drag is the hand's: a press at the start, moves along the
+    line to the end with the modifiers held throughout, and a release there;
+    a click is a press and a release at one point."""
+    ed = an_editor()
+    assert ed.drag((0, 0), (10, 20)) is False, "no window, no hand"
+    host = FakeHost()
+    ed.open(host)
+    assert ed.drag((0, 0), (10, 20), mods="shift", steps=2) is True
+    assert host.pointers == [
+        (999, "press", 0, 0, "shift"),
+        (999, "move", 5.0, 10.0, "shift"),
+        (999, "move", 10.0, 20.0, "shift"),
+        (999, "release", 10, 20, "shift"),
+    ]
+    host.pointers.clear()
+    assert ed.click(3, 4) is True
+    assert host.pointers == [(999, "press", 3, 4, ""), (999, "release", 3, 4, "")]
 
 
 def test_a_note_entry_verb_is_spelled_from_its_argument():

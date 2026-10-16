@@ -563,6 +563,94 @@ fn a_capture_goes_to_the_front_or_is_answered_with_why_not() {
     );
 }
 
+/// **A hand played to a window is read once, here**: the kind, the point
+/// (an int or a float, as a client writes it) and the modifiers, handed to
+/// the front as one event -- and a word the host does not know, or a window
+/// it does not have, is said and dropped rather than guessed at.
+#[test]
+fn a_pointer_event_is_read_and_handed_to_the_front() {
+    let mut host = Host::new();
+    host.handle_packet(def_msg(1, TREE), from());
+    let pointer = |host: &mut Host, args: Vec<OscType>| {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_POINTER.into(),
+                args,
+            }),
+            from(),
+        )
+    };
+    let s = |v: &str| OscType::String(v.into());
+    let effects = pointer(
+        &mut host,
+        vec![
+            OscType::Int(1),
+            s("press"),
+            OscType::Int(40),
+            OscType::Float(12.5),
+            s("shift+ctrl"),
+        ],
+    );
+    let [
+        HostEffect::Pointer {
+            window: 1,
+            kind: PointerKind::Press,
+            x,
+            y,
+            mods,
+        },
+    ] = &effects[..]
+    else {
+        panic!("the front is handed the press: {effects:?}");
+    };
+    assert_eq!((*x, *y), (40.0, 12.5));
+    assert_eq!(
+        *mods,
+        PointerMods {
+            shift: true,
+            ctrl: true,
+            alt: false
+        }
+    );
+    let plain = pointer(
+        &mut host,
+        vec![
+            OscType::Int(1),
+            s("release"),
+            OscType::Float(1.0),
+            OscType::Float(2.0),
+        ],
+    );
+    assert!(matches!(
+        &plain[..],
+        [HostEffect::Pointer { kind: PointerKind::Release, mods, .. }] if *mods == PointerMods::default()
+    ));
+    for args in [
+        vec![
+            OscType::Int(1),
+            s("hover"),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+        vec![
+            OscType::Int(1),
+            s("move"),
+            OscType::Int(0),
+            OscType::Int(0),
+            s("hyper"),
+        ],
+        vec![
+            OscType::Int(99),
+            s("move"),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+        vec![OscType::Int(1), s("move"), OscType::Int(0)],
+    ] {
+        assert!(pointer(&mut host, args).is_empty(), "nothing guessed");
+    }
+}
+
 /// A host antialiases what it draws unless it is told not to.
 #[test]
 fn a_host_draws_with_four_samples_unless_told() {

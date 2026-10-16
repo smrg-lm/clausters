@@ -676,6 +676,20 @@ pub const GUI_VERB: &str = "/gui_verb";
 /// disk natively, relative to the host's working directory unless absolute,
 /// and a path in the page's own storage in a tab.
 pub const GUI_CAPTURE: &str = "/gui_capture";
+/// `/gui_pointer <window> <kind> <x> <y> [mods]` -- a hand played to a
+/// window: a press, a move or a release of the primary button at `(x, y)`,
+/// handed to the window's gesture machine as the front's own pointer input
+/// is -- the same press, drag and release a mouse reaches, so a scripted drag
+/// *is* the drag.
+///
+/// `kind` is `"press"`, `"move"` or `"release"`; a move with the button
+/// pressed drags and one without hovers, exactly as the pointer's do. The
+/// point is in the window's **device pixels** -- the pixels of its
+/// framebuffer, which are a capture's ([`GUI_CAPTURE`]) -- so a script finds
+/// what to point at in the picture and points there. `mods` names the
+/// modifiers held for that one event, `+`-separated (`"shift"`,
+/// `"ctrl+alt"`); none are held otherwise, whatever the keyboard holds.
+pub const GUI_POINTER: &str = "/gui_pointer";
 /// `/gui_captured <window> <path> [reason]` -- the answer to a
 /// [`GUI_CAPTURE`]: the file is whole, or, with a reason, it was not written.
 pub const GUI_CAPTURED: &str = "/gui_captured";
@@ -714,10 +728,70 @@ pub enum HostEffect {
     /// front performs it through the gesture machine with that window's
     /// context, as a tool would, and carries out what it does.
     Perform { window: i32, verb: String },
+    /// `/gui_pointer` played a hand to the window rooted at `window`: the
+    /// front puts its pointer at `(x, y)` with `mods` held and hands the
+    /// window's gesture machine the `kind` of event its own input would.
+    Pointer {
+        window: i32,
+        kind: PointerKind,
+        x: f64,
+        y: f64,
+        mods: PointerMods,
+    },
     /// `/gui_capture` asked for the picture of the window rooted at `window`
     /// at `path`: the front draws a whole frame of it offscreen, writes the
     /// PNG and answers [`GUI_CAPTURED`] to the client that asked.
     Capture { window: i32, path: String },
+}
+
+/// What a scripted pointer event is ([`GUI_POINTER`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerKind {
+    /// The primary button goes down.
+    Press,
+    /// The pointer moves: a drag step with the button down, a hover without.
+    Move,
+    /// The primary button comes up.
+    Release,
+}
+
+impl PointerKind {
+    /// The kind a [`GUI_POINTER`] names, or `None` for a word it does not.
+    pub fn named(name: &str) -> Option<Self> {
+        match name {
+            "press" => Some(Self::Press),
+            "move" => Some(Self::Move),
+            "release" => Some(Self::Release),
+            _ => None,
+        }
+    }
+}
+
+/// The modifiers held for one scripted pointer event ([`GUI_POINTER`]):
+/// the three the gesture machine reads. `ctrl` is the host's command key,
+/// as a key table's `Ctrl` is.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PointerMods {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+}
+
+impl PointerMods {
+    /// Reads `"shift+ctrl"`-style names; an empty string holds none, and a
+    /// name it does not know is `Err` with that name.
+    pub fn parse(names: &str) -> Result<Self, String> {
+        let mut mods = Self::default();
+        for name in names.split('+').map(str::trim).filter(|n| !n.is_empty()) {
+            match name.to_ascii_lowercase().as_str() {
+                "shift" => mods.shift = true,
+                "ctrl" | "cmd" | "command" => mods.ctrl = true,
+                "alt" | "option" => mods.alt = true,
+                _ => return Err(name.to_string()),
+            }
+        }
+        Ok(mods)
+    }
 }
 
 /// The widget-protocol interpreter (transport- and GPU-agnostic). See

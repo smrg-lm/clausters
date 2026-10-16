@@ -823,6 +823,40 @@ class Editor:
         self._host.verb(self._window, str(name))
         return True
 
+    def pointer(self, kind: str, x: float, y: float, mods: str = "") -> bool:
+        """**A hand played to the window**: a ``"press"``, ``"move"`` or
+        ``"release"`` at ``(x, y)`` in its device pixels, with ``mods`` held --
+        `clausters.gui.host.GuiHost.pointer` on this editor's window. What it
+        edits arrives as a gesture's edit does, through the event loop.
+
+        Answers whether it was sent: ``False`` with no window open.
+        """
+        if self._host is None or self._window is None:
+            return False
+        self._host.pointer(self._window, kind, x, y, mods)
+        return True
+
+    def click(self, x: float, y: float, mods: str = "") -> bool:
+        """A press and a release at ``(x, y)``, with ``mods`` held (`pointer`)."""
+        return (self.pointer("press", x, y, mods)
+                and self.pointer("release", x, y, mods))
+
+    def drag(self, start, end, mods: str = "", steps: int = 8) -> bool:
+        """**A drag from ``start`` to ``end``**, each an ``(x, y)`` in the
+        window's device pixels: a press, ``steps`` moves along the straight
+        line between them, and a release at ``end``, with ``mods`` held
+        throughout (`pointer`). It is the drag a hand makes -- what a snap or
+        a constraint does to one, it does to this.
+        """
+        (x0, y0), (x1, y1) = start, end
+        if not self.pointer("press", x0, y0, mods):
+            return False
+        n = max(int(steps), 1)
+        for i in range(1, n + 1):
+            t = i / n
+            self.pointer("move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods)
+        return self.pointer("release", x1, y1, mods)
+
     def capture(self, path, timeout: float = 5.0) -> str:
         """**Write the window's picture to ``path``** as a PNG, and answer the
         path -- `clausters.gui.host.GuiHost.capture` on this editor's window,

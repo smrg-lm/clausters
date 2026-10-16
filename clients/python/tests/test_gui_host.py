@@ -292,6 +292,16 @@ class _Answering(_Recorder):
         return self.inbox.pop(0) if self.inbox else None
 
 
+def test_pointer_names_a_window_a_kind_and_a_point():
+    """``/gui_pointer`` plays a hand to a window: the kind and the point as
+    floats, and the modifiers only when some are held."""
+    host = GuiHost(interface=_Recorder())
+    host.pointer(7, "press", 10, 20)
+    host.pointer(type("Handle", (), {"id": 8})(), "move", 11.5, 21, "shift+ctrl")
+    assert host._osc.sent == [("/gui_pointer", 7, "press", 10.0, 20.0),
+                              ("/gui_pointer", 8, "move", 11.5, 21.0, "shift+ctrl")]
+
+
 def test_capture_waits_for_the_turns_before_it():
     """A capture asks a question first and waits for its answer, delivering
     the events that come before it -- an owner's turns -- and only then asks

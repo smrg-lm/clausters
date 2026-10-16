@@ -149,7 +149,16 @@ impl WindowState {
 /// What a client asked of a window before it was open.
 pub(super) enum Asked {
     Verb(String),
-    Capture { path: String, from: ClientId },
+    Pointer {
+        kind: crate::host::PointerKind,
+        x: f64,
+        y: f64,
+        mods: crate::host::PointerMods,
+    },
+    Capture {
+        path: String,
+        from: ClientId,
+    },
 }
 
 pub(super) struct App {
@@ -417,6 +426,13 @@ impl App {
                     }
                 }
                 HostEffect::Perform { window, verb } => self.perform_verb(window, &verb),
+                HostEffect::Pointer {
+                    window,
+                    kind,
+                    x,
+                    y,
+                    mods,
+                } => self.pointer(window, kind, x, y, mods),
                 HostEffect::Capture { window, path } => self.capture(window, path, from),
             }
         }
@@ -617,6 +633,7 @@ impl ApplicationHandler<UserEvent> for App {
         for (id, asked) in std::mem::take(&mut self.pending_asks) {
             match asked {
                 Asked::Verb(verb) => self.perform_verb(id, &verb),
+                Asked::Pointer { kind, x, y, mods } => self.pointer(id, kind, x, y, mods),
                 Asked::Capture { path, from } => self.capture(id, path, from),
             }
         }

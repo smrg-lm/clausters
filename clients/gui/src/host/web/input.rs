@@ -118,6 +118,39 @@ impl WebApp {
         }
     }
 
+    /// **A client played a hand to canvas `def`** (`/gui_pointer`): the
+    /// pointer put at `(x, y)` with `mods` held for this one event, and the
+    /// event handed to the machine the way this front's own input hands it --
+    /// a move drags while a drag is held and hovers otherwise. The keyboard's
+    /// modifiers come back afterwards: a scripted Shift is not left held.
+    pub(super) fn pointer(
+        &mut self,
+        def: i32,
+        kind: crate::host::PointerKind,
+        x: f64,
+        y: f64,
+        mods: crate::host::PointerMods,
+    ) {
+        use crate::host::PointerKind;
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return log(&format!("/gui_pointer {def}: no canvas holds that window"));
+        };
+        let held = slot.mods.get();
+        slot.mods
+            .set(u8::from(mods.shift) | u8::from(mods.ctrl) << 1 | u8::from(mods.alt) << 2);
+        slot.cursor = Some((x, y));
+        let dragging = slot.gestures.dragging();
+        match kind {
+            PointerKind::Press => self.on_press(def),
+            PointerKind::Move if dragging => self.on_move(def),
+            PointerKind::Move => self.on_motion(def),
+            PointerKind::Release => self.on_release(def),
+        }
+        if let Some(slot) = self.canvases.get(&def) {
+            slot.mods.set(held);
+        }
+    }
+
     /// Pointer press: the shared gesture machine acts by widget kind.
     fn on_press(&mut self, def: i32) {
         let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {

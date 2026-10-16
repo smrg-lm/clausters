@@ -663,6 +663,26 @@ class GuiHost:
         """
         self._send("/gui_verb", int(getattr(id, "id", id)), str(verb))
 
+    def pointer(self, id, kind: str, x: float, y: float, mods: str = ""):
+        """``/gui_pointer <id> <kind> <x> <y> [mods]`` -- a hand played to
+        window ``id`` (an id or a handle): a ``"press"``, a ``"move"`` or a
+        ``"release"`` of the primary button at ``(x, y)``.
+
+        The host hands it to the window's gesture machine as its own pointer
+        input does, so a scripted drag *is* the drag: a move drags while the
+        button is down and hovers otherwise, and what it edits reaches the
+        owner as the gesture's ``/gui_event``. The point is in the window's
+        device pixels, which are a capture's (`capture`): what is found in the
+        picture is pointed at there. ``mods`` names the modifiers held for that
+        one event, ``+``-separated (``"shift"``, ``"ctrl+alt"``); ``ctrl`` is
+        the command key, as in a key table.
+        """
+        window = int(getattr(id, "id", id))
+        args = [window, str(kind), float(x), float(y)]
+        if mods:
+            args.append(str(mods))
+        self._send("/gui_pointer", *args)
+
     def capture(self, id, path, timeout: float = 5.0) -> str:
         """``/gui_capture <id> <path>`` -- write the picture of window ``id``
         (an id or a handle) to ``path`` as a PNG, and answer the path once the

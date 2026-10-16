@@ -58,6 +58,7 @@ impl Host {
             GUI_CLOCK => self.on_clock(&msg.args, from, effects),
             GUI_VERB => self.on_verb(&msg.args, from, effects),
             GUI_CAPTURE => self.on_capture(&msg.args, from, effects),
+            GUI_POINTER => self.on_pointer(&msg.args, from, effects),
             _other => diag::debug!("{from}: ignoring unhandled address {_other}"),
         }
     }
@@ -273,6 +274,47 @@ impl Host {
         });
     }
 
+    /// `/gui_pointer <window> <kind> <x> <y> [mods]` -- a hand played to the
+    /// window rooted at `window` ([`GUI_POINTER`]). The host reads the event
+    /// and hands it to the front, which holds the window's gesture machine.
+    pub(super) fn on_pointer(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let (Some(window), Some(kind), Some(x), Some(y)) = (
+            int_arg(args, 0),
+            string_arg(args, 1),
+            number_arg(args, 2),
+            number_arg(args, 3),
+        ) else {
+            return diag::warn!("{from}: {GUI_POINTER} needs a window id, a kind, x and y");
+        };
+        let Some(kind) = PointerKind::named(kind) else {
+            return diag::warn!(
+                "{from}: {GUI_POINTER} {window}: {kind:?} is no pointer event \
+                 (press, move or release)"
+            );
+        };
+        let mods = match PointerMods::parse(string_arg(args, 4).unwrap_or("")) {
+            Ok(mods) => mods,
+            Err(name) => {
+                return diag::warn!("{from}: {GUI_POINTER} {window}: {name:?} is no modifier");
+            }
+        };
+        if self.window_def(window).is_none() {
+            return diag::warn!("{from}: {GUI_POINTER} {window}: no such window");
+        }
+        effects.push(HostEffect::Pointer {
+            window,
+            kind,
+            x,
+            y,
+            mods,
+        });
+    }
+
     /// `/gui_set <id> <k> <v> ...` -- update one live widget's properties, in the
     /// generic registry (for `/gui_query`) and, if it is inside an open window,
     /// in the typed render tree (so the change shows live).
@@ -426,6 +468,18 @@ pub(super) fn int_arg(args: &[OscType], i: usize) -> Option<i32> {
     match args.get(i) {
         Some(OscType::Int(n)) => Some(*n),
         Some(OscType::Long(n)) => Some(*n as i32),
+        _ => None,
+    }
+}
+
+/// The i-th argument as a number, whichever width or kind it was sent as --
+/// a coordinate a client may write as `3` or as `3.0`.
+pub(super) fn number_arg(args: &[OscType], i: usize) -> Option<f64> {
+    match args.get(i) {
+        Some(OscType::Float(v)) => Some(f64::from(*v)),
+        Some(OscType::Double(v)) => Some(*v),
+        Some(OscType::Int(n)) => Some(f64::from(*n)),
+        Some(OscType::Long(n)) => Some(*n as f64),
         _ => None,
     }
 }

@@ -127,6 +127,9 @@ fn handle(
             HostEffect::CloseWindow(id) => diag::info!("gui_free {id}: window closed (headless)"),
             // nothing to repaint headless
             HostEffect::Redraw(_) | HostEffect::RedrawLive(_) => {}
+            HostEffect::Pointer { window, .. } => {
+                diag::info!("gui_pointer {window}: no window to play a hand to (headless)")
+            }
             HostEffect::Capture { window, path } => send_reply(
                 socket,
                 tcp,

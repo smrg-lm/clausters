@@ -82,6 +82,21 @@ await editor.capture("/out/tidy.png"); // the window, as a PNG
 The path is in the page's own storage in a tab, and on the host's disk
 against a native host. With no window open the call rejects.
 
+**A hand** is played to the window the same way: `editor.drag(start, end)`
+presses at `start`, moves along the line to `end` and releases there, and
+`editor.click(x, y)` presses and releases at one point. The host hands each
+event to the window's gesture machine as the mouse's own, so a scripted drag
+is the drag: the grid snaps it and a constraint holds it, and what it edits
+comes back as a hand's edit does. The points are in the window's device
+pixels, which are a capture's, so what a script finds in the picture is where
+it points:
+
+```javascript
+editor.snapToGrid = false;
+editor.drag([450, 416], [700, 416]);    // a note, a little later
+await editor.capture("/out/dragged.png");
+```
+
 **What a quantize, a drag and a paste land on is a grid in beats**, a
 sixteenth until you choose another: `editor.grid = 1.0` for whole beats, `0`
 for none. It is read through the structure's tempo map, so a line is a beat

@@ -8,7 +8,9 @@ use crate::host::gestures::{GestureCtx, GestureEffect};
 use crate::host::widget::element::Key as HostKey;
 use crate::host::widget::element::SlotKey;
 
-use super::app::App;
+use crate::host::{PointerKind, PointerMods};
+
+use super::app::{App, Asked};
 
 impl App {
     /// Snapshots the gesture context for one window: framebuffer size,
@@ -119,7 +121,7 @@ impl App {
     pub(super) fn perform_verb(&mut self, def_id: i32, verb: &str) {
         if !self.windows.contains_key(&def_id) && self.pending.iter().any(|(id, _)| *id == def_id) {
             self.pending_asks
-                .push((def_id, super::app::Asked::Verb(verb.to_string())));
+                .push((def_id, Asked::Verb(verb.to_string())));
             return;
         }
         let ctx = self.gesture_ctx(def_id);
@@ -128,6 +130,41 @@ impl App {
         };
         let effects = ws.gestures.command(&mut self.host, &ctx, verb);
         self.apply_gesture_effects(effects);
+    }
+
+    /// **A client played a hand to window `def_id`** (`/gui_pointer`): the
+    /// pointer put at `(x, y)` with `mods` held for this one event, and the
+    /// event handed to the machine the way this front's own input hands it --
+    /// a move drags while a drag is held and hovers otherwise. The keyboard's
+    /// modifiers come back afterwards: a scripted Shift is not left held.
+    pub(super) fn pointer(
+        &mut self,
+        def_id: i32,
+        kind: PointerKind,
+        x: f64,
+        y: f64,
+        mods: PointerMods,
+    ) {
+        if !self.windows.contains_key(&def_id) && self.pending.iter().any(|(id, _)| *id == def_id) {
+            self.pending_asks
+                .push((def_id, Asked::Pointer { kind, x, y, mods }));
+            return;
+        }
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return tracing::warn!("/gui_pointer {def_id}: no window is open for it");
+        };
+        let held = (ws.shift, ws.ctrl, ws.alt);
+        (ws.shift, ws.ctrl, ws.alt) = (mods.shift, mods.ctrl, mods.alt);
+        ws.cursor = Some((x, y));
+        match kind {
+            PointerKind::Press => self.on_press(def_id),
+            PointerKind::Move if ws.gestures.dragging() => self.on_drag(def_id, x, y),
+            PointerKind::Move => self.on_motion(def_id, x, y),
+            PointerKind::Release => self.on_release(def_id),
+        }
+        if let Some(ws) = self.windows.get_mut(&def_id) {
+            (ws.shift, ws.ctrl, ws.alt) = held;
+        }
     }
 
     /// Press on a widget: the machine acts by kind and possibly starts a drag.

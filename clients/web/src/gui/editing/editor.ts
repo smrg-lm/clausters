@@ -1053,6 +1053,44 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
+     * **A hand played to the window**: a `"press"`, `"move"` or `"release"`
+     * at `(x, y)` in its device pixels, with `mods` held --
+     * {@link GuiHost.pointer} on this editor's window. What it edits arrives
+     * as a gesture's edit does, through the event loop.
+     *
+     * Answers whether it was sent: `false` with no window open.
+     */
+    pointer(kind: "press" | "move" | "release", x: number, y: number, mods = ""): boolean {
+        if (this.host === null || this.windowId === null) return false;
+        this.host.pointer(this.windowId, kind, x, y, mods);
+        return true;
+    }
+
+    /** A press and a release at `(x, y)`, with `mods` held ({@link Editor.pointer}). */
+    click(x: number, y: number, mods = ""): boolean {
+        return this.pointer("press", x, y, mods) && this.pointer("release", x, y, mods);
+    }
+
+    /**
+     * **A drag from `start` to `end`**, each an `[x, y]` in the window's device
+     * pixels: a press, `steps` moves along the straight line between them, and
+     * a release at `end`, with `mods` held throughout ({@link Editor.pointer}).
+     * It is the drag a hand makes -- what a snap or a constraint does to one,
+     * it does to this.
+     */
+    drag(start: [number, number], end: [number, number], mods = "", steps = 8): boolean {
+        const [x0, y0] = start;
+        const [x1, y1] = end;
+        if (!this.pointer("press", x0, y0, mods)) return false;
+        const n = Math.max(Math.trunc(steps), 1);
+        for (let i = 1; i <= n; i++) {
+            const t = i / n;
+            this.pointer("move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods);
+        }
+        return this.pointer("release", x1, y1, mods);
+    }
+
+    /**
      * **Write the window's picture to `path`** as a PNG, and resolve to the
      * path -- {@link GuiHost.capture} on this editor's window, which waits for
      * the turns before it: what a verb or a gesture edited is in the picture.

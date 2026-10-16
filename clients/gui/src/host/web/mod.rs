@@ -400,6 +400,13 @@ impl WebApp {
                     }
                 }
                 HostEffect::Perform { window, verb } => self.perform_verb(window, &verb),
+                HostEffect::Pointer {
+                    window,
+                    kind,
+                    x,
+                    y,
+                    mods,
+                } => self.pointer(window, kind, x, y, mods),
                 HostEffect::Capture { window, path } => self.capture(window, path),
             }
         }
