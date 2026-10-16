@@ -84,6 +84,13 @@ def run(req):
     source = "\n" * (line - 1) + code
     lines = source.splitlines(keepends=True)
     linecache.cache[filename] = (len(source), None, lines, filename)
+    # The code runs as the document it came from: a saved document defines
+    # `__file__`, as when Python runs the file, so a path resolved from it lands
+    # in the same place; an unsaved one defines none.
+    if filename.startswith("<"):
+        namespace.pop("__file__", None)
+    else:
+        namespace["__file__"] = filename
 
     tree = ast.parse(source, filename, "exec")
     last = None

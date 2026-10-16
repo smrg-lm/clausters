@@ -7,6 +7,9 @@ evaluation shares the same namespace, as in a console.
 
 - If the last statement is an expression, its value is shown after `->`.
 - Errors show the line number **in the file**, not in the fragment.
+- Code from a saved document runs with `__file__` set to that document's
+  path, as when Python runs the file, so a path a script resolves from it
+  lands in the same place either way. An unsaved document defines none.
 - `input()` is not available: standard input is used by the editor.
 - **Restart** creates a new process and clears every variable.
 - The **startup code** (File → Preferences) runs every time the session starts,

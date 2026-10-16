@@ -2550,18 +2550,14 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **A notebook example that writes files cannot run cell by cell in an
-  interactive session** *(found 2026-10-14, running the plugin examples in
-  `clausters-editor`)*. The `examples` skill has every example resolve its
-  output directory from `__file__` (`parents[1] / "out"`), so a run lands in
-  one place whatever the working directory. An interactive session that runs
-  the file's cells defines no `__file__`, and the first cell fails with a
-  `NameError` -- in every notebook that writes a file or passes a `data_dir`.
-  The two plugin examples needed no directory and dropped it; the others do
-  need one. What is open is where such a run puts its files when there is no
-  file to resolve from (the session's working directory, a fallback the
-  examples share, the editor defining `__file__` for the document it runs),
-  decided once for every example rather than worked around in each.
+- ✅ **A notebook example that writes files cannot run cell by cell in an
+  interactive session** *(found 2026-10-14, fixed 2026-10-15)*. Every example
+  resolves its output directory from `__file__`, and `clausters-editor`'s
+  session defined none, so the first cell of every notebook that writes a file
+  or passes a `data_dir` failed with a `NameError`. Decided once, in the
+  runner: the session sets `__file__` to the saved document it runs, as a
+  file run by Python and the usual cell runners do, and the examples keep
+  their one rule (the `examples` skill says so).
 
 - ✅ **The root lacked `Node`, already exported by the web client.** The base resource handle now imports from `clausters` as well as `clausters.defs`, matching both clients while adding persistent plugin event verbs.
 

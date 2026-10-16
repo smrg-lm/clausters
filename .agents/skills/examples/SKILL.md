@@ -146,6 +146,10 @@ the source either: an example's directory holds what a person wrote.
 
 The default resolves from `__file__`, not from the cwd, so it lands in the same
 place however the example is run; an explicit path argument still overrides it.
+A session that runs a file's cells defines `__file__` as that file
+(`clausters-editor` does), so a notebook needs no fallback for it either; a
+runner that does not is that runner's gap, never a reason for an example to
+guess.
 `/tmp` remains right for a file the run **consumes and deletes itself** (an
 impulse response rendered to be loaded back) — that is scratch, not a product.
 
