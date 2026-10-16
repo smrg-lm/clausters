@@ -762,8 +762,8 @@ impl WebApp {
                 let renderers = Renderers::new(&gpu.device, gpu.target());
                 let batches = Batches::new(&gpu.device, gpu.target());
                 log(&format!(
-                    "def {def_id}: GPU device ready; surface {}x{}",
-                    gpu.config.width, gpu.config.height
+                    "def {def_id}: GPU device ready on {}; surface {}x{}",
+                    gpu.adapter, gpu.config.width, gpu.config.height
                 ));
                 slot.render = Some(WindowRender {
                     gpu: *gpu,
