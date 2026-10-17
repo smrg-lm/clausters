@@ -1696,7 +1696,7 @@ def table(*, rows=None, columns=None, selected=None, multiple: bool | None = Non
     return node("table", id=id, **extra, **props)
 
 
-def files(path: str = ".", *, filter=None, text_size: float | None = None,
+def files(path: str = ".", *, filter=None, multiple: bool = False, text_size: float | None = None,
           color: str | None = None, id: int | None = None, **props) -> View:
     """A **file chooser**: the entries of directory ``path``, drawn by the host.
 
@@ -1708,14 +1708,18 @@ def files(path: str = ".", *, filter=None, text_size: float | None = None,
     Its **value** is the path of the file selected, so a `text` field bound to
     it follows the selection. A double click or Enter on a file reports
     ``("pick", path)``, and on a directory goes into it, reported as
-    ``("path", directory)``; the ``..`` row goes up."""
+    ``("path", directory)``; the ``..`` row goes up.
+
+    With ``multiple=True``, Ctrl adds/removes a file and Shift selects a range.
+    ``("select", *paths)`` reports the selected files and ``("pick", *paths)``
+    accepts them; directories are excluded. The value remains the last path."""
     extra = _drop_none(path=path, filter=None if filter is None else list(filter),
-                       text_size=text_size, color=color)
+                       multiple=1 if multiple else None, text_size=text_size, color=color)
     return node("files", id=id, **extra, **props)
 
 
 def file_dialog(path: str = ".", *, title: str = "Open", action: str = "Open",
-                filter=None, w: float = 520.0, h: float = 360.0,
+                filter=None, multiple: bool = False, w: float = 520.0, h: float = 360.0,
                 id: int | None = None, **props) -> View:
     """A **dialog** to choose a file in: a `files` chooser over a field that
     follows its selection, and the two buttons.
@@ -1725,7 +1729,7 @@ def file_dialog(path: str = ".", *, title: str = "Open", action: str = "Open",
     on a pick is yours -- listen for ``("pick", path)`` on ``files`` and for a
     click on ``ok``, read ``file``, and free the dialog to close it -- on a
     ``("cancel",)`` from the dialog too, which Escape and its close mark send."""
-    chooser = files(path, filter=filter, weight=1.0, name="files")
+    chooser = files(path, filter=filter, multiple=multiple, weight=1.0, name="files")
     field = text(label="file", name="file")
     chooser["bind"] = ["widget", field, "value"]
     return dialog(chooser, field,

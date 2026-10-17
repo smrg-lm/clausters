@@ -2300,16 +2300,20 @@ export function table(
  * follows the selection. A double click or Enter on a file reports
  * `"pick" path`, and on a directory goes into it, reported as
  * `"path" directory`; the `..` row goes up.
+ * With `multiple`, Ctrl adds/removes a file and Shift selects a range.
+ * `"select" ...paths` reports the selected files and `"pick" ...paths`
+ * accepts them; directories are excluded. The value remains the last path.
  */
 export function files(
     path = ".",
-    options: WidgetOptions & { filter?: readonly string[]; textSize?: number } = {},
+    options: WidgetOptions & { filter?: readonly string[]; textSize?: number; multiple?: boolean } = {},
 ): GuiNode {
-    const { filter, textSize, ...rest } = options;
+    const { filter, textSize, multiple, ...rest } = options;
     return node("files", {
         ...rest,
         ...drop([
             ["path", path],
+            ["multiple", flag(multiple)],
             ["filter", filter === undefined ? undefined : [...filter]],
             ["text_size", textSize],
         ]),
@@ -2332,12 +2336,13 @@ export function fileDialog(
         title?: string;
         action?: string;
         filter?: readonly string[];
+        multiple?: boolean;
     } = {},
 ): GuiNode {
-    const { title = "Open", action = "Open", filter, w = 520.0, h = 360.0, ...rest } = options;
+    const { title = "Open", action = "Open", filter, multiple, w = 520.0, h = 360.0, ...rest } = options;
     const field = text({ label: "file", name: "file" });
     const chooser = files(path, {
-        filter, weight: 1.0, name: "files", bind: ["widget", field, "value"],
+        filter, multiple, weight: 1.0, name: "files", bind: ["widget", field, "value"],
     });
     return dialog(
         { ...rest, title, flow: "col", w, h },

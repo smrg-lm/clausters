@@ -16,6 +16,201 @@ fn corrected(list: Vec<(i32, Value)>) -> Vec<Correction> {
 }
 
 impl AudioEditor {
+    /// The server buffer currently drawn; also the open file's identity.
+    pub fn focused_file(&self) -> i64 {
+        self.display
+    }
+
+    pub(super) fn binding(&self) -> Value {
+        let (start, end) = self.selection.unwrap_or((0, 0));
+        json!({"display": self.display, "take": self.opened, "channels": self.channels,
+            "rate": self.rate, "frames": self.length(), "cursor": self.cursor.unwrap_or(0),
+            "span": if end > start { json!([start as f64 / self.rate, end as f64 / self.rate]) } else { Value::Null },
+            "file": self.file(), "layers": self.layers(), "looping": self.looping,
+            "dirty": self.dirty})
+    }
+
+    pub(super) fn refresh_files(&mut self) {
+        if !self.file_open {
+            return;
+        }
+        let describe = |file: &AudioEditor| {
+            json!({"id": file.display,
+            "label": file.take_name().unwrap_or_else(|| format!("buffer {}", file.opened)),
+            "file": file.file()})
+        };
+        if self.files.is_empty() {
+            self.files.push(describe(self));
+        }
+        let active = describe(self);
+        for row in &mut self.files {
+            if row["id"].as_i64() == Some(self.display) {
+                *row = active.clone();
+            } else if let Some(file) = row["id"].as_i64().and_then(|id| self.parked.get(&id)) {
+                *row = describe(file);
+            }
+        }
+    }
+
+    /// **Hands `file` what is the window's rather than a file's**: the
+    /// widgets, the dialogs and the form that is up, the conversation with the
+    /// host, and where a take only the history holds is written.
+    fn bind_window(&self, file: &mut AudioEditor) {
+        file.window = self.window;
+        file.widget = self.widget;
+        file.pane = self.pane;
+        file.envelope_widget = self.envelope_widget;
+        file.lane = self.lane;
+        file.files_widget = self.files_widget;
+        file.files_visible = self.files_visible;
+        file.dialogs = self.dialogs.clone();
+        file.title = self.title.clone();
+        file.size = self.size;
+        file.bare = self.bare;
+        file.meters = self.meters;
+        file.dialog.clone_from(&self.dialog);
+        file.conversation = self.conversation;
+        file.scratch.clone_from(&self.scratch);
+        file.chunk = self.chunk;
+    }
+
+    pub(super) fn add_file(&mut self, mut file: AudioEditor) {
+        self.refresh_files();
+        self.bind_window(&mut file);
+        file.files = std::mem::take(&mut self.files);
+        file.parked = std::mem::take(&mut self.parked);
+        let was = std::mem::replace(self, file);
+        self.parked.insert(was.display, Box::new(was));
+        self.files.push(json!({"id": self.display}));
+        self.refresh_files();
+    }
+
+    pub(super) fn focus_file(&mut self, id: i64) -> Result<(), String> {
+        if id == self.display {
+            return Ok(());
+        }
+        let Some(mut file) = self.parked.remove(&id) else {
+            return Err("the file is not open in this editor".into());
+        };
+        self.bind_window(&mut file);
+        file.files = std::mem::take(&mut self.files);
+        file.parked = std::mem::take(&mut self.parked);
+        let was = std::mem::replace(self, *file);
+        self.parked.insert(was.display, Box::new(was));
+        self.refresh_files();
+        Ok(())
+    }
+
+    pub(super) fn close_file(&mut self, id: i64) -> Result<(Value, Vec<i64>), String> {
+        self.refresh_files();
+        if !self.files.iter().any(|f| f["id"].as_i64() == Some(id)) {
+            return Err("the file is not open in this editor".into());
+        }
+        if id == self.display {
+            if let Some(next) = self
+                .files
+                .iter()
+                .filter_map(|f| f["id"].as_i64())
+                .find(|&i| i != id)
+            {
+                self.focus_file(next)?;
+            } else {
+                self.files.clear();
+                self.file_open = false;
+                return Ok(self.free_buffers());
+            }
+        }
+        let file = self.parked.remove(&id).unwrap();
+        self.files.retain(|f| f["id"].as_i64() != Some(id));
+        Ok(file.free_buffers())
+    }
+
+    fn free_buffers(&self) -> (Value, Vec<i64>) {
+        let mut buffers: std::collections::BTreeSet<i64> = self
+            .frames
+            .keys()
+            .copied()
+            .filter(|b| !self.spilled.contains(b))
+            .chain(self.spare.iter().copied())
+            .chain([self.display])
+            .collect();
+        if self.owns_opened {
+            buffers.insert(self.opened);
+        }
+        let resident: Vec<i64> = buffers.iter().copied().collect();
+        buffers.extend(self.spilled.iter().copied());
+        let buffers: Vec<i64> = buffers.into_iter().collect();
+        let steps = steps_json(
+            &resident
+                .iter()
+                .copied()
+                .flat_map(|buffer| {
+                    [
+                        send(
+                            "/buffer_free",
+                            vec![clausters_core::osc::OscType::Int(buffer as i32)],
+                        ),
+                        clausters_editing::apply::Step::AwaitDone {
+                            command: "/buffer_free".into(),
+                            index: Some(buffer as i32),
+                        },
+                    ]
+                })
+                .collect::<Vec<_>>(),
+        );
+        (steps, buffers)
+    }
+
+    pub(super) fn compose_files(&self, tree: &mut Value) {
+        fn restore(tree: &mut Value, editor: &AudioEditor) {
+            let id = tree.get("id").and_then(Value::as_i64);
+            if id.is_some()
+                && [editor.widget, editor.pane, editor.lane]
+                    .into_iter()
+                    .flatten()
+                    .any(|i| Some(i64::from(i)) == id)
+            {
+                tree["cursor"] = json!(editor.cursor.unwrap_or(0));
+                tree["looping"] = json!(editor.looping);
+                let (start, end) = editor.selection.unwrap_or((0, 0));
+                tree["sel_start"] = json!(start);
+                tree["sel_len"] = json!(end.saturating_sub(start));
+            }
+            if let Some(children) = tree.get_mut("children").and_then(Value::as_array_mut) {
+                for child in children {
+                    restore(child, editor);
+                }
+            }
+        }
+        restore(tree, self);
+        let Some(widget) = self.files_widget else {
+            return;
+        };
+        if !self.files_visible {
+            return;
+        }
+        let selected: Vec<usize> = self
+            .files
+            .iter()
+            .position(|f| f["id"].as_i64() == Some(self.display))
+            .into_iter()
+            .collect();
+        let rows: Vec<Value> = self.files.iter().map(|f| json!([f["label"]])).collect();
+        // Chrome and dialogs stay outside the editing row. The independent
+        // list is a table; its selection is the application's focused file.
+        let Some(children) = tree.get_mut("children").and_then(Value::as_array_mut) else {
+            return;
+        };
+        let index = children
+            .iter()
+            .position(|c| c["weight"].as_f64().is_some_and(|w| w > 0.0));
+        if let Some(index) = index {
+            let picture = children.remove(index);
+            children.insert(index, json!({"type": "layout", "flow": "row", "margin": 0, "weight": 1,
+                "children": [{"type": "table", "id": widget, "name": "files", "label": "Files", "w": 180,
+                    "rows": rows, "selected": selected, "multiple": false}, picture]}));
+        }
+    }
     /// **Whether the take is a file not written yet**: a save has nowhere to
     /// go until a path is given.
     pub fn untitled(&self) -> bool {
@@ -62,10 +257,19 @@ impl AudioEditor {
                 };
                 [("path".to_string(), path)].into()
             }
-            Form::Open => [("path".to_string(), String::new())].into(),
+            Form::Open => [("path".to_string(), ".".to_string())].into(),
         };
         let open = Open { form, values };
-        let shown = open.shown(&self.dialogs);
+        let mut shown = open.shown(&self.dialogs);
+        if form == Form::Open
+            && let Some(id) = self.dialogs.get("open:path")
+        {
+            for (widget, props) in &mut shown {
+                if widget == id {
+                    *props = json!({"path": "."});
+                }
+            }
+        }
         self.dialog = Some(open);
         (None, corrected(shown))
     }
@@ -99,6 +303,24 @@ impl AudioEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if self.dialog.as_ref().is_some_and(|d| d.form == Form::Open) && name == "open:path" {
+            if matches!(tag, "pick" | "select") {
+                let paths: Vec<Value> = values
+                    .iter()
+                    .flat_map(|v| v.as_array().cloned().unwrap_or_else(|| vec![v.clone()]))
+                    .filter(|v| v.is_string())
+                    .collect();
+                if tag == "pick" && !paths.is_empty() {
+                    out.open_file = Some(json!({"paths": paths}));
+                    self.dialog = None;
+                    return (None, corrected(forms::hidden(&self.dialogs)));
+                }
+                if let Some(open) = self.dialog.as_mut() {
+                    open.values.insert("paths".into(), json!(paths).to_string());
+                }
+            }
+            return (None, Vec::new());
+        }
         let Some(open) = self.dialog.as_mut() else {
             return (None, Vec::new());
         };
@@ -125,11 +347,12 @@ impl AudioEditor {
                         Err(why) => Some(why),
                     },
                     Form::Open => {
-                        let path = open.value("path").trim().to_string();
-                        if path.is_empty() {
-                            Some("a file is opened by its path".into())
+                        let paths = serde_json::from_str::<Vec<Value>>(open.value("paths"))
+                            .unwrap_or_default();
+                        if paths.is_empty() {
+                            Some("select one or more files to open".into())
                         } else {
-                            out.open_file = Some(json!({ "path": path }));
+                            out.open_file = Some(json!({ "paths": paths }));
                             None
                         }
                     }
@@ -179,7 +402,28 @@ impl AudioEditor {
             "frames": self.length(),
             "channels": self.channels,
             "rate": self.rate,
+            "format": self.written_format,
+            "codec": if self.written_format.is_some() { Some("wav") } else { self.codec.as_deref() },
+            "sample_format": self.written_format.as_ref().or(self.sample_format.as_ref()),
             "untitled": self.untitled(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn the_file_list_is_an_independent_hideable_widget_on_the_left() {
+        let mut editor = super::super::new_json(r#"{"take":1,"frames":1000,"display":2}"#).unwrap();
+        editor.bare = true;
+        editor.files_widget = Some(20);
+        let tree = editor.window(10, None);
+        assert_eq!(tree["children"][0]["flow"], "row");
+        assert_eq!(tree["children"][0]["children"][0]["id"], 20);
+        assert_eq!(tree["children"][0]["children"][0]["type"], "table");
+        assert_eq!(tree["children"][0]["children"][1]["id"], 10);
+        editor.files_visible = false;
+        assert_eq!(editor.window(10, None)["children"][0]["id"], 10);
     }
 }

@@ -164,6 +164,16 @@ impl Files {
             .map(|e| files::join(&self.path, &e.name))
     }
 
+    fn selected_files(&self) -> Vec<OscType> {
+        self.rows
+            .selected
+            .iter()
+            .filter_map(|&i| self.entry(i))
+            .filter(|e| !e.dir)
+            .map(|e| OscType::String(files::join(&self.path, &e.name)))
+            .collect()
+    }
+
     /// Goes into directory `to`, which is asked for and reported.
     fn go(&mut self, to: String) -> Events {
         self.path = to.clone();
@@ -187,19 +197,36 @@ impl Files {
             }
             Some(e) => {
                 let path = files::join(&self.path, &e.name);
-                Events::value(OscType::String(path.clone()))
-                    .and_interface(vec![OscType::String("pick".into()), OscType::String(path)])
+                let picked = if self.rows.multiple {
+                    self.selected_files()
+                } else {
+                    vec![OscType::String(path.clone())]
+                };
+                Events::value(OscType::String(path)).and_interface(
+                    std::iter::once(OscType::String("pick".into()))
+                        .chain(picked)
+                        .collect(),
+                )
             }
             None => Events::none(),
         }
     }
 
-    /// What a selection change reports: the selected file's path as the value.
+    /// What a selection change reports: the selected file's path as the value
+    /// and, choosing several, every file selected as `"select" path...`.
     fn selection(&self) -> Events {
-        match self.selected_file() {
-            Some(path) => Events::value(OscType::String(path)),
+        let events = match self.selected_file().map(OscType::String) {
+            Some(value) => Events::value(value),
             None => Events::none(),
+        };
+        if !self.rows.multiple {
+            return events;
         }
+        events.and_interface(
+            std::iter::once(OscType::String("select".into()))
+                .chain(self.selected_files())
+                .collect(),
+        )
     }
 }
 
@@ -218,7 +245,7 @@ impl Element for Files {
                 self.refill();
                 true
             }
-            "text_size" => self.rows.set(key, v),
+            "text_size" | "multiple" => self.rows.set(key, v),
             _ => false,
         }
     }
@@ -461,5 +488,47 @@ mod tests {
         let f = chooser(r#"{"path":"takes"}"#);
         let w = f.rows.columns[1].w.unwrap();
         assert!(w > crate::host::font::width(&size_text(999 << 10), f.rows.text_size));
+    }
+
+    #[test]
+    fn multiple_selection_reports_all_paths_and_excludes_directories() {
+        let mut f = chooser(r#"{"path":"takes","multiple":true}"#);
+        f.wants_listing();
+        f.listed("takes", Ok(listing()));
+        f.rows.click(1, Mods::default(), 1);
+        f.rows.click(
+            2,
+            Mods {
+                ctrl: true,
+                ..Mods::default()
+            },
+            1,
+        );
+        f.rows.click(
+            3,
+            Mods {
+                ctrl: true,
+                ..Mods::default()
+            },
+            1,
+        );
+        let last = || Events::value(OscType::String("/takes/notes.txt".into()));
+        assert_eq!(
+            f.selection(),
+            last().and_interface(vec![
+                OscType::String("select".into()),
+                OscType::String("/takes/kick.wav".into()),
+                OscType::String("/takes/notes.txt".into())
+            ]),
+            "the value is the last file, so a bound field follows it"
+        );
+        assert_eq!(
+            f.open(3),
+            last().and_interface(vec![
+                OscType::String("pick".into()),
+                OscType::String("/takes/kick.wav".into()),
+                OscType::String("/takes/notes.txt".into())
+            ])
+        );
     }
 }

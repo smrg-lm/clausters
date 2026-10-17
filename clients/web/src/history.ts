@@ -730,10 +730,13 @@ export class Editing {
     /**
      * **Take one step of the order.** The step is already taken in the crate;
      * {@link Editing.carry} is what puts it back onto the objects here.
+     *
+     * `member` names the window stepping: an audio editor walks the order of
+     * its file in focus. With none, the step walks the context's order.
      */
-    step(direction: "undo" | "redo"): Stepped {
+    step(direction: "undo" | "redo", member?: number): Stepped {
         if (this.#core === null) return { stepped: false };
-        const stepped = this.#call("step", { direction }) as Stepped;
+        const stepped = this.#call("step", member === undefined ? { direction } : { direction, member }) as Stepped;
         this.version = Number(stepped.version ?? this.version);
         return stepped;
     }
@@ -798,8 +801,17 @@ export class Editing {
         }
     }
 
+    /**
+     * What an undo menu reads -- `canUndo`, `canRedo`, `undoLabel`,
+     * `redoLabel` -- of the order {@link Editing.step} walks for `member`.
+     */
+    state(member?: number): { canUndo?: boolean; canRedo?: boolean; undoLabel?: string | null; redoLabel?: string | null } {
+        if (this.#core === null) return {};
+        return this.#call("state", member === undefined ? {} : { member });
+    }
+
     #state(): { canUndo?: boolean; canRedo?: boolean; undoLabel?: string | null; redoLabel?: string | null } {
-        return this.#call("state");
+        return this.state();
     }
 
     /** Whether there is an edit to step back over. */

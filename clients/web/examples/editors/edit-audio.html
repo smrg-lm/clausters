@@ -68,9 +68,12 @@ clipboard are <b>tools</b> under it, which act on the take as the keys do.
 <code>editor.save()</code> -- or Ctrl+S in the window -- writes the
 edit back into the file it was opened from, and
 <code>editor.save({ path })</code> writes it as another file instead. File
--&gt; New file... opens a file not written yet in a window of its own, as the
+-&gt; New file... adds a file not written yet to this editor, as the
 <b>new file</b> button does; its first save asks where it goes. File -&gt;
-Open file... opens a file by its path, in a window of its own too.</div>
+Open file... uses the host's chooser; Ctrl/Shift selects several files.
+The independent file list is on the left and View -&gt; Files hides or shows
+it. Each file keeps its cursor, selection and undo/redo history; switching
+files stops the shared transport.</div>
 
       <button id="run">open the take</button>
       <div id="stage"></div>
@@ -88,6 +91,11 @@ Open file... opens a file by its path, in a window of its own too.</div>
         <button id="parts" disabled>what it is made of</button>
         <button id="many-channels" disabled>many channels</button>
         <button id="new-file" disabled>new file</button>
+        <button id="open-files" disabled>open two files</button>
+        <button id="focus-first" disabled>first file</button>
+        <button id="hide-files" disabled>hide files</button>
+        <button id="show-files" disabled>show files</button>
+        <button id="close-file" disabled>close file</button>
       </div>
       <pre id="log"></pre>
     </main>
@@ -205,7 +213,22 @@ Open file... opens a file by its path, in a window of its own too.</div>
         // File -> Save as... -- asks where it goes.
         $("new-file").disabled = false;
         $("new-file").onclick = () =>
-          gui.edit(SoundFile.empty(2, frames, rate), { title: "new", server, stage: $("stage") });
+          editor.newFile(2, frames, rate);
+
+        $("open-files").disabled = false;
+        $("open-files").onclick = async () => {
+          const first = await SoundFile.write("out/edit_audio_b.wav", samples, 1, rate, { sampleFormat: "float" });
+          const second = await SoundFile.write("out/edit_audio_c.wav", samples, 1, rate, { sampleFormat: "float" });
+          await editor.openFile([first.path, second.path]);
+        };
+        $("focus-first").disabled = false;
+        $("focus-first").onclick = () => editor.focusFile(0);
+        $("hide-files").disabled = false;
+        $("hide-files").onclick = () => editor.hideFiles();
+        $("show-files").disabled = false;
+        $("show-files").onclick = () => editor.showFiles();
+        $("close-file").disabled = false;
+        $("close-file").onclick = () => editor.closeFile();
 
         log("drag to select, Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V, Alt+drag to draw");
         editor.wait().then(() => log("the window is closed"));

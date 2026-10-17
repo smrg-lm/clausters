@@ -6,6 +6,10 @@
 //! in the same one walk one order -- which is the whole of how two applications
 //! share an undo.
 //!
+//! The one exception is a file an audio editor **adds** beside the one it was
+//! opened over: no other window reaches it, so it walks an order of its own
+//! while it is in focus ([`Editing::select`]).
+//!
 //! # What the context does, and what it hands back
 //!
 //! It holds the [`History`], the version a host names back, and its
@@ -52,6 +56,13 @@ pub const FIRST_VERSION: i64 = 1;
 
 /// A member's number in its context.
 pub type MemberId = u32;
+
+/// **Whose order a step walks**: the context's, or one audio file's that an
+/// editor opened beside the file it was opened over -- `(member, display)`.
+type Scope = Option<(MemberId, i64)>;
+
+/// An order not being walked: its history and the keys it numbered.
+type ParkedHistory = (History, HashMap<String, StructureId>);
 
 /// **What sits in a context.**
 #[derive(Clone, Debug)]
@@ -346,6 +357,16 @@ pub struct Stepped {
 #[derive(Debug)]
 pub struct Editing {
     history: History,
+    /// The file each audio editor was opened over, by member: its edits are
+    /// the context's order, which every window over that take shares.
+    audio_initial: HashMap<MemberId, i64>,
+    /// The structure each audio file is in its order.
+    audio_structures: HashMap<(MemberId, i64), StructureId>,
+    /// Whose order `history` is now.
+    audio_scope: Scope,
+    /// The orders not being walked: each file an audio editor added has one
+    /// of its own, so an undo there steps that file alone.
+    audio_histories: HashMap<Scope, ParkedHistory>,
     version: i64,
     seats: Vec<Seat>,
     keys: HashMap<String, StructureId>,
@@ -367,6 +388,10 @@ impl Editing {
     pub fn new() -> Self {
         Self {
             history: History::new(),
+            audio_initial: HashMap::new(),
+            audio_structures: HashMap::new(),
+            audio_scope: None,
+            audio_histories: HashMap::new(),
             version: FIRST_VERSION,
             seats: Vec::new(),
             keys: HashMap::new(),
@@ -584,13 +609,97 @@ impl Editing {
     /// **Takes a member in**, as the structure `key` names: the identity a
     /// member with the same key already has, or a new one.
     pub fn join(&mut self, key: &str, member: Member) -> MemberId {
+        let scope = self.audio_scope;
+        self.select_history(None);
         let history = &mut self.history;
         let structure = *self
             .keys
             .entry(key.to_string())
             .or_insert_with(|| history.register(member.domain()));
+        let id = self.seats.len() as MemberId;
+        if let Member::Audio(editor) = &member {
+            self.audio_initial.insert(id, editor.focused_file());
+            self.audio_structures
+                .insert((id, editor.focused_file()), structure);
+        }
         self.seats.push(Seat { member, structure });
-        (self.seats.len() - 1) as MemberId
+        self.select_history(scope);
+        id
+    }
+
+    /// **Selects whose order the next step and state read**: `member`'s --
+    /// for an audio editor, the order of the file in focus -- or, with `None`,
+    /// the context's. A turn of a member selects its own; a caller stepping
+    /// for a window names it here first.
+    pub fn select(&mut self, member: Option<MemberId>) {
+        match member {
+            Some(member) => self.audio_history(member),
+            None => self.select_history(None),
+        }
+    }
+
+    // A file an audio editor added walks an order of its own. The context's
+    // order still belongs to its other structures and windows, and to the
+    // file each audio editor was opened over.
+    fn select_history(&mut self, scope: Scope) {
+        if self.audio_scope == scope {
+            return;
+        }
+        let (mut history, mut keys) = self
+            .audio_histories
+            .remove(&scope)
+            .unwrap_or_else(|| (History::new(), HashMap::new()));
+        std::mem::swap(&mut self.history, &mut history);
+        std::mem::swap(&mut self.keys, &mut keys);
+        self.audio_histories
+            .insert(self.audio_scope, (history, keys));
+        self.audio_scope = scope;
+    }
+
+    /// Forgets the order of file `file` of `member`, closed: its own, or --
+    /// for the file the editor was opened over -- its structure in the
+    /// context's order, unless another window still holds that structure.
+    fn close_audio_file(&mut self, member: MemberId, file: i64) {
+        let scope = Some((member, file));
+        let structure = self.audio_structures.remove(&(member, file));
+        if self.audio_initial.get(&member) == Some(&file) {
+            self.audio_initial.remove(&member);
+            let shared =
+                self.seats.iter().enumerate().any(|(id, seat)| {
+                    id as MemberId != member && Some(seat.structure) == structure
+                });
+            if let Some(structure) = structure.filter(|_| !shared) {
+                let selected = self.audio_scope;
+                self.select_history(None);
+                self.history.forget(structure);
+                self.select_history(selected);
+            }
+        } else if self.audio_scope == scope {
+            let (history, keys) = self.audio_histories.remove(&None).unwrap_or_default();
+            self.history = history;
+            self.keys = keys;
+            self.audio_scope = None;
+        } else {
+            self.audio_histories.remove(&scope);
+        }
+    }
+
+    fn audio_history(&mut self, member: MemberId) {
+        let file = match self.member(member) {
+            Some(Member::Audio(editor)) => Some(editor.focused_file()),
+            _ => None,
+        };
+        let scope = file
+            .filter(|f| self.audio_initial.get(&member) != Some(f))
+            .map(|f| (member, f));
+        self.select_history(scope);
+        if let Some(file) = file {
+            let identity = *self
+                .audio_structures
+                .entry((member, file))
+                .or_insert_with(|| self.history.register(audio::DOMAIN));
+            self.seats[member as usize].structure = identity;
+        }
     }
 
     /// A member, to read.
@@ -618,6 +727,7 @@ impl Editing {
     /// before it when `coalesce` says the hand has not stopped. Answers whether
     /// the history took it, and moves the version when it did.
     pub fn record(&mut self, member: MemberId, record: &Record, coalesce: bool) -> bool {
+        self.audio_history(member);
         let Some(structure) = self.seats.get(member as usize).map(|s| s.structure) else {
             return false;
         };
@@ -650,6 +760,7 @@ impl Editing {
         member: MemberId,
         apply: impl FnOnce(&mut History, StructureId) -> bool,
     ) -> bool {
+        self.audio_history(member);
         let Some(structure) = self.structure(member) else {
             return false;
         };
@@ -692,6 +803,7 @@ impl Editing {
     /// `None` for a member that is not there or does not read messages (an
     /// external one).
     pub fn event(&mut self, member: MemberId, event: &Event) -> Option<Turned> {
+        self.audio_history(member);
         let version = self.version;
         let seat = self.seats.get_mut(member as usize)?;
         let structure = seat.structure;
@@ -762,6 +874,7 @@ impl Editing {
     ///
     /// `None` for a member that is not there or takes no verbs this way.
     pub fn act(&mut self, member: MemberId, request: &Value) -> Option<Turned> {
+        self.audio_history(member);
         let version = self.version;
         let seat = self.seats.get_mut(member as usize)?;
         let structure = seat.structure;
@@ -1118,6 +1231,12 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
         }
         "act" => to_json(&editing.act(member, &get(&request, "call"))),
         "step" => {
+            editing.select(
+                request
+                    .get("member")
+                    .and_then(Value::as_u64)
+                    .map(|m| m as MemberId),
+            );
             let direction = get(&request, "direction")
                 .as_str()
                 .and_then(Direction::parse)
@@ -1147,6 +1266,11 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             json!({ "recorded": taken, "version": editing.version() }).to_string()
         }
         "member" => {
+            editing.audio_history(member);
+            let before = match editing.member(member) {
+                Some(Member::Audio(editor)) => Some(editor.focused_file()),
+                _ => None,
+            };
             let inner = get(&request, "call")
                 .get("verb")
                 .and_then(Value::as_str)
@@ -1159,7 +1283,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             if let Some(map) = call.as_object_mut() {
                 map.insert("version".into(), json!(editing.version));
             }
-            match editing.member_mut(member) {
+            let answer = match editing.member_mut(member) {
                 Some(Member::Multitrack(editor)) => {
                     multitrack::call_json(editor, &call.to_string())
                 }
@@ -1169,17 +1293,48 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 #[cfg(feature = "notation")]
                 Some(Member::Score(editor)) => score::call_json(editor, &call.to_string()),
                 _ => "{}".into(),
+            };
+            editing.audio_history(member);
+            let after = match editing.member(member) {
+                Some(Member::Audio(editor)) => Some(editor.focused_file()),
+                _ => None,
+            };
+            if before != after {
+                editing.version += 1;
             }
+            let mut value: Value = serde_json::from_str(&answer).unwrap_or_default();
+            if value.get("binding").is_some() {
+                value["binding"]["structure"] = json!(editing.structure(member));
+                value["binding"]["version"] = json!(editing.version);
+            }
+            if inner == "close_file"
+                && value.get("error").is_none()
+                && let Some(file) = value["fileAction"]["file"].as_i64()
+            {
+                editing.close_audio_file(member, file);
+                if value["close"] != true {
+                    editing.audio_history(member);
+                }
+            }
+            value.to_string()
         }
         "moved" => json!({ "version": editing.moved() }).to_string(),
-        "state" => json!({
+        "state" => {
+            editing.select(
+                request
+                    .get("member")
+                    .and_then(Value::as_u64)
+                    .map(|m| m as MemberId),
+            );
+            json!({
             "version": editing.version(),
             "canUndo": editing.can_undo(),
             "canRedo": editing.can_redo(),
             "undoLabel": editing.undo_label(),
             "redoLabel": editing.redo_label(),
-        })
-        .to_string(),
+            })
+            .to_string()
+        }
         _ => "{}".into(),
     }
 }
@@ -2307,6 +2462,155 @@ mod tests {
         assert_eq!(
             third["freed"],
             json!([{"member": take, "buffers": [20], "spilled": [20]}])
+        );
+    }
+    /// **A window's undo walks the order of its file in focus**, whichever
+    /// member had the last turn, and the context's order is the other window's.
+    #[test]
+    fn a_step_named_for_a_window_walks_its_focused_file_beside_another_window() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "add_file",
+            "take": 50, "frames": 200, "channels": 1, "rate": 48000, "display": 51,
+            "buffers": [52, 53, 54], "untitled": true}}),
+        );
+        assert_eq!(
+            draw(&mut editing, member, 1, 30)["outcome"]["changed"],
+            true
+        );
+        let other = call(
+            &mut editing,
+            json!({"verb": "openAudio", "key": "take:4", "take": 4, "frames": 100,
+                   "rate": 48000, "display": 19, "buffers": [40, 41, 42, 43]}),
+        )["member"]
+            .as_u64()
+            .unwrap() as MemberId;
+        call(
+            &mut editing,
+            json!({"verb": "member", "member": other, "call": {"verb": "window", "widget": 13}}),
+        );
+        let version = editing.version();
+        call(
+            &mut editing,
+            json!({"verb": "event", "member": other, "addr": "/gui_event",
+                   "args": [13, 1, version, "draw", 0, 10, [0.5], [0.0]]}),
+        );
+        let state = |editing: &mut Editing, member: Option<MemberId>| {
+            call(editing, json!({"verb": "state", "member": member}))
+        };
+        assert_eq!(state(&mut editing, Some(member))["canUndo"], true);
+        let undone = call(
+            &mut editing,
+            json!({"verb": "step", "direction": "undo", "member": member}),
+        );
+        assert_eq!(undone["stepped"], true);
+        assert_eq!(undone["effects"][0]["member"], member);
+        assert_eq!(state(&mut editing, Some(member))["canUndo"], false);
+        assert_eq!(
+            state(&mut editing, Some(other))["canUndo"],
+            true,
+            "the other window's edit stays"
+        );
+        let context = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
+        assert_eq!(context["effects"][0]["member"], other);
+    }
+
+    /// **Closing the file an editor was opened over** forgets its edits in
+    /// the context's order, and the context's order is left whole when the
+    /// editor's last file closes.
+    #[test]
+    fn closing_the_opened_file_forgets_its_edits_and_keeps_the_context_order() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        draw(&mut editing, member, 1, 10);
+        call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "add_file",
+            "take": 50, "frames": 200, "channels": 1, "rate": 48000, "display": 51,
+            "buffers": [52, 53, 54], "untitled": true}}),
+        );
+        call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "close_file", "file": 9}}),
+        );
+        let context = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
+        assert_ne!(
+            context["stepped"], true,
+            "nothing applies a closed file's edit"
+        );
+        let closed = call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "close_file"}}),
+        );
+        assert_eq!(closed["close"], true);
+        assert!(editing.audio_histories.is_empty());
+        assert_eq!(editing.audio_scope, None);
+    }
+
+    #[test]
+    fn audio_files_keep_independent_histories_and_restore_their_state() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        let first = draw(&mut editing, member, 1, 10);
+        assert!(first["outcome"]["changed"].as_bool().unwrap());
+        let member_call = |editing: &mut Editing, inner: Value| {
+            call(
+                editing,
+                json!({"verb": "member", "member": member, "call": inner}),
+            )
+        };
+        member_call(&mut editing, json!({"verb": "locate", "at": 0.0005}));
+        member_call(
+            &mut editing,
+            json!({"verb": "span", "span": [0.0002, 0.0008]}),
+        );
+        let first_parts = member_call(&mut editing, json!({"verb": "parts"}));
+        let added = member_call(
+            &mut editing,
+            json!({"verb": "add_file", "take": 50, "frames": 200,
+            "channels": 2, "rate": 48000, "display": 51, "buffers": [52, 53, 54], "untitled": true}),
+        );
+        assert_eq!(added["binding"]["display"], 51);
+        assert!(!editing.can_undo(), "a new file has no edits");
+        let second = draw(&mut editing, member, 2, 30);
+        assert_eq!(second["outcome"]["changed"], true);
+        assert!(editing.step(Direction::Undo).stepped);
+        assert!(!editing.can_undo());
+        assert!(editing.can_redo());
+        let restored = member_call(&mut editing, json!({"verb": "focus_file", "file": 9}));
+        assert_eq!(restored["binding"]["cursor"], 24);
+        assert_eq!(
+            restored["binding"]["span"],
+            json!([10.0 / 48000.0, 38.0 / 48000.0])
+        );
+        assert!(editing.can_undo());
+        assert!(!editing.can_redo());
+        assert_eq!(
+            member_call(&mut editing, json!({"verb": "parts"})),
+            first_parts
+        );
+        assert!(editing.step(Direction::Undo).stepped);
+        assert!(!editing.can_undo());
+        member_call(&mut editing, json!({"verb": "focus_file", "file": 51}));
+        assert!(editing.can_redo(), "the other file retains its redo");
+        assert!(editing.step(Direction::Redo).stepped);
+        let closed = member_call(&mut editing, json!({"verb": "close_file", "file": 9}));
+        assert_eq!(
+            closed["binding"]["display"], 51,
+            "closing a background file keeps focus"
+        );
+        assert_eq!(
+            member_call(&mut editing, json!({"verb": "files"}))["files"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            editing.can_undo(),
+            "closing another file keeps this history"
         );
     }
 }

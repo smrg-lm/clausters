@@ -998,6 +998,7 @@ fn out_ports(outs: usize) -> Ports {
 ///
 /// - `sync` -- `file`, `buffer`, `channels`, `frames`, `takeRate`, `rate`
 /// - `closeFile` -- `file`
+/// - `focusFile` -- `file`, `frame`: stop, focus its reader and restore its cursor
 /// - `play` -- `file`, `start`, `pass` (`{"kind": "loop", "from", "to"}` or
 ///   `{"kind": "until", "end", "back"}`)
 /// - `pass` -- `pass`, as for `play`: the loop switch changed while it plays
@@ -1042,6 +1043,12 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
         }
         "removeEffect" => answer(playback.remove_effect(int("file"),ids)),
         "closeFile" => answer(playback.close_file(int("file"), ids)),
+        "focusFile" => {
+            let mut steps = playback.pause();
+            steps.extend(playback.focus_on(int("file")));
+            steps.extend(playback.locate(int("frame")));
+            answer(Ok(steps))
+        }
         "play" => match request
             .get("pass")
             .cloned()
@@ -1475,5 +1482,37 @@ mod tests {
         let unknown: Value =
             serde_json::from_str(&call_json(&mut playback, r#"{"verb": "no"}"#, &mut ids)).unwrap();
         assert!(unknown["error"].is_string());
+    }
+    #[test]
+    fn switching_files_pauses_the_old_reader_and_locates_at_the_incoming_rate() {
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
+        let mut ids = spaces();
+        playback
+            .sync(1, 10, 1, 48000, 48000.0, 48000.0, &mut ids)
+            .unwrap();
+        playback
+            .sync(2, 20, 2, 44100, 44100.0, 48000.0, &mut ids)
+            .unwrap();
+        playback.play(1, 0, Pass::Loop { from: 0, to: 48000 });
+        let answer: Value = serde_json::from_str(&call_json(
+            &mut playback,
+            r#"{"verb":"focusFile","file":2,"frame":22050}"#,
+            &mut ids,
+        ))
+        .unwrap();
+        assert_eq!(playback.focus(), Some(2));
+        assert!(!playback.rolling());
+        let steps = answer["steps"].as_array().unwrap();
+        let messages: Vec<_> = steps.iter().filter_map(|s| s.get("send")).collect();
+        assert_eq!(messages[0]["addr"], "/transport_stop");
+        let runs: Vec<_> = messages
+            .iter()
+            .filter(|m| m["addr"] == "/node_run")
+            .collect();
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0]["args"][1], json!({"i": 0}));
+        assert_eq!(runs[1]["args"][1], json!({"i": 1}));
+        assert_eq!(messages.last().unwrap()["addr"], "/transport_locateSample");
+        assert_eq!(messages.last().unwrap()["args"][1], json!({"h": 24000}));
     }
 }

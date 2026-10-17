@@ -82,7 +82,11 @@ interface Outcome {
     /** A new file asked for in the window: its shape, for this page to open. */
     newFile?: { channels: number; frames: number; rate: number };
     /** A file asked to be opened in the window, for this page to open. */
-    openFile?: { path: string };
+    openFile?: { paths: string[] };
+    /** A file the list or the menu asked to focus or close, by its id. */
+    fileAction?: { verb: string; file: number };
+    /** The file in focus after a file verb: its buffers, cursor and state. */
+    binding?: Record<string, unknown>;
 }
 
 /** A press of the space bar, as the editor read it: frames of the take. */
@@ -96,11 +100,10 @@ interface Play {
  * **What sounds one audio editor** -- the shared crate's playback, the steps
  * it answers carried out on the editor's server.
  *
- * One per editor, because a window is one file: its transport, its play
- * cursor and its meter are that file's, and playing one window moves nothing
- * in another. The views of one file share it, as they share the file. The
- * playback holds several files, all but the one played last paused, which is
- * how one editor will hold several.
+ * One per editor, shared by its open files: its transport, play cursor and
+ * meter follow the focused file, and playing one window moves nothing in
+ * another. All but the focused file stay paused; switching files stops and
+ * locates the same server transport to the incoming cursor.
  */
 class AudioPlayback {
     #native: AudioEditorPlayback | null = null;
@@ -177,12 +180,11 @@ class AudioDriver implements TransportDriver {
     paused = false;
     private readonly editor: AudioEditor;
     private readonly playback: AudioPlayback;
-    private readonly display: number;
+    private get display(): number { return Number(this.editor.coreCall("binding").display); }
 
-    constructor(editor: AudioEditor, playback: AudioPlayback, display: number) {
+    constructor(editor: AudioEditor, playback: AudioPlayback) {
         this.editor = editor;
         this.playback = playback;
-        this.display = display;
     }
 
     async #focused(): Promise<boolean> {
@@ -398,7 +400,7 @@ export class AudioEditor extends Editor<Buffer> {
     readonly runner = new StepRunner();
 
     /** The join the window draws. */
-    private readonly display: number;
+    private display: number;
 
     /**
      * What sounds the take: the server's audio editor playback, where this
@@ -408,9 +410,6 @@ export class AudioEditor extends Editor<Buffer> {
 
     /** The {@link SoundFile} the take was loaded from, when it was. */
     readonly #file: SoundFile | null;
-
-    /** The sample format the editor last wrote its file in, or `null`. */
-    #written: string | null = null;
 
     constructor(take: Buffer, options: AudioEditorOptions) {
         const view = new SamplesView(options.layers ?? MEASURES);
@@ -426,6 +425,9 @@ export class AudioEditor extends Editor<Buffer> {
         this.#file = options.file ?? null;
         this.server = resolveServer(take.server);
         this.display = this.server.buffers.alloc();
+        // The context is the take's; switching files changes the structure,
+        // so the window keeps the one it opened in.
+        this.givenContext = this.editing;
         const opened = this.editing.open(
             "openAudio",
             `audio:${Math.trunc(take.bufnum)}`,
@@ -436,6 +438,7 @@ export class AudioEditor extends Editor<Buffer> {
                 display: this.display,
                 path: take.path ?? null,
                 untitled: this.#file !== null && this.#file.path === null,
+                codec: this.#file?.codec, sample_format: this.#file?.sampleFormat,
                 layers: view.layers,
             },
             take,
@@ -457,7 +460,7 @@ export class AudioEditor extends Editor<Buffer> {
         // editor was handed is written by a save and by nothing else.
         domain.run(take, (copied.steps as unknown[] | undefined) ?? []);
         this.playback = new AudioPlayback(this.server);
-        this.#driver = new AudioDriver(this, this.playback, this.display);
+        this.#driver = new AudioDriver(this, this.playback);
         domain.after(() => this.sound());
     }
 
@@ -527,26 +530,150 @@ export class AudioEditor extends Editor<Buffer> {
      */
     /**
      * **A new file asked for in the window**: an empty {@link SoundFile} of
-     * that shape, opened in an editor of its own on the same host.
+     * that shape, added to this editor.
      */
-    private async newFile(shape: { channels: number; frames: number; rate: number }): Promise<void> {
-        const { edit } = await import("./edit.ts");
-        await edit(SoundFile.empty(shape.channels, shape.frames, shape.rate), {
-            host: this.host ?? undefined,
-            server: this.server,
-        });
+    private async newFileShape(shape: { channels: number; frames: number; rate: number }): Promise<void> {
+        await this.addFile(SoundFile.empty(shape.channels, shape.frames, shape.rate));
+    }
+
+    /** Add and focus an empty SoundFile of the requested shape. */
+    async newFile(channels: number, frames: number, rate: number): Promise<void> {
+        await (this.domain as AudioDomain).idle();
+        await this.newFileShape({ channels, frames, rate });
+    }
+
+    /** **Files asked to be opened**: each read and added, the last in focus. */
+    private async openPaths(paths: readonly string[]): Promise<void> {
+        for (const path of paths) await this.addFile(await SoundFile.open(path));
     }
 
     /**
-     * **A file asked to be opened in the window**: the {@link SoundFile} at
-     * `path`, opened in an editor of its own on the same host.
+     * Read `file` into a buffer and hand it to the crate as a new file in
+     * focus, with a display and spare buffers of its own.
      */
-    private async openFile(path: string): Promise<void> {
-        const { edit } = await import("./edit.ts");
-        await edit(await SoundFile.open(path), {
-            host: this.host ?? undefined,
-            server: this.server,
+    private async addFile(file: SoundFile): Promise<void> {
+        const take = await file.toBuffer({ server: this.server });
+        const answer = this.coreCall("add_file", {
+            take: take.bufnum, frames: take.frames, channels: take.channels, rate: take.sampleRate,
+            display: this.server.buffers.alloc(), path: file.path, untitled: file.path === null,
+            codec: file.codec, sample_format: file.sampleFormat,
+            buffers: Array.from({ length: SPARE }, () => this.server.buffers.alloc()),
         });
+        await this.applyFile(answer);
+    }
+
+    /** Open a path or an array of paths in this editor, focusing the last. */
+    async openFile(paths: string | readonly string[]): Promise<void> {
+        await (this.domain as AudioDomain).idle();
+        const answer = this.coreCall("open_file", { paths });
+        if (typeof answer.error === "string") throw new RangeError(answer.error);
+        await this.openPaths((answer.openFile as { paths: string[] }).paths);
+    }
+
+    /** Open SoundFiles in list order; a buffer-only entry is null. */
+    get files(): (SoundFile | null)[] {
+        type Row = {
+            file: {
+                path: string | null;
+                frames: number;
+                channels: number;
+                rate: number;
+                untitled: boolean;
+                codec: string | null;
+                sample_format: string | null;
+            };
+        };
+        return (this.coreCall("files").files as Row[]).map(({ file: f }) =>
+            f.path !== null || f.untitled
+                ? new SoundFile(f.path, f.frames, f.channels, f.rate, f.codec, f.sample_format)
+                : null,
+        );
+    }
+
+    /** Focus the file at zero-based index, restoring its cursor and selection. */
+    async focusFile(index: number): Promise<void> {
+        await (this.domain as AudioDomain).idle();
+        await this.applyFile(this.coreCall("focus_file", { index }));
+    }
+
+    /** Close the focused file, or the file at zero-based index. */
+    async closeFile(index?: number): Promise<void> {
+        await (this.domain as AudioDomain).idle();
+        await this.applyFile(this.coreCall("close_file", index === undefined ? {} : { index }));
+    }
+
+    /** Show the independent file list to the left of the editing view. */
+    showFiles(): void { this.take(this.coreCall("show_files") as Outcome); }
+
+    /** Hide the file list. */
+    hideFiles(): void { this.take(this.coreCall("hide_files") as Outcome); }
+
+    // ---- the history: the order of the file in focus ----
+
+    /** A step of this window's order: the file in focus walks its own. */
+    protected override step(direction: "undo" | "redo"): boolean {
+        const context = this.editing;
+        return this.app.stepped(context, context.step(direction, this.member), this);
+    }
+
+    /** Whether the file in focus has an edit to step back over. */
+    override get canUndo(): boolean {
+        return this.editing.state(this.member).canUndo === true;
+    }
+
+    /** Whether the file in focus has an undone edit to step forward into. */
+    override get canRedo(): boolean {
+        return this.editing.state(this.member).canRedo === true;
+    }
+
+    /** What an undo of the file in focus would be called. */
+    override get undoLabel(): string | undefined {
+        return this.editing.state(this.member).undoLabel ?? undefined;
+    }
+
+    /** What a redo of the file in focus would be called. */
+    override get redoLabel(): string | undefined {
+        return this.editing.state(this.member).redoLabel ?? undefined;
+    }
+
+    /**
+     * **Carry out a file verb's answer**: the server steps, the buffers it
+     * freed and, when the focus moved, the file now in focus bound -- its
+     * buffers, cursor, selection, layers and loop switch -- and the shared
+     * transport located to its cursor.
+     */
+    private async applyFile(answer: Record<string, unknown>): Promise<void> {
+        if (typeof answer.error === "string") throw new RangeError(answer.error);
+        const action = answer.fileAction as { verb: string; file: number } | undefined;
+        if (action?.verb === "close_file") await this.playback.call("closeFile", { file: action.file });
+        await runSteps(this.server, this.runner, (answer.steps ?? []) as never);
+        for (const buffer of (answer.freedBuffers ?? []) as number[]) this.server.buffers.free(buffer);
+        if (answer.close === true) { this.close(); return; }
+        if (answer.focusChanged !== true) {
+            if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
+            return;
+        }
+        const b = answer.binding as Record<string, unknown>;
+        this.display = Number(b.display);
+        this.sampleRate = Number(b.rate);
+        this.structure = new Buffer(
+            Number(b.take),
+            Number(b.frames),
+            Number(b.channels),
+            this.sampleRate,
+            this.server,
+        );
+        this.structureId = Number(b.structure);
+        this.editing.version = Number(b.version);
+        this.cursor = Number(b.cursor) / this.sampleRate;
+        this.dirty = b.dirty === true;
+        (this.view as SamplesView).layers = b.layers as Measure[];
+        this.#driver.span = b.span as [number, number] | null;
+        this.#driver.looping = b.looping === true;
+        this.#driver.paused = false;
+        await this.sound();
+        await this.playback.call("focusFile", { file: this.display, frame: Number(b.cursor) });
+        if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
     }
 
     private async sound(): Promise<void> {
@@ -632,7 +759,7 @@ export class AudioEditor extends Editor<Buffer> {
      */
     protected override closedWindow(): boolean {
         (this.domain as AudioDomain).after(async () => {
-            await this.playback.call("closeFile", { file: this.display });
+            await this.playback.call("close");
         });
         return super.closedWindow();
     }
@@ -640,7 +767,7 @@ export class AudioEditor extends Editor<Buffer> {
     /** Close the window, and free what sounded the take. */
     override close(): this {
         (this.domain as AudioDomain).after(async () => {
-            await this.playback.call("closeFile", { file: this.display });
+            await this.playback.call("close");
         });
         return super.close();
     }
@@ -743,7 +870,6 @@ export class AudioEditor extends Editor<Buffer> {
         domain.run(this.structure, (answer.steps as unknown[] | undefined) ?? []);
         await domain.idle();
         if (typeof answer.path === "string") {
-            this.#written = sampleFormat;
             return answer.path;
         }
         const frames = Number(this.coreCall("parts").frames ?? 0);
@@ -771,11 +897,14 @@ export class AudioEditor extends Editor<Buffer> {
         if (path === null) {
             return answer.untitled === true ? new SoundFile(null, frames, channels, rate) : null;
         }
-        const opened = this.#file;
-        if (this.#written === null && opened !== null && opened.path === path) {
-            return new SoundFile(path, frames, channels, rate, opened.codec, opened.sampleFormat);
-        }
-        return new SoundFile(path, frames, channels, rate, "wav", this.#written ?? "float");
+        return new SoundFile(
+            path,
+            frames,
+            channels,
+            rate,
+            answer.codec as string | null,
+            answer.sample_format as string | null,
+        );
     }
 
     /**
@@ -825,6 +954,14 @@ export class AudioEditor extends Editor<Buffer> {
      */
     private take(outcome: Outcome): boolean {
         if (outcome.turn === undefined || outcome.turn === "nothing") return false;
+        if (outcome.fileAction !== undefined && outcome.binding === undefined) {
+            const action = outcome.fileAction;
+            this.echo.send(outcome.answer);
+            (this.domain as AudioDomain).after(() =>
+                this.applyFile(this.coreCall(action.verb, { file: action.file })),
+            );
+            return false;
+        }
         if (outcome.layers !== undefined) (this.view as SamplesView).layers = outcome.layers;
         // **A view placed in a lane of its own** (the stacked views, or back
         // to one): the window is drawn again and the host keeps what is its own.
@@ -840,17 +977,17 @@ export class AudioEditor extends Editor<Buffer> {
         const steps = outcome.steps ?? [];
         (this.domain as AudioDomain).run(this.structure, steps);
         const domain = this.domain as AudioDomain;
-        if (steps.some((step) => (step as { send?: { addr?: string } }).send?.addr === "/buffer_write")) {
-            // a save from the window writes float, its one format
-            this.#written = "float";
+        if (outcome.newFile !== undefined || outcome.openFile !== undefined) {
+            this.echo.send(outcome.answer);
+            outcome = { ...outcome, answer: undefined };
         }
         if (outcome.newFile !== undefined) {
             const shape = outcome.newFile;
-            domain.after(() => this.newFile(shape));
+            domain.after(() => this.newFileShape(shape));
         }
         if (outcome.openFile !== undefined) {
-            const path = String(outcome.openFile.path);
-            domain.after(() => this.openFile(path));
+            const paths = outcome.openFile.paths;
+            domain.after(() => this.openPaths(paths));
         }
         if (changed) {
             this.dirty = true;

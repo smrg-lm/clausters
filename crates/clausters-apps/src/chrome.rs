@@ -118,7 +118,12 @@ fn sep() -> Value {
 pub fn menu(app: App, saves: bool) -> Value {
     let mut file = Vec::new();
     if app == App::Audio {
-        file.extend([entry(app, "new_file"), entry(app, "open_file"), sep()]);
+        file.extend([
+            entry(app, "new_file"),
+            entry(app, "open_file"),
+            entry(app, "close_file"),
+            sep(),
+        ]);
     }
     if saves {
         file.push(entry(app, "save"));
@@ -169,6 +174,7 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "view_wave"),
             entry(app, "view_spectrogram"),
             entry(app, "view_both"),
+            entry(app, "toggle_files"),
             sep(),
             entry(app, "layer_take"),
             entry(app, "show_envelope"),

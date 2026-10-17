@@ -85,8 +85,9 @@ class SamplesView(View):
         # the crate names the widgets of its dialogs and this numbers them
         dialogs = {str(name): self.widget(editor, "dialog", editor.structure, str(name))
                    for name in editor._call("dialogs").get("dialogs") or ()}
-        tree = editor._call("window", widget=wid, meter=meter, pane=pane, envelope=envelope,
-                            lane=lane, dialogs=dialogs)
+        files_widget = self.widget(editor, "files", editor.structure)
+        tree = editor._call("window", filesWidget=files_widget, widget=wid, meter=meter,
+                            pane=pane, envelope=envelope, lane=lane, dialogs=dialogs)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]

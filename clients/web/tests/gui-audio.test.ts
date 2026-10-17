@@ -192,7 +192,7 @@ test("the window draws a join over a private copy of the take", async () => {
 
 test("the window opens with both cursors on the transport clock", async () => {
     const [editor, host] = await opened(new FakeBuffer());
-    const take = host.trees[0]!.children![1]!.children![0]! as unknown as {
+    const take = host.trees[0]!.children![1]!.children![1]!.children![0]! as unknown as {
         axes: { x: Record<string, unknown> };
     };
     assert.equal(take.axes.x.cursor, 0, "the position cursor, placed");
@@ -353,7 +353,7 @@ test("the take sounds through the editor's own nodes", async () => {
     assert.equal(host.clock, "transport");
     const window = host.trees[0] as GuiNode & { plays?: boolean };
     assert.equal(window.plays, true, "the space bar is the editor's");
-    const meter = ((window.children ?? [])[1]!.children ?? []).find(
+    const meter = (((window.children ?? [])[1]!.children ?? [])[1]!.children ?? []).find(
         (c) => c.type === "meter",
     ) as Record<string, unknown>;
     assert.equal(meter.type, "meter");
@@ -504,7 +504,7 @@ test("both views stack the spectrogram in a lane under the take", async () => {
     editor.apply("/gui_event", [wid, 1, 0, "view_both"]);
     assert.deepEqual(editor.layers, ["peak", "rms"]);
     assert.equal(host.trees.length, 2, "the window is drawn again with a second lane");
-    const lanes = (host.trees.at(-1)!.children![1] as GuiNode).children![0] as GuiNode;
+    const lanes = (host.trees.at(-1)!.children![1]!.children![1] as GuiNode).children![0] as GuiNode;
     assert.equal(lanes.type, "layout");
     const [pane, lane] = lanes.children as GuiNode[];
     assert.equal(pane!.type, "pane");
@@ -512,14 +512,14 @@ test("both views stack the spectrogram in a lane under the take", async () => {
     assert.equal(lane!.link, pane!.id);
     editor.viewWave();
     assert.equal(host.trees.length, 3);
-    assert.equal(((host.trees.at(-1)!.children![1] as GuiNode).children![0] as GuiNode).type, "pane");
+    assert.equal(((host.trees.at(-1)!.children![1]!.children![1] as GuiNode).children![0] as GuiNode).type, "pane");
 });
 
 test("the edit layer is the pane body and not the visual stack", async () => {
     const editor = new AudioEditor(new FakeBuffer() as never, { sampleRate: SR, context: new Editing() });
     const host = new FakeHost();
     await editor.open(host as unknown as GuiHost);
-    const pane = host.trees[0]!.children![1]!.children![0]!;
+    const pane = host.trees[0]!.children![1]!.children![1]!.children![0]!;
     assert.equal(pane.type, "pane");
     assert.equal(pane.children![0]!.id, picture(host.trees[0]).id);
     assert.equal((pane.axes as any).x.unit, "time");
@@ -626,10 +626,10 @@ test("an empty sound file opens untitled and asks for a path", async () => {
     assert.ok(JSON.stringify(host.trees[0]).includes("Save as"));
 });
 
-test("a new file asked for in the window opens an editor of its own", async () => {
+test("a new file asked for in the window is delivered to the handler", async () => {
     const [editor] = await opened(new FakeBuffer(), { file: SoundFile.empty(1, 100, SR) });
     const asked: unknown[] = [];
-    (editor as unknown as { newFile: (shape: unknown) => Promise<void> }).newFile = (shape) => {
+    (editor as unknown as { newFileShape: (shape: unknown) => Promise<void> }).newFileShape = (shape) => {
         asked.push(shape);
         return Promise.resolve();
     };
@@ -659,16 +659,68 @@ test("channels fold through the crate and correct the take", async () => {
     assert.throws(() => editor.foldChannel(7), /channel 7/);
 });
 
-test("a file asked for in the window opens an editor of its own", async () => {
+test("files asked for in the window are delivered to the handler", async () => {
     const [editor] = await opened(new FakeBuffer());
-    const asked: string[] = [];
-    (editor as unknown as { openFile: (path: string) => Promise<void> }).openFile = (path) => {
+    const asked: string[][] = [];
+    (editor as unknown as { openPaths: (path: string[]) => Promise<void> }).openPaths = (path) => {
         asked.push(path);
         return Promise.resolve();
     };
     (editor as unknown as { take: (outcome: unknown) => boolean }).take({
-        turn: "route", openFile: { path: "/takes/b.wav" },
+        turn: "route", openFile: { paths: ["/takes/b.wav", "/takes/c.wav"] },
     });
     await settle();
-    assert.deepEqual(asked, ["/takes/b.wav"]);
+    assert.deepEqual(asked, [["/takes/b.wav", "/takes/c.wav"]]);
+});
+
+
+test("files share one handler and transport but keep state and history", async () => {
+    const [editor, host] = await opened(new FakeBuffer());
+    const transportId = editor.transport!.id;
+    const originalRead = SoundFile.prototype.toBuffer;
+    const originalOpen = SoundFile.open;
+    SoundFile.prototype.toBuffer = async function({ server } = {}) {
+        const endpoint = server as unknown as FakeServer;
+        return { bufnum: endpoint.buffers.alloc(), frames: this.frames, channels: this.channels,
+            sampleRate: this.sampleRate, server: endpoint, path: this.path } as never;
+    };
+    SoundFile.open = async (path: string) => new SoundFile(path, 200, 2, SR);
+    try {
+        editor.setEnvelope([0, 1, 1, 0, 100 / SR, 0.5, 1, 0]);
+        editor.coreCall("locate", { at: 20 / SR });
+        editor.coreCall("span", { span: [10 / SR, 40 / SR] });
+        const envelope = editor.envelope;
+        await editor.openFile(["/takes/b.wav", "/takes/c.wav"]);
+        assert.equal(editor.files.length, 3);
+        assert.equal(editor.file!.path, "/takes/c.wav");
+        assert.equal(editor.transport!.id, transportId);
+        assert.equal(editor.canUndo, false);
+        await editor.focusFile(0);
+        assert.equal(editor.cursor, 20 / SR);
+        assert.deepEqual(editor.envelope, envelope);
+        assert.equal(editor.undo(), true);
+        await settle();
+        assert.equal(editor.canRedo, true);
+        await editor.focusFile(1);
+        assert.equal(editor.canUndo, false);
+        assert.equal(editor.canRedo, false);
+        await editor.focusFile(0);
+        assert.equal(editor.canRedo, true);
+        editor.hideFiles();
+        assert.equal(editor.coreCall("files").visible, false);
+        editor.showFiles();
+        assert.equal(host.trees.at(-1)!.children![1]!.children![0]!.type, "table");
+        await editor.closeFile(2);
+        assert.equal(editor.files.length, 2);
+        assert.equal(editor.canRedo, true);
+        await assert.rejects(editor.focusFile(-1), /index/);
+        await editor.closeFile();
+        assert.equal(editor.file!.path, "/takes/b.wav");
+        await editor.closeFile();
+        assert.equal(editor.closed, true);
+        assert.deepEqual(editor.files, []);
+    } finally {
+        SoundFile.prototype.toBuffer = originalRead;
+        SoundFile.open = originalOpen;
+    }
 });

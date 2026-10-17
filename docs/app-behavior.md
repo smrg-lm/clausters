@@ -10,9 +10,10 @@ code that keeps it lives.
 
 ## Objects, windows and what they share
 
-- **A window shows one object.** An audio editor's window is one file (a
-  `SoundFile` or a buffer); a multitrack editor's is one multitrack; a score
-  editor's is one symbolic score. Two windows over two objects share nothing
+- **A window has its own editing context.** An audio editor's window holds
+  one or several files (`SoundFile`s or buffers) and shows the focused file;
+  a multitrack editor's is one multitrack; a score editor's is one symbolic
+  score. Two windows over two objects share nothing
   that moves: not a time window, not a cursor, not a meter.
 - **Views of one object share what the object has.** Two views of the same
   file (a waveform and a spectrogram, a roll and a score over one sequence)
@@ -24,7 +25,8 @@ code that keeps it lives.
   transport of its own (the clients' `AudioPlayback`, one per editor), so
   playing one window moves the play cursor and the meter of that window only.
   The playback can hold several files of one editor, all but the one played
-  last paused, which is how one editor will hold several files.
+  last paused. Switching files stops the shared server transport and locates
+  it to the incoming file's saved cursor; only that file can play.
 
 ## Views and layers
 
@@ -95,6 +97,10 @@ code that keeps it lives.
 
 ## State, history and verbs
 
+- **Each open audio file keeps its own state and history.** Switching files
+  restores its cursor, selection, gain curve and view settings. Undo/redo
+  steps only the focused file. The independent file list is on the left and
+  can be hidden; hiding it changes neither focus nor playback.
 - **An edit is in the history; a view state is not.** Cuts, pastes, strokes,
   curve points and Apply are history entries; which layer is shown, which
   channels are folded, the preview switch, the scroll and the zoom are not.

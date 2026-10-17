@@ -430,13 +430,17 @@ class Editing:
             self.version = int(turned.get("version", self.version))
         return turned or {}
 
-    def step(self, direction: str) -> dict:
+    def step(self, direction: str, member: "int | None" = None) -> dict:
         """**Take one step of the order**: ``{"stepped", "reason"?, "effects",
         "corrections", "version"}``. The step is already taken in the crate;
-        `carry` is what puts it back onto the objects here."""
+        `carry` is what puts it back onto the objects here.
+
+        ``member`` names the window stepping: an audio editor walks the order
+        of its file in focus. With none, the step walks the context's order."""
         if self.core is None:
             return {"stepped": False}
-        stepped = self.core.call("step", direction=str(direction))
+        stepped = self.core.call("step", direction=str(direction),
+                                 **({} if member is None else {"member": int(member)}))
         self.version = int(stepped.get("version", self.version))
         return stepped
 
@@ -492,8 +496,15 @@ class Editing:
             if handler is not None and hasattr(handler, "store"):
                 handler.store(structure, int(entry["buffer"]), entry.get("steps") or [])
 
+    def state(self, member: "int | None" = None) -> dict:
+        """What an undo menu reads -- ``{"canUndo", "canRedo", "undoLabel",
+        "redoLabel"}`` -- of the order `step` walks for ``member``."""
+        if self.core is None:
+            return {}
+        return self.core.call("state", **({} if member is None else {"member": int(member)}))
+
     def _state(self) -> dict:
-        return {} if self.core is None else self.core.call("state")
+        return self.state()
 
     @property
     def can_undo(self) -> bool:

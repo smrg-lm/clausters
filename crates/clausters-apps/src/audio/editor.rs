@@ -164,6 +164,9 @@ pub struct Outcome {
     /// `{path}`, for the client to open as it opens a new one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_file: Option<Value>,
+    /// The file binding the client focuses or closes, chosen by the app.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_action: Option<Value>,
 }
 
 turn::turned!(Outcome);
@@ -186,6 +189,7 @@ impl Converse for AudioEditor {
     fn owns(&self, widget: i64, _tag: &str) -> bool {
         self.widget
             .into_iter()
+            .chain(self.files_widget)
             .chain(self.pane)
             .chain(self.envelope_widget)
             .chain(self.lane)
@@ -208,6 +212,17 @@ impl Converse for AudioEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if self.files_widget.map(i64::from) == Some(widget) {
+            if matches!(tag, "select" | "activate")
+                && let Some(file) = values
+                    .first()
+                    .and_then(Value::as_u64)
+                    .and_then(|i| self.files.get(i as usize))
+            {
+                out.file_action = Some(json!({"verb": "focus_file", "file": file["id"]}));
+            }
+            return (None, Vec::new());
+        }
         if let Some(name) = self.dialog_name(widget) {
             return self.form_event(&name, tag, values, out);
         }
@@ -217,6 +232,22 @@ impl Converse for AudioEditor {
     fn window_verb(&mut self, message: &Message, args: &[Value], out: &mut Outcome) -> bool {
         if message.addr != "/gui_event" || !message.is_window {
             return false;
+        }
+        if matches!(message.tag.as_str(), "toggle_files" | "close_file") {
+            out.turn = Kind::Route;
+            if message.tag == "toggle_files" {
+                self.files_visible = !self.files_visible;
+                out.restructure = true;
+            } else {
+                out.file_action = Some(json!({"verb": "close_file", "file": self.display}));
+            }
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                None,
+                Vec::new(),
+            ));
+            return true;
         }
         // A channel's menu entry carries the channel after its verb.
         if let Some((verb, channel)) = message.tag.split_once(':')
@@ -286,6 +317,7 @@ impl Converse for AudioEditor {
         if message.tag == "play" || message.tag == "loop" {
             out.turn = Kind::Route;
             let looping = args.get(4).is_some_and(|v| int(v) != 0);
+            self.looping = looping;
             // The space bar plays or stops; `L` changes the pass in progress.
             if message.tag == "play" {
                 out.play = Some(self.play(looping));
@@ -356,6 +388,18 @@ pub struct AudioEditor {
     contents: parts::Take,
     envelope_widget: Option<i32>,
     preview_on: bool,
+    /// Whether the last pass asked for loops, restored with the file.
+    looping: bool,
+    /// Whether the take changed since it was opened or last saved.
+    dirty: bool,
+    /// The sample format a save last wrote the file in, when one did.
+    written_format: Option<String>,
+    /// The codec and sample format of the file the take was read from.
+    codec: Option<String>,
+    sample_format: Option<String>,
+    /// Whether the buffer the take was opened over is this editor's to free
+    /// on close: one it read from a file or made empty, not one handed over.
+    owns_opened: bool,
     effect_installed: bool,
     /// Frames of every take this editor knows -- the one it opened and each it
     /// made -- by buffer.
@@ -399,6 +443,17 @@ pub struct AudioEditor {
     /// The form that is up, when one is.
     dialog: Option<dialogs::Open>,
     conversation: Conversation,
+    /// The open files in the list's order, each `{id, label, file}`; the id
+    /// is the file's display buffer.
+    files: Vec<Value>,
+    /// The files not in focus, each the whole editor state it left, by id.
+    parked: BTreeMap<i64, Box<AudioEditor>>,
+    /// The id the client numbered the file list with.
+    files_widget: Option<i32>,
+    /// Whether the file list is shown.
+    files_visible: bool,
+    /// Whether a file is open: the last one closed leaves none.
+    file_open: bool,
 }
 
 /// A part reading frames `start..end` of `buffer`.
@@ -449,6 +504,12 @@ impl AudioEditor {
             contents: parts::Take::default(),
             envelope_widget: None,
             preview_on: false,
+            looping: false,
+            dirty: false,
+            written_format: None,
+            codec: None,
+            sample_format: None,
+            owns_opened: false,
             effect_installed: false,
             frames: BTreeMap::new(),
             spare: Vec::new(),
@@ -473,6 +534,11 @@ impl AudioEditor {
             dialogs: dialogs::Ids::new(),
             dialog: None,
             conversation: Conversation::new(version),
+            files: Vec::new(),
+            parked: BTreeMap::new(),
+            files_widget: None,
+            files_visible: true,
+            file_open: true,
         };
         editor.reopen(take, frames);
         editor.ensure_envelope();
@@ -587,6 +653,7 @@ impl AudioEditor {
         if !out.contains(&opened) {
             out.push(opened);
         }
+        out.extend(self.parked.values().flat_map(|file| file.rooted()));
         out
     }
 
@@ -596,6 +663,7 @@ impl AudioEditor {
         self.frames
             .get(&buffer)
             .map(|frames| frames * u64::from(self.channels) * 4)
+            .or_else(|| self.parked.values().find_map(|f| f.bytes(buffer)))
     }
 
     /// Forgets a take the caller is about to free, so nothing here names it.
@@ -728,6 +796,10 @@ impl AudioEditor {
                 steps
             }
         };
+        if matches!(to, Target::File(_)) {
+            self.written_format = Some(format.to_string());
+        }
+        self.dirty = false;
         self.target = to;
         Ok(steps_json(&steps))
     }
@@ -871,6 +943,8 @@ impl AudioEditor {
             lane: self.lane.filter(|_| self.views == Views::Stacked),
         });
         self.compose_envelope(&mut tree);
+        self.refresh_files();
+        self.compose_files(&mut tree);
         tree
     }
 
@@ -926,6 +1000,7 @@ impl AudioEditor {
             }
         }
         self.contents = next;
+        self.dirty = true;
         self.ensure_envelope();
         let mut steps = self.restored();
         steps.extend(self.stitched());
@@ -934,7 +1009,9 @@ impl AudioEditor {
 
     /// **One message from the host**, read and answered ([`turn::turn`]).
     pub fn event(&mut self, event: &Event, version: i64) -> Outcome {
-        turn::turn(self, event, version)
+        let outcome = turn::turn(self, event, version);
+        self.dirty |= outcome.changed;
+        outcome
     }
 
     /// **The widgets that draw the take**: the view in its lane and, stacked,
@@ -1416,6 +1493,8 @@ fn resync(widget: i64) -> Vec<Correction> {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct Facts {
+    codec: Option<String>,
+    sample_format: Option<String>,
     take: Option<i64>,
     frames: Option<u64>,
     channels: Option<u32>,
@@ -1541,6 +1620,10 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
         facts.version.unwrap_or(0),
     )?;
     editor.layers = stack;
+    editor.codec = facts.codec.clone();
+    editor.sample_format = facts.sample_format.clone();
+    editor.owns_opened =
+        facts.path.as_ref().is_some_and(|p| !p.is_empty()) || facts.untitled == Some(true);
     editor.adopt(Facts {
         layers: None,
         take: None,
@@ -1584,6 +1667,14 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   optional: `{"steps", "path"}` or `{"steps", "buffer"}`, what writes the
 ///   take over what it was opened from or, given one, into that file or that
 ///   buffer; or `{"error"}`.
+/// - `files` -- the ordered open files and list visibility; `binding` -- the
+///   focused file's buffer facts, cursor, selection, layers and loop switch.
+/// - `open_file` -- `paths`, a path or array: an outcome asking the client to
+///   load the files through SoundFile. `add_file` -- the loaded buffer facts,
+///   display and spare buffers: add it and return the server steps and binding.
+/// - `focus_file`, `close_file` -- `index` (zero-based) or `file` (join id):
+///   restore its state or free it. Closing without either names the focused file.
+/// - `show_files`, `hide_files`, `toggle_files` -- the independent left list.
 /// - `kept` -- `buffer`: a spill the caller could not carry out, so that take
 ///   is still in its buffer. Answers `{}`.
 /// - `span` -- `span`: `[start, end]` in seconds, or `null`: the time range
@@ -1608,6 +1699,9 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         .unwrap_or_default()
     {
         "sync" => {
+            if let Some(visible) = request.get("filesVisible").and_then(Value::as_bool) {
+                editor.files_visible = visible;
+            }
             if let Ok(facts) = serde_json::from_value::<Facts>(request.clone()) {
                 editor.adopt(Facts {
                     layers: None,
@@ -1647,6 +1741,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             }
         }
         "window" => {
+            editor.files_widget = request.get("filesWidget").and_then(Value::as_i64).map(|n| n as i32);
             if let Some(ids) = request.get("dialogs").and_then(Value::as_object) {
                 editor.dialogs = ids
                     .iter()
@@ -1680,6 +1775,50 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
         "folded" => json!({"folded": editor.folded()}).to_string(),
         "file" => editor.file().to_string(),
+        "files" => { editor.refresh_files(); json!({"files": editor.files, "visible": editor.files_visible}).to_string() },
+        "binding" => editor.binding().to_string(),
+        "add_file" => match new_json(&request.to_string()).and_then(|mut file| {
+            let steps = file.open()?;
+            editor.add_file(file);
+            Ok(steps)
+        }) {
+            Ok(steps) => json!({"turn": "route", "steps": steps, "binding": editor.binding(), "focusChanged": true, "restructure": true}).to_string(),
+            Err(error) => json!({"error": error}).to_string(),
+        },
+        "focus_file" | "close_file" => {
+            let verb = request["verb"].as_str().unwrap();
+            editor.refresh_files();
+            let file = if let Some(index) = request.get("index") {
+                match index.as_u64().and_then(|i| editor.files.get(i as usize)).and_then(|f| f["id"].as_i64()) {
+                    Some(id) => id,
+                    None => return json!({"error": "the file index is outside the open files"}).to_string(),
+                }
+            } else { request.get("file").and_then(Value::as_i64).unwrap_or(editor.display) };
+            let before = editor.display;
+            let result = if verb == "focus_file" {
+                editor.focus_file(file).map(|()| (json!([]), Vec::<i64>::new()))
+            } else { editor.close_file(file) };
+            match result {
+                Ok((steps, freed)) => json!({"turn": "route", "steps": steps, "freedBuffers": freed, "binding": editor.binding(), "focusChanged": before != editor.display,
+                    "restructure": true, "fileAction": {"verb": verb, "file": file}, "close": editor.files.is_empty()}).to_string(),
+                Err(error) => json!({"error": error}).to_string(),
+            }
+        }
+        "open_file" => {
+            let paths = request.get("paths").or_else(|| request.get("path"));
+            let paths = match paths {
+                Some(Value::String(path)) if !path.is_empty() => vec![json!(path)],
+                Some(Value::Array(paths)) if paths.iter().all(|p| p.as_str().is_some_and(|p| !p.is_empty())) => paths.clone(),
+                _ => return json!({"error": "open_file needs a path or an array of paths"}).to_string(),
+            };
+            json!({"turn": "route", "openFile": {"paths": paths}}).to_string()
+        }
+        "show_files" | "hide_files" | "toggle_files" => {
+            editor.files_visible = match request["verb"].as_str().unwrap() {
+                "show_files" => true, "hide_files" => false, _ => !editor.files_visible,
+            };
+            json!({"turn": "route", "restructure": true}).to_string()
+        }
         "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
         "show_envelope" | "setautomation" | "apply_envelope" | "preview_on" | "preview_off"
         | "remove_effect" | "fold_channel" | "solo_channel" | "show_all_channels" => {
@@ -1713,7 +1852,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "locate" => {
             json!({ "cue": editor.set_cursor(get("at").as_f64().unwrap_or(0.0)) }).to_string()
         }
-        "play" => json!(editor.play(get("looping").as_bool().unwrap_or(false))).to_string(),
+        "play" => {
+            editor.looping = get("looping").as_bool().unwrap_or(false);
+            json!(editor.play(editor.looping)).to_string()
+        },
         "save" => {
             let format = get("format").as_str().unwrap_or("float").to_string();
             let to = match (get("path").as_str(), get("buffer").as_i64()) {

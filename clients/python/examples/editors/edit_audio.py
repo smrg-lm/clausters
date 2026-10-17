@@ -44,9 +44,11 @@ it, which act on the take as the keys do. ``hear()`` plays the take as the edits
 prints what it is made of. ``editor.save()`` -- or Ctrl+S in the window --
 writes the edit back into the file it was opened from, and
 ``editor.save(path)`` writes it as another file instead. File -> New file...
-opens a file not written yet in a window of its own, as ``new_file()`` does;
-its first save asks where it goes. File -> Open file... opens a file by its
-path, in a window of its own too.
+adds a file not written yet to this editor, as ``new_file()`` does;
+its first save asks where it goes. File -> Open file... uses the host's
+chooser; Ctrl/Shift selects several files. The independent file list is on
+the left and View -> Files hides or shows it. Each file keeps its cursor,
+selection and undo/redo history; switching files stops the shared transport.
 
 Run it as a script, or step through the cells::
 
@@ -217,8 +219,35 @@ def many_channels():
 
 # %%
 def new_file():
-    """Open two seconds of stereo silence in a window of its own."""
-    return edit(SoundFile.empty(2, frames, rate), title="new", server=server)
+    """Add two seconds of stereo silence to this editor."""
+    editor.new_file(2, frames, rate)
+
+
+def open_files():
+    """Add two files at once, then use the list to switch and undo per file."""
+    first = SoundFile.write(OUT / "edit_audio_b.wav", samples, 1, rate, sample_format="float")
+    second = SoundFile.write(OUT / "edit_audio_c.wav", samples, 1, rate, sample_format="float")
+    editor.open_file([first.path, second.path])
+
+
+def focus_first():
+    """Restore the first file's cursor, selection and edits."""
+    editor.focus_file(0)
+
+
+def hide_files():
+    """Give the editing view the space occupied by the file list."""
+    editor.hide_files()
+
+
+def show_files():
+    """Show the independent file list again."""
+    editor.show_files()
+
+
+def close_file():
+    """Close the focused file; the others retain their state."""
+    editor.close_file()
 
 
 # %%

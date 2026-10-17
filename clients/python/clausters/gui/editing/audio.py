@@ -52,11 +52,10 @@ class _AudioPlayback:
     """**What sounds one audio editor** -- the shared crate's playback, the
     steps it answers carried out on the editor's server.
 
-    One per editor, because a window is one file: its transport, its play
-    cursor and its meter are that file's, and playing one window moves
-    nothing in another. The views of one file share it, as they share the
-    file. The playback holds several files, all but the one played last
-    paused, which is how one editor will hold several.
+    One per editor, shared by its open files: its transport, its play
+    cursor and meter follow the focused file, and playing one window moves
+    nothing in another. All but the focused file stay paused; switching files
+    stops and locates the same server transport to the incoming cursor.
     """
 
     def __init__(self, server):
@@ -281,8 +280,6 @@ class AudioEditor(Marking, Editor):
                  scratch: "str | None" = None, file=None, **options):
         #: The `clausters.SoundFile` the take was loaded from, when it was.
         self._file = file
-        #: The sample format the editor last wrote its file in, or ``None``.
-        self._written = None
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
         view = SamplesView(layers)
         domain = AudioDomain()
@@ -295,12 +292,17 @@ class AudioEditor(Marking, Editor):
         self._runner = _native.StepRunner()
         #: The join the window draws: the take as the edits have left it.
         self._display = self._server.buffers.alloc()
+        # The context is the take's; switching files changes the structure,
+        # so the window keeps the one it opened in.
+        self._context = self._editing
         self._member, self._structure_id = self._editing.open(
             "openAudio", f"audio:{int(take.bufnum)}",
             {**self._facts(), "frames": int(getattr(take, "frames", 0) or 0),
              "take": int(take.bufnum), "display": self._display,
              "path": getattr(take, "path", None),
              "untitled": self._file is not None and self._file.path is None,
+             "codec": getattr(file, "codec", None),
+             "sample_format": getattr(file, "sample_format", None),
              "layers": list(view.layers)}, take, domain)
         if history_bytes is not None:
             self._editing.limit_bytes(history_bytes)
@@ -425,29 +427,119 @@ class AudioEditor(Marking, Editor):
         return self._server
 
     def _new_file(self, shape: dict) -> None:
-        """**A new file asked for in the window**: an empty `clausters.SoundFile`
-        of that shape, opened in an editor of its own on the same host."""
-        from ...soundfile import SoundFile
-        from .edit import edit
-        edit(SoundFile.empty(int(shape["channels"]), int(shape["frames"]), float(shape["rate"])),
-             host=self._host, server=self._server)
+        """**A new file asked for in the window**: added to this editor."""
+        self.new_file(int(shape["channels"]), int(shape["frames"]), float(shape["rate"]))
 
-    def _open_file(self, path: str) -> None:
-        """**A file asked to be opened in the window**: the `clausters.SoundFile`
-        at ``path``, opened in an editor of its own on the same host."""
+    def new_file(self, channels: int, frames: int, rate: float) -> None:
+        """Add and focus an empty SoundFile of the requested shape."""
         from ...soundfile import SoundFile
-        from .edit import edit
-        edit(SoundFile.open(path), host=self._host, server=self._server)
+        self._add_file(SoundFile.empty(channels, frames, rate))
+
+    def _open_file(self, paths) -> None:
+        """**Files asked to be opened**: each read and added, the last in focus."""
+        from ...soundfile import SoundFile
+        for path in paths:
+            self._add_file(SoundFile.open(path))
+
+    def _add_file(self, file) -> None:
+        """Read ``file`` into a buffer and hand it to the crate as a new file
+        in focus, with a display and spare buffers of its own."""
+        take = file.to_buffer(server=self._server)
+        answer = self._call(
+            "add_file", take=int(take.bufnum), frames=int(take.frames),
+            channels=int(take.channels), rate=float(take.sample_rate),
+            display=self._server.buffers.alloc(), path=file.path,
+            untitled=file.path is None, codec=file.codec,
+            sample_format=file.sample_format,
+            buffers=[self._server.buffers.alloc() for _ in range(_SPARE)])
+        self._take(answer)
+
+    def open_file(self, paths) -> None:
+        """Open a path or a list of paths in this editor, focusing the last."""
+        paths = list(paths) if isinstance(paths, (list, tuple)) else str(paths)
+        answer = self._call("open_file", paths=paths)
+        if "error" in answer:
+            raise ValueError(answer["error"])
+        self._open_file(answer["openFile"]["paths"])
+
+    @property
+    def files(self) -> tuple:
+        """Open SoundFiles in list order; a buffer-only entry is None."""
+        from ...soundfile import SoundFile
+        return tuple(
+            SoundFile(f["path"], int(f["frames"]), int(f["channels"]), float(f["rate"]),
+                      f["codec"], f["sample_format"])
+            if f["path"] is not None or f["untitled"] else None
+            for row in self._call("files")["files"] for f in [row["file"]])
+
+    def focus_file(self, index: int) -> None:
+        """Focus the file at zero-based index, restoring its cursor and selection."""
+        self._take(self._call("focus_file", index=index))
+
+    def close_file(self, index=None) -> None:
+        """Close the focused file, or the file at zero-based index."""
+        self._take(self._call("close_file", **({} if index is None else {"index": index})))
+
+    def show_files(self) -> None:
+        """Show the independent file list to the left of the editing view."""
+        self._take(self._call("show_files"))
+
+    def hide_files(self) -> None:
+        """Hide the file list."""
+        self._take(self._call("hide_files"))
+
+    # ---- the history: the order of the file in focus ----
+
+    def _step(self, direction: str) -> bool:
+        """A step of this window's order: the file in focus walks its own."""
+        return self.app.stepped(self._editing.step(direction, self._member), self)
+
+    @property
+    def can_undo(self) -> bool:
+        """Whether the file in focus has an edit to step back over."""
+        return bool(self._editing.state(self._member).get("canUndo"))
+
+    @property
+    def can_redo(self) -> bool:
+        """Whether the file in focus has an undone edit to step forward into."""
+        return bool(self._editing.state(self._member).get("canRedo"))
+
+    @property
+    def undo_label(self) -> "str | None":
+        """What an undo of the file in focus would be called."""
+        return self._editing.state(self._member).get("undoLabel")
+
+    @property
+    def redo_label(self) -> "str | None":
+        """What a redo of the file in focus would be called."""
+        return self._editing.state(self._member).get("redoLabel")
+
+    def _bind_file(self, binding: dict) -> None:
+        """**Bind the file in focus**: its buffers, its structure in the
+        history, and the cursor, selection, layers and loop switch it left."""
+        from ...defs.buffer import Buffer
+        self._display = int(binding["display"])
+        self.sample_rate = float(binding["rate"])
+        self.structure = Buffer(int(binding["take"]), int(binding["frames"]),
+                                int(binding["channels"]), self.sample_rate, server=self._server)
+        self._structure_id = binding.get("structure", self._structure_id)
+        self._editing.version = int(binding.get("version", self._editing.version))
+        self.cursor = float(binding["cursor"]) / self.sample_rate
+        self.dirty = bool(binding["dirty"])
+        self.view.layers = tuple(binding["layers"])
+        self._driver.span = tuple(binding["span"]) if binding["span"] is not None else None
+        self._driver.looping = bool(binding["looping"])
+        self._driver._paused = False
 
     def _closed(self) -> bool:
         """The window closed: the take stops being one the editor plays, and
         the last one closed frees the editor's nodes."""
-        self._playback.call("closeFile", file=self._display)
+        self._playback.call("close")
         return super()._closed()
 
     def close(self):
         """Close the window, and free what sounded the take."""
-        self._playback.call("closeFile", file=self._display)
+        self._playback.call("close")
         return super().close()
 
     def _facts(self) -> dict:
@@ -523,7 +615,6 @@ class AudioEditor(Marking, Editor):
             raise ValueError(answer["error"])
         self.domain.run(self.structure, answer.get("steps") or [])
         if "path" in answer:
-            self._written = str(sample_format)
             return str(answer["path"])
         frames = int(self._call("parts").get("frames", 0))
         return Buffer(int(answer["buffer"]), frames,
@@ -543,10 +634,8 @@ class AudioEditor(Marking, Editor):
         rate = float(answer.get("rate", self.sample_rate))
         if path is None:
             return SoundFile(None, frames, channels, rate) if answer.get("untitled") else None
-        opened = self._file
-        if self._written is None and opened is not None and opened.path == path:
-            return SoundFile(path, frames, channels, rate, opened.codec, opened.sample_format)
-        return SoundFile(path, frames, channels, rate, "wav", self._written or "float")
+        return SoundFile(path, frames, channels, rate, answer.get("codec"),
+                         answer.get("sample_format"))
 
     @property
     def parts(self) -> list:
@@ -585,8 +674,29 @@ class AudioEditor(Marking, Editor):
     def _take(self, outcome: dict) -> bool:
         """Carry out what a turn came to, and answer the host. Returns whether
         the take changed."""
+        if "error" in outcome:
+            raise ValueError(outcome["error"])
         if outcome.get("turn") in (None, "nothing"):
             return False
+        action = outcome.get("fileAction")
+        if action is not None and "binding" not in outcome:
+            self.echo.send(outcome.get("answer"))
+            return self._take(self._call(action["verb"], file=action["file"]))
+        if action is not None and action["verb"] == "close_file":
+            self._playback.call("closeFile", file=int(action["file"]))
+        if "binding" in outcome:
+            self.domain.run(self.structure, outcome.get("steps") or [])
+            for buffer in outcome.get("freedBuffers") or ():
+                self._server.buffers.free(int(buffer))
+            outcome = dict(outcome, steps=[])
+            if outcome.get("close"):
+                self.close()
+                return False
+            if outcome.get("focusChanged"):
+                self._bind_file(outcome["binding"])
+                self._sound()
+                self._playback.call("focusFile", file=self._display,
+                                    frame=int(outcome["binding"]["cursor"]))
         if "layers" in outcome:
             self.view.layers = tuple(outcome["layers"])
         # **A view placed in a lane of its own** (the stacked views, or back
@@ -601,13 +711,13 @@ class AudioEditor(Marking, Editor):
         # save from the window, the file written.
         steps = outcome.get("steps") or []
         self.domain.run(self.structure, steps)
-        if any((step.get("send") or {}).get("addr") == "/buffer_write" for step in steps):
-            # a save from the window writes float, its one format
-            self._written = "float"
+        if outcome.get("newFile") is not None or outcome.get("openFile") is not None:
+            self.echo.send(outcome.get("answer"))
+            outcome = dict(outcome, answer=None)
         if outcome.get("newFile") is not None:
             self._new_file(outcome["newFile"])
         if outcome.get("openFile") is not None:
-            self._open_file(str(outcome["openFile"]["path"]))
+            self._open_file(outcome["openFile"]["paths"])
         if changed:
             self.dirty = True
             self._editing.changed()

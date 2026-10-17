@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 
 use crate::forms::{self, Spec};
 
@@ -17,7 +17,7 @@ pub enum Form {
     New,
     /// The path the take is written to, from now on.
     SaveAs,
-    /// A file to open, in a window of its own.
+    /// Files to open in this editor, chosen in the host's chooser.
     Open,
 }
 
@@ -53,10 +53,28 @@ impl Spec for Form {
                 ("seconds", "Length (seconds)"),
                 ("rate", "Sample rate (Hz)"),
             ],
-            Form::SaveAs | Form::Open => vec![("path", "File")],
+            Form::SaveAs => vec![("path", "File")],
+            Form::Open => vec![("path", "Files")],
+        }
+    }
+
+    /// The file to open is chosen in the host's own chooser, where Ctrl and
+    /// Shift select several, rather than typed.
+    fn field(self, _name: &str, widget: &mut Map<String, Value>) {
+        if self == Form::Open {
+            widget.remove("value");
+            widget.insert("type".into(), json!("files"));
+            widget.insert("path".into(), json!("."));
+            widget.insert("multiple".into(), json!(true));
+            widget.insert("w".into(), json!(CHOOSER_W));
+            widget.insert("h".into(), json!(CHOOSER_H));
         }
     }
 }
+
+/// How big the open form's chooser is: room for a long name and a dozen rows.
+const CHOOSER_W: f64 = 420.0;
+const CHOOSER_H: f64 = 300.0;
 
 /// The forms the window holds, in the order of their pages.
 const FORMS: [Form; 3] = [Form::New, Form::SaveAs, Form::Open];

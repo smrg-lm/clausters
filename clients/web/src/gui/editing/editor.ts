@@ -258,7 +258,7 @@ export class Editor<S = unknown> implements Adopting {
      * The context to register in when the caller named one; otherwise the
      * structure's own, asked for on each use.
      */
-    protected readonly givenContext: Editing | null;
+    protected givenContext: Editing | null;
     /**
      * The identity this structure was registered in the history under, minted on
      * the first edit -- a structure you built has no id and is not going to be

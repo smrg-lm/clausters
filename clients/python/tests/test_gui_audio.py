@@ -175,7 +175,7 @@ def test_the_window_draws_a_join_over_a_private_copy_of_the_take():
 
 def test_the_window_opens_with_both_cursors_on_the_transport_clock():
     editor, host, _wid, _context = opened(FakeBuffer())
-    take = host.trees[0]["children"][1]["children"][0]
+    take = host.trees[0]["children"][1]["children"][1]["children"][0]
     assert take["type"] == "pane"
     assert take["axes"]["x"]["cursor"] == 0.0, "the position cursor, placed"
     assert take["axes"]["x"]["playhead_at"] == 0.0, "the play cursor, anchored"
@@ -319,7 +319,7 @@ def test_the_take_sounds_through_the_editors_own_nodes():
     assert host.clock == "transport"
     window = host.trees[0]
     assert window["plays"] is True, "the space bar is the editor's"
-    meter = next(c for c in window["children"][1]["children"] if c["type"] == "meter")
+    meter = next(c for c in window["children"][1]["children"][1]["children"] if c["type"] == "meter")
     assert meter["type"] == "meter" and meter["rate"] == "control"
     assert meter["channels"] == 2
 
@@ -465,7 +465,7 @@ def test_both_views_stack_the_spectrogram_in_a_lane_under_the_take():
     editor.apply("/gui_event", [wid, 1, 0, "view_both"])
     assert editor.layers == ("peak", "rms")
     assert len(host.trees) == 2, "the window is drawn again with a second lane"
-    lanes = host.trees[-1]["children"][1]["children"][0]
+    lanes = host.trees[-1]["children"][1]["children"][1]["children"][0]
     assert lanes["type"] == "layout"
     pane, lane = lanes["children"]
     assert pane["type"] == "pane"
@@ -473,12 +473,12 @@ def test_both_views_stack_the_spectrogram_in_a_lane_under_the_take():
     assert lane["link"] == pane["id"]
     editor.view_wave()
     assert len(host.trees) == 3
-    assert host.trees[-1]["children"][1]["children"][0]["type"] == "pane"
+    assert host.trees[-1]["children"][1]["children"][1]["children"][0]["type"] == "pane"
 
 
 def test_edit_layer_is_the_panes_body_and_not_the_visual_stack():
     editor, host, wid, _context = opened(FakeBuffer())
-    pane = host.trees[0]["children"][1]["children"][0]
+    pane = host.trees[0]["children"][1]["children"][1]["children"][0]
     assert pane["type"] == "pane"
     assert pane["children"][0]["id"] == wid
     assert pane["axes"]["x"]["unit"] == "time"
@@ -571,7 +571,7 @@ def test_an_empty_sound_file_opens_untitled_and_asks_for_a_path():
     assert "Save as" in str(host.trees[0])
 
 
-def test_a_new_file_asked_for_in_the_window_opens_an_editor_of_its_own():
+def test_a_new_file_asked_for_in_the_window_is_delivered_to_the_handler():
     from clausters import SoundFile
     editor, _host, _wid, _context = opened(FakeBuffer(), file=SoundFile.empty(1, 100, SR))
     asked = []
@@ -599,9 +599,57 @@ def test_channels_fold_through_the_crate_and_correct_the_take():
         editor.fold_channel(7)
 
 
-def test_a_file_asked_for_in_the_window_opens_an_editor_of_its_own():
+def test_files_asked_for_in_the_window_are_delivered_to_the_handler():
     editor, _host, _wid, _context = opened(FakeBuffer())
     asked = []
     editor._open_file = lambda path: asked.append(path)
-    editor._take({"turn": "route", "openFile": {"path": "/takes/b.wav"}})
-    assert asked == ["/takes/b.wav"]
+    editor._take({"turn": "route", "openFile": {"paths": ["/takes/b.wav", "/takes/c.wav"]}})
+    assert asked == [["/takes/b.wav", "/takes/c.wav"]]
+
+
+def test_files_share_one_handler_and_transport_but_keep_state_and_history(monkeypatch):
+    from clausters import SoundFile
+    editor, host, wid, _context = opened(FakeBuffer())
+    transport_id = editor._playback.transport_id
+
+    def load(file, *, server=None, **options):
+        return types.SimpleNamespace(bufnum=server.buffers.alloc(), frames=file.frames,
+                                     channels=file.channels, sample_rate=file.sample_rate,
+                                     server=server, path=file.path)
+
+    monkeypatch.setattr(SoundFile, "to_buffer", load)
+    monkeypatch.setattr(SoundFile, "open", staticmethod(lambda path: SoundFile(str(path), 200, 2, SR)))
+    editor.set_envelope([0, 1, 1, 0, 100 / SR, 0.5, 1, 0])
+    editor._driver.locate(20 / SR)
+    editor._driver.set_span((10 / SR, 40 / SR))
+    first_envelope = editor.envelope
+    editor.open_file(["/takes/b.wav", "/takes/c.wav"])
+    assert len(editor.files) == 3
+    assert editor.file.path == "/takes/c.wav"
+    assert editor._playback.transport_id == transport_id
+    assert editor.can_undo is False
+    assert editor._window == 901
+    editor.focus_file(0)
+    assert editor.cursor == 20 / SR
+    assert editor._driver.span == (10 / SR, 40 / SR)
+    assert editor.envelope == first_envelope
+    assert editor.undo()
+    assert editor.can_redo
+    editor.focus_file(1)
+    assert not editor.can_undo and not editor.can_redo
+    editor.focus_file(0)
+    assert editor.can_redo
+    editor.hide_files()
+    assert editor._call("files")["visible"] is False
+    editor.show_files()
+    assert host.trees[-1]["children"][1]["children"][0]["type"] == "table"
+    editor.close_file(2)
+    assert len(editor.files) == 2
+    assert editor.can_redo
+    with pytest.raises(ValueError, match="index"):
+        editor.focus_file(-1)
+    editor.close_file()
+    assert editor.file.path == "/takes/b.wav"
+    editor.close_file()
+    assert editor.closed
+    assert editor.files == ()

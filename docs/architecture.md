@@ -2344,3 +2344,19 @@ summary-update walk feeds both sources. The original stays the edit source.
 The gain table and processed picture are replaced when take contents or curve
 change, held while bypassed, and freed on removal or file close. Neither
 belongs to undo history.
+
+The audio application keeps its open files in Rust: the file in focus is the
+editor's state, and each other one is parked whole while it waits. The file
+an editor was opened over keeps its edits in the context's undo order, which
+every window over that take shares; each file it adds walks a `History` of its
+own, which the context swaps in while that file is in focus. A window's step
+and its menu state name the window's member, so they walk the order of its
+file in focus; a step naming no member walks the context's. The clients keep
+one handler, bind the file in focus from the application's answer, read and
+write files through `SoundFile` and run the server steps it returns. The file
+list is an independent host `table` left of the editing view, shown or hidden
+by the application's verbs. The Open form is a field of the shared forms
+mechanism whose widget is the host's `files` chooser with `multiple`, so its
+Ctrl/Shift selection is the table's own. All files of one editor share its
+playback and server transport; a switch stops it and locates it to the
+incoming file's cursor.

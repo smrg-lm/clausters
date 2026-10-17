@@ -2056,9 +2056,9 @@ opened it.
   is rebuilt. Copying a span from one file and pasting it into another, or into
   a new empty file, is the editing context's: each open file is a member with
   its own history (`crate::editing`), the clipboard is the host's, and a new
-  empty file is a member over a new take. **Open:** whether the files share the
-  editor's one position, with the editor locating to each file's own cursor on
-  a switch, or each file has a transport of its own (`T6`).
+  empty file is a member over a new take. **Decided 2026-10-17:** the editor reuses one server transport and
+  locates it to the focused file's saved cursor on a switch. Each file keeps
+  its selection, edits and undo/redo history.
 
   **`ae.meter2`** -- the multitrack's meter, the same algorithm under the
   editor's own name: `In` per channel, `Meter` with the field's ballistics
@@ -2660,11 +2660,14 @@ Every entry carries a checkbox.
   as Apply and freed with their insert. Preview switches are outside undo;
   applying and the curve edits retain the existing take history.
 
-- ⬜ **Several files in one audio editor** *(out of X7)*. The playback holds a
-  file per open take and pauses all but the one in focus; the clients open
-  one take per editor, so what tabs or a list of open files look like, and
-  whether the files share one position or each locates to its own cursor on
-  a switch, is open.
+- ✅ **Several files in one audio editor** *(out of X7; closed 2026-10-17)*.
+  The Rust application holds the open files; a hideable `table` left of the
+  editing view lists them (View -> Files). `open_file` takes a path or a list;
+  the Open form is the host's `files` chooser with Ctrl/Shift selection; New
+  file adds to the editor. Each file keeps its parts, gain curve, cursor,
+  selection, layers and its own undo order (`docs/decisions.md`, "The files
+  an audio editor adds walk orders of their own"). A switch stops the one
+  server transport and locates it to the file's cursor.
 
 - ✅ **A roll with no sequence: whether the bare `pianoroll` stays** *(the
   user, 2026-10-01, deleting the bare `multitrack` builder in

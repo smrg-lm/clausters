@@ -180,6 +180,7 @@ impl AudioEditor {
         } else {
             conversation::answer(0, out.version, reason, corrections)
         });
+        self.dirty |= out.changed;
         out
     }
 

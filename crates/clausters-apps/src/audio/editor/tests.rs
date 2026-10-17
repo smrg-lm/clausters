@@ -811,13 +811,23 @@ fn the_open_file_form_names_a_path_for_the_client() {
         refused["answer"]["reason"]
             .as_str()
             .unwrap()
-            .contains("path")
+            .contains("select")
     );
     event(
         &mut editor,
-        json!([ids["open:path"], 3, 0, "/takes/b.flac"]),
+        json!([
+            ids["open:path"],
+            3,
+            0,
+            "select",
+            "/takes/b.flac",
+            "/takes/c.wav"
+        ]),
     );
     let opened = event(&mut editor, json!([ids["open:ok"], 4, 0, "click"]));
-    assert_eq!(opened["openFile"], json!({"path": "/takes/b.flac"}));
+    assert_eq!(
+        opened["openFile"],
+        json!({"paths": ["/takes/b.flac", "/takes/c.wav"]})
+    );
     assert!(opened.get("steps").is_none(), "nothing is written");
 }

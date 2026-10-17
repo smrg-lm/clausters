@@ -123,6 +123,7 @@ export class SamplesView extends View<Buffer> {
         }
         const tree = ed.coreCall("window", {
             widget: wid, meter, pane, envelope, lane, dialogs,
+            filesWidget: this.widget(editor, "files", editor.structure),
         }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
         // rather than composed in the crate.
