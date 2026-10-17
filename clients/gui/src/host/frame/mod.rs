@@ -2626,6 +2626,8 @@ mod tests {
             // A test fixture's axis has no air: what it checks is placement,
             // not how far a hand may open the vertical.
             y_headroom: 1.0,
+            y_measure: crate::host::widget::YMeasure::Value,
+            y_parked: None,
             ruler,
             dir: crate::host::widget::RulerDir::Up,
             ruler_y,

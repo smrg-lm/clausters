@@ -880,6 +880,22 @@ impl SignalElement {
         }
     }
 
+    /// **What the vertical measures, and how far past its domain it opens**:
+    /// a frequency stops at Nyquist, so its window is the axis and no more; a
+    /// value -- an amplitude a floating-point signal can leave -- opens past
+    /// it ([`crate::viewport::AMP_HEADROOM`]). It follows the **stack's axis**,
+    /// not the presentation: a body ruled in hertz is a body with a texture
+    /// on its axis, whatever else is drawn over it.
+    pub fn vertical_measure(&self) -> (crate::host::widget::YMeasure, f64) {
+        match self.axis_domain() {
+            layers::Domain::Frequency => (crate::host::widget::YMeasure::Frequency, 1.0),
+            _ => (
+                crate::host::widget::YMeasure::Value,
+                crate::viewport::AMP_HEADROOM,
+            ),
+        }
+    }
+
     /// Whether the element needs a GPU slot of its own, under whatever id
     /// addresses it (a clip's body is addressed by the clip).
     pub fn needs_gpu_slot(&self) -> bool {

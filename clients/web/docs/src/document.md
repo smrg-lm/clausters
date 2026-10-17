@@ -139,20 +139,21 @@ The takes a history can still reach are kept, and freed when it cannot;
 `historyBytes` caps what only the history holds, and `residentBytes` how much of that stays in memory -- past it the oldest takes are written to the page's own storage (`scratch`) and read back when an undo reaches them. What it opens is a file or a server buffer, and it edits a private copy of it: `await editor.save()` writes the edited take over what it was opened from -- the file it was read from, or the buffer, rewritten whole at the take's length -- and Ctrl+S in the window does the same. `editor.save({ path })` writes it as another file and `editor.save({ buffer })` into another buffer (`buffer: true` for a new one), which a later save then writes over. **A `SoundFile` opens there too**: `await edit(await SoundFile.open(path))` loads the file into a buffer of the editor's own and saves back to the file, and `await edit(SoundFile.empty(channels, frames, rate))` is silence not written anywhere yet -- its first save needs a path, which Ctrl+S asks for in a **Save as...** form and `editor.save()` refuses without one. `editor.file` is the `SoundFile` the take is now. The window's File menu has **New file...** (a form for the channels, the length and the rate, which opens the new file in a window of its own), **Open file...** (a path, opened the same way) and **Save as...**. `editor.buffer` is the edited
 take, to play or read, and `editor.parts` what it is made of. **It plays what it edits** on a transport of its own (another window's play moves nothing in it), and `editor.transport` is that `Transport` in the take's seconds: the space bar over the window plays the marked range, or from the position cursor, and `L` loops it -- the same `await transport.play()`, `span` and `loop(start, end)` from a page, each side reading what the other set. **A range swept while it loops is the loop's new span**: the loop follows the hand as it draws, and the head goes to the start of the range when the sweep is let go. A pass that is not looping keeps the end it was played with, and the next play reads the range. What the hand marked is samples, and `await editor.selected()` answers them as a `Segment` over `editor.buffer` (its `start` a frame, its `duration` seconds); `await editor.select(segment)` marks one and `await editor.unselect()` marks nothing. In an audio editor the samples marked and the transport's `span` are one range, so setting either sets both.
 
-The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`), also available as `editor.viewWave()`, `editor.viewSpectrogram()` and `editor.viewBoth()`. `editor.layers` accepts the same names and layer objects as the signal builders. `showLayer(name)`, `hideLayer(name)`, `soloLayer(name)` and `layerAlpha(name, alpha)` change the shared application's stack. Solo toggles without changing visibility. The mixed preset keeps the frequency axis and draws peak and RMS in their own amplitude boxes. Visualization changes leave the take and its history intact.
+The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`), also available as `editor.viewWave()`, `editor.viewSpectrogram()` and `editor.viewBoth()`. `editor.layers` accepts the same names and layer objects as the signal builders. `showLayer(name)`, `hideLayer(name)`, `soloLayer(name)` and `layerAlpha(name, alpha)` change the shared application's stack. Solo toggles without changing visibility. The mixed preset keeps the frequency axis and draws peak and RMS in their own amplitude boxes. Visualization changes leave the take and its history intact. The vertical ruler is in the units of the layer that claims the axis, and each quantity keeps its own vertical zoom: a spectrogram opens no further than its whole frequency range, and returning to the waveform finds the amplitude zoom where it was left.
 
 The picture now stands in a `pane`: one time ruler, selection and playhead
 shared by its bodies. `editor.layer = "take"` puts the take body in hand, the
-same action as View → Edit take. This edit body is separate from
+same action as View → Edit audio. This edit body is separate from
 `editor.layers`, which chooses pictures of the samples. `pane(...)` also
 accepts curve bodies; its `layer` property names the active body (`points`,
 `points:1`, etc.), and `hidden` excludes named bodies from drawing and editing.
 
-`editor.showEnvelope()` (View → Gain envelope) shows and selects the gain
+`editor.showEnvelope()` (View → Edit gain envelope) shows and selects the gain
 curve. `editor.envelope` reads its flat `time, value, shape, curve` quads in
 seconds; `editor.setEnvelope([...])` records a curve edit in the same undo
-order as sample edits. The header names the gain scale: zero to two, with one as unity. The signal
-ruler continues to measure sample amplitude. The
+order as sample edits. The header names the gain scale: zero to two, with one as unity, and the
+vertical ruler and the read-out under the pointer measure gain while the curve
+is in hand and the samples while the take is. The
 segment takes its shape and curvature from its first point, using the same
 shapes as an envelope. Values before the first point and after the last hold.
 The curve stays on the take's time axis when sample spans are cut or pasted.

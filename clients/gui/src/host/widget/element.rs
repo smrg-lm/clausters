@@ -781,6 +781,13 @@ pub struct TimeSpace {
     /// `true` for an element standing on its own (a `None` [`TimeSpace`] never
     /// reaches this field): outside a container an element is its own layer.
     pub active: bool,
+    /// Whether the container hands this body **its vertical ruler**: in a
+    /// pane every body is drawn over one rectangle and one gutter, and the
+    /// gutter is ruled in the units of the body in hand
+    /// ([`crate::host::layers::child_rules_y`]). `false` everywhere else: an
+    /// element standing on its own rules itself, and a clip's body rules
+    /// nothing.
+    pub rules_y: bool,
     /// **What of its samples the container is showing** -- where its time zero
     /// reads in the source, whether the window loops
     /// ([`SourceWindow`](super::SourceWindow)).
@@ -810,6 +817,7 @@ impl TimeSpace {
             head: None,
             cursor: None,
             active: true,
+            rules_y: false,
             window: super::SourceWindow::default(),
         }
     }

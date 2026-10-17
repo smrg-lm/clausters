@@ -180,6 +180,12 @@ fn carry<'a>(
         .unwrap_or(inherited);
 
     if let (Some(was), Some(now)) = (held.kind.editor(), fresh.kind.editor_mut()) {
+        // The vertical window is a window over one quantity, so it is carried
+        // by what it measures rather than by key ([`EditorProps::carry_y`]).
+        now.carry_y(
+            was,
+            (!says.contains_key("y_start"), !says.contains_key("y_len")),
+        );
         for key in HOST_OWNED {
             if says.contains_key(key) {
                 continue;
@@ -187,8 +193,6 @@ fn carry<'a>(
             match key {
                 "view_start" => now.x_start = was.x_start,
                 "view_len" => now.x_len = was.x_len,
-                "y_start" => now.y_start = was.y_start,
-                "y_len" => now.y_len = was.y_len,
                 "sel_start" => now.sel_start = was.sel_start,
                 "sel_len" => now.sel_len = was.sel_len,
                 "sel_min" => now.sel_min = was.sel_min,

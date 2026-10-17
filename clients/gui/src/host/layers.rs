@@ -303,6 +303,22 @@ pub fn child_is_active(widget: &Widget, index: usize) -> bool {
         .is_some_and(|(child_index, _)| child_index == index)
 }
 
+/// Whether the child at `index` **rules the container's vertical gutter**: the
+/// active layer, or -- with the placement in hand, which has no vertical of its
+/// own -- the first visible layer, the one the container is built around (a
+/// pane's take).
+///
+/// One gutter, one unit: the bodies of a pane are drawn over one rectangle, so
+/// two of them ruling it would print two scales over each other, and the one
+/// that is not in hand would be read for the one that is.
+pub fn child_rules_y(widget: &Widget, index: usize) -> bool {
+    let ruler = match active(widget) {
+        Layer::Content(n) => content(widget).nth(n),
+        Layer::Placement => content(widget).find(|(_, child)| child.visible),
+    };
+    ruler.is_some_and(|(child_index, _)| child_index == index)
+}
+
 /// The layer a press at `(x, y)` belongs to: the **topmost content layer whose
 /// own contents are under the pointer**, and the placement everywhere else.
 ///

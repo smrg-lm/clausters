@@ -133,7 +133,8 @@ def both():
 # %% [markdown]
 # ## A gain envelope over the take
 #
-# View -> Gain envelope selects the curve body. Drag its points or bend a
+# View -> Edit gain envelope selects the curve body, and the vertical ruler
+# reads gain while it is in hand. Drag its points or bend a
 # segment; double-click adds a point. These edits keep the samples intact.
 # `envelope()` shows a shaped fade; `apply_envelope()` renders it into a new
 # take and resets the curve to unity. Undo restores the take and the curve.

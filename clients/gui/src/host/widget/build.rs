@@ -281,11 +281,9 @@ pub(crate) fn signal_element(
     // It follows the **stack's axis**, not the presentation: a body ruled in
     // hertz is a body with a texture on its axis, whatever else is drawn over
     // it.
-    el.editor.y_headroom = if el.axis_domain() == signal::Domain::Frequency {
-        1.0
-    } else {
-        crate::viewport::AMP_HEADROOM
-    };
+    let (measure, headroom) = el.vertical_measure();
+    el.editor.y_headroom = headroom;
+    el.editor.y_measure = measure;
 
     // The capabilities the preset welded to the name, as the props they are:
     // whether a view navigates, carries a selection or edits back is a choice

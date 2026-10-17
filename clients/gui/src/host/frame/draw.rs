@@ -404,8 +404,10 @@ pub(super) fn draw_editor_overlay(
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
     // vertical unit / frequency scale), in the body's bottom-right corner --
     // pure math over the view mapping, within the channel's row under the cursor.
+    // In a pane the read-out is the body in hand's, as its gutter is.
     if let Some((cx, cy)) = inputs.world.cursor
         && body.contains(cx, cy)
+        && item.rules_y
     {
         let s = nav.start + nav.len * ((cx - body.x as f64) / body.w.max(1.0) as f64);
         let editor = &item.editor;
@@ -574,7 +576,9 @@ pub(super) fn draw_timeline_meshes(
             mesh.set_clip(clip);
             over.set_clip(clip);
         }
-        if item.editor.ruler_y != RulerY::Off {
+        // In a pane the gutter is the body in hand's: a take not in hand
+        // leaves it to the curve that is, folded strip names included.
+        if item.editor.ruler_y != RulerY::Off && item.rules_y {
             for ch in 0..rows {
                 let row = look.lanes.rect(body, rows, ch);
                 // A folded row is a strip with the channel's name where its
@@ -991,6 +995,7 @@ pub(super) fn draw_element_overlays(
             && let Some(time) = &mut time
         {
             time.active = crate::host::layers::child_is_active(owner, index);
+            time.rules_y = crate::host::layers::child_rules_y(owner, index);
         }
         let ctx = Ctx {
             world: &inputs.world,

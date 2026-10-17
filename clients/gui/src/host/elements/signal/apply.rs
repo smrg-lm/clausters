@@ -182,6 +182,21 @@ impl SignalElement {
                         let texture = self.is_texture_view();
                         let traces = self.draws_traces();
                         self.layers = stack;
+                        // **The vertical follows the claim.** A stack that
+                        // moves the axis to the other quantity takes up that
+                        // quantity's window, unit and headroom, and parks the
+                        // ones it leaves: zooming a spectrogram out stops at
+                        // Nyquist, whatever the waveform before it allowed.
+                        let (measure, headroom) = self.vertical_measure();
+                        let ruler_y = match measure {
+                            crate::host::widget::YMeasure::Frequency => {
+                                crate::host::widget::RulerY::Hz
+                            }
+                            crate::host::widget::YMeasure::Value => {
+                                crate::host::widget::RulerY::Norm
+                            }
+                        };
+                        self.editor.measure_y(measure, ruler_y, headroom);
                         // A newly enabled picture needs its existing loader
                         // and fill paths again. Opacity and axis changes only
                         // change uniforms; they do not rebuild the analysis.

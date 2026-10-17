@@ -392,6 +392,7 @@ impl TimelineGroups {
             // its own layer, over its own contents -- nothing above it is
             // deciding between claimants or showing a window of it.
             active: true,
+            rules_y: false,
             window: crate::host::widget::SourceWindow::default(),
         })
     }

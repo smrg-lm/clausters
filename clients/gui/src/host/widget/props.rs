@@ -193,6 +193,26 @@ impl RulerDir {
 /// and editing is in linear amplitude and only there -- a decision, recorded at
 /// "A take is drawn in amplitude and heard in decibels" in the GUI plan and
 /// held by `signal::tests::the_amplitude_unit_labels_the_axis_and_never_maps_it`.
+/// **The quantity a vertical axis measures**: a value (an amplitude, a
+/// curve's parameter) or a frequency. Two windows over two of them are two
+/// windows, never one ([`EditorProps::measure_y`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum YMeasure {
+    Value,
+    Frequency,
+}
+
+/// The vertical of the quantity that is not on the axis: its window, its unit
+/// and its headroom, as it was left.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParkedY {
+    pub measure: YMeasure,
+    pub start: f64,
+    pub len: f64,
+    pub ruler_y: RulerY,
+    pub headroom: f64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RulerY {
     /// No vertical ruler strip.
@@ -470,6 +490,16 @@ pub struct EditorProps {
     /// **frequency** axis takes 1, because there is nothing above Nyquist to
     /// open onto.
     pub y_headroom: f64,
+    /// **What the vertical measures right now**, which is what the window
+    /// above is a window *of*. Set by the element from its stack's axis.
+    pub y_measure: YMeasure,
+    /// **The vertical window of the quantity that is not on the axis**: a
+    /// stack that moves its axis from amplitude to frequency parks the
+    /// amplitude window, its unit and its headroom here and takes up the
+    /// frequency one where it was left, so each quantity keeps its own zoom.
+    /// A zoom is a window over one quantity, and read over another it names
+    /// nothing.
+    pub y_parked: Option<ParkedY>,
     /// The selection's **second axis**: the value range it is restricted to, in
     /// the element's own units (`sel_max <= sel_min` = the whole domain, which
     /// is no restriction at all).
@@ -562,6 +592,8 @@ impl EditorProps {
             y_start: number_f64(props, "y_start", 0.0),
             y_len: number_f64(props, "y_len", 1.0),
             y_headroom: 1.0,
+            y_measure: YMeasure::Value,
+            y_parked: None,
             sel_min: number_f64(props, "sel_min", 0.0),
             sel_max: number_f64(props, "sel_max", 0.0),
             x_start: number_f64(props, "view_start", 0.0),
@@ -627,6 +659,77 @@ impl EditorProps {
     /// lands).
     pub fn y_view(&self) -> (f64, f64) {
         normalized_window(self.y_start, self.y_len, self.y_headroom)
+    }
+
+    /// **The vertical, over `measure`**: nothing when it already measures
+    /// that; else the window, the unit and the headroom of the quantity
+    /// leaving the axis are parked ([`Self::y_parked`]) and the arriving one's
+    /// are taken up -- where it was left, or whole, in `ruler_y` and with
+    /// `headroom`, the first time it is on the axis.
+    pub fn measure_y(&mut self, measure: YMeasure, ruler_y: RulerY, headroom: f64) {
+        if self.y_measure == measure {
+            return;
+        }
+        let leaving = self.parked();
+        let arriving = self
+            .y_parked
+            .take()
+            .filter(|p| p.measure == measure)
+            .unwrap_or(ParkedY {
+                measure,
+                start: 0.0,
+                len: 1.0,
+                ruler_y,
+                headroom,
+            });
+        self.y_parked = Some(leaving);
+        self.take_up(arriving);
+    }
+
+    /// The vertical as it stands, to be parked.
+    fn parked(&self) -> ParkedY {
+        ParkedY {
+            measure: self.y_measure,
+            start: self.y_start,
+            len: self.y_len,
+            ruler_y: self.ruler_y,
+            headroom: self.y_headroom,
+        }
+    }
+
+    fn take_up(&mut self, y: ParkedY) {
+        self.y_measure = y.measure;
+        (self.y_start, self.y_len) = (y.start, y.len);
+        // A ruler switched off stays off: the strip is the def's to ask for.
+        if self.ruler_y != RulerY::Off {
+            self.ruler_y = y.ruler_y;
+        }
+        self.y_headroom = y.headroom;
+    }
+
+    /// **The vertical a redefinition carries from `was`**: the window where
+    /// both measure the same quantity, and otherwise the one `was` had parked
+    /// for this quantity -- so a def that moved the axis to the other quantity
+    /// neither reads one window over the other nor forgets either. `start`
+    /// and `len` say which half of the window is carried at all: the half the
+    /// def did not state.
+    pub(crate) fn carry_y(&mut self, was: &EditorProps, (start, len): (bool, bool)) {
+        let from = if was.y_measure == self.y_measure {
+            self.y_parked = was.y_parked;
+            Some((was.y_start, was.y_len))
+        } else {
+            let parked = was.y_parked.filter(|p| p.measure == self.y_measure);
+            self.y_parked = Some(was.parked());
+            parked.map(|p| (p.start, p.len))
+        };
+        if let Some((was_start, was_len)) = from {
+            if start {
+                self.y_start = was_start;
+            }
+            if len {
+                self.y_len = was_len;
+            }
+        }
     }
 
     /// The selection's value range, or `None` where it is not restricted on

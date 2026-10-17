@@ -358,6 +358,24 @@ impl Curve {
         }
     }
 
+    /// **The container's gutter, ruled in this curve's units**: what a pane
+    /// hands the body in hand, so an envelope being edited over a take is read
+    /// against its own `[min, max]` rather than the take's amplitude. The strip
+    /// is the band left of the field, the same one the take rules when it is
+    /// the body in hand.
+    fn draw_gutter(&self, d: &mut Draw, ctx: &Ctx, ax: &Axes) {
+        if ax.body.x - ctx.rect.x < 1.0 || ax.body.h <= 0.0 {
+            return;
+        }
+        let ticks = ruler::value_ticks(
+            self.min as f64,
+            self.max as f64,
+            ax.body.h as f64,
+            ctx.metrics,
+        );
+        ruler::draw_ticks_v(d, ax.body.x, ctx.rect.x, ax.body, &ticks);
+    }
+
     /// The break-points as they now stand -- what a container holding this as
     /// a layer reports them *with its own identity* in front of, since there
     /// the payload is the whole multitrack's curves and not this one's.
@@ -579,6 +597,9 @@ impl Element for Curve {
             self.is_handle(i)
         });
         if !self.body {
+            self.draw_readout(d, ctx, &ax);
+        } else if ctx.time.is_some_and(|t| t.rules_y) {
+            self.draw_gutter(d, ctx, &ax);
             self.draw_readout(d, ctx, &ax);
         }
     }

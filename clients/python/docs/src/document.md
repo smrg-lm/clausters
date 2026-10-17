@@ -90,20 +90,21 @@ a frame, its `duration` seconds); `editor.select(segment)` marks one and
 `editor.unselect()` marks nothing. In an audio editor the samples marked and the
 transport's `span` are one range, so setting either sets both.
 
-The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`). The same actions are `editor.view_wave()`, `editor.view_spectrogram()` and `editor.view_both()`. `editor.layers` accepts names (`peak`, `rms`, `signal`, `momentary`, `short`, `spectrogram`) or objects with `draw`, `visible`, `solo`, `alpha` and `y`. `show_layer(name)` and `hide_layer(name)` preserve a layer's place and settings; `solo_layer(name)` toggles solo, and `layer_alpha(name, alpha)` sets its opacity in `[0, 1]`. A frequency layer and an amplitude layer cannot both claim the vertical axis: the mixed preset puts peak and RMS on `y: "box"`. Changing visualization leaves the take and its history intact.
+The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`). The same actions are `editor.view_wave()`, `editor.view_spectrogram()` and `editor.view_both()`. `editor.layers` accepts names (`peak`, `rms`, `signal`, `momentary`, `short`, `spectrogram`) or objects with `draw`, `visible`, `solo`, `alpha` and `y`. `show_layer(name)` and `hide_layer(name)` preserve a layer's place and settings; `solo_layer(name)` toggles solo, and `layer_alpha(name, alpha)` sets its opacity in `[0, 1]`. A frequency layer and an amplitude layer cannot both claim the vertical axis: the mixed preset puts peak and RMS on `y: "box"`. Changing visualization leaves the take and its history intact. The vertical ruler is in the units of the layer that claims the axis, and each quantity keeps its own vertical zoom: a spectrogram opens no further than its whole frequency range, and returning to the waveform finds the amplitude zoom where it was left.
 
 The picture now stands in a `pane`: one time ruler, selection and playhead
 shared by its bodies. `editor.layer = "take"` puts the take body in hand, the
-same action as View → Edit take. This edit body is separate from
+same action as View → Edit audio. This edit body is separate from
 `editor.layers`, which chooses pictures of the samples. `pane(...)` also
 accepts curve bodies; its `layer` property names the active body (`points`,
 `points:1`, etc.), and `hidden` excludes named bodies from drawing and editing.
 
-`editor.show_envelope()` (View → Gain envelope) shows and selects the gain
+`editor.show_envelope()` (View → Edit gain envelope) shows and selects the gain
 curve. `editor.envelope` reads its flat `time, value, shape, curve` quads in
 seconds; `editor.set_envelope([...])` records a curve edit in the same undo
-order as sample edits. The header names the gain scale: zero to two, with one as unity. The signal
-ruler continues to measure sample amplitude. The
+order as sample edits. The header names the gain scale: zero to two, with one as unity, and the
+vertical ruler and the read-out under the pointer measure gain while the curve
+is in hand and the samples while the take is. The
 segment takes its shape and curvature from its first point, using the same
 shapes as an envelope. Values before the first point and after the last hold.
 The curve stays on the take's time axis when sample spans are cut or pasted.

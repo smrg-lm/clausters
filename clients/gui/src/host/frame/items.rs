@@ -107,6 +107,10 @@ pub(super) struct TimelineItem {
     /// How much of the samples exists, for a take being written into as it is
     /// drawn (`fills`); `None` when all of it does.
     pub(super) written: Option<u64>,
+    /// Whether this view draws its vertical ruler: always on its own, and in
+    /// a pane only while it is the body the gutter is ruled for
+    /// ([`crate::host::layers::child_rules_y`]).
+    pub(super) rules_y: bool,
 }
 
 /// A placed `canvas` widget, copied out of the host tree: its viewport body, the
@@ -223,6 +227,7 @@ pub(super) fn collect_widgets(
                         )?;
                         if let Some((owner, index)) = p.pane(placed) {
                             time.active = crate::host::layers::child_is_active(owner, index);
+                            time.rules_y = crate::host::layers::child_rules_y(owner, index);
                         }
                         Some(time)
                     }),
@@ -287,6 +292,9 @@ pub(super) fn collect_widgets(
                                 pending: el.pending_edit().cloned(),
                                 axis_owned: p.pane(placed).is_none(),
                                 written: el.samples().and_then(Samples::written),
+                                rules_y: p.pane(placed).is_none_or(|(owner, index)| {
+                                    crate::host::layers::child_rules_y(owner, index)
+                                }),
                             });
                         }
                     };

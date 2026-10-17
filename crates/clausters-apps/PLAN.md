@@ -2295,6 +2295,18 @@ only for a choice with non-obvious context.
 
 Every entry carries a checkbox.
 
+- ⬜ **The audio editor's Edit menu names one entry per kind of edit**
+  *(the user, 2026-10-17, reading the menu after the gain envelope and its
+  preview)*. Edit holds *Apply gain envelope* and *Remove effect* beside
+  *Preview on* and *Preview off*. Neither scales: a menu cannot grow an Apply
+  for every kind of processing a take admits, and *Remove effect* (free the
+  preview's insert, its node and its buffers, keeping the unapplied curve)
+  names a resource the reader never placed and reads as undoing an edit.
+  Unresolved, and a design before it is a fix: what an applied process is in
+  the editor (a curve, an insert, a chain), the one verb that renders whichever
+  is pending into the take, and whether the preview's insert is a resource a
+  menu shows at all or the preview switch's own business.
+
 - ⬜ **A roll may need its tempo and its barlines as parameters** *(the
   user, 2026-10-06, hearing the page of a sequence against the rolls over
   it)*. A sequence carries its tempo map as data and a roll reads it; one that
@@ -2812,7 +2824,7 @@ Every entry carries a checkbox.
 
 ## Found by use: the running list of fixes
 
-- ✅ **An overlaid gain curve needs its own scale named.** Found in the X14 example capture: unity sits halfway up a zero-to-two curve over a waveform whose ruler measures amplitude. Selecting the curve now states `gain 0..2 (unity 1)` in the pane header; selecting the take restores its caption. The signal ruler continues to measure samples.
+- ✅ **An overlaid gain curve needs its own scale named.** Found in the X14 example capture: unity sits halfway up a zero-to-two curve over a waveform whose ruler measures amplitude. Selecting the curve now states `gain 0..2 (unity 1)` in the pane header; selecting the take restores its caption. The signal ruler continues to measure samples. *(Superseded 2026-10-17: the pane's vertical ruler and read-out are the body in hand's, so the curve in hand is ruled in gain.)*
 
 
 Every entry carries a checkbox, and a fixed one stays with the record of what was

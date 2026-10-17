@@ -48,6 +48,14 @@ code that keeps it lives.
   window (`y_start`/`y_len`) is its own: a linked view shares time, not
   height. The wheel over a take's ruler zooms the amplitude about its centre,
   and a drag there pans it.
+- **The vertical is in the units, and at the zoom, of the one layer that
+  claims it.** Two quantities over one body are never ruled together: in a
+  signal's stack the layer on the axis claims it (a spectrogram in hertz, the
+  traces in their value), and in a pane the body in hand rules the gutter
+  (`host::layers::child_rules_y`), the take's amplitude or the envelope's gain.
+  Each quantity keeps its own window (`EditorProps::measure_y`): a frequency
+  axis opens no further than Nyquist, an amplitude past full scale, and
+  switching the view back finds each where it was left.
 - **Every row-relative question asks one layout.** A stacked view's rows are
   `host::bands::Lanes`: the even split by default, folded channels as strips a
   control tall, a floor of three controls an open row is never thinned past,
@@ -81,6 +89,6 @@ by eye on the example pair where it does not, against:
 1. two windows open over two objects: time, cursor and meter stay apart;
 2. zooming out as far as the axis allows, on a take and on an empty file;
 3. zooming and panning the vertical, with one channel, two, and enough to
-   overflow;
+   overflow, in every view the View menu offers and with each body in hand;
 4. the behavior the change did not touch: play, stop, loop, the selection,
    save, undo.

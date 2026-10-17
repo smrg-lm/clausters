@@ -72,7 +72,8 @@ pub(super) use axes::{AXES, flatten as flatten_axes, flatten_tree as flatten_tre
 pub use element::{Claim, Element, Needs};
 pub use props::{
     Align, Axis, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Group, Layout, Marker,
-    Naming, Place, Range, Rate, Ruler, RulerDir, RulerY, ScrollView, SourceWindow, markers_json,
+    Naming, Place, Range, Rate, Ruler, RulerDir, RulerY, ScrollView, SourceWindow, YMeasure,
+    markers_json,
 };
 pub use size::Natural;
 

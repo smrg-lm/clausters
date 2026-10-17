@@ -4242,3 +4242,99 @@ fn a_takes_ruler_in_a_pane_zooms_and_pans_its_amplitude() {
         "the drag pans it: {before} -> {after}, {pan:?}"
     );
 }
+
+/// **Each quantity keeps its own vertical.** A take zoomed out in amplitude
+/// and switched to a spectrogram is ruled in hertz over the whole of its
+/// frequency axis, and a wheel there opens no further than Nyquist; switched
+/// back, the amplitude window is where it was left.
+#[test]
+fn a_stack_moved_to_frequency_takes_up_the_frequency_window() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+        {"id":10,"type":"pane","layer":"take","axes":{"x":{"unit":"samples"}},"children":[
+            {"id":11,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}
+        ]}] }"#,
+    );
+    host.set_timeline_total(11, 1000);
+    let ctx = GestureCtx::new(1, 600, 400);
+    let mut g = Gestures::default();
+    let rect = placed_rect(&host, &ctx, 11);
+    let (x, y) = (f64::from(rect.x) + 8.0, f64::from(rect.y + rect.h * 0.5));
+    let editor = |host: &Host| {
+        host.window_def(1)
+            .unwrap()
+            .find(11)
+            .unwrap()
+            .kind
+            .editor()
+            .unwrap()
+            .clone()
+    };
+    for _ in 0..6 {
+        g.wheel(&mut host, &ctx, x, y, -2.0);
+    }
+    let amplitude = editor(&host).y_view();
+    assert!(
+        amplitude.1 > 1.0,
+        "an amplitude opens past full scale: {amplitude:?}"
+    );
+    let mut effects = Vec::new();
+    let mut set = |host: &mut Host, stack: serde_json::Value| {
+        assert!(host.set_props(11, vec![("layers".into(), stack)], &mut effects));
+    };
+    set(&mut host, serde_json::json!(["spectrogram"]));
+    let hz = editor(&host);
+    assert_eq!(hz.ruler_y, crate::host::widget::RulerY::Hz);
+    assert_eq!(hz.y_view(), (0.0, 1.0), "the frequency axis, whole");
+    for _ in 0..6 {
+        g.wheel(&mut host, &ctx, x, y, -2.0);
+    }
+    assert_eq!(editor(&host).y_view(), (0.0, 1.0), "nothing above Nyquist");
+    set(&mut host, serde_json::json!(["peak", "rms"]));
+    let back = editor(&host);
+    assert_eq!(back.ruler_y, crate::host::widget::RulerY::Norm);
+    assert_eq!(
+        back.y_view(),
+        amplitude,
+        "the amplitude window, as it was left"
+    );
+}
+
+/// **A pane's gutter is the body in hand's.** With the take in hand the take
+/// rules it; with the curve in hand the curve does, and the take does not --
+/// one gutter, one unit.
+#[test]
+fn a_panes_vertical_ruler_follows_the_body_in_hand() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+        {"id":10,"type":"pane","layer":"take","axes":{"x":{"unit":"samples"}},"children":[
+            {"id":11,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2},
+            {"id":12,"type":"curve","min":0,"max":2,"points":[0,1,1,0,1000,1,1,0]}
+        ]}] }"#,
+    );
+    let rules = |host: &Host| {
+        let pane = host.window_def(1).unwrap().find(10).unwrap();
+        (
+            crate::host::layers::child_rules_y(pane, 0),
+            crate::host::layers::child_rules_y(pane, 1),
+        )
+    };
+    assert_eq!(rules(&host), (true, false), "the take in hand rules");
+    let mut effects = Vec::new();
+    assert!(host.set_props(
+        10,
+        vec![("layer".into(), serde_json::json!("points"))],
+        &mut effects
+    ));
+    assert_eq!(rules(&host), (false, true), "the envelope in hand rules");
+    host.set_props(
+        10,
+        vec![("layer".into(), serde_json::json!("placement"))],
+        &mut effects,
+    );
+    assert_eq!(
+        rules(&host),
+        (true, false),
+        "nothing in hand: the take the pane is built around"
+    );
+}

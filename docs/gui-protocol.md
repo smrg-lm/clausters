@@ -1313,6 +1313,10 @@ horizontal ruler, navigation window, selection, position cursor and playhead.
 Children join the pane's `link` group (the pane's id when no link is named).
 The ruler and label reserve space once, outside the bodies. Each body keeps
 its own vertical scale; a signal's visual `layers` remain inside that signal.
+**The vertical gutter is the body in hand's**: it is ruled, and the read-out
+under the pointer is written, in the units of the active body (a curve's
+`min`..`max`, a take's amplitude), and with the placement in hand in those of
+the first visible body. A body not in hand draws no ruler there.
 
 `layer` chooses the editable body by role: `take`, `points`, `notes`, with
 `:1`, `:2`, etc. for repeated roles. `placement` leaves the pane itself in
