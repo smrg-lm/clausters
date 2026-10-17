@@ -121,6 +121,9 @@ class SoundFile:
         from .defs import Buffer
 
         if self.path is None:
+            if self.frames < 1:
+                raise ValueError("a sound file of no frames has nothing to allocate: "
+                                 "a buffer holds at least one")
             return Buffer.alloc(self.frames, self.channels, sample_rate=self.sample_rate,
                                 wait=wait, timeout=timeout, server=server)
         return Buffer.read(self, wait=wait, timeout=timeout, server=server)

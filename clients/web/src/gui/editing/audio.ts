@@ -91,26 +91,16 @@ interface Play {
 }
 
 /**
- * **What sounds the audio editors of one server** -- the shared crate's
- * playback, the steps it answers carried out on that server.
+ * **What sounds one audio editor** -- the shared crate's playback, the steps
+ * it answers carried out on the editor's server.
  *
- * One per server, since the editors on it share one structure and one
- * transport: each open take is a file of it, and the one played last is the
- * one that sounds.
+ * One per editor, because a window is one file: its transport, its play
+ * cursor and its meter are that file's, and playing one window moves nothing
+ * in another. The views of one file share it, as they share the file. The
+ * playback holds several files, all but the one played last paused, which is
+ * how one editor will hold several.
  */
 class AudioPlayback {
-    static readonly #of = new WeakMap<Server, AudioPlayback>();
-
-    /** The playback of `server`, made the first time it is asked for. */
-    static of(server: Server): AudioPlayback {
-        let found = AudioPlayback.#of.get(server);
-        if (found === undefined) {
-            found = new AudioPlayback(server);
-            AudioPlayback.#of.set(server, found);
-        }
-        return found;
-    }
-
     #native: AudioEditorPlayback | null = null;
     readonly #runner = new StepRunner();
     readonly #ready: Promise<void>;
@@ -122,7 +112,7 @@ class AudioPlayback {
     /** The transport it plays on -- one of the server's, allocated for it -- once it is made. */
     transportId: number | null = null;
 
-    private constructor(server: Server) {
+    constructor(server: Server) {
         this.server = server;
         this.#ready = (async () => {
             this.#native = new AudioEditorPlayback(await server.bulkChunk(), -1);
@@ -464,7 +454,7 @@ export class AudioEditor extends Editor<Buffer> {
         // **A private copy of the take**, and the join over it: the buffer the
         // editor was handed is written by a save and by nothing else.
         domain.run(take, (copied.steps as unknown[] | undefined) ?? []);
-        this.playback = AudioPlayback.of(this.server);
+        this.playback = new AudioPlayback(this.server);
         this.#driver = new AudioDriver(this, this.playback, this.display);
         domain.after(() => this.sound());
     }
@@ -476,10 +466,9 @@ export class AudioEditor extends Editor<Buffer> {
      * **The take's transport**, as the object a page plays: a `Transport` whose
      * verbs (`play`, `pause`, `stop`, `locate`, `loop`, `wait`) and `span`
      * speak the take's seconds -- the span is the band a drag sweeps, the loop
-     * switch is `L`, and each side reads what the other set. The audio editors
-     * of a server share it -- one of the server's, allocated for them -- and
-     * the take played last is the one it plays. `null`
-     * until the editor is open.
+     * switch is `L`, and each side reads what the other set. It is this
+     * editor's own -- one of the server's, allocated for it -- so another
+     * window's play never moves it. `null` until the editor is open.
      */
     get transport(): Transport | null {
         const id = this.playback.transportId;

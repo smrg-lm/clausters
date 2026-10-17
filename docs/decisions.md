@@ -10459,3 +10459,23 @@ keyboard gutter already does, because the rows are what is out of sight.
 What is folded is the owner's (the audio editor's `folded`, a view state
 outside the history), so a press on a strip only asks; the scroll is the
 reader's alone and never reported.
+
+## A take bounds its axis, and an audio editor plays on its own transport (2026-10-17)
+
+Two behaviors of the audio editor had drifted from what it was. Since the
+gain envelope joined the take's pane, the curve made the pane's navigation
+group look like an authoring surface (`roll_grid` reads any member with
+authored content), so a two-second take zoomed out to sixteen seconds -- the
+empty grid of a roll. A view of stored samples now **bounds** its group
+(`OnAxis::bounds_axis`): the group navigates the take's extent, with no
+headroom and no grid, and the other members are read on that axis without
+lengthening it. Headroom stays where a group has no take.
+
+And the audio editors of a server shared one playback, so playing one window
+moved the play cursor and the meter of every other. A window is one object,
+and a shared cursor is for views of one object, so each editor now has a
+playback of its own (one transport, one meter); the crate's playback still
+holds several files with one sounding, for an editor that holds several.
+
+Both rules, and the others the applications keep, are written in
+`docs/app-behavior.md`, which a change to an application is checked against.

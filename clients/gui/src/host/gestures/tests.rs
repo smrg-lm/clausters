@@ -4141,3 +4141,104 @@ fn a_press_on_a_folded_strip_asks_to_unfold_it() {
     );
     assert!(grabbed, "below it the rows are open and nothing is asked");
 }
+
+/// **A take bounds the axis a curve is drawn over it on**: the audio editor's
+/// pane holds the take's signal and its gain curve, and zooming out stops at
+/// the take -- the curve neither lengthens the axis nor makes it an authoring
+/// grid with empty time to scroll into. A pane of curves alone keeps that
+/// headroom, which is what a surface written into needs.
+#[test]
+fn a_take_bounds_the_axis_a_curve_is_drawn_over() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+        {"id":10,"type":"pane","layer":"take","axes":{"x":{"unit":"samples"}},"children":[
+            {"id":11,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2},
+            {"id":12,"type":"curve","duration":4,"points":[0,1,1,0,4,1,1,0]}
+        ]}] }"#,
+    );
+    host.set_timeline_total(11, 1000);
+    let ctx = GestureCtx::new(1, 600, 400);
+    let mut g = Gestures::default();
+    let rect = placed_rect(&host, &ctx, 11);
+    let (x, y) = (
+        f64::from(rect.x + rect.w * 0.5),
+        f64::from(rect.y + rect.h * 0.5),
+    );
+    for _ in 0..20 {
+        g.wheel(&mut host, &ctx, x, y, -4.0);
+    }
+    let (nav, total) = host.timeline_nav(10).unwrap();
+    assert_eq!(
+        total, 1000,
+        "the take's frames, not the curve's or a grid's"
+    );
+    assert!(
+        nav.len <= 1000.0,
+        "zoomed out no further than the take: {}",
+        nav.len
+    );
+
+    let mut curves = layered_pane_host();
+    let ctx = GestureCtx::new(1, 600, 400);
+    let rect = placed_rect(&curves, &ctx, 11);
+    let (x, y) = (
+        f64::from(rect.x + rect.w * 0.5),
+        f64::from(rect.y + rect.h * 0.5),
+    );
+    for _ in 0..20 {
+        g.wheel(&mut curves, &ctx, x, y, -4.0);
+    }
+    let (nav, _) = curves.timeline_nav(10).unwrap();
+    assert!(
+        nav.len > 100.0,
+        "curves alone keep their authoring headroom"
+    );
+}
+
+/// **The vertical axis of a take in a pane is the take's**: a wheel over its
+/// ruler zooms its amplitude and a drag there pans it, as on a bare signal.
+#[test]
+fn a_takes_ruler_in_a_pane_zooms_and_pans_its_amplitude() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+        {"id":10,"type":"pane","layer":"take","axes":{"x":{"unit":"samples"}},"children":[
+            {"id":11,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}
+        ]}] }"#,
+    );
+    host.set_timeline_total(11, 1000);
+    let ctx = GestureCtx::new(1, 600, 400);
+    let mut g = Gestures::default();
+    let rect = placed_rect(&host, &ctx, 11);
+    let y = f64::from(rect.y + rect.h * 0.4);
+    let x = f64::from(rect.x) + 8.0;
+    let zoom = g.wheel(&mut host, &ctx, x, y, 2.0);
+    assert!(
+        has_emit_tag(&zoom, 11, "view_y"),
+        "the wheel zooms the take: {zoom:?}"
+    );
+    let (before, _) = host
+        .window_def(1)
+        .unwrap()
+        .find(11)
+        .unwrap()
+        .kind
+        .editor()
+        .unwrap()
+        .y_view();
+    g.press(&mut host, &ctx, x, y);
+    let mut pan = g.drag_to(&mut host, &ctx, x, y + 30.0);
+    pan.extend(g.release(&mut host, &ctx, x, y + 30.0));
+    let (after, _) = host
+        .window_def(1)
+        .unwrap()
+        .find(11)
+        .unwrap()
+        .kind
+        .editor()
+        .unwrap()
+        .y_view();
+    assert!(
+        after != before,
+        "the drag pans it: {before} -> {after}, {pan:?}"
+    );
+}

@@ -168,6 +168,11 @@ export class SoundFile {
      */
     async toBuffer(options: BufferOptions = {}): Promise<Buffer> {
         if (this.path === null) {
+            if (this.frames < 1) {
+                throw new RangeError(
+                    "a sound file of no frames has nothing to allocate: a buffer holds at least one",
+                );
+            }
             return Buffer.alloc(this.frames, this.channels, { ...options, sampleRate: this.sampleRate });
         }
         return Buffer.read(this, options);

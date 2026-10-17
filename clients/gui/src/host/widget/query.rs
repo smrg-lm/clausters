@@ -347,6 +347,14 @@ impl WidgetKind {
             .is_some_and(OnAxis::unbounded_axis)
     }
 
+    /// Whether this widget bounds its group's axis
+    /// ([`OnAxis::bounds_axis`]).
+    pub fn bounds_axis(&self) -> bool {
+        self.as_element()
+            .and_then(Element::on_axis)
+            .is_some_and(OnAxis::bounds_axis)
+    }
+
     /// [`gutter`](Self::gutter) asked again of a widget that has been
     /// **placed**, for the chrome whose width is a property of the data rather
     /// than of the props. `None` -- every container, and most elements -- is a

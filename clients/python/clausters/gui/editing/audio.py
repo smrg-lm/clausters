@@ -33,7 +33,6 @@ redo. ``history_bytes`` caps what only the history holds; past it the oldest
 entries go first.
 """
 
-import weakref
 
 from ... import _native
 from ..._steps import run_steps
@@ -50,23 +49,15 @@ _SPARE = 2
 
 
 class _AudioPlayback:
-    """**What sounds the audio editors of one server** -- the shared crate's
-    playback, the steps it answers carried out on that server.
+    """**What sounds one audio editor** -- the shared crate's playback, the
+    steps it answers carried out on the editor's server.
 
-    One per server, since the editors on it share one structure and one
-    transport: each open take is a file of it, and the one played last is the
-    one that sounds.
+    One per editor, because a window is one file: its transport, its play
+    cursor and its meter are that file's, and playing one window moves
+    nothing in another. The views of one file share it, as they share the
+    file. The playback holds several files, all but the one played last
+    paused, which is how one editor will hold several.
     """
-
-    _of = weakref.WeakKeyDictionary()
-
-    @classmethod
-    def of(cls, server) -> "_AudioPlayback":
-        """The playback of ``server``, made the first time it is asked for."""
-        found = cls._of.get(server)
-        if found is None:
-            found = cls._of[server] = cls(server)
-        return found
 
     def __init__(self, server):
         self.server = server
@@ -328,7 +319,7 @@ class AudioEditor(Marking, Editor):
         domain.run(take, opened.get("steps") or [])
         #: What sounds the take: the server's audio editor playback, where
         #: this editor's take is the file its join is.
-        self._playback = _AudioPlayback.of(self._server)
+        self._playback = _AudioPlayback(self._server)
         #: What the `transport` plays through.
         self._driver = _AudioDriver(self)
         self._sound()
@@ -339,9 +330,9 @@ class AudioEditor(Marking, Editor):
         `clausters.defs.Transport` whose verbs (``play``, ``pause``,
         ``stop``, ``locate``, ``loop``, ``wait``) and ``span`` speak the
         take's seconds -- the span is the band a drag sweeps, the loop switch
-        is `L`, and each side reads what the other set. The audio editors of
-        a server share it -- one of the server's, allocated for them -- and
-        the take played last is the one it plays."""
+        is `L`, and each side reads what the other set. It is this editor's
+        own -- one of the server's, allocated for it -- so another window's
+        play never moves it."""
         transport = self._server.transport_at(self._playback.transport_id)
         transport._driver = self._driver
         return transport

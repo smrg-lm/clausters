@@ -2268,6 +2268,15 @@ pub trait OnAxis {
         false
     }
 
+    /// **Whether this element bounds its group's axis**: a view of a take,
+    /// whose time ends where its samples do. A group holding one navigates
+    /// exactly that extent -- no authoring headroom, no empty grid -- and the
+    /// other members on the axis (a curve over the take, its preview) are read
+    /// on it without lengthening it. `false` by default.
+    fn bounds_axis(&self) -> bool {
+        false
+    }
+
     /// **What this element reserves left of its body** for chrome of its own --
     /// a value ruler -- when it sits on a shared time axis. `0.0` by default.
     ///

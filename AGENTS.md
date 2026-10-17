@@ -381,6 +381,14 @@ on trust, so that is where drift accumulates:
   node tree or a def). The verb for a generator becoming material is
   **render**, never "realize"; the *graphic* direction is **draw**.
 
+- **An application's behavior rules are written down, and an addition keeps
+  them.** `docs/app-behavior.md` says what a window shares, what bounds a time
+  axis, how a stacked view's rows are laid out and what is history; read it
+  before changing an application and check the change against its list (two
+  windows open, zoom out to the end, the vertical with many channels, the
+  behavior the change did not touch). A rule found by fixing a regression is
+  added there in the same commit.
+
 - **`clausters.form` is a frozen, secondary module and is not that model.** It is
   a small client-side algebra for placing elements in time (`FormElement`, the five
   primitives, `Aggregate` with its **concrete**/**logical** kinds) with **no

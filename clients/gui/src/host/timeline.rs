@@ -405,6 +405,10 @@ struct Member {
     id: i32,
     key: GroupKey,
     offset: f64,
+    /// Whether it bounds the group's axis ([`OnAxis::bounds_axis`]).
+    ///
+    /// [`OnAxis::bounds_axis`]: super::widget::element::OnAxis::bounds_axis
+    bounds: bool,
 }
 
 impl Host {
@@ -425,6 +429,7 @@ impl Host {
                     id: w.id?,
                     key: group_key(w.id?, editor.link),
                     offset: editor.offset,
+                    bounds: w.kind.bounds_axis(),
                 })
             }));
         }
@@ -445,12 +450,24 @@ impl Host {
     /// The axis a group navigates is this or its empty span
     /// ([`Self::timeline_total`]); this is what an End key goes to.
     pub fn timeline_content(&self, key: GroupKey) -> usize {
-        self.timeline_members()
+        let members = self.timeline_members();
+        let bounded = members.iter().any(|m| m.key == key && m.bounds);
+        // **A take bounds the axis it is on**: where a group holds one, its
+        // extent is the take's, and a curve drawn over it is read on that axis
+        // rather than lengthening it.
+        members
             .iter()
-            .filter(|m| m.key == key)
+            .filter(|m| m.key == key && (m.bounds || !bounded))
             .map(|m| m.offset.max(0.0).ceil() as usize + self.timelines.total_of(m.id))
             .max()
             .unwrap_or(0)
+    }
+
+    /// Whether group `key` holds a view that bounds its axis -- a take.
+    fn group_bounded(&self, key: GroupKey) -> bool {
+        self.timeline_members()
+            .iter()
+            .any(|m| m.key == key && m.bounds)
     }
 
     /// The timeline length of group `key`: the max of its members' **placed**
@@ -502,6 +519,9 @@ impl Host {
     /// the window a roll opened on survives its first note arriving).
     fn timeline_span(&self, key: GroupKey) -> usize {
         let total = self.timeline_total(key);
+        if self.group_bounded(key) {
+            return total;
+        }
         if self.group_has_lane(key) || self.roll_grid(key).is_some() {
             total
                 .saturating_mul(Self::NAV_HEADROOM)
@@ -535,6 +555,10 @@ impl Host {
     ///
     /// [`EMPTY_BEATS`]: Host::EMPTY_BEATS
     fn timeline_empty_span(&self, key: GroupKey) -> usize {
+        // a take that has not loaded yet is not an empty grid to write into
+        if self.group_bounded(key) {
+            return 1;
+        }
         let Some((rate, tempo)) = self.roll_grid(key) else {
             return 1;
         };

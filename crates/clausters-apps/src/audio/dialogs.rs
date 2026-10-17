@@ -142,7 +142,11 @@ pub fn new_shape(open: &Open) -> Result<(u32, u64, f64), String> {
                 number("rate")
             )
         })?;
-    Ok((channels, (seconds * rate).round() as u64, rate))
+    let frames = (seconds * rate).round() as u64;
+    if frames == 0 {
+        return Err("a new file is at least one frame long".into());
+    }
+    Ok((channels, frames, rate))
 }
 
 #[cfg(test)]
@@ -190,6 +194,12 @@ mod tests {
         assert_eq!(new_shape(&open), Ok((2, 441_000, 44_100.0)));
         open.values.insert("seconds".into(), "0,5".into());
         assert_eq!(new_shape(&open), Ok((2, 22_050, 44_100.0)));
+        open.values.insert("seconds".into(), "0".into());
+        assert!(
+            new_shape(&open).is_err(),
+            "no frames is no file to draw into"
+        );
+        open.values.insert("seconds".into(), "1".into());
         open.values.insert("channels".into(), "0".into());
         assert!(new_shape(&open).is_err());
         open.values.insert("channels".into(), "1".into());

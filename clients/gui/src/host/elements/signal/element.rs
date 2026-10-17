@@ -373,6 +373,12 @@ impl OnAxis for SignalElement {
         SignalElement::lanes(self, m)
     }
 
+    /// A navigable view of stored samples is a take, and a take's axis ends
+    /// with it; a live view slides and bounds nothing.
+    fn bounds_axis(&self) -> bool {
+        self.caps.navigable && !self.is_live()
+    }
+
     fn centres_y_zoom(&self) -> bool {
         SignalElement::centres_y_zoom(self)
     }
