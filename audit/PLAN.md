@@ -42,6 +42,8 @@ The resources are ready when the validator and harness contract tests pass, prer
 
 ## Found by use
 
+- ✅ The integrated device trial read the global synth count immediately after `/server_sync`, which waits for async jobs, not the RT command drain. Poll the RT tree for the trial's owned node ids with a deadline; do not require unrelated host nodes to disappear.
+- ✅ PipeWire can put the process id on the client object and only `client.id` on its audio node, leaving readable xrun counters classified as unsupported. Resolve both direct node ownership and ownership through the client before selecting stream/sink counters.
 - ✅ The host's render/readback refactor left the timing generator starting its timer in `render` and reading it in `draw`, so the generated GUI patch no longer compiled. Start and record in the same draw function; offscreen readbacks return before the successful-frame counter.
 - ✅ A clean device preparation built the server and GUI binaries but not the shared-core library the Python driver needs. Build that binding as a declared prerequisite and retain its explicit path/hash with the paired binary identities.
 - ✅ A generic argument formatter interpreted JSON braces as substitution fields. Limit expansion to the documented tokens so JSON-emitting drivers remain valid.

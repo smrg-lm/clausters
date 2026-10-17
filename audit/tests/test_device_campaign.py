@@ -12,12 +12,45 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import baseline
+import device
 import paired
 from paired import CONDITIONS, histogram_delta, order
-from telemetry import gpu_delta, gpu_sample, parse_fdinfo, xrun_delta
+from telemetry import gpu_delta, gpu_sample, parse_fdinfo, pipewire_nodes, xrun_delta
 
 
 class DeviceCampaignTests(unittest.TestCase):
+    def test_cleanup_waits_for_owned_nodes_and_allows_foreign_nodes(self):
+        snapshots = iter(([1, 2, 99], [2, 99], [99]))
+        server = SimpleNamespace(query_tree=lambda **kw: SimpleNamespace(
+            walk=lambda: [SimpleNamespace(id=n) for n in next(snapshots)]))
+        with patch.object(device.time, "sleep"):
+            result = device.wait_for_freed(server, [1, 2])
+        self.assertEqual(result["remaining_node_ids"], [])
+        self.assertEqual(result["observed_node_ids"], [99])
+
+    def test_cleanup_fails_if_an_owned_node_does_not_leave_the_tree(self):
+        server = SimpleNamespace(query_tree=lambda **kw: SimpleNamespace(
+            walk=lambda: [SimpleNamespace(id=1)]))
+        with patch.object(device.time, "monotonic", side_effect=[0, 0, 1]):
+            with self.assertRaisesRegex(ValueError, "Trial nodes remain"):
+                device.wait_for_freed(server, [1], timeout=.1)
+
+    def test_pipewire_process_identity_can_belong_to_the_parent_client(self):
+        objects = [
+            {"id": 10, "type": "PipeWire:Interface:Client", "info": {"props": {"application.process.id": 123}}},
+            {"id": 11, "type": "PipeWire:Interface:Client", "info": {"props": {"application.process.id": 456}}},
+            {"id": 20, "type": "PipeWire:Interface:Node", "info": {"props": {"client.id": 10}}},
+            {"id": 21, "type": "PipeWire:Interface:Node", "info": {"props": {"application.process.id": "123"}}},
+            {"id": 22, "type": "PipeWire:Interface:Node", "info": {"props": {"client.id": 11}}},
+            {"id": 40, "type": "PipeWire:Interface:Link", "info": {"output-node-id": 20, "input-node-id": 30}},
+        ]
+        output = SimpleNamespace(returncode=0, stdout=json.dumps(objects), stderr="")
+        with patch("telemetry.subprocess.run", return_value=output):
+            result = pipewire_nodes([123])
+        self.assertEqual(result["stream_nodes"], [20, 21])
+        self.assertEqual(result["sink_nodes"], [30])
+        self.assertEqual(result["status"], "available")
+
     def test_xruns_are_scoped_to_stream_and_sink_and_missing_is_not_zero(self):
         identity = {"status": "available", "stream_nodes": [1], "sink_nodes": [2]}
         first = {"status": "available", "rows": [{"id": 1, "err": 3}, {"id": 2, "err": 0}, {"id": 9, "err": 0}]}

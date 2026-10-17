@@ -8,7 +8,7 @@ per-process CPU/RSS samples. Nothing here is a pass/fail judgement.
 import argparse, json, math, os, socket, subprocess, sys, threading, time
 from pathlib import Path
 
-from device import assess_capture
+from device import assess_capture, wait_for_freed
 from telemetry import gpu_sample, gpu_delta, host_sample, pipewire_nodes, xrun_delta
 
 CLK = os.sysconf("SC_CLK_TCK")
@@ -250,12 +250,13 @@ def main():
             th.join(timeout=5)
         for node in nodes:
             node.free()
+        owned = [node.id for node in nodes]
         if a.source or a.gui:
             src.free()
+            owned.append(src.id)
         server.sync()
+        rec["node_cleanup"] = wait_for_freed(server, owned)
         rec["after_free"] = status(server)
-        if rec["after_free"]["synths"] not in (None, 0):
-            raise ValueError("Synths remain after freeing the trial nodes")
         if a.gui and window.closed:
             raise ValueError("GUI window closed during capture")
         result = 0

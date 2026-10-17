@@ -101,8 +101,12 @@ def pipewire_nodes(pids):
     try:
         result = subprocess.run(["pw-dump", "-N"], capture_output=True, text=True, timeout=10)
         objects = json.loads(result.stdout) if result.returncode == 0 else []
+        wanted = set(map(str, pids))
+        clients = {str(item["id"]) for item in objects if item.get("type") == "PipeWire:Interface:Client"
+                   and str(item.get("info", {}).get("props", {}).get("application.process.id")) in wanted}
         nodes = {item["id"] for item in objects if item.get("type") == "PipeWire:Interface:Node"
-                 and str(item.get("info", {}).get("props", {}).get("application.process.id")) in set(map(str, pids))}
+                 and (str(item.get("info", {}).get("props", {}).get("application.process.id")) in wanted
+                      or str(item.get("info", {}).get("props", {}).get("client.id")) in clients)}
         # Include the connected output sink, whose xruns can differ from the
         # stream's. Do not fold unrelated audio clients into a process counter.
         peers = set()

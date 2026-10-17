@@ -1,6 +1,27 @@
 """Device sweep contracts. A driver writes raw JSON per fresh-server trial."""
 import json
 import math
+import time
+
+
+def wait_for_freed(server, node_ids, timeout=5):
+    """Wait for the RT tree to stop containing this trial's nodes only.
+
+    The async compilation/buffer barrier does not await the audio command
+    drain. Other nodes, including a host's own voices, are not this trial's.
+    """
+    owned = set(node_ids)
+    deadline = time.monotonic() + timeout
+    while True:
+        tree = server.query_tree(timeout=max(.001, deadline - time.monotonic()))
+        present = {node.id for node in tree.walk()}
+        remaining = owned & present
+        if not remaining:
+            return {"owned_node_ids": sorted(owned), "remaining_node_ids": [],
+                    "observed_node_ids": sorted(present)}
+        if time.monotonic() >= deadline:
+            raise ValueError("Trial nodes remain after RT drain: " + str(sorted(remaining)))
+        time.sleep(.01)
 
 
 def validate_sweep(step):
