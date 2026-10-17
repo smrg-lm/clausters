@@ -123,6 +123,31 @@ class HarnessTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit.verify_record(run)
 
+    def test_noise_reference_uses_sealed_records_and_matching_archives(self):
+        import baseline
+        work = self.prepare()
+        scenario = self.scenario()
+        scenario["steps"][0]["repetitions"] = 3
+        path = self.root / "noise-scenario.json"
+        audit.write(path, scenario)
+        records, archives = [], []
+        for name in ("baseline", "noise"):
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(audit.run_campaign(work, path, name), 0)
+            run = work / "runs" / name
+            audit.seal_record(run, "synthetic-test")
+            records.append(run)
+            output = self.root / (name + ".tar.gz")
+            audit.archive(run, output)
+            archives.append(output)
+        reference = baseline.establish(records, "synthetic-test", "Synthetic contract, not application acceptance")
+        self.assertEqual(reference["tolerance"], 0)
+        self.assertEqual(len(reference["metrics"]), 1)
+        self.assertEqual(baseline.archive_identity(records[0], archives[0])["sha256"], audit.digest(archives[0]))
+        (records[1] / "findings.md").write_text("tampered")
+        with self.assertRaises(ValueError):
+            baseline.establish(records, "synthetic-test", "reason")
+
     def test_patch_includes_staged_unstaged_new_binary_and_deletion_without_index_mutation(self):
         (self.repo / "tracked.txt").write_text("staged\n")
         self.git("add", "tracked.txt")

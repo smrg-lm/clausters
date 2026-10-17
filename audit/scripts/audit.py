@@ -312,6 +312,8 @@ def validate_scenario(value):
                 raise ValueError("Output paths must be source-relative")
         if step.get("isolate") not in {None, "pytest-file"}:
             raise ValueError("Unknown isolation mode")
+        if step.get("compatibility_capture") not in {None, "device-paired"}:
+            raise ValueError("Unknown compatibility capture")
         if step.get("profile", "debug") not in {"debug", "release"}:
             raise ValueError("Unsupported profile")
         if step.get("features") is not None and (not isinstance(step["features"], list) or
@@ -622,6 +624,9 @@ def run_campaign(work, scenario_path, name, patch=None):
                         if outcome["status"] == "passed":
                             raise
                     entry["observed_metrics"] = measured
+                    if outcome["status"] == "passed" and step.get("compatibility_capture") == "device-paired":
+                        from paired import compatibility as device_compatibility
+                        manifest["compatibility"]["device"] = device_compatibility(campaign / "evidence" / step["id"])
                     artifacts = []
                     for line in output.splitlines():
                         try:

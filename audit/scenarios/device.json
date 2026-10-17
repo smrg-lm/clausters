@@ -6,6 +6,28 @@
   "scope": "Linux instrumented real-device sweep; screen must stay on. Run only on a reserved machine with --patch.",
   "steps": [
     {
+      "id": "device-core",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--message-format=json",
+        "--release",
+        "--locked",
+        "--offline",
+        "-p",
+        "clausters-ffi"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "release"
+    },
+    {
       "id": "device-server",
       "kind": "command",
       "required": true,
@@ -73,7 +95,8 @@
       "timeout_seconds": 180,
       "depends_on": [
         "device-server",
-        "device-gui"
+        "device-gui",
+        "device-core"
       ],
       "levels": [
         0,

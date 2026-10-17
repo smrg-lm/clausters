@@ -1,0 +1,179 @@
+{
+  "format_version": 1,
+  "id": "device-paired",
+  "status": "ready",
+  "unit": "components",
+  "scope": "Reserved Linux device: safe-load sweep, six alternating conditions and manual review. Run with --patch.",
+  "steps": [
+    {
+      "id": "device-core",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--message-format=json",
+        "--release",
+        "--locked",
+        "--offline",
+        "-p",
+        "clausters-ffi"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800,
+      "depends_on": [],
+      "profile": "release"
+    },
+    {
+      "id": "control-build",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "{python}",
+        "{audit}/scripts/build_controls.py",
+        "--work",
+        "{work}",
+        "--output",
+        "{output}"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 7500,
+      "depends_on": [],
+      "profile": "release"
+    },
+    {
+      "id": "device-server",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--message-format=json",
+        "--release",
+        "--locked",
+        "--offline"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600,
+      "depends_on": [],
+      "profile": "release"
+    },
+    {
+      "id": "device-gui",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "cargo",
+        "build",
+        "--message-format=json",
+        "--release",
+        "--locked",
+        "--offline",
+        "--bin",
+        "clausters-gui"
+      ],
+      "cwd": "clients/gui",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 3600,
+      "depends_on": [],
+      "profile": "release"
+    },
+    {
+      "id": "device-sweep",
+      "kind": "sweep",
+      "required": true,
+      "argv": [
+        "{client_python}",
+        "{audit}/scripts/device_driver.py",
+        "--server",
+        "{target}/release/clausters",
+        "--gui-bin",
+        "{gui_target}/release/clausters-gui",
+        "--gui",
+        "--source",
+        "--screen-on",
+        "--nodes",
+        "{level}",
+        "--capture",
+        "{capture}"
+      ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 3,
+      "warmup": 0,
+      "timeout_seconds": 180,
+      "depends_on": [
+        "device-server",
+        "device-gui",
+        "device-core"
+      ],
+      "levels": [
+        0,
+        20,
+        40,
+        60,
+        80,
+        100,
+        120,
+        150
+      ],
+      "gui": true,
+      "screen_on": true,
+      "min_fps": 20,
+      "representative_cpu": 35,
+      "stop_peak_cpu": 90,
+      "profile": "release"
+    },
+    {
+      "id": "paired",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "{client_python}",
+        "{audit}/scripts/paired.py",
+        "--server",
+        "{target}/release/clausters",
+        "--gui-bin",
+        "{gui_target}/release/clausters-gui",
+        "--control-server",
+        "{output}/../control-build/clausters",
+        "--control-gui",
+        "{output}/../control-build/clausters-gui",
+        "--sweep-evidence",
+        "{output}/..",
+        "--output",
+        "{output}",
+        "--ffi-lib",
+        "{target}/release/libclausters_ffi.so"
+      ],
+      "cwd": ".",
+      "parser": "metrics",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 2400,
+      "depends_on": [
+        "control-build",
+        "device-sweep"
+      ],
+      "profile": "release",
+      "compatibility_capture": "device-paired"
+    },
+    {
+      "id": "device-review",
+      "kind": "manual",
+      "required": true,
+      "instructions": "Follow procedures/combined.md; review paired/receipt.json, every screenshot, renderer and GPU coverage, PipeWire xruns, output correctness, screen visibility, timing overhead and thermal/background observations. Automatic collection cannot attest visual/audio acceptance."
+    }
+  ]
+}

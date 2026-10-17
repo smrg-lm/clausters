@@ -8,16 +8,15 @@ per-process CPU/RSS samples. Nothing here is a pass/fail judgement.
 import argparse, json, math, os, socket, subprocess, sys, threading, time
 from pathlib import Path
 
-from clausters import Session
-from clausters.defs import SynthDef, Synth, control, out, sine
-from clausters.gui import panel, phasescope, signal, spectrum, view
 from device import assess_capture
+from telemetry import gpu_sample, gpu_delta, host_sample, pipewire_nodes, xrun_delta
 
 CLK = os.sysconf("SC_CLK_TCK")
 PAGE = os.sysconf("SC_PAGE_SIZE")
 
 
 def load_def():
+    from clausters.defs import SynthDef, control, out, sine
     # Ten sines summed and scaled by a zero amp: the DSP runs, nothing sounds.
     amp = control("amp", 0.0)
     f = control("freq", 440.0)
@@ -28,6 +27,7 @@ def load_def():
 
 
 def source_def():
+    from clausters.defs import SynthDef, control, out, sine
     freq = control("freq", 880.0, lag=0.05)
     amp = control("amp", 0.02)
     left = sine(freq)
@@ -60,8 +60,9 @@ def proc_sample(pid):
 
 def pw_top():
     try:
-        txt = subprocess.run(["pw-top", "-b", "-n", "2"], capture_output=True,
-                             text=True, timeout=10).stdout
+        command = subprocess.run(["pw-top", "-b", "-n", "2"], capture_output=True,
+                                 text=True, timeout=10)
+        txt = command.stdout
     except Exception as e:
         return {"error": str(e)}
     # Keep the last iteration only: each one starts with the header line.
@@ -73,7 +74,9 @@ def pw_top():
             rows.append({"state": parts[0], "id": int(parts[1]), "quant": parts[2],
                          "err": int(parts[8]) if parts[8].isdigit() else None,
                          "name": parts[-1], "line": line})
-    return {"rows": rows}
+    return {"rows": rows, "stdout": txt, "stderr": command.stderr,
+            "exit_code": command.returncode,
+            "status": "available" if command.returncode == 0 and rows else "unsupported"}
 
 
 def rt_state(pid):
@@ -104,7 +107,8 @@ def status(server):
     st = server.status()
     return {"t": time.monotonic(), "avg_cpu": st.avg_cpu, "peak_cpu": st.peak_cpu,
             "late_blocks": st.late_blocks, "ugens": getattr(st, "ugens", None),
-            "synths": getattr(st, "synths", None)}
+            "synths": getattr(st, "synths", None), "actual_sample_rate": st.actual_sample_rate,
+            "nominal_sample_rate": st.nominal_sample_rate}
 
 
 def main():
@@ -112,6 +116,7 @@ def main():
     ap.add_argument("--capture", required=True)
     ap.add_argument("--server", required=True)
     ap.add_argument("--gui-bin")
+    ap.add_argument("--ffi-lib", help="Exact shared-core library; defaults beside the server binary")
     ap.add_argument("--nodes", type=int, default=0)
     ap.add_argument("--source", action="store_true")
     ap.add_argument("--gui", action="store_true")
@@ -120,6 +125,8 @@ def main():
     ap.add_argument("--warmup", type=float, default=10)
     ap.add_argument("--seconds", type=float, default=60)
     ap.add_argument("--slow-us", type=int)
+    ap.add_argument("--uninstrumented", action="store_true",
+                    help="Control run: record unavailable timing explicitly")
     a = ap.parse_args()
     if a.nodes < 0 or not all(math.isfinite(v) and v > 0 for v in (a.warmup, a.seconds, a.min_fps)):
         ap.error("nodes must be nonnegative and durations/fps positive and finite")
@@ -127,26 +134,38 @@ def main():
         ap.error("GUI capture requires --screen-on and --gui-bin; keep display awake")
     if a.slow_us is not None and a.slow_us <= 0:
         ap.error("slow threshold must be positive")
+    if a.slow_us and a.uninstrumented:
+        ap.error("slow capture is not an uninstrumented control")
     path = Path(a.capture).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         ap.error("capture must be new")
     os.environ["CLAUSTERS_BIN"] = str(Path(a.server).resolve(strict=True))
+    ffi = Path(a.ffi_lib) if a.ffi_lib else Path(a.server).resolve().parent / "libclausters_ffi.so"
+    os.environ["CLAUSTERS_FFI_LIB"] = str(ffi.resolve(strict=True))
     if a.gui_bin:
         os.environ["CLAUSTERS_GUI_BIN"] = str(Path(a.gui_bin).resolve(strict=True))
     stimer, gtimer = str(path) + ".audio.json", str(path) + ".gui.json"
-    os.environ["CLAUSTERS_AUDIT_TIMING"] = stimer
-    os.environ["CLAUSTERS_AUDIT_GUI_TIMING"] = gtimer
+    for key in ("CLAUSTERS_AUDIT_TIMING", "CLAUSTERS_AUDIT_GUI_TIMING",
+                "CLAUSTERS_AUDIT_SLOW_US", "CLAUSTERS_AUDIT_SLOW"):
+        os.environ.pop(key, None)
+    if not a.uninstrumented:
+        os.environ["CLAUSTERS_AUDIT_TIMING"] = stimer
+        os.environ["CLAUSTERS_AUDIT_GUI_TIMING"] = gtimer
+    os.environ["CLAUSTERS_AUDIT_RENDERER"] = str(path) + ".renderer.json"
     if a.slow_us:
         os.environ["CLAUSTERS_AUDIT_SLOW_US"] = str(a.slow_us)
         os.environ["CLAUSTERS_AUDIT_SLOW"] = str(path) + ".slow.json"
     rec = {"args": vars(a), "env": {k: os.environ.get(k) for k in (
-        "PIPEWIRE_QUANTUM", "CLAUSTERS_BIN", "CLAUSTERS_GUI_BIN")},
+        "PIPEWIRE_QUANTUM", "CLAUSTERS_BIN", "CLAUSTERS_GUI_BIN", "CLAUSTERS_FFI_LIB")},
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     session, th = None, None
     stop = threading.Event()
     result = 1
     try:
+        from clausters import Session
+        from clausters.defs import Synth
+        from clausters.gui import panel, phasescope, signal, spectrum, view
         # Reserve distinct loopback port numbers, avoiding the ordinary session.
         # The device procedure reserves the machine; a bind race is still a
         # failed prerequisite rather than permission to use an existing server.
@@ -158,6 +177,8 @@ def main():
         session = Session.live(port=audio_port, workers=0, data_dir=str(path) + ".server-data")
         server = session.server
         rec["server_pids"] = pids_of(os.path.realpath(a.server))
+        if len(rec["server_pids"]) != 1:
+            raise ValueError("Device trial requires exactly one isolated server binary process")
         load_def().send(server)
         nodes = [Synth("audit_load", {"freq": 440.0 + i % 50}, server=server) for i in range(a.nodes)]
         if a.source or a.gui:
@@ -187,23 +208,43 @@ def main():
                        name="waterfall", window_size=1024, freq_scale="log", label="waterfall"),
                 title="audit: analyzer", w=760, h=640, layout="col").open()
             rec["gui_pids"] = pids_of(os.path.realpath(a.gui_bin))
+            if len(rec["gui_pids"]) != 1:
+                raise ValueError("Device trial requires exactly one isolated GUI binary process")
         pids = rec["server_pids"] + rec.get("gui_pids", [])
         def snapshot():
             return {"rt": [rt_state(p) for p in rec["server_pids"]],
-                    "server_timing": read_json(stimer),
-                    "gui_timing": read_json(gtimer) if a.gui else None,
+                    "server_timing": read_json(stimer) if not a.uninstrumented else None,
+                    "gui_timing": read_json(gtimer) if a.gui and not a.uninstrumented else None,
                     "status": status(server), "pw": pw_top(),
-                    "proc": {p: proc_sample(p) for p in pids}}
+                    "proc": {p: proc_sample(p) for p in pids},
+                    "gpu": gpu_sample(rec.get("gui_pids", [])), "host": host_sample()}
         time.sleep(a.warmup)
         server.status()
+        rec["pipewire_identity"] = pipewire_nodes(rec["server_pids"])
         capture = {"start": snapshot(), "samples": []}
         rec["capture"] = capture
         until = time.monotonic() + a.seconds
         while time.monotonic() < until:
             time.sleep(min(1, max(0, until - time.monotonic())))
-            capture["samples"].append({"status": status(server), "proc": {p: proc_sample(p) for p in pids}})
+            capture["samples"].append({"status": status(server), "proc": {p: proc_sample(p) for p in pids},
+                                       "gpu": gpu_sample(rec.get("gui_pids", []))})
         capture["end"] = snapshot()
-        rec["assessment"] = assess_capture(capture, a.gui, a.min_fps)
+        if a.uninstrumented:
+            rec["assessment"] = {"timing": "unsupported: uninstrumented control",
+                                 "mean_cpu": sum(s["status"]["avg_cpu"] for s in capture["samples"]) / len(capture["samples"]),
+                                 "late": capture["end"]["status"]["late_blocks"] - capture["start"]["status"]["late_blocks"]}
+        else:
+            rec["assessment"] = assess_capture(capture, a.gui, a.min_fps)
+        rec["gpu_assessment"] = gpu_delta([capture["start"]["gpu"],
+            *[s["gpu"] for s in capture["samples"]], capture["end"]["gpu"]])
+        rec["xrun_assessment"] = xrun_delta(rec["pipewire_identity"], capture["start"]["pw"], capture["end"]["pw"])
+        if a.gui:
+            # Readback adds work: do it after the timed interval.
+            rec["renderer"] = ({"status": "unsupported", "reason": "Uninstrumented binary has no adapter identity writer"}
+                               if a.uninstrumented else read_json(os.environ["CLAUSTERS_AUDIT_RENDERER"]))
+            if not a.uninstrumented and not rec["renderer"]:
+                raise ValueError("Missing instrumented renderer identity")
+            rec["screenshot"] = session.gui_host.capture(window, str(path) + ".png")
         stop.set()
         if th:
             th.join(timeout=5)
@@ -213,6 +254,8 @@ def main():
             src.free()
         server.sync()
         rec["after_free"] = status(server)
+        if rec["after_free"]["synths"] not in (None, 0):
+            raise ValueError("Synths remain after freeing the trial nodes")
         if a.gui and window.closed:
             raise ValueError("GUI window closed during capture")
         result = 0

@@ -42,6 +42,8 @@ The resources are ready when the validator and harness contract tests pass, prer
 
 ## Found by use
 
+- ✅ The host's render/readback refactor left the timing generator starting its timer in `render` and reading it in `draw`, so the generated GUI patch no longer compiled. Start and record in the same draw function; offscreen readbacks return before the successful-frame counter.
+- ✅ A clean device preparation built the server and GUI binaries but not the shared-core library the Python driver needs. Build that binding as a declared prerequisite and retain its explicit path/hash with the paired binary identities.
 - ✅ A generic argument formatter interpreted JSON braces as substitution fields. Limit expansion to the documented tokens so JSON-emitting drivers remain valid.
 - ✅ The benchmark's peak_block field contains microseconds, including diagnostic rows that reuse the field. Preserve that unit and keep ungated rows descriptive.
 - ✅ Existing native/web builders resolve workspace target paths literally. Isolated preparations provide target symlinks without touching the maintainer's checkout.
@@ -66,4 +68,6 @@ From the first campaign's method notes:
 ## Future directions
 
 - ⬜ Evaluate optional CI integration after actual campaign evidence establishes stable noise and duration.
-- ⬜ Automate more device/GPU captures where backend support justifies it; preserve the required manual evidence path and explicit unsupported coverage.
+- ✅ Automate optional Linux DRM GPU-engine counters, scoped PipeWire xruns, renderer identity and post-interval host readbacks. Preserve raw captures and explicit unsupported presentation/per-frame GPU coverage; physical acceptance remains a separate campaign task.
+- ⬜ Validate the integrated device runner with paired audio-only, GUI-only and combined trials, including uninstrumented controls, retained renderer/counter captures and manual visual/audio review.
+- ⬜ Establish a reviewed device baseline from compatible sealed records and repeated same-code noise measurements; retain the measured tolerance, scope and archive identities.
