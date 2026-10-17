@@ -1346,9 +1346,11 @@ follows the same layout.
 ### A processed signal over its source
 
 `signal` accepts optional `preview_buffer` (a server buffer id; a negative id or `null`
-clears it). It draws the processed waveform on the same time axis and amplitude
-scale over the original, using the existing buffer fetch and peak summary
-paths. A frequency-axis body draws this amplitude overlay in its box. The
-original `buffer`/`path`/`cache` remains the source for editing, copy, cursor
+clears it). **The preview is drawn as the view it previews**: where traces
+claim the vertical, the processed waveform is drawn on the same time axis and
+amplitude scale over the original; where a spectrogram claims it, the texture
+is analyzed from the processed samples instead of the original's, and no
+waveform is drawn over it. Both use the existing buffer fetch and peak summary
+paths. The original `buffer`/`path`/`cache` remains the source for editing, copy, cursor
 readout and navigation. The owner renders and frees the processed buffer; the
 host only reads it. Setting the prop again refreshes that picture.

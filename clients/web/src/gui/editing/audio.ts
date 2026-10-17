@@ -568,7 +568,8 @@ export class AudioEditor extends Editor<Buffer> {
         const state = await this.playback.call("state");
         if (this.host !== null && this.window !== null) {
             const previews = state.previews as Record<string, number | null> | undefined;
-            for (const wid of (this.view as SamplesView).widgets.keys()) {
+            // every view of the take, each drawing the preview as itself
+            for (const wid of (preview.pictures as number[] | undefined) ?? []) {
                 await this.host.set(wid, { preview_buffer: previews?.[String(this.display)] ?? -1 });
             }
         }
@@ -829,6 +830,8 @@ export class AudioEditor extends Editor<Buffer> {
         // to one): the window is drawn again and the host keeps what is its own.
         if (outcome.restructure === true && this.windowId !== null) {
             this.app.publish(this.windowId, this.draw());
+            // the def carries no preview: each view is handed it again
+            void this.sound();
         }
         const changed = outcome.changed === true;
         // **The steps are this page's to carry out**: a new take made where the

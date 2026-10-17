@@ -435,9 +435,16 @@ impl Samples for SignalElement {
         if self.preview_buffer != Some(bufnum) {
             return self.source_buffer() != Some(bufnum);
         }
-        self.preview_view
+        let took = self
+            .preview_view
             .as_mut()
-            .is_some_and(|view| view.take(data))
+            .is_some_and(|view| view.take(data));
+        // A texture is analyzed from the preview's samples: they landed, so
+        // the picture is built again from them.
+        if took && self.is_texture_view() {
+            self.slot_dirty = true;
+        }
+        took
     }
 
     fn secondary_samples(&mut self) -> Vec<&mut dyn Samples> {

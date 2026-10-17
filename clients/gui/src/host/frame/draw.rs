@@ -738,7 +738,12 @@ pub(super) fn draw_timeline_meshes(
                 }
             }
         }
-        if let Some(preview) = &look.preview {
+        // **The preview is drawn as the view it previews**: over traces, the
+        // processed trace; over a texture, nothing here -- the texture itself
+        // is analyzed from the preview's samples (`SignalElement::fill`).
+        if let Some(preview) = &look.preview
+            && look.axis == Domain::Amplitude
+        {
             let trace = crate::host::graphics::signal::trace::Trace::Data(&preview.0);
             for ch in 0..channels.min(preview.0.num_channels()) {
                 let row = look
@@ -751,11 +756,7 @@ pub(super) fn draw_timeline_meshes(
                     ch,
                     &local,
                     look.domain,
-                    if look.axis == Domain::Amplitude {
-                        look.y
-                    } else {
-                        (0.0, 1.0)
-                    },
+                    look.y,
                     crate::host::graphics::signal::trace::TraceStyle::new(
                         with_alpha(th.series(ch + 1), 0.7),
                         m.trace_w,

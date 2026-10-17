@@ -388,8 +388,9 @@ class AudioEditor(Marking, Editor):
         state = self._playback.state()
         if self._host is not None and self._window is not None:
             buffer = (state.get("previews") or {}).get(str(self._display))
-            for wid in self.view.widgets:
-                self._host.set(wid, preview_buffer=-1 if buffer is None else buffer)
+            # every view of the take, each drawing the preview as itself
+            for wid in preview.get("pictures") or ():
+                self._host.set(int(wid), preview_buffer=-1 if buffer is None else buffer)
         self._call("sync", meters=self._playback.state().get("meters"))
 
     def _cue(self, frame: int) -> None:
@@ -592,6 +593,8 @@ class AudioEditor(Marking, Editor):
         # to one): the window is drawn again and the host keeps what is its own.
         if outcome.get("restructure") and self._window is not None:
             self.app.publish(int(self._window), self.draw())
+            # the def carries no preview: each view is handed it again
+            self._sound()
         changed = bool(outcome.get("changed"))
         # **The steps are this client's to carry out**: a new take made where
         # the turn needed one and the join stitched over the list -- or, for a

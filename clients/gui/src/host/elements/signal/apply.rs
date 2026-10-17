@@ -38,6 +38,11 @@ impl SignalElement {
                     Box::new(view)
                 });
                 self.preview_asked = false;
+                // A texture drawn from the preview goes back to the source's
+                // samples, or waits for the new preview's.
+                if self.is_texture_view() {
+                    self.slot_dirty = true;
+                }
                 true
             }
             // The source.

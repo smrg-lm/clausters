@@ -13,8 +13,11 @@ const GAIN_MAX: f64 = 1.0;
 
 impl AudioEditor {
     pub(super) fn preview_state(&self) -> Value {
+        // `pictures` are the widgets the preview is drawn in: every view of
+        // the take, each drawing it as the view it is.
         json!({"on":self.preview_on, "installed":self.effect_installed,
-            "points":self.envelope_quads(false),"revision":self.contents.payload().0})
+            "points":self.envelope_quads(false),"revision":self.contents.payload().0,
+            "pictures": self.pictures().collect::<Vec<_>>()})
     }
 
     pub(super) fn preview_event(

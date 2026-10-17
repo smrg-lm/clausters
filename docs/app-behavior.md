@@ -35,6 +35,10 @@ code that keeps it lives.
   pane (the take, the gain envelope); one is in hand at a time. Views are
   placed as **alternatives** in one lane, one shown at a time, or **stacked**
   in lanes of their own on one axis.
+- **A preview is drawn as the view it previews**: over the waveform, as the
+  processed waveform; in a spectrogram, as the spectrogram of the result, in
+  place of the take's. Every view of the take gets it (`pictures` in the
+  editor's `preview` answer), and a window drawn again is handed it again.
 - **The defaults, not the limits.** The audio editor's menu superposes the
   edit layers (the envelope over the take) and the visualization layers of
   one quantity (RMS inside the peaks), and places the waveform and the
