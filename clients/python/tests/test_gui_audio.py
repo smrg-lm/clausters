@@ -623,7 +623,10 @@ def test_files_share_one_handler_and_transport_but_keep_state_and_history(monkey
     editor._driver.locate(20 / SR)
     editor._driver.set_span((10 / SR, 40 / SR))
     first_envelope = editor.envelope
+    listed = lambda: host.trees[-1]["children"][1]["children"][0]["id"]
+    files_list = listed()
     editor.open_file(["/takes/b.wav", "/takes/c.wav"])
+    assert listed() == files_list, "the list is the window's: a click in flight still finds it"
     assert len(editor.files) == 3
     assert editor.file.path == "/takes/c.wav"
     assert editor._playback.transport_id == transport_id

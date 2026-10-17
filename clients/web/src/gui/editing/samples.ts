@@ -25,6 +25,7 @@ import { View } from "./view.ts";
 /** What a take's window is composed through: the editor's door to its core. */
 interface TakeWindow {
     syncCore(): void;
+    windowWidget(role: string, key?: string): number;
     coreCall(verb: string, args?: Record<string, unknown>): Record<string, unknown>;
 }
 
@@ -108,9 +109,10 @@ export class SamplesView extends View<Buffer> {
 
     build(editor: Editor<Buffer>): GuiNode {
         const wid = this.widget(editor, "waveform", editor.structure);
-        const meter = this.widget(editor, "meter", editor.structure);
-        const pane = this.widget(editor, "pane", editor.structure);
         const ed = editor as unknown as TakeWindow;
+        // the window's own widgets keep their ids while the files change
+        const meter = this.register(ed.windowWidget("meter"), editor.structure);
+        const pane = this.widget(editor, "pane", editor.structure);
         ed.syncCore();
         const envelope = this.widget(editor, "envelope", editor.structure);
         // the spectrogram's lane, drawn when the views are stacked
@@ -119,11 +121,11 @@ export class SamplesView extends View<Buffer> {
         const named = ed.coreCall("dialogs").dialogs;
         const dialogs: Record<string, number> = {};
         for (const name of Array.isArray(named) ? named.map(String) : []) {
-            dialogs[name] = this.widget(editor, "dialog", editor.structure, name);
+            dialogs[name] = this.register(ed.windowWidget("dialog", name), editor.structure);
         }
         const tree = ed.coreCall("window", {
             widget: wid, meter, pane, envelope, lane, dialogs,
-            filesWidget: this.widget(editor, "files", editor.structure),
+            filesWidget: this.register(ed.windowWidget("files"), editor.structure),
         }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
         // rather than composed in the crate.

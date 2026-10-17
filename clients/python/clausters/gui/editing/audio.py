@@ -304,6 +304,9 @@ class AudioEditor(Marking, Editor):
              "codec": getattr(file, "codec", None),
              "sample_format": getattr(file, "sample_format", None),
              "layers": list(view.layers)}, take, domain)
+        #: The identity the window's own widgets are named by -- the list,
+        #: the meter, the dialogs -- which stay while the files change.
+        self._window_structure = self._structure_id
         if history_bytes is not None:
             self._editing.limit_bytes(history_bytes)
         if resident_bytes is not None:
@@ -487,6 +490,14 @@ class AudioEditor(Marking, Editor):
     def hide_files(self) -> None:
         """Hide the file list."""
         self._take(self._call("hide_files"))
+
+    def _window_widget(self, role: str, key: str = "") -> int:
+        """The id of a widget that is the **window's** rather than the file's:
+        named by the structure the editor opened over, so it is the same widget
+        whichever file is in focus and a click in flight still finds it. The
+        take's own widgets are named by the file in focus, so a gesture over
+        the file before a switch never lands on the next one."""
+        return self.app.id_for(self._window_structure, role, key, drawer=self)
 
     # ---- the history: the order of the file in focus ----
 

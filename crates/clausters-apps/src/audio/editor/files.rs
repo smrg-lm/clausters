@@ -161,28 +161,30 @@ impl AudioEditor {
         (steps, buffers)
     }
 
+    /// **What the window is corrected with when this file comes into
+    /// focus**: its cursor, its selection and its loop switch on every view
+    /// of the take. They are the host's screen state, which a definition does
+    /// not overwrite, so they travel as an answer -- which also hands the
+    /// host the version the switch moved to.
+    pub(super) fn focus_corrections(&self) -> Vec<Correction> {
+        let (start, end) = self.selection.unwrap_or((0, 0));
+        let cursor = self.cursor.unwrap_or(0);
+        [self.widget, self.pane, self.lane]
+            .into_iter()
+            .flatten()
+            .map(|id| Correction {
+                widget: i64::from(id),
+                props: json!({
+                    "cursor": cursor,
+                    "sel_start": if end > start { start } else { cursor },
+                    "sel_len": end.saturating_sub(start),
+                    "looping": self.looping,
+                }),
+            })
+            .collect()
+    }
+
     pub(super) fn compose_files(&self, tree: &mut Value) {
-        fn restore(tree: &mut Value, editor: &AudioEditor) {
-            let id = tree.get("id").and_then(Value::as_i64);
-            if id.is_some()
-                && [editor.widget, editor.pane, editor.lane]
-                    .into_iter()
-                    .flatten()
-                    .any(|i| Some(i64::from(i)) == id)
-            {
-                tree["cursor"] = json!(editor.cursor.unwrap_or(0));
-                tree["looping"] = json!(editor.looping);
-                let (start, end) = editor.selection.unwrap_or((0, 0));
-                tree["sel_start"] = json!(start);
-                tree["sel_len"] = json!(end.saturating_sub(start));
-            }
-            if let Some(children) = tree.get_mut("children").and_then(Value::as_array_mut) {
-                for child in children {
-                    restore(child, editor);
-                }
-            }
-        }
-        restore(tree, self);
         let Some(widget) = self.files_widget else {
             return;
         };

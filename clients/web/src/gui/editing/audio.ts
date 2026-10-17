@@ -446,6 +446,7 @@ export class AudioEditor extends Editor<Buffer> {
         );
         this.member = opened.member;
         this.structureId = opened.identity;
+        this.windowStructure = opened.identity;
         if (options.historyBytes !== undefined && options.historyBytes !== null) {
             this.editing.limitBytes(options.historyBytes);
         }
@@ -608,6 +609,20 @@ export class AudioEditor extends Editor<Buffer> {
     /** Hide the file list. */
     hideFiles(): void { this.take(this.coreCall("hide_files") as Outcome); }
 
+    /** The identity the window's own widgets are named by. */
+    private windowStructure = 0;
+
+    /**
+     * The id of a widget that is the **window's** rather than the file's:
+     * named by the structure the editor opened over, so it is the same widget
+     * whichever file is in focus and a click in flight still finds it. The
+     * take's own widgets are named by the file in focus, so a gesture over the
+     * file before a switch never lands on the next one.
+     */
+    windowWidget(role: string, key = ""): number {
+        return this.app.idFor(this.windowStructure, role, key, this);
+    }
+
     // ---- the history: the order of the file in focus ----
 
     /** A step of this window's order: the file in focus walks its own. */
@@ -674,6 +689,9 @@ export class AudioEditor extends Editor<Buffer> {
         await this.sound();
         await this.playback.call("focusFile", { file: this.display, frame: Number(b.cursor) });
         if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
+        // the switch moved the version: the answer hands it to the host, with
+        // the incoming file's cursor and selection
+        this.echo.send(answer.answer as never);
     }
 
     private async sound(): Promise<void> {

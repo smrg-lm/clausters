@@ -2353,9 +2353,15 @@ own, which the context swaps in while that file is in focus. A window's step
 and its menu state name the window's member, so they walk the order of its
 file in focus; a step naming no member walks the context's. The clients keep
 one handler, bind the file in focus from the application's answer, read and
-write files through `SoundFile` and run the server steps it returns. The file
-list is an independent host `table` left of the editing view, shown or hidden
-by the application's verbs. The Open form is a field of the shared forms
+write files through `SoundFile` and run the server steps it returns. A
+switch answers the host with the incoming file's cursor, selection and loop
+switch, which also hands it the version the switch moved to. The take's
+widgets are named by the file in focus, so a gesture over the previous file
+never lands on the next; the window's own widgets (the file list, the meter,
+the dialogs) are named by the structure the editor opened over and keep their
+ids across switches, and a choice in the list is navigation, never stale. The
+file list is an independent host `table` left of the editing view, shown or
+hidden by the application's verbs. The Open form is a field of the shared forms
 mechanism whose widget is the host's `files` chooser with `multiple`, so its
 Ctrl/Shift selection is the table's own. All files of one editor share its
 playback and server transport; a switch stops it and locates it to the

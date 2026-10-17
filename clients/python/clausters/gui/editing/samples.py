@@ -76,16 +76,18 @@ class SamplesView(View):
 
     def build(self, editor) -> dict:
         wid = self.widget(editor, "waveform", editor.structure)
-        meter = self.widget(editor, "meter", editor.structure)
+        # the window's own widgets keep their ids while the files change
+        meter = self.register(editor._window_widget("meter"), editor.structure)
         pane = self.widget(editor, "pane", editor.structure)
         editor._sync_core()
         envelope = self.widget(editor, "envelope", editor.structure)
         # the spectrogram's lane, drawn when the views are stacked
         lane = self.widget(editor, "lane", editor.structure)
         # the crate names the widgets of its dialogs and this numbers them
-        dialogs = {str(name): self.widget(editor, "dialog", editor.structure, str(name))
+        dialogs = {str(name): self.register(editor._window_widget("dialog", str(name)),
+                                            editor.structure)
                    for name in editor._call("dialogs").get("dialogs") or ()}
-        files_widget = self.widget(editor, "files", editor.structure)
+        files_widget = self.register(editor._window_widget("files"), editor.structure)
         tree = editor._call("window", filesWidget=files_widget, widget=wid, meter=meter,
                             pane=pane, envelope=envelope, lane=lane, dialogs=dialogs)
         # **A script's own widgets are its objects**, so they are appended here

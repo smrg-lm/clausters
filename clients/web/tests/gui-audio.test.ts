@@ -690,7 +690,10 @@ test("files share one handler and transport but keep state and history", async (
         editor.coreCall("locate", { at: 20 / SR });
         editor.coreCall("span", { span: [10 / SR, 40 / SR] });
         const envelope = editor.envelope;
+        const listed = () => host.trees.at(-1)!.children![1]!.children![0]!.id;
+        const filesList = listed();
         await editor.openFile(["/takes/b.wav", "/takes/c.wav"]);
+        assert.equal(listed(), filesList, "the list is the window's: a click in flight still finds it");
         assert.equal(editor.files.length, 3);
         assert.equal(editor.file!.path, "/takes/c.wav");
         assert.equal(editor.transport!.id, transportId);

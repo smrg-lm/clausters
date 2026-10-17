@@ -1307,6 +1307,11 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 value["binding"]["structure"] = json!(editing.structure(member));
                 value["binding"]["version"] = json!(editing.version);
             }
+            // The switch moved the version, and the answer is how the host
+            // learns it: its next gesture names this one.
+            if let Some(answer) = value.get_mut("answer").filter(|a| a.is_object()) {
+                answer["docVersion"] = json!(editing.version);
+            }
             if inner == "close_file"
                 && value.get("error").is_none()
                 && let Some(file) = value["fileAction"]["file"].as_i64()
@@ -2581,6 +2586,15 @@ mod tests {
         assert!(editing.can_redo());
         let restored = member_call(&mut editing, json!({"verb": "focus_file", "file": 9}));
         assert_eq!(restored["binding"]["cursor"], 24);
+        // the host learns the version the switch moved to, with the cursor
+        // and selection the incoming file left
+        assert_eq!(restored["answer"]["answer"], "push");
+        assert_eq!(restored["answer"]["docVersion"], editing.version());
+        assert_eq!(
+            restored["answer"]["corrections"][0]["props"]["sel_start"],
+            10
+        );
+        assert_eq!(restored["answer"]["corrections"][0]["props"]["sel_len"], 28);
         assert_eq!(
             restored["binding"]["span"],
             json!([10.0 / 48000.0, 38.0 / 48000.0])

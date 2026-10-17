@@ -212,17 +212,6 @@ impl Converse for AudioEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        if self.files_widget.map(i64::from) == Some(widget) {
-            if matches!(tag, "select" | "activate")
-                && let Some(file) = values
-                    .first()
-                    .and_then(Value::as_u64)
-                    .and_then(|i| self.files.get(i as usize))
-            {
-                out.file_action = Some(json!({"verb": "focus_file", "file": file["id"]}));
-            }
-            return (None, Vec::new());
-        }
         if let Some(name) = self.dialog_name(widget) {
             return self.form_event(&name, tag, values, out);
         }
@@ -230,6 +219,29 @@ impl Converse for AudioEditor {
     }
 
     fn window_verb(&mut self, message: &Message, args: &[Value], out: &mut Outcome) -> bool {
+        // **A file chosen in the list is navigation, not an edit**: it names
+        // no data a gesture was made against, so it is never stale -- a hand
+        // clicking down the list faster than the answers come back still
+        // lands on the file it clicked last.
+        if message.addr == "/gui_event" && self.files_widget.map(i64::from) == Some(message.widget)
+        {
+            out.turn = Kind::Route;
+            if matches!(message.tag.as_str(), "select" | "activate")
+                && let Some(file) = args
+                    .get(4)
+                    .and_then(Value::as_u64)
+                    .and_then(|i| self.files.get(i as usize))
+            {
+                out.file_action = Some(json!({"verb": "focus_file", "file": file["id"]}));
+            }
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                None,
+                Vec::new(),
+            ));
+            return true;
+        }
         if message.addr != "/gui_event" || !message.is_window {
             return false;
         }
@@ -1782,7 +1794,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             editor.add_file(file);
             Ok(steps)
         }) {
-            Ok(steps) => json!({"turn": "route", "steps": steps, "binding": editor.binding(), "focusChanged": true, "restructure": true}).to_string(),
+            Ok(steps) => json!({"turn": "route", "steps": steps, "binding": editor.binding(), "focusChanged": true, "restructure": true,
+                "answer": conversation::answer(0, editor.conversation.applied, None, editor.focus_corrections())}).to_string(),
             Err(error) => json!({"error": error}).to_string(),
         },
         "focus_file" | "close_file" => {
@@ -1800,7 +1813,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             } else { editor.close_file(file) };
             match result {
                 Ok((steps, freed)) => json!({"turn": "route", "steps": steps, "freedBuffers": freed, "binding": editor.binding(), "focusChanged": before != editor.display,
-                    "restructure": true, "fileAction": {"verb": verb, "file": file}, "close": editor.files.is_empty()}).to_string(),
+                    "restructure": true, "fileAction": {"verb": verb, "file": file}, "close": editor.files.is_empty(),
+                    "answer": (before != editor.display).then(|| conversation::answer(0, editor.conversation.applied, None, editor.focus_corrections()))}).to_string(),
                 Err(error) => json!({"error": error}).to_string(),
             }
         }
