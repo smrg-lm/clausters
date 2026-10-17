@@ -26,4 +26,5 @@
 //! pasted block at another rate is refused: resampling is an edit, and nothing
 //! here asked for one.
 
+pub mod dialogs;
 pub mod editor;

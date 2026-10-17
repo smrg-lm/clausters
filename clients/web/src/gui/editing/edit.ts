@@ -43,6 +43,7 @@ import { PointsEditor, isCurve } from "./points.ts";
 import type { PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { AudioEditor, isTake } from "./audio.ts";
+import { SoundFile } from "../../soundfile.ts";
 import { ScoreEditor, isScore } from "./score.ts";
 import type { Interpretation, Transcription } from "../notation/sheet.ts";
 import { main } from "../../base/main.ts";
@@ -140,6 +141,7 @@ export interface EditOptions {
      * row; a multitrack opened with none still edits.
      */
     sources?: MultitrackEditorOptions["sources"];
+    /** The multitrack's server, and the one a {@link SoundFile} is loaded on. */
     server?: Server;
     /**
      * **A curve's own four**, ignored by every other structure: the ranges its
@@ -182,6 +184,17 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
         meter, key, clef, beatUnit, division, tuplets, voices, dynamics, interp,
         ...rest
     } = options;
+    if (structure instanceof SoundFile) {
+        // A file is loaded into a buffer of the editor's own, which is the
+        // take it edits; the file is what a save writes.
+        const { server, ...others } = rest;
+        const take = await structure.toBuffer({ server });
+        return new AudioEditor(take, {
+            sampleRate,
+            ...others,
+            file: structure,
+        }) as unknown as Editor<never>;
+    }
     if (isTake(structure)) {
         return new AudioEditor(structure, {
             sampleRate,
@@ -227,14 +240,15 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
     }
     throw new TypeError(
         `nothing edits a ${(structure as object)?.constructor?.name ?? typeof structure}: ` +
-            "`edit` opens a Buffer (its samples), an Automation (its curve), an " +
+            "`edit` opens a Buffer or a SoundFile (its samples), an Automation (its curve), an " +
             "EventSequence or a Timeline (its notes), a Multitrack (the multitrack) or a " +
             "Score (its page).",
     );
 }
 
 /**
- * Opens `structure` in an editor of its own kind -- a `Buffer` (its samples), an
+ * Opens `structure` in an editor of its own kind -- a `Buffer` or a
+ * `SoundFile` (its samples; a file not written yet asks for a path), an
  * `Automation` (its curve), a `Timeline` (its notes), a `Multitrack` (the
  * multitrack) or a `Score` (a symbolic score, on its page, in place), or a
  * running `Node`, whose def's controls open in a generic editor
@@ -274,7 +288,9 @@ export async function edit(
     const { until, ...rest } = options;
     const opened = structure instanceof Timeline ? await structure.renderEvents(until) : structure;
     // A take knows its own rate; anything else takes the ambient server's.
-    if (!rest.sampleRate && !isTake(opened)) rest.sampleRate = await ambientRate();
+    if (!rest.sampleRate && !isTake(opened) && !(opened instanceof SoundFile)) {
+        rest.sampleRate = await ambientRate();
+    }
     const editor = await editorFor(opened, rest);
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });

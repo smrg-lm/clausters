@@ -31,6 +31,7 @@ use clausters_editing::load::stitch_message;
 use clausters_editing::samples;
 use clausters_editing::sources::{Held, stitch};
 
+use crate::audio::dialogs;
 use crate::samples::{MEASURES, MeterAt, Window, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, number, text};
 
@@ -99,6 +100,10 @@ pub struct Outcome {
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub close: bool,
+    /// **A new file was asked for** in the window (`newFile`): `{channels,
+    /// frames, rate}`, for the client to open -- a file is the client's to hold.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_file: Option<Value>,
 }
 
 turn::turned!(Outcome);
@@ -124,6 +129,7 @@ impl Converse for AudioEditor {
             .chain(self.pane)
             .chain(self.envelope_widget)
             .any(|w| i64::from(w) == widget)
+            || self.dialog_name(widget).is_some()
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -141,6 +147,9 @@ impl Converse for AudioEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if let Some(name) = self.dialog_name(widget) {
+            return self.form_event(&name, tag, out);
+        }
         self.gesture(widget, tag, values, out)
     }
 
@@ -174,20 +183,18 @@ impl Converse for AudioEditor {
         // **Ctrl+S over the window is a save**, the window's own verb: it names
         // no widget, changes nothing the history holds, and is answered with
         // the steps that write the file.
-        if message.tag == "save" {
+        if matches!(message.tag.as_str(), "save" | "save_as" | "new_file") {
             out.turn = Kind::Route;
-            let reason = match self.save(None, "float") {
-                Ok(steps) => {
-                    out.steps = Some(steps);
-                    None
-                }
-                Err(why) => Some(why),
+            let (reason, corrections) = match message.tag.as_str() {
+                "save" => self.save_from_window(out),
+                "save_as" => self.open_form(dialogs::Form::SaveAs),
+                _ => self.open_form(dialogs::Form::New),
             };
             out.answer = Some(conversation::answer(
                 message.seq,
                 out.version,
                 reason,
-                Vec::new(),
+                corrections,
             ));
             return true;
         }
@@ -297,6 +304,10 @@ pub struct AudioEditor {
     selection: Option<(u64, u64)>,
     /// Where the level meter is read from, once a playback measures the take.
     meters: Option<(i32, usize)>,
+    /// The dialogs' widgets, by name ([`dialogs::names`]).
+    dialogs: dialogs::Ids,
+    /// The form that is up, when one is.
+    dialog: Option<dialogs::Open>,
     conversation: Conversation,
 }
 
@@ -366,6 +377,8 @@ impl AudioEditor {
             cursor: None,
             selection: None,
             meters: None,
+            dialogs: dialogs::Ids::new(),
+            dialog: None,
             conversation: Conversation::new(version),
         };
         editor.reopen(take, frames);
@@ -754,6 +767,7 @@ impl AudioEditor {
             size: self.size,
             meter,
             bare: self.bare,
+            dialogs: dialogs::stack(&self.dialogs),
         });
         self.compose_envelope(&mut tree);
         tree
@@ -1289,6 +1303,8 @@ struct Facts {
     chunk: Option<usize>,
     /// The file the take was read from.
     path: Option<String>,
+    /// **A file not written yet**: its first save asks for a path.
+    untitled: Option<bool>,
     /// The directory a take leaves memory for.
     scratch: Option<String>,
     #[serde(deserialize_with = "present")]
@@ -1347,6 +1363,8 @@ impl AudioEditor {
         }
         if let Some(path) = facts.path.filter(|p| !p.is_empty()) {
             self.target = Target::File(path);
+        } else if facts.untitled == Some(true) {
+            self.target = Target::File(String::new());
         }
         if let Some(scratch) = facts.scratch.filter(|s| !s.is_empty()) {
             self.scratch = Some(scratch);
@@ -1503,6 +1521,12 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             }
         }
         "window" => {
+            if let Some(ids) = request.get("dialogs").and_then(Value::as_object) {
+                editor.dialogs = ids
+                    .iter()
+                    .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
+                    .collect();
+            }
             editor.envelope_widget = request
                 .get("envelope")
                 .and_then(Value::as_i64)
@@ -1523,6 +1547,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 .to_string()
         }
         "preview" => editor.preview_state().to_string(),
+        "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
+        "file" => editor.file().to_string(),
         "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
         "show_envelope" | "setautomation" | "apply_envelope" | "preview_on" | "preview_off"
         | "remove_effect" => serde_json::to_string(&editor.act(&request, version)).unwrap(),
@@ -1592,6 +1618,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
 pub const DOMAIN: &str = PARTS;
 
 mod envelope;
+mod files;
 
 #[cfg(test)]
 mod tests;

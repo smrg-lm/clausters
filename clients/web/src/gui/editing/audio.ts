@@ -38,6 +38,7 @@
 import { PARTS } from "../../document.ts";
 import type { Answer } from "./echo.ts";
 import { Buffer } from "../../defs/buffer.ts";
+import { SoundFile } from "../../soundfile.ts";
 import { AudioEditorPlayback, StepRunner } from "../../core/clausters_core_web.js";
 import type { Server } from "../../defs/server/index.ts";
 import type { Transport, TransportDriver } from "../../defs/server/transport.ts";
@@ -76,6 +77,8 @@ interface Outcome {
     /** What a selection redrawn asks of a loop in progress: its span now. */
     follow?: { from: number; to: number; place: boolean };
     cue?: number;
+    /** A new file asked for in the window: its shape, for this page to open. */
+    newFile?: { channels: number; frames: number; rate: number };
 }
 
 /** A press of the space bar, as the editor read it: frames of the take. */
@@ -409,6 +412,12 @@ export class AudioEditor extends Editor<Buffer> {
      */
     private readonly playback: AudioPlayback;
 
+    /** The {@link SoundFile} the take was loaded from, when it was. */
+    readonly #file: SoundFile | null;
+
+    /** The sample format the editor last wrote its file in, or `null`. */
+    #written: string | null = null;
+
     constructor(take: Buffer, options: AudioEditorOptions) {
         const view = new SamplesView(options.layers ?? MEASURES);
         const domain = new AudioDomain();
@@ -420,6 +429,7 @@ export class AudioEditor extends Editor<Buffer> {
             view,
         });
         domain.editor = this;
+        this.#file = options.file ?? null;
         this.server = resolveServer(take.server);
         this.display = this.server.buffers.alloc();
         const opened = this.editing.open(
@@ -431,6 +441,7 @@ export class AudioEditor extends Editor<Buffer> {
                 take: Math.trunc(take.bufnum),
                 display: this.display,
                 path: take.path ?? null,
+                untitled: this.#file !== null && this.#file.path === null,
                 layers: view.layers,
             },
             take,
@@ -521,6 +532,18 @@ export class AudioEditor extends Editor<Buffer> {
      * Make what sounds be the take as it now is -- the join and its length --
      * and tell the window where its level is read from.
      */
+    /**
+     * **A new file asked for in the window**: an empty {@link SoundFile} of
+     * that shape, opened in an editor of its own on the same host.
+     */
+    private async newFile(shape: { channels: number; frames: number; rate: number }): Promise<void> {
+        const { edit } = await import("./edit.ts");
+        await edit(SoundFile.empty(shape.channels, shape.frames, shape.rate), {
+            host: this.host ?? undefined,
+            server: this.server,
+        });
+    }
+
     private async sound(): Promise<void> {
         const frames = Number(this.coreCall("parts").frames ?? 0);
         await this.playback.call("sync", {
@@ -713,7 +736,10 @@ export class AudioEditor extends Editor<Buffer> {
         const domain = this.domain as AudioDomain;
         domain.run(this.structure, (answer.steps as unknown[] | undefined) ?? []);
         await domain.idle();
-        if (typeof answer.path === "string") return answer.path;
+        if (typeof answer.path === "string") {
+            this.#written = sampleFormat;
+            return answer.path;
+        }
         const frames = Number(this.coreCall("parts").frames ?? 0);
         return new Buffer(
             Number(answer.buffer),
@@ -722,6 +748,28 @@ export class AudioEditor extends Editor<Buffer> {
             this.sampleRate,
             this.server,
         );
+    }
+
+    /**
+     * **The {@link SoundFile} the take is**, at its length now: the file it was
+     * opened from or last saved to, one with no path when it has not been
+     * written yet, and `null` for a take opened over a buffer and saved into
+     * none.
+     */
+    get file(): SoundFile | null {
+        const answer = this.coreCall("file");
+        const path = typeof answer.path === "string" ? answer.path : null;
+        const frames = Number(answer.frames ?? 0);
+        const channels = Number(answer.channels ?? 1);
+        const rate = Number(answer.rate ?? this.sampleRate);
+        if (path === null) {
+            return answer.untitled === true ? new SoundFile(null, frames, channels, rate) : null;
+        }
+        const opened = this.#file;
+        if (this.#written === null && opened !== null && opened.path === path) {
+            return new SoundFile(path, frames, channels, rate, opened.codec, opened.sampleFormat);
+        }
+        return new SoundFile(path, frames, channels, rate, "wav", this.#written ?? "float");
     }
 
     /**
@@ -776,8 +824,17 @@ export class AudioEditor extends Editor<Buffer> {
         // **The steps are this page's to carry out**: a new take made where the
         // turn needed one and the join stitched over the list -- or, for a save
         // from the window, the file written.
-        (this.domain as AudioDomain).run(this.structure, outcome.steps ?? []);
+        const steps = outcome.steps ?? [];
+        (this.domain as AudioDomain).run(this.structure, steps);
         const domain = this.domain as AudioDomain;
+        if (steps.some((step) => (step as { send?: { addr?: string } }).send?.addr === "/buffer_write")) {
+            // a save from the window writes float, its one format
+            this.#written = "float";
+        }
+        if (outcome.newFile !== undefined) {
+            const shape = outcome.newFile;
+            domain.after(() => this.newFile(shape));
+        }
         if (changed) {
             this.dirty = true;
             this.editing.changed();
@@ -943,6 +1000,11 @@ export interface AudioEditorOptions extends GenericEditorOptions<Buffer> {
      * not given.
      */
     scratch?: string;
+    /**
+     * The {@link SoundFile} `take` was loaded from, which a save writes -- one
+     * with no path asks for one. `edit` loads a file and passes it here.
+     */
+    file?: SoundFile | null;
 }
 
 /**

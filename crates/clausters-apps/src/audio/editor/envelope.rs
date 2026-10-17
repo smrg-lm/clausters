@@ -35,7 +35,7 @@ impl AudioEditor {
     }
 
     pub(super) fn pane_label(&self) -> String {
-        let take = crate::samples::label(self.name.as_deref(), self.display);
+        let take = crate::samples::label(self.take_name().as_deref(), self.display);
         if self.edit_layer.starts_with("points") {
             format!("{take} -- gain 0..2 (unity 1)")
         } else {

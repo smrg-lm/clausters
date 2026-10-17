@@ -279,12 +279,19 @@ class AudioEditor(Marking, Editor):
             back when an undo or a redo needs them.
         scratch: the directory, on the server's filesystem, a take leaves
             memory for. A temporary one when not given.
+        file: the `clausters.SoundFile` `take` was loaded from, which a save
+            writes -- one with no path asks for one. `clausters.gui.edit`
+            loads a file and passes it here.
     """
 
     def __init__(self, take, *, sample_rate: float = 0.0, title: str = "Audio",
                  layers=MEASURES, history_bytes: "int | None" = None,
                  resident_bytes: "int | None" = None,
-                 scratch: "str | None" = None, **options):
+                 scratch: "str | None" = None, file=None, **options):
+        #: The `clausters.SoundFile` the take was loaded from, when it was.
+        self._file = file
+        #: The sample format the editor last wrote its file in, or ``None``.
+        self._written = None
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
         view = SamplesView(layers)
         domain = AudioDomain()
@@ -302,6 +309,7 @@ class AudioEditor(Marking, Editor):
             {**self._facts(), "frames": int(getattr(take, "frames", 0) or 0),
              "take": int(take.bufnum), "display": self._display,
              "path": getattr(take, "path", None),
+             "untitled": self._file is not None and self._file.path is None,
              "layers": list(view.layers)}, take, domain)
         if history_bytes is not None:
             self._editing.limit_bytes(history_bytes)
@@ -424,6 +432,14 @@ class AudioEditor(Marking, Editor):
     def _plays_on(self):
         return self._server
 
+    def _new_file(self, shape: dict) -> None:
+        """**A new file asked for in the window**: an empty `clausters.SoundFile`
+        of that shape, opened in an editor of its own on the same host."""
+        from ...soundfile import SoundFile
+        from .edit import edit
+        edit(SoundFile.empty(int(shape["channels"]), int(shape["frames"]), float(shape["rate"])),
+             host=self._host, server=self._server)
+
     def _closed(self) -> bool:
         """The window closed: the take stops being one the editor plays, and
         the last one closed frees the editor's nodes."""
@@ -508,11 +524,30 @@ class AudioEditor(Marking, Editor):
             raise ValueError(answer["error"])
         self.domain.run(self.structure, answer.get("steps") or [])
         if "path" in answer:
+            self._written = str(sample_format)
             return str(answer["path"])
         frames = int(self._call("parts").get("frames", 0))
         return Buffer(int(answer["buffer"]), frames,
                       max(1, int(getattr(self.structure, "channels", 1) or 1)),
                       self.sample_rate, server=self._server)
+
+    @property
+    def file(self):
+        """**The `clausters.SoundFile` the take is**, at its length now: the
+        file it was opened from or last saved to, one with no path when it has
+        not been written yet, and ``None`` for a take opened over a buffer and
+        saved into none."""
+        from ...soundfile import SoundFile
+        answer = self._call("file")
+        path = answer.get("path")
+        frames, channels = int(answer.get("frames", 0)), int(answer.get("channels", 1))
+        rate = float(answer.get("rate", self.sample_rate))
+        if path is None:
+            return SoundFile(None, frames, channels, rate) if answer.get("untitled") else None
+        opened = self._file
+        if self._written is None and opened is not None and opened.path == path:
+            return SoundFile(path, frames, channels, rate, opened.codec, opened.sample_format)
+        return SoundFile(path, frames, channels, rate, "wav", self._written or "float")
 
     @property
     def parts(self) -> list:
@@ -559,7 +594,13 @@ class AudioEditor(Marking, Editor):
         # **The steps are this client's to carry out**: a new take made where
         # the turn needed one and the join stitched over the list -- or, for a
         # save from the window, the file written.
-        self.domain.run(self.structure, outcome.get("steps") or [])
+        steps = outcome.get("steps") or []
+        self.domain.run(self.structure, steps)
+        if any((step.get("send") or {}).get("addr") == "/buffer_write" for step in steps):
+            # a save from the window writes float, its one format
+            self._written = "float"
+        if outcome.get("newFile") is not None:
+            self._new_file(outcome["newFile"])
         if changed:
             self.dirty = True
             self._editing.changed()

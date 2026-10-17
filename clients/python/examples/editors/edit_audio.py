@@ -42,8 +42,10 @@ these is also in the **menu bar** -- File, Edit, View, Transport, Help, each
 entry with its key -- and the transport and the clipboard are **tools** under
 it, which act on the take as the keys do. ``hear()`` plays the take as the edits have left it, and ``parts()``
 prints what it is made of. ``editor.save()`` -- or Ctrl+S in the window --
-writes the edit back into the buffer it was opened from, and
-``editor.save(path)`` writes it as a file instead.
+writes the edit back into the file it was opened from, and
+``editor.save(path)`` writes it as another file instead. File -> New file...
+opens a file not written yet in a window of its own, as ``new_file()`` does;
+its first save asks where it goes.
 
 Run it as a script, or step through the cells::
 
@@ -51,26 +53,31 @@ Run it as a script, or step through the cells::
 
     python clients/python/examples/editors/edit_audio.py
 
-It self-launches the audio server and the GUI host, and writes its own take --
-nothing has to be found on disk.
+It self-launches the audio server and the GUI host, and writes its own take
+into ``clients/python/examples/out/`` -- nothing has to be found on disk.
 """
 
 # %%
 import math
+import pathlib
 import sys
 
-from clausters import Session, play
-from clausters.defs import Buffer
+from clausters import Session, SoundFile, play
 from clausters.gui import edit
 
 SECONDS = 2.0
 
+#: Where the take is written: ``examples/out/``, the git-ignored directory
+#: every generator in this tree writes to.
+OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
+OUT.mkdir(exist_ok=True)
+
 # %% [markdown]
 # ## A take, made here
 #
-# Two seconds of a decaying tone, written into a server buffer with
-# `clausters.defs.Buffer.from_samples`. A shape worth recognizing, so an edit
-# over it is visibly an edit over *this*.
+# Two seconds of a decaying tone, written to a file with
+# `clausters.SoundFile.write`. A shape worth recognizing, so an edit over it is
+# visibly an edit over *this*.
 
 # %%
 session = Session.live()
@@ -81,18 +88,18 @@ samples = [
     math.exp(-3.0 * i / frames) * 0.7 * math.sin(2 * math.pi * 440.0 * i / rate)
     for i in range(frames)
 ]
-take = Buffer.from_samples(samples, 1, rate, server=server)
+take = SoundFile.write(OUT / "edit_audio.wav", samples, 1, rate, sample_format="float")
 
 # %% [markdown]
 # ## One verb
 #
-# A `Buffer` opens in the audio editor: a pane holding the join it owns.
-# The buffer is not written while you edit -- every edit is a new list of parts
+# A `SoundFile` opens in the audio editor: a pane holding the join it owns.
+# The file is not written while you edit -- every edit is a new list of parts
 # over a copy of it and over the takes the edits made -- until you save.
 
 # %%
 session.gui()          # the host wired to this session's server
-editor = edit(take, title="take", history_bytes=64 * 1024 * 1024)
+editor = edit(take, title="take", history_bytes=64 * 1024 * 1024, server=server)
 
 # %% [markdown]
 # ## Read the same take through different layers
@@ -176,6 +183,18 @@ def parts():
     for part in editor.parts:
         span = part["source"]["range"]
         print(f"buffer {part['source']['source']}: frames {span['start']}..{span['end']}")
+
+
+# %% [markdown]
+# ## A file not written yet
+#
+# `SoundFile.empty` is a shape with no path: silence that opens like any take.
+# Its first save -- Ctrl+S, or File -> Save as... -- asks where it goes.
+
+# %%
+def new_file():
+    """Open two seconds of stereo silence in a window of its own."""
+    return edit(SoundFile.empty(2, frames, rate), title="new", server=server)
 
 
 # %%

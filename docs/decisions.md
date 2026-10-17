@@ -10424,3 +10424,19 @@ through the embed library and a page through the NRT worker's module, and
 with, so the same samples are the same bytes from both clients. An empty
 `SoundFile` is a shape with no path, which `to_buffer` allocates as silence;
 the audio editor opens one and asks for a path when it is saved.
+
+## An application's dialogs are one mechanism, and a new file is the client's to open (2026-10-16)
+
+The score editor's dialogs -- forms on the pages of a stack the window holds
+from the start, opened by correcting the stack's index -- were its own module,
+and the audio editor needed the same thing for two forms: a new file's shape
+and a save-as path. Rather than a second copy, the mechanism moved to
+`clausters_apps::forms`, generic over what a form is (`forms::Spec`: its
+prefix, page, title and fields), and both editors describe their forms to it.
+
+The new-file form does not open the file itself. A window's holder decides
+what a window is (a client opens an editor, a standalone host its own), so its
+`OK` answers the shape as the outcome's `newFile` and the client opens
+`edit(SoundFile.empty(...))` beside the window. A file not written yet is a
+save target with no path: the window's save opens the save-as form, and a
+script's `save()` refuses without a path rather than guessing one.

@@ -18,6 +18,7 @@ import { AudioEditor, Editing, edit, measures } from "../src/gui/editing/index.t
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 import { Transport } from "../src/defs/server/transport.ts";
+import { SoundFile } from "../src/soundfile.ts";
 
 /**
  * The view a window edits: the node its `main` names, which stands under the
@@ -158,7 +159,9 @@ const settle = async (): Promise<void> => {
 
 async function opened(
     take: FakeBuffer,
-    options: { historyBytes?: number; residentBytes?: number; scratch?: string } = {},
+    options: {
+        historyBytes?: number; residentBytes?: number; scratch?: string; file?: SoundFile;
+    } = {},
 ): Promise<[AudioEditor, FakeHost, number, Editing]> {
     const context = new Editing();
     const editor = new AudioEditor(take as never, { sampleRate: SR, context, ...options });
@@ -593,4 +596,36 @@ test("preview switches keep samples and history and release the insert", async (
     assert.deepEqual(editor.parts,before);
     assert.equal(context.version,version);
     assert.equal(editor.envelope[1],0.25);
+});
+
+test("an empty sound file opens untitled and asks for a path", async () => {
+    const [editor, host] = await opened(new FakeBuffer(4800, 2), { file: SoundFile.empty(2, 4800, SR) });
+    assert.equal(editor.buffer.frames, 4800);
+    const file = editor.file!;
+    assert.deepEqual([file.path, file.frames, file.channels], [null, 4800, 2]);
+    await assert.rejects(editor.save(), /path/);
+    assert.equal(await editor.save({ path: "/takes/new.wav" }), "/takes/new.wav");
+    assert.equal(editor.file!.path, "/takes/new.wav");
+    assert.equal(editor.file!.sampleFormat, "float");
+    // the window numbers the dialogs and holds their stack
+    assert.ok(JSON.stringify(host.trees[0]).includes("Save as"));
+});
+
+test("a new file asked for in the window opens an editor of its own", async () => {
+    const [editor] = await opened(new FakeBuffer(), { file: SoundFile.empty(1, 100, SR) });
+    const asked: unknown[] = [];
+    (editor as unknown as { newFile: (shape: unknown) => Promise<void> }).newFile = (shape) => {
+        asked.push(shape);
+        return Promise.resolve();
+    };
+    (editor as unknown as { take: (outcome: unknown) => boolean }).take({
+        turn: "route", newFile: { channels: 3, frames: 10, rate: SR },
+    });
+    await settle();
+    assert.deepEqual(asked, [{ channels: 3, frames: 10, rate: SR }]);
+});
+
+test("a take opened over a buffer is no file", async () => {
+    const [editor] = await opened(new FakeBuffer());
+    assert.equal(editor.file, null);
 });

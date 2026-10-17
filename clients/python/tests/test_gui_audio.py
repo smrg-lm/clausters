@@ -539,3 +539,32 @@ def test_preview_switches_keep_samples_and_history_and_release_the_insert():
     assert take.server.addrs().count("/buffer_free") == 2
     assert editor.parts == before and context.version == version
     assert editor.envelope[1] == 0.25
+
+
+def test_an_empty_sound_file_opens_untitled_and_asks_for_a_path():
+    from clausters import SoundFile
+    editor, host, _wid, _context = opened(FakeBuffer(4800, 2), file=SoundFile.empty(2, 4800, SR))
+    assert editor.buffer.frames == 4800
+    file = editor.file
+    assert (file.path, file.frames, file.channels) == (None, 4800, 2)
+    with pytest.raises(ValueError, match="path"):
+        editor.save()
+    assert editor.save("/takes/new.wav") == "/takes/new.wav"
+    assert editor.file.path == "/takes/new.wav"
+    assert editor.file.sample_format == "float"
+    # the window numbers the dialogs and holds their stack
+    assert "Save as" in str(host.trees[0])
+
+
+def test_a_new_file_asked_for_in_the_window_opens_an_editor_of_its_own():
+    from clausters import SoundFile
+    editor, _host, _wid, _context = opened(FakeBuffer(), file=SoundFile.empty(1, 100, SR))
+    asked = []
+    editor._new_file = lambda shape: asked.append(shape)
+    editor._take({"turn": "route", "newFile": {"channels": 3, "frames": 10, "rate": SR}})
+    assert asked == [{"channels": 3, "frames": 10, "rate": SR}]
+
+
+def test_a_take_opened_over_a_buffer_is_no_file():
+    editor, _host, _wid, _context = opened(FakeBuffer())
+    assert editor.file is None

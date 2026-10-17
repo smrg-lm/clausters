@@ -590,3 +590,142 @@ fn the_window_carries_the_meter_and_plays_its_own_take() {
     assert_eq!(meter["scale"], "db", "an amplitude, read in decibels");
     assert_eq!(meter["channels"], 2);
 }
+
+/// The audio editor opened with its dialogs numbered from 400, in the order
+/// the crate names them.
+fn with_dialogs(facts: Value) -> (AudioEditor, BTreeMap<String, i64>) {
+    let mut editor = opened(2);
+    call(&mut editor, facts);
+    let names = call(&mut editor, json!({"verb": "dialogs"}))["dialogs"].clone();
+    let ids: BTreeMap<String, i64> = names
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str().unwrap().to_string(), 400 + i as i64))
+        .collect();
+    let window = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "dialogs": ids}),
+    );
+    assert!(
+        window.to_string().contains("\"Save as\""),
+        "the window holds the dialogs' stack"
+    );
+    (editor, ids)
+}
+
+/// **A file not written yet asks where it goes**: Ctrl+S opens the save-as
+/// form rather than writing, and its `OK` writes the join there -- the path
+/// the file is from then on.
+#[test]
+fn an_untitled_file_is_saved_through_the_save_as_form() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync", "untitled": true}));
+    assert_eq!(
+        call(&mut editor, json!({"verb": "file"}))["path"],
+        Value::Null
+    );
+    let asked = event(&mut editor, json!([900, 1, 0, "save"]));
+    assert!(asked.get("steps").is_none(), "nothing is written yet");
+    let corrections = asked["answer"]["corrections"].to_string();
+    assert!(
+        corrections.contains("\"index\":2"),
+        "the save-as page: {corrections}"
+    );
+
+    event(
+        &mut editor,
+        json!([ids["file:path"], 2, 0, "/takes/new.wav"]),
+    );
+    let saved = event(&mut editor, json!([ids["file:ok"], 3, 0, "click"]));
+    assert_eq!(
+        args(&saved["steps"], "/buffer_write")[1],
+        json!({"s": "/takes/new.wav"})
+    );
+    assert!(
+        saved["answer"]["corrections"]
+            .to_string()
+            .contains("\"index\":0")
+    );
+    let file = call(&mut editor, json!({"verb": "file"}));
+    assert_eq!(file["path"], "/takes/new.wav");
+    assert_eq!(file["untitled"], false);
+    // and the next Ctrl+S writes there with no form
+    let again = event(&mut editor, json!([900, 4, 0, "save"]));
+    assert_eq!(
+        walk(&again["steps"]),
+        ["/buffer_write", "await /buffer_write"]
+    );
+}
+
+/// A save-as with no path stays up and says why; Cancel takes it down.
+#[test]
+fn a_save_as_with_no_path_is_refused_and_cancel_closes_it() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync", "path": "/takes/a.wav"}));
+    let shown = event(&mut editor, json!([900, 1, 0, "save_as"]));
+    assert!(
+        shown["answer"]["corrections"]
+            .to_string()
+            .contains("/takes/a.wav")
+    );
+    event(&mut editor, json!([ids["file:path"], 2, 0, "  "]));
+    let refused = event(&mut editor, json!([ids["file:ok"], 3, 0, "click"]));
+    assert!(
+        refused["answer"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("path")
+    );
+    let cancelled = event(&mut editor, json!([ids["file:cancel"], 4, 0, "click"]));
+    assert!(
+        cancelled["answer"]["corrections"]
+            .to_string()
+            .contains("\"index\":0")
+    );
+    assert_eq!(
+        call(&mut editor, json!({"verb": "file"}))["path"],
+        "/takes/a.wav"
+    );
+}
+
+/// **A new file is the client's to open**: the form opens on the window's
+/// shape, and its `OK` names the shape asked for in the outcome.
+#[test]
+fn the_new_file_form_names_a_shape_for_the_client() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    let shown = event(&mut editor, json!([900, 1, 0, "new_file"]));
+    let text = shown["answer"]["corrections"].to_string();
+    assert!(
+        text.contains("\"value\":\"2\"") && text.contains("44100"),
+        "{text}"
+    );
+    event(&mut editor, json!([ids["new:channels"], 2, 0, "4"]));
+    event(&mut editor, json!([ids["new:seconds"], 3, 0, "1.5"]));
+    let made = event(&mut editor, json!([ids["new:ok"], 4, 0, "click"]));
+    assert_eq!(
+        made["newFile"],
+        json!({"channels": 4, "frames": 66150, "rate": 44100.0})
+    );
+    event(&mut editor, json!([900, 5, 0, "new_file"]));
+    event(&mut editor, json!([ids["new:seconds"], 6, 0, "long"]));
+    let refused = event(&mut editor, json!([ids["new:ok"], 7, 0, "click"]));
+    assert!(refused.get("newFile").is_none());
+    assert!(refused["answer"]["reason"].is_string());
+}
+
+/// A window composed without the dialogs saves an untitled file nowhere and
+/// says so, and opens no form.
+#[test]
+fn without_dialogs_an_untitled_save_is_refused() {
+    let mut editor = opened(1);
+    call(&mut editor, json!({"verb": "sync", "untitled": true}));
+    let out = event(&mut editor, json!([900, 1, 0, "save"]));
+    assert!(out["answer"]["reason"].as_str().unwrap().contains("path"));
+    let form = event(&mut editor, json!([900, 2, 0, "new_file"]));
+    assert!(
+        form["answer"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("dialogs")
+    );
+}

@@ -28,13 +28,13 @@ use serde_json::{Value, json};
 use clausters_core::notation::{FIELDS, Header, PageSetup};
 
 /// The caller's widget id for each widget of the dialogs it numbered.
-pub type Ids = BTreeMap<String, i32>;
+pub type Ids = crate::forms::Ids;
 
 /// The field of the text form holding the footnotes, one to a line.
 pub const NOTES: &str = "notes";
 
 /// The stack the dialogs are pages of.
-pub const STACK: &str = "stack";
+pub const STACK: &str = crate::forms::STACK;
 
 /// **One of the forms.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -331,219 +331,76 @@ const FORMS: [Form; 5] = [
 /// What the close form asks.
 pub const UNSAVED: &str = "The score has changes that are not saved.";
 
-/// **Every widget of the dialogs, by name**, for a caller to number: the
-/// stack; and for each form its dialog (`text`), its fields (`text:title`),
-/// the labels a form corrects (`param:label`) and its two buttons
-/// (`text:ok`, `text:cancel`) -- three for the close form, whose third
-/// closes without saving (`close:discard`).
-#[must_use]
-pub fn names() -> Vec<String> {
-    let mut out = vec![STACK.to_string()];
-    for form in FORMS {
-        let prefix = form.prefix();
-        out.push(prefix.to_string());
-        out.extend(
-            form.fields()
-                .iter()
-                .map(|(name, _)| format!("{prefix}:{name}")),
-        );
-        if matches!(form, Form::Param(_)) {
-            out.push(format!("{prefix}:label"));
-        }
-        out.push(format!("{prefix}:ok"));
-        out.push(format!("{prefix}:cancel"));
-        if form == Form::Close {
-            out.push(format!("{prefix}:discard"));
+/// How high the footnotes' field is: four lines of them.
+const NOTES_H: f64 = 76.0;
+
+impl crate::forms::Spec for Form {
+    fn prefix(self) -> &'static str {
+        Form::prefix(self)
+    }
+
+    fn page(self) -> i32 {
+        Form::page(self)
+    }
+
+    fn title(self) -> &'static str {
+        Form::title(self)
+    }
+
+    fn fields(self) -> Vec<(&'static str, &'static str)> {
+        Form::fields(self)
+    }
+
+    fn label(self) -> Option<&'static str> {
+        match self {
+            Form::Param(param) => Some(param.label()),
+            _ => None,
         }
     }
-    out
+
+    fn closes(self) -> Option<&'static str> {
+        (self == Form::Close).then_some(UNSAVED)
+    }
+
+    fn field(self, name: &str, widget: &mut serde_json::Map<String, Value>) {
+        if name == NOTES {
+            widget.insert("multiline".into(), json!(true));
+            widget.insert("h".into(), json!(NOTES_H));
+        }
+    }
+}
+
+/// **Every widget of the dialogs, by name**, for a caller to number
+/// ([`crate::forms::names`]).
+#[must_use]
+pub fn names() -> Vec<String> {
+    crate::forms::names(&FORMS)
 }
 
 /// Whether `ids` numbers every widget of the dialogs: a window has all of
 /// them or none.
 #[must_use]
 pub fn numbered(ids: &Ids) -> bool {
-    names().iter().all(|name| ids.contains_key(name))
-}
-
-/// How wide a row's caption is: the longest of them, "Bottom margin (mm)",
-/// at the size text is drawn, in either face.
-const CAPTION_W: f64 = 170.0;
-
-/// How wide a field is: a title, a path, a line of a footnote.
-const FIELD_W: f64 = 340.0;
-
-/// How high the footnotes' field is: four lines of them.
-const NOTES_H: f64 = 76.0;
-
-/// One form as a dialog: a row per field, and `Cancel` and `OK` under them --
-/// or, closing, the close form every application asks in
-/// ([`crate::closing::dialog`]).
-fn dialog(form: Form, ids: &Ids) -> Value {
-    let prefix = form.prefix();
-    let id = |name: &str| ids.get(&format!("{prefix}:{name}")).copied();
-    // the close form is every application's, built where the rule is
-    if form == Form::Close {
-        return crate::closing::dialog(ids.get(prefix).copied(), UNSAVED, id);
-    }
-    let rows: Vec<Value> = form
-        .fields()
-        .iter()
-        .map(|(name, label)| {
-            let mut caption = json!({"type": "label", "text": label, "w": CAPTION_W});
-            // the parameter's caption is the question the transformation asks
-            if let (Form::Param(_), Some(map)) = (form, caption.as_object_mut()) {
-                map.insert("id".into(), json!(id("label")));
-            }
-            let mut field = json!({"type": "text", "id": id(name), "value": "", "w": FIELD_W});
-            if let (true, Some(map)) = (*name == NOTES, field.as_object_mut()) {
-                map.insert("multiline".into(), json!(true));
-                map.insert("h".into(), json!(NOTES_H));
-            }
-            // a row is its caption and its field and no air of its own: the
-            // dialog's gap is what separates one row from the next
-            json!({
-                "type": "layout",
-                "flow": "row",
-                "hug": true,
-                "margin": 0,
-                "children": [caption, field],
-            })
-        })
-        .collect();
-    let spring = json!({"type": "separator", "weight": 1, "line": false});
-    let cancel = json!({"type": "button", "id": id("cancel"), "label": "Cancel"});
-    let children = json!([spring, cancel, {"type": "button", "id": id("ok"), "label": "OK"}]);
-    let buttons = json!({
-        "type": "layout",
-        "flow": "row",
-        "hug": true,
-        "pack": true,
-        "margin": 0,
-        "children": children,
-    });
-    json!({
-        "type": "layout",
-        "id": ids.get(prefix),
-        "modal": true,
-        "frame": true,
-        "hug": true,
-        "title": form.title(),
-        "flow": "col",
-        "children": rows.into_iter().chain([buttons]).collect::<Vec<_>>(),
-    })
+    crate::forms::numbered(&FORMS, ids)
 }
 
 /// **The dialogs, as the stack the window holds** -- or `None` when the
-/// caller did not number them. It takes no room in the window's flow: page 0
-/// is empty, and each form's dialog is alone on a page of its own.
+/// caller did not number them ([`crate::forms::stack`]).
 #[must_use]
 pub fn stack(ids: &Ids) -> Option<Value> {
-    if !numbered(ids) {
-        return None;
-    }
-    let pages: Vec<Value> = std::iter::once(json!({"type": "layout"}))
-        .chain(
-            FORMS
-                .iter()
-                .map(|form| json!({"type": "layout", "children": [dialog(*form, ids)]})),
-        )
-        .collect();
-    Some(json!({
-        "type": "layout",
-        "id": ids.get(STACK),
-        "flow": "stack",
-        "index": 0,
-        "margin": 0,
-        "h": 0,
-        "children": pages,
-    }))
+    crate::forms::stack(&FORMS, ids)
 }
 
-/// **What a widget of the dialogs said.**
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Said {
-    /// A field now holds this text.
-    Field(String, String),
-    /// `OK`.
-    Accept,
-    /// `Cancel`, Escape, or the dialog's close mark.
-    Cancel,
-    /// The close form's `Don't save`.
-    Discard,
-}
+pub use crate::forms::{Said, hidden};
 
-/// **What the widget `name` reporting `tag` said** -- or `None` for a name
-/// that is no widget of `form`, and for a report that says nothing (a
-/// button's value, which rises and falls with the hand).
+/// **What the widget `name` reporting `tag` said** ([`crate::forms::read`]).
 #[must_use]
 pub fn read(form: Form, name: &str, tag: &str) -> Option<Said> {
-    let prefix = form.prefix();
-    if name == prefix {
-        return (tag == "cancel").then_some(Said::Cancel);
-    }
-    let part = name.strip_prefix(prefix)?.strip_prefix(':')?;
-    match part {
-        "ok" => (tag == "click").then_some(Said::Accept),
-        "cancel" => (tag == "click").then_some(Said::Cancel),
-        "discard" if form == Form::Close => (tag == "click").then_some(Said::Discard),
-        field if form.fields().iter().any(|(name, _)| *name == field) => {
-            Some(Said::Field(field.to_string(), tag.to_string()))
-        }
-        _ => None,
-    }
+    crate::forms::read(form, name, tag)
 }
 
 /// **A form that is up**: which, and what its fields hold as they are typed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Open {
-    pub form: Form,
-    pub values: BTreeMap<String, String>,
-}
-
-impl Open {
-    /// What the field `name` holds.
-    #[must_use]
-    pub fn value(&self, name: &str) -> &str {
-        self.values.get(name).map_or("", String::as_str)
-    }
-
-    /// **What the window is corrected with to show it**: every field's text,
-    /// the parameter's caption, and the stack turned to its page.
-    #[must_use]
-    pub fn shown(&self, ids: &Ids) -> Vec<(i32, Value)> {
-        let prefix = self.form.prefix();
-        let mut out: Vec<(i32, Value)> = self
-            .form
-            .fields()
-            .iter()
-            .filter_map(|(name, _)| {
-                let id = *ids.get(&format!("{prefix}:{name}"))?;
-                Some((id, json!({"value": self.value(name)})))
-            })
-            .collect();
-        if let (Form::Param(param), Some(id)) = (self.form, ids.get("param:label")) {
-            out.push((*id, json!({"text": param.label()})));
-        }
-        // a dialog that serves several questions says which it is asking
-        if let Some(id) = ids.get(prefix) {
-            out.push((*id, json!({"title": self.form.title()})));
-        }
-        if let Some(stack) = ids.get(STACK) {
-            out.push((*stack, json!({"index": self.form.page()})));
-        }
-        out
-    }
-}
-
-/// What the stack is corrected with to take a dialog down.
-#[must_use]
-pub fn hidden(ids: &Ids) -> Vec<(i32, Value)> {
-    ids.get(STACK)
-        .map(|stack| (*stack, json!({"index": 0})))
-        .into_iter()
-        .collect()
-}
+pub type Open = crate::forms::Open<Form>;
 
 /// **The text form, holding `header`**: each field its text, and the
 /// footnotes one to a line.

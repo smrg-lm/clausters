@@ -66,8 +66,10 @@ history. Every one of these is also in the <b>menu bar</b> -- File, Edit,
 View, Transport, Help, each entry with its key -- and the transport and the
 clipboard are <b>tools</b> under it, which act on the take as the keys do.
 <code>editor.save()</code> -- or Ctrl+S in the window -- writes the
-edit back into the buffer it was opened from, and
-<code>editor.save({ path })</code> writes it as a file instead.</div>
+edit back into the file it was opened from, and
+<code>editor.save({ path })</code> writes it as another file instead. File
+-&gt; New file... opens a file not written yet in a window of its own, as the
+<b>new file</b> button does; its first save asks where it goes.</div>
 
       <button id="run">open the take</button>
       <div id="stage"></div>
@@ -83,14 +85,16 @@ edit back into the buffer it was opened from, and
         <button id="apply-envelope" disabled>apply envelope</button>
         <button id="play" disabled>play the take</button>
         <button id="parts" disabled>what it is made of</button>
+        <button id="new-file" disabled>new file</button>
       </div>
       <pre id="log"></pre>
     </main>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_audio.py, call
-      for call: the same generated take, the same `edit`, the same
-      `play` of the join it draws, and the same list of parts read back.
+      for call: the same generated take written as the same file, the same
+      `edit`, the same `play` of the join it draws, and the same list of parts
+      read back. The file is in the page's own storage (`opfs`).
 
       The platform's differences are the usual two: the host is the wasm one in
       this tab and draws into an element, and nothing is pumped.
@@ -99,8 +103,7 @@ edit back into the buffer it was opened from, and
       /examples/editors/edit-audio.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, play } from "../../dist/index.js";
-      import { Buffer } from "../../dist/defs/index.js";
+      import { Session, SoundFile, gui, play } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -113,23 +116,26 @@ edit back into the buffer it was opened from, and
         const server = session.server;
         const rate = (await server.queryInfo()).nominalSampleRate;
 
-        // A take, made here: two seconds of a decaying tone. A shape worth
-        // recognizing, so an edit over it is visibly an edit over *this*.
+        // A take, made here: two seconds of a decaying tone, written to a file.
+        // A shape worth recognizing, so an edit over it is visibly an edit
+        // over *this*.
         const frames = Math.trunc(SECONDS * rate);
         const samples = new Float32Array(frames);
         for (let i = 0; i < frames; i += 1) {
           samples[i] = Math.exp(-3.0 * i / frames) * 0.7 *
             Math.sin(2 * Math.PI * 440.0 * i / rate);
         }
-        const take = await Buffer.fromSamples(samples, 1, rate, { server });
+        const take = await SoundFile.write("out/edit_audio.wav", samples, 1, rate, {
+          sampleFormat: "float",
+        });
 
         await session.gui();
-        // One verb. A `Buffer` opens in the audio editor: a pane holding
-        // the join it owns. The buffer is not written while you edit -- every
+        // One verb. A `SoundFile` opens in the audio editor: a pane holding
+        // the join it owns. The file is not written while you edit -- every
         // edit is a new list of parts over a copy of it and over the takes the
         // edits made -- until you save.
         const editor = await gui.edit(take, {
-          title: "take", historyBytes: 64 * 1024 * 1024, stage: $("stage"),
+          title: "take", historyBytes: 64 * 1024 * 1024, server, stage: $("stage"),
         });
 
         // The same take through different layers. The mixed view keeps the
@@ -169,6 +175,13 @@ edit back into the buffer it was opened from, and
             log(`buffer ${part.source.source}: frames ${span.start}..${span.end}`);
           }
         };
+
+        // A file not written yet: `SoundFile.empty` is a shape with no path,
+        // silence that opens like any take. Its first save -- Ctrl+S, or
+        // File -> Save as... -- asks where it goes.
+        $("new-file").disabled = false;
+        $("new-file").onclick = () =>
+          gui.edit(SoundFile.empty(2, frames, rate), { title: "new", server, stage: $("stage") });
 
         log("drag to select, Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V, Alt+drag to draw");
         editor.wait().then(() => log("the window is closed"));

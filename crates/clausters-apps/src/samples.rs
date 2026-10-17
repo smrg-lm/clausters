@@ -82,6 +82,9 @@ pub struct Window<'a> {
     /// **A window with no chrome**: no menu bar and no tools, for a client
     /// that composes its own around it.
     pub bare: bool,
+    /// The dialogs a menu entry opens, as the stack the window holds, when
+    /// the caller numbered them.
+    pub dialogs: Option<Value>,
 }
 
 /// **Where the level meter is read from**, and the id it is drawn under: the
@@ -183,6 +186,12 @@ pub fn window(w: &Window<'_>) -> Value {
             w.widget,
         );
     }
+    if let (Some(stack), Some(children)) = (
+        w.dialogs.clone(),
+        window.get_mut("children").and_then(Value::as_array_mut),
+    ) {
+        children.push(stack);
+    }
     window
 }
 
@@ -234,6 +243,7 @@ mod tests {
             meter: None,
             size: (1000, 520),
             bare: true,
+            dialogs: None,
         })
     }
 

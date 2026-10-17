@@ -47,6 +47,7 @@ from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
 from .audio import AudioEditor, is_take
+from ...soundfile import SoundFile
 from .score import ScoreEditor, is_score
 
 
@@ -55,8 +56,9 @@ def edit(structure, *, sample_rate: float = 0.0,
     """Open ``structure`` in an editor of its own kind.
 
     Args:
-        structure: what to edit -- a `clausters.defs.Buffer` (in the audio
-            editor, which edits a copy and writes it back on `save`), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
+        structure: what to edit -- a `clausters.defs.Buffer` or a
+            `clausters.SoundFile` (in the audio editor, which edits a copy and
+            writes it back on `save`; a file not written yet asks for a path), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
             `clausters.multitrack.Automation`), a `clausters.seq.EventSequence`
             (its notes, in place), a `clausters.seq.Timeline` (rendered into a
             sequence first -- ``until=`` bounds one that does not end -- which
@@ -100,7 +102,8 @@ def edit(structure, *, sample_rate: float = 0.0,
             the transcription's keys, which say how the sequence is read
             where its events do not (``meter``, ``key``, ``clef``,
             ``beat_unit``, ``division``, ``tuplets``, ``voices``,
-            ``dynamics``), and ``interp``. A node takes ``title`` only.
+            ``dynamics``), and ``interp``. A node takes ``title`` only. A
+            `clausters.SoundFile` takes ``server``, the one it is loaded on.
 
     Returns:
         The editor, **open** -- the one already open over ``structure``, when
@@ -126,7 +129,12 @@ def edit(structure, *, sample_rate: float = 0.0,
         opened = _already_open(structure, host, options)
         if opened is not None:
             return opened
-    if is_take(structure):
+    if isinstance(structure, SoundFile):
+        # A file is loaded into a buffer of the editor's own, which is the
+        # take it edits; the file is what a save writes.
+        take = structure.to_buffer(server=options.pop("server", None))
+        editor = AudioEditor(take, sample_rate=sample_rate, file=structure, **options)
+    elif is_take(structure):
         editor = AudioEditor(structure, sample_rate=sample_rate, **options)
     elif is_curve(structure):
         editor = PointsEditor(structure, sample_rate=sample_rate or _ambient_rate(),
