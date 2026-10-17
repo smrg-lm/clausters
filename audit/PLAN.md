@@ -42,6 +42,7 @@ The resources are ready when the validator and harness contract tests pass, prer
 
 ## Found by use
 
+- ⬜ Characterize the occasional DSP-block spikes at 150 ten-sine load synths in campaign `2026-10-17_e9f513e9_03`: 7 late 64-frame blocks and 1 stream xrun across three one-minute captures, with no complete 128-frame callback overrun. The existing counters do not isolate their cause; the selected 60-node comparison load is not a capacity limit.
 - ✅ The paired-summary reader expected dense histogram arrays, while the real timing producer emits sparse `[index, count]` pairs. Decode the producer's format, retain the fixed overflow bucket and exercise the Python reader against JSON emitted by the compiled Rust template.
 - ✅ The integrated device trial read the global synth count immediately after `/server_sync`, which waits for async jobs, not the RT command drain. Poll the RT tree for the trial's owned node ids with a deadline; do not require unrelated host nodes to disappear.
 - ✅ PipeWire can put the process id on the client object and only `client.id` on its audio node, leaving readable xrun counters classified as unsupported. Resolve both direct node ownership and ownership through the client before selecting stream/sink counters.
@@ -70,7 +71,7 @@ From the first campaign's method notes:
 
 ## Future directions
 
-- ⬜ Evaluate optional CI integration after actual campaign evidence establishes stable noise and duration.
+- ⬜ Evaluate optional application-campaign execution in CI after actual campaign evidence establishes stable noise and duration. Resource validation and harness contract tests already run in CI; campaign execution remains an optional implementation decision, and headless CI cannot supply physical audio/display acceptance.
 - ✅ Automate optional Linux DRM GPU-engine counters, scoped PipeWire xruns, renderer identity and post-interval host readbacks. Preserve raw captures and explicit unsupported presentation/per-frame GPU coverage; physical acceptance remains a separate campaign task.
-- ⬜ Validate the integrated device runner with paired audio-only, GUI-only and combined trials, including uninstrumented controls, retained renderer/counter captures and manual visual/audio review.
-- ⬜ Establish a reviewed device baseline from compatible sealed records and repeated same-code noise measurements; retain the measured tolerance, scope and archive identities.
+- ⬜ Validate the integrated device runner with paired audio-only, GUI-only and combined trials, including uninstrumented controls, retained renderer/counter captures and manual visual/audio review. Automatic collection passed in `2026-10-17_e9f513e9_03`. Supplementary records `2026-10-17_e9f513e9_04_manual-review` and `2026-10-17_e9f513e9_05_manual-controls` retain operator-confirmed listening and visible GUI review across all six condition types, with no late DSP blocks or scoped PipeWire xruns. Those later observations do not attest the original intervals: finish a complete three-repetition integrated campaign with its required contemporaneous manual evidence, then seal and archive it as accepted. Collection and review attachment tooling already exist; the remaining acceptance work is campaign execution.
+- ⬜ Establish a reviewed device baseline from at least two compatible sealed, accepted records of the same code and instrumentation, each with at least three measured repetitions per metric. Review the measured noise and tolerance, and retain scope and verified archive identities. Descriptor generation and record comparison are implemented in `scripts/baseline.py` and `scripts/audit.py`; collecting and accepting the records and reviewing the generated tolerance remain pending. The supplementary manual records do not establish a baseline.
