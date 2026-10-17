@@ -63,6 +63,7 @@ The verdict is one of three:
 | `window` | `select_all` | `Editor.select_all` | `Editor.selectAll` | **api** |
 | `window` | `keys` | — | — | **n/a** — the window's key sheet, a page of the window itself rather than an act on what it holds; `verb("keys")` shows it |
 | `audio` | `new_file` | `SoundFile.empty` | `SoundFile.empty` | **api** — the form's shape, opened with `edit(SoundFile.empty(...))` in a window of its own |
+| `audio` | `open_file` | `SoundFile.open` | `SoundFile.open` | **api** — opened with `edit(SoundFile.open(path))` in a window of its own |
 | `audio` | `save_as` | `AudioEditor.save` | `AudioEditor.save` | **api** — `save(path)` |
 | `audio` | `show_all_channels` | `AudioEditor.show_all_channels` | `AudioEditor.showAllChannels` | **api** — beside `fold_channel` and `solo_channel`, which the menu reaches per channel |
 | `audio` | `view_wave` | `AudioEditor.view_wave` | `AudioEditor.viewWave` | **api** |

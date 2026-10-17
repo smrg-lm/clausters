@@ -45,7 +45,8 @@ prints what it is made of. ``editor.save()`` -- or Ctrl+S in the window --
 writes the edit back into the file it was opened from, and
 ``editor.save(path)`` writes it as another file instead. File -> New file...
 opens a file not written yet in a window of its own, as ``new_file()`` does;
-its first save asks where it goes.
+its first save asks where it goes. File -> Open file... opens a file by its
+path, in a window of its own too.
 
 Run it as a script, or step through the cells::
 

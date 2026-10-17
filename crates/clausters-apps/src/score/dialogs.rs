@@ -395,8 +395,8 @@ pub use crate::forms::{Said, hidden};
 
 /// **What the widget `name` reporting `tag` said** ([`crate::forms::read`]).
 #[must_use]
-pub fn read(form: Form, name: &str, tag: &str) -> Option<Said> {
-    crate::forms::read(form, name, tag)
+pub fn read(form: Form, name: &str, tag: &str, values: &[Value]) -> Option<Said> {
+    crate::forms::read(form, name, tag, values)
 }
 
 /// **A form that is up**: which, and what its fields hold as they are typed.
@@ -586,23 +586,27 @@ mod tests {
     fn a_report_is_read_as_what_the_form_was_told() {
         let form = Form::Text;
         assert_eq!(
-            read(form, "text:title", "A title"),
+            read(form, "text:title", "A title", &[]),
             Some(Said::Field("title".into(), "A title".into()))
         );
         // a field holding the word a button says is still a field
         assert_eq!(
-            read(form, "text:title", "click"),
+            read(form, "text:title", "click", &[]),
             Some(Said::Field("title".into(), "click".into()))
         );
-        assert_eq!(read(form, "text:ok", "click"), Some(Said::Accept));
+        assert_eq!(read(form, "text:ok", "click", &[]), Some(Said::Accept));
         assert_eq!(
-            read(form, "text:ok", "1"),
+            read(form, "text:ok", "1", &[]),
             None,
             "a button's value is no command"
         );
-        assert_eq!(read(form, "text:cancel", "click"), Some(Said::Cancel));
-        assert_eq!(read(form, "text", "cancel"), Some(Said::Cancel));
-        assert_eq!(read(form, "page:top", "12"), None, "another form's field");
+        assert_eq!(read(form, "text:cancel", "click", &[]), Some(Said::Cancel));
+        assert_eq!(read(form, "text", "cancel", &[]), Some(Said::Cancel));
+        assert_eq!(
+            read(form, "page:top", "12", &[]),
+            None,
+            "another form's field"
+        );
     }
 
     #[test]

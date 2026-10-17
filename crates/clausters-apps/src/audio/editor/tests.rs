@@ -772,3 +772,52 @@ fn channels_fold_solo_and_unfold_through_one_state() {
             .contains("channel 9")
     );
 }
+
+/// **A field's focus is not its text**: the host reports `"focus" 1` when a
+/// field takes the keyboard, and the form keeps what was typed. A field that
+/// holds the word `focus` is still a field.
+#[test]
+fn a_fields_focus_report_is_not_what_it_holds() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    event(&mut editor, json!([900, 1, 0, "new_file"]));
+    event(&mut editor, json!([ids["new:channels"], 2, 0, "focus", 1]));
+    event(&mut editor, json!([ids["new:channels"], 3, 0, "3"]));
+    event(&mut editor, json!([ids["new:channels"], 4, 0, "focus", 0]));
+    let made = event(&mut editor, json!([ids["new:ok"], 5, 0, "click"]));
+    assert_eq!(made["newFile"]["channels"], 3);
+    event(&mut editor, json!([900, 6, 0, "save_as"]));
+    event(&mut editor, json!([ids["file:path"], 7, 0, "focus"]));
+    let saved = event(&mut editor, json!([ids["file:ok"], 8, 0, "click"]));
+    assert_eq!(
+        args(&saved["steps"], "/buffer_write")[1],
+        json!({"s": "focus"}),
+        "a path typed as the word is the word"
+    );
+}
+
+/// **A file to open is the client's to open**, as a new one is: the form's
+/// `OK` names the path in the outcome.
+#[test]
+fn the_open_file_form_names_a_path_for_the_client() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    let shown = event(&mut editor, json!([900, 1, 0, "open_file"]));
+    assert!(
+        shown["answer"]["corrections"]
+            .to_string()
+            .contains("\"index\":3")
+    );
+    let refused = event(&mut editor, json!([ids["open:ok"], 2, 0, "click"]));
+    assert!(
+        refused["answer"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("path")
+    );
+    event(
+        &mut editor,
+        json!([ids["open:path"], 3, 0, "/takes/b.flac"]),
+    );
+    let opened = event(&mut editor, json!([ids["open:ok"], 4, 0, "click"]));
+    assert_eq!(opened["openFile"], json!({"path": "/takes/b.flac"}));
+    assert!(opened.get("steps").is_none(), "nothing is written");
+}

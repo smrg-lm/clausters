@@ -190,11 +190,17 @@ pub enum Said {
     Discard,
 }
 
-/// **What the widget `name` reporting `tag` said** -- or `None` for a name
-/// that is no widget of `form`, and for a report that says nothing (a
-/// button's value, which rises and falls with the hand).
+/// **What the widget `name` reporting `tag` said**, with the `values` after
+/// the tag -- or `None` for a name that is no widget of `form`, and for a
+/// report that says nothing: a button's value, which rises and falls with the
+/// hand, and a field's **focus**, which reports `"focus" 1|0` where its text
+/// reports the text alone. The trailing number is what tells the two apart, so
+/// a field holding the word `focus` is still a field.
 #[must_use]
-pub fn read<F: Spec>(form: F, name: &str, tag: &str) -> Option<Said> {
+pub fn read<F: Spec>(form: F, name: &str, tag: &str, values: &[Value]) -> Option<Said> {
+    if tag == "focus" && values.first().is_some_and(Value::is_number) {
+        return None;
+    }
     let prefix = form.prefix();
     if name == prefix {
         return (tag == "cancel").then_some(Said::Cancel);

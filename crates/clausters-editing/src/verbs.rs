@@ -84,6 +84,7 @@ pub const AUDIO_SCOPE: &str = "audio";
 /// Audio view presets; menu commands share the application's JSON verbs.
 pub const AUDIO: &[Verb] = &[
     verb("new_file", &[], "New file..."),
+    verb("open_file", &["Ctrl+O"], "Open file..."),
     verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
     verb("show_all_channels", &[], "Show all channels"),
     verb("view_wave", &["W"], "Waveform"),

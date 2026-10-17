@@ -582,3 +582,11 @@ def test_channels_fold_through_the_crate_and_correct_the_take():
     assert editor.folded == []
     with pytest.raises(ValueError, match="channel 7"):
         editor.fold_channel(7)
+
+
+def test_a_file_asked_for_in_the_window_opens_an_editor_of_its_own():
+    editor, _host, _wid, _context = opened(FakeBuffer())
+    asked = []
+    editor._open_file = lambda path: asked.append(path)
+    editor._take({"turn": "route", "openFile": {"path": "/takes/b.wav"}})
+    assert asked == ["/takes/b.wav"]

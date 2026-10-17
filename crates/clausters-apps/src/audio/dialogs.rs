@@ -1,5 +1,5 @@
-//! **The audio editor's dialogs**: a new file's shape, and the path a file
-//! is saved under -- two forms of the shared mechanism ([`crate::forms`]).
+//! **The audio editor's dialogs**: a new file's shape, the path a file is
+//! saved under and the file to open -- three forms of the shared mechanism ([`crate::forms`]).
 
 use std::collections::BTreeMap;
 
@@ -17,6 +17,8 @@ pub enum Form {
     New,
     /// The path the take is written to, from now on.
     SaveAs,
+    /// A file to open, in a window of its own.
+    Open,
 }
 
 impl Spec for Form {
@@ -24,6 +26,7 @@ impl Spec for Form {
         match self {
             Form::New => "new",
             Form::SaveAs => "file",
+            Form::Open => "open",
         }
     }
 
@@ -31,6 +34,7 @@ impl Spec for Form {
         match self {
             Form::New => 1,
             Form::SaveAs => 2,
+            Form::Open => 3,
         }
     }
 
@@ -38,6 +42,7 @@ impl Spec for Form {
         match self {
             Form::New => "New file",
             Form::SaveAs => "Save as",
+            Form::Open => "Open file",
         }
     }
 
@@ -48,13 +53,13 @@ impl Spec for Form {
                 ("seconds", "Length (seconds)"),
                 ("rate", "Sample rate (Hz)"),
             ],
-            Form::SaveAs => vec![("path", "File")],
+            Form::SaveAs | Form::Open => vec![("path", "File")],
         }
     }
 }
 
 /// The forms the window holds, in the order of their pages.
-const FORMS: [Form; 2] = [Form::New, Form::SaveAs];
+const FORMS: [Form; 3] = [Form::New, Form::SaveAs, Form::Open];
 
 /// **Every widget of the dialogs, by name**, for a caller to number.
 #[must_use]
@@ -158,9 +163,11 @@ mod tests {
         let ids = ids();
         let stack = stack(&ids).expect("numbered");
         let pages = stack["children"].as_array().unwrap();
-        assert_eq!(pages.len(), 3, "no dialog, a new file and a save");
+        assert_eq!(pages.len(), 4, "no dialog, a new file, a save and an open");
         assert_eq!(pages[1]["children"][0]["title"], "New file");
         assert_eq!(pages[2]["children"][0]["title"], "Save as");
+        assert_eq!(pages[3]["children"][0]["title"], "Open file");
+        assert_eq!(form_of("open:path"), Some(Form::Open));
         assert_eq!(form_of("new:rate"), Some(Form::New));
         assert_eq!(form_of("file:ok"), Some(Form::SaveAs));
         assert_eq!(form_of("stack"), None);

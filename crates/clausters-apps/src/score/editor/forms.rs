@@ -80,12 +80,13 @@ impl ScoreEditor {
         &mut self,
         name: &str,
         tag: &str,
+        values: &[serde_json::Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         let Some(open) = self.dialog.as_mut() else {
             return (None, Vec::new());
         };
-        match dialogs::read(open.form, name, tag) {
+        match dialogs::read(open.form, name, tag, values) {
             None => (None, Vec::new()),
             Some(Said::Field(field, text)) => {
                 open.values.insert(field, text);

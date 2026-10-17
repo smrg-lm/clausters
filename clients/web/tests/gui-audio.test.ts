@@ -643,3 +643,17 @@ test("channels fold through the crate and correct the take", async () => {
     assert.deepEqual(editor.folded, []);
     assert.throws(() => editor.foldChannel(7), /channel 7/);
 });
+
+test("a file asked for in the window opens an editor of its own", async () => {
+    const [editor] = await opened(new FakeBuffer());
+    const asked: string[] = [];
+    (editor as unknown as { openFile: (path: string) => Promise<void> }).openFile = (path) => {
+        asked.push(path);
+        return Promise.resolve();
+    };
+    (editor as unknown as { take: (outcome: unknown) => boolean }).take({
+        turn: "route", openFile: { path: "/takes/b.wav" },
+    });
+    await settle();
+    assert.deepEqual(asked, ["/takes/b.wav"]);
+});

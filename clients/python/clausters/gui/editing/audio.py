@@ -440,6 +440,13 @@ class AudioEditor(Marking, Editor):
         edit(SoundFile.empty(int(shape["channels"]), int(shape["frames"]), float(shape["rate"])),
              host=self._host, server=self._server)
 
+    def _open_file(self, path: str) -> None:
+        """**A file asked to be opened in the window**: the `clausters.SoundFile`
+        at ``path``, opened in an editor of its own on the same host."""
+        from ...soundfile import SoundFile
+        from .edit import edit
+        edit(SoundFile.open(path), host=self._host, server=self._server)
+
     def _closed(self) -> bool:
         """The window closed: the take stops being one the editor plays, and
         the last one closed frees the editor's nodes."""
@@ -601,6 +608,8 @@ class AudioEditor(Marking, Editor):
             self._written = "float"
         if outcome.get("newFile") is not None:
             self._new_file(outcome["newFile"])
+        if outcome.get("openFile") is not None:
+            self._open_file(str(outcome["openFile"]["path"]))
         if changed:
             self.dirty = True
             self._editing.changed()

@@ -118,7 +118,7 @@ fn sep() -> Value {
 pub fn menu(app: App, saves: bool) -> Value {
     let mut file = Vec::new();
     if app == App::Audio {
-        file.extend([entry(app, "new_file"), sep()]);
+        file.extend([entry(app, "new_file"), entry(app, "open_file"), sep()]);
     }
     if saves {
         file.push(entry(app, "save"));

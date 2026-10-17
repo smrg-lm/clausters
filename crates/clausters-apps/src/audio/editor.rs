@@ -104,6 +104,10 @@ pub struct Outcome {
     /// frames, rate}`, for the client to open -- a file is the client's to hold.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_file: Option<Value>,
+    /// **A file was asked to be opened** in the window (`openFile`):
+    /// `{path}`, for the client to open as it opens a new one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_file: Option<Value>,
 }
 
 turn::turned!(Outcome);
@@ -148,7 +152,7 @@ impl Converse for AudioEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         if let Some(name) = self.dialog_name(widget) {
-            return self.form_event(&name, tag, out);
+            return self.form_event(&name, tag, values, out);
         }
         self.gesture(widget, tag, values, out)
     }
@@ -200,11 +204,15 @@ impl Converse for AudioEditor {
         // **Ctrl+S over the window is a save**, the window's own verb: it names
         // no widget, changes nothing the history holds, and is answered with
         // the steps that write the file.
-        if matches!(message.tag.as_str(), "save" | "save_as" | "new_file") {
+        if matches!(
+            message.tag.as_str(),
+            "save" | "save_as" | "new_file" | "open_file"
+        ) {
             out.turn = Kind::Route;
             let (reason, corrections) = match message.tag.as_str() {
                 "save" => self.save_from_window(out),
                 "save_as" => self.open_form(dialogs::Form::SaveAs),
+                "open_file" => self.open_form(dialogs::Form::Open),
                 _ => self.open_form(dialogs::Form::New),
             };
             out.answer = Some(conversation::answer(

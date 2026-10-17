@@ -1,4 +1,4 @@
-//! The file the take is: the new-file and save-as dialogs, and a file not
+//! The file the take is: the new-file, open and save-as dialogs, and a file not
 //! written yet, which asks for its path the first time it is saved.
 
 use super::*;
@@ -62,6 +62,7 @@ impl AudioEditor {
                 };
                 [("path".to_string(), path)].into()
             }
+            Form::Open => [("path".to_string(), String::new())].into(),
         };
         let open = Open { form, values };
         let shown = open.shown(&self.dialogs);
@@ -95,12 +96,13 @@ impl AudioEditor {
         &mut self,
         name: &str,
         tag: &str,
+        values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         let Some(open) = self.dialog.as_mut() else {
             return (None, Vec::new());
         };
-        match forms::read(open.form, name, tag) {
+        match forms::read(open.form, name, tag, values) {
             None => (None, Vec::new()),
             Some(Said::Field(field, value)) => {
                 open.values.insert(field, value);
@@ -122,6 +124,15 @@ impl AudioEditor {
                         }
                         Err(why) => Some(why),
                     },
+                    Form::Open => {
+                        let path = open.value("path").trim().to_string();
+                        if path.is_empty() {
+                            Some("a file is opened by its path".into())
+                        } else {
+                            out.open_file = Some(json!({ "path": path }));
+                            None
+                        }
+                    }
                     Form::SaveAs => {
                         let path = open.value("path").trim().to_string();
                         if path.is_empty() {

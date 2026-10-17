@@ -79,6 +79,8 @@ interface Outcome {
     cue?: number;
     /** A new file asked for in the window: its shape, for this page to open. */
     newFile?: { channels: number; frames: number; rate: number };
+    /** A file asked to be opened in the window, for this page to open. */
+    openFile?: { path: string };
 }
 
 /** A press of the space bar, as the editor read it: frames of the take. */
@@ -544,6 +546,18 @@ export class AudioEditor extends Editor<Buffer> {
         });
     }
 
+    /**
+     * **A file asked to be opened in the window**: the {@link SoundFile} at
+     * `path`, opened in an editor of its own on the same host.
+     */
+    private async openFile(path: string): Promise<void> {
+        const { edit } = await import("./edit.ts");
+        await edit(await SoundFile.open(path), {
+            host: this.host ?? undefined,
+            server: this.server,
+        });
+    }
+
     private async sound(): Promise<void> {
         const frames = Number(this.coreCall("parts").frames ?? 0);
         await this.playback.call("sync", {
@@ -834,6 +848,10 @@ export class AudioEditor extends Editor<Buffer> {
         if (outcome.newFile !== undefined) {
             const shape = outcome.newFile;
             domain.after(() => this.newFile(shape));
+        }
+        if (outcome.openFile !== undefined) {
+            const path = String(outcome.openFile.path);
+            domain.after(() => this.openFile(path));
         }
         if (changed) {
             this.dirty = true;

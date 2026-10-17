@@ -1535,7 +1535,7 @@ impl ScoreEditor {
             return self.tool(&name, tag, out);
         }
         if let Some(name) = self.dialog_widget(widget).map(str::to_string) {
-            return self.form_said(&name, tag, out);
+            return self.form_said(&name, tag, values, out);
         }
         // an entry of a palette is a verb over what is selected
         if let Some(name) = self.palette_entry(widget) {
