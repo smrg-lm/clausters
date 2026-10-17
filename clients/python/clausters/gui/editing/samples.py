@@ -79,7 +79,8 @@ class SamplesView(View):
         meter = self.widget(editor, "meter", editor.structure)
         pane = self.widget(editor, "pane", editor.structure)
         editor._sync_core()
-        tree = editor._call("window", widget=wid, meter=meter, pane=pane)
+        envelope = self.widget(editor, "envelope", editor.structure)
+        tree = editor._call("window", widget=wid, meter=meter, pane=pane, envelope=envelope)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]

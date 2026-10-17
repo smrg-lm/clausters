@@ -46,6 +46,61 @@ use crate::{Opaque, Range, SourceId};
 /// is -- the samples stay in the takes the lists name.
 pub const PARTS: &str = "parts";
 
+/// An edited take: its immutable sample spans and its non-destructive curves.
+/// Automation uses seconds, exactly as a region's automation does.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Take {
+    /// The sample spans, in reading order.
+    pub parts: Vec<Part>,
+    /// Curves over the take, from its origin.
+    #[serde(default)]
+    pub automation: Vec<crate::multitrack::Automation<crate::timebase::Second>>,
+}
+
+impl Take {
+    /// A snapshot in the existing parts vocabulary, including its curves.
+    pub fn payload(&self) -> Opaque {
+        Opaque(json!({"intent": PARTS, "parts": self.parts, "automation": self.automation}))
+    }
+
+    /// Read a snapshot; older parts-only payloads have no curves.
+    pub fn read(value: &Opaque) -> Option<Self> {
+        Some(Self {
+            parts: read(value)?,
+            automation: serde_json::from_value(
+                value
+                    .0
+                    .get("automation")
+                    .cloned()
+                    .unwrap_or_else(|| json!([])),
+            )
+            .ok()?,
+        })
+    }
+
+    /// The same SetAutomation intent a region or track accepts.
+    pub fn set_automation(
+        &mut self,
+        intent: &crate::multitrack::edit::MultitrackIntent,
+    ) -> Result<bool, &'static str> {
+        let crate::multitrack::edit::MultitrackIntent::SetAutomation { automation, points } =
+            intent
+        else {
+            return Err("not a setautomation intent");
+        };
+        let curve = self
+            .automation
+            .iter_mut()
+            .find(|a| a.id == *automation)
+            .ok_or("no such automation")?;
+        if curve.points == *points {
+            return Ok(false);
+        }
+        curve.points.clone_from(points);
+        Ok(true)
+    }
+}
+
 /// **An edit in the parts vocabulary**: `{"intent": "parts", "parts": [...]}`.
 pub fn payload(parts: &[Part]) -> Opaque {
     Opaque(json!({ "intent": PARTS, "parts": parts }))

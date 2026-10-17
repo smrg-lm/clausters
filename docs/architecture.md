@@ -1069,6 +1069,18 @@ buffers freed, the buffer number staying the take's identity, and a step whose
 list reads one reads it back before stitching -- the same rule natively and in a
 page, whose server writes to the origin's private file system.
 
+The edited take is `parts::Take`: parts plus the same `Automation<Second>`
+a region holds. The gain body's props and intake use `clausters_editing::points`;
+its edits use `SetAutomation` and snapshots include both parts and curves.
+`Editing::act` records a scripted edit through the same history as a gesture.
+`clausters_editing::gain` projects the curve into existing `/buffer_gain`
+segments; the server's existing shared envelope shapes do all sample arithmetic.
+Apply copies the join into a new owned buffer, applies the segments and resets
+the curve to unity in one entry. If a cut leaves a segment ending beyond the
+take, the render includes that segment's silent tail so its shape is unchanged;
+the resulting part keeps only the take's span. No samples enter the history.
+Preview processing is not part of this path.
+
 **The editor's turns are here too** (`clausters_apps::multitrack::editor`). One
 `MultitrackEditor` holds one view's end of the conversation with the host and
 answers every message as an `Outcome`: the gesture read and applied with the

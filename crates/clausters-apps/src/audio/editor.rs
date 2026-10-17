@@ -119,11 +119,16 @@ impl Converse for AudioEditor {
         self.widget
             .into_iter()
             .chain(self.pane)
+            .chain(self.envelope_widget)
             .any(|w| i64::from(w) == widget)
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
-        resync(widget)
+        if self.envelope_widget.map(i64::from) == Some(widget) {
+            self.envelope_corrections()
+        } else {
+            resync(widget)
+        }
     }
 
     fn route(
@@ -142,7 +147,12 @@ impl Converse for AudioEditor {
         }
         if matches!(
             message.tag.as_str(),
-            "view_wave" | "view_spectrogram" | "view_both" | "layer_take"
+            "view_wave"
+                | "view_spectrogram"
+                | "view_both"
+                | "layer_take"
+                | "show_envelope"
+                | "apply_envelope"
         ) {
             out.turn = Kind::Route;
             let (reason, corrections) = self.gesture(message.widget, &message.tag, &[], out);
@@ -227,7 +237,7 @@ pub struct Follow {
 
 /// What an audio editor is put back to when a step it took part in is
 /// refused elsewhere ([`AudioEditor::before_step`]).
-pub(crate) struct Kept(Vec<Part>, BTreeSet<i64>);
+pub(crate) struct Kept(parts::Take, BTreeSet<i64>);
 
 /// **An audio editor**: the take it opened, the list of parts it is now, the
 /// join that list is drawn from, and one view's end of the conversation.
@@ -247,7 +257,8 @@ pub struct AudioEditor {
     opened: i64,
     /// Whether the private copy has been made.
     copied: bool,
-    list: Vec<Part>,
+    contents: parts::Take,
+    envelope_widget: Option<i32>,
     /// Frames of every take this editor knows -- the one it opened and each it
     /// made -- by buffer.
     frames: BTreeMap<i64, u64>,
@@ -325,7 +336,8 @@ impl AudioEditor {
             target: Target::Buffer(take),
             opened: take,
             copied: false,
-            list: Vec::new(),
+            contents: parts::Take::default(),
+            envelope_widget: None,
             frames: BTreeMap::new(),
             spare: Vec::new(),
             scratch: None,
@@ -346,6 +358,7 @@ impl AudioEditor {
             conversation: Conversation::new(version),
         };
         editor.reopen(take, frames);
+        editor.ensure_envelope();
         Ok(editor)
     }
 
@@ -353,7 +366,7 @@ impl AudioEditor {
     fn reopen(&mut self, take: i64, frames: u64) {
         self.take = take;
         self.frames.insert(take, frames);
-        self.list = if frames > 0 {
+        self.contents.parts = if frames > 0 {
             vec![part(take, 0, frames)]
         } else {
             Vec::new()
@@ -362,12 +375,12 @@ impl AudioEditor {
 
     /// The list the take is now.
     pub fn list(&self) -> &[Part] {
-        &self.list
+        &self.contents.parts
     }
 
     /// How many frames the take is now.
     pub fn length(&self) -> u64 {
-        parts::length(&self.list).unwrap_or(0)
+        parts::length(&self.contents.parts).unwrap_or(0)
     }
 
     /// The canonical array of layers, back to front.
@@ -382,16 +395,23 @@ impl AudioEditor {
     }
 
     fn edit_layer(&mut self, name: &str) -> Result<Vec<Correction>, String> {
-        if !matches!(name, "take" | "placement") {
+        if !matches!(name, "take" | "placement")
+            && !(matches!(name, "points" | "points:0") && self.envelope_widget.is_some())
+        {
             return Err(format!("this pane has no '{name}' body"));
         }
+        let relabel = self.edit_layer.starts_with("points") || name.starts_with("points");
         self.edit_layer = name.into();
         Ok(self
             .pane
             .into_iter()
             .map(|id| Correction {
                 widget: i64::from(id),
-                props: json!({"layer": name}),
+                props: if relabel {
+                    json!({"layer": name, "label": self.pane_label()})
+                } else {
+                    json!({"layer": name})
+                },
             })
             .collect())
     }
@@ -439,7 +459,7 @@ impl AudioEditor {
     /// **The takes this editor cannot let go of**: the one it opened, which is
     /// the caller's, and every take the list reads now.
     pub fn rooted(&self) -> Vec<SourceId> {
-        let mut out = parts::sources(&self.list);
+        let mut out = parts::sources(&self.contents.parts);
         let opened = SourceId(self.take as u64);
         if !out.contains(&opened) {
             out.push(opened);
@@ -485,7 +505,7 @@ impl AudioEditor {
     /// read back is what was written.
     pub fn spill(&mut self, buffer: i64) -> Option<Value> {
         let path = self.path(buffer)?;
-        let reads = parts::sources(&self.list).contains(&SourceId(buffer as u64));
+        let reads = parts::sources(&self.contents.parts).contains(&SourceId(buffer as u64));
         if buffer == self.take || reads || self.spilled.contains(&buffer) {
             return None;
         }
@@ -603,7 +623,7 @@ impl AudioEditor {
     /// The steps that read back every take on disk the list now reads, before
     /// the join over it is stitched.
     fn restored(&mut self) -> Vec<Step> {
-        let wanted: Vec<i64> = parts::sources(&self.list)
+        let wanted: Vec<i64> = parts::sources(&self.contents.parts)
             .iter()
             .map(|s| s.0 as i64)
             .filter(|b| self.spilled.contains(b))
@@ -683,7 +703,7 @@ impl AudioEditor {
         let mut source =
             Source::volatile(Lifetime::Temporary).shaped(self.channels, self.length(), self.rate);
         source.location = Location::Segments {
-            parts: self.list.clone(),
+            parts: self.contents.parts.clone(),
         };
         let Some(made) = stitch(&source, &held) else {
             return Vec::new();
@@ -709,10 +729,11 @@ impl AudioEditor {
             bus,
             channels,
         });
-        window(&Window {
+        let label = self.pane_label();
+        let mut tree = window(&Window {
             buffer: self.display,
             channels: self.channels,
-            name: self.name.as_deref(),
+            name: Some(&label),
             layers: &self.layers,
             rate: self.rate,
             widget,
@@ -722,7 +743,9 @@ impl AudioEditor {
             size: self.size,
             meter,
             bare: self.bare,
-        })
+        });
+        self.compose_envelope(&mut tree);
+        tree
     }
 
     /// **Where the level is read from**: the first control bus the
@@ -755,12 +778,12 @@ impl AudioEditor {
     /// **What a history step is put back to** when another structure of the
     /// same step refuses it: the list, and which takes are on disk.
     pub(crate) fn before_step(&self) -> Kept {
-        Kept(self.list.clone(), self.spilled.clone())
+        Kept(self.contents.clone(), self.spilled.clone())
     }
 
     /// Puts back what [`before_step`](Self::before_step) kept.
     pub(crate) fn put_back(&mut self, kept: Kept) {
-        self.list = kept.0;
+        self.contents = kept.0;
         self.spilled = kept.1;
     }
 
@@ -768,7 +791,16 @@ impl AudioEditor {
     /// the take, and the answer is the steps that stitch it. Nothing when the
     /// payload is not a list.
     pub fn apply(&mut self, payload: &Value) -> Option<Value> {
-        self.list = parts::read(&Opaque(payload.clone()))?;
+        let mut next = parts::Take::read(&Opaque(payload.clone()))?;
+        // Visibility is view state: walking the edit order restores the curve,
+        // not which body the user has chosen to look at since the edit.
+        for curve in &mut next.automation {
+            if let Some(held) = self.contents.automation.iter().find(|a| a.id == curve.id) {
+                curve.visible = held.visible;
+            }
+        }
+        self.contents = next;
+        self.ensure_envelope();
         let mut steps = self.restored();
         steps.extend(self.stitched());
         Some(steps_json(&steps))
@@ -782,7 +814,8 @@ impl AudioEditor {
     /// **Every widget of the window, corrected** -- what a history step leaves
     /// behind.
     pub fn resync_all(&self, version: i64) -> Answer {
-        let corrections = self.widget.map_or_else(Vec::new, |w| resync(i64::from(w)));
+        let mut corrections = self.widget.map_or_else(Vec::new, |w| resync(i64::from(w)));
+        corrections.extend(self.envelope_corrections());
         conversation::answer(0, version, None, corrections)
     }
 
@@ -827,6 +860,15 @@ impl AudioEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if tag == "show_envelope" {
+            return self.show_envelope();
+        }
+        if tag == "points" && self.envelope_widget.map(i64::from) == Some(widget) {
+            return self.set_envelope_event(values, out);
+        }
+        if tag == "apply_envelope" {
+            return self.apply_envelope_event(out);
+        }
         if tag == "layer" {
             return match values
                 .first()
@@ -844,10 +886,7 @@ impl AudioEditor {
                 Err(reason) => (Some(reason), Vec::new()),
             };
         }
-        if matches!(
-            tag,
-            "view_wave" | "view_spectrogram" | "view_both" | "layer_take"
-        ) {
+        if matches!(tag, "view_wave" | "view_spectrogram" | "view_both") {
             return match self.layer_verb(tag, &Value::Null) {
                 Ok(view) => {
                     out.layers = view.layers;
@@ -869,7 +908,8 @@ impl AudioEditor {
         };
         match edited {
             Ok(Some((label, list, mut steps))) => {
-                let before = std::mem::replace(&mut self.list, list);
+                let before = self.contents.clone();
+                self.contents.parts = list;
                 steps.extend(self.restored());
                 steps.extend(self.stitched());
                 out.record = Some(self.record(&label, &before));
@@ -889,16 +929,16 @@ impl AudioEditor {
 
     /// The entry a turn leaves: the list after, the list before, and the takes
     /// each reads.
-    fn record(&self, label: &str, before: &[Part]) -> Record {
+    fn record(&self, label: &str, before: &parts::Take) -> Record {
         let ids = |list: &[Part]| parts::sources(list).iter().map(|s| s.0).collect();
         Record {
             label: label.into(),
             legs: vec![Leg {
-                forward: json!({ "edit": parts::payload(&self.list).0 }),
-                backward: parts::payload(before).0,
+                forward: json!({ "edit": self.contents.payload().0 }),
+                backward: before.payload().0,
                 key: String::new(),
-                holds_forward: ids(&self.list),
-                holds_backward: ids(before),
+                holds_forward: ids(&self.contents.parts),
+                holds_backward: ids(&before.parts),
             }],
         }
     }
@@ -981,7 +1021,7 @@ impl AudioEditor {
         ));
         self.frames.insert(buffer, frames);
         let list = parts::replace(
-            &self.list,
+            &self.contents.parts,
             start,
             start + frames,
             &[part(buffer, 0, frames)],
@@ -996,7 +1036,7 @@ impl AudioEditor {
         if len == 0 {
             return Ok(None);
         }
-        let list = parts::remove(&self.list, start, start + len)?;
+        let list = parts::remove(&self.contents.parts, start, start + len)?;
         if list.is_empty() {
             return Err("a take cannot be cut down to nothing".into());
         }
@@ -1019,7 +1059,7 @@ impl AudioEditor {
         let mut steps = self.allocate(buffer, frames);
         steps.extend(self.fill(buffer, &samples));
         self.frames.insert(buffer, frames);
-        let list = parts::insert(&self.list, position, &[part(buffer, 0, frames)])?;
+        let list = parts::insert(&self.contents.parts, position, &[part(buffer, 0, frames)])?;
         Ok(Some(("paste".into(), list, steps)))
     }
 
@@ -1089,7 +1129,7 @@ impl AudioEditor {
         self.spare.push(scratch);
         self.frames.insert(take, frames);
         let list = parts::replace(
-            &self.list,
+            &self.contents.parts,
             position,
             position + frames,
             &[part(take, 0, frames)],
@@ -1369,7 +1409,10 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   solo toggles without changing visibility. `layer_alpha` also takes `alpha`.
 /// - `view_wave`, `view_spectrogram`, `view_both`: replace the visual stack.
 /// - `layer` -- optional `name`: the active edit body and its correction.
-/// - `window` -- `widget`, optional `pane` and `meter`, the ids of the axis
+/// - `envelope` -- seconds-based gain quads. `show_envelope` shows the body.
+/// - `setautomation` -- `points`, gain quads; `apply_envelope` renders them.
+///   Scripted edits go through `Editing::act` so their history is recorded.
+/// - `window` -- `widget`, optional `pane`, `envelope` and `meter`, the ids of the axis
 ///   container and level meter: the window, as a GuiDef.
 /// - `props` -- `widget`: the correction.
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
@@ -1446,6 +1489,11 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             }
         }
         "window" => {
+            editor.envelope_widget = request
+                .get("envelope")
+                .and_then(Value::as_i64)
+                .map(|n| n as i32);
+            editor.ensure_envelope();
             editor.pane = request
                 .get("pane")
                 .and_then(Value::as_i64)
@@ -1460,6 +1508,14 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 )
                 .to_string()
         }
+        "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
+        "show_envelope" | "setautomation" | "apply_envelope" => {
+            serde_json::to_string(&editor.act(&request, version)).unwrap()
+        }
+        "props" if editor.envelope_widget == Some(widget) => editor
+            .envelope_corrections()
+            .first()
+            .map_or_else(|| "{}".into(), |c| c.props.to_string()),
         "props" => Value::Object(props(widget)).to_string(),
         "open" => match editor.open() {
             Ok(steps) => json!({ "steps": steps }).to_string(),
@@ -1520,6 +1576,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
 
 /// The domain an audio editor's structure is registered under.
 pub const DOMAIN: &str = PARTS;
+
+mod envelope;
 
 #[cfg(test)]
 mod tests;

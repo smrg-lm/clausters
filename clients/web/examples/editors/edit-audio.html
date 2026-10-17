@@ -39,6 +39,12 @@ what only the history holds, and the oldest entries go first past it.
 The View menu chooses waveform (W), spectrogram (S) or both (B). The three buttons below
 call the same verbs as the menu.
 
+View -> Gain envelope selects the curve body. Drag points, bend a segment,
+or double-click to add a point. Curve edits keep samples intact. The gain envelope
+button shows a shaped fade; Apply envelope renders it into a new take and resets
+the curve to unity. Undo restores both. Playback hears gain after Apply; live
+preview is separate work.<br>
+
 <b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
 <b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
 there. <b>Click</b> to put the position cursor down --
@@ -70,6 +76,8 @@ edit back into the buffer it was opened from, and
     <button id="wave" disabled>waveform</button>
         <button id="spectrogram" disabled>spectrogram</button>
         <button id="both" disabled>both</button>
+        <button id="envelope" disabled>gain envelope</button>
+        <button id="apply-envelope" disabled>apply envelope</button>
         <button id="play" disabled>play the take</button>
         <button id="parts" disabled>what it is made of</button>
       </div>
@@ -134,6 +142,15 @@ edit back into the buffer it was opened from, and
 
         // `editor.buffer` is the join the window draws: the take as the edits
         // have left it, which `play` reads like any other buffer.
+        // The same curve and calls as the Python example, in seconds.
+        $("envelope").disabled = false;
+        $("envelope").onclick = () => {
+          editor.showEnvelope();
+          editor.setEnvelope([0, 0, 3, 0, 0.5, 1, 1, 0, SECONDS, 0.25, 1, 0]);
+        };
+        $("apply-envelope").disabled = false;
+        $("apply-envelope").onclick = () => editor.applyEnvelope();
+
         $("play").disabled = false;
         $("play").onclick = () => play(editor.buffer, { server });
         $("parts").disabled = false;

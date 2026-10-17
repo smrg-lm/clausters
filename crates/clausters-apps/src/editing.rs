@@ -761,12 +761,13 @@ impl Editing {
     /// the hand asked for through the client rather than on the page.
     ///
     /// `None` for a member that is not there or takes no verbs this way.
-    #[cfg(feature = "notation")]
     pub fn act(&mut self, member: MemberId, request: &Value) -> Option<Turned> {
         let version = self.version;
         let seat = self.seats.get_mut(member as usize)?;
         let structure = seat.structure;
         let outcome = match &mut seat.member {
+            Member::Audio(editor) => Outcome::Audio(editor.act(request, version)),
+            #[cfg(feature = "notation")]
             Member::Score(editor) => Outcome::Score(editor.act(request, version)),
             _ => return None,
         };
@@ -1115,7 +1116,6 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
             to_json(&editing.event(member, &event))
         }
-        #[cfg(feature = "notation")]
         "act" => to_json(&editing.act(member, &get(&request, "call"))),
         "step" => {
             let direction = get(&request, "direction")

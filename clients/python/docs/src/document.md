@@ -99,6 +99,21 @@ same action as View → Edit take. This edit body is separate from
 accepts curve bodies; its `layer` property names the active body (`points`,
 `points:1`, etc.), and `hidden` excludes named bodies from drawing and editing.
 
+`editor.show_envelope()` (View → Gain envelope) shows and selects the gain
+curve. `editor.envelope` reads its flat `time, value, shape, curve` quads in
+seconds; `editor.set_envelope([...])` records a curve edit in the same undo
+order as sample edits. The header names the gain scale: zero to two, with one as unity. The signal
+ruler continues to measure sample amplitude. The
+segment takes its shape and curvature from its first point, using the same
+shapes as an envelope. Values before the first point and after the last hold.
+The curve stays on the take's time axis when sample spans are cut or pasted.
+
+`editor.apply_envelope()` (Edit → Apply gain envelope) renders that gain into
+a new take and resets the curve to unity. Undo restores both the original
+take and the unapplied curve; redo restores the rendered take without applying
+gain a second time. Curve edits alone leave the samples and playback unchanged.
+Only Apply changes what is heard; live preview is separate work. Save writes
+the current samples, so apply a curve before saving if it should be heard.
 
 ```python
 from clausters.gui import edit

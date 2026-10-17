@@ -843,6 +843,35 @@ export class AudioEditor extends Editor<Buffer> {
         this.take(outcome as Outcome);
     }
 
+    /** Gain envelope as time/value/shape/curve quads, in seconds; gain is 0 to 2.
+     * Editing is non-destructive. applyEnvelope renders into a new take. */
+    get envelope(): number[] { return this.coreCall("envelope").points as number[]; }
+
+    /** Set gain quads as one undoable edit; times increase and ranges hold. */
+    setEnvelope(points: Iterable<number>): boolean {
+        return this.envelopeAct("setautomation", { points: [...points] });
+    }
+
+    /** Show and select the gain curve body over the take. */
+    showEnvelope(): void { this.viewLayers("show_envelope"); }
+
+    /** Render gain and reset the curve to unity in one undo step.
+     * Preview playback is not affected until this is applied. */
+    applyEnvelope(): boolean { return this.envelopeAct("apply_envelope"); }
+
+    private envelopeAct(verb: string, args: Record<string, unknown> = {}): boolean {
+        return this.editing.turn(this, () => {
+            this.syncCore();
+            const turned = this.editing.act(this.member, { verb, ...args });
+            const outcome = (turned.outcome ?? {}) as Outcome;
+            const changed = this.take(outcome);
+            this.editing.release(turned.freed, turned.stored);
+            const reason = outcome.answer?.reason;
+            if (reason) throw new RangeError(reason);
+            return changed;
+        });
+    }
+
     /** The active edit body, separate from the take's visual layers. */
     get layer(): string { return this.coreCall("layer").layer as string; }
     set layer(name: string) { this.viewLayers("layer", { name }); }

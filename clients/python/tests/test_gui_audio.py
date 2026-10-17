@@ -470,6 +470,46 @@ def test_edit_layer_is_the_panes_body_and_not_the_visual_stack():
     assert host.acks[-1][1] == [(pane["id"], {"layer": "placement"})]
     editor.layer = "take"
     assert editor.layers == ("peak", "rms")
-    with pytest.raises(ValueError, match="no 'points' body"):
-        editor.layer = "points"
+    with pytest.raises(ValueError, match="no 'points:1' body"):
+        editor.layer = "points:1"
     assert editor.layer == "take"
+
+
+def test_gain_curve_edits_and_apply_share_the_take_history():
+    take = FakeBuffer()
+    editor, host, _wid, context = opened(take)
+    original = editor.parts
+    duration = 100 / SR
+    points = [0, 0.25, 5, -3, duration, 0.75, 1, 0]
+    editor.show_envelope()
+    assert editor.layer == "points"
+    take.server.sent.clear()
+    assert editor.set_envelope(points)
+    assert editor.envelope == points
+    assert "/buffer_gain" not in take.server.addrs()
+    assert "/buffer_setRange" not in take.server.addrs()
+    assert editor.apply_envelope()
+    gains = [args for addr, args in take.server.sent if addr == "/buffer_gain"]
+    assert gains and gains[0][0] not in (take.bufnum, editor.buffer.bufnum)
+    assert gains[0][1:7] == (0, 100, 0.25, 0.75, 5, -3.0)
+    assert editor.envelope[1] == 1
+    assert editor.undo()
+    assert editor.parts == original
+    assert editor.envelope == points
+    assert editor.undo()
+    assert editor.envelope[1] == 1
+    assert editor.redo()
+    assert editor.redo()
+    assert editor.envelope[1] == 1
+    assert context.version > 1
+    assert host.acks
+
+
+def test_invalid_gain_quads_leave_history_and_samples_unchanged():
+    editor, _host, _wid, context = opened(FakeBuffer())
+    before, version = editor.envelope, context.version
+    with pytest.raises(ValueError, match="complete"):
+        editor.set_envelope([0, 1, 1])
+    assert editor.envelope == before
+    assert context.version == version
+    assert not editor.apply_envelope(), "unity does not make another take"

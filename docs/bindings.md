@@ -1261,3 +1261,11 @@ Python property that reads becomes a method, a property that writes becomes a
 
 **Options are one object in TypeScript**, as everywhere in that client:
 Python `seq.play(at, server)`; TypeScript `seq.play({ at, server })`.
+
+
+The existing editing JSON door also carries audio gain curves: `envelope`
+reads seconds-based quads, `show_envelope` selects the curve body, and
+`setautomation` / `apply_envelope` run through `Editing::act` to record the
+same undo order as host gestures. The window request accepts the caller-owned
+`envelope` widget id beside `widget` and `pane`. These are JSON payloads over
+the existing door; no C or wasm symbol or ABI counter changes.

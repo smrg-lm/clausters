@@ -85,6 +85,8 @@ pub const AUDIO_SCOPE: &str = "audio";
 pub const AUDIO: &[Verb] = &[
     verb("view_wave", &["W"], "Waveform"),
     verb("layer_take", &[], "Edit take"),
+    verb("show_envelope", &[], "Gain envelope"),
+    verb("apply_envelope", &[], "Apply gain envelope"),
     verb("view_spectrogram", &["S"], "Spectrogram"),
     verb("view_both", &["B"], "Spectrogram and waveform"),
 ];

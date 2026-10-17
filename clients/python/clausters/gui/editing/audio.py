@@ -609,6 +609,41 @@ class AudioEditor(Marking, Editor):
         self._take(outcome)
 
     @property
+    def envelope(self) -> list[float]:
+        """Gain envelope as time/value/shape/curve quads, with time in seconds.
+
+        Values range from zero to two; unity is one. Editing the curve is
+        non-destructive. `apply_envelope` renders it into a new take.
+        """
+        return list(self._call("envelope")["points"])
+
+    def set_envelope(self, points) -> bool:
+        """Set gain quads as one undoable edit. Times must increase; the
+        shared application keeps time and gain inside the take's ranges."""
+        return self._envelope_act("setautomation", points=list(points))
+
+    def show_envelope(self) -> None:
+        """Show and select the gain curve body over the take."""
+        self._view_layers("show_envelope")
+
+    def apply_envelope(self) -> bool:
+        """Render gain into a new take and reset the curve to unity, in one
+        undo step. Preview playback is not affected until this is applied."""
+        return self._envelope_act("apply_envelope")
+
+    def _envelope_act(self, verb: str, **args) -> bool:
+        with self._editing.turn(self):
+            self._sync_core()
+            turned = self._editing.act(self._member, _plain({"verb": verb, **args}))
+            outcome = turned.get("outcome") or {}
+            changed = self._take(outcome)
+            self._editing.release(turned.get("freed"), turned.get("stored"))
+            reason = (outcome.get("answer") or {}).get("reason")
+            if reason:
+                raise ValueError(reason)
+            return changed
+
+    @property
     def layer(self) -> str:
         """The active edit body, separate from the take's visual layers."""
         return self._call("layer")["layer"]

@@ -267,24 +267,6 @@ its plan; the plan is where its acceptance is read.
   shared machine; the eye pass is part of closing it) plus the third persistence
   option the host grew while the track was paused.
 
-- ⬜ **The audio editor's layers: the view is the next container, and it is the
-  richer one** *(`clients/gui/PLAN.md`, Future directions)*. Not a milestone —
-  **a track's worth**, and the one the user asked to have thought through and
-  built next. The layer mechanism is done and general (`host::layers`, proved by
-  the `clip`); what this needs is the *contents*, and they are of two kinds the
-  design must keep separate: **visualization layers** (the same material drawn
-  several ways, alternating or superimposed) and **edit layers** (what a hand is
-  doing, one at a time — non-destructive processing as curves over the waveform,
-  seen, heard, then rendered in). The two combine and are not the same axis. It
-  lands on the rules `A6` made explicit — the stack's order, the layer that
-  owns the vertical, and the alpha — which shipped and are what the contents
-  are now designed over. The neighbouring entry "Many channels are drawn and not yet readable,
-  and a take cannot be created empty" remains part of the same design. **`O24` now designs the same thing from the document's side**, on
-  Sonic Visualiser's pane/layer shape - layers that display audio and layers
-  that annotate it as one kind on one axis, with the rule that *the axis belongs
-  to the pane, not to the content*. The two entries are one design and the host's
-  is the view half; read them together before either starts.
-
 - ⬜ **The free arrangement plane (the blueprint view)** *(`clients/gui/PLAN.md`,
   Future directions)*. A **second kind of multitrack**, explicitly not a milestone
   of the one that shipped: it shares characteristics with the lane stack and its

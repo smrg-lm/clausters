@@ -132,6 +132,7 @@ pub fn menu(app: App, saves: bool) -> Value {
     ];
     if app == App::Audio {
         edit.push(entry(app, "mix"));
+        edit.extend([sep(), entry(app, "apply_envelope")]);
     }
     edit.extend([entry(app, "delete"), sep(), entry(app, "select_all")]);
     if app != App::Audio {
@@ -157,6 +158,7 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "view_both"),
             sep(),
             entry(app, "layer_take"),
+            entry(app, "show_envelope"),
         ]);
     }
     if app != App::Audio {

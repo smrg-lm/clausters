@@ -512,6 +512,55 @@ test("the edit layer is the pane body and not the visual stack", async () => {
     assert.deepEqual(host.acks.at(-1)![1], [[pane.id, { layer: "placement" }]]);
     editor.layer = "take";
     assert.deepEqual(editor.layers, ["peak", "rms"]);
-    assert.throws(() => { editor.layer = "points"; }, /no 'points' body/);
+    assert.throws(() => { editor.layer = "points:1"; }, /no 'points:1' body/);
     assert.equal(editor.layer, "take");
+});
+
+test("gain curve edits and apply share the take history", async () => {
+    const take = new FakeBuffer();
+    const [editor, host, , context] = await opened(take);
+    const original = editor.parts;
+    const duration = 100 / SR;
+    const points = [0, 0.25, 5, -3, duration, 0.75, 1, 0];
+    editor.showEnvelope();
+    assert.equal(editor.layer, "points");
+    await settle();
+    take.server.sent.length = 0;
+    assert.equal(editor.setEnvelope(points), true);
+    assert.deepEqual(editor.envelope, points);
+    await settle();
+    assert.equal(take.server.addrs().includes("/buffer_gain"), false);
+    assert.equal(take.server.addrs().includes("/buffer_setRange"), false);
+    assert.equal(editor.applyEnvelope(), true);
+    await settle();
+    const gains = take.server.sent.filter(([addr]) => addr === "/buffer_gain").map(([, args]) => args);
+    assert.ok(gains.length);
+    assert.ok(gains[0][0] !== take.bufnum && gains[0][0] !== editor.buffer.bufnum);
+    assert.deepEqual(gains[0].slice(1, 7), [0, 100, 0.25, 0.75, 5, -3]);
+    assert.equal(editor.envelope[1], 1);
+    assert.equal(editor.undo(), true);
+    await settle();
+    assert.deepEqual(editor.parts, original);
+    assert.deepEqual(editor.envelope, points);
+    assert.equal(editor.undo(), true);
+    await settle();
+    assert.equal(editor.envelope[1], 1);
+    assert.equal(editor.redo(), true);
+    await settle();
+    assert.equal(editor.redo(), true);
+    await settle();
+    assert.equal(editor.envelope[1], 1);
+    assert.ok(context.version > 1);
+    assert.ok(host.acks.length);
+});
+
+test("invalid gain quads leave history and samples unchanged", async () => {
+    const [editor, , , context] = await opened(new FakeBuffer());
+    const before = editor.envelope;
+    const version = context.version;
+    assert.throws(() => editor.setEnvelope([0, 1, 1]), /complete/);
+    assert.deepEqual(editor.envelope, before);
+    assert.equal(context.version, version);
+    assert.equal(editor.applyEnvelope(), false);
+    await settle();
 });

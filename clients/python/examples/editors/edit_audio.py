@@ -123,6 +123,27 @@ def both():
 
 
 # %% [markdown]
+# ## A gain envelope over the take
+#
+# View -> Gain envelope selects the curve body. Drag its points or bend a
+# segment; double-click adds a point. These edits keep the samples intact.
+# `envelope()` shows a shaped fade; `apply_envelope()` renders it into a new
+# take and resets the curve to unity. Undo restores the take and the curve.
+# Playback hears the gain only after Apply; live preview is separate work.
+
+# %%
+def envelope():
+    """Show and set a gain envelope, with times in seconds."""
+    editor.show_envelope()
+    editor.set_envelope([0, 0, 3, 0, 0.5, 1, 1, 0, SECONDS, 0.25, 1, 0])
+
+
+def apply_envelope():
+    """Render the gain, keeping both take and curve available to undo."""
+    editor.apply_envelope()
+
+
+# %% [markdown]
 # ## Hear it, and read what it is made of
 #
 # `editor.buffer` is the join the window draws: the take as the edits have left

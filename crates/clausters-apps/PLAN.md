@@ -2278,6 +2278,9 @@ opened it.
 
 - ✅ **X13 - The audio pane owns the axis and routes its bodies.** Opened 2026-10-16; the user approved the `pane` widget. Reuse `EditorProps`, timeline navigation and `host::layers` with existing `axes`, `link`, `layer` and `hidden` props. The pane owns one horizontal ruler, time selection and playhead; signal and curve bodies share its window and only the active visible body receives edits. Keep visual layers inside the take. Add the application's `layer` verb, View menu body selection and both clients' property. Acceptance: routing and hidden-body regressions, shared navigation tests, paired example captures, native/browser host builds, clippy and docs. No new OSC command or exported symbol.
 
+- ✅ **X14 - Gain envelope over an audio take.** The take holds the region's existing `Automation<Second>` alongside its parts. Project a curve body through the shared points intake and SetAutomation intent; edit and apply share the existing Editing undo order. View -> Gain envelope selects the body; Edit -> Apply gain envelope copies the take and chains existing `/buffer_gain` shaped segments, resetting the curve to unity in the same history entry. Both clients expose the same verbs through existing JSON doors. Acceptance: model/history, gesture/verb, client and server-render signal tests; paired example captures and docs. No protocol or ABI addition. Preview remains separate work. The user runs the full feature matrix.
+
+
 ## Definition of done (per milestone)
 
 The project rule: code plus tests, a clear commit message, this file's checkbox,
@@ -2795,6 +2798,9 @@ Every entry carries a checkbox.
   that already name one.
 
 ## Found by use: the running list of fixes
+
+- ✅ **An overlaid gain curve needs its own scale named.** Found in the X14 example capture: unity sits halfway up a zero-to-two curve over a waveform whose ruler measures amplitude. Selecting the curve now states `gain 0..2 (unity 1)` in the pane header; selecting the take restores its caption. The signal ruler continues to measure samples.
+
 
 Every entry carries a checkbox, and a fixed one stays with the record of what was
 wrong.

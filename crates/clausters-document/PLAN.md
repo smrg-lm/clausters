@@ -1222,6 +1222,12 @@ against, not work: what turned into work is in them, named.*
   signal's visual stack stays inside the take body. An ordinary layout panel
   remains a layout: it has no measuring axis to own or edit routing to resolve.
 
+  **A take holds the same automation as a region** *(X14, 2026-10-16)*.
+  `parts::Take` carries `Automation<Second>` beside its parts, with the same
+  SetAutomation intent. Its history snapshots include curves and source spans,
+  never samples; applying gain writes a new take through existing server gain
+  operations. The curve stays on the take's time axis across sample edits.
+  Preview processing remains separate work in the applications plan.
 
   **The multitrack editor plays through the server's transport, and computes no
   time at all** *(decided 2026-09-08, taken as the milestone's first leg)*. This
