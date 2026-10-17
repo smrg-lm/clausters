@@ -102,7 +102,7 @@ accepts curve bodies; its `layer` property names the active body (`points`,
 `editor.show_envelope()` (View → Edit gain envelope) shows and selects the gain
 curve. `editor.envelope` reads its flat `time, value, shape, curve` quads in
 seconds; `editor.set_envelope([...])` records a curve edit in the same undo
-order as sample edits. The header names the gain scale: zero to two, with one as unity, and the
+order as sample edits. The header names the gain scale: zero to one, where one is unity, and the
 vertical ruler and the read-out under the pointer measure gain while the curve
 is in hand and the samples while the take is. The
 segment takes its shape and curvature from its first point, using the same

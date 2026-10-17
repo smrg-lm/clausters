@@ -922,7 +922,7 @@ export class AudioEditor extends Editor<Buffer> {
         this.take(outcome as Outcome);
     }
 
-    /** Gain envelope as time/value/shape/curve quads, in seconds; gain is 0 to 2.
+    /** Gain envelope as time/value/shape/curve quads, in seconds; gain is 0 to 1, 1 is unity.
      * Editing is non-destructive. applyEnvelope renders into a new take. */
     get envelope(): number[] { return this.coreCall("envelope").points as number[]; }
 

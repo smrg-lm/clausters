@@ -6,6 +6,11 @@ use clausters_document::multitrack::{Automation, edit::MultitrackIntent};
 use clausters_document::timebase::Second;
 use clausters_editing::points;
 
+/// **The gain envelope's range**: silence to unity. An envelope shapes the
+/// level the take already has; it attenuates and never boosts, so its ruler
+/// reads `0..1` and a fresh curve stands at its top.
+const GAIN_MAX: f64 = 1.0;
+
 impl AudioEditor {
     pub(super) fn preview_state(&self) -> Value {
         json!({"on":self.preview_on, "installed":self.effect_installed,
@@ -37,7 +42,7 @@ impl AudioEditor {
     pub(super) fn pane_label(&self) -> String {
         let take = crate::samples::label(self.take_name().as_deref(), self.display);
         if self.edit_layer.starts_with("points") {
-            format!("{take} -- gain 0..2 (unity 1)")
+            format!("{take} -- gain 0..{GAIN_MAX}")
         } else {
             take
         }
@@ -45,8 +50,10 @@ impl AudioEditor {
 
     pub(super) fn ensure_envelope(&mut self) {
         if self.contents.automation.is_empty() {
-            let mut curve =
-                Automation::new(NodeId(1), Opaque(json!({"port":"gain", "min":0, "max":2})));
+            let mut curve = Automation::new(
+                NodeId(1),
+                Opaque(json!({"port":"gain", "min":0, "max":GAIN_MAX})),
+            );
             curve.points = vec![
                 points::point(Second(0.0), 1.0, 1.0, 0.0),
                 points::point(Second(self.length() as f64 / self.rate), 1.0, 1.0, 0.0),
@@ -67,11 +74,11 @@ impl AudioEditor {
     fn envelope_props(&self) -> Value {
         let mut props = points::props(
             &self.envelope_quads(true),
-            Some((0.0, 2.0)),
+            Some((0.0, GAIN_MAX)),
             self.length() as f64,
         );
         props.insert("min".into(), json!(0));
-        props.insert("max".into(), json!(2));
+        props.insert("max".into(), json!(GAIN_MAX));
         props.insert("editable".into(), json!(true));
         Value::Object(props)
     }
@@ -198,7 +205,7 @@ impl AudioEditor {
         }
         let mut flat = flat.to_vec();
         crate::points::Rules {
-            values: Some((0.0, 2.0)),
+            values: Some((0.0, GAIN_MAX)),
             time: Some((0.0, self.length() as f64 / self.rate)),
         }
         .keep(&mut flat);

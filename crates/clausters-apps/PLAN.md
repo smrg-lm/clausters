@@ -2824,7 +2824,7 @@ Every entry carries a checkbox.
 
 ## Found by use: the running list of fixes
 
-- ✅ **An overlaid gain curve needs its own scale named.** Found in the X14 example capture: unity sits halfway up a zero-to-two curve over a waveform whose ruler measures amplitude. Selecting the curve now states `gain 0..2 (unity 1)` in the pane header; selecting the take restores its caption. The signal ruler continues to measure samples. *(Superseded 2026-10-17: the pane's vertical ruler and read-out are the body in hand's, so the curve in hand is ruled in gain.)*
+- ✅ **An overlaid gain curve needs its own scale named.** Found in the X14 example capture: unity sits halfway up a zero-to-two curve over a waveform whose ruler measures amplitude. Selecting the curve now states `gain 0..2 (unity 1)` in the pane header; selecting the take restores its caption. The signal ruler continues to measure samples. *(Superseded 2026-10-17: the pane's vertical ruler and read-out are the body in hand's, so the curve in hand is ruled in gain. The same day its range became 0..1, silence to unity: an envelope attenuates and does not boost.)*
 
 
 Every entry carries a checkbox, and a fixed one stays with the record of what was

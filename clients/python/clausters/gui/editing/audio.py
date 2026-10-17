@@ -667,7 +667,7 @@ class AudioEditor(Marking, Editor):
     def envelope(self) -> list[float]:
         """Gain envelope as time/value/shape/curve quads, with time in seconds.
 
-        Values range from zero to two; unity is one. Editing the curve is
+        Values range from zero to one; one is unity, the take as it is. Editing the curve is
         non-destructive. `apply_envelope` renders it into a new take.
         """
         return list(self._call("envelope")["points"])
