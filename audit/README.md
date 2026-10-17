@@ -10,7 +10,11 @@ Results are **not** kept in the repository. A campaign's runs, logs, measurement
 
 What the repository keeps is what was decided: [PLAN.md](PLAN.md) lists each finding of a campaign and the commit or plan entry that settled it, and an application finding that stays open is filed in the owning plan's "Found by use" or "Future directions", like any other.
 
-The first campaign (2026-10-15, commit `04f4b742`) is `audit/records/2026-10-15_04f4b742_01.zip` on the auditor's machine. Beside it, `audit-branch.bundle` keeps the history of the branch the tooling was developed on (`git fetch audit-branch.bundle audit:audit` restores it). The resources the campaign actually ran (commit `2e376873`, an earlier version of that branch's second commit) are not in it: each run's own archive carries them as `resources.tar`. Read [methodology notes](methodology-notes.md) before the next one: that campaign needed corrections the runner does not make yet.
+The first campaign (2026-10-15, commit `04f4b742`) is `audit/records/2026-10-15_04f4b742_01.zip` on the auditor's machine. Beside it, `audit-branch.bundle` keeps the history of the branch the tooling was developed on (`git fetch audit-branch.bundle audit:audit` restores it). The resources the campaign actually ran (commit `2e376873`, an earlier version of that branch's second commit) are not in it: each run's own archive carries them as `resources.tar`. The [methodology notes](methodology-notes.md) explain that campaign's corrections and their integration into the reusable harness; the archived resources remain the version actually used.
+
+The second campaign, `2026-10-15_2558210e_02`, measured real-device audio and audio/GUI interference. Its callback histograms, slow-callback diagnostics, representative-load sweep and successful-frame checks are now reusable through the [instrumentation generator](instrumentation/README.md#linux-device-histogram-and-slow-callback-patch) and `scenarios/device.json`. Those resources have automated contract checks; validating their integrated collection path on a real device remains a separate campaign task.
+
+CI runs the resource validator and harness contract tests, without executing application audit workloads. Optional campaign execution in CI and further device/GPU capture automation remain in [PLAN.md](PLAN.md#future-directions). Performance comparisons also need a reviewed baseline and a tolerance established by same-code noise measurements; the comparison command alone does not establish either.
 
 ## Prepare
 
