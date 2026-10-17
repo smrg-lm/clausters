@@ -366,6 +366,8 @@ export interface InitOutput {
     readonly clausters_read_soundfile: (a: number, b: bigint, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
     readonly clausters_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly clausters_render_log: (a: number, b: number) => number;
+    readonly clausters_soundfile_info: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
+    readonly clausters_write_soundfile: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;
     readonly clausters_midi_read_clip: (a: number, b: number, c: number) => number;

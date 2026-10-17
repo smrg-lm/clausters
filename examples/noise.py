@@ -26,7 +26,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
-from clausters.render import read_soundfile
+from clausters import SoundFile
 from clausters.defs import Server, SynthDef, control
 from clausters.defs.ugens import (
     DoneAction, Env, brown_noise, clip_noise, crackle, decay2, dust, env_gen,
@@ -135,7 +135,7 @@ def render(path=None):
 
     # The claims below measure individual sections, not a summary, so the
     # samples come back from the file the server just wrote.
-    samples = read_soundfile(path).samples if path else \
+    samples = SoundFile.open(path).read() if path else \
         server.render(sample_rate=SR, channels=2).samples
 
     # The claim, measured on what was just rendered.

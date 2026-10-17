@@ -1017,7 +1017,7 @@ pub fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buff
     let is_wav = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("wav") || e.eq_ignore_ascii_case("wave"));
+        .is_some_and(is_wav_ext);
     if is_wav {
         read_wav(path, file_start, num_frames)
     } else {
@@ -1054,6 +1054,132 @@ pub fn read_audio_bytes(
         Default::default(),
     );
     read_symphonia_stream(stream, ext, label, file_start, num_frames)
+}
+
+/// **What a soundfile is, read from its header**: the shape a client shows
+/// and plans with before it decodes a sample.
+///
+/// `frames` is what [`read_audio`] would return: a WAV's own count, and for
+/// every other format the playable frames the container states -- decoded and
+/// counted only when the container states none. `codec` is the container's
+/// short name (`"wav"`, `"flac"`, `"mp3"`, ...); `sample_format` is a WAV's
+/// sample type in the writing family's names (`"int16"`, `"int24"`, `"int32"`,
+/// `"float"`), and `None` for any other format, whose decoder chooses.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SoundInfo {
+    pub frames: u64,
+    pub channels: usize,
+    pub sample_rate: f64,
+    pub codec: String,
+    pub sample_format: Option<String>,
+}
+
+/// [`SoundInfo`] for the file at `path`, through the same two decoders
+/// [`read_audio`] chooses between, so the header and the samples never
+/// disagree about which decoder a file belongs to.
+pub fn probe_audio(path: &str) -> Result<SoundInfo, String> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    if is_wav_ext(ext) {
+        let reader = hound::WavReader::open(path).map_err(|e| format!("{path}: {e}"))?;
+        return Ok(wav_info(&reader));
+    }
+    let file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    let stream = symphonia::core::io::MediaSourceStream::new(Box::new(file), Default::default());
+    probe_symphonia(stream, ext, path, || read_audio(path, 0, 0))
+}
+
+/// [`probe_audio`] over bytes already in memory, as [`read_audio_bytes`] is to
+/// [`read_audio`]: a page reads the file through its own storage and hands the
+/// bytes here.
+pub fn probe_audio_bytes(bytes: Vec<u8>, ext: &str, label: &str) -> Result<SoundInfo, String> {
+    if is_wav_ext(ext) {
+        let reader = hound::WavReader::new(std::io::Cursor::new(bytes))
+            .map_err(|e| format!("{label}: {e}"))?;
+        return Ok(wav_info(&reader));
+    }
+    let stream = symphonia::core::io::MediaSourceStream::new(
+        Box::new(std::io::Cursor::new(bytes.clone())),
+        Default::default(),
+    );
+    probe_symphonia(stream, ext, label, || {
+        read_audio_bytes(bytes, ext, label, 0, 0)
+    })
+}
+
+fn is_wav_ext(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("wav") || ext.eq_ignore_ascii_case("wave")
+}
+
+fn wav_info<R: std::io::Read>(reader: &hound::WavReader<R>) -> SoundInfo {
+    let spec = reader.spec();
+    let sample_format = match (spec.sample_format, spec.bits_per_sample) {
+        (hound::SampleFormat::Float, _) => "float".to_string(),
+        (hound::SampleFormat::Int, bits) => format!("int{bits}"),
+    };
+    SoundInfo {
+        frames: u64::from(reader.duration()),
+        channels: usize::from(spec.channels),
+        sample_rate: f64::from(spec.sample_rate),
+        codec: "wav".into(),
+        sample_format: Some(sample_format),
+    }
+}
+
+/// The header of a non-WAV file, and `decode` for the one case it cannot
+/// answer alone: a container that states no frame count.
+fn probe_symphonia(
+    stream: symphonia::core::io::MediaSourceStream,
+    ext: &str,
+    label: &str,
+    decode: impl FnOnce() -> Result<Buffer, String>,
+) -> Result<SoundInfo, String> {
+    use symphonia::core::codecs::CodecParameters;
+    use symphonia::core::formats::probe::Hint;
+    use symphonia::core::formats::{FormatOptions, TrackType};
+    use symphonia::core::meta::MetadataOptions;
+
+    let err = |e: String| format!("{label}: {e}");
+    let mut hint = Hint::new();
+    if !ext.is_empty() {
+        hint.with_extension(ext);
+    }
+    let format = symphonia::default::get_probe()
+        .probe(
+            &hint,
+            stream,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|e| err(e.to_string()))?;
+    let codec = format.format_info().short_name.to_string();
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or_else(|| err("no audio track".into()))?;
+    let Some(CodecParameters::Audio(params)) = track.codec_params.as_ref() else {
+        return Err(err("default track is not audio".into()));
+    };
+    let channels = params.channels.as_ref().map_or(0, |c| c.count());
+    let sample_rate = params.sample_rate.unwrap_or(0);
+    if let (Some(frames), true, true) = (track.num_frames, channels > 0, sample_rate > 0) {
+        return Ok(SoundInfo {
+            frames,
+            channels,
+            sample_rate: f64::from(sample_rate),
+            codec,
+            sample_format: None,
+        });
+    }
+    let buffer = decode()?;
+    Ok(SoundInfo {
+        frames: buffer.frames() as u64,
+        channels: buffer.channels(),
+        sample_rate: buffer.sample_rate(),
+        codec,
+        sample_format: None,
+    })
 }
 
 /// Decodes a compressed/other-format file fully into an interleaved f32 buffer,
@@ -1328,6 +1454,42 @@ fn write_span(buffer: &Buffer, buf_start: usize, num_frames: i64) -> (usize, usi
         (num_frames as usize).min(buffer.frames() - start)
     };
     (start, frames)
+}
+
+/// Writes interleaved `samples` to a WAV file at `path`: [`wav_header`] and
+/// [`encode_wav_frames`], the two pieces a page writes into its own storage,
+/// so a client saving samples writes the same bytes from a window and from a
+/// tab. `sample_format` is the writing family's name (`int16` | `int24` |
+/// `float`).
+pub fn write_audio(
+    path: &str,
+    samples: Vec<f32>,
+    channels: usize,
+    sample_rate: f64,
+    sample_format: &str,
+) -> Result<(), String> {
+    if channels == 0 {
+        return Err(format!("{path}: a soundfile needs at least one channel"));
+    }
+    if !samples.len().is_multiple_of(channels) {
+        return Err(format!(
+            "{path}: {} samples are not whole frames of {channels} channels",
+            samples.len()
+        ));
+    }
+    if !(sample_rate > 0.0 && sample_rate.is_finite()) {
+        return Err(format!(
+            "{path}: sample rate must be positive, got {sample_rate}"
+        ));
+    }
+    let body = encode_wav_frames(&samples, sample_format)?;
+    let data_bytes = u32::try_from(body.len())
+        .map_err(|_| format!("{path}: {} bytes do not fit a WAV file", body.len()))?;
+    let channels = u16::try_from(channels)
+        .map_err(|_| format!("{path}: {channels} channels do not fit a WAV file"))?;
+    let mut bytes = wav_header(channels, sample_rate as u32, sample_format, data_bytes)?;
+    bytes.extend_from_slice(&body);
+    std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))
 }
 
 fn write_wav(

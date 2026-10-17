@@ -23,7 +23,7 @@ the same process wrote it and reads it:
    same file into a server buffer. Float32 WAV, read by the decoder the
    server already ships; nothing is converted to int16 on the way.
 3. A `play_buf` synth plays the buffer -- the take, sounding as a sample.
-4. For comparison, `read_soundfile` brings the samples into the client
+4. For comparison, a `SoundFile` brings the samples into the client
    through *that same decoder*, and the numbers match the render's own stats.
 
 The two ends of step 4 are worth noticing: the stdlib `wave` module cannot
@@ -40,11 +40,11 @@ import os
 import sys
 import tempfile
 
-from clausters import Session
+from clausters import Session, SoundFile
 from clausters.base import Routine
 from clausters.defs import SynthDef, control, out
 from clausters.defs.ugens import play_buf
-from clausters.render import channels, read_soundfile
+from clausters.render import channels
 from clausters.seq import pbind, pseq, pwhite
 from clausters.defs import Synth
 from clausters.defs import Buffer
@@ -119,11 +119,12 @@ print(f"  wrote {wav} ({os.path.getsize(wav)} bytes, float32)")
 # ## 2. Read it back, through the server's decoder
 
 # %%
-audio = read_soundfile(wav)
-left, right = channels(audio.samples, audio.channels)
+audio = SoundFile.open(wav)
+left, right = channels(audio.read(), audio.channels)
 print(f"read back: {audio.frames} frames x {audio.channels} ch, "
       f"{len(left)} + {len(right)} samples deinterleaved")
-same = all(abs(a - b) < 1e-9 for a, b in zip(audio.peak, stats.peak))
+peak = [max(abs(s) for s in side) for side in (left, right)]
+same = all(abs(a - b) < 1e-9 for a, b in zip(peak, stats.peak))
 print(f"  peak matches the render's own measurement: {same}")
 
 # %% [markdown]

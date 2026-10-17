@@ -91,7 +91,7 @@ import sys
 import tempfile
 
 from clausters import Session
-from clausters.render import read_soundfile
+from clausters import SoundFile
 from clausters.defs import Buffer, Synth, SynthDef, control, out, play_buf
 from clausters.gui import peaks_cache_file, samples_to_file, spectrogram, view, waveform
 from clausters.seq import EventPattern, pbind, pseq, pwhite
@@ -115,7 +115,7 @@ def render_stereo(path: str) -> list:
 
     The server writes the WAV (`render(path=...)` hands the score to the
     ``--nrt`` renderer), so the same file feeds two consumers: `/buffer_allocRead`
-    loads it into a buffer for the playhead to sound, and `read_soundfile`
+    loads it into a buffer for the playhead to sound, and `SoundFile.read`
     brings the samples here for the waveform view -- interleaved f32, the
     layout everything downstream already speaks.
     """
@@ -124,7 +124,7 @@ def render_stereo(path: str) -> list:
     nrt.play(phrase())
     stats = nrt.render(sample_rate=SR, channels=2, path=path)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) -> {path}")
-    return list(read_soundfile(path).samples)
+    return list(SoundFile.open(path).read())
 
 
 _tmp = tempfile.mkdtemp(prefix="clausters_editor_")
@@ -160,7 +160,7 @@ print(f"audio server on segment {server.shm}")
 # The playhead's sound source: the very file the render wrote, in a server
 # buffer, played by a synth. Nothing converts it -- `Buffer.read` is
 # /buffer_allocRead, which decodes float WAV through the same decoder
-# read_soundfile used above, and hands back the shape it found.
+# SoundFile.read used above, and hands back the shape it found.
 take = Buffer.read(wav_path, server=server)
 SynthDef(
     "sampler",

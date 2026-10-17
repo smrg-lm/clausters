@@ -938,6 +938,115 @@ pub unsafe extern "C" fn clausters_close(handle: *mut Clausters) {
     drop(unsafe { Box::from_raw(handle) });
 }
 
+/// Reads an audio file's **header** -- its shape, without decoding a sample --
+/// through the decoder [`clausters_read_soundfile`] uses, so the two never
+/// disagree about a file.
+///
+/// Writes the frame count, channel count and sample rate into the three out
+/// pointers, the container's short name (`wav`, `flac`, ...) into (`codec`,
+/// `codec_cap`) and a WAV's sample format (`int16`, `int24`, `int32`, `float`;
+/// empty for other formats) into (`sample_format`, `format_cap`), both
+/// NUL-terminated. Returns 0, or -1 with a message in (`err`, `err_cap`).
+///
+/// # Safety
+/// `path` must be a NUL-terminated UTF-8 string; the three out pointers must
+/// be writable; each text buffer either NULL or writable for its capacity.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)] // a C signature: one out pointer per field
+pub unsafe extern "C" fn clausters_soundfile_info(
+    path: *const std::ffi::c_char,
+    out_frames: *mut u64,
+    out_channels: *mut u32,
+    out_sample_rate: *mut f64,
+    codec: *mut u8,
+    codec_cap: usize,
+    sample_format: *mut u8,
+    format_cap: usize,
+    err: *mut u8,
+    err_cap: usize,
+) -> i32 {
+    let result = (|| {
+        if path.is_null() {
+            return Err("null path".to_string());
+        }
+        // SAFETY: caller contract.
+        let p = unsafe { std::ffi::CStr::from_ptr(path) }
+            .to_str()
+            .map_err(|e| format!("path is not UTF-8: {e}"))?;
+        crate::server::nrt::probe_audio(p)
+    })();
+    match result {
+        Ok(info) => {
+            // SAFETY: caller contract.
+            unsafe {
+                *out_frames = info.frames;
+                *out_channels = info.channels as u32;
+                *out_sample_rate = info.sample_rate;
+            }
+            write_error(&info.codec, codec, codec_cap);
+            write_error(
+                info.sample_format.as_deref().unwrap_or(""),
+                sample_format,
+                format_cap,
+            );
+            0
+        }
+        Err(e) => {
+            write_error(&e, err, err_cap);
+            -1
+        }
+    }
+}
+
+/// Writes `samples` interleaved `f32` samples of `channels` channels at
+/// `sample_rate` to a WAV file at `path`, with the header and the encoder a
+/// page writes its files with. `sample_format` is `int16`, `int24` or `float`. Returns 0, or -1
+/// with a message in (`err`, `err_cap`).
+///
+/// # Safety
+/// `path` and `sample_format` must be NUL-terminated UTF-8 strings; `data`
+/// readable for `samples` floats (or NULL when `samples` is 0); `err` either
+/// NULL or writable for `err_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_write_soundfile(
+    path: *const std::ffi::c_char,
+    data: *const f32,
+    samples: u64,
+    channels: u32,
+    sample_rate: f64,
+    sample_format: *const std::ffi::c_char,
+    err: *mut u8,
+    err_cap: usize,
+) -> i32 {
+    let result = (|| {
+        if path.is_null() || sample_format.is_null() {
+            return Err("null path or sample format".to_string());
+        }
+        // SAFETY: caller contract.
+        let p = unsafe { std::ffi::CStr::from_ptr(path) }
+            .to_str()
+            .map_err(|e| format!("path is not UTF-8: {e}"))?;
+        // SAFETY: caller contract.
+        let format = unsafe { std::ffi::CStr::from_ptr(sample_format) }
+            .to_str()
+            .map_err(|e| format!("sample format is not UTF-8: {e}"))?;
+        let values = if samples == 0 || data.is_null() {
+            Vec::new()
+        } else {
+            // SAFETY: caller contract: `data` holds `samples` floats.
+            unsafe { std::slice::from_raw_parts(data, samples as usize) }.to_vec()
+        };
+        crate::server::nrt::write_audio(p, values, channels as usize, sample_rate, format)
+    })();
+    match result {
+        Ok(()) => 0,
+        Err(e) => {
+            write_error(&e, err, err_cap);
+            -1
+        }
+    }
+}
+
 /// Reads an audio file into a malloc'd **interleaved** `f32` buffer -- the
 /// same decoder `/buffer_allocRead` uses, so a client never needs one of its own.
 /// WAV goes through hound; FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the

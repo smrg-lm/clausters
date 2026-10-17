@@ -63,6 +63,15 @@ class Part(NamedTuple):
     fade_out_curve: float = 0.0
 
 
+
+def _file_path(path) -> str:
+    """The path a read command names: a path, or a `clausters.SoundFile`'s."""
+    file_path = getattr(path, "path", path)
+    if file_path is None:
+        raise ValueError("this sound file is not written anywhere yet, so there is "
+                         "nothing to read; SoundFile.to_buffer allocates its shape")
+    return str(file_path)
+
 class Buffer:
     """A block of samples the server holds, and a synth reads or writes.
 
@@ -290,7 +299,11 @@ class Buffer:
         The shape is the **file's**, so the client cannot know it in advance:
         waiting reads it back (one `info` round trip) and the returned buffer
         carries it. Not waiting -- and NRT, which has no reply -- leaves
-        ``frames``/``channels`` at 0 until you call `info` yourself."""
+        ``frames``/``channels`` at 0 until you call `info` yourself.
+
+        ``path`` is a path or a `clausters.SoundFile`; one not written yet has
+        nothing to read (`clausters.SoundFile.to_buffer` allocates it)."""
+        path = _file_path(path)
         srv = _resolve(server)
         bufnum = srv.buffers.alloc()
         buf = cls(bufnum, server=srv)
@@ -321,7 +334,8 @@ class Buffer:
         ``[1]`` is the right channel alone, ``[1, 0]`` swaps a pair, ``[0, 0]``
         makes a mono file two-channel. A channel the file does not have raises
         rather than reading as silence. The buffer's shape comes from the file
-        *and* the selection."""
+        *and* the selection. ``path`` is a path or a `clausters.SoundFile`."""
+        path = _file_path(path)
         srv = _resolve(server)
         bufnum = srv.buffers.alloc()
         buf = cls(bufnum, server=srv)
@@ -377,7 +391,8 @@ class Buffer:
         """Read selected channels of a soundfile into **this** buffer
         (``/buffer_readChannel``), keeping its shape -- so the selection must
         have as many channels as the buffer does. `read_channels` is the form
-        that allocates for you."""
+        that allocates for you. ``path`` is a path or a `clausters.SoundFile`."""
+        path = _file_path(path)
         args = (self.bufnum, str(path), int(file_start), int(num_frames),
                 int(buf_start), *(int(c) for c in channels))
         srv = self._server()
@@ -410,8 +425,10 @@ class Buffer:
     def read_into(self, path, *, file_start: int = 0, num_frames: int = -1,
                   buf_start: int = 0, wait: bool = True, timeout: "float | None" = None):
         """Read a sound file into this buffer (``/buffer_read``), keeping its shape.
-        NRT scores at time 0; RT ``wait=True`` blocks on ``/done``."""
+        NRT scores at time 0; RT ``wait=True`` blocks on ``/done``. ``path`` is
+        a path or a `clausters.SoundFile`."""
         srv = self._server()
+        path = _file_path(path)
         args = [self.bufnum, str(path), int(file_start), int(num_frames),
                 int(buf_start)]
         if self._scored() or not wait:
@@ -426,17 +443,29 @@ class Buffer:
               buf_start: int = 0, wait: bool = True, timeout: "float | None" = None):
         """Write this buffer to a WAV file (``/buffer_write``); ``sample_format`` is
         ``"int16"``, ``"int24"`` or ``"float"``. NRT scores at time 0; RT
-        ``wait=True`` blocks on ``/done``."""
+        ``wait=True`` blocks on ``/done``.
+
+        Answers the `clausters.SoundFile` written, its shape the buffer's span,
+        when this buffer knows its shape and the write was waited for; ``None``
+        otherwise. The path is the server's filesystem."""
+        from ..soundfile import SoundFile
+
         srv = self._server()
         args = [self.bufnum, str(path), "wav", str(sample_format),
                 int(num_frames), int(buf_start)]
         if self._scored() or not wait:
             srv.send_msg("/buffer_write", *args)
-            return
+            return None
         addr, rargs = srv.request("/buffer_write", *args, timeout=timeout,
                                   expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/buffer_write {self.bufnum} {path!r} failed: {rargs}")
+        if not (self.frames and self.channels):
+            return None
+        start = min(max(0, int(buf_start)), self.frames)
+        frames = self.frames - start if num_frames < 0 else min(int(num_frames), self.frames - start)
+        return SoundFile(str(path), frames, self.channels, float(self.sample_rate), "wav",
+                         "float" if sample_format == "float32" else str(sample_format))
 
     def zero(self, *, wait: bool = True, timeout: "float | None" = None):
         """Zero this buffer (``/buffer_zero``). NRT scores at time 0; RT

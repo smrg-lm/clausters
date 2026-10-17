@@ -30,8 +30,8 @@ score in one cell and re-render in the next.
 import pathlib
 import sys
 
-from clausters import Session
-from clausters.render import read_soundfile
+from clausters import Session, SoundFile
+from clausters.render import channels
 from clausters.base import Routine
 from clausters.defs import SynthDef, control, out, sine
 from clausters.defs import Synth
@@ -91,10 +91,10 @@ Routine(sequence).play()
 # %%
 def run(path: str = str(OUT / "pause_resume.wav")):
     stats = session.render(sample_rate=SR, channels=2, path=path)
-    audio = read_soundfile(path)
+    audio = SoundFile.open(path)
     third = audio.frames // 3
     rms = lambda a: (sum(s * s for s in a) / max(1, len(a))) ** 0.5
-    mono = audio.channel(0)
+    mono = channels(audio.read(), audio.channels)[0]
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s)")
     print(f"beat RMS: {rms(mono[:third]):.3f} (on) "
           f"{rms(mono[third:2 * third]):.3f} (paused) "

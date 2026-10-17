@@ -865,7 +865,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
 
         - without it the samples come back in ``stats.samples``, interleaved;
         - with it the **server** writes the file and ``stats.samples`` is
-          ``None``. Read it back with `clausters.render.read_soundfile`.
+          ``None``. Read it back with `clausters.SoundFile`.
 
         The file is written by the server, not here: the score goes to the
         ``clausters --nrt`` renderer, which streams straight to disk. That is

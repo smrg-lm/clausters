@@ -2,7 +2,7 @@
 // page's own storage (the origin private file system, `opfs`) in a tab.
 //
 // One door for both, because a path a caller names means the same thing to
-// every verb that takes one -- `render`'s output, `readSoundfile`, a saved
+// every verb that takes one -- `render`'s output, a `SoundFile`, a saved
 // session -- and the server's `/buffer_allocRead` in a tab already reads that
 // same storage.
 

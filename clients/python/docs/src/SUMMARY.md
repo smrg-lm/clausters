@@ -48,6 +48,7 @@
   - [scope](api/clausters.scope.md)
   - [segments](api/clausters.segments.md)
   - [session](api/clausters.session.md)
+  - [soundfile](api/clausters.soundfile.md)
   - [base](api/clausters.base.md)
     - [absobject](api/clausters.base.absobject.md)
     - [appclock](api/clausters.base.appclock.md)

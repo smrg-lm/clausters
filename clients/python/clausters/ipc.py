@@ -441,6 +441,22 @@ def _load(path: str | None = None) -> ctypes.CDLL:
         ctypes.POINTER(ctypes.c_double), ctypes.c_char_p, ctypes.c_size_t,
     ]
 
+    info_fn = _require(lib, "clausters_soundfile_info", "embed")
+    info_fn.restype = ctypes.c_int32
+    info_fn.argtypes = [
+        ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint64),
+        ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_double),
+        ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_size_t,
+        ctypes.c_char_p, ctypes.c_size_t,
+    ]
+    write_fn = _require(lib, "clausters_write_soundfile", "embed")
+    write_fn.restype = ctypes.c_int32
+    write_fn.argtypes = [
+        ctypes.c_char_p, ctypes.POINTER(ctypes.c_float), ctypes.c_uint64,
+        ctypes.c_uint32, ctypes.c_double, ctypes.c_char_p, ctypes.c_char_p,
+        ctypes.c_size_t,
+    ]
+
     # `embed,realtime` surface: the live embedded server. Optional at load
     # time so `render()` works with an `embed`-only build; if it is absent the
     # error is deferred to `Clausters()`, where it is actually needed.
@@ -542,6 +558,42 @@ def read_soundfile(path, start: int = 0, frames: int = -1,
     samples = array("f", ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float * total)).contents)
     lib.clausters_free_samples(ptr, total)
     return samples, n.value, chans.value, rate.value
+
+
+def soundfile_info(path, lib_path: str | None = None) -> tuple[int, int, float, str, str | None]:
+    """Read an audio file's header through the server's decoder: ``(frames,
+    channels, sample_rate, codec, sample_format)``, decoding no samples.
+    ``sample_format`` is a WAV's (``"int16"``, ``"int24"``, ``"int32"``,
+    ``"float"``) and ``None`` for any other format."""
+    lib = _load(lib_path)
+    n = ctypes.c_uint64(0)
+    chans = ctypes.c_uint32(0)
+    rate = ctypes.c_double(0.0)
+    codec = ctypes.create_string_buffer(64)
+    fmt = ctypes.create_string_buffer(64)
+    err = ctypes.create_string_buffer(512)
+    if lib.clausters_soundfile_info(
+            str(path).encode(), ctypes.byref(n), ctypes.byref(chans),
+            ctypes.byref(rate), codec, len(codec), fmt, len(fmt), err, len(err)) != 0:
+        raise RenderError(err.value.decode() or f"could not read {path}")
+    return (n.value, chans.value, rate.value, codec.value.decode(),
+            fmt.value.decode() or None)
+
+
+def write_soundfile(path, samples, channels: int, sample_rate: float,
+                    sample_format: str = "int16", lib_path: str | None = None) -> None:
+    """Write interleaved float32 `samples` to a WAV file at `path`, with the
+    header and the encoder the web client writes its files with.
+    ``sample_format`` is ``"int16"``, ``"int24"`` or ``"float"``."""
+    lib = _load(lib_path)
+    data = samples if isinstance(samples, array) and samples.typecode == "f" else array("f", samples)
+    pointer = ctypes.cast((ctypes.c_float * len(data)).from_buffer(data), ctypes.POINTER(ctypes.c_float)) \
+        if len(data) else None
+    err = ctypes.create_string_buffer(512)
+    if lib.clausters_write_soundfile(
+            str(path).encode(), pointer, len(data), int(channels), float(sample_rate),
+            str(sample_format).encode(), err, len(err)) != 0:
+        raise RenderError(err.value.decode() or f"could not write {path}")
 
 
 def true_peak(samples, channels: int) -> tuple[float, ...]:

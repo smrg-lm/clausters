@@ -44,7 +44,7 @@ float32 in a stdlib ``array('f')``) when the render kept them. Passing
 ``--nrt`` renderer, so it never crosses into this process -- and leaves
 ``samples`` ``None``. That holds for every kind of render, a bare expression
 included: there is no second writer on this side. Read one back with
-`read_soundfile`.
+`clausters.SoundFile`: ``SoundFile.open(stats.path).read()``.
 
 A render with no ``seed`` draws a fresh one, so anything with a stochastic
 UGen in it is a new take every call; ``stats.seed`` reports the one used, and
@@ -74,7 +74,7 @@ from .base.main import main
 from .defs.node import Group, Synth
 from .log import LEVELS, render_line
 
-__all__ = ["render", "bounce_def", "RenderStats", "read_soundfile",
+__all__ = ["render", "bounce_def", "RenderStats",
            "render_to_file", "channels", "interleave", "MAX_BOUNCED_EVENTS"]
 
 
@@ -96,7 +96,7 @@ class RenderStats:
     ``samples`` holds the audio when the render kept it in memory, and is
     ``None`` when a ``path`` sent it to a file instead: **the path chooses
     where the output goes, not whether there is one**, so the stats come back
-    either way. Read a written file with `read_soundfile`.
+    either way. Read a written file with `clausters.SoundFile`.
 
     ``peak`` and ``rms`` are **per channel**, in channel order, measured by
     the renderer as it streamed -- not by a second pass here, which for a
@@ -127,7 +127,7 @@ class RenderStats:
         if self.samples is None:
             raise ValueError(
                 "this render went to a file, so it has no samples here; read "
-                "them back with read_soundfile(stats.path)"
+                "them back with SoundFile.open(stats.path).read()"
             )
         return self.samples[index::self.channels]
 
@@ -157,35 +157,6 @@ def interleave(*chans) -> array:
     for i, c in enumerate(chans):
         out[i::len(chans)] = array("f", c)
     return out
-
-
-def read_soundfile(path, start: int = 0, frames: int = -1) -> RenderStats:
-    """Read an audio file through **the server's own decoder**.
-
-    WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the rest -- whatever
-    the file holds, the samples come back interleaved `float32`, scaled to
-    ``[-1, 1]``, at the file's own sample rate (nothing here resamples). This
-    is the same decoder ``/buffer_allocRead`` uses, which is why the client needs
-    no audio library of its own: the stdlib `wave` module cannot even read
-    the float32 WAV that `render` writes.
-
-    Reads `frames` frames from `start`; ``frames = -1`` means to the end.
-    Returns a `RenderStats` with ``samples`` filled and ``events`` 0.
-    """
-    from . import ipc
-
-    samples, n, chans, rate = ipc.read_soundfile(path, start, frames)
-    peak, rms = _measure(samples, chans)
-    return RenderStats(frames=n, channels=chans, sample_rate=rate, events=0,
-                       peak=peak, rms=rms, path=str(path), samples=samples)
-
-
-def _measure(samples, chans: int):
-    """Per-channel peak and RMS, through the core so the numbers match the
-    server's own (`clausters_core_stats`)."""
-    from . import ipc
-
-    return ipc.channel_stats(samples, chans)
 
 
 def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,

@@ -301,11 +301,11 @@ test("a render of a value pattern is the values it generates", async () => {
     await assert.rejects(render(pseq([1, 2], Infinity)), /count/);
 });
 
-test("a render with a path writes the take, and readSoundfile reads it back", async () => {
+test("a render with a path writes the take, and a SoundFile reads it back", async () => {
     const { mkdtemp, rm } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    const { readSoundfile } = await import("../src/render.ts");
+    const { SoundFile } = await import("../src/soundfile.ts");
     const dir = await mkdtemp(join(tmpdir(), "clausters-take-"));
     try {
         const kept = await render(sine(440.0).mul(0.5), { dur: 0.25, channels: 2, seed: 7 });
@@ -319,21 +319,22 @@ test("a render with a path writes the take, and readSoundfile reads it back", as
         assert.equal(sent.events, kept.events);
 
         // A float file is the take, sample for sample, through the server's decoder.
-        const back = await readSoundfile(path);
+        const back = await SoundFile.open(path);
         assert.equal(back.frames, kept.frames);
         assert.equal(back.channels, 2);
         assert.equal(back.sampleRate, 48_000);
-        assert.deepEqual([...back.samples!], [...kept.samples!]);
-        const tail = await readSoundfile(path, { start: 100, frames: 10 });
-        assert.deepEqual([...tail.samples!], [...kept.samples!.slice(200, 220)]);
+        assert.equal(back.sampleFormat, "float");
+        assert.deepEqual([...await back.read()], [...kept.samples!]);
+        const tail = await back.read(100, 10);
+        assert.deepEqual([...tail], [...kept.samples!.slice(200, 220)]);
 
         // int16 is the server's own conversion: within a step of the take.
         const short = join(dir, "short.wav");
         await render(sine(440.0).mul(0.5), {
             dur: 0.25, channels: 2, seed: 7, path: short, sampleFormat: "int16",
         });
-        const quantized = await readSoundfile(short);
-        const worst = Math.max(...quantized.samples!.map((v, i) => Math.abs(v - kept.samples![i]!)));
+        const quantized = await (await SoundFile.open(short)).read();
+        const worst = Math.max(...quantized.map((v, i) => Math.abs(v - kept.samples![i]!)));
         assert.ok(worst <= 1 / 32768 + 1e-9, `int16 error ${worst}`);
     } finally {
         await rm(dir, { recursive: true, force: true });

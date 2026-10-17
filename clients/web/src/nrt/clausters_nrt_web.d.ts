@@ -22,6 +22,27 @@ export class Decoded {
 }
 
 /**
+ * A soundfile's header, read from its bytes: the shape a page shows before it
+ * decodes a sample (`probe_audio_bytes`, the native `clausters_soundfile_info`).
+ */
+export class Probed {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly channels: number;
+    readonly codec: string;
+    /**
+     * Frames per channel, as a double so a page reads a plain number.
+     */
+    readonly frames: number;
+    /**
+     * A WAV's sample format, empty for any other format.
+     */
+    readonly sampleFormat: string;
+    readonly sampleRate: number;
+}
+
+/**
  * Decodes a soundfile already in memory -- the Worker's whole job.
  *
  * `ext` is the format hint (`"wav"`, `"flac"`, ..., no dot; an empty hint still
@@ -72,6 +93,12 @@ export function faustBoxFromJson(json: string): number;
 export function faustSignalsFromJson(json: string): Uint32Array;
 
 /**
+ * Reads a soundfile's header out of its bytes, with the decoder `decodeAudio`
+ * uses. `ext` and `label` are as there.
+ */
+export function probeAudio(bytes: Uint8Array, ext: string, label: string): Probed;
+
+/**
  * Removes the data segment a Faust wasm module carries, so the module can be
  * instantiated against the engine's own linear memory.
  *
@@ -104,6 +131,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_decoded_free: (a: number, b: number) => void;
+    readonly __wbg_probed_free: (a: number, b: number) => void;
     readonly decodeAudio: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly decoded_channels: (a: number) => number;
     readonly decoded_frames: (a: number) => number;
@@ -112,13 +140,21 @@ export interface InitOutput {
     readonly encodeWavFrames: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly faustBoxFromJson: (a: number, b: number) => [number, number, number];
     readonly faustSignalsFromJson: (a: number, b: number) => [number, number, number, number];
+    readonly probeAudio: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly probed_channels: (a: number) => number;
+    readonly probed_codec: (a: number) => [number, number];
+    readonly probed_sampleFormat: (a: number) => [number, number];
+    readonly probed_sampleRate: (a: number) => number;
     readonly stripFaustData: (a: number, b: number) => [number, number, number, number];
     readonly wavHeader: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly probed_frames: (a: number) => number;
     readonly clausters_abi_version: () => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;
     readonly clausters_read_soundfile: (a: number, b: bigint, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
     readonly clausters_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly clausters_render_log: (a: number, b: number) => number;
+    readonly clausters_soundfile_info: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
+    readonly clausters_write_soundfile: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;
     readonly clausters_midi_read_clip: (a: number, b: number, c: number) => number;

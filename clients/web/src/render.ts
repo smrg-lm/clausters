@@ -42,7 +42,7 @@
 // are the server crate's (`engine/codec.ts`), so the file is the one a native
 // render writes. What a page cannot do is stream while rendering: its
 // renderer is the wasm engine in this tab, so the samples exist in full before
-// the file is written. `readSoundfile` reads a file back through the server's
+// the file is written. `SoundFile` reads a file back through the server's
 // own decoder.
 //
 // `workers` stays out for a harder reason: the wasm entry point renders on the
@@ -73,8 +73,8 @@ import { Timeline } from "./seq/timeline.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
 import { channelStats } from "./data/analysis.ts";
 import { renderScoreBytes } from "./engine/render.ts";
-import { decodeSoundfile, encodeWav } from "./engine/codec.ts";
-import { readFileAt, writeFileAt } from "./base/files.ts";
+import { encodeWav } from "./engine/codec.ts";
+import { writeFileAt } from "./base/files.ts";
 
 /**
  * How many events -- or values -- a render takes before it decides its source
@@ -140,7 +140,7 @@ export interface RenderStats {
 /** A finished render's samples, or why there are none. */
 function samplesOf(stats: RenderStats): Float32Array {
     if (stats.samples === null) {
-        throw new Error(`clausters: the take went to ${stats.path}: read it with readSoundfile`);
+        throw new Error(`clausters: the take went to ${stats.path}: read it with SoundFile.open(path).read()`);
     }
     return stats.samples;
 }
@@ -223,41 +223,6 @@ export async function renderScore(
         seed: used,
         path: path ?? null,
         samples: path === undefined ? samples : null,
-    };
-}
-
-/**
- * Reads a soundfile through **the server's own decoder** -- WAV, FLAC,
- * OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the rest -- from the disk under
- * node or the page's own storage (`opfs`) in a tab: `frames` frames from
- * `start` (`-1`, the default, to the end), interleaved `float32` scaled to
- * `[-1, 1]` at the file's own rate. The same decoder `/buffer_allocRead` uses,
- * so the samples are the ones a server buffer holds. Resolves with a
- * `RenderStats` whose `samples` are filled.
- */
-export async function readSoundfile(
-    path: string,
-    { start = 0, frames = -1 }: { start?: number; frames?: number } = {},
-): Promise<RenderStats> {
-    const decoded = await decodeSoundfile(await readFileAt(path), path, start, frames);
-    const peak: number[] = [];
-    const rms: number[] = [];
-    for (let ch = 0; ch < decoded.channels; ch++) {
-        const [p = 0, r = 0] = channelStats(decoded.samples, decoded.channels, ch);
-        peak.push(p);
-        rms.push(r);
-    }
-    return {
-        frames: decoded.frames,
-        channels: decoded.channels,
-        sampleRate: decoded.sampleRate,
-        events: 0,
-        duration: decoded.sampleRate > 0 ? decoded.frames / decoded.sampleRate : 0,
-        peak,
-        rms,
-        seed: 0n,
-        path,
-        samples: decoded.samples,
     };
 }
 

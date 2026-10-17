@@ -80,7 +80,7 @@ export type { Plottable, PlotOptions } from "./plot.ts";
 export { scope, ScopeWindow } from "./scope.ts";
 export type { ScopeOptions, ScopeView } from "./scope.ts";
 export {
-    MAX_BOUNCED_EVENTS, bounceDef, channel, channels, interleave, readSoundfile, render, renderScore,
+    MAX_BOUNCED_EVENTS, bounceDef, channel, channels, interleave, render, renderScore,
 } from "./render.ts";
 export type {
     RenderOptions,
@@ -208,6 +208,8 @@ export { AddAction, Group, Node, Synth, Voices } from "./defs/node.ts";
 export type { Controls, GroupOptions, NodeLike, Placement } from "./defs/node.ts";
 export { Bus } from "./defs/bus.ts";
 export { Buffer } from "./defs/buffer.ts";
+export { SoundFile } from "./soundfile.ts";
+export type { SoundFileFormat } from "./soundfile.ts";
 export type { BufferOptions, Part } from "./defs/buffer.ts";
 export { SynthDef } from "./defs/synthdef.ts";
 export { FaustDef } from "./defs/faustdef.ts";

@@ -28,7 +28,7 @@ def test_render_bounces_a_bare_expression(tmp_path):
     _embed_or_skip()
     from clausters.defs import sine
 
-    from clausters.render import read_soundfile
+    from clausters import SoundFile
 
     # In memory: the samples ride in the stats.
     kept = render(sine(440.0) * 0.2, dur=0.25, sample_rate=SR, channels=1)
@@ -54,7 +54,7 @@ def test_render_bounces_a_bare_expression(tmp_path):
     assert fmt in (3, 0xFFFE)
     assert (chans, rate, bits) == (1, int(SR), 32)
     # And it holds the take the in-memory render produced, sample for sample.
-    assert read_soundfile(wav).samples == kept.samples
+    assert SoundFile.open(wav).read() == kept.samples
 
 
 def test_render_refuses_an_expression_wider_than_its_outputs():
@@ -268,7 +268,7 @@ def test_a_reported_seed_replays_its_take():
 def test_the_file_path_reports_its_seed_too(tmp_path):
     _embed_or_skip()
     from clausters import Session
-    from clausters.render import read_soundfile
+    from clausters import SoundFile
 
     def score(seed):
         s = Session.nrt()
@@ -283,7 +283,7 @@ def test_the_file_path_reports_its_seed_too(tmp_path):
     assert fresh.samples is None
     # The same seed through the file writer gives the same audio back.
     again = score(fresh.seed)
-    assert read_soundfile(again.path).samples == read_soundfile(fresh.path).samples
+    assert SoundFile.open(again.path).read() == SoundFile.open(fresh.path).read()
 
 
 def test_a_file_render_forwards_what_the_renderer_logged(tmp_path, monkeypatch, caplog):

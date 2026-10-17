@@ -33,7 +33,7 @@ code wrote it and reads it:
 <code>path</code>: the take is written to <code>out/phrase.wav</code> in the
 page's own filesystem (the origin private file system). What comes back is the
 stats -- frames, events, per-channel peak and RMS -- and no samples.</li>
-<li><code>readSoundfile</code> brings the samples into the page through the
+<li>A <code>SoundFile</code> brings the samples into the page through the
 server's own decoder, and the numbers match the render's own stats.</li>
 <li>A live session starts and <code>Buffer.read</code>
 (<code>/buffer_allocRead</code>) loads that same file into a server buffer:
@@ -64,7 +64,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
     -->
     <script type="module">
       import {
-        Buffer, Routine, Session, Synth, channels, readSoundfile,
+        Buffer, Routine, Session, SoundFile, Synth, channels,
       } from "../../dist/index.js";
       import { SynthDef, control, out, playBuf } from "../../dist/defs/index.js";
       import { pbind, pseq, pwhite } from "../../dist/seq/index.js";
@@ -128,11 +128,12 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         // ---- 2. read it back ----
         // The same decoder `/buffer_allocRead` uses, so the samples are the
         // ones a server buffer holds.
-        const audio = await readSoundfile(wav);
-        const [left, right] = channels(audio.samples, audio.channels);
+        const audio = await SoundFile.open(wav);
+        const [left, right] = channels(await audio.read(), audio.channels);
         log(`read back: ${audio.frames} frames x ${audio.channels} ch, `
           + `${left.length} + ${right.length} samples deinterleaved`);
-        const same = audio.peak.every((a, i) => Math.abs(a - stats.peak[i]) < 1e-9);
+        const peak = [left, right].map((side) => side.reduce((m, s) => Math.max(m, Math.abs(s)), 0));
+        const same = peak.every((a, i) => Math.abs(a - stats.peak[i]) < 1e-9);
         log(`  peak matches the render's own measurement: ${same}`);
 
         // ---- 3. load it into a running server and play it ----

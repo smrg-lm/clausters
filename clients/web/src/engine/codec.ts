@@ -28,6 +28,11 @@ interface Codec {
         numFrames: number,
         channels: Uint32Array,
     ) => { samples: Float32Array; channels: number; frames: number; sampleRate: number };
+    probeAudio: (
+        bytes: Uint8Array,
+        ext: string,
+        label: string,
+    ) => { frames: number; channels: number; sampleRate: number; codec: string; sampleFormat: string };
 }
 
 let loaded: Promise<Codec> | null = null;
@@ -99,13 +104,37 @@ export async function decodeSoundfile(
     frames: number,
 ): Promise<{ samples: Float32Array; channels: number; frames: number; sampleRate: number }> {
     const module = await codec();
-    const dot = path.lastIndexOf(".");
-    const ext = dot > path.lastIndexOf("/") ? path.slice(dot + 1).toLowerCase() : "";
-    const decoded = module.decodeAudio(bytes, ext, path, start, frames, new Uint32Array());
+    const decoded = module.decodeAudio(bytes, extension(path), path, start, frames, new Uint32Array());
     return {
         samples: decoded.samples,
         channels: decoded.channels,
         frames: decoded.frames,
         sampleRate: decoded.sampleRate,
     };
+}
+
+/**
+ * A soundfile's header through the server's own decoder: its shape, the
+ * container's short name and a WAV's sample format (empty for other formats).
+ * The format is probed as {@link decodeSoundfile} probes it.
+ */
+export async function probeSoundfile(
+    bytes: Uint8Array,
+    path: string,
+): Promise<{ frames: number; channels: number; sampleRate: number; codec: string; sampleFormat: string }> {
+    const module = await codec();
+    const info = module.probeAudio(bytes, extension(path), path);
+    return {
+        frames: info.frames,
+        channels: info.channels,
+        sampleRate: info.sampleRate,
+        codec: info.codec,
+        sampleFormat: info.sampleFormat,
+    };
+}
+
+/** The format hint a path gives: its extension, lowercased, or nothing. */
+function extension(path: string): string {
+    const dot = path.lastIndexOf(".");
+    return dot > path.lastIndexOf("/") ? path.slice(dot + 1).toLowerCase() : "";
 }

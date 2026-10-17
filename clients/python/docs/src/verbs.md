@@ -255,33 +255,51 @@ This holds for **every** kind of render, a bare expression included:
 render(sine(440.0) * 0.2, dur=2.0, path="beep.wav").samples   # None, like the rest
 ```
 
-There is no second writer in the client for the short bounces — one writer
-means one answer about the format, and reading a file back never depends on
-which verb wrote it.
+A render that sends its audio to a file writes it in the server's renderer; the
+samples a render kept in memory are saved with `SoundFile.write` below. Either
+file is read back by the same decoder, whichever wrote it.
 
-### Reading a file back
+### Sound files: `SoundFile`
 
-The counterpart is `read_soundfile`, which decodes through **the server's
-decoder**, not a Python one:
+A file on the client's side is a `SoundFile`: its path and its shape, read from
+the header without decoding a sample. Reading it, writing one and loading one
+into the server all go through it:
 
 ```python
-from clausters.render import read_soundfile
+from clausters import SoundFile
+from clausters.defs import Buffer
 
-audio = read_soundfile("take.wav")
-audio.frames, audio.channels, audio.sample_rate
-audio.samples          # interleaved float32
+take = SoundFile.open("take.wav")
+take.frames, take.channels, take.sample_rate, take.codec   # the header
+samples = take.read()                  # interleaved float32, decoded now
+head = take.read(0, 4800)              # the first 4800 frames
+
+stats = render(sine(440.0) * 0.2, dur=2.0)
+SoundFile.write("beep.wav", stats.samples, stats.channels, stats.sample_rate)
+
+buf = take.to_buffer()                 # the same command as Buffer.read(take)
+copy = buf.write("copy.wav")           # answers the SoundFile it wrote
 ```
 
-WAV goes through hound and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC and AIFF
-through symphonia — the same path `/buffer_allocRead` takes, so client and server
-never disagree about a file. Integer files are scaled to `[-1, 1]` on the way
-out: whatever the file holds, what you get is `float32`. Nothing resamples;
-`sample_rate` is the file's own.
+Decoding goes through **the server's decoder**, not a Python one: WAV through
+hound and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC and AIFF through symphonia — the
+same path `/buffer_allocRead` takes, so client and server never disagree about
+a file. Integer files are scaled to `[-1, 1]` on the way out: whatever the file
+holds, what you get is `float32`. Nothing resamples; `sample_rate` is the
+file's own. `SoundFile.write` writes WAV (`sample_format` `"int16"`, `"int24"`
+or `"float"`) with the encoder the web client writes its files with, so the
+same samples are the same bytes in both.
 
 This is not a convenience wrapper over the standard library. Python's `wave`
 module cannot read a float32 WAV at all — the format `render` writes — so
-borrowing the server's reader is what keeps the client free of an audio
+borrowing the server's codecs is what keeps the client free of an audio
 dependency.
+
+A `SoundFile` is a **file**, and a `Buffer` is memory on the **server**: they
+meet only through reads and writes. `SoundFile.empty(channels, frames, rate)`
+is a file of that shape that is not written anywhere yet — silence an editor
+opens and asks a path for when it is saved; its `to_buffer` allocates a zeroed
+buffer. `take.source` is the document's `Source` for the file.
 
 ### Interleaved, and how to split it
 

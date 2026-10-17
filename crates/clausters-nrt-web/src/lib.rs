@@ -21,7 +21,9 @@
 //! The Worker has no filesystem either: OPFS is a JS API, so bytes come in
 //! from the page and a path never crosses. What the page reads, this decodes.
 
-use clausters::server::nrt::{encode_wav_frames, read_audio_bytes, select_channels, wav_header};
+use clausters::server::nrt::{
+    encode_wav_frames, probe_audio_bytes, read_audio_bytes, select_channels, wav_header,
+};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -102,6 +104,61 @@ pub fn decode_audio(
         channels: buffer.channels(),
         frames: buffer.frames(),
         sample_rate: buffer.sample_rate(),
+    })
+}
+
+/// A soundfile's header, read from its bytes: the shape a page shows before it
+/// decodes a sample (`probe_audio_bytes`, the native `clausters_soundfile_info`).
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+pub struct Probed {
+    frames: f64,
+    channels: usize,
+    sample_rate: f64,
+    codec: String,
+    sample_format: String,
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl Probed {
+    /// Frames per channel, as a double so a page reads a plain number.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    pub fn frames(&self) -> f64 {
+        self.frames
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter, js_name = sampleRate))]
+    pub fn sample_rate(&self) -> f64 {
+        self.sample_rate
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    pub fn codec(&self) -> String {
+        self.codec.clone()
+    }
+
+    /// A WAV's sample format, empty for any other format.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter, js_name = sampleFormat))]
+    pub fn sample_format(&self) -> String {
+        self.sample_format.clone()
+    }
+}
+
+/// Reads a soundfile's header out of its bytes, with the decoder `decodeAudio`
+/// uses. `ext` and `label` are as there.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = probeAudio))]
+pub fn probe_audio(bytes: Vec<u8>, ext: &str, label: &str) -> Result<Probed, String> {
+    let info = probe_audio_bytes(bytes, ext, label)?;
+    Ok(Probed {
+        frames: info.frames as f64,
+        channels: info.channels,
+        sample_rate: info.sample_rate,
+        codec: info.codec,
+        sample_format: info.sample_format.unwrap_or_default(),
     })
 }
 

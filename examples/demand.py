@@ -40,7 +40,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
-from clausters.render import read_soundfile
+from clausters import SoundFile
 from clausters.defs import Server, SynthDef
 from clausters.defs.ugens import (
     DoneAction, Env, dbrown, decay2, drand, dseq, dseries, dshuf, dstutter,
@@ -224,7 +224,7 @@ def run_bench(path=None):
     stats = server.render(sample_rate=SR, channels=1, path=path)
     # The claims below read individual slots, not a summary, so the samples
     # come back from the file the server just wrote.
-    samples = read_soundfile(path).samples if path else \
+    samples = SoundFile.open(path).read() if path else \
         server.render(sample_rate=SR, channels=1).samples
 
     print(f"\nthe bench: {len(rows)} streams, one pulled value every "
@@ -320,7 +320,7 @@ def render_sequence(path=None):
     clock.render()
     stats = server.render(sample_rate=SR, channels=2, path=path)
     # Per-section RMS below needs the samples, not the whole-render summary.
-    samples = read_soundfile(path).samples if path else \
+    samples = SoundFile.open(path).read() if path else \
         server.render(sample_rate=SR, channels=2).samples
 
     peak = max(stats.peak)

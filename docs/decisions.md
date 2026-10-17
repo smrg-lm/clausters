@@ -10403,3 +10403,24 @@ summary walk serve both sources. A resumed effect retains its frozen state;
 transport-addressed gain immediately follows the current position. A chain
 reorder rebuilds the affected suffix with its saved ports and fresh state,
 since an auto-sorted group refuses manual node moves.
+
+## A sound file is a client object, and a buffer is never one (2026-10-16)
+
+The clients read and wrote audio files through scattered verbs:
+`read_soundfile` decoded a whole file into a render's statistics, a render's
+kept samples had no writer at all, and `Buffer.read` took a bare path. A file is
+a different structure from a buffer -- one is on the client's disk (or a page's
+storage), the other is memory in the server -- so it gets its own object,
+`SoundFile`, in both clients: a path (or none, for a file not written yet) and
+the shape read from the header. `SoundFile.open` reads the header only,
+`read` decodes on demand, `SoundFile.write` writes WAV, `to_buffer` loads it,
+and `Buffer.write` answers the `SoundFile` it wrote. `read_soundfile` and
+`readSoundfile` are gone rather than kept beside it.
+
+Every byte goes through the server crate's codecs, never a client library: the
+header probe sits beside `read_audio` (`nrt::probe_audio`) and reaches Python
+through the embed library and a page through the NRT worker's module, and
+`SoundFile.write` uses the header and encoder a page already wrote renders
+with, so the same samples are the same bytes from both clients. An empty
+`SoundFile` is a shape with no path, which `to_buffer` allocates as silence;
+the audio editor opens one and asks for a path when it is saved.

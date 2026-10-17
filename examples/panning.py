@@ -38,7 +38,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
-from clausters.render import read_soundfile
+from clausters import SoundFile
 from clausters.defs import Server, SynthDef, control
 from clausters.defs.ugens import (
     DoneAction, Env, balance2, env_gen, lf_noise1, lf_tri, lin_pan2, mid_side,
@@ -212,7 +212,7 @@ def render(path=None):
     stats = server.render(sample_rate=SR, channels=2, path=path)
     # The claims below measure individual sections, not a summary, so the
     # samples come back from the file the server just wrote.
-    samples = read_soundfile(path).samples if path else \
+    samples = SoundFile.open(path).read() if path else \
         server.render(sample_rate=SR, channels=2).samples
 
     peak = max(stats.peak)

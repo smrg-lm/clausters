@@ -154,17 +154,23 @@ stats.path;            // "out/take.wav"
 
 The file is where every path this client takes is: the page's own storage — the origin private file system, `opfs` — in a tab, and the disk under node. It is also what `Buffer.read` and the engine's `/buffer_allocRead` read in a tab, so a take written by a render loads straight into a buffer. `sampleFormat` is `"float"` (the default), `"int24"` or `"int16"`, and the framing and the conversion are the server crate's, so the file is the one a native render writes. What a page cannot do is stream while rendering: its renderer is the wasm engine in the tab, so the samples exist in full before the file is written.
 
-### Reading a file back
+### Sound files: `SoundFile`
 
-`readSoundfile` decodes through **the server's decoder** — WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF — the one `/buffer_allocRead` uses, so the client and the engine never disagree about a file:
+A file on the page's side is a `SoundFile`: its path and its shape, read from the header. Reading it, writing one and loading one into the engine all go through it, with the codecs the server decodes and writes with — WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF in, WAV out — so the page and the engine never disagree about a file:
 
 ```js
-const audio = await readSoundfile("out/take.wav");
-audio.frames; audio.channels; audio.sampleRate;
-const [left, right] = channels(audio.samples, audio.channels);
+const take = await SoundFile.open("out/take.wav");
+take.frames; take.channels; take.sampleRate; take.codec;   // the header
+const [left, right] = channels(await take.read(), take.channels);
+
+const stats = await render(sine(440.0).mul(0.2), { dur: 2.0 });
+await SoundFile.write("out/beep.wav", stats.samples, stats.channels, stats.sampleRate);
+
+const buf = await take.toBuffer();        // the same command as Buffer.read(take)
+const copy = await buf.write("out/copy.wav");   // resolves with the SoundFile it wrote
 ```
 
-Integer files are scaled to `[-1, 1]`, nothing resamples, and `start`/`frames` read a span. `channels` deinterleaves and `interleave` weaves back.
+Integer files are scaled to `[-1, 1]`, nothing resamples, and `read(start, frames)` reads a span. `channels` deinterleaves and `interleave` weaves back. A `SoundFile` is a **file** and a `Buffer` is memory in the **engine**: they meet only through reads and writes. `SoundFile.empty(channels, frames, rate)` is a file of that shape not written anywhere yet — silence an editor opens and asks a path for when it is saved — and its `toBuffer` allocates a zeroed buffer. `take.source` is the document's `Source` for the file.
 
 `examples/buffers/render-then-load.html` runs the whole loop — render to a file, read it back, load it into a buffer and play it.
 

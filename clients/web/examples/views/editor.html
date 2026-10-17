@@ -72,7 +72,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { Buffer, Session, Synth, SynthDef, gui, readSoundfile, seq } from "../../dist/index.js";
+      import { Buffer, Session, SoundFile, Synth, SynthDef, gui, seq } from "../../dist/index.js";
       import { control, out, playBuf } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -94,7 +94,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
        *
        * The render writes the WAV, so the same file feeds two consumers --
        * `/buffer_allocRead` loads it into a buffer for the playhead to sound,
-       * and `readSoundfile` brings the samples here for the waveform view --
+       * and `SoundFile.read` brings the samples here for the waveform view --
        * interleaved f32, the layout everything downstream already speaks.
        */
       async function renderStereo(path) {
@@ -103,7 +103,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         nrt.play(phrase());
         const stats = await nrt.render({ sampleRate: SR, channels: 2, path });
         log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) -> ${path}`);
-        return (await readSoundfile(path)).samples;
+        return (await SoundFile.open(path)).read();
       }
 
       const SELECT_PLAN = { drag: "select", ctrl: "select_box select" };

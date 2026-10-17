@@ -23,8 +23,21 @@ import { parseBufferList } from "./info.ts";
 import type { BufferInfo } from "./info.ts";
 import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
+import { SoundFile } from "../soundfile.ts";
 
 export const NUM_BUFFERS = 4096;
+
+/** The path a read command names: a path, or a {@link SoundFile}'s. */
+function filePath(file: string | SoundFile): string {
+    const path = typeof file === "string" ? file : file.path;
+    if (path === null) {
+        throw new RangeError(
+            "this sound file is not written anywhere yet, so there is nothing to read; "
+                + "SoundFile.toBuffer allocates its shape",
+        );
+    }
+    return path;
+}
 
 /**
  * One source's contribution to a join -- what {@link Buffer.stitch} takes and
@@ -226,9 +239,12 @@ export class Buffer {
      * own decoder, so the samples are the ones a native read of the same file
      * gives. `load` is the other door and a different thing: a file over the
      * network, decoded by the browser.
+     *
+     * `file` is a path or a {@link SoundFile}; one not written yet has nothing
+     * to read ({@link SoundFile.toBuffer} allocates it).
      */
     static async read(
-        path: string,
+        file: string | SoundFile,
         {
             fileStart = 0,
             numFrames = 0,
@@ -236,6 +252,7 @@ export class Buffer {
             server: on,
         }: BufferOptions & { fileStart?: number; numFrames?: number } = {},
     ): Promise<Buffer> {
+        const path = filePath(file);
         const server = resolveServer(on);
         const bufnum = server.buffers.alloc();
         try {
@@ -266,9 +283,10 @@ export class Buffer {
      * is the right channel alone, `[1, 0]` swaps a pair, `[0, 0]` makes a mono
      * file two-channel. A channel the file does not have throws rather than
      * reading as silence. The shape comes from the file *and* the selection.
+     * `file` is a path or a {@link SoundFile}.
      */
     static async readChannels(
-        path: string,
+        file: string | SoundFile,
         channels: number[],
         {
             fileStart = 0,
@@ -277,6 +295,7 @@ export class Buffer {
             server: on,
         }: BufferOptions & { fileStart?: number; numFrames?: number } = {},
     ): Promise<Buffer> {
+        const path = filePath(file);
         const server = resolveServer(on);
         const bufnum = server.buffers.alloc();
         try {
@@ -445,7 +464,8 @@ export class Buffer {
      * file.
      *
      * The path is the server's, as in `read` -- a native server's disk over the
-     * WebSocket carrier, the page's own storage (`opfs`) in a tab.
+     * WebSocket carrier, the page's own storage (`opfs`) in a tab. `file` is a
+     * path or a {@link SoundFile}.
      *
      * **Not yet delegated in a tab**, unlike `read`: this one overlays the
      * file onto the buffer's current contents, which live in the engine's own
@@ -453,7 +473,7 @@ export class Buffer {
      * is named in `clients/web/PLAN.md` rather than left to be found by ear.
      */
     async readInto(
-        path: string,
+        file: string | SoundFile,
         {
             fileStart = 0,
             numFrames = -1,
@@ -468,6 +488,7 @@ export class Buffer {
             timeout?: number;
         } = {},
     ): Promise<void> {
+        const path = filePath(file);
         const args: MsgArg[] = [
             ["i", this.bufnum],
             path,
@@ -505,7 +526,7 @@ export class Buffer {
             wait?: boolean;
             timeout?: number;
         } = {},
-    ): Promise<void> {
+    ): Promise<SoundFile | null> {
         const args: MsgArg[] = [
             ["i", this.bufnum],
             path,
@@ -516,9 +537,13 @@ export class Buffer {
         ];
         if (!wait) {
             this.srv().sendMsg("/buffer_write", ...args);
-            return;
+            return null;
         }
         await this.srv().command("/buffer_write", args, timeout);
+        if (!(this.frames && this.channels)) return null;
+        const start = Math.min(Math.max(0, Math.trunc(bufStart)), this.frames);
+        const frames = numFrames < 0 ? this.frames - start : Math.min(Math.trunc(numFrames), this.frames - start);
+        return new SoundFile(path, frames, this.channels, this.sampleRate, "wav", sampleFormat);
     }
 
     /** Zeroes this buffer (`/buffer_zero`). */
@@ -631,10 +656,10 @@ export class Buffer {
      * Reads selected channels of a sound file into **this** buffer
      * (`/buffer_readChannel`), keeping its shape -- so the selection must have
      * as many channels as the buffer does. {@link readChannels} is the form
-     * that allocates for you.
+     * that allocates for you. `file` is a path or a {@link SoundFile}.
      */
     async readChannelsInto(
-        path: string,
+        file: string | SoundFile,
         channels: number[],
         {
             fileStart = 0,
@@ -650,6 +675,7 @@ export class Buffer {
             timeout?: number;
         } = {},
     ): Promise<void> {
+        const path = filePath(file);
         await this.edit(
             "/buffer_readChannel",
             [

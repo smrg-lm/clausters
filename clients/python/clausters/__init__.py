@@ -130,9 +130,10 @@ from .gui import GuiHost
 from .panic import panic
 from .play import play
 from .plot import plot
-from .render import read_soundfile, render
+from .render import render
 from .scope import scope
 from .session import Session
+from .soundfile import SoundFile
 
 __all__ = [
     # the layers, for the names too many to spell out flat: the UGen and
@@ -188,7 +189,8 @@ __all__ = [
     "render",
     "plot",
     "scope",
-    "read_soundfile",
+    # audio files on the client side
+    "SoundFile",
     # incoming OSC and MIDI
     "OscFunc",
     "MidiFunc",
