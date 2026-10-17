@@ -252,6 +252,24 @@ pub struct NrtResult {
     pub outcome: Result<NrtAction, String>,
 }
 
+/// Whether `cmd` installs a **new** buffer at its index (or clears it) rather
+/// than writing into the one already there: what decides whether a job behind
+/// it must build on the queue's [`NrtChain`] instead of the mirror.
+pub fn replaces(cmd: &str) -> bool {
+    !matches!(
+        cmd,
+        "/buffer_set"
+            | "/buffer_setRange"
+            | "/buffer_setChannel"
+            | "/buffer_setRangeChannel"
+            | "/buffer_fill"
+            | "/buffer_gain"
+            | "/buffer_reverse"
+            | "/buffer_mix"
+            | "/buffer_write"
+    )
+}
+
 /// What the queue has most recently produced per buffer index.
 ///
 /// The queue is the serialization point for buffer mutation, so "the current
@@ -261,11 +279,15 @@ pub struct NrtResult {
 /// replacement from the existing contents ([`NrtJob::Set`]) therefore takes its
 /// base from here when the queue has already produced one.
 ///
-/// The chain is consulted **only while the queue still owes work on that
-/// index**, which the submitter says with [`NrtRequest::chained`]. With nothing
-/// in flight the network-side mirror has caught up and its snapshot is the
-/// authority -- which is also what keeps a buffer installed outside the queue
-/// (the embed door's `install_buffer`) from being undone by a stale entry.
+/// The chain is consulted **only while the queue still owes a replacement on
+/// that index**, which the submitter says with [`NrtRequest::chained`]. A write
+/// in place behind another write in place needs no chain: both land in the
+/// buffer the mirror already holds, in queue order. With no replacement in
+/// flight the mirror's snapshot is the authority, and it has to be: the
+/// network side may have moved an installed buffer into a shared region, so
+/// the `Arc` recorded here can be a copy nobody reads any more. That is also
+/// what keeps a buffer installed outside the queue (the embed door's
+/// `install_buffer`) from being undone by a stale entry.
 #[derive(Default)]
 pub struct NrtChain(std::collections::HashMap<i32, Arc<Buffer>>);
 

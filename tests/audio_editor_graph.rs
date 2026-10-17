@@ -351,3 +351,72 @@ fn preview_matches_apply_for_every_gain_shape() {
         );
     }
 }
+
+/// **An edit with the insert already sounding is heard as Apply would be**:
+/// the curve moved under a preview replaces the insert's table, and the
+/// output matches the same curve applied to the take, with no step where
+/// the first point after zero lands.
+#[test]
+fn a_curve_edited_under_preview_matches_apply() {
+    use clausters_document::timebase::Second;
+    use clausters_editing::points::point;
+    let before = vec![
+        point(Second(0.0), 1.0, 1.0, 0.0),
+        point(Second(0.08), 1.0, 1.0, 0.0),
+    ];
+    let after = vec![
+        point(Second(0.0), 1.0, 1.0, 0.0),
+        point(Second(0.02), 0.2, 1.0, 0.0),
+        point(Second(0.06), 1.0, 1.0, 0.0),
+    ];
+    let mut outputs = Vec::new();
+    for preview in [true, false] {
+        let mut s = session();
+        take(&mut s, 4096, 0.5);
+        let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+        ids.alloc(clausters_core::ids::Space::Buffers, 1).unwrap();
+        let mut playback = AudioEditorPlayback::new(Endpoint::default());
+        if !preview {
+            run(&mut s, clausters_editing::gain::steps(0, 4096, SR, &after));
+        }
+        run(
+            &mut s,
+            playback.sync(1, 0, 1, 4096, SR, SR, &mut ids).unwrap(),
+        );
+        if preview {
+            run(
+                &mut s,
+                playback.gain(1, before.clone(), true, &mut ids).unwrap(),
+            );
+            run(
+                &mut s,
+                playback.gain(1, after.clone(), true, &mut ids).unwrap(),
+            );
+        }
+        run(
+            &mut s,
+            playback.play(1, 0, Pass::Until { end: 4096, back: 0 }),
+        );
+        let (left, _) = render(&mut s, 70);
+        assert!(fails(&mut s).is_empty());
+        outputs.push(left);
+    }
+    let error = outputs[0]
+        .iter()
+        .zip(&outputs[1])
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0, f32::max);
+    let at = outputs[0]
+        .iter()
+        .zip(&outputs[1])
+        .position(|(a, b)| (a - b).abs() == error)
+        .unwrap();
+    assert!(
+        error < 2e-5,
+        "error {error} at {at}: {} {}; steps {} {}",
+        outputs[0][at],
+        outputs[1][at],
+        largest_step(&outputs[0]),
+        largest_step(&outputs[1])
+    );
+}

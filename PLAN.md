@@ -4471,3 +4471,13 @@ should confirm before the fix.
   so a generic editor draws a frequency slider linear and with no unit. Both
   walks that read a def's parameters (the libfaust UI glue and the compiler's
   JSON) would read the two declarations into the control's display.
+- ⬜ **A write in place behind an undrained replacement can miss a shared
+  buffer** *(found 2026-10-16, fixing the audio editor's gain preview)*. While
+  a `/buffer_alloc`, read, gen or stitch on an index is still in the NRT queue,
+  a `/buffer_set`, fill, gain, reverse or mix sent behind it builds on the
+  queue's own buffer (`NrtChain`). When the server shares buffers, the drain
+  copies that buffer into a region and the mirror holds the copy, so a write the
+  NRT thread runs after the copy lands in memory nobody reads. Every client
+  awaits an allocation's `/done` before writing, which is why nothing has hit
+  it; closing it means the chain learning the shared buffer, or the share
+  happening on the NRT thread before the result is returned.

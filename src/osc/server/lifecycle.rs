@@ -176,7 +176,7 @@ impl OscServer {
             ))]
             plugin_spares_building: std::collections::HashSet::new(),
             nrt_submitted: 0,
-            nrt_in_flight: Default::default(),
+            nrt_replacing: Default::default(),
             nrt_drained: 0,
             faust_submitted: 0,
             faust_drained: 0,

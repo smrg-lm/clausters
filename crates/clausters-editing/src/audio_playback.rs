@@ -406,8 +406,9 @@ impl AudioEditorPlayback {
                     OscType::Float(1.0),
                 ],
             ));
-            // Fill is synchronous. Gain's completion barriers install the table
-            // before any node can read it.
+            // The fill and the gains are writes in place, run in queue order;
+            // the gains' completion barriers finish the table before any node
+            // reads it.
             steps.extend(crate::gain::steps(buffer, frames, f.rate, &points));
             steps.push(send(
                 "/buffer_alloc",

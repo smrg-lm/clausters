@@ -115,6 +115,10 @@ already carry it.
   *(root `PLAN.md`, Found by use)*. Both found building `J12`, both seen in
   the generic editor a node opens.
 
+- ⬜ **A write in place behind an undrained replacement can miss a shared
+  buffer** *(root `PLAN.md`, Found by use)*. The narrower race left after the
+  gain preview's fix; no client writes before an allocation's `/done`.
+
 - ⬜ **A `nodetree` in a page never refreshes**, **The host's wasm exports
   the MIDI crate's C ABI, which no page calls**, and **A press in a
   multitrack lands off its mark again at a density of 0.8 — seen only in the
