@@ -30,6 +30,14 @@
 //!   write lands and the file is rewritten from the run loop at most every
 //!   [`WRITE_PERIOD`], so a hand drawing a stroke does not rewrite a
 //!   multi-megabyte file per announcement.
+//! - **A file that is behind is not there.** Between a write and the next
+//!   [`Self::flush`] the pyramid in memory is ahead of the file, and a peer
+//!   that opened the file then would draw the samples as they were, with the
+//!   announcement of the write already gone by: nothing would ever correct
+//!   it. So the first write that leaves the pyramid dirty unlinks the file,
+//!   and the flush writes it back whole (into a file of its own, then renamed
+//!   over the name). A peer that opens the take meanwhile finds no overview
+//!   and summarizes the samples, which is correct and only slower.
 //! - **It can be stale, and only in one direction.** A writer the owner never
 //!   hears about -- a peer storing into the mapping without announcing it -- is
 //!   the one case the summary cannot follow, exactly as the *pictures* of that
@@ -150,8 +158,11 @@ impl Overviews {
             .collect();
         let sources: Vec<_> = channels.iter().collect();
         let stats = clausters_core::peaks::overview(&sources, first, BASE_BUCKET, buckets);
-        if overview.pyramid.write_buckets(first, BASE_BUCKET, &stats) {
+        if overview.pyramid.write_buckets(first, BASE_BUCKET, &stats) && !overview.dirty {
+            // The file now describes samples that are not there: it goes
+            // until the flush writes the pyramid that does.
             overview.dirty = true;
+            let _ = std::fs::remove_file(&overview.path);
         }
     }
 
@@ -211,11 +222,27 @@ impl Overviews {
                 continue;
             }
             overview.dirty = false;
-            if let Err(e) = overview.pyramid.write_cache(&overview.path) {
+            if let Err(e) = write_whole(&overview.path, &overview.pyramid) {
                 tracing::warn!("cannot refresh {}: {e}", overview.path.display());
             }
         }
     }
+}
+
+/// Writes `pyramid` to `path` **whole or not at all**: into a file of its own
+/// first, then renamed over the name, so a peer opening it reads either no
+/// overview or a complete one, never one half written that happens to parse.
+fn write_whole(path: &Path, pyramid: &MultiPyramid) -> std::io::Result<()> {
+    let mut part = path.as_os_str().to_owned();
+    part.push(".part");
+    let part = PathBuf::from(part);
+    let written = pyramid
+        .write_cache(&part)
+        .and_then(|()| std::fs::rename(&part, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    written
 }
 
 /// The overview's name: the region's own, plus `.peaks`. Sibling rather than

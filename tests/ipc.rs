@@ -998,11 +998,33 @@ fn the_overview_beside_a_region_follows_the_writes() {
             vec![OscType::Int(3), OscType::Int(0), OscType::Blob(blob)],
         )
     ));
+    // **Never behind once the write is done.** From the `/done` on, the file
+    // is either gone or the new summary: a peer that opens the take in
+    // between -- a view handed this buffer on the write's `/done` -- would
+    // otherwise draw the silence that was there, and the announcement that
+    // could correct it would already have gone by.
+    let mut buf = vec![0u8; 65536];
+    let mut done = false;
     let mut followed = false;
     for _ in 0..600 {
         server.step();
         engine.process_block(&mut out);
-        if let Ok(Some(multi)) = MultiPyramid::read_cache(&file)
+        while let Some((_, len)) = client.try_pop(&mut buf) {
+            if let Ok(OscPacket::Message(msg)) = clausters::osc::decode_packet(&buf[..len])
+                && msg.addr == "/done"
+            {
+                done = true;
+            }
+        }
+        let read = MultiPyramid::read_cache(&file).ok().flatten();
+        if done && let Some(multi) = &read {
+            assert_ne!(
+                multi.channel(0).and_then(|p| p.column(0, 0.0, 256.0)),
+                Some((0.0, 0.0)),
+                "a finished write left an overview of the samples before it"
+            );
+        }
+        if let Some(multi) = read
             && multi.channel(0).and_then(|p| p.column(0, 0.0, 256.0)) == Some((0.8, 0.8))
         {
             // And only the span: a refresh is the write's, not the take's.
