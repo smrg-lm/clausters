@@ -88,6 +88,11 @@ pub(crate) struct YAxis {
     /// How many rows the view stacks -- with [`row_h`](Self::row_h), the
     /// whole of its vertical stack.
     pub rows: usize,
+    /// How those rows are laid out: folded strips, a floor and a scroll. The
+    /// even split leaves every row [`row_h`](Self::row_h) tall.
+    pub lanes: crate::host::bands::Lanes,
+    /// The body's height, which the laid-out rows share.
+    pub body_h: f64,
 }
 
 impl YAxis {
@@ -100,7 +105,18 @@ impl YAxis {
     /// picture, and that is a statement about channels rather than about what
     /// the axis can hold.
     pub fn bands(&self) -> super::super::bands::Bands {
-        super::super::bands::Bands::uniform(self.rows.max(1), self.row_h as f32)
+        self.lanes.bands(self.rows.max(1), self.body_h as f32)
+    }
+
+    /// A screen `y` in the stack's own coordinates: from the body's top
+    /// (`body_y`), and down by however far the stack is scrolled.
+    pub fn local(&self, y: f64, body_y: f64) -> f32 {
+        (y - body_y) as f32 + self.lanes.clamped(self.rows.max(1), self.body_h as f32)
+    }
+
+    /// Whether the stack is taller than its body, so a wheel scrolls it.
+    pub fn scrolls(&self) -> bool {
+        self.lanes.overflow(self.rows.max(1), self.body_h as f32) > 0.0
     }
 }
 

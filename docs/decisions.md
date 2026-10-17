@@ -10440,3 +10440,22 @@ what a window is (a client opens an editor, a standalone host its own), so its
 `edit(SoundFile.empty(...))` beside the window. A file not written yet is a
 save target with no path: the window's save opens the save-as form, and a
 script's `save()` refuses without a path rather than guessing one.
+
+## A channel stack folds to strips and scrolls past a floor (2026-10-16)
+
+A many-channel take thinned its rows until they were lines. Of the shapes the
+plan named (scroll, fold, pick), folding to a strip was chosen with the user:
+a folded channel stays on screen as one control's height with its name and
+its peaks, so it is still there to unfold by hand. An open row has a floor of
+three controls; a stack that does not fit is laid out at that height and seen
+through the body, which is a scroll rather than a thinning.
+
+The layout is one value, `host::bands::Lanes` (a 64-bit mask of folded
+channels, the strip, the floor and the scroll), carried by every geometry
+question a stacked view asks, so the drawing, the hit tests and the readouts
+cannot disagree; with nothing folded it is the even split it replaced. The
+plain wheel over the ruler scrolls and Ctrl zooms the amplitude, as the
+keyboard gutter already does, because the rows are what is out of sight.
+What is folded is the owner's (the audio editor's `folded`, a view state
+outside the history), so a press on a strip only asks; the scroll is the
+reader's alone and never reported.

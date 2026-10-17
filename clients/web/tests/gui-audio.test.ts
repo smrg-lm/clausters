@@ -629,3 +629,17 @@ test("a take opened over a buffer is no file", async () => {
     const [editor] = await opened(new FakeBuffer());
     assert.equal(editor.file, null);
 });
+
+test("channels fold through the crate and correct the take", async () => {
+    const [editor, host, wid] = await opened(new FakeBuffer(100, 4));
+    editor.foldChannel(1);
+    assert.deepEqual(editor.folded, [1]);
+    await settle();
+    const pushed = host.acks[host.acks.length - 1]![1];
+    assert.ok(pushed.some(([w, p]) => w === wid && JSON.stringify(p.folded) === "[1]"), JSON.stringify(pushed));
+    editor.soloChannel(2);
+    assert.deepEqual(editor.folded, [0, 1, 3]);
+    editor.showAllChannels();
+    assert.deepEqual(editor.folded, []);
+    assert.throws(() => editor.foldChannel(7), /channel 7/);
+});

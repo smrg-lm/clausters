@@ -681,6 +681,34 @@ class AudioEditor(Marking, Editor):
         """Show and select the gain curve body over the take."""
         self._view_layers("show_envelope")
 
+    @property
+    def folded(self) -> list[int]:
+        """The channels drawn folded, in order: strips one control tall that a
+        press on their name unfolds. A view state, outside the history."""
+        return list(self._call("folded")["folded"])
+
+    def fold_channel(self, channel: int) -> None:
+        """Fold channel ``channel`` (from 0) to a strip, or unfold it when it
+        is folded."""
+        self._channels("fold_channel", channel=int(channel))
+
+    def solo_channel(self, channel: int) -> None:
+        """Show channel ``channel`` alone: every other channel folded."""
+        self._channels("solo_channel", channel=int(channel))
+
+    def show_all_channels(self) -> None:
+        """Unfold every channel."""
+        self._channels("show_all_channels")
+
+    def _channels(self, verb: str, **args) -> None:
+        """A channel verb: the crate's answer carried out, and a refusal --
+        a channel the take does not have -- raised."""
+        outcome = self._call(verb, version=self._editing.version, **args)
+        self._take(outcome)
+        reason = (outcome.get("answer") or {}).get("reason")
+        if reason:
+            raise ValueError(reason)
+
     def apply_envelope(self) -> bool:
         """Render gain into a new take and reset the curve to unity, in one
         undo step. An enabled preview follows the reset curve, so gain is applied once."""

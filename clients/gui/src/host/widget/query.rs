@@ -371,6 +371,14 @@ impl WidgetKind {
             .map_or_else(|| uploaded.max(1), |a| a.rows(uploaded))
     }
 
+    /// **How those rows are laid out** -- folded strips, a floor and a scroll
+    /// ([`OnAxis::lanes`]); the even split for a widget that says nothing.
+    pub fn lanes(&self, m: &super::super::metrics::Metrics) -> crate::host::bands::Lanes {
+        self.as_element()
+            .and_then(Element::on_axis)
+            .map_or_else(Default::default, |a| a.lanes(m))
+    }
+
     /// Whether a y zoom over this widget anchors at the centre of a lane
     /// instead of under the pointer -- an **amplitude** axis, whose zero sits at
     /// the centre of every lane.

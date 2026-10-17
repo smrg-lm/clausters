@@ -214,11 +214,27 @@ impl Gestures {
             && let Some(y) = axis.y
             && y.strip.contains(cx, cy)
         {
+            let bands = y.bands();
+            let row = bands.index_at(y.local(cy, axis.body.y as f64));
+            // **A folded row's strip is its name, and a press on it unfolds
+            // it**: there is no axis there to grab. What is folded is the
+            // owner's to say, so the press asks it rather than unfolding here.
+            if let Some(row) = row.filter(|r| y.lanes.is_folded(*r)) {
+                super::effects::emit(
+                    host,
+                    &mut out,
+                    ctx.def_id,
+                    id,
+                    vec![OscType::String("unfold".into()), OscType::Int(row as i32)],
+                );
+                return out;
+            }
+            let row_h = row.map_or(y.row_h, |r| f64::from(bands.band(r).1).max(1.0));
             self.drag = Some(Drag::PanY {
                 id,
                 origin_y: cy,
                 y_start: y.start,
-                row_h: y.row_h,
+                row_h,
             });
             return out;
         }
@@ -576,7 +592,7 @@ impl Gestures {
                     return false;
                 }
                 let index = frames.round().max(0.0) as usize;
-                let channel = crate::host::frame::channel_at(value.body, value.rows.max(1), cy);
+                let channel = value.row_at(cy);
                 // What it is now, so the intent that leaves on release is
                 // absolute *and* carries its own inverse.
                 let Some(previous) = host
@@ -642,7 +658,7 @@ impl Gestures {
                     return refuse(host, out, def_id, id, "draw", BEFORE_THE_START.into());
                 }
                 let index = frames.round().max(0.0) as usize;
-                let channel = crate::host::frame::channel_at(value.body, value.rows.max(1), cy);
+                let channel = value.row_at(cy);
                 let Some(previous) = host
                     .window_def(ctx.def_id)
                     .and_then(|t| t.find(id))

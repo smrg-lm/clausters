@@ -156,6 +156,9 @@ impl AudioEditor {
                 self.preview_event(request["verb"].as_str().unwrap(), &mut out)
             }
             "apply_envelope" | "apply" => self.apply_envelope_event(&mut out),
+            "fold_channel" => self.fold_channel(request.get("channel").and_then(Value::as_u64)),
+            "solo_channel" => self.solo_channel(request.get("channel").and_then(Value::as_u64)),
+            "show_all_channels" => self.show_all_channels(),
             _ => (Some("unknown audio editor action".into()), Vec::new()),
         };
         out.answer = Some(if reason.is_some() && corrections.is_empty() {

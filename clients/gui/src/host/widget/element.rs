@@ -317,9 +317,16 @@ pub struct ValueAxis {
     pub y: (f64, f64),
     /// How many rows the body is split into (1 when overlaid).
     pub rows: usize,
+    /// How the rows are laid out: folded strips, a floor and a scroll.
+    pub lanes: crate::host::bands::Lanes,
 }
 
 impl ValueAxis {
+    /// The row a y pixel is over, clamped to the stack.
+    pub fn row_at(&self, cy: f64) -> usize {
+        self.lanes.at(self.body, self.rows.max(1), cy as f32)
+    }
+
     /// The value under a y pixel, in the element's own units, clamped to the
     /// domain.
     ///
@@ -330,8 +337,7 @@ impl ValueAxis {
     /// ([`crate::waveform::display_to_value`]), so the marquee and the number
     /// beside it can never disagree.
     pub fn value_at(&self, cy: f64) -> f64 {
-        let rows = self.rows.max(1);
-        self.value_in(crate::host::frame::channel_at(self.body, rows, cy), cy)
+        self.value_in(self.row_at(cy), cy)
     }
 
     /// The value `cy` names **in a named row**, whatever row it is actually
@@ -346,7 +352,7 @@ impl ValueAxis {
     /// it left its own row.
     pub fn value_in(&self, row: usize, cy: f64) -> f64 {
         let rows = self.rows.max(1);
-        let row = crate::host::frame::channel_rect(self.body, rows, row.min(rows - 1));
+        let row = self.lanes.rect(self.body, rows, row.min(rows - 1));
         let rel = ((cy - row.y as f64) / row.h.max(1.0) as f64).clamp(0.0, 1.0);
         let display = self.y.0 + (1.0 - rel) * self.y.1;
         let v = crate::waveform::display_to_value(display, self.domain.0, self.domain.1) as f64;
@@ -877,6 +883,10 @@ pub enum SlotFrame {
         /// texture measures).
         y: (f64, f64),
         overlay: bool,
+        /// **How the stacked rows are laid out**: which are folded, how tall a
+        /// fold is, the floor an open row has and how far the stack is
+        /// scrolled ([`crate::host::bands::Lanes`]).
+        lanes: crate::host::bands::Lanes,
         /// **The loudness layer**: the measured curve, its own scale and what
         /// a span of it measures. Empty where no layer asks for one.
         loudness: crate::host::elements::signal::LoudnessFrame,
@@ -1541,6 +1551,13 @@ pub trait Element: fmt::Debug {
     /// element's. A key it does not know must return `false` -- the host logs
     /// the unknown prop rather than silently dropping it.
     fn set(&mut self, key: &str, v: &Value) -> bool;
+
+    /// **Scrolls a stack of rows to `px`** from its top -- what a wheel over a
+    /// stacked view taller than its body does, the reader's own state and no
+    /// edit of anything. `false` for an element with no such stack.
+    fn set_lane_scroll(&mut self, _px: f32) -> bool {
+        false
+    }
 
     /// Draws into the window's one mesh, inside `ctx.rect`. `d` carries the
     /// resolved theme and the size table of the placement, so an element names
@@ -2289,6 +2306,13 @@ pub trait OnAxis {
     /// stacks.
     fn rows(&self, uploaded: usize) -> usize {
         uploaded.max(1)
+    }
+
+    /// **How its rows are laid out** -- folded strips, a floor an open row is
+    /// never thinned past, and the reader's scroll ([`crate::host::bands::Lanes`]).
+    /// The default is the even split.
+    fn lanes(&self, _m: &Metrics) -> crate::host::bands::Lanes {
+        crate::host::bands::Lanes::default()
     }
 
     /// Whether a y zoom over this element anchors at the **centre** of a row

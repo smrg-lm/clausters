@@ -115,6 +115,11 @@ already carry it.
   *(root `PLAN.md`, Found by use)*. Both found building `J12`, both seen in
   the generic editor a node opens.
 
+- ⬜ **A clip's lane stacks every channel evenly, however short the lane**
+  and **A short channel row's ruler labels collide at its edges**
+  *(`clients/gui/PLAN.md`, Found by use)*. Both left by the audio editor's
+  folded channels: the clip's half of the same layout, and a ruler detail.
+
 - ⬜ **A write in place behind an undrained replacement can miss a shared
   buffer** *(root `PLAN.md`, Found by use)*. The narrower race left after the
   gain preview's fix; no client writes before an allocation's `/done`.

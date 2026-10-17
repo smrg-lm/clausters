@@ -739,6 +739,15 @@ pub(crate) fn channel_rect(body: Rect, channels: usize, ch: usize) -> Rect {
     Rect::new(body.x, body.y + y, body.w, h)
 }
 
+/// **What a scrolled stack of rows draws within**: the widget's clip, narrowed
+/// to the body's height across the widget's width, so a row scrolled out of
+/// the body is cut where the body ends while its y-ruler labels beside the
+/// body still draw.
+pub(crate) fn rows_clip(clip: Option<Rect>, rect: Rect, body: Rect) -> Rect {
+    let band = Rect::new(rect.x, body.y, rect.w, body.h);
+    clip.map_or(band, |c| c.intersect(band))
+}
+
 /// The time-ruler unit of `editor` (the beats grid rides its props).
 pub(crate) fn time_unit(editor: &EditorProps) -> TimeUnit<'_> {
     match editor.ruler {
@@ -1667,7 +1676,7 @@ fn upload_heavy(
                 view.set_alpha(alpha);
                 view.set_freq_window(item.look.y.0, item.look.y.1);
                 view.set_framing(framing_of(
-                    channel_rect(body, rows, ch.min(rows - 1)),
+                    item.look.lanes.rect(body, rows, ch.min(rows - 1)),
                     fb_w,
                     fb_h,
                 ));
@@ -1752,8 +1761,20 @@ fn draw_heavy(
         };
         let channels = slot.views.len();
         let rows = if item.look.overlay { 1 } else { channels };
+        // A stack scrolled past its body draws only inside the body's rows,
+        // never over the chrome above or below it.
+        if item.look.lanes.overflow(rows, body.h) > 0.0
+            && !apply_scissor(
+                pass,
+                Some(rows_clip(item.clip, item.rect, body)),
+                fb_w,
+                fb_h,
+            )
+        {
+            continue;
+        }
         for (ch, view) in slot.views.iter().enumerate() {
-            let row = channel_rect(body, rows, ch.min(rows - 1));
+            let row = item.look.lanes.rect(body, rows, ch.min(rows - 1));
             let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
             if w >= 1.0 && h >= 1.0 {
                 pass.set_viewport(x, y, w, h, 0.0, 1.0);

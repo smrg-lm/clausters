@@ -940,6 +940,32 @@ export class AudioEditor extends Editor<Buffer> {
     /** Free the preview insert and table, retaining the unapplied curve. */
     removeEffect(): void { this.envelopeAct("remove_effect"); }
 
+    /**
+     * The channels drawn folded, in order: strips one control tall that a
+     * press on their name unfolds. A view state, outside the history.
+     */
+    get folded(): number[] { return this.coreCall("folded").folded as number[]; }
+
+    /** Fold channel `channel` (from 0) to a strip, or unfold it when it is folded. */
+    foldChannel(channel: number): void { this.channels("fold_channel", { channel }); }
+
+    /** Show channel `channel` alone: every other channel folded. */
+    soloChannel(channel: number): void { this.channels("solo_channel", { channel }); }
+
+    /** Unfold every channel. */
+    showAllChannels(): void { this.channels("show_all_channels"); }
+
+    /**
+     * A channel verb: the crate's answer carried out, and a refusal -- a
+     * channel the take does not have -- thrown.
+     */
+    private channels(verb: string, args: Record<string, unknown> = {}): void {
+        const outcome = this.coreCall(verb, { version: this.editing.version, ...args }) as Outcome;
+        this.take(outcome);
+        const reason = outcome.answer?.reason;
+        if (reason) throw new RangeError(reason);
+    }
+
     private envelopeAct(verb: string, args: Record<string, unknown> = {}): boolean {
         return this.editing.turn(this, () => {
             this.syncCore();

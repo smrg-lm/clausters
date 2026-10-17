@@ -568,3 +568,17 @@ def test_a_new_file_asked_for_in_the_window_opens_an_editor_of_its_own():
 def test_a_take_opened_over_a_buffer_is_no_file():
     editor, _host, _wid, _context = opened(FakeBuffer())
     assert editor.file is None
+
+
+def test_channels_fold_through_the_crate_and_correct_the_take():
+    editor, host, wid, _context = opened(FakeBuffer(100, 4))
+    editor.fold_channel(1)
+    assert editor.folded == [1]
+    pushed = host.acks[-1][1]
+    assert any("folded" in str(c) and str(wid) in str(c) for c in pushed), pushed
+    editor.solo_channel(2)
+    assert editor.folded == [0, 1, 3]
+    editor.show_all_channels()
+    assert editor.folded == []
+    with pytest.raises(ValueError, match="channel 7"):
+        editor.fold_channel(7)

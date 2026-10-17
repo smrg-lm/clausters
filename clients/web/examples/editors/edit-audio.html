@@ -85,6 +85,7 @@ edit back into the file it was opened from, and
         <button id="apply-envelope" disabled>apply envelope</button>
         <button id="play" disabled>play the take</button>
         <button id="parts" disabled>what it is made of</button>
+        <button id="many-channels" disabled>many channels</button>
         <button id="new-file" disabled>new file</button>
       </div>
       <pre id="log"></pre>
@@ -174,6 +175,28 @@ edit back into the file it was opened from, and
             const span = part.source.range;
             log(`buffer ${part.source.source}: frames ${span.start}..${span.end}`);
           }
+        };
+
+        // Many channels: eight tones, a row each. View -> Fold channel folds
+        // one to a strip with its name, View -> Solo channel shows one alone,
+        // View -> Show all channels opens them again; a press on a strip's
+        // name unfolds it. A stack too tall for the window keeps its rows
+        // readable and scrolls under the wheel over the vertical ruler.
+        $("many-channels").disabled = false;
+        $("many-channels").onclick = async () => {
+          const tones = new Float32Array(frames * 8);
+          for (let i = 0; i < frames; i += 1) {
+            for (let c = 0; c < 8; c += 1) {
+              tones[i * 8 + c] = Math.exp(-3.0 * i / frames) * 0.5 *
+                Math.sin(2 * Math.PI * 440.0 * (1 + c / 4) * i / rate);
+            }
+          }
+          const wide = await gui.edit(
+            await SoundFile.write("out/edit_audio_8ch.wav", tones, 8, rate, { sampleFormat: "float" }),
+            { title: "eight channels", server, stage: $("stage") },
+          );
+          wide.foldChannel(1);
+          wide.foldChannel(4);
         };
 
         // A file not written yet: `SoundFile.empty` is a shape with no path,

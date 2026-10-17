@@ -254,6 +254,8 @@ fn time_axis(
             row_h: (body.h as f64
                 / p.widget.id.map_or(1, |id| rows(id, &p.widget.kind)).max(1) as f64)
                 .max(1.0),
+            lanes: p.widget.kind.lanes(metrics),
+            body_h: body.h as f64,
         }),
     })
 }

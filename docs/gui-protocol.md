@@ -1324,6 +1324,21 @@ Children have ordinary widget ids, so their existing edit payloads and buffer
 fetches keep their existing addresses. An unknown layer name is refused. A gesture already captured by a body
 settles on that body when released, as it does for other host elements.
 
+### Folded channels and a stack that scrolls
+
+A stacked `signal` (not `overlay`) takes `folded`, a list of channel indices
+(a `/gui_set` may carry it as the list's JSON string). A folded channel is a
+strip one control tall, with its name (`Ch 1`, ...) in the vertical ruler's
+place and its peaks drawn at that height; the open rows share the rest. A press
+on a strip's name reports `/gui_event id seq "unfold" channel`: what is folded
+is the owner's, which answers with the prop. An open row is never thinned past
+three controls tall: a stack that does not fit its body is laid out at that
+height and **scrolls** -- the wheel over the vertical ruler moves it a row's
+floor a notch, and Ctrl+wheel zooms the amplitude as it does elsewhere. The
+scroll is the reader's and is not reported. Every row-relative reading (the
+cursor readout, a sweep restricted in value, a held sample, a y zoom's anchor)
+follows the same layout.
+
 ### A processed signal over its source
 
 `signal` accepts optional `preview_buffer` (a server buffer id; a negative id or `null`

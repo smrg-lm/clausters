@@ -229,6 +229,24 @@ impl Gestures {
                 Some(_) if kind.wheel_pans_y() && !ctx.ctrl => {
                     pan_timeline_y(host, &mut out, def_id, tid, steps * 0.1);
                 }
+                // **A stack of rows taller than its body scrolls under the
+                // wheel**, and Ctrl zooms the amplitude as the keys' gutter
+                // does: the rows are what is out of sight, so they are what
+                // the plain wheel reaches. A notch is a row's floor.
+                Some(y) if y.scrolls() && !ctx.ctrl => {
+                    let rows = y.rows.max(1);
+                    let h = y.body_h as f32;
+                    let to = (y.lanes.clamped(rows, h) - steps as f32 * y.lanes.min)
+                        .clamp(0.0, y.lanes.overflow(rows, h));
+                    if host
+                        .window_def_mut(def_id)
+                        .and_then(|t| t.find_mut(tid))
+                        .and_then(|w| w.kind.as_element_mut())
+                        .is_some_and(|el| el.set_lane_scroll(to))
+                    {
+                        out.push(GestureEffect::Redraw(def_id));
+                    }
+                }
                 Some(y) => {
                     let anchor = if kind.centres_y_zoom() {
                         0.5
@@ -237,10 +255,10 @@ impl Gestures {
                         // band stack -- the same question a roll asks about a
                         // semitone and a multitrack about a lane.
                         let bands = y.bands();
-                        let local = cy - axis.body.y as f64;
-                        let i = bands.index_at(local as f32).unwrap_or(0);
+                        let local = y.local(cy, axis.body.y as f64);
+                        let i = bands.index_at(local).unwrap_or(0);
                         let (top, h) = bands.band(i);
-                        1.0 - ((local - top as f64) / (h as f64).max(1.0)).clamp(0.0, 1.0)
+                        1.0 - (((local - top) / h.max(1.0)) as f64).clamp(0.0, 1.0)
                     };
                     zoom_timeline_y(host, &mut out, def_id, tid, factor, anchor);
                 }

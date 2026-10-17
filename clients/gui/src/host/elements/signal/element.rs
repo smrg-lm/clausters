@@ -143,6 +143,13 @@ impl Element for SignalElement {
         self.apply(key, v)
     }
 
+    fn set_lane_scroll(&mut self, px: f32) -> bool {
+        let px = px.max(0.0);
+        let moved = (px - self.lane_scroll).abs() > 0.5;
+        self.lane_scroll = px;
+        moved
+    }
+
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         if !self.on_live_layer() {
             self.paint(d, ctx);
@@ -360,6 +367,10 @@ impl OnAxis for SignalElement {
 
     fn rows(&self, uploaded: usize) -> usize {
         SignalElement::rows(self, uploaded)
+    }
+
+    fn lanes(&self, m: &Metrics) -> crate::host::bands::Lanes {
+        SignalElement::lanes(self, m)
     }
 
     fn centres_y_zoom(&self) -> bool {
@@ -660,6 +671,7 @@ impl SignalElement {
                 domain: self.domain(),
                 y: self.editor.y_view(),
                 overlay: self.display.overlay,
+                lanes: self.lanes(ctx.metrics),
                 preview: self
                     .preview_data()
                     .map(crate::host::widget::element::PreviewData),

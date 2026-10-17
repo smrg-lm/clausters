@@ -312,4 +312,33 @@ mod tests {
         assert!(pending.slot_kind().is_some());
         assert!(pending.fill().is_empty());
     }
+    /// **The folded channels are the element's prop**, read as a list or as
+    /// the JSON string a `/gui_set` carries, and they reach every geometry
+    /// question through its lanes: a strip a control tall, a floor for the
+    /// open rows, and a scroll only the reader sets.
+    #[test]
+    fn folded_channels_are_a_prop_and_lay_the_rows_out() {
+        use crate::host::widget::element::Element;
+        let m = crate::host::metrics::Metrics::default();
+        let mut take =
+            element(r#"{"id":1,"type":"signal","view":"trace","buffer":7,"folded":[1, 3]}"#);
+        let lanes = take.lanes(&m);
+        assert!(lanes.is_folded(1) && lanes.is_folded(3) && !lanes.is_folded(0));
+        assert_eq!(lanes.strip, m.control_h);
+        assert!(take.set("folded", &serde_json::json!("[0]")));
+        assert_eq!(take.lanes(&m).folded, 1);
+        assert!(take.set("folded", &serde_json::json!([])));
+        assert_eq!(take.lanes(&m).folded, 0);
+        assert!(take.set_lane_scroll(40.0));
+        assert_eq!(take.lanes(&m).scroll, 40.0);
+        assert!(!take.set_lane_scroll(40.2), "under half a pixel is no move");
+        let overlaid = element(
+            r#"{"id":1,"type":"signal","view":"trace","buffer":7,"overlay":1,"folded":[1]}"#,
+        );
+        assert_eq!(
+            overlaid.lanes(&m),
+            crate::host::bands::Lanes::default(),
+            "overlaid traces share one row and fold nothing"
+        );
+    }
 }

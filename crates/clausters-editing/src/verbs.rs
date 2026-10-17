@@ -85,6 +85,7 @@ pub const AUDIO_SCOPE: &str = "audio";
 pub const AUDIO: &[Verb] = &[
     verb("new_file", &[], "New file..."),
     verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
+    verb("show_all_channels", &[], "Show all channels"),
     verb("view_wave", &["W"], "Waveform"),
     verb("layer_take", &[], "Edit take"),
     verb("show_envelope", &[], "Gain envelope"),

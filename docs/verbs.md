@@ -62,9 +62,19 @@ The verdict is one of three:
 | `window` | `delete` | `Editor.delete` | `Editor.delete` | **api** |
 | `window` | `select_all` | `Editor.select_all` | `Editor.selectAll` | **api** |
 | `window` | `keys` | — | — | **n/a** — the window's key sheet, a page of the window itself rather than an act on what it holds; `verb("keys")` shows it |
+| `audio` | `new_file` | `SoundFile.empty` | `SoundFile.empty` | **api** — the form's shape, opened with `edit(SoundFile.empty(...))` in a window of its own |
+| `audio` | `save_as` | `AudioEditor.save` | `AudioEditor.save` | **api** — `save(path)` |
+| `audio` | `show_all_channels` | `AudioEditor.show_all_channels` | `AudioEditor.showAllChannels` | **api** — beside `fold_channel` and `solo_channel`, which the menu reaches per channel |
 | `audio` | `view_wave` | `AudioEditor.view_wave` | `AudioEditor.viewWave` | **api** |
 | `audio` | `view_spectrogram` | `AudioEditor.view_spectrogram` | `AudioEditor.viewSpectrogram` | **api** |
 | `audio` | `view_both` | `AudioEditor.view_both` | `AudioEditor.viewBoth` | **api** |
+| `audio` | `layer_take` | `AudioEditor.layer` | `AudioEditor.layer` | **api** — `layer = "take"` |
+| `audio` | `show_envelope` | `AudioEditor.show_envelope` | `AudioEditor.showEnvelope` | **api** |
+| `audio` | `preview_on` | `AudioEditor.preview_on` | `AudioEditor.previewOn` | **api** |
+| `audio` | `preview_off` | `AudioEditor.preview_off` | `AudioEditor.previewOff` | **api** |
+| `audio` | `remove_effect` | `AudioEditor.remove_effect` | `AudioEditor.removeEffect` | **api** |
+| `audio` | `apply` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** — the one effect today is the gain envelope |
+| `audio` | `apply_envelope` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** |
 | `multitrack` | `pause` | `MultitrackEditor.pause` | `MultitrackEditor.pause` | **api** |
 | `multitrack` | `stop` | `MultitrackEditor.stop` | `MultitrackEditor.stop` | **api** |
 | `multitrack` | `stop_at_end` | `MultitrackEditor.stop_at_end` | `MultitrackEditor.stopAtEnd` | **api** |

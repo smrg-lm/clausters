@@ -147,6 +147,10 @@ impl SignalElement {
             "loudness_stats" => truthy(v).map(|b| self.loudness.stats = b).is_some(),
             // The chrome.
             "overlay" => truthy(v).map(|b| self.display.overlay = b).is_some(),
+            "folded" => {
+                self.display.folded = super::folded_mask(v);
+                true
+            }
             // **Live, and both ways.** A client arms it when it starts
             // recording into the buffer and clears it when the take is
             // finished -- and clearing it is what turns the picture back into

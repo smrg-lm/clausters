@@ -262,6 +262,7 @@ pub(crate) fn signal_element(
     el.display = signal::Display {
         overlay: props.get("overlay").and_then(truthy).unwrap_or(false),
         label: label(props),
+        folded: props.get("folded").map_or(0, signal::folded_mask),
     };
     // The y strip's default unit is the axis' own: hertz where a texture is on
     // it, the value unit where the traces are -- so a stack that put a wave on

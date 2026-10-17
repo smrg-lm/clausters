@@ -52,6 +52,8 @@ pub enum Vertical {
     Value {
         domain: (f32, f32),
         window: (f64, f64),
+        /// How the rows are laid out: folded strips, a floor and a scroll.
+        lanes: crate::host::bands::Lanes,
     },
     /// A roll's pitch axis: the window its rows -- or its line -- are drawn
     /// over.
@@ -116,12 +118,15 @@ pub fn bands(
                 .map(|band| vec![band])
                 .unwrap_or_default()
         }
-        Vertical::Value { domain, window } => {
+        Vertical::Value {
+            domain,
+            window,
+            lanes,
+        } => {
             let (y0, y_len) = window;
             let mut out = Vec::with_capacity(channels);
             for ch in 0..channels {
-                let row = row_of(body, channels, ch);
-                let row = Rect::new(body.x, row.0, body.w, row.1);
+                let row = lanes.rect(body, channels, ch);
                 // Value -> display -> the row's own height, the inverse of the
                 // read the sweep made.
                 let y_of = |v: f64| {
@@ -134,12 +139,6 @@ pub fn bands(
             out
         }
     }
-}
-
-/// One channel row's `(y, height)` in a stack of `channels`.
-fn row_of(body: Rect, channels: usize, ch: usize) -> (f32, f32) {
-    let r = crate::waveform::channel_rect(body, channels, ch);
-    (r.y, r.h)
 }
 
 /// `(y, height)` for `top..bottom` clipped into `r`, or nothing when the two

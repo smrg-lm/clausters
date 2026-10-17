@@ -275,6 +275,35 @@ pub fn toolbar(app: App, lead: Option<Vec<Value>>) -> Value {
 /// **Dresses `window`**: the menu bar, the toolbar on top of what it holds,
 /// the outlines the tools are drawn with, and the view the window's commands
 /// address (`main`).
+/// **The channel entries of an audio window's View menu**, for a take of
+/// `channels`: show them all, and a submenu each to fold one (or unfold it) and
+/// to show one alone. The verbs carry the channel after a colon
+/// (`fold_channel:2`), since an entry names a verb and nothing else.
+pub fn channel_entries(menu: &mut Value, channels: u32) {
+    if channels < 2 {
+        return;
+    }
+    let Some(view) = menu
+        .as_array_mut()
+        .and_then(|titles| titles.iter_mut().find(|t| t["label"] == "View"))
+        .and_then(|t| t.get_mut("menu"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let each = |verb: &str| -> Vec<Value> {
+        (0..channels)
+            .map(|c| json!({"label": format!("Channel {}", c + 1), "verb": format!("{verb}:{c}")}))
+            .collect()
+    };
+    view.extend([
+        sep(),
+        entry(App::Audio, "show_all_channels"),
+        sub("Fold channel", each("fold_channel")),
+        sub("Solo channel", each("solo_channel")),
+    ]);
+}
+
 pub fn dress(window: &mut Value, menu: Value, toolbar: Value, main: i32) {
     let Some(map) = window.as_object_mut() else {
         return;

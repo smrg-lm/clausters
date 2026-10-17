@@ -85,6 +85,8 @@ pub struct Window<'a> {
     /// The dialogs a menu entry opens, as the stack the window holds, when
     /// the caller numbered them.
     pub dialogs: Option<Value>,
+    /// The channels drawn folded.
+    pub folded: &'a [u32],
 }
 
 /// **Where the level meter is read from**, and the id it is drawn under: the
@@ -125,6 +127,9 @@ pub fn window(w: &Window<'_>) -> Value {
     });
     picture.insert("id".into(), json!(w.widget));
     picture.insert("weight".into(), json!(1.0));
+    if !w.folded.is_empty() {
+        picture.insert("folded".into(), json!(w.folded));
+    }
     let picture = if let Some(pane) = w.pane {
         let axes = picture.remove("axes").unwrap_or(Value::Null);
         let label = picture.remove("label");
@@ -179,9 +184,11 @@ pub fn window(w: &Window<'_>) -> Value {
         "children": body,
     });
     if !w.bare {
+        let mut menu = crate::chrome::menu(crate::chrome::App::Audio, true);
+        crate::chrome::channel_entries(&mut menu, w.channels);
         crate::chrome::dress(
             &mut window,
-            crate::chrome::menu(crate::chrome::App::Audio, true),
+            menu,
             crate::chrome::toolbar(crate::chrome::App::Audio, None),
             w.widget,
         );
@@ -244,6 +251,7 @@ mod tests {
             size: (1000, 520),
             bare: true,
             dialogs: None,
+            folded: &[],
         })
     }
 

@@ -280,11 +280,16 @@ pub(super) enum Vertical {
 /// A spectrogram gives the same answer as a lane of clips and for a different
 /// reason: the one measures bins and the other measures nothing, and neither
 /// leaves a value for a selection to be restricted on.
-fn sweep_axis(editor: &EditorProps, vertical: Vertical) -> selection::Vertical {
+fn sweep_axis(
+    editor: &EditorProps,
+    vertical: Vertical,
+    lanes: crate::host::bands::Lanes,
+) -> selection::Vertical {
     match vertical {
         Vertical::Value(domain) => selection::Vertical::Value {
             domain,
             window: editor.y_view(),
+            lanes,
         },
         Vertical::Frequency(..) => selection::Vertical::Whole,
     }
@@ -326,7 +331,7 @@ pub(super) fn draw_editor_overlay(
             chrome.selection(),
             channels,
             item.editor.value_range(),
-            sweep_axis(&item.editor, vertical),
+            sweep_axis(&item.editor, vertical, item.look.lanes),
         );
     }
     // **The edit the hand is making, drawn over the picture and marked as
@@ -342,7 +347,7 @@ pub(super) fn draw_editor_overlay(
         && (held.start as f64) < nav.start + nav.len
     {
         let n = channels.max(1);
-        let row = crate::host::frame::channel_rect(body, n, held.channel.min(n - 1));
+        let row = item.look.lanes.rect(body, n, held.channel.min(n - 1));
         let (y0, y_len) = item.editor.y_view();
         let y_of = |v: f32| {
             let d = crate::waveform::value_to_display(v, domain.0, domain.1);
@@ -417,7 +422,12 @@ pub(super) fn draw_editor_overlay(
             ),
             _ => ruler::readout_time(s, rate, nav.len / rate / body.w.max(1.0) as f64),
         };
-        let row = channel_rect(body, channels.max(1), channel_at(body, channels.max(1), cy));
+        let lanes = item.look.lanes;
+        let row = lanes.rect(
+            body,
+            channels.max(1),
+            lanes.at(body, channels.max(1), cy as f32),
+        );
         let rel = ((cy - row.y as f64) / row.h.max(1.0) as f64).clamp(0.0, 1.0);
         // The cursor's height mapped through the visible vertical window into
         // an absolute display coordinate (0 = axis bottom) -- so the readout
@@ -556,9 +566,33 @@ pub(super) fn draw_timeline_meshes(
         // resolution is the element's ([`SlotFrame::Signal::axis`]) and is not
         // made a second time here.
         let axis = look.axis;
+        // **A stack taller than its body is seen through it**: everything
+        // drawn per row from here on is cut at the body's top and bottom, the
+        // y ruler beside it included.
+        if look.lanes.overflow(rows, body.h) > 0.0 {
+            let clip = Some(super::rows_clip(item.clip, item.rect, body));
+            mesh.set_clip(clip);
+            over.set_clip(clip);
+        }
         if item.editor.ruler_y != RulerY::Off {
             for ch in 0..rows {
-                let row = channel_rect(body, rows, ch);
+                let row = look.lanes.rect(body, rows, ch);
+                // A folded row is a strip with the channel's name where its
+                // ruler would be, which is also what a press unfolds it by.
+                if look.lanes.is_folded(ch) {
+                    let name = format!("Ch {}", ch + 1);
+                    let h = crate::host::font::height(m.caption_scale);
+                    crate::host::font::text_ellipsis(
+                        mesh,
+                        &name,
+                        item.rect.x + m.pad * 0.5,
+                        row.y + ((row.h - h) * 0.5).max(0.0),
+                        (body.x - item.rect.x - m.pad).max(0.0),
+                        m.caption_scale,
+                        th.text,
+                    );
+                    continue;
+                }
                 let ticks = match axis {
                     Domain::Frequency => ruler::hz_ticks(
                         nyquist,
@@ -658,7 +692,9 @@ pub(super) fn draw_timeline_meshes(
                         &mut *mesh
                     };
                     for ch in 0..channels {
-                        let row = channel_rect(body, rows, if look.overlay { 0 } else { ch });
+                        let row = look
+                            .lanes
+                            .rect(body, rows, if look.overlay { 0 } else { ch });
                         let mut style = crate::host::graphics::signal::trace::TraceStyle::new(
                             with_alpha(
                                 crate::host::graphics::signal::trace::measure_color(
@@ -701,7 +737,9 @@ pub(super) fn draw_timeline_meshes(
         if let Some(preview) = &look.preview {
             let trace = crate::host::graphics::signal::trace::Trace::Data(&preview.0);
             for ch in 0..channels.min(preview.0.num_channels()) {
-                let row = channel_rect(body, rows, if look.overlay { 0 } else { ch });
+                let row = look
+                    .lanes
+                    .rect(body, rows, if look.overlay { 0 } else { ch });
                 crate::waveform::draw_channel(
                     over,
                     row,
@@ -724,7 +762,7 @@ pub(super) fn draw_timeline_meshes(
             }
         }
         for ch in 1..rows {
-            let row = channel_rect(body, rows, ch);
+            let row = look.lanes.rect(body, rows, ch);
             over.rect(
                 Rect::new(row.x, row.y, row.w, m.divider_w),
                 th.channel_divider,
@@ -1336,16 +1374,20 @@ mod tests {
         editor.y_start = 0.25;
         editor.y_len = 0.5;
         assert_eq!(
-            sweep_axis(&editor, Vertical::Value(DEFAULT_DOMAIN)),
+            sweep_axis(&editor, Vertical::Value(DEFAULT_DOMAIN), Default::default()),
             selection::Vertical::Value {
                 domain: DEFAULT_DOMAIN,
                 window: (0.25, 0.5),
+                lanes: Default::default(),
             },
         );
         // A frequency axis is not a value axis: its second axis is bins, so
         // nothing restricts a sweep over it.
         let freq = Vertical::Frequency(24_000.0, FreqScale::Linear, 20.0);
-        assert_eq!(sweep_axis(&editor, freq), selection::Vertical::Whole);
+        assert_eq!(
+            sweep_axis(&editor, freq, Default::default()),
+            selection::Vertical::Whole
+        );
     }
 
     /// The vertical strip follows the domain the geometry was built through.

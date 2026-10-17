@@ -67,6 +67,8 @@ pub(super) struct TimelineLook {
     /// whichever the stack put on the axis.
     pub(super) y: (f64, f64),
     pub(super) overlay: bool,
+    /// How the stacked rows are laid out, as the element stated it.
+    pub(super) lanes: crate::host::bands::Lanes,
     /// The loudness layer, as the element stated it: the curve it measured,
     /// the scale it is read on and what its span measures.
     pub(super) loudness: crate::host::elements::signal::LoudnessFrame,
@@ -307,6 +309,7 @@ pub(super) fn collect_widgets(
                             domain,
                             y,
                             overlay,
+                            lanes,
                             loudness,
                             preview,
                             look,
@@ -319,6 +322,7 @@ pub(super) fn collect_widgets(
                                 domain,
                                 y,
                                 overlay,
+                                lanes,
                                 loudness,
                                 look,
                             },

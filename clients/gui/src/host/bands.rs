@@ -210,6 +210,99 @@ impl Bands {
     }
 }
 
+/// **A channel stack whose rows may be folded**: what a stacked signal view
+/// lays its channels out by.
+///
+/// A folded row is a strip `strip` tall -- room for the channel's name and a
+/// summary of its peaks -- and the open rows share what is left. An open row
+/// is never shorter than `min`: a stack that does not fit is laid out at that
+/// height, taller than its body, and seen from `scroll` pixels down. With
+/// nothing folded and room enough it is exactly the even split the stack
+/// always was.
+///
+/// A mask rather than a list, so it is `Copy` and travels with every geometry
+/// question a frame asks: channels past the sixty-fourth do not fold.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Lanes {
+    /// Bit `i` set: channel `i` is folded.
+    pub folded: u64,
+    /// A folded row's height.
+    pub strip: f32,
+    /// The least an open row is given before the stack scrolls; 0 for no
+    /// floor.
+    pub min: f32,
+    /// How far down the stack the body shows, in pixels.
+    pub scroll: f32,
+}
+
+impl Lanes {
+    /// The mask of `channels`, each index folded -- an index past the
+    /// sixty-fourth is ignored.
+    pub fn mask(channels: impl IntoIterator<Item = usize>) -> u64 {
+        channels
+            .into_iter()
+            .filter(|c| *c < 64)
+            .fold(0, |m, c| m | (1u64 << c))
+    }
+
+    /// Whether row `i` is folded.
+    pub fn is_folded(&self, i: usize) -> bool {
+        i < 64 && self.folded & (1u64 << i) != 0
+    }
+
+    /// The rows of a stack of `rows` in a body `h` tall, measured from the
+    /// stack's own top (before the scroll).
+    pub fn bands(&self, rows: usize, h: f32) -> Bands {
+        let rows = rows.max(1);
+        let folded = (0..rows).filter(|i| self.is_folded(*i)).count();
+        if folded == 0 && (self.min <= 0.0 || h / rows as f32 >= self.min) {
+            return Bands::uniform(rows, h / rows as f32);
+        }
+        let strip = self.strip.max(0.0).min(h / rows as f32);
+        let open = rows - folded;
+        let share = if open == 0 {
+            0.0
+        } else {
+            ((h - strip * folded as f32) / open as f32).max(self.min)
+        };
+        Bands::table((0..rows).map(|i| if self.is_folded(i) { strip } else { share }))
+    }
+
+    /// How far the stack can be scrolled in a body `h` tall: what it is taller
+    /// than the body by.
+    pub fn overflow(&self, rows: usize, h: f32) -> f32 {
+        (self.bands(rows, h).total() - h).max(0.0)
+    }
+
+    /// The scroll, clamped to what a body `h` tall can show.
+    pub fn clamped(&self, rows: usize, h: f32) -> f32 {
+        self.scroll.clamp(0.0, self.overflow(rows, h))
+    }
+
+    /// Row `ch` of a stack of `rows` in `body`, scrolled: it may lie partly or
+    /// wholly outside the body, which the caller's scissor clips.
+    pub fn rect(
+        &self,
+        body: crate::host::layout::Rect,
+        rows: usize,
+        ch: usize,
+    ) -> crate::host::layout::Rect {
+        let (y, h) = self.bands(rows, body.h).band(ch);
+        let top = body.y + y - self.clamped(rows, body.h);
+        crate::host::layout::Rect::new(body.x, top, body.w, h)
+    }
+
+    /// The row a position `y` in screen pixels falls in, clamped to the stack.
+    pub fn at(&self, body: crate::host::layout::Rect, rows: usize, y: f32) -> usize {
+        let bands = self.bands(rows, body.h);
+        let local = y - body.y + self.clamped(rows, body.h);
+        bands
+            .index_at(local.clamp(0.0, (bands.total() - 0.001).max(0.0)))
+            .unwrap_or(0)
+            .min(rows.max(1) - 1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,5 +382,52 @@ mod tests {
             assert_eq!(b.at(3.0), 0.0);
             assert_eq!(b.index_of(3.0), 0.0);
         }
+    }
+    #[test]
+    fn a_folded_row_is_a_strip_and_the_open_rows_share_the_rest() {
+        use crate::host::layout::Rect;
+        let body = Rect::new(0.0, 100.0, 50.0, 400.0);
+        let even = Lanes::default();
+        assert_eq!(even.rect(body, 4, 2), Rect::new(0.0, 300.0, 50.0, 100.0));
+        let lanes = Lanes {
+            folded: Lanes::mask([1]),
+            strip: 20.0,
+            ..Lanes::default()
+        };
+        assert_eq!(lanes.rect(body, 3, 1).h, 20.0);
+        assert_eq!(lanes.rect(body, 3, 0).h, 190.0);
+        assert_eq!(lanes.rect(body, 3, 2).y, 100.0 + 210.0);
+        assert_eq!(lanes.at(body, 3, 100.0 + 195.0), 1);
+        assert_eq!(lanes.at(body, 3, 900.0), 2, "clamped to the last row");
+    }
+
+    #[test]
+    fn a_stack_past_its_floor_scrolls_and_the_scroll_is_clamped() {
+        use crate::host::layout::Rect;
+        let body = Rect::new(0.0, 0.0, 50.0, 300.0);
+        let lanes = Lanes {
+            min: 60.0,
+            scroll: 1e6,
+            ..Lanes::default()
+        };
+        assert_eq!(lanes.overflow(16, 300.0), 16.0 * 60.0 - 300.0);
+        let last = lanes.rect(body, 16, 15);
+        assert_eq!(
+            (last.y, last.h),
+            (240.0, 60.0),
+            "the end of the stack, in view"
+        );
+        assert_eq!(lanes.at(body, 16, 250.0), 15);
+        let top = Lanes {
+            scroll: -5.0,
+            ..lanes
+        };
+        assert_eq!(top.rect(body, 16, 0).y, 0.0);
+        assert_eq!(
+            Lanes::default().overflow(16, 300.0),
+            0.0,
+            "no floor, no scroll"
+        );
+        assert_eq!(Lanes::mask([0, 70]), 1, "past the sixty-fourth is ignored");
     }
 }

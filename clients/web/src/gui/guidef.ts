@@ -951,8 +951,6 @@ export interface SourceOptions extends WidgetOptions {
     path?: string | Source;
     /** A server buffer number, pulled over the host's client leg. */
     buffer?: number | Source;
-    /** Processed buffer drawn over the source; never used for edits or copy. */
-    previewBuffer?: number | null;
     /**
      * A short signal inline in the JSON, or {@link KEEP} -- the run the host is
      * already drawing, named rather than re-sent.
@@ -1283,7 +1281,7 @@ export type SignalLayers = string | (string | SignalLayer)[];
  * name and document the six common points of the product.
  */
 export function signal(
-    options: SourceOptions & {
+    options: SourceOptions & PreviewOptions & {
         view?: string;
         bus?: number;
         rate?: "audio" | "control";
@@ -1336,6 +1334,15 @@ export function signal(
         editable?: boolean;
         overlay?: boolean;
         /**
+         * The channel indices a stacked view draws **folded**: a strip one
+         * control tall with the channel's name and its peaks, the open rows
+         * sharing the rest. A press on a strip's name reports `"unfold"
+         * channel`. An open row is never thinned past three controls tall: a
+         * stack that does not fit scrolls under the wheel over its vertical
+         * ruler (Ctrl zooms it).
+         */
+        folded?: readonly number[];
+        /**
          * **The stack the picture is**, back to front. A layer is named by what
          * it draws: `"peak"` (the min/max envelope the signal reached), `"rms"`
          * (the symmetric body of the level it held), `"signal"` (the
@@ -1384,7 +1391,7 @@ export function signal(
 ): GuiNode {
     const {
         view, cache, path, buffer, previewBuffer, data, blob, channels, bus, rate, retention,
-        baseBucket, navigable, selectable, editable, overlay, layers, measure, fills, at, dur,
+        baseBucket, navigable, selectable, editable, overlay, folded, layers, measure, fills, at, dur,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats,
         start, loop, axes: pair, label: text, ...rest
     } = options;
@@ -1403,6 +1410,7 @@ export function signal(
             ["selectable", flag(selectable)],
             ["editable", flag(editable)],
             ["overlay", flag(overlay)],
+            ["folded", folded === undefined ? undefined : [...folded]],
             ["layers", layers],
             ["measure", measure],
             ["loudness_target", loudnessTarget],
@@ -2628,11 +2636,13 @@ export function dialog(
  * there.
  */
 export function waveform(
-    options: SourceOptions & TimelineOptions & {
+    options: SourceOptions & PreviewOptions & TimelineOptions & {
         /** The peak-pyramid bucket size (default 256). */
         baseBucket?: number;
         /** Draw the channels as overlaid traces instead of stacked lanes. */
         overlay?: boolean;
+        /** The channels drawn folded, as in {@link signal}. */
+        folded?: readonly number[];
         /** The amplitude-axis ruler: it labels the axis, it does not map it. */
         rulerY?: string;
         /** The integer resolution `rulerY: "bits"` labels (default 16). */
@@ -2692,7 +2702,7 @@ export function waveform(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, previewBuffer, data, blob, channels, baseBucket, overlay,
+        cache, path, buffer, previewBuffer, data, blob, channels, baseBucket, overlay, folded,
         rulerY, bitDepth, min, max, layers, measure, fills,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats, ...timeline
     } = options;
@@ -2706,6 +2716,7 @@ export function waveform(
         ...drop([
             ["base_bucket", baseBucket],
             ["overlay", flag(overlay)],
+            ["folded", folded === undefined ? undefined : [...folded]],
             ["layers", layers],
             ["measure", measure],
             ["fills", flag(fills)],
@@ -2733,7 +2744,7 @@ export function waveform(
  * and `colormap` picks 0 viridis / 1 magma / 2 grayscale.
  */
 export function spectrogram(
-    options: SourceOptions & TimelineOptions & {
+    options: SourceOptions & PreviewOptions & TimelineOptions & {
         windowSize?: number;
         hop?: number;
         dbFloor?: number;
@@ -2753,10 +2764,12 @@ export function spectrogram(
         layers?: SignalLayers;
         /** The frequency ruler: `"hz"` (the default) or `"off"`. */
         rulerY?: string;
+        /** The channels drawn folded, as in {@link signal}. */
+        folded?: readonly number[];
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, previewBuffer, data, blob, channels, windowSize, hop,
+        cache, path, buffer, previewBuffer, data, blob, channels, folded, windowSize, hop,
         dbFloor, dbCeil, freqScale, logFreq, colormap, layers, rulerY, ...timeline
     } = options;
     return node("signal", {
@@ -2764,6 +2777,7 @@ export function spectrogram(
         ...timelineProps(timeline, drop([["unit", rulerY]])),
         ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
         ...drop([
+            ["folded", folded === undefined ? undefined : [...folded]],
             ["window_size", windowSize],
             ["hop", hop],
             ["db_floor", dbFloor],
@@ -2810,7 +2824,7 @@ export function plot(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, previewBuffer, data, blob, channels, view, overlay, sampleRate,
+        cache, path, buffer, data, blob, channels, view, overlay, sampleRate,
         min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale, layers, measure,
         label: text, axes: pair, ...rest
     } = options;
@@ -2820,7 +2834,7 @@ export function plot(
         ...rest,
         view: PLOT_VIEW[view ?? "signal"] ?? view,
         navigable: 0,
-        ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, data, blob, channels }),
         ...axes(
             drop([["unit", ruler], ["sample_rate", sampleRate]]),
             drop([["unit", rulerY], ["min", min], ["max", max]]),
@@ -3572,9 +3586,15 @@ export const curve = bpf;
 export const nodes = nodetree;
 export const keys = piano;
 
+/** A navigable view's processed picture over its source. */
+export interface PreviewOptions {
+    /** Processed buffer drawn over the source; never used for edits or copy. */
+    previewBuffer?: number | null;
+}
+
 /** A heavy view's data source as wire props. */
 function sourceProps(options: Pick<SourceOptions,
-    "cache" | "path" | "buffer" | "previewBuffer" | "data" | "blob" | "channels">): Props {
+    "cache" | "path" | "buffer" | "data" | "blob" | "channels"> & PreviewOptions): Props {
     const { cache, path, buffer, previewBuffer, data, blob, channels } = options;
     return drop([
         ["cache", cache],

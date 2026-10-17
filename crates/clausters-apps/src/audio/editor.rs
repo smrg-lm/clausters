@@ -157,6 +157,22 @@ impl Converse for AudioEditor {
         if message.addr != "/gui_event" || !message.is_window {
             return false;
         }
+        // A channel's menu entry carries the channel after its verb.
+        if let Some((verb, channel)) = message.tag.split_once(':')
+            && matches!(verb, "fold_channel" | "solo_channel")
+        {
+            out.turn = Kind::Route;
+            let channel = channel.parse::<u64>().ok().map(Value::from);
+            let values: Vec<Value> = channel.into_iter().collect();
+            let (reason, corrections) = self.gesture(message.widget, verb, &values, out);
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                reason,
+                corrections,
+            ));
+            return true;
+        }
         if matches!(
             message.tag.as_str(),
             "view_wave"
@@ -169,6 +185,7 @@ impl Converse for AudioEditor {
                 | "preview_off"
                 | "remove_effect"
                 | "apply"
+                | "show_all_channels"
         ) {
             out.turn = Kind::Route;
             let (reason, corrections) = self.gesture(message.widget, &message.tag, &[], out);
@@ -304,6 +321,8 @@ pub struct AudioEditor {
     selection: Option<(u64, u64)>,
     /// Where the level meter is read from, once a playback measures the take.
     meters: Option<(i32, usize)>,
+    /// The channels drawn folded, a view state outside the history.
+    folded: BTreeSet<u32>,
     /// The dialogs' widgets, by name ([`dialogs::names`]).
     dialogs: dialogs::Ids,
     /// The form that is up, when one is.
@@ -377,6 +396,7 @@ impl AudioEditor {
             cursor: None,
             selection: None,
             meters: None,
+            folded: BTreeSet::new(),
             dialogs: dialogs::Ids::new(),
             dialog: None,
             conversation: Conversation::new(version),
@@ -768,6 +788,7 @@ impl AudioEditor {
             meter,
             bare: self.bare,
             dialogs: dialogs::stack(&self.dialogs),
+            folded: &self.folded(),
         });
         self.compose_envelope(&mut tree);
         tree
@@ -887,6 +908,14 @@ impl AudioEditor {
     ) -> (Option<String>, Vec<Correction>) {
         if tag == "show_envelope" {
             return self.show_envelope();
+        }
+        let channel = values.first().and_then(Value::as_u64);
+        match tag {
+            "unfold" => return self.unfold_channel(channel),
+            "fold_channel" => return self.fold_channel(channel),
+            "solo_channel" => return self.solo_channel(channel),
+            "show_all_channels" => return self.show_all_channels(),
+            _ => {}
         }
         if tag == "points" && self.envelope_widget.map(i64::from) == Some(widget) {
             return self.set_envelope_event(values, out);
@@ -1548,10 +1577,13 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         }
         "preview" => editor.preview_state().to_string(),
         "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
+        "folded" => json!({"folded": editor.folded()}).to_string(),
         "file" => editor.file().to_string(),
         "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
         "show_envelope" | "setautomation" | "apply_envelope" | "preview_on" | "preview_off"
-        | "remove_effect" => serde_json::to_string(&editor.act(&request, version)).unwrap(),
+        | "remove_effect" | "fold_channel" | "solo_channel" | "show_all_channels" => {
+            serde_json::to_string(&editor.act(&request, version)).unwrap()
+        }
         "props" if editor.envelope_widget == Some(widget) => editor
             .envelope_corrections()
             .first()
@@ -1617,6 +1649,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
 /// The domain an audio editor's structure is registered under.
 pub const DOMAIN: &str = PARTS;
 
+mod channels;
 mod envelope;
 mod files;
 

@@ -44,6 +44,7 @@ CLASSES = {
     "ScoreEditor": ("clausters.gui.editing.score", "gui/editing/score.ts"),
     "Multitrack": ("clausters.multitrack", "multitrack.ts"),
     "Tracks": ("clausters.multitrack", "multitrack.ts"),
+    "SoundFile": ("clausters.soundfile", "soundfile.ts"),
 }
 
 

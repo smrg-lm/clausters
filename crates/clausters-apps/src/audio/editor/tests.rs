@@ -729,3 +729,46 @@ fn without_dialogs_an_untitled_save_is_refused() {
             .contains("dialogs")
     );
 }
+
+/// **Folding is the editor's view state**: a script's verb, a menu entry
+/// carrying its channel and a press on a strip's name all change one list, and
+/// each answers with the take widget's `folded` prop.
+#[test]
+fn channels_fold_solo_and_unfold_through_one_state() {
+    let mut editor = opened(4);
+    let folded = |out: &Value| out["answer"]["corrections"][0]["props"]["folded"].clone();
+    let act = call(
+        &mut editor,
+        json!({"verb": "fold_channel", "version": 0, "channel": 2}),
+    );
+    assert_eq!(folded(&act), json!([2]));
+    let solo = event(&mut editor, json!([900, 1, 0, "solo_channel:1"]));
+    assert_eq!(folded(&solo), json!([0, 2, 3]));
+    let unfold = event(&mut editor, json!([12, 2, 0, "unfold", 3]));
+    assert_eq!(folded(&unfold), json!([0, 2]));
+    assert_eq!(
+        call(&mut editor, json!({"verb": "folded"}))["folded"],
+        json!([0, 2])
+    );
+    let window = call(&mut editor, json!({"verb": "window", "widget": 12}));
+    assert!(
+        window.to_string().contains("\"folded\":[0,2]"),
+        "the window draws it"
+    );
+    assert!(
+        window.to_string().contains("solo_channel:3"),
+        "a menu entry per channel"
+    );
+    let all = event(&mut editor, json!([900, 3, 0, "show_all_channels"]));
+    assert_eq!(folded(&all), json!([]));
+    let wrong = call(
+        &mut editor,
+        json!({"verb": "fold_channel", "version": 0, "channel": 9}),
+    );
+    assert!(
+        wrong["answer"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("channel 9")
+    );
+}

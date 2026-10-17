@@ -4071,3 +4071,73 @@ fn a_curve_over_a_signal_edits_on_the_panes_shared_gutter() {
         "the point moved; the segment beside it was not bent: {args:?}"
     );
 }
+
+/// **A stack too tall for its body scrolls under the wheel over its ruler**,
+/// and Ctrl zooms the amplitude there as before: sixteen channels in a short
+/// window keep their rows readable instead of thinning to lines.
+#[test]
+fn a_stack_too_tall_for_its_body_scrolls_and_ctrl_zooms() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":61,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(61, 1000);
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.slot_channels.insert(61, 16);
+    let scroll = |host: &Host| {
+        host.window_def(1)
+            .unwrap()
+            .find(61)
+            .unwrap()
+            .kind
+            .signal()
+            .unwrap()
+            .lane_scroll
+    };
+    let effects = g.wheel(&mut host, &ctx, 10.0, 150.0, -2.0);
+    assert!(!has_emit_tag(&effects, 61, "view_y"), "a scroll is no zoom");
+    assert!(scroll(&host) > 0.0, "the wheel down moved the stack");
+    g.wheel(&mut host, &ctx, 10.0, 150.0, 100.0);
+    assert_eq!(scroll(&host), 0.0, "and back up to its top, no further");
+    ctx.ctrl = true;
+    let zoom = g.wheel(&mut host, &ctx, 10.0, 150.0, 1.0);
+    assert!(
+        has_emit_tag(&zoom, 61, "view_y"),
+        "Ctrl zooms the amplitude"
+    );
+}
+
+/// **A press on a folded strip's name asks its owner to unfold it**, and a
+/// press on an open row's ruler is still the axis grabbed.
+#[test]
+fn a_press_on_a_folded_strip_asks_to_unfold_it() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":61,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],
+             "base_bucket":2,"folded":[0]}]}"#,
+    );
+    host.set_timeline_total(61, 1000);
+    let mut g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 800, 300);
+    ctx.slot_channels.insert(61, 4);
+    let mut unfolded = None;
+    let mut grabbed = false;
+    for y in (0..300).step_by(2) {
+        let mut effects = g.press(&mut host, &ctx, 10.0, y as f64);
+        effects.extend(g.release(&mut host, &ctx, 10.0, y as f64));
+        match emitted_args(&effects, 61) {
+            Some(args) if args.first() == Some(&OscType::String("unfold".into())) => {
+                unfolded.get_or_insert(args);
+            }
+            _ if unfolded.is_some() => grabbed = true,
+            _ => {}
+        }
+    }
+    assert_eq!(
+        unfolded,
+        Some(vec![OscType::String("unfold".into()), OscType::Int(0)]),
+        "the first strip is channel 0's"
+    );
+    assert!(grabbed, "below it the rows are open and nothing is asked");
+}

@@ -186,6 +186,27 @@ def parts():
 
 
 # %% [markdown]
+# ## Many channels
+#
+# A take of eight channels stacks a row each. View -> Fold channel folds one to
+# a strip with its name, View -> Solo channel shows one alone, and View -> Show
+# all channels opens them again; a press on a strip's name unfolds it. A stack
+# too tall for the window keeps its rows readable and scrolls under the wheel
+# over the vertical ruler (Ctrl+wheel there zooms the amplitude).
+
+# %%
+def many_channels():
+    """Open eight channels, each its own tone, with the second and fifth folded."""
+    tones = [math.exp(-3.0 * i / frames) * 0.5 * math.sin(2 * math.pi * 440.0 * (1 + c / 4) * i / rate)
+             for i in range(frames) for c in range(8)]
+    wide = edit(SoundFile.write(OUT / "edit_audio_8ch.wav", tones, 8, rate, sample_format="float"),
+                title="eight channels", server=server)
+    wide.fold_channel(1)
+    wide.fold_channel(4)
+    return wide
+
+
+# %% [markdown]
 # ## A file not written yet
 #
 # `SoundFile.empty` is a shape with no path: silence that opens like any take.

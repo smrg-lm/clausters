@@ -428,6 +428,32 @@ impl Default for Spectral {
     }
 }
 
+/// How many control heights an open channel row is given at least before a
+/// stacked view scrolls instead of thinning its rows further: room for a
+/// waveform and its amplitude labels.
+pub const MIN_OPEN_ROWS: f32 = 3.0;
+
+/// **The `folded` prop as a mask**: a list of channel indices, or the same
+/// list as the JSON string a `/gui_set` scalar carries. Anything else folds
+/// nothing.
+pub fn folded_mask(v: &serde_json::Value) -> u64 {
+    let parsed;
+    let list = match v {
+        serde_json::Value::String(text) => {
+            parsed = serde_json::from_str::<serde_json::Value>(text).unwrap_or_default();
+            &parsed
+        }
+        other => other,
+    };
+    crate::host::bands::Lanes::mask(
+        list.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_u64)
+            .map(|c| c as usize),
+    )
+}
+
 /// The chrome that no presentation owns: how the channels are laid out, and the
 /// element's name.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -436,6 +462,8 @@ pub struct Display {
     /// lanes.
     pub overlay: bool,
     pub label: Option<String>,
+    /// The channels drawn folded, as a mask ([`crate::host::bands::Lanes`]).
+    pub folded: u64,
 }
 
 /// One view of one signal: a presentation of a source, what the user may do
@@ -489,6 +517,9 @@ pub struct SignalElement {
     pub value: ValueRange,
     pub spectral: Spectral,
     pub display: Display,
+    /// How far down its channel stack the view is scrolled, in pixels -- the
+    /// reader's, kept by the element, and clamped wherever it is read.
+    pub lane_scroll: f32,
     pub editor: EditorProps,
     /// The cached spectral analysis of a **stored** [`Presentation::Spectrum`]
     /// -- recomputed at the element's mutation points (parse, a bulk load
@@ -574,6 +605,7 @@ impl SignalElement {
             value: p.value,
             spectral: p.spectral,
             display: Display::default(),
+            lane_scroll: 0.0,
             editor,
             analysis: None,
             loudness: LoudnessLayer::default(),
@@ -771,6 +803,7 @@ impl SignalElement {
             domain: self.domain(),
             y: self.editor.y_view(),
             rows: self.rows(uploaded),
+            lanes: self.lanes(m),
         })
     }
 
@@ -856,6 +889,22 @@ impl SignalElement {
     /// Whether the element reads its samples live (a forward-only source).
     pub fn is_live(&self) -> bool {
         matches!(self.source, Source::Bus(_))
+    }
+
+    /// **How its stacked rows are laid out**: the folded channels as strips a
+    /// control tall, an open row never shorter than [`MIN_OPEN_ROWS`] of them,
+    /// and the reader's scroll. Overlaid traces share one row, which folds
+    /// nothing.
+    pub fn lanes(&self, m: &Metrics) -> crate::host::bands::Lanes {
+        if self.display.overlay {
+            return crate::host::bands::Lanes::default();
+        }
+        crate::host::bands::Lanes {
+            folded: self.display.folded,
+            strip: m.control_h,
+            min: m.control_h * MIN_OPEN_ROWS,
+            scroll: self.lane_scroll,
+        }
     }
 
     /// How many lanes this element stacks out of the `uploaded` channels the
