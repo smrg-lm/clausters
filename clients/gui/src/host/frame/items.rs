@@ -53,6 +53,7 @@ pub(super) struct SpectralBodyItem {
 /// question "is this a waveform or a spectrogram" stopped being the frame's the
 /// moment one body could carry both.
 pub(super) struct TimelineLook {
+    pub(super) preview: Option<crate::host::widget::element::PreviewData>,
     /// The layers, back to front.
     pub(super) layers: crate::host::graphics::signal::layers::Stack,
     /// What the body's vertical measures, as the element resolved it.
@@ -307,10 +308,12 @@ pub(super) fn collect_widgets(
                             y,
                             overlay,
                             loudness,
+                            preview,
                             look,
                         } => timeline(
                             body,
                             TimelineLook {
+                                preview,
                                 layers,
                                 axis,
                                 domain,

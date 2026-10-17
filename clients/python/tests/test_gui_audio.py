@@ -44,6 +44,9 @@ class FakeHost:
     def push(self, seq, *corrections, doc_version=0, reason=None):
         self.acks.append((seq, list(corrections), reason))
 
+    def set(self, id, **props):
+        self.__dict__.setdefault("props", {}).setdefault(id, {}).update(props)
+
     def close(self, id):
         pass
 
@@ -513,3 +516,26 @@ def test_invalid_gain_quads_leave_history_and_samples_unchanged():
     assert editor.envelope == before
     assert context.version == version
     assert not editor.apply_envelope(), "unity does not make another take"
+
+
+def test_preview_switches_keep_samples_and_history_and_release_the_insert():
+    take = FakeBuffer()
+    editor, host, wid, context = opened(take)
+    editor.set_envelope([0, 0.25, 1, 0, 100 / SR, 0.75, 1, 0])
+    before, version = editor.parts, context.version
+    take.server.sent.clear()
+    editor.preview_on()
+    assert editor.parts == before and context.version == version
+    assert "/buffer_gain" in take.server.addrs()
+    assert "/synth_new" in take.server.addrs()
+    assert host.props[wid]["preview_buffer"] >= 0
+    take.server.sent.clear()
+    editor.preview_off()
+    assert "/buffer_alloc" not in take.server.addrs()
+    assert host.props[wid]["preview_buffer"] == -1
+    editor.preview_on()
+    assert "/buffer_alloc" not in take.server.addrs()
+    editor.remove_effect()
+    assert take.server.addrs().count("/buffer_free") == 2
+    assert editor.parts == before and context.version == version
+    assert editor.envelope[1] == 0.25

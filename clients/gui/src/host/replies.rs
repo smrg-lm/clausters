@@ -232,7 +232,21 @@ pub(crate) trait Front {
                 .host()
                 .window_def(want.def_id)
                 .and_then(|t| t.find(want.widget_id))
-                .map(|w| w.bulk_target().kind.needs().slot)
+                .and_then(|w| {
+                    let target = w.bulk_target();
+                    let n = target.kind.needs();
+                    if let Some(signal) = target.signal()
+                        && signal.source_buffer() != Some(bufnum)
+                        && !n.takes.contains(&bufnum)
+                    {
+                        return None;
+                    }
+                    Some(if n.takes.contains(&bufnum) {
+                        None
+                    } else {
+                        n.slot
+                    })
+                })
             else {
                 continue;
             };
@@ -324,12 +338,40 @@ pub(crate) trait Front {
         );
         let mut bucket = None;
         for want in wants {
+            if self
+                .host()
+                .window_def(want.def_id)
+                .and_then(|t| t.find(want.widget_id))
+                .and_then(|w| w.bulk_target().signal())
+                .is_some_and(|signal| {
+                    signal.source_buffer() != Some(bufnum) && signal.preview_buffer != Some(bufnum)
+                })
+            {
+                continue;
+            }
             let Some(base_bucket) = self.summary_bucket_of(want.def_id, want.widget_id) else {
                 continue;
             };
             let data = Arc::new(WaveformData::with_multi_pyramid(
                 clausters_core::peaks::MultiPyramid::empty(frames, channels, base_bucket),
             ));
+            let plural = self
+                .host()
+                .window_def(want.def_id)
+                .and_then(|t| t.find(want.widget_id))
+                .is_some_and(|w| w.bulk_target().kind.needs().takes.contains(&bufnum));
+            if plural {
+                if let Some(w) = self
+                    .host_mut()
+                    .window_def_mut(want.def_id)
+                    .and_then(|t| t.find_mut(want.widget_id))
+                {
+                    w.take_bulk_of(bufnum, || Loaded::Peaks(data.clone()));
+                }
+                bucket = bucket.or(Some(base_bucket));
+                self.redraw_window(want.def_id);
+                continue;
+            }
             // Only a view that claimed a geometry slot draws the summary from
             // one; every other keeps it on the element.
             let geometry = matches!(

@@ -934,7 +934,7 @@ def plane(*children, flow: str | None = None, axis: str | None = None,
     return node("plane", id=id, children=children, **extra, **props)
 
 def signal(*, view: str | None = None, data=None, blob: int | None = None,
-           buffer: int | None = None, path: str | None = None, cache: str | None = None,
+           buffer: int | None = None, preview_buffer: int | None = None, path: str | None = None, cache: str | None = None,
            bus: int | None = None, rate: str | None = None, channels: int | None = None,
            retention: float | None = None,
            base_bucket: int | None = None, navigable: bool | None = None,
@@ -997,6 +997,10 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       summary and nothing else -- a peaks cache, a streamed overview -- draws no
       ``"spectrogram"`` layer, since an analysis is made from samples.
 
+    - ``preview_buffer`` -- an optional processed server buffer drawn over the
+      original samples on the same axis. It never becomes the edit/copy source.
+      Set it to ``None`` to clear the overlay.
+
     - the **source** -- ``bus`` (with ``rate``) is forward-only, read live;
       ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,
       which is what lets a view navigate, slice and select. ``channels``
@@ -1049,7 +1053,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     through the window its container states, which is the ordinary one.
     """
     extra = _drop_none(view=view, data=_samples_arg(data),
-                       blob=blob, buffer=buffer, path=path, cache=cache,
+                       blob=blob, buffer=buffer, preview_buffer=preview_buffer, path=path, cache=cache,
                        retention=retention,
                        bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
                        layers=layers, measure=measure, at=at, dur=dur, start=start,
@@ -1942,7 +1946,7 @@ def dialog(*children, title: str | None = None, flow: str | None = None,
 
 
 def waveform(*, autofit: bool | None = None,
-             data=None, blob: int | None = None, buffer: int | None = None,
+             data=None, blob: int | None = None, buffer: int | None = None, preview_buffer: int | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, overlay: bool | None = None,
              layers=None, measure: str | None = None, fills: bool | None = None,
@@ -2082,7 +2086,7 @@ def waveform(*, autofit: bool | None = None,
     (it keeps the view it had). Only the vertical window ``y_start``/``y_len``
     stays per-view."""
     extra = _drop_none(data=_samples_arg(data),
-                       blob=blob, buffer=buffer, path=path, cache=cache,
+                       blob=blob, buffer=buffer, preview_buffer=preview_buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
                        layers=layers, measure=measure,
                        loudness_target=loudness_target, loudness_scale=loudness_scale,
@@ -2106,7 +2110,7 @@ def waveform(*, autofit: bool | None = None,
 
 
 def spectrogram(*, autofit: bool | None = None,
-                data=None, blob: int | None = None, buffer: int | None = None,
+                data=None, blob: int | None = None, buffer: int | None = None, preview_buffer: int | None = None,
                 path: str | None = None, cache: str | None = None, channels: int | None = None,
                 window_size: int | None = None, hop: int | None = None,
                 sample_rate: float | None = None, db_floor: float | None = None,
@@ -2169,7 +2173,7 @@ def spectrogram(*, autofit: bool | None = None,
     documented whole in `signal`; the ``y`` is what keeps two quantities off
     one vertical."""
     extra = _drop_none(data=_samples_arg(data),
-                       blob=blob, buffer=buffer, path=path, cache=cache,
+                       blob=blob, buffer=buffer, preview_buffer=preview_buffer, path=path, cache=cache,
                        channels=channels, window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        colormap=colormap, layers=layers, color=color)

@@ -379,6 +379,18 @@ class AudioEditor(Marking, Editor):
             "sync", file=self._display, buffer=self._display,
             channels=max(1, int(getattr(self.structure, "channels", 1) or 1)),
             frames=frames, takeRate=self.sample_rate, rate=self._playback.rate)
+        preview = self._call("preview")
+        if preview["installed"]:
+            self._playback.call("gain", file=self._display,
+                                points=preview["points"], on=preview["on"],
+                                revision=preview["revision"])
+        else:
+            self._playback.call("removeEffect", file=self._display)
+        state = self._playback.state()
+        if self._host is not None and self._window is not None:
+            buffer = (state.get("previews") or {}).get(str(self._display))
+            for wid in self.view.widgets:
+                self._host.set(wid, preview_buffer=-1 if buffer is None else buffer)
         self._call("sync", meters=self._playback.state().get("meters"))
 
     def _cue(self, frame: int) -> None:
@@ -552,6 +564,8 @@ class AudioEditor(Marking, Editor):
             self.dirty = True
             self._editing.changed()
             self._sound()
+        if outcome.get("preview") is not None and not changed:
+            self._sound()
         if outcome.get("play") is not None:
             # The loop switch rides beside the space bar and `L`: a pass that
             # loops is the switch on.
@@ -628,8 +642,20 @@ class AudioEditor(Marking, Editor):
 
     def apply_envelope(self) -> bool:
         """Render gain into a new take and reset the curve to unity, in one
-        undo step. Preview playback is not affected until this is applied."""
+        undo step. An enabled preview follows the reset curve, so gain is applied once."""
         return self._envelope_act("apply_envelope")
+
+    def preview_on(self) -> None:
+        """Hear the gain envelope through a ramped insert on the take."""
+        self._envelope_act("preview_on")
+
+    def preview_off(self) -> None:
+        """Ramp to dry and pause the insert, retaining its state."""
+        self._envelope_act("preview_off")
+
+    def remove_effect(self) -> None:
+        """Free the preview insert and its table; keep the unapplied curve."""
+        self._envelope_act("remove_effect")
 
     def _envelope_act(self, verb: str, **args) -> bool:
         with self._editing.turn(self):

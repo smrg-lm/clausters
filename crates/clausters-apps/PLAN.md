@@ -2625,15 +2625,28 @@ Every entry carries a checkbox.
   playback's `end`, and a script copies it into `Session.end` when it
   saves.)*
 
-- ⬜ **Effects in preview in the audio editor** *(out of X7)*: a chain in
-  place on `dry`, between the readers and the pass, whose effects are heard
-  and not written; applying one to the take is a separate operation on the
-  server. The shape is decided in X7 (a linear chain on `ReplaceOut`, a bypass
-  that ramps `LinXFade2` and then pauses, removing as a separate verb); what
-  is decided with the first effect is what a resumed effect does with the
-  state it froze with (a delay line still holding the past), and how an
-  effect is moved in the chain, since an auto-sorted group refuses a manual
-  move.
+- ✅ **Effects in preview in the audio editor** *(out of X7)*: the first
+  insert is the take's gain envelope, heard through `ReplaceOut` and a
+  linear-ASR `LinXFade2` bypass, then paused at exact dry. Preview on/off,
+  remove and Apply are distinct verbs. The processed picture uses a scratch
+  buffer through the existing signal's `preview_buffer` prop.
+
+  **Resume and order.** Resume preserves effect state; transport-addressed
+  automation reads the current position immediately, including after a locate
+  or loop wrap. A future stateful insert retains its frozen tail as well;
+  removing and enabling it creates fresh state. Chain order is the stored
+  insertion order of the read/replace nodes. A reorder rebuilds the affected
+  suffix in its requested order, with the same port values and fresh DSP
+  state, rather than issuing a forbidden manual move in an auto group.
+  The first chain has one gain insert and no reorder control.
+
+  **Ownership.** The playback owns the dry bus and gain synth id. Readers
+  and pass use that bus through their ordinary ports; auto order supplies
+  their dependency order. A synth paused by its ASR can then be resumed by
+  its own id, unlike a private member hidden under a slot group. The gain
+  table and scratch picture are made with the same buffer gain operations
+  as Apply and freed with their insert. Preview switches are outside undo;
+  applying and the curve edits retain the existing take history.
 
 - ⬜ **Several files in one audio editor** *(out of X7)*. The playback holds a
   file per open take and pauses all but the one in focus; the clients open

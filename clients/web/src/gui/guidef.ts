@@ -951,6 +951,8 @@ export interface SourceOptions extends WidgetOptions {
     path?: string | Source;
     /** A server buffer number, pulled over the host's client leg. */
     buffer?: number | Source;
+    /** Processed buffer drawn over the source; never used for edits or copy. */
+    previewBuffer?: number | null;
     /**
      * A short signal inline in the JSON, or {@link KEEP} -- the run the host is
      * already drawing, named rather than re-sent.
@@ -1381,7 +1383,7 @@ export function signal(
     } = {},
 ): GuiNode {
     const {
-        view, cache, path, buffer, data, blob, channels, bus, rate, retention,
+        view, cache, path, buffer, previewBuffer, data, blob, channels, bus, rate, retention,
         baseBucket, navigable, selectable, editable, overlay, layers, measure, fills, at, dur,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats,
         start, loop, axes: pair, label: text, ...rest
@@ -1389,7 +1391,7 @@ export function signal(
     return node("signal", {
         ...rest,
         ...(pair === undefined ? {} : { axes: pair }),
-        ...sourceProps({ cache, path, buffer, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
         ...drop([
             ["view", view],
             ["bus", bus],
@@ -2690,7 +2692,7 @@ export function waveform(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, data, blob, channels, baseBucket, overlay,
+        cache, path, buffer, previewBuffer, data, blob, channels, baseBucket, overlay,
         rulerY, bitDepth, min, max, layers, measure, fills,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats, ...timeline
     } = options;
@@ -2700,7 +2702,7 @@ export function waveform(
             timeline,
             drop([["unit", rulerY], ["bit_depth", bitDepth], ["min", min], ["max", max]]),
         ),
-        ...sourceProps({ cache, path, buffer, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
         ...drop([
             ["base_bucket", baseBucket],
             ["overlay", flag(overlay)],
@@ -2754,13 +2756,13 @@ export function spectrogram(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, data, blob, channels, windowSize, hop,
+        cache, path, buffer, previewBuffer, data, blob, channels, windowSize, hop,
         dbFloor, dbCeil, freqScale, logFreq, colormap, layers, rulerY, ...timeline
     } = options;
     return node("signal", {
         view: "spectrogram",
         ...timelineProps(timeline, drop([["unit", rulerY]])),
-        ...sourceProps({ cache, path, buffer, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
         ...drop([
             ["window_size", windowSize],
             ["hop", hop],
@@ -2808,7 +2810,7 @@ export function plot(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, data, blob, channels, view, overlay, sampleRate,
+        cache, path, buffer, previewBuffer, data, blob, channels, view, overlay, sampleRate,
         min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale, layers, measure,
         label: text, axes: pair, ...rest
     } = options;
@@ -2818,7 +2820,7 @@ export function plot(
         ...rest,
         view: PLOT_VIEW[view ?? "signal"] ?? view,
         navigable: 0,
-        ...sourceProps({ cache, path, buffer, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
         ...axes(
             drop([["unit", ruler], ["sample_rate", sampleRate]]),
             drop([["unit", rulerY], ["min", min], ["max", max]]),
@@ -3572,12 +3574,13 @@ export const keys = piano;
 
 /** A heavy view's data source as wire props. */
 function sourceProps(options: Pick<SourceOptions,
-    "cache" | "path" | "buffer" | "data" | "blob" | "channels">): Props {
-    const { cache, path, buffer, data, blob, channels } = options;
+    "cache" | "path" | "buffer" | "previewBuffer" | "data" | "blob" | "channels">): Props {
+    const { cache, path, buffer, previewBuffer, data, blob, channels } = options;
     return drop([
         ["cache", cache],
         ["path", path],
         ["buffer", buffer],
+        ["preview_buffer", previewBuffer],
         // A `Source` and `KEEP` pass through untouched -- `node` expands a
         // source into the carrier it picked, and a keep is a word about the
         // host's own copy; anything else is read into an array here.

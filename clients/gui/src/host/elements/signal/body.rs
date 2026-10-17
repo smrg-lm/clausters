@@ -62,5 +62,27 @@ impl SignalElement {
             self.editor.sample_rate,
             self.written_frames(),
         );
+        if let Some(preview) = self.preview_data() {
+            let layers =
+                crate::host::graphics::signal::layers::Stack::parse(&serde_json::json!("peak"))
+                    .unwrap();
+            let mut theme = d.theme.clone();
+            theme.selection = crate::host::theme::with_alpha(theme.series(1), 0.7);
+            let mut preview_draw = Draw::new(d.mesh, d.m, &theme);
+            crate::host::graphics::track::draw_take(
+                &mut preview_draw,
+                rect,
+                &time.view,
+                &time.window,
+                time.span,
+                &crate::host::graphics::signal::trace::Trace::Data(&preview),
+                min,
+                max,
+                &layers,
+                self.display.overlay,
+                self.editor.sample_rate,
+                self.written_frames(),
+            );
+        }
     }
 }

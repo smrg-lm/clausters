@@ -723,6 +723,51 @@ mod tests {
         );
     }
 
+    #[test]
+    fn preview_loading_keeps_the_original_as_the_edit_source() {
+        use crate::host::widget::element::{Element, Samples};
+        let mut take =
+            element(r#"{"id":1,"type":"signal","view":"trace","buffer":7,"preview_buffer":8}"#);
+        take.take(Loaded::Raw {
+            samples: vec![0.5; 1024],
+            channels: 1,
+        });
+        assert_eq!(take.ask_takes(false), vec![8]);
+        assert!(take.ask_takes(false).is_empty());
+        assert!(take.bulk_of(
+            8,
+            Loaded::Raw {
+                samples: vec![0.25; 1024],
+                channels: 1
+            }
+        ));
+        assert_eq!(take.source_buffer(), Some(7));
+        assert_eq!(take.sample_block(0, 1, 48000.0).unwrap().samples, vec![0.5]);
+        assert_eq!(
+            take.preview_data().unwrap().column(0, 256.0, 0.0, 256.0),
+            (0.25, 0.25)
+        );
+        let secondary = take.secondary_samples().pop().unwrap();
+        assert!(secondary.write_buckets(0, 256, &[-0.1, 0.1, 0.01]));
+        assert_eq!(
+            take.preview_data().unwrap().column(0, 256.0, 0.0, 256.0),
+            (-0.1, 0.1)
+        );
+        assert!(take.set("preview_buffer", &serde_json::Value::Null));
+        assert!(take.preview_data().is_none());
+        assert_eq!(take.source_buffer(), Some(7));
+        // An answer already in flight after clearing is consumed, not applied
+        // through the primary source's unlabelled fallback.
+        assert!(take.bulk_of(
+            8,
+            Loaded::Raw {
+                samples: vec![1.0; 1024],
+                channels: 1
+            }
+        ));
+        assert_eq!(take.sample_block(0, 1, 48000.0).unwrap().samples, vec![0.5]);
+    }
+
     /// A prebuilt summary wins over the raw samples, and a server buffer is the
     /// last resort -- the precedence the source has always had.
     #[test]

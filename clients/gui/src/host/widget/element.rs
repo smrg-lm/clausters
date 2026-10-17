@@ -819,9 +819,16 @@ impl TimeSpace {
     }
 }
 
-/// What a claimed slot is fed **this frame** -- the live counterpart of
-/// [`SlotKind`], produced with the world in hand so a value read from a bus is
-/// resolved where every other per-frame read is.
+/// A shared picture compares by identity, without comparing all its samples.
+#[derive(Debug, Clone)]
+pub struct PreviewData(pub std::sync::Arc<crate::waveform::WaveformData>);
+impl PartialEq for PreviewData {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+/// What a claimed slot is fed this frame, with its resolved drawing rules.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SlotFrame {
     /// The shader slot: where in the placement to draw, the current source
@@ -873,6 +880,8 @@ pub enum SlotFrame {
         /// **The loudness layer**: the measured curve, its own scale and what
         /// a span of it measures. Empty where no layer asks for one.
         loudness: crate::host::elements::signal::LoudnessFrame,
+        /// Processed samples, sharing the original axis and body.
+        preview: Option<PreviewData>,
         /// How a texture layer is coloured and scaled. Meaningless where the
         /// stack has none, and cheap enough to state anyway.
         look: TextureLook,
@@ -2483,6 +2492,12 @@ pub trait Samples {
     /// not asked for yet -- a box that just appeared over a new buffer -- and an
     /// empty list on every other frame. Empty by default: an element that
     /// declares no takes has none to ask for.
+    /// Additional stored sources drawn by this element, visited by the same
+    /// buffer-update walk as its primary source.
+    fn secondary_samples(&mut self) -> Vec<&mut dyn Samples> {
+        Vec::new()
+    }
+
     fn ask_takes(&mut self, _all: bool) -> Vec<i32> {
         Vec::new()
     }

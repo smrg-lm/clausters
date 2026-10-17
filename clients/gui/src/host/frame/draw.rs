@@ -698,6 +698,31 @@ pub(super) fn draw_timeline_meshes(
                 }
             }
         }
+        if let Some(preview) = &look.preview {
+            let trace = crate::host::graphics::signal::trace::Trace::Data(&preview.0);
+            for ch in 0..channels.min(preview.0.num_channels()) {
+                let row = channel_rect(body, rows, if look.overlay { 0 } else { ch });
+                crate::waveform::draw_channel(
+                    over,
+                    row,
+                    &trace,
+                    ch,
+                    &local,
+                    look.domain,
+                    if look.axis == Domain::Amplitude {
+                        look.y
+                    } else {
+                        (0.0, 1.0)
+                    },
+                    crate::host::graphics::signal::trace::TraceStyle::new(
+                        with_alpha(th.series(ch + 1), 0.7),
+                        m.trace_w,
+                    )
+                    .with_measure(crate::host::graphics::signal::trace::Measure::Peak)
+                    .with_rate(item.editor.sample_rate),
+                );
+            }
+        }
         for ch in 1..rows {
             let row = channel_rect(body, rows, ch);
             over.rect(

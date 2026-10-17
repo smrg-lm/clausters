@@ -61,6 +61,7 @@ const SPARE = 2;
 interface Outcome {
     turn?: string;
     layers?: Measure[];
+    preview?: unknown;
     /** Whether to close the window, by the crate's rule for every editor. */
     close?: boolean;
     answer?: Answer;
@@ -530,7 +531,20 @@ export class AudioEditor extends Editor<Buffer> {
             takeRate: this.sampleRate,
             rate: this.playback.rate,
         });
-        this.coreCall("sync", { meters: (await this.playback.call("state")).meters ?? null });
+        const preview = this.coreCall("preview");
+        if (preview.installed) {
+            await this.playback.call("gain", { file: this.display, points: preview.points, on: preview.on, revision: preview.revision });
+        } else {
+            await this.playback.call("removeEffect", { file: this.display });
+        }
+        const state = await this.playback.call("state");
+        if (this.host !== null && this.window !== null) {
+            const previews = state.previews as Record<string, number | null> | undefined;
+            for (const wid of (this.view as SamplesView).widgets.keys()) {
+                await this.host.set(wid, { preview_buffer: previews?.[String(this.display)] ?? -1 });
+            }
+        }
+        this.coreCall("sync", { meters: state.meters ?? null });
     }
 
     /**
@@ -769,6 +783,7 @@ export class AudioEditor extends Editor<Buffer> {
             this.editing.changed();
             domain.after(() => this.sound());
         }
+        if (outcome.preview !== undefined && !changed) domain.after(() => this.sound());
         const play = outcome.play;
         // The loop switch rides beside the space bar and `L`: a pass that
         // loops is the switch on.
@@ -858,6 +873,15 @@ export class AudioEditor extends Editor<Buffer> {
     /** Render gain and reset the curve to unity in one undo step.
      * Preview playback is not affected until this is applied. */
     applyEnvelope(): boolean { return this.envelopeAct("apply_envelope"); }
+
+    /** Hear the gain envelope through a ramped insert. */
+    previewOn(): void { this.envelopeAct("preview_on"); }
+
+    /** Ramp to dry and pause the insert, retaining its state. */
+    previewOff(): void { this.envelopeAct("preview_off"); }
+
+    /** Free the preview insert and table, retaining the unapplied curve. */
+    removeEffect(): void { this.envelopeAct("remove_effect"); }
 
     private envelopeAct(verb: string, args: Record<string, unknown> = {}): boolean {
         return this.editing.turn(this, () => {

@@ -10386,3 +10386,20 @@ its active visible body receives edits. Signal visual layers stay inside the
 take body: peak, RMS and spectrogram are pictures of samples, while a curve
 is an independently editable structure. The distinction keeps one signal
 analysis and one implementation of each curve gesture.
+
+## Audio preview owns the insert id and dry bus (2026-10-16)
+
+A GraphDef slot is a group whose member ids are private. `EnvGen` with done
+action 1 pauses its own synth, and `/node_run` on the containing group cannot
+resume that member. The audio playback therefore allocates each file's dry
+bus and inserts an ordinary caller-owned synth inside the auto-sorted play
+group. Reader and pass ports name that same bus. This keeps the ramp and
+pause sample-driven in one node, without client timers or new commands.
+
+The processed picture is a scratch buffer read through `preview_buffer` on
+the existing signal body. It is superposed after the original picture and
+never becomes an edit or copy source. The existing plural-buffer loader and
+summary walk serve both sources. A resumed effect retains its frozen state;
+transport-addressed gain immediately follows the current position. A chain
+reorder rebuilds the affected suffix with its saved ports and fresh state,
+since an auto-sorted group refuses manual node moves.

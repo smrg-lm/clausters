@@ -234,3 +234,120 @@ fn a_stop_is_declicked_and_the_meter_falls() {
     assert_eq!(fails(&mut s), Vec::<String>::new());
     assert_eq!(playback.node_count(), 0);
 }
+
+/// The gain insert follows the transport and uses a linear bypass with an
+/// exact dry endpoint. Repeated resume addresses the synth paused by EnvGen.
+#[test]
+fn gain_preview_bypasses_without_a_step_and_resumes() {
+    use clausters_document::timebase::Second;
+    use clausters_editing::points::point;
+    let mut s = session();
+    take(&mut s, 48000, 0.5);
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut playback = AudioEditorPlayback::new(Endpoint::default());
+    run(
+        &mut s,
+        playback.sync(1, 0, 1, 48000, SR, SR, &mut ids).unwrap(),
+    );
+    ids.alloc(clausters_core::ids::Space::Buffers, 1).unwrap();
+    let points = vec![
+        point(Second(0.0), 0.25, 1.0, 0.0),
+        point(Second(1.0), 0.25, 1.0, 0.0),
+    ];
+    run(
+        &mut s,
+        playback.gain(1, points.clone(), true, &mut ids).unwrap(),
+    );
+    run(
+        &mut s,
+        playback.play(1, 0, Pass::Loop { from: 0, to: 48000 }),
+    );
+    let (wet, _) = render(&mut s, 20);
+    assert!(
+        (wet[wet.len() - 1] - 0.125).abs() < 1e-5,
+        "last {} fails {:?}",
+        wet[wet.len() - 1],
+        fails(&mut s)
+    );
+    for on in [false, true, false, true] {
+        run(
+            &mut s,
+            playback.gain(1, points.clone(), on, &mut ids).unwrap(),
+        );
+        let (signal, _) = render(&mut s, 20);
+        assert!(signal.iter().all(|x| x.is_finite()));
+        assert!(
+            largest_step(&signal) < 0.003,
+            "bypass step {}",
+            largest_step(&signal)
+        );
+        let want = if on { 0.125 } else { 0.5 };
+        assert!(
+            (signal[signal.len() - 1] - want).abs() < 1e-5,
+            "on {on}: {}",
+            signal[signal.len() - 1]
+        );
+    }
+    run(&mut s, playback.close(&mut ids).unwrap());
+    assert!(fails(&mut s).is_empty());
+}
+
+/// Every segment shape is shared with Apply, including held ends. This
+/// compares complete node systems, not two copies of envelope arithmetic.
+#[test]
+fn preview_matches_apply_for_every_gain_shape() {
+    use clausters_document::timebase::Second;
+    use clausters_editing::points::point;
+    for shape in 0..=8 {
+        let curve = vec![
+            point(Second(0.005), 0.2, shape as f64, -3.0),
+            point(Second(0.025), 1.6, 1.0, 0.0),
+        ];
+        let mut outputs = Vec::new();
+        for preview in [true, false] {
+            let mut s = session();
+            take(&mut s, 4096, 0.5);
+            let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+            ids.alloc(clausters_core::ids::Space::Buffers, 1).unwrap();
+            let mut playback = AudioEditorPlayback::new(Endpoint::default());
+            if !preview {
+                run(&mut s, clausters_editing::gain::steps(0, 4096, SR, &curve));
+            }
+            run(
+                &mut s,
+                playback.sync(1, 0, 1, 4096, SR, SR, &mut ids).unwrap(),
+            );
+            if preview {
+                run(
+                    &mut s,
+                    playback.gain(1, curve.clone(), true, &mut ids).unwrap(),
+                );
+            }
+            run(
+                &mut s,
+                playback.play(1, 0, Pass::Until { end: 4096, back: 0 }),
+            );
+            let (left, right) = render(&mut s, 70);
+            assert!(left.iter().chain(&right).all(|x| x.is_finite()));
+            assert_eq!(left, right);
+            assert!(fails(&mut s).is_empty());
+            outputs.push(left);
+        }
+        let error = outputs[0]
+            .iter()
+            .zip(&outputs[1])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f32::max);
+        let at = outputs[0]
+            .iter()
+            .zip(&outputs[1])
+            .position(|(a, b)| (a - b).abs() == error)
+            .unwrap();
+        assert!(
+            error < 2e-5,
+            "shape {shape}: error {error} at {at}: {} {}",
+            outputs[0][at],
+            outputs[1][at]
+        );
+    }
+}

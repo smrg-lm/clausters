@@ -330,8 +330,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   keeping the pile; a master in the multitrack's view; and, among its open
   decisions, what a version means across a load), and the applications'
   (time-stretch from a clip's edge; what a bare window leaves to its handle;
-  a box of notes that chooses its synth; effects in preview and several files
-  in one audio editor; a roll's tempo and barlines as parameters; the score
+  a box of notes that chooses its synth; several files in one audio
+  editor; a roll's tempo and barlines as parameters; the score
   editor's editing rules as modules; what a score editor's hand expects and
   this one has not; dynamics as a model of the instrument and of hearing; a
   glissando that arrives without a new attack). Every one of them carries its

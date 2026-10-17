@@ -46,6 +46,9 @@ pub struct Outcome {
     /// A view change, also returned when no window is open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layers: Option<Value>,
+    /// A preview-chain change, independent of the take and its history.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<Value>,
     /// What to send the host, `silent` for nothing.
     pub answer: Option<Answer>,
     /// The stamp a [`Kind::Step`] is answered with.
@@ -153,6 +156,10 @@ impl Converse for AudioEditor {
                 | "layer_take"
                 | "show_envelope"
                 | "apply_envelope"
+                | "preview_on"
+                | "preview_off"
+                | "remove_effect"
+                | "apply"
         ) {
             out.turn = Kind::Route;
             let (reason, corrections) = self.gesture(message.widget, &message.tag, &[], out);
@@ -259,6 +266,8 @@ pub struct AudioEditor {
     copied: bool,
     contents: parts::Take,
     envelope_widget: Option<i32>,
+    preview_on: bool,
+    effect_installed: bool,
     /// Frames of every take this editor knows -- the one it opened and each it
     /// made -- by buffer.
     frames: BTreeMap<i64, u64>,
@@ -338,6 +347,8 @@ impl AudioEditor {
             copied: false,
             contents: parts::Take::default(),
             envelope_widget: None,
+            preview_on: false,
+            effect_installed: false,
             frames: BTreeMap::new(),
             spare: Vec::new(),
             scratch: None,
@@ -866,7 +877,10 @@ impl AudioEditor {
         if tag == "points" && self.envelope_widget.map(i64::from) == Some(widget) {
             return self.set_envelope_event(values, out);
         }
-        if tag == "apply_envelope" {
+        if matches!(tag, "preview_on" | "preview_off" | "remove_effect") {
+            return self.preview_event(tag, out);
+        }
+        if matches!(tag, "apply_envelope" | "apply") {
             return self.apply_envelope_event(out);
         }
         if tag == "layer" {
@@ -1508,10 +1522,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 )
                 .to_string()
         }
+        "preview" => editor.preview_state().to_string(),
         "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
-        "show_envelope" | "setautomation" | "apply_envelope" => {
-            serde_json::to_string(&editor.act(&request, version)).unwrap()
-        }
+        "show_envelope" | "setautomation" | "apply_envelope" | "preview_on" | "preview_off"
+        | "remove_effect" => serde_json::to_string(&editor.act(&request, version)).unwrap(),
         "props" if editor.envelope_widget == Some(widget) => editor
             .envelope_corrections()
             .first()

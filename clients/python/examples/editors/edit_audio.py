@@ -129,13 +129,29 @@ def both():
 # segment; double-click adds a point. These edits keep the samples intact.
 # `envelope()` shows a shaped fade; `apply_envelope()` renders it into a new
 # take and resets the curve to unity. Undo restores the take and the curve.
-# Playback hears the gain only after Apply; live preview is separate work.
+# `preview_on()` hears and draws it; `preview_off()` ramps back to dry.
+# `remove_effect()` frees the insert and retains the unapplied curve.
 
 # %%
 def envelope():
     """Show and set a gain envelope, with times in seconds."""
     editor.show_envelope()
     editor.set_envelope([0, 0, 3, 0, 0.5, 1, 1, 0, SECONDS, 0.25, 1, 0])
+
+
+def preview_on():
+    """Hear and draw the gain without changing the take."""
+    editor.preview_on()
+
+
+def preview_off():
+    """Ramp to the unprocessed take and pause the insert."""
+    editor.preview_off()
+
+
+def remove_effect():
+    """Free the insert and retain the curve for later use."""
+    editor.remove_effect()
 
 
 def apply_envelope():

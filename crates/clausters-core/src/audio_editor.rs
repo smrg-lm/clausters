@@ -17,7 +17,7 @@
 //! ```text
 //! editor group                       follows the editor's transport: never frozen
 //! |- transport group                 governed by it: frozen and thawed
-//! |  `- ae.play.N                    the take; private `dry` (N)
+//! |  `- ae.play.N                    the take; playback-owned `dry` (N)
 //! |     |- [source] slot, per channel  ae.reader: one channel of the take -> dry
 //! |     `- ae.pass.N                 dry -> the editor's bus (a mono take on both sides)
 //! `- ae.output.W                     reads the editor's bus
@@ -50,11 +50,9 @@
 //! parent's, since it has none, and the two graphs live in different groups --
 //! so the bus is a number, the way a meter's control bus is.
 //!
-//! # What is deliberately not here yet
-//!
-//! **Effects in preview**: a chain in place on `dry`, between the readers and
-//! the pass. It is declared when the first effect is written, since a slot of
-//! nothing cannot be heard and so cannot be checked.
+//! The gain preview is an ordinary insert on the playback-owned dry bus.
+//! Its linear bypass reaches dry exactly, then pauses the caller-owned synth.
+//! The processed picture is another server buffer, never the edit source.
 
 use serde_json::{Value, json};
 
@@ -72,7 +70,9 @@ pub const CHAN: &str = "chan";
 pub const SPAN: &str = "span";
 /// The slot a take's readers fill: one per channel.
 pub const SOURCE_SLOT: &str = "source";
-/// The bus the readers write, private to each `ae.play`.
+/// The chain slot, whose caller-owned insert can pause and resume itself.
+pub const FX_SLOT: &str = "fx";
+/// The bus the readers write, owned per file by the playback.
 pub const DRY_BUS: &str = "dry";
 
 /// The most channels a take is played with: a bound rather than a judgement
@@ -150,18 +150,6 @@ fn in_out_controls(ins: usize, outs: usize) -> Vec<Value> {
     controls
 }
 
-/// `{"in0": "<bus>:0", ...}` for `n` channels of `bus`, under `prefix`.
-fn wiring(prefix: &str, bus: &str, n: usize) -> serde_json::Map<String, Value> {
-    (0..n)
-        .map(|channel| {
-            (
-                format!("{prefix}{channel}"),
-                json!(format!("{bus}:{channel}")),
-            )
-        })
-        .collect()
-}
-
 /// **One channel of the take**, following the transport.
 ///
 /// The multitrack's reader without what a take played whole does not use: no
@@ -222,6 +210,49 @@ pub fn pass_def(channels: usize) -> Result<Value, String> {
     }))
 }
 
+/// The gain effect's ordinary SynthDef name.
+pub fn gain_name(channels: usize) -> String {
+    format!("{PREFIX}.gain.{channels}")
+}
+
+/// A sample-rate gain table at the transport position, inserted on dry.
+/// The linear ASR reaches dry exactly and pauses this synth on release.
+pub fn gain_def(channels: usize) -> Result<Value, String> {
+    check(channels)?;
+    let controls = vec![
+        control("dry", 0.0),
+        control("gain", 0.0),
+        control("on", 1.0),
+        control("rate", 48000.0),
+        control("initial", 0.0),
+    ];
+    let mut ugens = vec![
+        json!({"kind":"TransportPos", "inputs":[{"const":0.0}]}),
+        json!({"kind":"SampleRate", "inputs":[]}),
+        json!({"kind":"Div", "inputs":[{"control":3},{"ugen":1}]}),
+        json!({"kind":"Mul", "inputs":[{"ugen":0},{"ugen":2}]}),
+        json!({"kind":"BufRd", "inputs":[{"control":1},{"const":0.0},{"ugen":3},{"const":0.0}]}),
+        json!({"kind":"EnvGen", "inputs":[
+            {"control":2},{"const":1.0},{"const":0.0},{"const":1.0},
+            {"const":1.0},{"control":4},{"const":2.0},{"const":1.0},{"const":-1.0},
+            {"const":1.0},{"const":0.005},{"const":1.0},{"const":0.0},
+            {"const":0.0},{"const":0.005},{"const":1.0},{"const":0.0}]}),
+        json!({"kind":"Mul", "inputs":[{"ugen":5},{"const":2.0}]}),
+        json!({"kind":"Sub", "inputs":[{"ugen":6},{"const":1.0}]}),
+    ];
+    for channel in 0..channels {
+        let i = ugens.len();
+        ugens.extend([
+            json!({"kind":"Add", "inputs":[{"control":0},{"const":channel}]}),
+            json!({"kind":"In", "inputs":[{"ugen":i}]}),
+            json!({"kind":"Mul", "inputs":[{"ugen":i+1},{"ugen":4}]}),
+            json!({"kind":"LinXFade2", "inputs":[{"ugen":i+1},{"ugen":i+2},{"ugen":7},{"const":1.0}]}),
+            json!({"kind":"ReplaceOut", "inputs":[{"ugen":i},{"ugen":i+3}]}),
+        ]);
+    }
+    Ok(json!({"name":gain_name(channels),"controls":controls,"ugens":ugens}))
+}
+
 /// **The level meter**: the multitrack's meter, the same algorithm under the
 /// editor's name, over the editor's bus.
 pub fn meter_def(width: usize) -> Result<Value, String> {
@@ -250,14 +281,14 @@ pub fn declick_def(width: usize) -> Result<Value, String> {
     }))
 }
 
-/// **The take, as a graph**: its readers onto a private `dry`, and the pass
+/// **The take, as a graph**: its readers onto a playback-owned `dry`, and the pass
 /// onto the editor's bus, whose channels are the ports `out0..` ([`bus_port`]).
 /// The rest of its surface is the readers' own -- `buf`, `chan`, `span` --
 /// which a `/graph_addSlot` on [`SOURCE_SLOT`] sets per channel.
 pub fn play_graph(channels: usize) -> Result<Value, String> {
     check(channels)?;
     let outs = width(channels);
-    let pass = wiring("in", DRY_BUS, channels);
+    let pass = serde_json::Map::<String, Value>::new();
     let mut surface = serde_json::Map::new();
     surface.insert(BUF.into(), json!([{"member": 1, "control": BUF}]));
     surface.insert(CHAN.into(), json!([{"member": 1, "control": CHAN}]));
@@ -266,12 +297,18 @@ pub fn play_graph(channels: usize) -> Result<Value, String> {
         let port = bus_port("out", channel);
         surface.insert(port.clone(), json!([{"member": 0, "control": port}]));
     }
+    for channel in 0..channels {
+        let port = bus_port("dry", channel);
+        surface.insert(port, json!([{"member":0,"control":bus_port("in",channel)}]));
+    }
+    surface.insert("reader_out".into(), json!([{"member":1,"control":"out"}]));
     Ok(json!({
         "name": play_name(channels),
-        "buses": [{"name": DRY_BUS, "rate": "audio", "channels": channels}],
+        "buses": [],
         "members": [
             {"def": pass_name(channels), "controls": pass},
-            {"def": reader_name(), "slot": SOURCE_SLOT, "controls": {"out": DRY_BUS}},
+            {"def": reader_name(), "slot": SOURCE_SLOT, "controls": {}},
+            {"def": "ae.insert", "kind":"graph", "slot":FX_SLOT},
         ],
         "surface": surface,
     }))
@@ -317,11 +354,16 @@ pub fn defs_for(channels: usize) -> Result<crate::mixer::Defs, String> {
     Ok(crate::mixer::Defs {
         synth: vec![
             reader_def(),
+            gain_def(channels)?,
             pass_def(channels)?,
             meter_def(w)?,
             declick_def(w)?,
         ],
-        graph: vec![play_graph(channels)?, output_graph(w)?],
+        graph: vec![
+            json!({"name":"ae.insert","members":[]}),
+            play_graph(channels)?,
+            output_graph(w)?,
+        ],
     })
 }
 
@@ -386,6 +428,6 @@ mod tests {
         assert!(defs_for(MAX_CHANNELS + 1).is_err());
         let defs = defs_for(2).unwrap();
         assert_eq!(defs.synth[0]["name"], "ae.reader");
-        assert_eq!(defs.graph[1]["name"], "ae.output.2");
+        assert_eq!(defs.graph.last().unwrap()["name"], "ae.output.2");
     }
 }

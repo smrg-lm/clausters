@@ -7,6 +7,33 @@ use clausters_document::timebase::Second;
 use clausters_editing::points;
 
 impl AudioEditor {
+    pub(super) fn preview_state(&self) -> Value {
+        json!({"on":self.preview_on, "installed":self.effect_installed,
+            "points":self.envelope_quads(false),"revision":self.contents.payload().0})
+    }
+
+    pub(super) fn preview_event(
+        &mut self,
+        verb: &str,
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        self.ensure_envelope();
+        match verb {
+            "preview_on" => {
+                self.preview_on = true;
+                self.effect_installed = true;
+            }
+            "preview_off" => self.preview_on = false,
+            "remove_effect" => {
+                self.preview_on = false;
+                self.effect_installed = false;
+            }
+            _ => unreachable!(),
+        }
+        out.preview = Some(self.preview_state());
+        (None, Vec::new())
+    }
+
     pub(super) fn pane_label(&self) -> String {
         let take = crate::samples::label(self.name.as_deref(), self.display);
         if self.edit_layer.starts_with("points") {
@@ -125,7 +152,10 @@ impl AudioEditor {
                     ),
                 }
             }
-            "apply_envelope" => self.apply_envelope_event(&mut out),
+            "preview_on" | "preview_off" | "remove_effect" => {
+                self.preview_event(request["verb"].as_str().unwrap(), &mut out)
+            }
+            "apply_envelope" | "apply" => self.apply_envelope_event(&mut out),
             _ => (Some("unknown audio editor action".into()), Vec::new()),
         };
         out.answer = Some(if reason.is_some() && corrections.is_empty() {

@@ -1323,3 +1323,13 @@ an empty string shows all bodies. Both properties accept live `/gui_set`.
 Children have ordinary widget ids, so their existing edit payloads and buffer
 fetches keep their existing addresses. An unknown layer name is refused. A gesture already captured by a body
 settles on that body when released, as it does for other host elements.
+
+### A processed signal over its source
+
+`signal` accepts optional `preview_buffer` (a server buffer id; a negative id or `null`
+clears it). It draws the processed waveform on the same time axis and amplitude
+scale over the original, using the existing buffer fetch and peak summary
+paths. A frequency-axis body draws this amplitude overlay in its box. The
+original `buffer`/`path`/`cache` remains the source for editing, copy, cursor
+readout and navigation. The owner renders and frees the processed buffer; the
+host only reads it. Setting the prop again refreshes that picture.

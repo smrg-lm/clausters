@@ -2326,3 +2326,21 @@ Python staging builds both adapters for server/embed and stages the helper in
 `_bin`. Embedded lookup uses the loaded library's location, so installed wheels
 and relocated prefix installs do not depend on the Python executable's path or
 the build machine's source checkout. An explicit override still wins.
+
+The audio editor's preview gain is an ordinary SynthDef insert between its
+readers and pass, on a per-file dry bus owned by `AudioEditorPlayback`. Its
+mono gain table is filled on the server by the same `gain::steps` used by
+Apply; `TransportPos` reads it at the take's sample rate. A linear ASR into
+`LinXFade2` ramps the bypass to exact dry, then pauses the synth itself. The
+playback owns that synth id, so resume addresses the node that was paused.
+The dry bus is allocated alongside it rather than hidden inside GraphDef: a
+slot group id could not resume a member paused by `PauseSelf`. Auto ordering
+places the read/replace insert between readers and pass.
+
+A second server buffer holds the processed picture. Both clients carry its
+id to the signal's `preview_buffer` prop; they perform no sample arithmetic.
+The existing plural-buffer intake loads this secondary source, and the same
+summary-update walk feeds both sources. The original stays the edit source.
+The gain table and processed picture are replaced when take contents or curve
+change, held while bypassed, and freed on removal or file close. Neither
+belongs to undo history.

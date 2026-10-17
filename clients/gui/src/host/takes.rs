@@ -219,10 +219,15 @@ pub(crate) fn samples_views(
     apply: &mut dyn FnMut(&mut dyn widget::element::Samples) -> bool,
 ) -> usize {
     let mut did = 0;
-    if let Some(el) = widget.kind.as_samples_mut()
-        && apply(el)
-    {
-        did += 1;
+    if let Some(el) = widget.kind.as_samples_mut() {
+        if apply(el) {
+            did += 1;
+        }
+        for secondary in el.secondary_samples() {
+            if apply(secondary) {
+                did += 1;
+            }
+        }
     }
     for child in &mut widget.children {
         did += samples_views(child, apply);

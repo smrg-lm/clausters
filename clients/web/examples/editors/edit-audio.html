@@ -42,8 +42,8 @@ call the same verbs as the menu.
 View -> Gain envelope selects the curve body. Drag points, bend a segment,
 or double-click to add a point. Curve edits keep samples intact. The gain envelope
 button shows a shaped fade; Apply envelope renders it into a new take and resets
-the curve to unity. Undo restores both. Playback hears gain after Apply; live
-preview is separate work.<br>
+the curve to unity. Undo restores both. Preview on hears and draws gain without changing the take. Preview off ramps
+back to dry; Remove effect frees the insert and retains its curve.<br>
 
 <b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
 <b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
@@ -77,6 +77,9 @@ edit back into the buffer it was opened from, and
         <button id="spectrogram" disabled>spectrogram</button>
         <button id="both" disabled>both</button>
         <button id="envelope" disabled>gain envelope</button>
+        <button id="preview-on" disabled>preview on</button>
+        <button id="preview-off" disabled>preview off</button>
+        <button id="remove-effect" disabled>remove effect</button>
         <button id="apply-envelope" disabled>apply envelope</button>
         <button id="play" disabled>play the take</button>
         <button id="parts" disabled>what it is made of</button>
@@ -148,6 +151,12 @@ edit back into the buffer it was opened from, and
           editor.showEnvelope();
           editor.setEnvelope([0, 0, 3, 0, 0.5, 1, 1, 0, SECONDS, 0.25, 1, 0]);
         };
+        $("preview-on").disabled = false;
+        $("preview-on").onclick = () => editor.previewOn();
+        $("preview-off").disabled = false;
+        $("preview-off").onclick = () => editor.previewOff();
+        $("remove-effect").disabled = false;
+        $("remove-effect").onclick = () => editor.removeEffect();
         $("apply-envelope").disabled = false;
         $("apply-envelope").onclick = () => editor.applyEnvelope();
 

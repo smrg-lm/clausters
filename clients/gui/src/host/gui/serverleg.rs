@@ -112,7 +112,21 @@ impl App {
                 .host
                 .window_def(want.def_id)
                 .and_then(|t| t.find(want.widget_id))
-                .map(|w| w.bulk_target().kind.needs().slot)
+                .and_then(|w| {
+                    let target = w.bulk_target();
+                    let n = target.kind.needs();
+                    if let Some(signal) = target.signal()
+                        && signal.source_buffer() != Some(bufnum)
+                        && !n.takes.contains(&bufnum)
+                    {
+                        return None;
+                    }
+                    Some(if n.takes.contains(&bufnum) {
+                        None
+                    } else {
+                        n.slot
+                    })
+                })
             else {
                 continue;
             };
