@@ -1330,6 +1330,10 @@ settles on that body when released, as it does for other host elements.
 
 ### Folded channels and a stack that scrolls
 
+**A stacked `signal` inks every channel in one colour**: its channels are one
+take, and channels in colours of their own read as separate tracks. With
+`overlay` they share one row and are told apart by colour, one series each.
+
 A stacked `signal` (not `overlay`) takes `folded`, a list of channel indices
 (a `/gui_set` may carry it as the list's JSON string). A folded channel is a
 strip one control tall, with its name (`Ch 1`, ...) in the vertical ruler's

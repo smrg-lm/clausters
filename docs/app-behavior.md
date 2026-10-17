@@ -86,6 +86,9 @@ code that keeps it lives.
   and a scroll when the floor does not fit. Drawing, the ruler, the
   spectrogram's viewports, the cursor readout, a value-restricted sweep, a held
   sample and a zoom's anchor all read it, so none of them can disagree.
+- **One object, one colour.** The channels of a take stacked in rows are drawn
+  in one colour, since colours of their own read as separate tracks; only
+  channels overlaid on one row are told apart by colour.
 - **Where the rows overflow, the plain wheel over the ruler scrolls them** and
   Ctrl zooms the amplitude, as a roll's keyboard gutter scrolls its octaves.
   Where they fit, the wheel zooms as it always did.

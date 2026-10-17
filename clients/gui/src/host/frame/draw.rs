@@ -259,6 +259,14 @@ fn amp_or_value_ticks(
     ruler::value_ticks(lo as f64, hi as f64, row_h, m)
 }
 
+/// **The series a channel of one take is inked in.** Stacked, every channel
+/// is the same take and is drawn in one colour: channels in colours of their
+/// own read as separate tracks. Overlaid on one row they are told apart by
+/// colour, which is the only thing that can tell them apart there.
+fn channel_series(overlay: bool, ch: usize) -> usize {
+    if overlay { ch } else { 0 }
+}
+
 /// What a timeline view's **vertical** axis measures, which is what its cursor
 /// readout names. It used to be an `Option<(f64, FreqScale, f64)>` where
 /// `None` silently meant "a waveform, in amplitude" -- and amplitude is the
@@ -704,7 +712,7 @@ pub(super) fn draw_timeline_meshes(
                                 crate::host::graphics::signal::trace::measure_color(
                                     th,
                                     measure,
-                                    th.series(ch),
+                                    th.series(channel_series(look.overlay, ch)),
                                 ),
                                 layer.alpha,
                             ),
@@ -758,7 +766,7 @@ pub(super) fn draw_timeline_meshes(
                     look.domain,
                     look.y,
                     crate::host::graphics::signal::trace::TraceStyle::new(
-                        with_alpha(th.series(ch + 1), 0.7),
+                        with_alpha(th.series(channel_series(look.overlay, ch) + 1), 0.7),
                         m.trace_w,
                     )
                     .with_measure(crate::host::graphics::signal::trace::Measure::Peak)
@@ -1367,6 +1375,23 @@ pub(crate) fn draw_status(over: &mut Mesh, band: Rect, inputs: &FrameInputs, the
 
 #[cfg(test)]
 mod tests {
+    /// A stacked take is one colour; overlaid channels are told apart.
+    #[test]
+    fn the_channels_of_one_take_are_one_colour_unless_overlaid() {
+        assert_eq!(
+            (0..4)
+                .map(|ch| super::channel_series(false, ch))
+                .collect::<Vec<_>>(),
+            [0, 0, 0, 0]
+        );
+        assert_eq!(
+            (0..3)
+                .map(|ch| super::channel_series(true, ch))
+                .collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+    }
+
     use super::*;
     use crate::waveform::DEFAULT_DOMAIN;
 
