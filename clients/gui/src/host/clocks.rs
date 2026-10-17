@@ -168,11 +168,17 @@ impl Host {
         // cursor stands on.
         // The device clock is left alone: a view anchored on it names its own
         // anchor, in the engine's samples.
+        // A pane owns its members' time axis and draws their play cursor, so
+        // it reads the transport at its axis' rate, which is its take's.
         let engine = self.server_rate;
-        let scale = |w: &Widget, head: HeadClock| match (head, w.kind.as_samples()) {
-            (HeadClock::Transport(_), Some(samples)) if engine > 0.0 => {
-                samples.samples_rate().map_or(1.0, |rate| rate / engine)
+        let rate_of = |w: &Widget| match &w.kind {
+            WidgetKind::Pane { editor, .. } => {
+                (editor.sample_rate > 0.0).then_some(editor.sample_rate)
             }
+            kind => kind.as_samples().and_then(|samples| samples.samples_rate()),
+        };
+        let scale = |w: &Widget, head: HeadClock| match head {
+            HeadClock::Transport(_) if engine > 0.0 => rate_of(w).map_or(1.0, |rate| rate / engine),
             _ => 1.0,
         };
         // Nothing named below the window and no rate to convert: every widget

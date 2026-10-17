@@ -1509,3 +1509,41 @@ fn a_set_of_a_live_prop_asks_for_the_live_layers_alone() {
         [HostEffect::Redraw(1)]
     ));
 }
+
+/// **A pane draws its take's play cursor, so it reads the transport in the
+/// take's frames** -- the pane owns the axis, and its rate is the take's.
+#[test]
+fn a_pane_over_a_take_at_another_rate_reads_the_transport_as_its_frames() {
+    struct At;
+    impl BusSource for At {
+        fn control(&self, _index: usize) -> f32 {
+            0.0
+        }
+        fn transport_position(&self, _transport: usize) -> f64 {
+            48_000.0
+        }
+    }
+    let tree = |rate: f64| {
+        format!(
+            r#"{{"type":"window","children":[{{"type":"pane","id":5,
+            "axes":{{"x":{{"sample_rate":{rate},"unit":"time"}}}},"children":[
+            {{"id":10,"type":"signal","data":[0.0,0.0]}}]}}]}}"#
+        )
+    };
+    let mut host = Host::new();
+    host.server_rate = 48_000.0;
+    host.handle_packet(def_msg(1, &tree(44_100.0)), from());
+    host.set_head_clock_of(1, HeadClock::Transport(2));
+    let read = |host: &Host, id| {
+        host.head_clocks(1, Some(&At as &dyn BusSource))
+            .at(Some(id))
+    };
+    assert_eq!(
+        read(&host, 5),
+        44_100.0,
+        "the pane draws a second of the take"
+    );
+    assert_eq!(read(&host, 10), 44_100.0);
+    host.handle_packet(def_msg(1, &tree(48_000.0)), from());
+    assert_eq!(read(&host, 5), 48_000.0, "a take at the engine's rate");
+}
