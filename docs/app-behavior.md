@@ -74,6 +74,11 @@ code that keeps it lives.
 - **An application is an API; a menu is a caller.** Every action is a verb
   of the application in the shared crate, which both clients call by the same
   name; a menu entry, a key and a tool only call it and hold no state.
+- **A menu entry and its key are one verb, with or without a pointer.** A key
+  addresses the view under the pointer; a menu entry has no pointer over the
+  take, so it addresses the window's last selection or its one take, and a
+  pane, its take and a curve over it are one take (`gestures::keys::sole_take`
+  counts the views that hold samples themselves).
 - **What the owner holds, the owner answers.** A press on a folded strip asks
   the owner to unfold it; a dialog's `OK` answers an outcome (`newFile`,
   `openFile`) the client acts on, since the client is what opens windows.

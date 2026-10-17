@@ -4338,3 +4338,27 @@ fn a_panes_vertical_ruler_follows_the_body_in_hand() {
         "nothing in hand: the take the pane is built around"
     );
 }
+
+/// **A verb from the menu bar reaches the take inside a pane.** The menu
+/// carries no pointer over the take, so the window's one take is the
+/// addressee -- and a pane, its curve and its take are three widgets on the
+/// axis holding one take, not three takes.
+#[test]
+fn select_all_from_the_menu_sweeps_the_take_in_a_pane() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+        {"id":10,"type":"pane","layer":"take","axes":{"x":{"unit":"samples"}},"children":[
+            {"id":11,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2},
+            {"id":12,"type":"curve","min":0,"max":1,"points":[0,1,1,0,3,1,1,0]}
+        ]}] }"#,
+    );
+    host.set_timeline_total(11, 4);
+    let ctx = GestureCtx::new(1, 600, 400);
+    let mut g = Gestures::default();
+    let out = g.command(&mut host, &ctx, "select_all");
+    let state = host
+        .timeline_key(11)
+        .and_then(|key| host.timelines().state(key).copied())
+        .unwrap();
+    assert_eq!(state.selection(), Some((0.0, 4.0)), "{out:?}");
+}

@@ -918,9 +918,21 @@ fn element_block(
 /// The window's **only** timeline view, when there is exactly one and it
 /// draws samples -- what a key with no pointer is addressed to.
 fn sole_take(host: &Host, def_id: i32) -> Option<i32> {
-    let views = timeline_ids(host.window_def(def_id)?);
-    match views.as_slice() {
-        [id] if host.buffer_frames(def_id, *id).is_some() => Some(*id),
+    // **The views that hold samples themselves**, not every member of the
+    // axis: a pane answers for its take's samples, and a curve drawn over the
+    // take is on the axis too, so counting members found three where there is
+    // one take.
+    let tree = host.window_def(def_id)?;
+    let takes: Vec<i32> = timeline_ids(tree)
+        .into_iter()
+        .filter(|id| {
+            tree.find(*id)
+                .and_then(|w| w.kind.as_samples())
+                .is_some_and(|s| s.sample_shape().is_some())
+        })
+        .collect();
+    match takes.as_slice() {
+        [id] => Some(*id),
         _ => None,
     }
 }
