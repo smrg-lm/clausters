@@ -103,11 +103,12 @@ session.gui()          # the host wired to this session's server
 editor = edit(take, title="take", history_bytes=64 * 1024 * 1024, server=server)
 
 # %% [markdown]
-# ## Read the same take through different layers
+# ## Two views of the same take
 #
-# View -> Waveform (W), Spectrogram (S), or Spectrogram and waveform (B) calls the same
-# verbs as these functions. The mixed view keeps the frequency ruler and puts
-# peak and RMS in their own amplitude boxes, with one selection and playhead.
+# View -> Waveform (W), Spectrogram (S), or Waveform and spectrogram (B) calls
+# the same verbs as these functions. The first two replace each other in the
+# take's lane; the third stacks them, the spectrogram in a lane under the
+# waveform, with one selection and play cursor and a vertical each.
 
 # %%
 def select_take():

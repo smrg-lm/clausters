@@ -1,5 +1,10 @@
 //! **Edit layers**: which of a container's layered contents a hand is editing.
 //!
+//! Not the **visualization layers** of one picture (peak, RMS, a texture),
+//! which are the measures inside one signal element and edit nothing
+//! (`clausters_document::view::layers`); an edit layer is a body that a
+//! press can take, superposed on the others in one rectangle.
+//!
 //! A container that layers elements draws several things on one rectangle, and
 //! each of them is editable in its own vocabulary: the container's *placement*
 //! (where it sits, how long it is), the contents under it, the events over

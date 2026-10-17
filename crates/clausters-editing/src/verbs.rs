@@ -96,7 +96,7 @@ pub const AUDIO: &[Verb] = &[
     verb("apply", &[], "Apply effect"),
     verb("apply_envelope", &[], "Apply gain envelope"),
     verb("view_spectrogram", &["S"], "Spectrogram"),
-    verb("view_both", &["B"], "Spectrogram and waveform"),
+    verb("view_both", &["B"], "Waveform and spectrogram"),
 ];
 
 /// The multitrack window's scope.

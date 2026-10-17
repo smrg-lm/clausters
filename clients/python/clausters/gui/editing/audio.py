@@ -588,6 +588,10 @@ class AudioEditor(Marking, Editor):
             return False
         if "layers" in outcome:
             self.view.layers = tuple(outcome["layers"])
+        # **A view placed in a lane of its own** (the stacked views, or back
+        # to one): the window is drawn again and the host keeps what is its own.
+        if outcome.get("restructure") and self._window is not None:
+            self.app.publish(int(self._window), self.draw())
         changed = bool(outcome.get("changed"))
         # **The steps are this client's to carry out**: a new take made where
         # the turn needed one and the join stitched over the list -- or, for a
@@ -764,15 +768,17 @@ class AudioEditor(Marking, Editor):
         self._view_layers("layer_alpha", name=name, alpha=alpha)
 
     def view_wave(self) -> None:
-        """Show the peak and RMS waveform."""
+        """Show the peak and RMS waveform in the take's lane, instead of the
+        spectrogram."""
         self._view_layers("view_wave")
 
     def view_spectrogram(self) -> None:
-        """Show the spectrogram with the frequency axis."""
+        """Show the spectrogram in the take's lane, instead of the waveform."""
         self._view_layers("view_spectrogram")
 
     def view_both(self) -> None:
-        """Show the spectrogram with peak and RMS in their own boxes."""
+        """Show both views, stacked: the waveform in the take's lane and the
+        spectrogram in a lane under it, on one time axis."""
         self._view_layers("view_both")
 
 

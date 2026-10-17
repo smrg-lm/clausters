@@ -26,6 +26,26 @@ code that keeps it lives.
   The playback can hold several files of one editor, all but the one played
   last paused, which is how one editor will hold several files.
 
+## Views and layers
+
+- **Four words, each its own question.** A **view** is one picture of an
+  object on a lane (the waveform, the spectrogram). A **visualization layer** is
+  a measure drawn inside one view, on that view's vertical (peak, RMS, a
+  preview). An **edit layer** is a body a hand edits, superposed on a view in a
+  pane (the take, the gain envelope); one is in hand at a time. Views are
+  placed as **alternatives** in one lane, one shown at a time, or **stacked**
+  in lanes of their own on one axis.
+- **The defaults, not the limits.** The audio editor's menu superposes the
+  edit layers (the envelope over the take) and the visualization layers of
+  one quantity (RMS inside the peaks), and places the waveform and the
+  spectrogram as alternatives (`view_wave`, `view_spectrogram`) or stacked
+  (`view_both`) (`clausters_apps::audio::editor::Views`). The mechanism keeps
+  every combination: a script still superposes a spectrogram and the traces
+  in one view through `editor.layers`, as long as one quantity claims its
+  vertical. A change between one lane and two
+  redefines the window (`restructure`), and the host keeps the zoom, the
+  selection and the layer in hand.
+
 ## The time axis
 
 - **A take bounds its axis.** A group that holds a view of stored samples (a

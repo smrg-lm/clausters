@@ -307,7 +307,7 @@ impl AudioEditor {
         out.steps = Some(steps_json(&steps));
         out.changed = true;
         out.version += 1;
-        let mut corrections = self.widget.map_or_else(Vec::new, |w| resync(i64::from(w)));
+        let mut corrections = self.reread();
         corrections.extend(self.envelope_corrections());
         (None, corrections)
     }

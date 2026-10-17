@@ -65,6 +65,8 @@ interface Outcome {
     preview?: unknown;
     /** Whether to close the window, by the crate's rule for every editor. */
     close?: boolean;
+    /** Whether the window holds other widgets now: it is drawn and published again. */
+    restructure?: boolean;
     answer?: Answer;
     changed?: boolean;
     version?: number;
@@ -823,6 +825,11 @@ export class AudioEditor extends Editor<Buffer> {
     private take(outcome: Outcome): boolean {
         if (outcome.turn === undefined || outcome.turn === "nothing") return false;
         if (outcome.layers !== undefined) (this.view as SamplesView).layers = outcome.layers;
+        // **A view placed in a lane of its own** (the stacked views, or back
+        // to one): the window is drawn again and the host keeps what is its own.
+        if (outcome.restructure === true && this.windowId !== null) {
+            this.app.publish(this.windowId, this.draw());
+        }
         const changed = outcome.changed === true;
         // **The steps are this page's to carry out**: a new take made where the
         // turn needed one and the join stitched over the list -- or, for a save
@@ -1002,13 +1009,14 @@ export class AudioEditor extends Editor<Buffer> {
     /** Set a layer's opacity between zero and one. */
     layerAlpha(name: string, alpha: number): void { this.viewLayers("layer_alpha", { name, alpha }); }
 
-    /** Show the peak and RMS waveform. */
+    /** Show the peak and RMS waveform in the take's lane, instead of the spectrogram. */
     viewWave(): void { this.viewLayers("view_wave"); }
 
-    /** Show the spectrogram with the frequency axis. */
+    /** Show the spectrogram in the take's lane, instead of the waveform. */
     viewSpectrogram(): void { this.viewLayers("view_spectrogram"); }
 
-    /** Show the spectrogram with peak and RMS in their own boxes. */
+    /** Show both views, stacked: the waveform in the take's lane and the
+     * spectrogram in a lane under it, on one time axis. */
     viewBoth(): void { this.viewLayers("view_both"); }
 
 }

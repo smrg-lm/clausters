@@ -9,10 +9,9 @@ impl AudioEditor {
         self.folded.iter().copied().collect()
     }
 
-    /// What the take's widget is corrected with: its folded channels.
+    /// What the take's pictures are corrected with: its folded channels.
     fn folded_corrections(&self) -> Vec<Correction> {
-        self.widget
-            .into_iter()
+        self.pictures()
             .map(|widget| Correction {
                 widget: i64::from(widget),
                 props: json!({ "folded": self.folded() }),

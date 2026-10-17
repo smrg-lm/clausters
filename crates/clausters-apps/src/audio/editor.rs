@@ -9,6 +9,31 @@
 //! needs one and stitch the drawn join over the new list ([`Outcome::steps`]).
 //! Each entry states the takes its two lists read, so the history holds them
 //! for as long as it can walk to them.
+//!
+//! **How the window shows the take: views, and the layers of each.** Four
+//! words, kept apart because each answers a different question:
+//!
+//! - A **view** is one picture of the take on a lane of its own: the
+//!   waveform or the spectrogram. Views of one take share its time axis, its
+//!   selection and its play cursor, never its vertical.
+//! - A **visualization layer** is one measure drawn *inside* a view, over the
+//!   view's one vertical: peak and RMS in the waveform, the preview of an
+//!   unapplied process over them. They are the view's [`Stack`].
+//! - An **edit layer** is what a hand edits, superposed on a view in the
+//!   take's `pane`: the take itself, or the gain envelope over it. One is in
+//!   hand at a time and it rules the vertical (`edit_layer`).
+//! - The views are placed in one of two ways, never superposed: as
+//!   **alternatives** in the one lane, one shown at a time
+//!   ([`Views::Waveform`], [`Views::Spectrogram`]), or **stacked**, one lane
+//!   under the other on the shared axis ([`Views::Stacked`]).
+//!
+//! **These are the defaults the menu offers, not limits of the mechanism.**
+//! The menu superposes edit layers (the envelope over the take) and the
+//! visualization layers of one quantity (RMS in its peaks), and places two
+//! views measuring different quantities as alternatives or lanes. A script
+//! still writes any stack through the `layers` verb -- a spectrogram with the
+//! traces in boxes over it included -- so long as one quantity claims the
+//! vertical.
 
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,6 +59,33 @@ use clausters_editing::sources::{Held, stitch};
 use crate::audio::dialogs;
 use crate::samples::{MEASURES, MeterAt, Window, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, number, text};
+
+/// **Which views of the take the window shows, and how they are placed**
+/// (the module's vocabulary): one of the two alternatives in the take's lane,
+/// or both, stacked in two lanes on one axis. A view state, outside the
+/// history.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Views {
+    /// The waveform alone, in the take's lane.
+    #[default]
+    Waveform,
+    /// The spectrogram alone, in the take's lane.
+    Spectrogram,
+    /// The waveform in the take's lane and the spectrogram in a lane under
+    /// it, on the take's axis.
+    Stacked,
+}
+
+impl Views {
+    /// How many lanes the window holds: what a change between two views has
+    /// to redefine the window for.
+    fn lanes(self) -> usize {
+        match self {
+            Views::Stacked => 2,
+            _ => 1,
+        }
+    }
+}
 
 /// The most values one write carries when the caller has not said.
 pub const DEFAULT_CHUNK: usize = 8192;
@@ -100,6 +152,10 @@ pub struct Outcome {
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub close: bool,
+    /// **The window holds other widgets now**: the client draws it again
+    /// (`window`) and publishes it, and the host keeps what is its own.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub restructure: bool,
     /// **A new file was asked for** in the window (`newFile`): `{channels,
     /// frames, rate}`, for the client to open -- a file is the client's to hold.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -132,6 +188,7 @@ impl Converse for AudioEditor {
             .into_iter()
             .chain(self.pane)
             .chain(self.envelope_widget)
+            .chain(self.lane)
             .any(|w| i64::from(w) == widget)
             || self.dialog_name(widget).is_some()
     }
@@ -314,7 +371,13 @@ pub struct AudioEditor {
     spilled: BTreeSet<i64>,
     chunk: usize,
     name: Option<String>,
+    /// The visualization layers of the view in the take's lane.
     layers: Stack,
+    /// Which views the window shows ([`Views`]).
+    views: Views,
+    /// The id the client numbered the spectrogram's lane with, for the
+    /// stacked views.
+    lane: Option<i32>,
     title: String,
     size: (i64, i64),
     /// Whether the window is composed with no chrome ([`Window::bare`]).
@@ -394,6 +457,8 @@ impl AudioEditor {
             chunk: DEFAULT_CHUNK,
             name: None,
             layers: Stack::checked(&json!(layers))?,
+            views: Views::Waveform,
+            lane: None,
             title: "Audio".into(),
             size: (1000, 520),
             bare: false,
@@ -484,12 +549,10 @@ impl AudioEditor {
                 Some(stack) => Stack::checked(stack)?,
                 None => self.layers.clone(),
             },
-            "view_wave" => Stack::checked(&json!(["peak", "rms"]))?,
+            // The two alternatives in the take's lane, and both stacked: the
+            // waveform in the take's lane over the spectrogram's own.
+            "view_wave" | "view_both" => Stack::checked(&json!(["peak", "rms"]))?,
             "view_spectrogram" => Stack::checked(&json!(["spectrogram"]))?,
-            "view_both" => Stack::checked(&json!([
-                "spectrogram", {"draw": "peak", "y": "box"},
-                {"draw": "rms", "y": "box", "alpha": 0.6}
-            ]))?,
             _ => self.layers.edit(
                 request
                     .get("name")
@@ -500,8 +563,16 @@ impl AudioEditor {
             )?,
         };
         self.layers = next;
+        let before = self.views;
+        self.views = match verb {
+            "view_wave" => Views::Waveform,
+            "view_spectrogram" => Views::Spectrogram,
+            "view_both" => Views::Stacked,
+            _ => self.views,
+        };
         Ok(Outcome {
             turn: Kind::Route,
+            restructure: before.lanes() != self.views.lanes(),
             layers: Some(self.layers()),
             answer: Some(conversation::answer(0, 0, None, self.layer_corrections())),
             ..Outcome::default()
@@ -797,6 +868,7 @@ impl AudioEditor {
             bare: self.bare,
             dialogs: dialogs::stack(&self.dialogs),
             folded: &self.folded(),
+            lane: self.lane.filter(|_| self.views == Views::Stacked),
         });
         self.compose_envelope(&mut tree);
         tree
@@ -865,10 +937,23 @@ impl AudioEditor {
         turn::turn(self, event, version)
     }
 
+    /// **The widgets that draw the take**: the view in its lane and, stacked,
+    /// the spectrogram's lane under it.
+    pub(super) fn pictures(&self) -> impl Iterator<Item = i32> + '_ {
+        self.widget
+            .into_iter()
+            .chain(self.lane.filter(|_| self.views == Views::Stacked))
+    }
+
+    /// **Every picture of the take, read again** ([`resync`]).
+    pub(super) fn reread(&self) -> Vec<Correction> {
+        self.pictures().flat_map(|w| resync(i64::from(w))).collect()
+    }
+
     /// **Every widget of the window, corrected** -- what a history step leaves
     /// behind.
     pub fn resync_all(&self, version: i64) -> Answer {
-        let mut corrections = self.widget.map_or_else(Vec::new, |w| resync(i64::from(w)));
+        let mut corrections = self.reread();
         corrections.extend(self.envelope_corrections());
         conversation::answer(0, version, None, corrections)
     }
@@ -955,6 +1040,7 @@ impl AudioEditor {
             return match self.layer_verb(tag, &Value::Null) {
                 Ok(view) => {
                     out.layers = view.layers;
+                    out.restructure = view.restructure;
                     (None, self.layer_corrections())
                 }
                 Err(reason) => (Some(reason), Vec::new()),
@@ -985,10 +1071,10 @@ impl AudioEditor {
                 // the host holds: the join it draws is replaced whole by the
                 // stitch, and only the answer can say so. A caller sends the
                 // answer once the steps have landed.
-                (None, resync(widget))
+                (None, self.reread())
             }
             Ok(None) => (None, Vec::new()),
-            Err(why) => (Some(why), resync(widget)),
+            Err(why) => (Some(why), self.reread()),
         }
     }
 
@@ -1476,13 +1562,16 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   outcome with the canonical `layers` and a correction, or `{"error"}`.
 /// - `show_layer`, `hide_layer`, `solo_layer` -- `name`: change a layer;
 ///   solo toggles without changing visibility. `layer_alpha` also takes `alpha`.
-/// - `view_wave`, `view_spectrogram`, `view_both`: replace the visual stack.
+/// - `view_wave`, `view_spectrogram`: the view in the take's lane, one or the
+///   other; `view_both`: both, stacked in two lanes ([`Views`]). An outcome
+///   with `restructure` asks the client to draw the window again.
 /// - `layer` -- optional `name`: the active edit body and its correction.
 /// - `envelope` -- seconds-based gain quads. `show_envelope` shows the body.
 /// - `setautomation` -- `points`, gain quads; `apply_envelope` renders them.
 ///   Scripted edits go through `Editing::act` so their history is recorded.
-/// - `window` -- `widget`, optional `pane`, `envelope` and `meter`, the ids of the axis
-///   container and level meter: the window, as a GuiDef.
+/// - `window` -- `widget`, optional `pane`, `envelope`, `lane` and `meter`, the
+///   ids of the axis container, the gain curve, the spectrogram's lane and
+///   the level meter: the window, as a GuiDef.
 /// - `props` -- `widget`: the correction.
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
 /// - `apply` -- `payload`: `{"steps"}` for a list the history handed back, or
@@ -1571,6 +1660,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             editor.ensure_envelope();
             editor.pane = request
                 .get("pane")
+                .and_then(Value::as_i64)
+                .map(|n| n as i32);
+            editor.lane = request
+                .get("lane")
                 .and_then(Value::as_i64)
                 .map(|n| n as i32);
             editor
@@ -1763,9 +1856,56 @@ mod layer_tests {
             args: vec![json!(17), json!(7), json!(0), json!("view_both")],
         };
         let out = editor.event(&event, 3);
-        assert_eq!(out.layers, Some(Stack::checked(&json!(["spectrogram", {"draw":"peak","y":"box"}, {"draw":"rms","y":"box","alpha":0.6}])).unwrap().to_value()));
+        assert_eq!(out.layers, Some(json!(["peak", "rms"])));
+        assert!(out.restructure, "the stacked views add a lane");
         let answer = serde_json::to_value(out.answer.unwrap()).unwrap();
         assert_eq!(answer["seq"], 7);
         assert_eq!(answer["docVersion"], 3);
+    }
+
+    /// **The two views are alternatives in one lane, or stacked in two**,
+    /// never superposed: the stacked window holds the take's lane, with its
+    /// pane and the gain curve in it, over the spectrogram's own lane on the
+    /// same axis, which carries the time ruler. Moving between one lane and
+    /// two redefines the window; between the alternatives, a prop does.
+    #[test]
+    fn the_views_are_alternatives_in_a_lane_or_stacked_lanes() {
+        let mut editor = new_json(r#"{"take":1,"frames":1000}"#).unwrap();
+        editor.bare = true;
+        let window = |editor: &mut AudioEditor| {
+            call(
+                editor,
+                json!({"verb":"window","widget":17,"pane":18,"envelope":19,"lane":20}),
+            )
+        };
+        let one = window(&mut editor);
+        assert_eq!(one["children"][0]["type"], "pane", "one lane");
+        let out = call(&mut editor, json!({"verb":"view_spectrogram"}));
+        assert_eq!(out["restructure"], Value::Null, "an alternative is a prop");
+        let out = call(&mut editor, json!({"verb":"view_both"}));
+        assert_eq!(out["restructure"], true);
+        let corrected: Vec<_> = editor.reread().iter().map(|c| c.widget).collect();
+        assert_eq!(corrected, [17, 20], "both pictures read the take again");
+        let two = window(&mut editor);
+        let lanes = &two["children"][0];
+        assert_eq!(lanes["type"], "layout");
+        let (pane, lane) = (&lanes["children"][0], &lanes["children"][1]);
+        assert_eq!(pane["id"], 18);
+        assert_eq!(
+            pane["axes"]["x"]["ruler"], false,
+            "the ruler is the bottom lane's"
+        );
+        assert_eq!(pane["children"][0]["measure"], "peak rms");
+        assert_eq!(
+            pane["children"][1]["id"], 19,
+            "the envelope stays over the take"
+        );
+        assert_eq!(lane["id"], 20);
+        assert_eq!(lane["link"], 18, "on the take's axis");
+        assert_eq!(lane["measure"], "spectrogram");
+        assert_eq!(lane["editable"], false);
+        let out = call(&mut editor, json!({"verb":"view_wave"}));
+        assert_eq!(out["restructure"], true, "back to one lane");
+        assert_eq!(window(&mut editor)["children"][0]["type"], "pane");
     }
 }

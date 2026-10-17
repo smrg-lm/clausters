@@ -478,26 +478,41 @@ test("visual layers use shared outcomes for calls and menu events", async () => 
     const editor = new AudioEditor(new FakeBuffer() as never, { sampleRate: SR, context: new Editing() });
     const host = new FakeHost();
     await editor.open(host as never);
-    editor.viewBoth();
-    assert.equal(editor.layers[0], "spectrogram");
-    assert.equal((editor.layers[1] as unknown as {y: string}).y, "box");
     editor.hideLayer("peak");
-    assert.equal((editor.layers[1] as {visible: boolean}).visible, false);
+    assert.equal((editor.layers[0] as {visible: boolean}).visible, false);
     editor.showLayer("peak");
     editor.layerAlpha("peak", 0.3);
     editor.soloLayer("peak");
-    assert.equal((editor.layers[1] as {alpha: number}).alpha, 0.3);
-    assert.equal((editor.layers[1] as {solo: boolean}).solo, true);
+    assert.equal((editor.layers[0] as {alpha: number}).alpha, 0.3);
+    assert.equal((editor.layers[0] as {solo: boolean}).solo, true);
     editor.soloLayer("peak");
-    editor.viewWave();
-    assert.deepEqual(editor.layers, ["peak", "rms"]);
     editor.viewSpectrogram();
+    assert.deepEqual(editor.layers, ["spectrogram"]);
     const before = editor.layers;
     assert.throws(() => editor.showLayer("peak"), /different domains/);
     assert.deepEqual(editor.layers, before);
+    editor.viewWave();
+    assert.deepEqual(editor.layers, ["peak", "rms"]);
+    assert.equal(host.trees.length, 1, "an alternative is a prop, not a new window");
+});
+
+test("both views stack the spectrogram in a lane under the take", async () => {
+    const editor = new AudioEditor(new FakeBuffer() as never, { sampleRate: SR, context: new Editing() });
+    const host = new FakeHost();
+    await editor.open(host as never);
     const wid = [...editor.view!.widgets.keys()][0]!;
     editor.apply("/gui_event", [wid, 1, 0, "view_both"]);
-    assert.equal((editor.layers[1] as unknown as {y: string}).y, "box");
+    assert.deepEqual(editor.layers, ["peak", "rms"]);
+    assert.equal(host.trees.length, 2, "the window is drawn again with a second lane");
+    const lanes = (host.trees.at(-1)!.children![1] as GuiNode).children![0] as GuiNode;
+    assert.equal(lanes.type, "layout");
+    const [pane, lane] = lanes.children as GuiNode[];
+    assert.equal(pane!.type, "pane");
+    assert.equal(lane!.measure, "spectrogram");
+    assert.equal(lane!.link, pane!.id);
+    editor.viewWave();
+    assert.equal(host.trees.length, 3);
+    assert.equal(((host.trees.at(-1)!.children![1] as GuiNode).children![0] as GuiNode).type, "pane");
 });
 
 test("the edit layer is the pane body and not the visual stack", async () => {

@@ -437,28 +437,43 @@ def test_visual_layers_use_shared_outcomes_for_calls_and_menu_events():
     editor = AudioEditor(FakeBuffer(), context=Editing())
     host = FakeHost()
     editor.open(host)
-    editor.view_both()
-    assert editor.layers[0] == "spectrogram"
-    assert editor.layers[1]["y"] == "box"
-    assert host.acks[-1][1][0][1].get("layers")
     editor.hide_layer("peak")
-    assert editor.layers[1]["visible"] is False
+    assert editor.layers[0]["visible"] is False
     editor.show_layer("peak")
     editor.layer_alpha("peak", 0.3)
     editor.solo_layer("peak")
-    assert editor.layers[1]["alpha"] == 0.3
-    assert editor.layers[1]["solo"] is True
+    assert editor.layers[0]["alpha"] == 0.3
+    assert editor.layers[0]["solo"] is True
     editor.solo_layer("peak")
-    editor.view_wave()
-    assert editor.layers == ("peak", "rms")
+    assert host.acks[-1][1][0][1].get("layers")
     editor.view_spectrogram()
+    assert editor.layers == ("spectrogram",)
     before = editor.layers
     with pytest.raises(ValueError, match="different domains"):
         editor.show_layer("peak")
     assert editor.layers == before
+    editor.view_wave()
+    assert editor.layers == ("peak", "rms")
+    assert len(host.trees) == 1, "an alternative is a prop, not a new window"
+
+
+def test_both_views_stack_the_spectrogram_in_a_lane_under_the_take():
+    editor = AudioEditor(FakeBuffer(), context=Editing())
+    host = FakeHost()
+    editor.open(host)
     wid = next(iter(editor.view.widgets))
     editor.apply("/gui_event", [wid, 1, 0, "view_both"])
-    assert editor.layers[1]["y"] == "box"
+    assert editor.layers == ("peak", "rms")
+    assert len(host.trees) == 2, "the window is drawn again with a second lane"
+    lanes = host.trees[-1]["children"][1]["children"][0]
+    assert lanes["type"] == "layout"
+    pane, lane = lanes["children"]
+    assert pane["type"] == "pane"
+    assert lane["measure"] == "spectrogram"
+    assert lane["link"] == pane["id"]
+    editor.view_wave()
+    assert len(host.trees) == 3
+    assert host.trees[-1]["children"][1]["children"][0]["type"] == "pane"
 
 
 def test_edit_layer_is_the_panes_body_and_not_the_visual_stack():

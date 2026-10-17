@@ -140,8 +140,8 @@ Open file... opens a file by its path, in a window of its own too.</div>
           title: "take", historyBytes: 64 * 1024 * 1024, server, stage: $("stage"),
         });
 
-        // The same take through different layers. The mixed view keeps the
-        // frequency ruler and puts peak and RMS in their own amplitude boxes.
+        // Two views of the same take: waveform and spectrogram replace each
+        // other in the take's lane, and both stacks them in two lanes.
         $("take-layer").disabled = false;
         $("wave").disabled = false;
         $("take-layer").onclick = () => { editor.layer = "take"; };

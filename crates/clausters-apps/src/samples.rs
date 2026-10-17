@@ -87,6 +87,10 @@ pub struct Window<'a> {
     pub dialogs: Option<Value>,
     /// The channels drawn folded.
     pub folded: &'a [u32],
+    /// **The spectrogram's lane, for the stacked views**: the id it is
+    /// numbered with, drawn under the take's lane on the same axis. `None`
+    /// is the one lane, showing whichever view `layers` is.
+    pub lane: Option<i32>,
 }
 
 /// **Where the level meter is read from**, and the id it is drawn under: the
@@ -130,6 +134,30 @@ pub fn window(w: &Window<'_>) -> Value {
     if !w.folded.is_empty() {
         picture.insert("folded".into(), json!(w.folded));
     }
+    // **The spectrogram's lane**, stacked under the take's: another view of the
+    // same samples, a member of the take's axis (its selection, its cursor,
+    // its play cursor) with a vertical of its own. It carries the time ruler,
+    // at the bottom of the stack, and the take's lane carries none.
+    let lane = w.lane.map(|id| {
+        let mut lane = catalogue::waveform(&Waveform {
+            buffer: Some(w.buffer),
+            channels: Some(w.channels.max(1)),
+            measure: "spectrogram".into(),
+            ruler: "time".into(),
+            sample_rate: w.rate,
+            ..Waveform::default()
+        });
+        lane.insert("id".into(), json!(id));
+        lane.insert("weight".into(), json!(1.0));
+        lane.insert("link".into(), json!(w.pane.unwrap_or(w.widget)));
+        // A picture of the take, never a surface a hand edits samples on.
+        lane.insert("editable".into(), json!(false));
+        if !w.folded.is_empty() {
+            lane.insert("folded".into(), json!(w.folded));
+        }
+        Value::Object(lane)
+    });
+    let ruled = lane.is_none();
     let picture = if let Some(pane) = w.pane {
         let axes = picture.remove("axes").unwrap_or(Value::Null);
         let label = picture.remove("label");
@@ -138,10 +166,22 @@ pub fn window(w: &Window<'_>) -> Value {
         if let Some(y) = axes.get("y") {
             picture.insert("axes".into(), json!({"y": y}));
         }
+        let mut x = axes.get("x").cloned().unwrap_or_else(|| json!({}));
+        if !ruled {
+            x["ruler"] = json!(false);
+        }
         json!({"type": "pane", "id": pane, "weight": 1, "layer": w.layer, "label": label,
-            "axes": {"x": axes.get("x")}, "children": [picture]})
+            "axes": {"x": x}, "children": [picture]})
     } else {
+        if !ruled {
+            picture.insert("ruler".into(), json!(false));
+        }
         Value::Object(picture)
+    };
+    let picture = match lane {
+        Some(lane) => json!({"type": "layout", "flow": "col", "margin": 0, "weight": 1,
+            "children": [picture, lane]}),
+        None => picture,
     };
     let mut children = vec![picture];
     // **The level, beside the take**: the editor's output measured before its
@@ -252,6 +292,7 @@ mod tests {
             bare: true,
             dialogs: None,
             folded: &[],
+            lane: None,
         })
     }
 

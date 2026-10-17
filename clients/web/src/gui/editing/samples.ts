@@ -113,6 +113,8 @@ export class SamplesView extends View<Buffer> {
         const ed = editor as unknown as TakeWindow;
         ed.syncCore();
         const envelope = this.widget(editor, "envelope", editor.structure);
+        // the spectrogram's lane, drawn when the views are stacked
+        const lane = this.widget(editor, "lane", editor.structure);
         // the crate names the widgets of its dialogs and this numbers them
         const named = ed.coreCall("dialogs").dialogs;
         const dialogs: Record<string, number> = {};
@@ -120,7 +122,7 @@ export class SamplesView extends View<Buffer> {
             dialogs[name] = this.widget(editor, "dialog", editor.structure, name);
         }
         const tree = ed.coreCall("window", {
-            widget: wid, meter, pane, envelope, dialogs,
+            widget: wid, meter, pane, envelope, lane, dialogs,
         }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
         // rather than composed in the crate.

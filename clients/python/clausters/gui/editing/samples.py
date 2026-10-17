@@ -80,11 +80,13 @@ class SamplesView(View):
         pane = self.widget(editor, "pane", editor.structure)
         editor._sync_core()
         envelope = self.widget(editor, "envelope", editor.structure)
+        # the spectrogram's lane, drawn when the views are stacked
+        lane = self.widget(editor, "lane", editor.structure)
         # the crate names the widgets of its dialogs and this numbers them
         dialogs = {str(name): self.widget(editor, "dialog", editor.structure, str(name))
                    for name in editor._call("dialogs").get("dialogs") or ()}
         tree = editor._call("window", widget=wid, meter=meter, pane=pane, envelope=envelope,
-                            dialogs=dialogs)
+                            lane=lane, dialogs=dialogs)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]

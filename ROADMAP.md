@@ -120,6 +120,11 @@ already carry it.
   *(`clients/gui/PLAN.md`, Found by use)*. Both left by the audio editor's
   folded channels: the clip's half of the same layout, and a ruler detail.
 
+- ⬜ **The audio editor's switches are menu entries, not checks** and **Cut,
+  Copy, Paste and Paste mix in the audio editor do not agree with the
+  selection and the position cursor** *(`crates/clausters-apps/PLAN.md`,
+  Found by use)*. Both found by the user in the audio editor's menus.
+
 - ⬜ **A write in place behind an undrained replacement can miss a shared
   buffer** *(root `PLAN.md`, Found by use)*. The narrower race left after the
   gain preview's fix; no client writes before an allocation's `/done`.

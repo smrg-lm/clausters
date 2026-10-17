@@ -1,6 +1,13 @@
 //! **The layer stack of a signal picture**: what is drawn on one body, in what
 //! order, at what weight, and which of them the vertical belongs to.
 //!
+//! These are **visualization layers**: measures of one view, read on that
+//! view's vertical. They are not the **edit layers** a hand chooses between
+//! (the take, a curve over it), which are the bodies of a container
+//! (`host::layers` in the GUI host), and they are not separate **views**: two
+//! pictures of one take on lanes of their own, or one in place of the other,
+//! are composed by the application (`clausters_apps::audio::editor`, "views").
+//!
 //! A signal view draws several things on one rectangle -- the envelope, the
 //! level inside it, the reconstruction over both, a loudness curve on a scale
 //! of its own, a time-frequency texture under all of them. Which ones, and how
