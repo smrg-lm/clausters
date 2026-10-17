@@ -42,6 +42,7 @@ The resources are ready when the validator and harness contract tests pass, prer
 
 ## Found by use
 
+- ✅ The paired-summary reader expected dense histogram arrays, while the real timing producer emits sparse `[index, count]` pairs. Decode the producer's format, retain the fixed overflow bucket and exercise the Python reader against JSON emitted by the compiled Rust template.
 - ✅ The integrated device trial read the global synth count immediately after `/server_sync`, which waits for async jobs, not the RT command drain. Poll the RT tree for the trial's owned node ids with a deadline; do not require unrelated host nodes to disappear.
 - ✅ PipeWire can put the process id on the client object and only `client.id` on its audio node, leaving readable xrun counters classified as unsupported. Resolve both direct node ownership and ownership through the client before selecting stream/sink counters.
 - ✅ The host's render/readback refactor left the timing generator starting its timer in `render` and reading it in `draw`, so the generated GUI patch no longer compiled. Start and record in the same draw function; offscreen readbacks return before the successful-frame counter.

@@ -1,11 +1,15 @@
 """Compile and exercise the measurement template outside every app workspace."""
 from pathlib import Path
+import json
 import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 
 AUDIT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(AUDIT / "scripts"))
+from paired import histogram_delta
 
 RUST_TESTS = r'''
 #[cfg(test)]
@@ -33,6 +37,17 @@ mod tests {
     }
     #[global_allocator]
     static ALLOCATOR: Count = Count;
+
+    #[test]
+    fn serializes_sparse_histograms_for_the_python_reader() {
+        let hist = Hist::new();
+        hist.add(BUCKET_NS * BUCKETS as u64 + 7);
+        let before = hist.json();
+        hist.add(0);
+        hist.add(BUCKET_NS);
+        let path = std::env::var("AUDIT_HISTOGRAM_CONTRACT").unwrap();
+        std::fs::write(path, format!("[{},{}]", before, hist.json())).unwrap();
+    }
 
     #[test]
     fn histogram_boundaries_and_overflow_keep_true_maximum() {
@@ -87,6 +102,7 @@ class TimingTests(unittest.TestCase):
             (root / "Cargo.toml").write_text('[package]\nname="audit-timing-contract"\nversion="0.0.0"\nedition="2024"\n[dependencies]\nlibc="0.2"\n')
             (root / "src/lib.rs").write_text((AUDIT / "instrumentation/timing.rs.in").read_text() + RUST_TESTS)
             env = {**os.environ, "CARGO_TARGET_DIR": str(root / "target"), "CARGO_BUILD_JOBS": "2", "CARGO_INCREMENTAL": "0"}
+            env["AUDIT_HISTOGRAM_CONTRACT"] = str(root / "histograms.json")
             # The lockfile resolves from the local registry cache when it has
             # libc, and from the network only where it does not (a fresh CI
             # runner); everything after runs offline against that lockfile.
@@ -99,3 +115,5 @@ class TimingTests(unittest.TestCase):
             for argv in (["cargo", "test", "--offline"], ["cargo", "clippy", "--offline", "--all-targets", "--", "-D", "warnings"]):
                 result = subprocess.run(argv, cwd=root, env=env, capture_output=True, text=True, timeout=120)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            before, after = json.loads((root / "histograms.json").read_text())
+            self.assertEqual(histogram_delta(before, after), {"mean_us": 5, "p99_upper_us": 20})

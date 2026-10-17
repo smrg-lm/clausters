@@ -14,6 +14,8 @@ from controls import receipt_environment
 
 CONDITIONS = [(mode, instrumented) for mode in ("audio", "gui", "combined")
               for instrumented in (True, False)]
+# The geometry of instrumentation/timing.rs.in, including the overflow bucket.
+BUCKET_COUNT = 8192
 
 
 def order(repetition):
@@ -49,9 +51,24 @@ def compatibility(root):
 
 def histogram_delta(before, after):
     width = after["bucket_ns"]
-    if width != before["bucket_ns"] or len(before["buckets"]) != len(after["buckets"]):
+    if type(width) is not int or width <= 0 or width != before["bucket_ns"]:
         raise ValueError("Histogram geometry changed")
-    buckets = [b - a for a, b in zip(before["buckets"], after["buckets"])]
+    def decode(histogram):
+        # The producer emits only occupied buckets as [index, count] pairs.
+        # New occupied indices between snapshots do not change its geometry.
+        decoded = [0] * BUCKET_COUNT
+        seen = set()
+        for pair in histogram["buckets"]:
+            if not isinstance(pair, list) or len(pair) != 2:
+                raise ValueError("Expected sparse histogram index/count pairs")
+            index, value = pair
+            if (type(index) is not int or not 0 <= index < BUCKET_COUNT
+                    or index in seen or type(value) is not int or value < 0):
+                raise ValueError("Invalid sparse histogram bucket")
+            seen.add(index)
+            decoded[index] = value
+        return decoded
+    buckets = [b - a for a, b in zip(decode(before), decode(after))]
     count = after["count"] - before["count"]
     total = after["sum_ns"] - before["sum_ns"]
     # Writers read cumulative atomics independently. Retain raw endpoints;
@@ -63,7 +80,7 @@ def histogram_delta(before, after):
     for index, n in enumerate(buckets):
         cumulative += n
         if cumulative >= rank:
-            if index == len(buckets) - 1:
+            if index == BUCKET_COUNT - 1:
                 raise ValueError("p99 is in the overflowing bucket")
             p99 = (index + 1) * width / 1000
             break

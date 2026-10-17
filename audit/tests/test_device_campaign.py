@@ -106,8 +106,8 @@ class DeviceCampaignTests(unittest.TestCase):
             def execute(argv, cwd, env, timeout, stdout, stderr):
                 capture = Path(argv[argv.index("--capture") + 1])
                 instrumented = "--uninstrumented" not in argv
-                hist0 = {"bucket_ns": 10000, "count": 100, "sum_ns": 1000000, "buckets": [100, 0]}
-                hist1 = {"bucket_ns": 10000, "count": 110, "sum_ns": 1100000, "buckets": [110, 0]}
+                hist0 = {"bucket_ns": 10000, "count": 100, "sum_ns": 1000000, "buckets": [[0, 100]]}
+                hist1 = {"bucket_ns": 10000, "count": 110, "sum_ns": 1100000, "buckets": [[0, 110]]}
                 def point(hist):
                     return {"status": {"actual_sample_rate": 48000}, "proc": {},
                             "server_timing": {"duration": hist, "frames_min": 128, "frames_max": 128} if instrumented else None,
@@ -137,10 +137,13 @@ class DeviceCampaignTests(unittest.TestCase):
                 paired.compatibility(root / "captures")
 
     def test_histogram_excludes_warmup_and_refuses_overflow(self):
-        first = {"bucket_ns": 10000, "count": 100, "sum_ns": 9000000, "buckets": [0, 100, 0]}
-        last = {"bucket_ns": 10000, "count": 110, "sum_ns": 9100000, "buckets": [10, 100, 0]}
+        first = {"bucket_ns": 10000, "count": 100, "sum_ns": 9000000, "buckets": [[1, 100]]}
+        last = {"bucket_ns": 10000, "count": 110, "sum_ns": 9100000, "buckets": [[0, 10], [1, 100]]}
         self.assertEqual(histogram_delta(first, last), {"mean_us": 10, "p99_upper_us": 10})
-        last["buckets"] = [0, 100, 10]
+        last["buckets"] = [[1, 100], [8191, 10]]
+        with self.assertRaises(ValueError):
+            histogram_delta(first, last)
+        last["buckets"] = [[1, 100], [1, 10]]
         with self.assertRaises(ValueError):
             histogram_delta(first, last)
 
