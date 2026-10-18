@@ -31,6 +31,7 @@
 //! playback's meters write. They come in as arguments, which is the rule the
 //! projections already follow.
 
+pub mod application;
 pub mod audio;
 pub mod chrome;
 pub mod closing;

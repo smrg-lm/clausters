@@ -57,6 +57,8 @@ class FakeHost {
         return { id };
     }
     set(): void {}
+    clip = "";
+    clipboard(document: string): void { this.clip = document; }
     close(): void {}
     headClock(id: number | { readonly id: number }, name: string, _transport = 0): void {
         this.clock = name;
@@ -272,7 +274,7 @@ test("a take past the resident budget goes to disk and comes back", async () => 
     const first = take.server.sent[take.server.addrs().indexOf("/buffer_alloc")]![1][0];
     assert.ok(
         take.server.sent.some(
-            ([addr, args]) => addr === "/buffer_write" && args[1] === `/scratch/take-${first}.wav`,
+            ([addr, args]) => addr === "/buffer_write" && args[0] === first && String(args[1]).startsWith("/scratch/take-") && String(args[1]).endsWith(`-${first}.wav`),
         ),
     );
     take.server.sent = [];
@@ -787,5 +789,71 @@ test("two audio windows keep distinct component bindings on one host", async () 
     assert.deepEqual([...second.view!.widgets.keys()], otherIds);
     first.close();
     assert.equal(second.closed, false);
+    second.close();
+});
+
+
+test("reconnecting refuses stale editor resources before sending", async () => {
+    const take = new FakeBuffer();
+    const [editor] = await opened(take);
+    await settle();
+    const previousIds = take.server.ids;
+    const sent = take.server.sent.length;
+    take.server.ids = new IdSpaces(8192, 1024, 2, 16384, 4096, 16, 64, 0, 1);
+    assert.throws(() => editor.parts, /previous server instance/);
+    const playback = (editor as unknown as { playback: { call(v: string): Promise<unknown> } }).playback;
+    await assert.rejects(playback.call("close"), /previous server instance/);
+    assert.equal(take.server.sent.length, sent);
+    assert.notEqual(previousIds, take.server.ids);
+});
+
+
+test("shared undo updates an unfocused file without moving focus", async () => {
+    const [editor, , , context] = await opened(new FakeBuffer());
+    const original = editor.envelope;
+    editor.setEnvelope([0, 0.5, 1, 0, 100 / SR, 0.25, 1, 0]);
+    await settle();
+    const originalRead = SoundFile.prototype.toBuffer;
+    const originalOpen = SoundFile.open;
+    SoundFile.prototype.toBuffer = async function({ server } = {}) {
+        const endpoint = server as unknown as FakeServer;
+        return { bufnum: endpoint.buffers.alloc(), frames: this.frames, channels: this.channels,
+            sampleRate: this.sampleRate, server: endpoint, path: this.path } as never;
+    };
+    SoundFile.open = async (path: string) => new SoundFile(path, 200, 2, SR);
+    try {
+        await editor.openFile("/takes/b.wav");
+        const binding = editor.coreCall("binding");
+        const stepped = context.step("undo");
+        assert.equal(stepped.stepped, true);
+        assert.notEqual(stepped.effects?.[0]?.file?.id, binding.id);
+        context.carry(stepped);
+        await settle();
+        assert.equal(editor.coreCall("binding").id, binding.id);
+        assert.equal(editor.file!.path, "/takes/b.wav");
+        await editor.focusFile(0);
+        assert.deepEqual(editor.envelope, original);
+        editor.close();
+    } finally {
+        SoundFile.prototype.toBuffer = originalRead;
+        SoundFile.open = originalOpen;
+    }
+});
+
+
+test("clipboard replacement does not free a previous server incarnations id", async () => {
+    const take = new FakeBuffer();
+    const [first] = await opened(take);
+    const publish = (editor: AudioEditor, buffer: number) =>
+        (editor as unknown as { clipboard(doc: string, buffer: number): void }).clipboard("{}", buffer);
+    publish(first, 700);
+    take.server.ids = new IdSpaces(8192, 1024, 2, 16384, 4096, 16, 64, 0, 1);
+    const second = new AudioEditor(take as never, { context: new Editing(), sampleRate: SR });
+    await settle();
+    take.server.sent = [];
+    publish(second, 701);
+    assert.ok(!take.server.sent.some(([addr, args]) => addr === "/buffer_free" && Number(args[0]) === 700));
+    publish(second, 702);
+    assert.ok(take.server.sent.some(([addr, args]) => addr === "/buffer_free" && Number(args[0]) === 701));
     second.close();
 });

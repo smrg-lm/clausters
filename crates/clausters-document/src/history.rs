@@ -789,6 +789,28 @@ impl History {
         out
     }
 
+    /// Sources retained by entries over one structure, including both halves.
+    /// This lets a service resolve local source ids on the structure's endpoint.
+    pub fn held_sources_for(&self, structure: StructureId) -> Vec<SourceId> {
+        let mut sources = Vec::new();
+        for change in self
+            .entries
+            .iter()
+            .flat_map(|entry| &entry.changes)
+            .filter(|change| change.structure == structure)
+        {
+            for source in std::iter::once(&change.forward)
+                .chain(change.backward.as_ref())
+                .flat_map(|half| &half.holds)
+            {
+                if !sources.contains(source) {
+                    sources.push(*source);
+                }
+            }
+        }
+        sources
+    }
+
     /// The sources an entry that left was holding and none still holds,
     /// without draining -- [`History::pending_release`]'s reason, for sources.
     pub fn pending_sources(&self) -> Vec<SourceId> {
@@ -840,8 +862,15 @@ impl History {
                 .map(size_of)
                 .sum()
         };
+        self.trim_to_bytes_with(bytes, &only_mine)
+    }
+
+    /// Trim whole entries using an endpoint-aware byte accounting policy.
+    /// The policy may distinguish equal local ids on different endpoints and
+    /// exclude sources retained by consumers outside this history.
+    pub fn trim_to_bytes_with(&mut self, bytes: u64, held_bytes: &dyn Fn(&Self) -> u64) -> usize {
         let mut dropped = 0;
-        while !self.entries.is_empty() && only_mine(self) > bytes {
+        while !self.entries.is_empty() && held_bytes(self) > bytes {
             if self.cursor > 0 {
                 self.drop_oldest();
             } else {

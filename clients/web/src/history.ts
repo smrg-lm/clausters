@@ -89,6 +89,8 @@ export interface StepHandler extends Applier {
     write?(structure: never | object, points: readonly number[]): void;
     /** An audio editor's: carry out the steps that stitch its take again. */
     run?(structure: never | object, steps: unknown[]): void;
+    /** Update an edited object's playback independently of the viewed object. */
+    soundFile?(structure: never | object, file: Record<string, unknown>): void;
     /**
      * An audio editor's: free takes nothing reaches any more. A take on disk
      * (`spilled`) has no buffer to free, only its number to give back.
@@ -151,6 +153,8 @@ export interface Effect {
     payloads?: unknown[];
     /** An audio editor's: the steps that stitch its take again. */
     steps?: unknown[];
+    /** The edited audio object's playback projection, even when not viewed. */
+    file?: Record<string, unknown>;
     /** A points editor's: the curve's points, as flat quads, to write back. */
     points?: number[];
 }
@@ -701,6 +705,11 @@ export class Editing {
         return this.version;
     }
 
+    /** One shared application-service request. @internal */
+    serviceCall<T = Record<string, unknown>>(verb: string, args: Record<string, unknown> = {}): T {
+        return this.#call(verb, args) as T;
+    }
+
     /**
      * **Limits the takes only the history holds** to `bytes`, or lifts the
      * limit with `null`. Past it the oldest entries go first, and the takes
@@ -762,6 +771,7 @@ export class Editing {
             }
             if (effect.kind === "audio") {
                 held.handler.run?.(held.structure as never, effect.steps ?? []);
+                if (effect.file !== undefined) held.handler.soundFile?.(held.structure as never, effect.file);
                 continue;
             }
             if (effect.kind === "points") {

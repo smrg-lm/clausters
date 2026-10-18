@@ -457,6 +457,7 @@ struct AudioWindowState {
     meter_widget: Option<i32>,
     envelope_widget: Option<i32>,
     scratch: Option<String>,
+    scratch_scope: crate::application::resources::ScratchScope,
     chunk: usize,
     lane: Option<i32>,
     title: String,
@@ -559,6 +560,7 @@ impl AudioEditor {
                 meter_widget: None,
                 envelope_widget: None,
                 scratch: None,
+                scratch_scope: Default::default(),
                 chunk: DEFAULT_CHUNK,
                 lane: None,
                 title: "Audio".into(),
@@ -703,6 +705,9 @@ impl AudioEditor {
     /// **The takes this editor cannot let go of**: the one it opened, which is
     /// the caller's, and every take the list reads now.
     pub fn rooted(&self) -> Vec<SourceId> {
+        if !self.open_files.open {
+            return Vec::new();
+        }
         let mut out = parts::sources(&self.file.contents.parts);
         let opened = SourceId(self.file.take as u64);
         if !out.contains(&opened) {
@@ -715,6 +720,38 @@ impl AudioEditor {
                 .flat_map(|file| file.rooted()),
         );
         out
+    }
+
+    /// Scope remote references and scratch names to this endpoint incarnation.
+    pub(crate) fn set_server(&mut self, server: crate::application::resources::ServerInstance) {
+        self.window_state.scratch_scope.server = server;
+    }
+
+    pub(crate) fn storage_available(&self) -> bool {
+        self.window_state.scratch.is_some()
+    }
+
+    /// Source metadata for the resource service, across open files.
+    pub(crate) fn resource_sources(&self) -> Vec<(i64, u64, Option<String>, bool)> {
+        if !self.open_files.open {
+            return Vec::new();
+        }
+        std::iter::once(&self.file)
+            .chain(self.open_files.parked.values())
+            .flat_map(|file| {
+                file.frames.iter().map(|(&buffer, &frames)| {
+                    (
+                        buffer,
+                        frames * u64::from(file.channels) * 4,
+                        file.spilled
+                            .contains(&buffer)
+                            .then(|| self.path(buffer))
+                            .flatten(),
+                        buffer != file.opened || file.owns_opened,
+                    )
+                })
+            })
+            .collect()
     }
 
     /// How many bytes the take in `buffer` holds, or `None` for one this editor
@@ -734,25 +771,25 @@ impl AudioEditor {
 
     /// Forgets a take the caller is about to free, so nothing here names it.
     pub fn forget(&mut self, buffer: i64) {
-        if buffer != self.file.take {
-            self.file.frames.remove(&buffer);
-            self.file.spilled.remove(&buffer);
+        for file in std::iter::once(&mut self.file).chain(self.open_files.parked.values_mut()) {
+            if buffer != file.take {
+                file.frames.remove(&buffer);
+                file.spilled.remove(&buffer);
+            }
         }
     }
 
-    /// Whether the take in `buffer` is on disk rather than in its buffer --
-    /// so freeing it gives back a number and frees no buffer.
+    /// Whether a take is stored rather than resident, across all open files.
     pub fn is_spilled(&self, buffer: i64) -> bool {
-        self.file.spilled.contains(&buffer)
+        std::iter::once(&self.file)
+            .chain(self.open_files.parked.values())
+            .any(|file| file.spilled.contains(&buffer))
     }
 
     /// Where the take in `buffer` is written when it leaves memory.
     fn path(&self, buffer: i64) -> Option<String> {
         let scratch = self.window_state.scratch.as_deref()?;
-        Some(format!(
-            "{}/take-{buffer}.wav",
-            scratch.trim_end_matches('/')
-        ))
+        Some(self.window_state.scratch_scope.path(scratch, buffer))
     }
 
     /// **Takes a take out of memory**: the steps that write it to the scratch
@@ -762,12 +799,14 @@ impl AudioEditor {
     /// read back is what was written.
     pub fn spill(&mut self, buffer: i64) -> Option<Value> {
         let path = self.path(buffer)?;
-        let reads = parts::sources(&self.file.contents.parts).contains(&SourceId(buffer as u64));
-        if buffer == self.file.take || reads || self.file.spilled.contains(&buffer) {
+        let file = std::iter::once(&mut self.file)
+            .chain(self.open_files.parked.values_mut())
+            .find(|file| file.frames.contains_key(&buffer))?;
+        let reads = parts::sources(&file.contents.parts).contains(&SourceId(buffer as u64));
+        if buffer == file.take || reads || file.spilled.contains(&buffer) {
             return None;
         }
-        self.file.frames.get(&buffer)?;
-        self.file.spilled.insert(buffer);
+        file.spilled.insert(buffer);
         let index = buffer as i32;
         Some(steps_json(&[
             send(
@@ -878,7 +917,9 @@ impl AudioEditor {
     /// A spill the caller could not carry out -- the write was refused, a
     /// quota full -- so the take is still in its buffer.
     pub fn kept(&mut self, buffer: i64) {
-        self.file.spilled.remove(&buffer);
+        for file in std::iter::once(&mut self.file).chain(self.open_files.parked.values_mut()) {
+            file.spilled.remove(&buffer);
+        }
     }
 
     /// The steps that read back every take on disk the list now reads, before
@@ -2122,6 +2163,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             Some(steps) => json!({ "steps": steps }).to_string(),
             None => "{}".into(),
         },
+        "playback" => editor.playback_file().to_string(),
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
         "span" => {
             let span = get("span")

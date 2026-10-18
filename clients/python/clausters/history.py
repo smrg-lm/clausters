@@ -406,6 +406,9 @@ class Editing:
             self.version = int(self.core.call("moved").get("version", self.version))
         return self.version
 
+    def _service_call(self, verb: str, **args):
+        return {} if self.core is None else self.core.call(verb, **args)
+
     def limit_bytes(self, bytes: "int | None") -> None:
         """**Limits the takes only the history holds** to ``bytes``, or lifts
         the limit with ``None``. Past it the oldest entries go first, and the
@@ -465,6 +468,8 @@ class Editing:
                 continue
             if effect.get("kind") == "audio":
                 handler.run(structure, effect.get("steps") or [])
+                if effect.get("file") is not None and hasattr(handler, "sound_file"):
+                    handler.sound_file(structure, effect["file"])
                 continue
             if effect.get("kind") == "points":
                 handler.write(structure, effect.get("points") or [])

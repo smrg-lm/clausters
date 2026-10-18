@@ -39,6 +39,7 @@ from ... import _native
 from ..._steps import run_steps
 from ...errors import CommandError
 from ...defs._wire import resolve as _resolve
+from .application import _service_instance
 from .domain import Domain
 from .editor import Editor
 from .marking import Marking
@@ -66,6 +67,7 @@ class _AudioPlayback:
 
     def __init__(self, server):
         self.server = server
+        self._instance = _service_instance(server)
         self._native = _native.AudioEditorPlayback(chunk=server._bulk_chunk())
         self._runner = _native.StepRunner()
         # Node ids come back on their `/node_end`, which only a registered
@@ -91,6 +93,8 @@ class _AudioPlayback:
 
     def call(self, verb: str, **args) -> dict:
         """One verb of the crate's playback, its steps carried out."""
+        if _service_instance(self.server) != self._instance:
+            raise RuntimeError("the audio service belongs to a previous server instance")
         answer = self._native.call(verb, self.server.ids, **args)
         steps = answer.get("steps")
         if steps:
@@ -234,8 +238,13 @@ class AudioDomain(Domain):
         editor = self.editor
         if editor is None or not steps:
             return False
+        editor._check_server()
         run_steps(editor._server, editor._runner, steps)
         return True
+
+    def sound_file(self, structure, file):
+        if self.editor is not None:
+            self.editor._sync_sound(file)
 
     def free(self, structure, buffers, spilled=()) -> None:
         """Free takes the context handed back: nothing reaches them any more.
@@ -244,6 +253,7 @@ class AudioDomain(Domain):
         editor = self.editor
         if editor is None:
             return
+        editor._check_server()
         for bufnum in buffers:
             if bufnum not in spilled:
                 editor._server.send_msg("/buffer_free", int(bufnum))
@@ -255,6 +265,7 @@ class AudioDomain(Domain):
         editor = self.editor
         if editor is None:
             return
+        editor._check_server()
         try:
             run_steps(editor._server, editor._runner, steps)
         except CommandError:
@@ -305,6 +316,7 @@ class AudioEditor(Marking, Editor):
         domain.editor = self
         #: The server the take is on, and every take this editor makes.
         self._server = _resolve(getattr(take, "server", None))
+        self._instance = _service_instance(self._server)
         #: The runner the steps are walked through.
         self._runner = _native.StepRunner()
         #: The join the window draws: the take as the edits have left it.
@@ -313,9 +325,10 @@ class AudioEditor(Marking, Editor):
         # so the window keeps the one it opened in.
         self._context = self._editing
         self._member, self._structure_id = self._editing.open(
-            "openAudio", f"audio:{int(take.bufnum)}",
+            "openAudio", f"audio:{self._instance['connection']}:{self._instance['generation']}:{int(take.bufnum)}",
             {**self._facts(), "frames": int(getattr(take, "frames", 0) or 0),
              "take": int(take.bufnum), "display": self._display,
+             "server": self._instance,
              "path": getattr(take, "path", None),
              "untitled": self._file is not None and self._file.path is None,
              "codec": getattr(file, "codec", None),
@@ -396,18 +409,9 @@ class AudioEditor(Marking, Editor):
     def _sound(self, *, publish_preview: bool = True) -> None:
         """Make what sounds be the take as it now is -- the join and its
         length -- and tell the window where its level is read from."""
-        frames = int(self._call("parts").get("frames", 0))
-        self._playback.call(
-            "sync", file=self._file_id, buffer=self._display,
-            channels=max(1, int(getattr(self.structure, "channels", 1) or 1)),
-            frames=frames, takeRate=self.sample_rate, rate=self._playback.rate)
-        preview = self._call("preview")
-        if preview["installed"]:
-            self._playback.call("gain", file=self._file_id,
-                                points=preview["points"], on=preview["on"],
-                                revision=preview["revision"])
-        else:
-            self._playback.call("removeEffect", file=self._file_id)
+        file = self._call("playback")
+        self._sync_sound(file)
+        preview = file["preview"]
         state = self._playback.state()
         if publish_preview and self._host is not None and self._window is not None:
             buffer = (state.get("previews") or {}).get(str(self._file_id))
@@ -415,6 +419,18 @@ class AudioEditor(Marking, Editor):
             for wid in preview.get("pictures") or ():
                 self._host.set(int(wid), preview_buffer=-1 if buffer is None else buffer)
         self._call("sync", meters=self._playback.state().get("meters"))
+
+    def _sync_sound(self, file):
+        self._playback.call("sync", file=int(file["id"]), buffer=int(file["display"]),
+                            channels=int(file["channels"]), frames=int(file["frames"]),
+                            takeRate=float(file["rate"]), rate=self._playback.rate)
+        preview = file["preview"]
+        if preview["installed"]:
+            self._playback.call("gain", file=int(file["id"]), points=preview["points"],
+                                on=preview["on"], revision=preview["revision"])
+        else:
+            self._playback.call("removeEffect", file=int(file["id"]))
+        self._retain_playback()
 
     def _cue(self, frame: int) -> None:
         """**The position cursor moved**: the play cursor goes with it while
@@ -438,11 +454,12 @@ class AudioEditor(Marking, Editor):
         """**A copy made on the server**: the buffer it is in is the
         clipboard's now, the one the previous copy was in goes, and the host's
         clipboard names it."""
+        self._check_server()
         held = _CLIPBOARD.get(self._server)
-        if held is not None and held != buffer:
-            self._server.send_msg("/buffer_free", held)
-            self._server.buffers.free(held)
-        _CLIPBOARD[self._server] = buffer
+        if held is not None and held[0] == self._instance and held[1] != buffer:
+            self._server.send_msg("/buffer_free", held[1])
+            self._server.buffers.free(held[1])
+        _CLIPBOARD[self._server] = (dict(self._instance), buffer)
         if self._host is not None:
             self._host.clipboard(doc)
 
@@ -591,11 +608,13 @@ class AudioEditor(Marking, Editor):
         """The window closed: the take stops being one the editor plays, and
         the last one closed frees the editor's nodes."""
         self._playback.call("close")
+        self._drop_playback()
         return super()._closed()
 
     def close(self):
         """Close the window, and free what sounded the take."""
         self._playback.call("close")
+        self._drop_playback()
         return super().close()
 
     def _facts(self) -> dict:
@@ -610,7 +629,21 @@ class AudioEditor(Marking, Editor):
 
     def _call(self, verb: str, **args) -> dict:
         """One verb of this editor's member, through the context."""
+        self._check_server()
         return self._editing.member(self._member, verb, **args)
+
+    def _check_server(self):
+        if _service_instance(self._server) != self._instance:
+            self._editing._service_call("invalidate", server=self._instance)
+            raise RuntimeError("the audio service belongs to a previous server instance")
+
+    def _retain_playback(self):
+        result = self._editing._service_call("retainMember", member=self._member, kind="playback")
+        self._editing.release(result.get("freed"), result.get("stored"))
+
+    def _drop_playback(self):
+        result = self._editing._service_call("dropRoot", root={"kind": "playback", "owner": self._member})
+        self._editing.release(result.get("freed"), result.get("stored"))
 
     def _sync_core(self) -> None:
         """Hand the core the chrome, the window it is open in, and enough
@@ -744,6 +777,8 @@ class AudioEditor(Marking, Editor):
             self.domain.run(self.structure, outcome.get("steps") or [])
             for buffer in outcome.get("freedBuffers") or ():
                 self._server.buffers.free(int(buffer))
+            if action is not None and action["verb"] == "close_file":
+                self._retain_playback()
             outcome = dict(outcome, steps=[])
             if outcome.get("close"):
                 self.close()

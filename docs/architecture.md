@@ -1341,8 +1341,9 @@ than the window. `docs/decisions.md` records why for each of the three.
 The following is the target contract for the application-state migration,
 audited against the audio editor on 2026-10-18. The ownership table records
 that audit's starting point. The file/window separation described immediately
-below is implemented; coordinator, service and completion contracts remain
-designs for the subsequent migration. The application milestones in the apps plan
+below and the editing/resource services are implemented; coordinator and
+completion contracts remain designs for the subsequent migration. The
+application milestones in the apps plan
 own its delivery. No new public API, wire message or ABI symbol is introduced
 by this contract.
 
@@ -1420,6 +1421,20 @@ binding; the adapters update their current structure and layers, publish the
 window and send the explicit corrections. Host-local navigation remains
 host-local. This separation does not implement a new operation scheduler,
 clipboard service or persistent workspace.
+
+#### Implemented editing, playback and resource services
+
+`clausters_apps::application::histories::Histories` maps an `Object` (member plus stable object id) to an undo `ScopeId` and the structure registered in that order. `Editing::with_services` accepts this service and `application::resources::Resources` explicitly; its default constructor supplies independent instances. The history engine remains `clausters_document::history::History`. Joining a member under a shared key registers its initial object in the context's order; another object gets an independent order. Selection changes the order being walked without exchanging histories or cloning them into a window. Closing its last observer removes an independent order; shared orders retain the history engine's existing forgotten-structure semantics.
+
+A step resolves each structure back to the object that was registered, including an inactive audio file. The audio composition applies to that file's contents while retaining the focused file, binding generation and conversation. Its `Effect::Audio` includes both ordered server steps and the edited file's playback projection. Both adapters execute the steps and update that file's playback graph; they do not infer the target from whatever is now focused. Whole-step rollback also restores the original target object.
+
+`Resources` records a `ResourceId` as a `ServerInstance` plus a local buffer number, its byte size, release endpoint and resident/stored location. `RootKind` separates contents, history, clipboard, playback and pending operations. Replacing one root does not drop another consumer's lease; invalid acquisitions leave the previous root intact. Collection reports each unreferenced owned source once, and never frees a borrowed source. History roots include inactive orders. The audio adapters retain playback roots after their graph updates and drop them after closing the graph, so trimming a history or closing a file cannot free a source playback still holds. Clipboard and operation leases use the same service contract; their publication and commit integration belongs to the following migrations.
+
+The byte limit applies independently to each undo order, with endpoint-aware accounting that excludes sources held by another service. The resident limit applies across the composition's history-only sources. Candidates are chosen in creation order; the owning audio file supplies the existing write/free steps even when out of focus, and a restore precedes the dependent stitch. A refused spill is marked `kept` on its owning file. `ScratchScope` names files by endpoint incarnation, composition namespace and buffer, under the supplied scratch directory. Existing disk and OPFS execution ports write float WAVs. The caller owns the scratch directory and its cleanup; a final source release gives back its buffer lease, or only its id when stored.
+
+Each adapter supplies a random connection identity and an allocator incarnation. Reattaching with reconciled allocators advances that incarnation; old editors and playback handles refuse work before addressing the replacement endpoint, and the resource service invalidates the old leases without sending frees to the replacement. This is conservative connection identity: two handles are not assumed to be the same endpoint merely because their addresses or local buffer ids match. A server restarted without reattaching has not established a new valid application connection. In-flight completion admission and cancellation remain part of the operation coordinator contract below.
+
+The services need no renderer. The real native NRT endpoint and the browser NRT/OPFS acceptance execute the same spill, restore and release decisions and compare restored samples. Playback remains `clausters_editing::audio_playback::AudioEditorPlayback`, with one transport per editor; injecting an editing context does not share a transport.
 
 #### Composition and extension
 

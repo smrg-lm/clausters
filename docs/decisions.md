@@ -10539,3 +10539,28 @@ retention and renderer reconciliation remain the mechanisms underneath.
 Preview corrections follow publication, and only composed lanes receive
 cursor corrections. History and sample resources remain attached to the
 file's stable object identity, independent of the display buffer.
+
+## Application resource ids include a connection incarnation
+
+*2026-10-18.* Buffer numbers are local to a running endpoint. A restarted
+server can allocate the same number again, and two connections can name
+unrelated buffers with the same number. An audio editor's source retention
+and clipboard replacement must not free a replacement server's buffer.
+
+The application resource service uses a connection identity, an allocator
+incarnation and the local buffer id. Both language adapters assign a random
+connection token and advance the incarnation when attachment replaces the
+allocator. An old editor refuses work; invalidation forgets its leases without
+sending frees. The clipboard's existing per-server slot carries that same
+incarnation when replacing its copied buffer. Connections are treated as
+separate until a later exchange contract explicitly establishes compatibility.
+This requires no new server command or ABI symbol and keeps server detection
+at the connection adapter. Publication, cancellation and stale in-flight
+completions remain responsibilities of the operation coordinator.
+
+The existing history engine continues to walk whole entries. Application
+object membership selects an order, and endpoint-aware byte accounting is an
+input to trimming; neither an editor class nor a window decides which subset
+of an entry can be undone. Source ownership lives in the resource service,
+with independent roots, rather than treating a history release as permission
+to free a buffer immediately.

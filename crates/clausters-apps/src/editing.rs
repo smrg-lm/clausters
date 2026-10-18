@@ -31,8 +31,6 @@
 //! order. Two windows over one take are one structure, so an undo in either
 //! walks the edit the other made.
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -41,6 +39,10 @@ use clausters_document::multitrack::edit::MULTITRACK;
 use clausters_document::{Opaque, SourceId};
 use clausters_editing::conversation::Answer;
 
+use crate::application::histories::{Histories, Object, ScopeId};
+use crate::application::resources::{
+    ResourceId, Resources, Root, RootKind, ServerInstance, Source,
+};
 use crate::audio::editor::{self as audio, AudioEditor};
 use crate::multitrack::editor::{self as multitrack, MultitrackEditor};
 use crate::notes::Shared;
@@ -56,13 +58,6 @@ pub const FIRST_VERSION: i64 = 1;
 
 /// A member's number in its context.
 pub type MemberId = u32;
-
-/// **Whose order a step walks**: the context's, or one audio file's that an
-/// editor opened beside the file it was opened over, as `(member, display)`.
-type Scope = Option<(MemberId, i64)>;
-
-/// An order not being walked: its history and the keys it numbered.
-type ParkedHistory = (History, HashMap<String, StructureId>);
 
 /// **What sits in a context.**
 #[derive(Clone, Debug)]
@@ -109,6 +104,7 @@ impl Member {
 struct Seat {
     member: Member,
     structure: StructureId,
+    server: ServerInstance,
 }
 
 /// **What a member's turn came to**, in that member's own terms.
@@ -253,6 +249,8 @@ pub enum Effect {
         member: MemberId,
         /// The steps, in the JSON a runner walks.
         steps: Value,
+        /// The edited object's playback projection, independent of view focus.
+        file: Value,
     },
     /// A notes editor applied the step to the sequence it shares: its holder
     /// reads the change through its own handle, and there is nothing to carry
@@ -356,20 +354,10 @@ pub struct Stepped {
 /// **The editing context**: a history, its version, and the members it holds.
 #[derive(Debug)]
 pub struct Editing {
-    history: History,
-    /// The file each audio editor was opened over, by member: its edits are
-    /// the context's order, which every window over that take shares.
-    audio_initial: HashMap<MemberId, i64>,
-    /// The structure each audio file is in its order.
-    audio_structures: HashMap<(MemberId, i64), StructureId>,
-    /// Whose order `history` is now.
-    audio_scope: Scope,
-    /// The orders not being walked: each file an audio editor added has one
-    /// of its own, so an undo there steps that file alone.
-    audio_histories: HashMap<Scope, ParkedHistory>,
+    history: Histories,
+    resources: Resources,
     version: i64,
     seats: Vec<Seat>,
-    keys: HashMap<String, StructureId>,
     /// The most bytes of takes only the history holds, when there is a limit.
     bytes: Option<u64>,
     /// The most of those bytes kept in memory, when there is a limit; the rest
@@ -386,15 +374,17 @@ impl Default for Editing {
 impl Editing {
     /// An empty context.
     pub fn new() -> Self {
+        Self::with_services(Histories::new(), Resources::default())
+    }
+
+    /// Compose explicit editing-order and source-ownership services.
+    /// Neither service needs a renderer, a server connection or playback.
+    pub fn with_services(history: Histories, resources: Resources) -> Self {
         Self {
-            history: History::new(),
-            audio_initial: HashMap::new(),
-            audio_structures: HashMap::new(),
-            audio_scope: None,
-            audio_histories: HashMap::new(),
+            history,
+            resources,
             version: FIRST_VERSION,
             seats: Vec::new(),
-            keys: HashMap::new(),
             bytes: None,
             resident: None,
         }
@@ -437,23 +427,46 @@ impl Editing {
                 _ => Vec::new(),
             }))
             .collect();
+        self.sync_resources();
         if let Some(bytes) = self.bytes {
-            let size_of = |source: SourceId| {
-                editors
-                    .iter()
-                    .find_map(|e| e.bytes(source.0 as i64))
-                    .unwrap_or(0)
-            };
-            let is_rooted = |source: SourceId| rooted.contains(&source);
-            self.history.trim_to_bytes(bytes, &size_of, &is_rooted);
+            let endpoints: std::collections::HashMap<_, _> = self
+                .seats
+                .iter()
+                .enumerate()
+                .flat_map(|(member, seat)| {
+                    self.history
+                        .structures_for(member as MemberId)
+                        .into_iter()
+                        .map(move |structure| (structure, seat.server))
+                })
+                .collect();
+            let resources = &self.resources;
+            self.history.trim_orders(bytes, &|history| {
+                let ids: std::collections::BTreeSet<_> = history
+                    .structures()
+                    .into_iter()
+                    .filter_map(|structure| {
+                        endpoints.get(&structure).map(|server| (structure, *server))
+                    })
+                    .flat_map(|(structure, server)| {
+                        history
+                            .held_sources_for(structure)
+                            .into_iter()
+                            .map(move |source| ResourceId {
+                                server,
+                                buffer: source.0 as i64,
+                            })
+                    })
+                    .collect();
+                ids.into_iter()
+                    .filter(|id| !resources.retained_outside_history(*id))
+                    .filter_map(|id| resources.source(id).map(|source| source.bytes))
+                    .sum()
+            });
+            self.sync_resources();
         }
-        let released: Vec<i64> = self
-            .history
-            .released_sources()
-            .into_iter()
-            .filter(|source| !rooted.contains(source))
-            .map(|source| source.0 as i64)
-            .collect();
+        let released = self.resources.collect();
+        let released_joins = self.history.released_sources();
         // Each take goes back under the member that made it: the one that
         // knows its size is the one whose server it is on.
         let mut out: Vec<Freed> = Vec::new();
@@ -472,47 +485,32 @@ impl Editing {
                 out.len() - 1
             }
         };
-        for buffer in released {
-            let owner = self.seats.iter().position(|seat| {
-                matches!(&seat.member, Member::Audio(editor) if editor.bytes(buffer).is_some())
-            });
-            let Some(owner) = owner else {
-                // **A join goes back under the multitrack that knows it**,
-                // which is the one whose caller built its buffer.
-                let source = SourceId(buffer as u64);
-                let owner = self.seats.iter().position(|seat| {
-                    matches!(&seat.member, Member::Multitrack(editor) if editor.is_join(source))
-                });
-                if let Some(owner) = owner {
-                    let at = at_member(&mut out, owner as MemberId);
-                    out[at].sources.push(source.0);
+        for source in released {
+            let at = at_member(&mut out, source.member);
+            out[at].buffers.push(source.id.buffer);
+            if source.stored.is_some() {
+                out[at].spilled.push(source.id.buffer);
+            }
+            for seat in &mut self.seats {
+                if seat.server == source.id.server
+                    && let Member::Audio(editor) = &mut seat.member
+                {
+                    editor.forget(source.id.buffer);
                 }
-                continue;
-            };
-            let member = owner as MemberId;
-            let spilled = matches!(
-                &self.seats[owner].member,
-                Member::Audio(editor) if editor.is_spilled(buffer)
-            );
-            let at = at_member(&mut out, member);
-            out[at].buffers.push(buffer);
-            if spilled {
-                out[at].spilled.push(buffer);
             }
         }
-        for seat in &mut self.seats {
-            match &mut seat.member {
-                Member::Audio(editor) => {
-                    for buffer in out.iter().flat_map(|f| &f.buffers) {
-                        editor.forget(*buffer);
-                    }
+        for source in released_joins {
+            if rooted.contains(&source) {
+                continue;
+            }
+            for (owner, seat) in self.seats.iter_mut().enumerate() {
+                if let Member::Multitrack(editor) = &mut seat.member
+                    && editor.is_join(source)
+                {
+                    let at = at_member(&mut out, owner as MemberId);
+                    out[at].sources.push(source.0);
+                    editor.forget_join(source);
                 }
-                Member::Multitrack(editor) => {
-                    for source in out.iter().flat_map(|f| &f.sources) {
-                        editor.forget_join(SourceId(*source));
-                    }
-                }
-                _ => {}
             }
         }
         let stored = self.store();
@@ -526,45 +524,22 @@ impl Editing {
         let Some(limit) = self.resident else {
             return Vec::new();
         };
-        let rooted: Vec<SourceId> = self
-            .seats
-            .iter()
-            .filter_map(|seat| match &seat.member {
-                Member::Audio(editor) => Some(editor.rooted()),
-                _ => None,
+        let candidates = self.resources.spill_candidates(limit, |id| {
+            self.resources.source(id).is_some_and(|source| {
+                matches!(&self.seats[source.member as usize].member,
+                    Member::Audio(editor) if editor.storage_available())
             })
-            .flatten()
-            .collect();
-        // Oldest first: the order the pile names them in.
-        let mut resident: Vec<(usize, i64, u64)> = Vec::new();
-        for source in self.history.held_sources() {
-            if rooted.contains(&source) {
-                continue;
-            }
-            let buffer = source.0 as i64;
-            let found = self.seats.iter().position(
-                |seat| matches!(&seat.member, Member::Audio(e) if e.bytes(buffer).is_some()),
-            );
-            let Some(owner) = found else {
+        });
+        let mut out = Vec::new();
+        for id in candidates {
+            let Some(source) = self.resources.source(id) else {
                 continue;
             };
-            if let Member::Audio(editor) = &self.seats[owner].member
-                && !editor.is_spilled(buffer)
-                && let Some(bytes) = editor.bytes(buffer)
-            {
-                resident.push((owner, buffer, bytes));
-            }
-        }
-        let mut total: u64 = resident.iter().map(|(_, _, b)| b).sum();
-        let mut out = Vec::new();
-        for (owner, buffer, bytes) in resident {
-            if total <= limit {
-                break;
-            }
+            let owner = source.member as usize;
+            let buffer = id.buffer;
             if let Member::Audio(editor) = &mut self.seats[owner].member
                 && let Some(steps) = editor.spill(buffer)
             {
-                total -= bytes;
                 out.push(Stored {
                     member: owner as MemberId,
                     buffer,
@@ -573,6 +548,64 @@ impl Editing {
             }
         }
         out
+    }
+
+    fn sync_resources(&mut self) {
+        for (member, seat) in self.seats.iter().enumerate() {
+            let Member::Audio(editor) = &seat.member else {
+                continue;
+            };
+            let member = member as MemberId;
+            for (buffer, bytes, stored, owned) in editor.resource_sources() {
+                self.resources.register(Source {
+                    id: ResourceId {
+                        server: seat.server,
+                        buffer,
+                    },
+                    member,
+                    bytes,
+                    owned,
+                    stored,
+                });
+            }
+            let ids = |sources: Vec<SourceId>| {
+                sources.into_iter().map(|source| ResourceId {
+                    server: seat.server,
+                    buffer: source.0 as i64,
+                })
+            };
+            self.resources.retain(
+                Root {
+                    kind: RootKind::Contents,
+                    owner: u64::from(member),
+                },
+                ids(editor.rooted()),
+            );
+            self.resources.retain(
+                Root {
+                    kind: RootKind::History,
+                    owner: u64::from(member),
+                },
+                ids(self.history.sources_for(member)),
+            );
+        }
+    }
+
+    /// Resources explicitly supplied to this composition, independent of views.
+    pub fn resources(&mut self) -> &mut Resources {
+        &mut self.resources
+    }
+
+    /// Associate a member with a connection incarnation before it allocates.
+    pub fn set_server(&mut self, member: MemberId, server: ServerInstance) -> bool {
+        let Some(seat) = self.seats.get_mut(member as usize) else {
+            return false;
+        };
+        seat.server = server;
+        if let Member::Audio(editor) = &mut seat.member {
+            editor.set_server(server);
+        }
+        true
     }
 
     /// The version a host names back.
@@ -609,21 +642,24 @@ impl Editing {
     /// **Takes a member in**, as the structure `key` names: the identity a
     /// member with the same key already has, or a new one.
     pub fn join(&mut self, key: &str, member: Member) -> MemberId {
-        let scope = self.audio_scope;
-        self.select_history(None);
-        let history = &mut self.history;
-        let structure = *self
-            .keys
-            .entry(key.to_string())
-            .or_insert_with(|| history.register(member.domain()));
         let id = self.seats.len() as MemberId;
-        if let Member::Audio(editor) = &member {
-            self.audio_initial.insert(id, editor.focused_file());
-            self.audio_structures
-                .insert((id, editor.focused_file()), structure);
-        }
-        self.seats.push(Seat { member, structure });
-        self.select_history(scope);
+        let object = match &member {
+            Member::Audio(editor) => editor.focused_file(),
+            _ => 0,
+        };
+        let structure = self.history.join(
+            Object {
+                member: id,
+                id: object,
+            },
+            key,
+            &member.domain(),
+        );
+        self.seats.push(Seat {
+            member,
+            structure,
+            server: ServerInstance::default(),
+        });
         id
     }
 
@@ -633,73 +669,27 @@ impl Editing {
     /// for a window names it here first.
     pub fn select(&mut self, member: Option<MemberId>) {
         match member {
-            Some(member) => self.audio_history(member),
-            None => self.select_history(None),
+            Some(member) => self.select_member(member),
+            None => self.history.select(ScopeId(0)),
         }
     }
 
-    // A file an audio editor added walks an order of its own. The context's
-    // order still belongs to its other structures and windows, and to the
-    // file each audio editor was opened over.
-    fn select_history(&mut self, scope: Scope) {
-        if self.audio_scope == scope {
-            return;
-        }
-        let (mut history, mut keys) = self
-            .audio_histories
-            .remove(&scope)
-            .unwrap_or_else(|| (History::new(), HashMap::new()));
-        std::mem::swap(&mut self.history, &mut history);
-        std::mem::swap(&mut self.keys, &mut keys);
-        self.audio_histories
-            .insert(self.audio_scope, (history, keys));
-        self.audio_scope = scope;
-    }
-
-    /// Forgets the order of file `file` of `member`, closed: its own or, for
-    /// the file the editor was opened over, its structure in the context's
-    /// order, unless another window still holds that structure.
     fn close_audio_file(&mut self, member: MemberId, file: i64) {
-        let scope = Some((member, file));
-        let structure = self.audio_structures.remove(&(member, file));
-        if self.audio_initial.get(&member) == Some(&file) {
-            self.audio_initial.remove(&member);
-            let shared =
-                self.seats.iter().enumerate().any(|(id, seat)| {
-                    id as MemberId != member && Some(seat.structure) == structure
-                });
-            if let Some(structure) = structure.filter(|_| !shared) {
-                let selected = self.audio_scope;
-                self.select_history(None);
-                self.history.forget(structure);
-                self.select_history(selected);
-            }
-        } else if self.audio_scope == scope {
-            let (history, keys) = self.audio_histories.remove(&None).unwrap_or_default();
-            self.history = history;
-            self.keys = keys;
-            self.audio_scope = None;
-        } else {
-            self.audio_histories.remove(&scope);
-        }
+        self.history.close(Object { member, id: file });
     }
 
-    fn audio_history(&mut self, member: MemberId) {
-        let file = match self.member(member) {
-            Some(Member::Audio(editor)) => Some(editor.focused_file()),
-            _ => None,
+    fn select_member(&mut self, member: MemberId) {
+        let Some(seat) = self.seats.get(member as usize) else {
+            return;
         };
-        let scope = file
-            .filter(|f| self.audio_initial.get(&member) != Some(f))
-            .map(|f| (member, f));
-        self.select_history(scope);
-        if let Some(file) = file {
-            let identity = *self
-                .audio_structures
-                .entry((member, file))
-                .or_insert_with(|| self.history.register(audio::DOMAIN));
-            self.seats[member as usize].structure = identity;
-        }
+        // Domain adapters supply object identity; order membership is generic.
+        let object = match &seat.member {
+            Member::Audio(editor) => editor.focused_file(),
+            _ => 0,
+        };
+        let domain = seat.member.domain();
+        let structure = self.history.focus(Object { member, id: object }, &domain);
+        self.seats[member as usize].structure = structure;
     }
 
     /// A member, to read.
@@ -727,7 +717,7 @@ impl Editing {
     /// before it when `coalesce` says the hand has not stopped. Answers whether
     /// the history took it, and moves the version when it did.
     pub fn record(&mut self, member: MemberId, record: &Record, coalesce: bool) -> bool {
-        self.audio_history(member);
+        self.select_member(member);
         let Some(structure) = self.seats.get(member as usize).map(|s| s.structure) else {
             return false;
         };
@@ -760,7 +750,7 @@ impl Editing {
         member: MemberId,
         apply: impl FnOnce(&mut History, StructureId) -> bool,
     ) -> bool {
-        self.audio_history(member);
+        self.select_member(member);
         let Some(structure) = self.structure(member) else {
             return false;
         };
@@ -803,7 +793,7 @@ impl Editing {
     /// `None` for a member that is not there or does not read messages (an
     /// external one).
     pub fn event(&mut self, member: MemberId, event: &Event) -> Option<Turned> {
-        self.audio_history(member);
+        self.select_member(member);
         let version = self.version;
         let seat = self.seats.get_mut(member as usize)?;
         let structure = seat.structure;
@@ -874,7 +864,7 @@ impl Editing {
     ///
     /// `None` for a member that is not there or takes no verbs this way.
     pub fn act(&mut self, member: MemberId, request: &Value) -> Option<Turned> {
-        self.audio_history(member);
+        self.select_member(member);
         let version = self.version;
         let seat = self.seats.get_mut(member as usize)?;
         let structure = seat.structure;
@@ -925,6 +915,24 @@ impl Editing {
             stored: Vec::new(),
             version: self.version,
         };
+        let targets: Vec<_> = self
+            .history
+            .peek_walk(direction)
+            .into_iter()
+            .flat_map(|walked| walked.legs.into_iter().map(|(structure, _)| structure))
+            .collect();
+        if self.seats.iter().enumerate().any(|(member, seat)| {
+            matches!(seat.member, Member::Audio(_))
+                && !self.resources.valid(seat.server)
+                && self
+                    .history
+                    .structures_for(member as MemberId)
+                    .iter()
+                    .any(|structure| targets.contains(structure))
+        }) {
+            out.reason = Some("the editing order references a previous server instance".into());
+            return out;
+        }
         let Some(walked) = self.history.walk(direction) else {
             return out;
         };
@@ -939,10 +947,11 @@ impl Editing {
             let mut seated = false;
             let mut stepped = false;
             for (id, seat) in self.seats.iter_mut().enumerate() {
-                if seat.structure != *structure {
+                let member = id as MemberId;
+                let object = self.history.object_for(member, *structure);
+                if seat.structure != *structure && object.is_none() {
                     continue;
                 }
-                let member = id as MemberId;
                 match &mut seat.member {
                     Member::Multitrack(editor) => {
                         seated = true;
@@ -958,12 +967,24 @@ impl Editing {
                     }
                     Member::Audio(editor) => {
                         seated = true;
-                        kept.push((id, Kept::Audio(editor.before_step())));
-                        // The last list is the take: a step names one list per
-                        // entry, and what it leaves is what is drawn.
-                        if let Some(steps) = payloads.last().and_then(|p| editor.apply(&p.0)) {
-                            stepped = true;
-                            out.effects.push(Effect::Audio { member, steps });
+                        let target = object.map_or(editor.focused_file(), |object| object.id);
+                        if let Some((before, result)) = editor.over_file(target, |editor| {
+                            let before = editor.before_step();
+                            let result = payloads
+                                .last()
+                                .and_then(|p| editor.apply(&p.0))
+                                .map(|steps| (steps, editor.playback_file()));
+                            (before, result)
+                        }) {
+                            kept.push((id, Kept::Audio(target, before)));
+                            if let Some((steps, file)) = result {
+                                stepped = true;
+                                out.effects.push(Effect::Audio {
+                                    member,
+                                    steps,
+                                    file,
+                                });
+                            }
                         }
                     }
                     // One structure, one sequence: every notes editor over it
@@ -1090,7 +1111,7 @@ impl Editing {
 /// structure of the same step refuses it.
 enum Kept {
     Multitrack(crate::multitrack::editor::Kept),
-    Audio(audio::Kept),
+    Audio(i64, audio::Kept),
     Notes(clausters_document::EventSequence),
     Points(clausters_document::multitrack::Automation),
     #[cfg(feature = "notation")]
@@ -1101,7 +1122,9 @@ impl Kept {
     fn put_back(self, member: &mut Member) {
         match (self, member) {
             (Kept::Multitrack(state), Member::Multitrack(editor)) => editor.put_back(state),
-            (Kept::Audio(state), Member::Audio(editor)) => editor.put_back(state),
+            (Kept::Audio(file, state), Member::Audio(editor)) => {
+                editor.over_file(file, |editor| editor.put_back(state));
+            }
             (Kept::Notes(state), Member::Notes(editor)) => editor.put_back(state),
             (Kept::Points(state), Member::Points(editor)) => editor.put_back(state),
             #[cfg(feature = "notation")]
@@ -1195,7 +1218,15 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             None => json!({ "error": "the request names no multitrack" }).to_string(),
         },
         "openAudio" => match audio::new_json(&request.to_string()) {
-            Ok(editor) => joined(editing, &key, Member::Audio(Box::new(editor))),
+            Ok(editor) => {
+                let member = editing.join(&key, Member::Audio(Box::new(editor)));
+                if let Ok(server) =
+                    serde_json::from_value::<ServerInstance>(get(&request, "server"))
+                {
+                    editing.set_server(member, server);
+                }
+                json!({"member": member, "structure": editing.structure(member)}).to_string()
+            }
             Err(error) => json!({ "error": error }).to_string(),
         },
         "openNotes" => {
@@ -1209,6 +1240,53 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 .unwrap_or_else(|| crate::points::shared_of(&request));
             let editor = points::new_json(curve, &request.to_string());
             joined(editing, &key, Member::Points(Box::new(editor)))
+        }
+        "resources" => serde_json::to_string(&editing.resources.sources()).unwrap(),
+        "retainMember" => {
+            editing.sync_resources();
+            let retained = if let Some(seat) = editing.seats.get(member as usize)
+                && let Member::Audio(editor) = &seat.member
+                && let Ok(kind) = serde_json::from_value::<RootKind>(get(&request, "kind"))
+                && !matches!(kind, RootKind::Contents | RootKind::History)
+            {
+                editing.resources.retain(
+                    Root {
+                        kind,
+                        owner: u64::from(member),
+                    },
+                    editor.rooted().into_iter().map(|source| ResourceId {
+                        server: seat.server,
+                        buffer: source.0 as i64,
+                    }),
+                )
+            } else {
+                false
+            };
+            let (freed, stored) = editing.release();
+            json!({"retained": retained, "freed": freed, "stored": stored}).to_string()
+        }
+        "retain" => {
+            editing.sync_resources();
+            let root = serde_json::from_value::<Root>(get(&request, "root"));
+            let sources = serde_json::from_value::<Vec<ResourceId>>(get(&request, "sources"));
+            let retained = match (root, sources) {
+                (Ok(root), Ok(sources)) => editing.resources.retain(root, sources),
+                _ => false,
+            };
+            json!({"retained": retained}).to_string()
+        }
+        "dropRoot" => {
+            if let Ok(root) = serde_json::from_value::<Root>(get(&request, "root")) {
+                editing.resources.drop_root(root);
+            }
+            let (freed, stored) = editing.release();
+            json!({"freed": freed, "stored": stored}).to_string()
+        }
+        "invalidate" => {
+            let invalidated = serde_json::from_value::<ServerInstance>(get(&request, "server"))
+                .map(|server| editing.resources.invalidate(server))
+                .unwrap_or_default();
+            json!({"invalidated": invalidated}).to_string()
         }
         "bytes" => {
             editing.set_bytes(get(&request, "bytes").as_u64());
@@ -1266,7 +1344,8 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             json!({ "recorded": taken, "version": editing.version() }).to_string()
         }
         "member" => {
-            editing.audio_history(member);
+            editing.select_member(member);
+            editing.sync_resources();
             let before = match editing.member(member) {
                 Some(Member::Audio(editor)) => Some(editor.focused_file()),
                 _ => None,
@@ -1294,7 +1373,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 Some(Member::Score(editor)) => score::call_json(editor, &call.to_string()),
                 _ => "{}".into(),
             };
-            editing.audio_history(member);
+            editing.select_member(member);
             let after = match editing.member(member) {
                 Some(Member::Audio(editor)) => Some(editor.focused_file()),
                 _ => None,
@@ -1317,8 +1396,33 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 && let Some(file) = value["fileAction"]["file"].as_i64()
             {
                 editing.close_audio_file(member, file);
+                editing.sync_resources();
+                let server = editing.seats[member as usize].server;
+                let protected: Vec<i64> = value["freedBuffers"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_i64)
+                    .filter(|&buffer| editing.resources.retained(ResourceId { server, buffer }))
+                    .collect();
+                if let Some(buffers) = value["freedBuffers"].as_array_mut() {
+                    buffers.retain(|buffer| !protected.contains(&buffer.as_i64().unwrap_or(-1)));
+                    for buffer in buffers.iter().filter_map(Value::as_i64) {
+                        editing.resources.released(ResourceId { server, buffer });
+                    }
+                }
+                if let Some(steps) = value["steps"].as_array_mut() {
+                    steps.retain(|step| {
+                        let buffer = step["send"]["args"][0]["i"]
+                            .as_i64()
+                            .or_else(|| step["await"]["index"].as_i64());
+                        let free = step["send"]["addr"] == "/buffer_free"
+                            || step["await"]["command"] == "/buffer_free";
+                        !free || !buffer.is_some_and(|buffer| protected.contains(&buffer))
+                    });
+                }
                 if value["close"] != true {
-                    editing.audio_history(member);
+                    editing.select_member(member);
                 }
             }
             value.to_string()
@@ -1425,9 +1529,9 @@ impl Editing {
     /// The curve a points editor under `key` already edits, so a second
     /// window over it edits the same one.
     fn shared_curve(&self, key: &str) -> Option<crate::points::Shared> {
-        let structure = self.keys.get(key)?;
+        let structure = self.history.named(key)?;
         self.seats.iter().find_map(|seat| match &seat.member {
-            Member::Points(editor) if seat.structure == *structure => Some(editor.curve().clone()),
+            Member::Points(editor) if seat.structure == structure => Some(editor.curve().clone()),
             _ => None,
         })
     }
@@ -1506,6 +1610,7 @@ mod tests {
     use clausters_document::multitrack::{Content, Multitrack, Region, Track};
     use clausters_document::points::{Points, payload as points_payload};
     use clausters_document::{Lifetime, NodeId, Second, SourceId, SourceRef};
+    use std::collections::HashMap;
 
     const SR: f64 = 48_000.0;
 
@@ -2428,10 +2533,14 @@ mod tests {
         assert_eq!(second["stored"][0]["buffer"], 20, "the first stroke's take");
         let steps = second["stored"][0]["steps"].as_array().unwrap();
         assert_eq!(steps[0]["send"]["addr"], "/buffer_write");
-        assert_eq!(
-            steps[0]["send"]["args"][1],
-            json!({"s": "/scratch/take-20.wav"})
+        let stored_path = steps[0]["send"]["args"][1].clone();
+        assert!(
+            stored_path["s"]
+                .as_str()
+                .unwrap()
+                .starts_with("/scratch/take-")
         );
+        assert!(stored_path["s"].as_str().unwrap().ends_with("-20.wav"));
         assert_eq!(steps[2]["send"]["addr"], "/buffer_free");
 
         // Undo the second stroke: the list reads the first one's take again,
@@ -2439,10 +2548,7 @@ mod tests {
         let undone = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
         let steps = undone["effects"][0]["steps"].as_array().unwrap();
         assert_eq!(steps[0]["send"]["addr"], "/buffer_allocRead");
-        assert_eq!(
-            steps[0]["send"]["args"][1],
-            json!({"s": "/scratch/take-20.wav"})
-        );
+        assert_eq!(steps[0]["send"]["args"][1], stored_path);
         assert_eq!(steps[2]["send"]["addr"], "/buffer_stitch");
         // ...and the take the undo left behind is now the one on disk.
         assert_eq!(undone["stored"][0]["buffer"], 21);
@@ -2550,8 +2656,8 @@ mod tests {
             json!({"verb": "member", "member": member, "call": {"verb": "close_file"}}),
         );
         assert_eq!(closed["close"], true);
-        assert!(editing.audio_histories.is_empty());
-        assert_eq!(editing.audio_scope, None);
+        assert_eq!(editing.history.orders_len(), 1);
+        assert_eq!(editing.history.selected(), ScopeId(0));
     }
 
     #[test]
@@ -2657,5 +2763,208 @@ mod tests {
             before
         );
         assert!(!editing.can_undo());
+    }
+    #[test]
+    fn a_pending_consumer_outlives_redo_and_releases_exactly_once() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        draw(&mut editing, member, 1, 10);
+        let source = json!({"server": {"connection":0,"generation":0}, "buffer":20});
+        let root = json!({"kind":"pending", "owner":100});
+        assert_eq!(
+            call(
+                &mut editing,
+                json!({"verb":"retain", "root":root, "sources":[source]})
+            )["retained"],
+            true
+        );
+        call(&mut editing, json!({"verb":"step", "direction":"undo"}));
+        let replaced = draw(&mut editing, member, 2, 30);
+        assert!(replaced.get("freed").is_none());
+        let released = call(&mut editing, json!({"verb":"dropRoot", "root":root}));
+        assert_eq!(
+            released["freed"],
+            json!([{"member":member, "buffers":[20]}])
+        );
+        assert_eq!(
+            call(&mut editing, json!({"verb":"dropRoot", "root":root}))["freed"],
+            json!([])
+        );
+    }
+
+    #[test]
+    fn closing_a_file_defers_source_release_until_playback_drops_its_root() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        draw(&mut editing, member, 1, 10);
+        assert_eq!(
+            call(
+                &mut editing,
+                json!({"verb":"retainMember", "member":member, "kind":"playback"})
+            )["retained"],
+            true
+        );
+        let closed = call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"close_file", "file":1}}),
+        );
+        assert!(
+            !closed["freedBuffers"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(20))
+        );
+        assert!(
+            !closed["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|step| step["send"]["addr"] == "/buffer_free"
+                    && step["send"]["args"][0]["i"] == 20)
+        );
+        let released = call(
+            &mut editing,
+            json!({"verb":"dropRoot", "root":{"kind":"playback", "owner":member}}),
+        );
+        assert!(
+            released["freed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["buffers"].as_array().unwrap().contains(&json!(20)))
+        );
+    }
+
+    #[test]
+    fn an_inactive_files_history_keeps_sources_and_can_spill_through_its_owner() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"sync", "scratch":"scratch"}}),
+        );
+        draw(&mut editing, member, 1, 10);
+        draw(&mut editing, member, 2, 10);
+        call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"add_file", "take":50, "frames":200, "display":51,"buffers":[52,53,54]}}),
+        );
+        editing.set_resident(Some(0));
+        let (_, stored) = editing.release();
+        assert_eq!(
+            stored
+                .iter()
+                .map(|stored| stored.buffer)
+                .collect::<Vec<_>>(),
+            [20]
+        );
+        call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"kept", "buffer":20}}),
+        );
+        assert!(
+            matches!(editing.member(member), Some(Member::Audio(editor)) if !editor.is_spilled(20))
+        );
+        let (freed, _) = editing.release();
+        assert!(freed.is_empty());
+    }
+    #[test]
+    fn shared_undo_routes_to_an_unfocused_object_without_rebinding_the_window() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        draw(&mut editing, member, 1, 10);
+        call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"add_file", "take":50,"frames":200,"display":51,"buffers":[52,53,54]}}),
+        );
+        let binding = call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"binding"}}),
+        );
+        let stepped = call(&mut editing, json!({"verb":"step", "direction":"undo"}));
+        assert_eq!(stepped["stepped"], true);
+        assert_eq!(stepped["effects"][0]["file"]["id"], 1);
+        assert_eq!(stepped["effects"][0]["file"]["display"], 9);
+        let after = call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"binding"}}),
+        );
+        assert_eq!(after["id"], binding["id"]);
+        assert_eq!(after["generation"], binding["generation"]);
+        call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"focus_file", "file":1}}),
+        );
+        let parts = call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"parts"}}),
+        );
+        assert_eq!(parts["parts"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn equal_local_buffer_ids_on_different_servers_release_on_their_own_endpoint() {
+        let mut editing = Editing::new();
+        let a = an_audio_take(&mut editing);
+        editing.set_server(
+            a,
+            ServerInstance {
+                connection: 1,
+                generation: 1,
+            },
+        );
+        let b = call(
+            &mut editing,
+            json!({"verb":"openAudio", "key":"another-server", "take":3,"frames":100,"display":9,
+            "buffers":[20,21,22,23], "server":{"connection":2,"generation":1}}),
+        )["member"]
+            .as_u64()
+            .unwrap() as u32;
+        call(
+            &mut editing,
+            json!({"verb":"member", "member":b,"call":{"verb":"window", "widget":12}}),
+        );
+        draw(&mut editing, a, 1, 10);
+        draw(&mut editing, b, 2, 10);
+        call(&mut editing, json!({"verb":"step", "direction":"undo"}));
+        let replaced = draw(&mut editing, a, 3, 30);
+        assert_eq!(replaced["freed"], json!([{"member":b,"buffers":[20]}]));
+        assert!(
+            matches!(editing.member(a), Some(Member::Audio(editor)) if editor.bytes(20).is_some())
+        );
+    }
+    #[test]
+    fn a_lost_endpoint_refuses_its_step_without_blocking_unrelated_context_edits() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        draw(&mut editing, member, 1, 10);
+        let external = editing.join(
+            "local",
+            Member::External {
+                domain: "local".into(),
+            },
+        );
+        call(
+            &mut editing,
+            json!({"verb":"record", "member":external, "label":"local edit",
+            "legs":[{"forward":{"edit":{"x":1}},"backward":{"x":0}}]}),
+        );
+        call(
+            &mut editing,
+            json!({"verb":"invalidate", "server":{"connection":0,"generation":0}}),
+        );
+        assert_eq!(
+            call(&mut editing, json!({"verb":"step","direction":"undo"}))["stepped"],
+            true
+        );
+        let refused = call(&mut editing, json!({"verb":"step","direction":"undo"}));
+        assert_eq!(refused["stepped"], false);
+        assert!(
+            refused["reason"]
+                .as_str()
+                .unwrap()
+                .contains("previous server instance")
+        );
+        assert!(editing.can_undo());
     }
 }

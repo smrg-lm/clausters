@@ -251,9 +251,9 @@ opened it.
     memory. The byte budget stays the bound on everything the history
     holds, spilled or not, and a write the server refuses -- a quota full --
     leaves the take in memory (the member is told it was `kept`). The
-    scratch directory is the caller's to name; a file is named by the buffer
-    it held, so a directory holds at most one file per buffer number the
-    session ever used.
+    scratch directory is the caller's to name and clean up; a file is named
+    by its endpoint incarnation, composition namespace and buffer, so two
+    compositions do not overwrite each other's stored sources.
     *Landed as the context's `resident` budget beside `bytes`: a turn and a
     step answer `stored` (the steps that write a take and free its buffer),
     a step that needs one back reads it before stitching, and a take freed
@@ -2411,7 +2411,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   conversations, meters and navigation apart. Rebinding drops old observers;
   redraw retains resources and stale gestures remain refused.
 
-- ⬜ **X17 - Compose editing, playback and resource services.** After `X16`,
+- ✅ **X17 - Compose editing, playback and resource services.** After `X16`,
   pass scoped dependencies explicitly. Generalize history-scope routing out
   of `Editing`'s audio-file bookkeeping while preserving the initial file's
   shared context and additional files' independent orders. Keep the history
@@ -4189,3 +4189,12 @@ wrong.
   (`TempoMap::settle_beat` on every beat the notes axis reads back). The record
   is `docs/decisions.md`, "A grid is a length in beats".
 
+
+- ✅ **Inactive-file history and resource routing** (2026-10-18). A shared
+  undo could not find an audio file while its window showed an independent
+  file, and storage/release methods inspected only the focused file. Route
+  history legs by registered object, update that object's playback without
+  rebinding the window, account for all orders and keep consumers as separate
+  resource roots. A source without a scratch port must not prevent another
+  source from spilling. Clipboard replacement must not free a previous
+  connection incarnation's reused buffer number.

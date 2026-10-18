@@ -43,6 +43,22 @@ import type { Adopting } from "../../history.ts";
 import type { Echo } from "./echo.ts";
 import { log } from "./trace.ts";
 
+const SERVICE_SERVERS = new WeakMap<object, { connection: number; ids: object; generation: number }>();
+
+/** A connection incarnation, advanced when attach replaces its allocators. @internal */
+export function serviceInstance(server: { readonly ids: object }): { connection: number; generation: number } {
+    let previous = SERVICE_SERVERS.get(server);
+    const ids = server.ids;
+    if (previous === undefined) {
+        const words = crypto.getRandomValues(new Uint32Array(2));
+        const connection = (words[0]! & 0xfffff) * 0x100000000 + words[1]! + 1;
+        previous = { connection, ids, generation: 0 };
+    }
+    else if (previous.ids !== ids) previous = { ...previous, ids, generation: previous.generation + 1 };
+    SERVICE_SERVERS.set(server, previous);
+    return { connection: previous.connection, generation: previous.generation };
+}
+
 /**
  * The base a host-less draw counts widget ids from. Above the hand-picked range
  * and above `gui/ids`'s own base, so a tree drawn with no host does not collide

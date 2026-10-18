@@ -24,6 +24,32 @@ impl AudioEditor {
         self.file.id.0
     }
 
+    /// Apply object work without changing focus, bindings or conversation state.
+    pub(crate) fn over_file<T>(
+        &mut self,
+        id: i64,
+        apply: impl FnOnce(&mut Self) -> T,
+    ) -> Option<T> {
+        if !self.open_files.open {
+            return None;
+        }
+        if self.file.id.0 == id {
+            return Some(apply(self));
+        }
+        let next = self.open_files.parked.remove(&FileId(id))?;
+        let focused = std::mem::replace(&mut self.file, next);
+        let answer = apply(self);
+        let updated = std::mem::replace(&mut self.file, focused);
+        self.open_files.parked.insert(updated.id, updated);
+        self.refresh_files();
+        Some(answer)
+    }
+
+    pub(crate) fn playback_file(&self) -> Value {
+        json!({"id":self.file.id, "display":self.file.display, "channels":self.file.channels,
+            "frames":self.length(), "rate":self.file.rate, "preview":self.preview_state()})
+    }
+
     pub(super) fn binding(&self) -> Value {
         let (start, end) = self.file.presentation.selection.unwrap_or((0, 0));
         json!({"id": self.file.id, "generation": self.window_state.binding_generation,

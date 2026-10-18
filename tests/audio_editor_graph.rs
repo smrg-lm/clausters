@@ -199,7 +199,10 @@ fn a_stop_is_declicked_and_the_meter_falls() {
     let (playing, _) = render(&mut s, 40);
     assert!(playing.iter().any(|x| *x > 0.49), "the take plays");
     let (bus, channels) = playback.meters().expect("a meter");
-    assert_eq!(channels, 2);
+    assert_eq!(
+        channels, 1,
+        "the mono signal defines the visible meter width"
+    );
     let level = bus_value(&mut s, bus);
     assert!(level > 0.4, "the meter reads the take: {level}");
 
@@ -419,4 +422,113 @@ fn a_curve_edited_under_preview_matches_apply() {
         largest_step(&outputs[0]),
         largest_step(&outputs[1])
     );
+}
+
+/// The application's resource decisions executed by the real NRT endpoint:
+/// float WAV spill, restore before stitch, and final release of a spilled redo.
+#[test]
+fn application_sources_spill_restore_and_release_without_a_renderer() {
+    use clausters_apps::editing::{Editing, call_json};
+    use clausters_editing::apply::steps_from_json;
+    use serde_json::{Value, json};
+    let directory = std::env::temp_dir().join(format!(
+        "clausters-app-services-{}-{}",
+        std::process::id(),
+        clausters_core::rng::entropy_seed()
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let mut server = session();
+    take(&mut server, 100, 0.125);
+    let mut editing = Editing::new();
+    let call = |editing: &mut Editing, request: Value| -> Value {
+        serde_json::from_str(&call_json(editing, &request.to_string())).unwrap()
+    };
+    let member = call(
+        &mut editing,
+        json!({"verb":"openAudio", "key":"take", "take":0,
+        "frames":100, "channels":1, "rate":SR, "display":1, "buffers":[2,3,4,5,6,7,8]}),
+    )["member"]
+        .clone();
+    let opened = call(
+        &mut editing,
+        json!({"verb":"member", "member":member, "call":{"verb":"open"}}),
+    );
+    run(&mut server, steps_from_json(&opened["steps"]));
+    call(
+        &mut editing,
+        json!({"verb":"member", "member":member, "call":{"verb":"sync", "scratch":directory.to_str().unwrap()}}),
+    );
+    call(
+        &mut editing,
+        json!({"verb":"member", "member":member, "call":{"verb":"window", "widget":10}}),
+    );
+    editing.set_resident(Some(0));
+    let execute = |server: &mut NrtSession, answer: &Value| {
+        run(server, steps_from_json(&answer["outcome"]["steps"]));
+        for effect in answer["effects"].as_array().into_iter().flatten() {
+            run(server, steps_from_json(&effect["steps"]));
+        }
+        for stored in answer["stored"].as_array().into_iter().flatten() {
+            run(server, steps_from_json(&stored["steps"]));
+        }
+        for freed in answer["freed"].as_array().into_iter().flatten() {
+            for buffer in freed["buffers"].as_array().into_iter().flatten() {
+                if !freed["spilled"]
+                    .as_array()
+                    .is_some_and(|spilled| spilled.contains(buffer))
+                {
+                    send(
+                        server,
+                        "/buffer_free",
+                        vec![OscType::Int(buffer.as_i64().unwrap() as i32)],
+                    );
+                }
+            }
+        }
+        server.settle_for(4);
+        assert!(fails(server).is_empty());
+    };
+    let stroke = |editing: &mut Editing, seq, value| {
+        let version = editing.version();
+        call(
+            editing,
+            json!({"verb":"event", "member":member, "addr":"/gui_event",
+            "args":[10,seq,version,"draw",0,10,[value],[0]]}),
+        )
+    };
+    execute(&mut server, &stroke(&mut editing, 1, 0.5));
+    let second = stroke(&mut editing, 2, 0.25);
+    execute(&mut server, &second);
+    let path = second["stored"][0]["steps"][0]["send"]["args"][1]["s"]
+        .as_str()
+        .unwrap();
+    let mut wav = hound::WavReader::open(path).unwrap();
+    assert_eq!(wav.samples::<f32>().next().unwrap().unwrap(), 0.5);
+    let undone = call(&mut editing, json!({"verb":"step", "direction":"undo"}));
+    assert_eq!(undone["stepped"], true);
+    execute(&mut server, &undone);
+    send(
+        &mut server,
+        "/buffer_getRange",
+        vec![OscType::Int(1), OscType::Int(10), OscType::Int(1)],
+    );
+    server.settle_for(4);
+    let mut bytes = vec![0; 65536];
+    let mut restored = None;
+    while let Some(len) = server.poll_into(&mut bytes) {
+        if let Ok(clausters::rosc::OscPacket::Message(message)) =
+            clausters::osc::decode_packet(&bytes[..len])
+            && message.addr == "/buffer_getRange.reply"
+            && let OscType::Blob(samples) = &message.args[2]
+        {
+            restored = Some(f32::from_le_bytes(samples[..4].try_into().unwrap()));
+        }
+    }
+    assert_eq!(restored, Some(0.5));
+    let third = stroke(&mut editing, 3, 0.75);
+    assert!(!third["freed"][0]["spilled"].as_array().unwrap().is_empty());
+    execute(&mut server, &third);
+    drop(wav);
+    drop(server);
+    std::fs::remove_dir_all(directory).unwrap();
 }

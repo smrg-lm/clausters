@@ -42,6 +42,14 @@ code that keeps it lives.
   layout with zero levels. Mono, stereo and multichannel switches resize the
   existing meter in both directions (`AudioEditorPlayback::meters` and the
   audio application's `playing` corrections).
+- **Undo targets the registered object.** In a shared editing context, a
+  step can restore an audio file that is out of focus. It updates that file's
+  playback graph and keeps the window's focused file and binding generation.
+  An additional independent file keeps its own order.
+- **Services retain sources independently.** Contents, all undo orders,
+  playback, clipboard and pending work are separate resource roots. Dropping
+  one root never frees a source held by another. A source on a lost connection
+  cannot be freed on its replacement, even when buffer numbers repeat.
 - **A play cursor is drawn in its take's frames.** A transport counts the
   engine's samples, and every view of a take at another rate, the pane
   that draws its play cursor included, reads it by the take's rate over the

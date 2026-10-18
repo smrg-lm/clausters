@@ -45,6 +45,7 @@ import type { Transport, TransportDriver } from "../../defs/server/transport.ts"
 import { Segment } from "../../segments.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import { runSteps } from "../../steps.ts";
+import { serviceInstance } from "./application.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
@@ -63,7 +64,7 @@ const SPARE = 2;
  * the server (an audio editor over a take of minutes) is the clipboard's
  * until the next one, which frees it.
  */
-const CLIPBOARD = new WeakMap<object, number>();
+const CLIPBOARD = new WeakMap<object, { instance: { connection: number; generation: number }; buffer: number }>();
 
 /** What one turn of the core came to. */
 interface Outcome {
@@ -119,6 +120,7 @@ interface Play {
 class AudioPlayback {
     #native: AudioEditorPlayback | null = null;
     readonly #runner = new StepRunner();
+    readonly #instance: { connection: number; generation: number };
     readonly #ready: Promise<void>;
     /** The engine's sample rate, asked once; 0 when it will not say. */
     rate = 0;
@@ -130,6 +132,7 @@ class AudioPlayback {
 
     constructor(server: Server) {
         this.server = server;
+        this.#instance = serviceInstance(server);
         this.#ready = (async () => {
             this.#native = new AudioEditorPlayback(await server.bulkChunk(), -1);
             const taken = JSON.parse(
@@ -151,6 +154,10 @@ class AudioPlayback {
     /** One verb of the crate's playback, its steps carried out. */
     async call(verb: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
         await this.#ready;
+        const current = serviceInstance(this.server);
+        if (current.connection !== this.#instance.connection || current.generation !== this.#instance.generation) {
+            throw new Error("the audio service belongs to a previous server instance");
+        }
         const native = this.#native as AudioEditorPlayback;
         const answer = JSON.parse(
             native.call(JSON.stringify({ verb, ...args }), this.server.ids),
@@ -322,8 +329,16 @@ export class AudioDomain extends Domain<Buffer> {
     run(_structure: Buffer, steps: unknown[]): boolean {
         const editor = this.editor;
         if (editor === null || steps.length === 0) return false;
-        this.#queue(() => runSteps(editor.server, editor.runner, steps as never));
+        this.#queue(() => {
+            editor.checkServer();
+            return runSteps(editor.server, editor.runner, steps as never);
+        });
         return true;
+    }
+
+    /** Keep a stepped object's playback current even when another file is viewed. */
+    soundFile(_structure: Buffer, file: Record<string, unknown>): void {
+        this.#queue(async () => { await this.editor?.syncSound(file); });
     }
 
     /**
@@ -334,6 +349,7 @@ export class AudioDomain extends Domain<Buffer> {
         const editor = this.editor;
         if (editor === null || buffers.length === 0) return;
         this.#queue(async () => {
+            editor.checkServer();
             for (const bufnum of buffers) {
                 if (!spilled.includes(bufnum)) {
                     editor.server.sendMsg("/buffer_free", ["i", Math.trunc(bufnum)]);
@@ -352,6 +368,7 @@ export class AudioDomain extends Domain<Buffer> {
         const editor = this.editor;
         if (editor === null) return;
         this.#work = this.#work.then(async () => {
+            editor.checkServer();
             try {
                 await runSteps(editor.server, editor.runner, steps as never);
             } catch {
@@ -406,6 +423,7 @@ export interface AudioEditor extends Marking<Segment<Buffer> | null, Segment<Buf
 export class AudioEditor extends Editor<Buffer> {
     /** This editor's member in its editing context. */
     private readonly member: number;
+    private instance!: { connection: number; generation: number };
 
     /**
      * The server the take is on, and every take this editor makes.
@@ -446,18 +464,20 @@ export class AudioEditor extends Editor<Buffer> {
         domain.editor = this;
         this.#file = options.file ?? null;
         this.server = resolveServer(take.server);
+        this.instance = serviceInstance(this.server);
         this.display = this.server.buffers.alloc();
         // The context is the take's; switching files changes the structure,
         // so the window keeps the one it opened in.
         this.givenContext = this.editing;
         const opened = this.editing.open(
             "openAudio",
-            `audio:${Math.trunc(take.bufnum)}`,
+            `audio:${this.instance.connection}:${this.instance.generation}:${Math.trunc(take.bufnum)}`,
             {
                 ...this.facts(),
                 frames: Math.trunc(take.frames || 0),
                 take: Math.trunc(take.bufnum),
                 display: this.display,
+                server: this.instance,
                 path: take.path ?? null,
                 untitled: this.#file !== null && this.#file.path === null,
                 codec: this.#file?.codec, sample_format: this.#file?.sampleFormat,
@@ -676,11 +696,15 @@ export class AudioEditor extends Editor<Buffer> {
      * shown the file.
      */
     private async applyFile(answer: Record<string, unknown>): Promise<void> {
+        this.checkServer();
         if (typeof answer.error === "string") throw new RangeError(answer.error);
         const action = answer.fileAction as { verb: string; file: number } | undefined;
-        if (action?.verb === "close_file") await this.playback.call("closeFile", { file: action.file });
+        if (action?.verb === "close_file") {
+            await this.playback.call("closeFile", { file: action.file });
+        }
         await runSteps(this.server, this.runner, (answer.steps ?? []) as never);
         for (const buffer of (answer.freedBuffers ?? []) as number[]) this.server.buffers.free(buffer);
+        if (action?.verb === "close_file") this.retainPlayback();
         if (answer.close === true) { this.close(); return; }
         if (answer.focusChanged !== true) {
             if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
@@ -717,21 +741,9 @@ export class AudioEditor extends Editor<Buffer> {
     }
 
     private async sound(publishPreview = true): Promise<void> {
-        const frames = Number(this.coreCall("parts").frames ?? 0);
-        await this.playback.call("sync", {
-            file: this.fileId,
-            buffer: this.display,
-            channels: Math.max(1, Math.trunc(this.structure.channels || 1)),
-            frames,
-            takeRate: this.sampleRate,
-            rate: this.playback.rate,
-        });
-        const preview = this.coreCall("preview");
-        if (preview.installed) {
-            await this.playback.call("gain", { file: this.fileId, points: preview.points, on: preview.on, revision: preview.revision });
-        } else {
-            await this.playback.call("removeEffect", { file: this.fileId });
-        }
+        const file = this.coreCall("playback");
+        await this.syncSound(file);
+        const preview = file.preview as Record<string, unknown>;
         const state = await this.playback.call("state");
         if (publishPreview && this.host !== null && this.window !== null) {
             const previews = state.previews as Record<string, number | null> | undefined;
@@ -741,6 +753,20 @@ export class AudioEditor extends Editor<Buffer> {
             }
         }
         this.coreCall("sync", { meters: state.meters ?? null });
+    }
+
+    /** Sync one object's graph independently of the window's focus. @internal */
+    async syncSound(file: Record<string, unknown>): Promise<void> {
+        const id = Number(file.id);
+        await this.playback.call("sync", { file: id, buffer: Number(file.display), channels: Number(file.channels),
+            frames: Number(file.frames), takeRate: Number(file.rate), rate: this.playback.rate });
+        const preview = file.preview as Record<string, unknown>;
+        if (preview.installed === true) {
+            await this.playback.call("gain", { file: id, points: preview.points, on: preview.on, revision: preview.revision });
+        } else {
+            await this.playback.call("removeEffect", { file: id });
+        }
+        this.retainPlayback();
     }
 
     /**
@@ -777,12 +803,14 @@ export class AudioEditor extends Editor<Buffer> {
      * names it.
      */
     private clipboard(doc: string, buffer: number): void {
+        this.checkServer();
         const held = CLIPBOARD.get(this.server);
-        if (held !== undefined && held !== buffer) {
-            void this.server.sendMsg("/buffer_free", ["i", held]);
-            this.server.buffers.free(held);
+        if (held !== undefined && held.instance.connection === this.instance.connection
+            && held.instance.generation === this.instance.generation && held.buffer !== buffer) {
+            void this.server.sendMsg("/buffer_free", ["i", held.buffer]);
+            this.server.buffers.free(held.buffer);
         }
-        CLIPBOARD.set(this.server, buffer);
+        CLIPBOARD.set(this.server, { instance: { ...this.instance }, buffer });
         this.host?.clipboard(doc);
     }
 
@@ -838,6 +866,7 @@ export class AudioEditor extends Editor<Buffer> {
     protected override closedWindow(): boolean {
         (this.domain as AudioDomain).after(async () => {
             await this.playback.call("close");
+            this.dropPlayback();
         });
         return super.closedWindow();
     }
@@ -846,6 +875,7 @@ export class AudioEditor extends Editor<Buffer> {
     override close(): this {
         (this.domain as AudioDomain).after(async () => {
             await this.playback.call("close");
+            this.dropPlayback();
         });
         return super.close();
     }
@@ -872,6 +902,7 @@ export class AudioEditor extends Editor<Buffer> {
      * @internal
      */
     coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
+        this.checkServer();
         return this.editing.member(this.member, verb, args);
     }
 
@@ -883,6 +914,25 @@ export class AudioEditor extends Editor<Buffer> {
      */
     syncCore(): void {
         this.topUp();
+    }
+
+    /** Refuse stale resources before addressing the replacement server. @internal */
+    checkServer(): void {
+        const current = serviceInstance(this.server);
+        if (current.connection !== this.instance.connection || current.generation !== this.instance.generation) {
+            this.editing.serviceCall("invalidate", { server: this.instance });
+            throw new Error("the audio service belongs to a previous server instance");
+        }
+    }
+
+    private retainPlayback(): void {
+        const result = this.editing.serviceCall("retainMember", { member: this.member, kind: "playback" });
+        this.editing.release(result.freed as never, result.stored as never);
+    }
+
+    private dropPlayback(): void {
+        const result = this.editing.serviceCall("dropRoot", { root: { kind: "playback", owner: this.member } });
+        this.editing.release(result.freed as never, result.stored as never);
     }
 
     private topUp(): void {

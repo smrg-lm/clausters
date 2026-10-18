@@ -47,6 +47,9 @@ class FakeHost:
     def set(self, id, **props):
         self.__dict__.setdefault("props", {}).setdefault(id, {}).update(props)
 
+    def clipboard(self, document):
+        self.clip = document
+
     def close(self, id):
         pass
 
@@ -240,8 +243,10 @@ def test_a_take_past_the_resident_budget_goes_to_disk_and_comes_back():
         editor.apply("/gui_event", [wid, seq, context.version, "draw", 0, 10,
                                     [0.5], [0.0]])
     first = take.server.sent[take.server.addrs().index("/buffer_alloc")][1][0]
-    assert ("/buffer_write", (first, f"/scratch/take-{first}.wav", "wav", "float")) \
-        in take.server.sent
+    writes = [args for addr, args in take.server.sent if addr == "/buffer_write"]
+    assert any(args[0] == first and args[1].startswith("/scratch/take-")
+               and args[1].endswith(f"-{first}.wav") and args[2:] == ("wav", "float")
+               for args in writes)
     take.server.sent.clear()
     assert editor.undo() is True
     assert take.server.addrs()[:2] == ["/buffer_allocRead", "/buffer_stitch"]
@@ -707,4 +712,58 @@ def test_two_audio_windows_keep_distinct_component_bindings_on_one_host():
     assert set(second.view.widgets) == other_ids
     first.close()
     assert not second.closed
+    second.close()
+
+
+def test_reconnecting_refuses_stale_editor_resources_before_sending():
+    take = FakeBuffer()
+    editor, _host, _wid, _context = opened(take)
+    previous_ids = take.server.ids
+    sent = len(take.server.sent)
+    take.server.ids = _native.IdSpaces(max_nodes=8192, audio_buses=1024, outputs=2,
+                                      control_buses=16384, buffers=4096)
+    with pytest.raises(RuntimeError, match="previous server instance"):
+        _ = editor.parts
+    with pytest.raises(RuntimeError, match="previous server instance"):
+        editor._playback.call("close")
+    assert len(take.server.sent) == sent
+    # Keep the original allocator alive until the stale handle is discarded.
+    assert previous_ids is not take.server.ids
+
+
+def test_shared_undo_updates_an_unfocused_file_without_moving_focus(monkeypatch):
+    from clausters import SoundFile
+    editor, _host, _wid, context = opened(FakeBuffer())
+    original = editor.envelope
+    editor.set_envelope([0, 0.5, 1, 0, 100 / SR, 0.25, 1, 0])
+    monkeypatch.setattr(SoundFile, "to_buffer", lambda file, *, server=None, **options:
+                        types.SimpleNamespace(bufnum=server.buffers.alloc(), frames=file.frames,
+                                              channels=file.channels, sample_rate=file.sample_rate,
+                                              server=server, path=file.path))
+    monkeypatch.setattr(SoundFile, "open", staticmethod(lambda path: SoundFile(str(path), 200, 2, SR)))
+    editor.open_file("/takes/b.wav")
+    binding = editor._call("binding")
+    stepped = context.step("undo")
+    assert stepped["stepped"]
+    assert stepped["effects"][0]["file"]["id"] != binding["id"]
+    context.carry(stepped)
+    assert editor._call("binding")["id"] == binding["id"]
+    assert editor.file.path == "/takes/b.wav"
+    editor.focus_file(0)
+    assert editor.envelope == original
+    editor.close()
+
+
+def test_clipboard_replacement_does_not_free_a_previous_server_incarnations_id():
+    take = FakeBuffer()
+    first, _host, _wid, _context = opened(take)
+    first._clipboard("{}", 700)
+    take.server.ids = _native.IdSpaces(max_nodes=8192, audio_buses=1024, outputs=2,
+                                      control_buses=16384, buffers=4096)
+    second = AudioEditor(take, context=Editing())
+    take.server.sent.clear()
+    second._clipboard("{}", 701)
+    assert not any(addr == "/buffer_free" and args == (700,) for addr, args in take.server.sent)
+    second._clipboard("{}", 702)
+    assert ("/buffer_free", (701,)) in take.server.sent
     second.close()

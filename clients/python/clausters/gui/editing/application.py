@@ -44,10 +44,26 @@ a script writes changes.
 """
 
 import weakref
+import secrets
 
 from ..ids import CAPACITY, GuiIdAllocator
 from ...history import FIRST_VERSION, Editing
 from .trace import log
+
+# A connection's allocator incarnation changes when attach reconciles it.
+_SERVICE_SERVERS = weakref.WeakKeyDictionary()
+
+
+def _service_instance(server):
+    previous = _SERVICE_SERVERS.get(server)
+    ids = server.ids
+    if previous is None:
+        previous = (secrets.randbits(52) + 1, ids, 0)
+    elif previous[1] is not ids:
+        previous = (previous[0], ids, previous[2] + 1)
+    _SERVICE_SERVERS[server] = previous
+    return {"connection": previous[0], "generation": previous[2]}
+
 
 #: The base a host-less draw counts widget ids from. Above the hand-picked range
 #: and above `clausters.gui.ids.BASE_ID`, so a tree drawn with no host does not
