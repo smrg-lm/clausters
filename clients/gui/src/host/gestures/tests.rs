@@ -1063,6 +1063,16 @@ fn copy_reads_the_samples_and_cut_and_paste_leave_as_intents() {
     let args = emitted_args(&effects, 50).expect("a paste reports");
     assert_eq!(args[1], OscType::Double(1.0), "at the position cursor");
 
+    // **A paste with the pointer over nothing** (from the menu) goes to the
+    // view the cursor was put on, with nothing selected.
+    host.select_timeline(50, 0.0, 0.0);
+    host.set_timeline_cursor(50, 4.0);
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Paste, -10.0, -10.0, &mut clip)
+        .expect("the view the cursor was put on answers");
+    let args = emitted_args(&effects, 50).expect("a paste reports");
+    assert_eq!(args[1], OscType::Double(4.0));
+
     // A mix is the same payload under its own word: the owner adds the block
     // onto what is there rather than putting it in.
     let effects = g

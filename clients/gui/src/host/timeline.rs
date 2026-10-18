@@ -933,6 +933,18 @@ impl Host {
         self.timelines.state(key)?.selection().map(|_| id)
     }
 
+    /// **Who a paste is addressed to when the pointer is over nothing**: the
+    /// view the window's most recent selection or position cursor was put on.
+    /// A paste lands at the cursor and needs no span, so a click (a cursor and
+    /// no selection) names it; without this a paste from the menu landed
+    /// nowhere unless something was selected.
+    pub fn paste_addressee(&self, def_id: i32) -> Option<i32> {
+        let id = self.timelines.last_selected()?;
+        let tree = self.window_def(def_id)?;
+        tree.find(id)?;
+        self.timelines.state(self.timeline_key(id)?).map(|_| id)
+    }
+
     /// Sets widget `id`'s group playhead anchor. Returns the roots to repaint
     /// (the anchor is group-wide: every member sweeps from it).
     pub fn set_timeline_playhead(&mut self, id: i32, at: f64) -> Vec<i32> {
@@ -979,6 +991,12 @@ impl Host {
         // cursor cues will be: a click lands between two samples, and a mark
         // drawn there stood beside the playhead that started from it.
         state.cursor = if pos < 0.0 { pos } else { pos.round() };
+        // A cursor put down is where a paste goes, so the view it was put on
+        // is the one a paste with no pointer is addressed to
+        // ([`Host::paste_addressee`]); a copy still asks for a selection.
+        if pos >= 0.0 {
+            self.timelines.last_selected = Some(id);
+        }
         self.timeline_roots(key)
     }
 

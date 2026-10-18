@@ -288,7 +288,10 @@ already where the pointer has been — and, when the pointer is over none of the
 the view carrying the window's most recent selection. That fallback is what a
 sweep to the first or last sample needs: it leaves the pointer in the window's
 margin, or off the window altogether, with the selection plainly drawn on
-screen.
+screen. A paste needs no span, since it lands at the position cursor, so with
+the pointer over nothing (a paste from the menu) it goes to the view the most
+recent selection **or cursor** was put on, and to the window's one take when
+there is no such view.
 
 **Playing a selection is not a clipboard operation**, and the distinction is
 worth keeping: looping it moves no data at all. The loop region is group state —

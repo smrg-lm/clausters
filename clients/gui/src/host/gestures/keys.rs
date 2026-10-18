@@ -736,6 +736,9 @@ impl Gestures {
         // recent selection does (`Host::selection_addressee`).
         let id = match hit(host, ctx, cx, cy).filter(|h| host.timeline_key(h.id).is_some()) {
             Some(Hit { id, .. }) => id,
+            None if matches!(verb, ClipVerb::Paste | ClipVerb::Mix) => host
+                .paste_addressee(ctx.def_id)
+                .or_else(|| sole_take(host, ctx.def_id))?,
             None => host.selection_addressee(ctx.def_id)?,
         };
         let key = host.timeline_key(id)?;
