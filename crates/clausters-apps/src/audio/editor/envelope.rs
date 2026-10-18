@@ -393,7 +393,7 @@ mod tests {
         let first = editing.act(id, &request).unwrap();
         assert!(matches!(
             first.outcome,
-            crate::editing::Outcome::Audio(Outcome { changed: true, .. })
+            crate::editing::Outcome::Audio(ref outcome) if outcome.changed
         ));
         assert_eq!(editing.version(), 2);
         let applied = editing.act(id, &json!({"verb":"apply_envelope"})).unwrap();

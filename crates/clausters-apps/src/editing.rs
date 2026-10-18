@@ -118,7 +118,7 @@ pub enum Outcome {
     /// A multitrack editor's.
     Multitrack(multitrack::Outcome),
     /// An audio editor's.
-    Audio(audio::Outcome),
+    Audio(Box<audio::Outcome>),
     /// A notes editor's.
     Notes(notes::Outcome),
     /// A points editor's.
@@ -809,7 +809,7 @@ impl Editing {
         let structure = seat.structure;
         let mut outcome = match &mut seat.member {
             Member::Multitrack(editor) => Outcome::Multitrack(editor.event(event, version)),
-            Member::Audio(editor) => Outcome::Audio(editor.event(event, version)),
+            Member::Audio(editor) => Outcome::Audio(Box::new(editor.event(event, version))),
             Member::Notes(editor) => Outcome::Notes(editor.event(event, version)),
             Member::Points(editor) => Outcome::Points(editor.event(event, version)),
             #[cfg(feature = "notation")]
@@ -879,7 +879,7 @@ impl Editing {
         let seat = self.seats.get_mut(member as usize)?;
         let structure = seat.structure;
         let outcome = match &mut seat.member {
-            Member::Audio(editor) => Outcome::Audio(editor.act(request, version)),
+            Member::Audio(editor) => Outcome::Audio(Box::new(editor.act(request, version))),
             #[cfg(feature = "notation")]
             Member::Score(editor) => Outcome::Score(editor.act(request, version)),
             _ => return None,
