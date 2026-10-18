@@ -693,6 +693,12 @@ pub const GUI_CAPTURE: &str = "/gui_capture";
 /// modifiers held for that one event, `+`-separated (`"shift"`,
 /// `"ctrl+alt"`); none are held otherwise, whatever the keyboard holds.
 pub const GUI_POINTER: &str = "/gui_pointer";
+/// `/gui_clipboard <json> [blob...]` -- an owner puts a document on the
+/// host-wide clipboard: what a copy over a view it copies for left there (a
+/// span of a take copied on the server, named by the buffer it is in).
+/// `json` is the typed clipboard document and the blobs are the payloads it
+/// names, as a paste carries them.
+pub const GUI_CLIPBOARD: &str = "/gui_clipboard";
 /// `/gui_captured <window> <path> [reason]` -- the answer to a
 /// [`GUI_CAPTURE`]: the file is whole, or, with a reason, it was not written.
 pub const GUI_CAPTURED: &str = "/gui_captured";

@@ -1107,6 +1107,57 @@ fn a_copy_the_host_cannot_honestly_make_is_refused() {
     assert!(clip.is_empty(), "and nothing was put on the clipboard");
 }
 
+/// **An owner that copies is asked to**: the copy and the cut leave as
+/// intents, the clipboard is the owner's to fill (`/gui_clipboard`), and a
+/// source the host cannot read is not refused.
+#[test]
+fn a_copy_goes_to_an_owner_that_copies() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":53,"type":"signal","view":"trace","bus":0,"rate":"audio",
+             "copies":"owner"}]}"#,
+    );
+    host.set_timeline_total(53, 1000);
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let mut clip = crate::host::clipboard::Clip::default();
+    host.select_timeline(53, 10.0, 40.0);
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Copy, 400.0, 150.0, &mut clip)
+        .expect("answered");
+    let args = emitted_args(&effects, 53).expect("the copy is asked of the owner");
+    assert_eq!(args[0], OscType::String("copy".into()));
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Cut, 400.0, 150.0, &mut clip)
+        .expect("answered");
+    let tags: Vec<_> = effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit { args, .. } => args.first().cloned(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        tags,
+        [
+            OscType::String("copy".into()),
+            OscType::String("cut".into())
+        ],
+        "a cut is the owner's copy and the removal"
+    );
+
+    // The owner's document goes on the host's clipboard.
+    let doc = r#"{"content":{"kind":"buffer","channels":2,"frames":40,"sample_rate":48000.0,"buffer":70}}"#;
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_CLIPBOARD.into(),
+            args: vec![OscType::String(doc.into())],
+        }),
+        from(),
+    );
+    assert_eq!(host.clipboard.doc().map(|d| d.kind()), Some("buffer"));
+}
+
 /// **A sweep to the first sample leaves the pointer off the view, and the copy
 /// is still the selection's.** Dragging to the very start or end of the contents
 /// parks the pointer in the window's margin -- or outside the window, where there
@@ -3128,7 +3179,7 @@ fn a_dragged_sample_leaves_as_one_absolute_intent() {
             .expect("the intent went out stamped"),
     };
     host.handle_packet(
-        clausters_core::osc::OscPacket::Message(clausters_core::osc::OscMessage {
+        OscPacket::Message(OscMessage {
             addr: crate::host::GUI_ACK.into(),
             args: vec![
                 clausters_core::osc::OscType::Int(seq),

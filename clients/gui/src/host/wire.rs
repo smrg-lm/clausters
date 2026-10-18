@@ -59,6 +59,7 @@ impl Host {
             GUI_VERB => self.on_verb(&msg.args, from, effects),
             GUI_CAPTURE => self.on_capture(&msg.args, from, effects),
             GUI_POINTER => self.on_pointer(&msg.args, from, effects),
+            GUI_CLIPBOARD => self.on_clipboard(&msg.args, from),
             _other => diag::debug!("{from}: ignoring unhandled address {_other}"),
         }
     }
@@ -244,6 +245,25 @@ impl Host {
             window,
             verb: verb.to_string(),
         });
+    }
+
+    /// `/gui_clipboard <json> [blob...]` -- the clipboard an owner made
+    /// ([`GUI_CLIPBOARD`]), put on the host's as a copy puts one there.
+    pub(super) fn on_clipboard(&mut self, args: &[OscType], from: ClientId) {
+        let Some(json) = string_arg(args, 0) else {
+            return diag::warn!("{from}: {GUI_CLIPBOARD} needs a clipboard document");
+        };
+        let doc = clausters_document::clipboard::Clipboard::parse(json);
+        let blobs = args[1..]
+            .iter()
+            .filter_map(|a| match a {
+                OscType::Blob(bytes) => {
+                    Some(clausters_document::clipboard::decode_samples(bytes).into())
+                }
+                _ => None,
+            })
+            .collect();
+        self.clipboard.put(doc, blobs);
     }
 
     /// `/gui_capture <window> <path>` -- the picture of the window rooted at

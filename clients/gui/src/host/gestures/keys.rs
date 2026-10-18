@@ -882,6 +882,24 @@ fn copy_selection(
     // frames: a clip placed late holds sample 0 at its offset, which is the
     // one conversion between the axis and the contents on it.
     let from = (start - offset).max(0.0) as u64;
+    // **An owner that copies is asked to**, whatever the host could read:
+    // it copies the span where its samples are (on the server, for a take)
+    // and puts the copy's name on the clipboard (`/gui_clipboard`), so a cut
+    // of minutes sends no samples across the wire.
+    if element_owner_copies(host, ctx, id) {
+        emit(
+            host,
+            out,
+            ctx.def_id,
+            id,
+            vec![
+                OscType::String("copy".into()),
+                OscType::Double(start),
+                OscType::Double(len),
+            ],
+        );
+        return Some(true);
+    }
     match element_block(host, ctx, id, from, len as u64) {
         Some(block) => {
             clip.put_samples(block.samples.into(), block.channels, block.sample_rate);
@@ -900,6 +918,14 @@ fn copy_selection(
             Some(false)
         }
     }
+}
+
+/// Whether widget `id`'s owner copies what the host cannot read.
+fn element_owner_copies(host: &mut Host, ctx: &GestureCtx, id: i32) -> bool {
+    host.widget_kind(ctx.def_id, id)
+        .and_then(|w| w.as_element())
+        .and_then(|e| e.samples())
+        .is_some_and(|s| s.owner_copies())
 }
 
 /// The contents behind widget `id` over `frames` of its own frames from

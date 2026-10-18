@@ -866,3 +866,49 @@ fn the_open_file_form_names_a_path_for_the_client() {
     );
     assert!(opened.get("steps").is_none(), "nothing is written");
 }
+
+/// **A copy is made on the server**: the span is copied out of the join into
+/// a buffer handed over, the clipboard names that buffer, and a paste copies
+/// it again on the server into a take of the pasting editor's own, at the
+/// block's rate. No sample crosses the wire either way.
+#[test]
+fn a_copy_is_made_on_the_server_and_a_paste_copies_it_again() {
+    let mut editor = opened(1);
+    let copied = event(&mut editor, json!([12, 1, 0, "copy", 10.0, 20.0]));
+    assert_eq!(
+        walk(&copied["steps"]),
+        ["/buffer_alloc", "sync", "/buffer_gen", "await /buffer_gen"]
+    );
+    assert_eq!(copied["clipboardBuffer"], 20, "a buffer handed over");
+    let doc = copied["clipboard"].as_str().unwrap().to_string();
+    let clip: Value = serde_json::from_str(&doc).unwrap();
+    assert_eq!(clip["content"]["kind"], "buffer");
+    assert_eq!(clip["content"]["buffer"], 20);
+    assert_eq!(clip["content"]["frames"], 20);
+    assert!(copied.get("record").is_none(), "a copy is not an edit");
+    assert_eq!(spans(&mut editor), [(3, 0, 100)]);
+
+    // pasted into an editor at another rate: a take of its own at the
+    // block's, read at the ratio
+    let mut other = new_json(
+        &json!({"take": 30, "frames": 100, "channels": 1, "rate": 48000,
+                "display": 31, "buffers": [40, 41]})
+        .to_string(),
+    )
+    .unwrap();
+    call(&mut other, json!({"verb": "window", "widget": 12}));
+    let pasted = event(&mut other, json!([12, 1, 0, "paste", 50.0, "buffer", doc]));
+    let steps = walk(&pasted["steps"]);
+    assert_eq!(
+        steps[..4],
+        ["/buffer_alloc", "sync", "/buffer_gen", "await /buffer_gen"]
+    );
+    let alloc = pasted["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|s| s.get("send").filter(|m| m["addr"] == "/buffer_alloc"))
+        .unwrap();
+    assert_eq!(alloc["args"][3], json!({"f": 44100.0}));
+    assert_eq!(spans(&mut other), [(30, 0, 50), (40, 0, 20), (30, 50, 100)]);
+}

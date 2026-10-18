@@ -92,6 +92,21 @@ pub enum Content {
         /// Which blob holds it: frame-major little-endian `f32`.
         blob: usize,
     },
+    /// **A block a server holds**, named rather than carried: what an editor
+    /// copies when its samples are the server's (a take of minutes, drawn
+    /// from a summary). The copy is made on the server into a buffer of its
+    /// own, so a paste on that server copies it again from there and no
+    /// sample crosses the wire either way.
+    Buffer {
+        /// How many channels are interleaved in it.
+        channels: u32,
+        /// Frames per channel.
+        frames: u64,
+        /// The rate it was taken at. Carried, never acted on.
+        sample_rate: f64,
+        /// The server buffer holding it.
+        buffer: i32,
+    },
 }
 
 impl Content {
@@ -103,6 +118,7 @@ impl Content {
             Content::Elements { .. } => "elements",
             Content::Samples { .. } => "samples",
             Content::Spectral { .. } => "spectral",
+            Content::Buffer { .. } => "buffer",
         }
     }
 }
@@ -192,7 +208,7 @@ impl Clipboard {
     pub fn blobs(&self) -> usize {
         match &self.content {
             Content::Samples { blob, .. } | Content::Spectral { blob, .. } => blob + 1,
-            Content::Text { .. } | Content::Elements { .. } => 0,
+            Content::Text { .. } | Content::Elements { .. } | Content::Buffer { .. } => 0,
         }
     }
 
@@ -203,9 +219,9 @@ impl Clipboard {
     /// owner performs and logs.
     pub fn sample_rate(&self) -> Option<f64> {
         match &self.content {
-            Content::Samples { sample_rate, .. } | Content::Spectral { sample_rate, .. } => {
-                Some(*sample_rate)
-            }
+            Content::Samples { sample_rate, .. }
+            | Content::Spectral { sample_rate, .. }
+            | Content::Buffer { sample_rate, .. } => Some(*sample_rate),
             Content::Text { .. } | Content::Elements { .. } => None,
         }
     }
@@ -223,7 +239,7 @@ impl Clipboard {
                 values_per_bin,
                 ..
             } => Some(*frames as usize * *bins as usize * *values_per_bin as usize),
-            Content::Text { .. } | Content::Elements { .. } => None,
+            Content::Text { .. } | Content::Elements { .. } | Content::Buffer { .. } => None,
         }
     }
 
@@ -236,6 +252,9 @@ impl Clipboard {
                 channels, frames, ..
             } => *channels == 0 || *frames == 0,
             Content::Spectral { frames, bins, .. } => *frames == 0 || *bins == 0,
+            Content::Buffer {
+                channels, frames, ..
+            } => *channels == 0 || *frames == 0,
         }
     }
 

@@ -58,6 +58,13 @@ import type { Measure } from "./samples.ts";
  */
 const SPARE = 2;
 
+/**
+ * **The buffer each server's clipboard copy is in**, by server: a copy made on
+ * the server (an audio editor over a take of minutes) is the clipboard's
+ * until the next one, which frees it.
+ */
+const CLIPBOARD = new WeakMap<object, number>();
+
 /** What one turn of the core came to. */
 interface Outcome {
     turn?: string;
@@ -87,6 +94,10 @@ interface Outcome {
     fileAction?: { verb: string; file: number };
     /** The file in focus after a file verb: its buffers, cursor and state. */
     binding?: Record<string, unknown>;
+    /** A copy made on the server: the document naming the buffer it is in. */
+    clipboard?: string;
+    /** The buffer that copy is in. */
+    clipboardBuffer?: number;
 }
 
 /** A press of the space bar, as the editor read it: frames of the take. */
@@ -759,6 +770,21 @@ export class AudioEditor extends Editor<Buffer> {
     }
 
     /**
+     * **A copy made on the server**: the buffer it is in is the clipboard's
+     * now, the one the previous copy was in goes, and the host's clipboard
+     * names it.
+     */
+    private clipboard(doc: string, buffer: number): void {
+        const held = CLIPBOARD.get(this.server);
+        if (held !== undefined && held !== buffer) {
+            void this.server.sendMsg("/buffer_free", ["i", held]);
+            this.server.buffers.free(held);
+        }
+        CLIPBOARD.set(this.server, buffer);
+        this.host?.clipboard(doc);
+    }
+
+    /**
      * **The window's play cursor and the list's play mark, as the playback
      * stands**: the line is drawn over the file shown unless another file is
      * playing, and the list marks the file that plays. Read off what the
@@ -1029,6 +1055,9 @@ export class AudioEditor extends Editor<Buffer> {
         const steps = outcome.steps ?? [];
         (this.domain as AudioDomain).run(this.structure, steps);
         const domain = this.domain as AudioDomain;
+        if (outcome.clipboard !== undefined && outcome.clipboardBuffer !== undefined) {
+            this.clipboard(outcome.clipboard, outcome.clipboardBuffer);
+        }
         if (outcome.newFile !== undefined || outcome.openFile !== undefined) {
             this.echo.send(outcome.answer);
             outcome = { ...outcome, answer: undefined };

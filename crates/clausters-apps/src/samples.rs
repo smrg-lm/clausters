@@ -131,6 +131,9 @@ pub fn window(w: &Window<'_>) -> Value {
     });
     picture.insert("id".into(), json!(w.widget));
     picture.insert("weight".into(), json!(1.0));
+    // A take drawn from a summary leaves the host no samples to copy: the
+    // editor copies it, naming the takes the span is made of.
+    picture.insert("copies".into(), json!("owner"));
     if !w.folded.is_empty() {
         picture.insert("folded".into(), json!(w.folded));
     }

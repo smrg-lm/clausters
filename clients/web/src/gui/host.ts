@@ -893,6 +893,15 @@ export class GuiHost {
      * one -- its application clock -- and this names a counter, not a
      * scheduler.
      */
+    /**
+     * `/gui_clipboard <json>` -- put a clipboard document on the host's
+     * clipboard: what an owner copies when the host could not read the span
+     * itself (a take drawn from a summary, named by the takes it is made of).
+     */
+    clipboard(doc: string): void {
+        this.send("/gui_clipboard", doc);
+    }
+
     headClock(
         id: number | { readonly id: number },
         which: "device" | "transport",

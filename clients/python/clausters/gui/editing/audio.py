@@ -33,6 +33,7 @@ redo. ``history_bytes`` caps what only the history holds; past it the oldest
 entries go first.
 """
 
+import weakref
 
 from ... import _native
 from ..._steps import run_steps
@@ -46,6 +47,11 @@ from .samples import MEASURES, SamplesView, _plain, measures
 #: How many buffers the crate holds for new takes before a turn: a stroke or a
 #: paste takes one, a mix two.
 _SPARE = 2
+
+#: **The buffer each server's clipboard copy is in**, by server: a copy made
+#: on the server (`AudioEditor` over a take of minutes) is the clipboard's
+#: until the next one, which frees it.
+_CLIPBOARD = weakref.WeakKeyDictionary()
 
 
 class _AudioPlayback:
@@ -421,6 +427,18 @@ class AudioEditor(Marking, Editor):
                                 **{"pass": play["pass"]})
         self._show_transport()
 
+    def _clipboard(self, doc: str, buffer: int) -> None:
+        """**A copy made on the server**: the buffer it is in is the
+        clipboard's now, the one the previous copy was in goes, and the host's
+        clipboard names it."""
+        held = _CLIPBOARD.get(self._server)
+        if held is not None and held != buffer:
+            self._server.send_msg("/buffer_free", held)
+            self._server.buffers.free(held)
+        _CLIPBOARD[self._server] = buffer
+        if self._host is not None:
+            self._host.clipboard(doc)
+
     def _show_transport(self) -> None:
         """**The window's play cursor and the list's play mark, as the
         playback stands**: the line is drawn over the file shown unless another
@@ -747,6 +765,8 @@ class AudioEditor(Marking, Editor):
         # save from the window, the file written.
         steps = outcome.get("steps") or []
         self.domain.run(self.structure, steps)
+        if outcome.get("clipboard") is not None:
+            self._clipboard(outcome["clipboard"], int(outcome["clipboardBuffer"]))
         if outcome.get("newFile") is not None or outcome.get("openFile") is not None:
             self.echo.send(outcome.get("answer"))
             outcome = dict(outcome, answer=None)

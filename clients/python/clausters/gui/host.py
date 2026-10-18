@@ -753,6 +753,12 @@ class GuiHost:
             if addr not in _HostSource.REPLIES:
                 self.deliver(addr, args)
 
+    def clipboard(self, doc: str):
+        """``/gui_clipboard <json>`` -- put a clipboard document on the host's
+        clipboard: what an owner copies when the host could not read the span
+        itself (a take drawn from a summary, named by the takes it is made of)."""
+        self._send("/gui_clipboard", str(doc))
+
     def head_clock(self, id, which: str, transport: int = 0):
         """``/gui_headClock <id> <which> [transport]`` -- which counter the
         playheads of ``id`` are drawn from: a window, or a widget and every view

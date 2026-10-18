@@ -167,6 +167,15 @@ pub struct Outcome {
     /// The file binding the client focuses or closes, chosen by the app.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_action: Option<Value>,
+    /// **A copy made on the server**: the clipboard document naming the
+    /// buffer it is in, for the client to put on the host's clipboard
+    /// (`/gui_clipboard`). The buffer is the clipboard's from now on, and
+    /// the one the previous copy left goes when this one lands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clipboard: Option<String>,
+    /// The buffer that copy is in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clipboard_buffer: Option<i64>,
 }
 
 turn::turned!(Outcome);
@@ -1160,6 +1169,12 @@ impl AudioEditor {
             self.observe(tag, values, out);
             return (None, Vec::new());
         }
+        if tag == "copy" {
+            return match self.copy_span(values, out) {
+                Ok(()) => (None, Vec::new()),
+                Err(why) => (Some(why), Vec::new()),
+            };
+        }
         let edited = match tag {
             "draw" | "sample" => self.stroke(tag, values),
             "cut" => self.cut(values),
@@ -1304,6 +1319,58 @@ impl AudioEditor {
         Ok(Some((taken.label, list, steps)))
     }
 
+    /// **A copy, made on the server**: frames `start`..`+len` of the join
+    /// copied into a buffer of their own (a buffer handed over for takes),
+    /// and named on the clipboard. The host draws a take of minutes from a
+    /// summary and holds none of its samples, and a copy that carried them
+    /// would cross the wire twice; this one moves nothing but its name.
+    fn copy_span(&mut self, values: &[Value], out: &mut Outcome) -> Result<(), String> {
+        let at = |i: usize| values.get(i).map_or(0.0, number).round().max(0.0) as u64;
+        let (start, len) = (at(0), at(1).min(self.length().saturating_sub(at(0))));
+        if len == 0 {
+            return Ok(());
+        }
+        let buffer = self.next_buffer()?;
+        let mut steps = self.allocate(buffer, len);
+        steps.extend(self.copied(buffer, self.display, start, len));
+        let clip = Clipboard {
+            content: Content::Buffer {
+                channels: self.channels,
+                frames: len,
+                sample_rate: self.rate,
+                buffer: buffer as i32,
+            },
+            origin: None,
+        };
+        out.steps = Some(steps_json(&steps));
+        out.clipboard = Some(clip.to_json());
+        out.clipboard_buffer = Some(buffer);
+        Ok(())
+    }
+
+    /// The steps that copy `frames` frames of `from`, from frame `start`,
+    /// into `into` from its first, and wait for it.
+    fn copied(&self, into: i64, from: i64, start: u64, frames: u64) -> Vec<Step> {
+        let width = u64::from(self.channels);
+        vec![
+            send(
+                "/buffer_gen",
+                vec![
+                    OscType::Int(into as i32),
+                    OscType::String("copy".into()),
+                    OscType::Int(0),
+                    OscType::Int(from as i32),
+                    OscType::Int((start * width) as i32),
+                    OscType::Int((frames * width) as i32),
+                ],
+            ),
+            Step::AwaitDone {
+                command: "/buffer_gen".into(),
+                index: Some(into as i32),
+            },
+        ]
+    }
+
     /// **A cut takes the span out of the list**, and moves no samples.
     fn cut(&mut self, values: &[Value]) -> Result<Edited, String> {
         let at = |i: usize| values.get(i).map_or(0.0, number).round().max(0.0) as u64;
@@ -1327,6 +1394,9 @@ impl AudioEditor {
     /// nothing is converted on the way in. A block of another width is
     /// refused, since fitting it would be an edit nobody asked for.
     fn paste(&mut self, values: &[Value]) -> Result<Edited, String> {
+        if let Some(pasted) = self.held_block(values)? {
+            return Ok(Some(pasted));
+        }
         let (position, samples, rate) = self.block(values)?;
         let frames = samples.len() as u64 / u64::from(self.channels);
         if frames == 0 {
@@ -1429,6 +1499,55 @@ impl AudioEditor {
             &self.rates_of(),
         )?;
         Ok(Some(("mix".into(), list, steps)))
+    }
+
+    /// **A paste of a block a server holds** (a copy made on the server):
+    /// copied again on the server into a take of this editor's own, at the
+    /// block's rate, and put in at the position. `None` for a clipboard of
+    /// another kind.
+    fn held_block(&mut self, values: &[Value]) -> Result<Edited, String> {
+        let position = values.first().map_or(0.0, number).round().max(0.0) as u64;
+        let doc = values.get(2).map(text).unwrap_or_default();
+        let Ok(clip) = serde_json::from_str::<Clipboard>(&doc) else {
+            return Ok(None);
+        };
+        let Content::Buffer {
+            channels,
+            frames,
+            sample_rate,
+            buffer: held,
+        } = clip.content
+        else {
+            return Ok(None);
+        };
+        if channels != self.channels {
+            return Err(format!(
+                "a block of {channels} channels does not paste into a take of {}",
+                self.channels
+            ));
+        }
+        if frames == 0 {
+            return Ok(None);
+        }
+        let rate = if sample_rate > 0.0 {
+            sample_rate
+        } else {
+            self.rate
+        };
+        let buffer = self.next_buffer()?;
+        let mut steps = self.allocate_at(buffer, frames, rate);
+        steps.extend(self.copied(buffer, i64::from(held), 0, frames));
+        self.frames.insert(buffer, frames);
+        if rate != self.rate {
+            self.rates.insert(SourceId(buffer as u64), rate);
+        }
+        let list = parts::insert(
+            &self.contents.parts,
+            position,
+            &[part(buffer, 0, frames)],
+            &self.rates_of(),
+        )?;
+        Ok(Some(("paste".into(), list, steps)))
     }
 
     /// **The block a paste or a mix carries**: where it goes, its samples

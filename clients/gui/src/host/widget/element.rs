@@ -2492,6 +2492,12 @@ pub trait Samples {
         None
     }
 
+    /// Whether the element's **owner copies** a span (`copies: "owner"`)
+    /// rather than the host, and names the copy on the clipboard.
+    fn owner_copies(&self) -> bool {
+        false
+    }
+
     /// The value of one sample of this element's samples, in its own domain --
     /// what a grab reads so the intent it later emits can carry the value it
     /// started from.

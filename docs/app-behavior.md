@@ -113,6 +113,10 @@ code that keeps it lives.
   swept elsewhere does not move where a paste goes. After a cut or a paste
   the frames a selection named have moved, so the selection is cleared and
   the cursor stands where the edit landed.
+- **A copy of a take is made on the server.** Copy and cut in the audio
+  editor copy the span into a server buffer the clipboard names, whatever
+  its length; a paste copies it again on the server. No sample crosses the
+  wire, and any audio editor on that server can paste it.
 - **A block keeps its rate.** A block pasted from a file at another rate is
   a take at its own rate, read at the ratio; a mix needs one rate and is
   refused across two.

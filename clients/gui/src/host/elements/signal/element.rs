@@ -523,6 +523,10 @@ impl Samples for SignalElement {
         SignalElement::sample_block(self, start, frames, server_rate)
     }
 
+    fn owner_copies(&self) -> bool {
+        self.owner_copies
+    }
+
     fn sample_value(&self, channel: usize, frame: usize) -> Option<f32> {
         let data = self.source.data()?;
         let trace = data.trace();

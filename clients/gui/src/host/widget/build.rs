@@ -292,6 +292,7 @@ pub(crate) fn signal_element(
     // Not a capability but the same shape of answer: whether the buffer is
     // being written into as it is drawn, which only the client knows.
     el.fills = props.get("fills").and_then(truthy).unwrap_or(false);
+    el.owner_copies = props.get("copies").and_then(Value::as_str) == Some("owner");
     el.caps = signal::Caps {
         navigable: cap("navigable", el.caps.navigable),
         selectable: cap("selectable", el.caps.selectable),

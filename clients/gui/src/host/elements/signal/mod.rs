@@ -505,6 +505,11 @@ pub struct SignalElement {
     /// beyond, where the buffer's own zeros are silence the picture would
     /// otherwise draw a flat line across.
     pub fills: bool,
+    /// **Whether its owner copies a span** (`copies: "owner"`) rather than
+    /// the host: a take of minutes is the server's, and an owner that copies
+    /// it there sends no samples across the wire. Off, the host copies what
+    /// it holds and refuses what it does not.
+    pub owner_copies: bool,
     /// **How far the samples have been written**, in frames -- the buffer's
     /// write frontier, read by the host from the shared segment and pushed in
     /// through [`Samples::set_written`](crate::host::widget::element::Samples::set_written).
@@ -577,6 +582,7 @@ impl SignalElement {
             preview_view: None,
             preview_asked: false,
             fills: false,
+            owner_copies: false,
             written: 0,
             pending: None,
             source: if p.live {
