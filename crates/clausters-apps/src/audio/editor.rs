@@ -416,6 +416,9 @@ pub struct AudioEditor {
     /// Frames of every take this editor knows -- the one it opened and each it
     /// made -- by buffer.
     frames: BTreeMap<i64, u64>,
+    /// The rate of each take that is not at the editor's: a block pasted from
+    /// a file at another rate keeps its own, and is read at the ratio.
+    rates: BTreeMap<SourceId, f64>,
     /// Buffers the caller handed over for new takes, next first.
     spare: Vec<i64>,
     /// Where a take only the history holds is written when it leaves memory,
@@ -527,6 +530,7 @@ impl AudioEditor {
             owns_opened: false,
             effect_installed: false,
             frames: BTreeMap::new(),
+            rates: BTreeMap::new(),
             spare: Vec::new(),
             scratch: None,
             spilled: BTreeSet::new(),
@@ -579,7 +583,16 @@ impl AudioEditor {
 
     /// How many frames the take is now.
     pub fn length(&self) -> u64 {
-        parts::length(&self.contents.parts).unwrap_or(0)
+        parts::length(&self.contents.parts, &self.rates_of()).unwrap_or(0)
+    }
+
+    /// How the list counts its takes: at the editor's rate, and each take
+    /// at another rate at its own.
+    fn rates_of(&self) -> parts::Rates<'_> {
+        parts::Rates {
+            join: self.rate,
+            of: &self.rates,
+        }
     }
 
     /// The canonical array of layers, back to front.
@@ -906,7 +919,11 @@ impl AudioEditor {
                         buffer: *buffer as i32,
                         channels: self.channels as usize,
                         frames: *frames,
-                        rate: self.rate,
+                        rate: self
+                            .rates
+                            .get(&SourceId(*buffer as u64))
+                            .copied()
+                            .unwrap_or(self.rate),
                     },
                 )
             })
@@ -1205,6 +1222,11 @@ impl AudioEditor {
 
     /// The steps that make `buffer` a take `frames` long at the editor's rate.
     fn allocate(&self, buffer: i64, frames: u64) -> Vec<Step> {
+        self.allocate_at(buffer, frames, self.rate)
+    }
+
+    /// The steps that make `buffer` a take `frames` long at `rate`.
+    fn allocate_at(&self, buffer: i64, frames: u64, rate: f64) -> Vec<Step> {
         vec![
             send(
                 "/buffer_alloc",
@@ -1212,7 +1234,7 @@ impl AudioEditor {
                     OscType::Int(buffer as i32),
                     OscType::Int(frames as i32),
                     OscType::Int(self.channels as i32),
-                    OscType::Float(self.rate as f32),
+                    OscType::Float(rate as f32),
                 ],
             ),
             Step::Sync(buffer as i32),
@@ -1277,6 +1299,7 @@ impl AudioEditor {
             start,
             start + frames,
             &[part(buffer, 0, frames)],
+            &self.rates_of(),
         )?;
         Ok(Some((taken.label, list, steps)))
     }
@@ -1288,7 +1311,7 @@ impl AudioEditor {
         if len == 0 {
             return Ok(None);
         }
-        let list = parts::remove(&self.contents.parts, start, start + len)?;
+        let list = parts::remove(&self.contents.parts, start, start + len, &self.rates_of())?;
         if list.is_empty() {
             return Err("a take cannot be cut down to nothing".into());
         }
@@ -1297,21 +1320,31 @@ impl AudioEditor {
 
     /// **A paste is a new take holding the block**, put in at the position.
     ///
-    /// The block travels with the gesture -- the clipboard is the host's -- so
-    /// its samples are written into a take of their own; it is refused when
-    /// its width or its rate is not the take's, since fitting either would be
-    /// an edit nobody asked for.
+    /// The block travels with the gesture (the clipboard is the host's), so
+    /// its samples are written into a take of their own. A block at another
+    /// rate keeps it: the take is written at the block's rate and the list
+    /// reads it at the ratio, as every source at another rate is read, so
+    /// nothing is converted on the way in. A block of another width is
+    /// refused, since fitting it would be an edit nobody asked for.
     fn paste(&mut self, values: &[Value]) -> Result<Edited, String> {
-        let (position, samples) = self.block(values)?;
+        let (position, samples, rate) = self.block(values)?;
         let frames = samples.len() as u64 / u64::from(self.channels);
         if frames == 0 {
             return Ok(None);
         }
         let buffer = self.next_buffer()?;
-        let mut steps = self.allocate(buffer, frames);
+        let mut steps = self.allocate_at(buffer, frames, rate);
         steps.extend(self.fill(buffer, &samples));
         self.frames.insert(buffer, frames);
-        let list = parts::insert(&self.contents.parts, position, &[part(buffer, 0, frames)])?;
+        if rate != self.rate {
+            self.rates.insert(SourceId(buffer as u64), rate);
+        }
+        let list = parts::insert(
+            &self.contents.parts,
+            position,
+            &[part(buffer, 0, frames)],
+            &self.rates_of(),
+        )?;
         Ok(Some(("paste".into(), list, steps)))
     }
 
@@ -1325,7 +1358,15 @@ impl AudioEditor {
     /// steps and goes back to the ones this editor holds. A block that runs
     /// past the end of the take is mixed as far as the take goes.
     fn mix(&mut self, values: &[Value]) -> Result<Edited, String> {
-        let (position, mut samples) = self.block(values)?;
+        let (position, mut samples, rate) = self.block(values)?;
+        // A sum is taken sample for sample, so the two have to be one rate:
+        // fitting one to the other is a resampling nobody asked for.
+        if rate != self.rate {
+            return Err(format!(
+                "a block at {rate} Hz does not mix into a take at {} Hz",
+                self.rate
+            ));
+        }
         let width = u64::from(self.channels);
         let total = self.length();
         if position >= total {
@@ -1385,13 +1426,15 @@ impl AudioEditor {
             position,
             position + frames,
             &[part(take, 0, frames)],
+            &self.rates_of(),
         )?;
         Ok(Some(("mix".into(), list, steps)))
     }
 
-    /// **The block a paste or a mix carries**: where it goes, and its samples
-    /// interleaved at the take's width -- or why it does not fit this take.
-    fn block(&self, values: &[Value]) -> Result<(u64, Vec<f32>), String> {
+    /// **The block a paste or a mix carries**: where it goes, its samples
+    /// interleaved at the take's width and the rate they were taken at; or
+    /// why it does not fit this take.
+    fn block(&self, values: &[Value]) -> Result<(u64, Vec<f32>, f64), String> {
         let position = values.first().map_or(0.0, number).round().max(0.0) as u64;
         let doc = values.get(2).map(text).unwrap_or_default();
         let Ok(clip) = serde_json::from_str::<Clipboard>(&doc) else {
@@ -1415,12 +1458,11 @@ impl AudioEditor {
                 self.channels
             ));
         }
-        if sample_rate > 0.0 && (sample_rate - self.rate).abs() > f64::EPSILON {
-            return Err(format!(
-                "a block at {sample_rate} Hz does not paste into a take at {} Hz",
-                self.rate
-            ));
-        }
+        let rate = if sample_rate > 0.0 {
+            sample_rate
+        } else {
+            self.rate
+        };
         let mut samples: Vec<f32> = match values.get(3 + blob) {
             Some(Value::Array(items)) => items.iter().map(|v| number(v) as f32).collect(),
             _ => return Err("the clipboard's samples did not travel with it".into()),
@@ -1428,7 +1470,7 @@ impl AudioEditor {
         let width = u64::from(self.channels);
         let frames = frames.min(samples.len() as u64 / width);
         samples.truncate((frames * width) as usize);
-        Ok((position, samples))
+        Ok((position, samples, rate))
     }
 
     /// The steps that write `samples`, interleaved, into `buffer` from its

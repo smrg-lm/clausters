@@ -1,6 +1,8 @@
 use super::*;
 use crate::{Lifetime, SourceRef};
 
+const SAME: Rates<'static> = Rates::SAME;
+
 fn part(source: u64, start: u64, end: u64) -> Part {
     Part {
         source: SourceRef {
@@ -37,77 +39,77 @@ fn spans(parts: &[Part]) -> Vec<(u64, u64, u64)> {
 #[test]
 fn a_list_is_as_long_as_its_parts_and_a_part_that_does_not_say_is_refused() {
     let list = [part(1, 0, 100), part(2, 50, 80)];
-    assert_eq!(length(&list), Ok(130));
+    assert_eq!(length(&list, &SAME), Ok(130));
     let mut whole = part(3, 0, 0);
     whole.source.range = None;
-    assert_eq!(length(&[whole.clone()]), Err(UNRANGED));
-    assert_eq!(remove(&[whole], 0, 1), Err(UNRANGED));
+    assert_eq!(length(&[whole.clone()], &SAME), Err(UNRANGED));
+    assert_eq!(remove(&[whole], 0, 1, &SAME), Err(UNRANGED));
 }
 
 #[test]
 fn a_span_is_the_parts_it_crosses_each_cut_to_it() {
     let list = [part(1, 0, 100), part(2, 50, 80), part(3, 0, 10)];
     assert_eq!(
-        spans(&span(&list, 90, 135).unwrap()),
+        spans(&span(&list, 90, 135, &SAME).unwrap()),
         [(1, 90, 100), (2, 50, 80), (3, 0, 5)]
     );
     assert_eq!(
-        spans(&span(&list, 135, 1000).unwrap()),
+        spans(&span(&list, 135, 1000, &SAME).unwrap()),
         [(3, 5, 10)],
         "cut at the end"
     );
-    assert!(span(&list, 20, 20).unwrap().is_empty());
+    assert!(span(&list, 20, 20, &SAME).unwrap().is_empty());
 }
 
 #[test]
 fn a_fade_is_kept_only_where_its_end_of_the_part_is_kept() {
     let list = [faded(part(1, 0, 100), 8, 8)];
-    let head = &span(&list, 0, 50).unwrap()[0];
+    let head = &span(&list, 0, 50, &SAME).unwrap()[0];
     assert_eq!((head.fade_in, head.fade_out), (8, 0));
-    let tail = &span(&list, 50, 100).unwrap()[0];
+    let tail = &span(&list, 50, 100, &SAME).unwrap()[0];
     assert_eq!((tail.fade_in, tail.fade_out), (0, 8));
 }
 
 #[test]
 fn a_cut_pasted_back_where_it_was_is_the_list_it_started_from() {
     let list = vec![part(1, 0, 100)];
-    let cut = span(&list, 20, 30).unwrap();
-    let left = remove(&list, 20, 30).unwrap();
+    let cut = span(&list, 20, 30, &SAME).unwrap();
+    let left = remove(&list, 20, 30, &SAME).unwrap();
     assert_eq!(spans(&left), [(1, 0, 20), (1, 30, 100)]);
-    assert_eq!(length(&left), Ok(90));
-    assert_eq!(insert(&left, 20, &cut).unwrap(), list);
+    assert_eq!(length(&left, &SAME), Ok(90));
+    assert_eq!(insert(&left, 20, &cut, &SAME).unwrap(), list);
 }
 
 #[test]
 fn a_take_put_over_a_span_replaces_those_frames_and_nothing_else() {
     let list = [part(1, 0, 100)];
     let drawn = [part(9, 0, 10)];
-    let out = replace(&list, 40, 50, &drawn).unwrap();
+    let out = replace(&list, 40, 50, &drawn, &SAME).unwrap();
     assert_eq!(spans(&out), [(1, 0, 40), (9, 0, 10), (1, 50, 100)]);
-    assert_eq!(length(&out), Ok(100));
+    assert_eq!(length(&out, &SAME), Ok(100));
 }
 
 #[test]
 fn a_position_past_the_end_is_the_end() {
     let list = [part(1, 0, 10)];
-    let out = insert(&list, 99, &[part(2, 0, 5)]).unwrap();
+    let out = insert(&list, 99, &[part(2, 0, 5)], &SAME).unwrap();
     assert_eq!(spans(&out), [(1, 0, 10), (2, 0, 5)], "appended");
-    assert_eq!(spans(&remove(&list, 5, 99).unwrap()), [(1, 0, 5)]);
+    assert_eq!(spans(&remove(&list, 5, 99, &SAME).unwrap()), [(1, 0, 5)]);
 }
 
 #[test]
 fn parts_that_read_on_from_each_other_are_one_unless_a_seam_says_otherwise() {
     let list = [part(1, 0, 10), part(2, 0, 10), part(1, 10, 20)];
-    let out = remove(&list, 10, 20).unwrap();
+    let out = remove(&list, 10, 20, &SAME).unwrap();
     assert_eq!(spans(&out), [(1, 0, 20)]);
 
     let seamed = [faded(part(1, 0, 10), 0, 4), part(2, 0, 10), part(1, 10, 20)];
-    let out = remove(&seamed, 10, 20).unwrap();
+    let out = remove(&seamed, 10, 20, &SAME).unwrap();
     assert_eq!(spans(&out), [(1, 0, 10), (1, 10, 20)], "a fade is a seam");
 
     let mut other = part(1, 10, 20);
     other.channels = Some(vec![1]);
-    let out = remove(&[part(1, 0, 10), part(2, 0, 10), other], 10, 20).unwrap();
+    let out = remove(&[part(1, 0, 10), part(2, 0, 10), other], 10, 20, &SAME).unwrap();
     assert_eq!(out.len(), 2, "another channel map is another reading");
 }
 
@@ -140,4 +142,30 @@ fn a_list_travels_as_its_own_payload_and_nothing_else_reads_as_one() {
     let list = vec![faded(part(1, 0, 10), 2, 0), part(2, 5, 9)];
     assert_eq!(read(&payload(&list)), Some(list));
     assert_eq!(read(&Opaque(serde_json::json!({"intent": "write"}))), None);
+}
+
+/// **A take at another rate fills the list by the ratio of the two**: a
+/// second of it is a second of the list, a cut inside it lands on the
+/// nearest frame of the take, and the list comes back to itself.
+#[test]
+fn a_take_at_another_rate_fills_the_list_by_the_ratio() {
+    let of = |source: SourceId| (source == SourceId(2)).then_some(44_100.0);
+    let rates = Rates {
+        join: 48_000.0,
+        of: &of,
+    };
+    // a second of the list's own take, then a second of a 44.1 kHz one
+    let list = vec![part(1, 0, 48_000), part(2, 0, 44_100)];
+    assert_eq!(length(&list, &rates), Ok(96_000));
+    // half a second into the second take is 22 050 of its frames
+    let tail = span(&list, 72_000, 96_000, &rates).unwrap();
+    assert_eq!(spans(&tail), [(2, 22_050, 44_100)]);
+    let cut = span(&list, 60_000, 72_000, &rates).unwrap();
+    assert_eq!(spans(&cut), [(2, 11_025, 22_050)]);
+    let left = remove(&list, 60_000, 72_000, &rates).unwrap();
+    assert_eq!(length(&left, &rates), Ok(84_000));
+    assert_eq!(insert(&left, 60_000, &cut, &rates).unwrap(), list);
+    // the stitch's count and the list's are one rule
+    assert_eq!(contributed(44_100, 44_100.0, 48_000.0), 48_000);
+    assert_eq!(contributed(100, 48_000.0, 48_000.0), 100);
 }

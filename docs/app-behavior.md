@@ -113,6 +113,9 @@ code that keeps it lives.
   swept elsewhere does not move where a paste goes. After a cut or a paste
   the frames a selection named have moved, so the selection is cleared and
   the cursor stands where the edit landed.
+- **A block keeps its rate.** A block pasted from a file at another rate is
+  a take at its own rate, read at the ratio; a mix needs one rate and is
+  refused across two.
 - **A choice in the file list is navigation.** It is never refused as stale,
   and the list keeps its widget across switches, so a hand clicking down it
   lands on the file it clicked last.

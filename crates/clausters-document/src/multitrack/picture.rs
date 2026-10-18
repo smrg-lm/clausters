@@ -1107,7 +1107,7 @@ fn segments_of(
             channels: None,
         }]);
     };
-    let out = crate::parts::span(&parts, from, to)
+    let out = crate::parts::span(&parts, from, to, &crate::parts::Rates::SAME)
         .map_err(|_| "one of these boxes is a join whose parts do not say which frames they are")?;
     if out.is_empty() {
         return Err("one of these boxes reads past the end of the join it is a window onto");

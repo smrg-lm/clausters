@@ -8989,6 +8989,19 @@ of its source, and the two are the same count only at one rate. The picture
 follows the same shape: `segments` gained the ratio per span, so a join is drawn
 from the takes it is spans of whatever rates they are.
 
+**An audio editor's list reads takes at any rate, by the same rule**
+(2026-10-17). The parts arithmetic (`clausters_document::parts`) counted every
+part at the list's rate, and so a block copied from a file at another rate
+was refused when pasted. Each part now fills the list by the ratio of its
+take's rate to the list's, computed by `parts::contributed`, the one function
+the stitch also counts with, so the editor's arithmetic and what the server
+stitches cannot disagree. A pasted block is written at its own rate and read
+at the ratio; nothing is converted on the way in. A span that starts or ends
+inside a part at another rate is cut at the nearest frame of its take. A mix
+stays one rate: a sum is taken sample for sample, and fitting one block to
+the other's rate would be a resampling nobody asked for, so it is refused
+with that reason.
+
 What a join is still not is a **converter**: nothing is written out at the
 join's rate, so a mixed-rate join costs the reading and not memory. Wanting the
 samples themselves converted is rendering them, which is a different verb and

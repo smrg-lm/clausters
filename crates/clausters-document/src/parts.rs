@@ -11,12 +11,14 @@
 //!
 //! # Every position is a frame of the list
 //!
-//! A part contributes the frames of its `range`, and the list's frame `n` is
-//! wherever the parts before it leave off. That is only true while every part
-//! is at the list's own rate, which is the case this module serves: an edited
-//! take writes its new takes at its own rate. A list mixing rates is the
-//! multitrack's, whose parts state frames of the source and are read at a
-//! ratio the server works out; it is not widened into this one.
+//! A part's `range` is in frames of its take, and the list's frame `n` is
+//! wherever the parts before it leave off. A take at the list's own rate
+//! contributes its range as it is; one at another rate is read at the ratio
+//! of the two (`docs/decisions.md`, "A source at another rate is resampled as
+//! it plays"), so a second of it is a second of the list ([`contributed`]).
+//! [`Rates`] says the list's rate and each take's; [`Rates::SAME`] is a list
+//! whose takes are all at its rate. A span that starts or ends inside a part
+//! at another rate is cut at the nearest frame of its take.
 //!
 //! # A part must say its frames
 //!
@@ -118,12 +120,85 @@ pub fn read(payload: &Opaque) -> Option<Vec<Part>> {
 /// Why a list could not be read.
 pub const UNRANGED: &str = "a part of this join does not say which frames it is";
 
+/// **What a take's rate is**, where it is not the list's: a function of the
+/// source, or the table a holder keeps of the takes at another rate.
+pub trait RateOf {
+    /// The rate of `source`, or `None` for one at the list's rate.
+    fn rate_of(&self, source: SourceId) -> Option<f64>;
+}
+
+impl<F: Fn(SourceId) -> Option<f64>> RateOf for F {
+    fn rate_of(&self, source: SourceId) -> Option<f64> {
+        self(source)
+    }
+}
+
+impl RateOf for std::collections::BTreeMap<SourceId, f64> {
+    fn rate_of(&self, source: SourceId) -> Option<f64> {
+        self.get(&source).copied()
+    }
+}
+
+/// No take at another rate.
+struct NoRates;
+
+impl RateOf for NoRates {
+    fn rate_of(&self, _source: SourceId) -> Option<f64> {
+        None
+    }
+}
+
+/// **The rates a list is counted at**: its own, and each take's.
+#[derive(Clone, Copy)]
+pub struct Rates<'a> {
+    /// The list's rate; `0` counts every part at its take's frames.
+    pub join: f64,
+    /// Each take's rate, where it is not the list's.
+    pub of: &'a dyn RateOf,
+}
+
+impl Rates<'_> {
+    /// A list whose takes are all at its own rate.
+    pub const SAME: Rates<'static> = Rates {
+        join: 0.0,
+        of: &NoRates,
+    };
+
+    /// `part`'s take's rate and the list's, when the two differ.
+    fn differ(&self, part: &Part) -> Option<(f64, f64)> {
+        match (self.join, self.of.rate_of(part.source.source)) {
+            (join, Some(take)) if join > 0.0 && take > 0.0 && take != join => Some((take, join)),
+            _ => None,
+        }
+    }
+}
+
+/// **How many frames of a list at `join` a span of `frames` of a take at
+/// `take` fills**: the same count when the two rates agree, else the span's
+/// duration at the list's rate, to the nearest frame. One rule for the
+/// list's arithmetic and for the stitch that reads it.
+pub fn contributed(frames: u64, take: f64, join: f64) -> u64 {
+    if take > 0.0 && join > 0.0 && take != join {
+        ((frames as f64) * join / take).round() as u64
+    } else {
+        frames
+    }
+}
+
+/// The frames of the list `part` fills.
+fn filled(part: &Part, range: Range, rates: &Rates) -> u64 {
+    match rates.differ(part) {
+        Some((take, join)) => contributed(range.len(), take, join),
+        None => range.len(),
+    }
+}
+
 /// **How many frames the list is**, or the refusal when a part does not say.
-pub fn length(parts: &[Part]) -> Result<u64, &'static str> {
+pub fn length(parts: &[Part], rates: &Rates) -> Result<u64, &'static str> {
     parts.iter().try_fold(0u64, |total, part| {
         part.source
             .range
-            .map(|range| total + range.len())
+            .map(|range| total + filled(part, range, rates))
             .ok_or(UNRANGED)
     })
 }
@@ -133,21 +208,30 @@ pub fn length(parts: &[Part]) -> Result<u64, &'static str> {
 /// A span running past the end is cut at the end, and an empty one is no parts:
 /// both are answers, since whether reading nothing is an error is the caller's
 /// to say.
-pub fn span(parts: &[Part], from: u64, to: u64) -> Result<Vec<Part>, &'static str> {
+pub fn span(parts: &[Part], from: u64, to: u64, rates: &Rates) -> Result<Vec<Part>, &'static str> {
     let mut out = Vec::new();
     let mut at = 0u64;
     for part in parts {
         let range = part.source.range.ok_or(UNRANGED)?;
-        let (lo, hi) = (at, at + range.len());
+        let (lo, hi) = (at, at + filled(part, range, rates));
         at = hi;
         let (a, b) = (from.max(lo), to.min(hi));
         if a >= b {
             continue;
         }
+        // A frame of the list, as the frame of the take it reads: the same
+        // number at the list's rate, the nearest one at another.
+        let into = |offset: u64| {
+            let frame = match rates.differ(part) {
+                Some((take, join)) => ((offset as f64) * take / join).round() as u64,
+                None => offset,
+            };
+            (range.start + frame).min(range.end)
+        };
         let mut cut = part.clone();
         cut.source.range = Some(Range {
-            start: range.start + (a - lo),
-            end: range.start + (b - lo),
+            start: into(a - lo),
+            end: if b == hi { range.end } else { into(b - lo) },
         });
         if a != lo {
             cut.fade_in = 0;
@@ -171,26 +255,37 @@ pub fn replace(
     from: u64,
     to: u64,
     with: &[Part],
+    rates: &Rates,
 ) -> Result<Vec<Part>, &'static str> {
-    let total = length(parts)?;
-    length(with)?;
+    let total = length(parts, rates)?;
+    length(with, rates)?;
     let from = from.min(total);
     let to = to.clamp(from, total);
-    let mut out = span(parts, 0, from)?;
+    let mut out = span(parts, 0, from, rates)?;
     out.extend(with.iter().cloned());
-    out.extend(span(parts, to, total)?);
+    out.extend(span(parts, to, total, rates)?);
     Ok(merged(out))
 }
 
 /// **The list with frames `from`..`to` taken out.**
-pub fn remove(parts: &[Part], from: u64, to: u64) -> Result<Vec<Part>, &'static str> {
-    replace(parts, from, to, &[])
+pub fn remove(
+    parts: &[Part],
+    from: u64,
+    to: u64,
+    rates: &Rates,
+) -> Result<Vec<Part>, &'static str> {
+    replace(parts, from, to, &[], rates)
 }
 
 /// **The list with `inserted` put in at frame `at`**, which moves everything
 /// after it later.
-pub fn insert(parts: &[Part], at: u64, inserted: &[Part]) -> Result<Vec<Part>, &'static str> {
-    replace(parts, at, at, inserted)
+pub fn insert(
+    parts: &[Part],
+    at: u64,
+    inserted: &[Part],
+    rates: &Rates,
+) -> Result<Vec<Part>, &'static str> {
+    replace(parts, at, at, inserted, rates)
 }
 
 /// **Every take the list reads**, once each, in the order first read.
@@ -224,7 +319,7 @@ pub fn flatten(
             Some(inner) => {
                 let inner = flatten(&inner, parts_of)?;
                 let range = part.source.range.ok_or(UNRANGED)?;
-                let mut read = span(&inner, range.start, range.end)?;
+                let mut read = span(&inner, range.start, range.end, &Rates::SAME)?;
                 if let Some(first) = read.first_mut()
                     && part.fade_in > 0
                 {

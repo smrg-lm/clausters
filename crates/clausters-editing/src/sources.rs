@@ -152,12 +152,7 @@ pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch>
         // one second of a 48 kHz join is 48000 of its frames. The server reads
         // the span back out of that by the same ratio, which it takes off the
         // buffers themselves -- so nothing about the ratio travels.
-        let contributed = match (take.rate, rate) {
-            (src, join) if src > 0.0 && join > 0.0 && src != join => {
-                ((span as f64) * join / src).round() as u64
-            }
-            _ => span,
-        };
+        let contributed = clausters_document::parts::contributed(span, take.rate, rate);
         frames += contributed;
         out.push(StitchPart {
             buffer: take.buffer,

@@ -322,13 +322,42 @@ fn a_block_of_another_width_or_rate_is_refused() {
             .unwrap()
             .contains("2 channels")
     );
+    assert_eq!(spans(&mut editor), [(3, 0, 100)]);
+    // a mix is a sum taken sample for sample, so it is one rate
     let fast = serde_json::to_string(&Clipboard::samples(1, 1, 48000.0, 0)).unwrap();
     let out = event(
         &mut editor,
-        json!([12, 2, 0, "paste", 0.0, "samples", fast, [0.1]]),
+        json!([12, 2, 0, "mix", 0.0, "samples", fast, [0.1]]),
     );
     assert!(out["answer"]["reason"].as_str().unwrap().contains("Hz"));
     assert_eq!(spans(&mut editor), [(3, 0, 100)]);
+}
+
+/// **A block at another rate pastes as a take at its own rate**, which the
+/// list reads at the ratio: nothing is converted on the way in, and a second
+/// of the block is a second of the take.
+#[test]
+fn a_block_at_another_rate_pastes_at_its_own_rate() {
+    let mut editor = opened(1);
+    let fast = serde_json::to_string(&Clipboard::samples(1, 480, 48000.0, 0)).unwrap();
+    let block: Vec<f64> = vec![0.25; 480];
+    let out = event(
+        &mut editor,
+        json!([12, 1, 0, "paste", 50.0, "samples", fast, block]),
+    );
+    let steps = out["steps"].as_array().unwrap();
+    let alloc = steps
+        .iter()
+        .find_map(|s| s.get("send").filter(|m| m["addr"] == "/buffer_alloc"))
+        .unwrap();
+    assert_eq!(
+        alloc["args"][3],
+        json!({"f": 48000.0}),
+        "the take keeps the block's rate"
+    );
+    assert_eq!(spans(&mut editor), [(3, 0, 50), (20, 0, 480), (3, 50, 100)]);
+    // 480 frames at 48 kHz are 441 of the take at 44.1 kHz
+    assert_eq!(call(&mut editor, json!({"verb": "parts"}))["frames"], 541);
 }
 
 #[test]
