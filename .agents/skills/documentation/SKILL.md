@@ -1,6 +1,6 @@
 ---
 name: documentation
-description: How to write and place any Clausters documentation — first the user-vs-development split, then Diataxis as an internal lens for the user docs (tutorial / explanation / reference; how-to only on explicit request) across the two mdBooks, the generated API references (rustdoc + pydoc-markdown), and the development docs (architecture as C4, contributing as governance, ADR-style records in docs/decisions.md, roadmaps in the PLAN.md set). Consult before adding, moving or restructuring any doc page, docstring or example.
+description: How to write and place any Clausters documentation — first the user-vs-development split, then Diataxis as an internal lens for the user docs (tutorial / explanation / reference; how-to only on explicit request) across the three mdBooks, the generated API references (rustdoc + pydoc-markdown), and the development docs (architecture as C4, contributing as governance, ADR-style records in docs/decisions.md, roadmaps in the PLAN.md set). Consult before adding, moving or restructuring any doc page, docstring or example.
 ---
 
 # Documentation: user vs development, then Diataxis
@@ -115,7 +115,7 @@ Clausters uses three of the four by default — **Tutorial, Explanation,
 Reference**. The fourth, **How-to** (a goal-titled step recipe), is **not needed
 by default and can be skipped**; write one only on **explicit request, for a
 particular case**. The everyday practical-recipe niche is already covered by the
-runnable `examples/` (catalogued in `examples.md`). One page is one kind, except
+runnable `examples/` (located through `examples.md`). One page is one kind, except
 the feature pages (the documented hybrid below).
 
 | Quadrant    | Reader is...         | Serves   | Voice                         |
@@ -127,7 +127,7 @@ the feature pages (the documented hybrid below).
 **The two books have opposite balances — know which you are editing.** The
 **Python book is the usage book**: it maps cleanly to user Diataxis — Tutorial
 (`getting-started.md`), Explanation (`introduction.md`, `guide.md`), Reference
-(`api/`), plus the `examples.md` catalog; light and consumer-first. The
+(`api/`), plus `examples.md` for locating and running examples; light and consumer-first. The
 **server book leans heavily technical**, with only a thin usage layer: its
 genuine usage docs are `getting-started.md` and `examples.md` (plus the
 command-sending surface of `schemas.md`), while the deep `schemas.md` tables, the
@@ -151,9 +151,9 @@ thin usage layer with internals — link to them instead.
   "Synchronous calls" are Explanation, while the transport table, the segment
   layout and the **embed C ABI** signatures are its embedded Reference block.
 - **Reference** — the contracts and catalogs: `schemas.md` (defs / UGens / OSC
-  commands — the wire format), `examples.md` (the examples catalog), the rustdoc,
-  the Python `api/` pages. One uniform entry per component/example; complete and
-  opinion-free.
+  commands — the wire format), the rustdoc and the Python `api/` pages. One
+  uniform entry per component; complete and opinion-free. `examples.md`
+  locates the runnable examples without cataloguing them.
 
 **House style for feature pages (a deliberate hybrid).** Clausters keeps one
 page per feature instead of splitting it across quadrants, so a feature page is
@@ -216,16 +216,7 @@ ABI exported by `libclausters`. Treat it with the same sync duty as `schemas.md`
 a milestone that changes the C ABI or the segment layout updates the signatures,
 the byte sizes/offsets and the version note here.
 
-**`examples.md` is a catalog, not a component reference.** It is Reference-shaped
-(a uniform table — one row per runnable demo: what it shows, how to run it) but
-its job is **navigation**: it is the index of the practical, runnable layer,
-routing the reader to the actual demos in `examples/`, `clients/python/examples/`
-and the shell scripts, where the real "how do I do X" lives in code. Both books
-have one (server `docs/examples.md` and the Python book's). Duties: keep it
-**complete** — every demo has a row, and adding / renaming / removing one updates
-the table in the same change; keep the deep-links live (rows link out to the
-feature pages a demo exercises and to `schemas.md` anchors); and keep each row to
-one factual line — the explanation belongs on the feature page, not here.
+**`examples.md` locates examples; it does not enumerate them.** The three books say where the repository's example directories live and how to run each family, naming at most one or two entry points. An example documents its own purpose, prerequisites and invocation. A topic page may link one relevant example. Never require one catalog row per example: `AGENTS.md` explicitly rules out that catalog.
 
 **`clients.md` is Explanation (the cross-language map), not Reference — and its
 tables don't change that.** It carries two tables that *look* like reference but
@@ -304,5 +295,5 @@ When a feature is user-facing, "done" includes, where applicable:
 - the `PLAN.md` roadmap checkbox updated;
 - a `docs/decisions.md` entry only for a non-obvious choice.
 
-Then rebuild both books (`mdbook build .` and `clients/python/docs/build.sh`) so
-they still build clean.
+Then run `scripts/check-docs.sh` to build all three books, or select the
+affected books with its `server`/`python`/`web` arguments.

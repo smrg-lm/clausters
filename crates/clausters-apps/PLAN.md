@@ -2368,7 +2368,7 @@ checks and documentation accompany each change; final acceptance does not
 postpone them. Concrete type and module names are settled against existing
 code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
 
-- ⬜ **X15 - Audit ownership, boundaries and governing instructions.** Map
+- ✅ **X15 - Audit ownership, boundaries and governing instructions.** Map
   the audio editor, `Editing`, `closing`, both clients' `Application`, audio
   drivers/outcome handlers, host services and standalone `Owner`. Record
   each state's owner, lifetime, identity, persistence, undo scope and every
@@ -2392,6 +2392,8 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   Build regression cases for reported symptoms without claiming reproduction
   or a cause where none was demonstrated. No implementation depends on
   private agent state, a speculative registry or a new process supervisor.
+  Contract and audit: `docs/architecture.md`, "Application state and services:
+  implementation contract".
 
 - ⬜ **X16 - Separate audio files, windows and view relationships.** After
   `X15`, introduce explicit file identities, open-file collection, focus,
@@ -2589,6 +2591,21 @@ only for a choice with non-obvious context.
 ## Future directions (to fold into milestones as they firm up)
 
 Every entry carries a checkbox.
+
+- ⬜ **Persist an application's multi-file workspace** *(ownership audit,
+  2026-10-18)*. Saving an audio file is not saving the open-file set. Define
+  whether file order, focused file and presentation settings belong in a
+  workspace format, how references are resolved across disk/OPFS, and what
+  reopening a missing or changed file means. Do not serialize live resource
+  leases, clipboard contents or pending operations into a GuiDef. The current
+  application-state track keeps this state transient.
+
+- ⬜ **Application crash recovery and persistent undo** *(ownership audit,
+  2026-10-18)*. Define recovery checkpoints, ownership of retained sample
+  storage, cleanup after abnormal exit and format/version compatibility
+  before treating spill files or the edit log as a recovery format. A
+  successful file save and temporary history spill provide neither durable
+  workspace recovery nor a promise of undo after restart.
 
 - ⬜ **The audio editor's Edit menu names one entry per kind of edit**
   *(the user, 2026-10-17, reading the menu after the gain envelope and its
