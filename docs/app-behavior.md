@@ -63,6 +63,12 @@ code that keeps it lives.
 
 ## Views and layers
 
+- **Corrections address composed components.** A view's event and correction
+  registry includes only widgets present in its current tree. Reserving a
+  stable id for an optional component does not make it a correction target;
+  removing a stacked lane stops its corrections, and showing it again reuses
+  its id. Undo/redo keeps this rule when files or view layouts change.
+
 - **Four words, each its own question.** A **view** is one picture of an
   object on a lane (the waveform, the spectrogram). A **visualization layer** is
   a measure drawn inside one view, on that view's vertical (peak, RMS, a

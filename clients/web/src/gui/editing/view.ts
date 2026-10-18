@@ -44,7 +44,19 @@ export abstract class View<S = unknown> {
      */
     draw(editor: Editor<S>): GuiNode {
         this.widgets = new Map();
-        return this.build(editor);
+        const tree = this.build(editor);
+        // Stable ids may be reserved for optional components absent from this
+        // tree. Only composed components can receive events or corrections.
+        const present = new Set<number>();
+        const visit = (node: GuiNode): void => {
+            if (node.id !== undefined) present.add(node.id);
+            for (const child of node.children ?? []) visit(child);
+        };
+        visit(tree);
+        for (const wid of this.widgets.keys()) {
+            if (!present.has(wid)) this.widgets.delete(wid);
+        }
+        return tree;
     }
 
     /** The tree itself. Register each widget as it is made ({@link register}). */

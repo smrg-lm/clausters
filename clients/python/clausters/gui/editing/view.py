@@ -40,7 +40,21 @@ class View:
         the map from id to what it draws, which has to follow the tree.
         """
         self.widgets = {}
-        return self.build(editor)
+        tree = self.build(editor)
+        # Stable ids may be reserved for optional components absent from this
+        # tree. Only composed components can receive events or corrections.
+        present = set()
+
+        def visit(node):
+            if "id" in node:
+                present.add(node["id"])
+            for child in node.get("children", ()):
+                visit(child)
+
+        visit(tree)
+        self.widgets = {wid: showing for wid, showing in self.widgets.items()
+                        if wid in present}
+        return tree
 
     def build(self, editor) -> dict:
         """The tree itself. Make each widget with `widget`, which names it and

@@ -877,3 +877,31 @@ def test_native_editing_handle_serializes_size_and_fill_between_threads(monkeypa
         assert results == list(range(8))
     finally:
         core.free()
+
+
+def test_undo_redo_correct_only_composed_views_while_optional_ids_stay_stable():
+    editor, host, wid, context = opened(FakeBuffer())
+
+    def tree_ids(node):
+        result = {node["id"]} if "id" in node else set()
+        for child in node.get("children", ()):
+            result.update(tree_ids(child))
+        return result
+
+    editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]])
+    lane = editor._window_widget("lane")
+    for configure in (editor.view_wave, editor.view_both, editor.view_spectrogram,
+                      editor.view_both, editor.view_wave):
+        configure()
+        present = tree_ids(host.trees[-1])
+        assert set(editor.view.widgets) <= present
+        assert (lane in editor.view.widgets) == (lane in present)
+        assert editor._window_widget("lane") == lane
+        for walk in (editor.undo, editor.redo):
+            host.acks.clear()
+            assert walk()
+            corrections = [c for ack in host.acks for c in ack[1]]
+            assert corrections
+            assert all(widget in present for widget, _props in corrections)
+            assert any(widget == wid for widget, _props in corrections)
+    editor.close()

@@ -941,3 +941,42 @@ test("failed cut copy keeps contents and previous publication", async () => {
     editor.close();
     await settle();
 });
+
+
+test("undo redo correct only composed views while optional ids stay stable", async () => {
+    const take = new FakeBuffer();
+    const context = new Editing();
+    const editor = new AudioEditor(take as never, { sampleRate: SR, context });
+    const host = new FakeHost();
+    await editor.open(host as never);
+    const wid = [...editor.view!.widgets.keys()][0]!;
+    const treeIds = (node: GuiNode): Set<number> => {
+        const result = new Set<number>(node.id === undefined ? [] : [node.id]);
+        for (const child of node.children ?? []) {
+            for (const id of treeIds(child)) result.add(id);
+        }
+        return result;
+    };
+    editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]]);
+    await settle();
+    const lane = editor.windowWidget("lane");
+    for (const configure of [() => editor.viewWave(), () => editor.viewBoth(),
+        () => editor.viewSpectrogram(), () => editor.viewBoth(), () => editor.viewWave()]) {
+        configure();
+        await settle();
+        const present = treeIds(host.trees.at(-1)!);
+        assert.ok([...editor.view!.widgets.keys()].every((id) => present.has(id)));
+        assert.equal(editor.view!.widgets.has(lane), present.has(lane));
+        assert.equal(editor.windowWidget("lane"), lane);
+        for (const walk of [() => editor.undo(), () => editor.redo()]) {
+            host.acks.length = 0;
+            assert.equal(walk(), true);
+            await settle();
+            const corrections = host.acks.flatMap((ack) => ack[1]);
+            assert.ok(corrections.length > 0);
+            assert.ok(corrections.every(([id]) => present.has(id)));
+            assert.ok(corrections.some(([id]) => id === wid));
+        }
+    }
+    editor.close();
+});

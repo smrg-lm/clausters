@@ -3166,12 +3166,14 @@ Every entry carries a checkbox.
 
 ## Found by use: the running list of fixes
 
-- ⬜ **Audio undo can still correct a retired widget after closing a file**
-  *(native clipboard acceptance, 2026-10-18).* The `edit_audio` example,
-  after pasting/mixing into a new file and closing its origin, restores the
-  correct samples on undo but emits `/gui_set 1004: no such widget` for a
-  retired component. Trace correction targets against the current binding;
-  cover the sequence in contextual-action and reference-app acceptance.
+- ✅ **Audio undo corrected a component absent from the tree**
+  *(native clipboard acceptance, 2026-10-18).* After closing a clipboard
+  origin, undo restored samples but emitted `/gui_set 1004: no such widget`.
+  The simpler reproducer needs no close: the samples view registered its
+  optional stacked lane even in a single-view tree, and undo corrected every
+  registered id. Both clients now restrict the common view registry to the
+  composed tree while retaining reserved component ids across layout changes.
+  Regression tests walk undo/redo through single and stacked views.
 
 
 - ✅ **Closing an audio clipboard origin could free its loaded buffer twice**
