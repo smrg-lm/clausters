@@ -11,6 +11,7 @@ import types
 import pytest
 
 from clausters import _native
+from clausters.gui.ids import GuiIdAllocator
 from clausters.gui import edit
 from clausters.gui.editing import AudioEditor, Editing, measures
 
@@ -23,12 +24,11 @@ class FakeHost:
     def __init__(self):
         self.acks: list = []
         self.trees: list = []
-        self.next = 20_000
+        self.ids = GuiIdAllocator(base=20_000)
         self.clock = "device"
 
     def alloc_id(self) -> int:
-        self.next += 1
-        return self.next
+        return self.ids.alloc()
 
     def open(self, tree, id=None):
         self.trees.append(tree)
@@ -629,6 +629,7 @@ def test_files_share_one_handler_and_transport_but_keep_state_and_history(monkey
     editor.open_file(["/takes/b.wav", "/takes/c.wav"])
     assert listed() == files_list, "the list is the window's: a click in flight still finds it"
     assert len(editor.files) == 3
+    assert picture(host.trees[-1])["id"] == wid
     assert editor.file.path == "/takes/c.wav"
     assert editor._playback.transport_id == transport_id
     assert editor.can_undo is False
@@ -657,3 +658,53 @@ def test_files_share_one_handler_and_transport_but_keep_state_and_history(monkey
     editor.close_file()
     assert editor.closed
     assert editor.files == ()
+
+
+def test_playing_a_file_while_viewing_another_keeps_the_signal_and_meter(monkeypatch):
+    from clausters import SoundFile
+    take = FakeBuffer(channels=1)
+    editor, host, _wid, _context = opened(take)
+    monkeypatch.setattr(SoundFile, "to_buffer", lambda file, *, server=None, **options:
+                        types.SimpleNamespace(bufnum=server.buffers.alloc(), frames=file.frames,
+                                              channels=file.channels, sample_rate=file.sample_rate,
+                                              server=server, path=file.path))
+    monkeypatch.setattr(SoundFile, "open", staticmethod(
+        lambda path: SoundFile(str(path), 200, 6 if "six" in str(path) else 2, SR)))
+    first = editor._file_id
+    playing_channels = 1
+    editor._driver.play()
+    take.server.playing = True
+    editor.open_file(["/takes/stereo.wav", "/takes/six.wav"])
+    assert editor._playback.state()["playing"] == first
+    assert editor._playback.state()["meters"]["channels"] == 1
+    for index, channels in [(2, 6), (1, 2), (0, 1), (1, 2), (2, 6)]:
+        editor.focus_file(index)
+        state = editor._playback.state()
+        assert state["playing"] == first
+        assert state["meters"]["channels"] == playing_channels
+        wid = picture(host.trees[-1])["id"]
+        assert host.props[wid]["playhead_at"] == (0.0 if editor._file_id == first else -1.0)
+        editor._driver.stop()
+        take.server.playing = False
+        assert editor._playback.state()["meters"] == {"bus": -channels, "channels": channels}
+        editor._driver.play()
+        take.server.playing = True
+        first = editor._file_id
+        playing_channels = channels
+        assert editor._playback.state()["meters"]["channels"] == channels
+    editor.close()
+
+
+def test_two_audio_windows_keep_distinct_component_bindings_on_one_host():
+    take = FakeBuffer()
+    first, host, wid, context = opened(take)
+    second = AudioEditor(take, context=context)
+    second.open(host)
+    other_ids = set(second.view.widgets)
+    assert set(first.view.widgets).isdisjoint(other_ids)
+    first.view_both()
+    assert picture(host.trees[-1])["id"] == wid
+    assert set(second.view.widgets) == other_ids
+    first.close()
+    assert not second.closed
+    second.close()

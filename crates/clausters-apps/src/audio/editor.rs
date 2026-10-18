@@ -184,30 +184,31 @@ impl Converse for AudioEditor {
     type Outcome = Outcome;
 
     fn conversation(&mut self) -> &mut Conversation {
-        &mut self.conversation
+        &mut self.window_state.conversation
     }
 
     fn window_id(&self) -> Option<i32> {
-        self.window
+        self.window_state.window
     }
 
     fn closed(&mut self) {
-        self.window = None;
+        self.window_state.window = None;
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
-        self.widget
+        self.window_state
+            .widget
             .into_iter()
-            .chain(self.files_widget)
-            .chain(self.pane)
-            .chain(self.envelope_widget)
-            .chain(self.lane)
+            .chain(self.window_state.files_widget)
+            .chain(self.window_state.pane)
+            .chain(self.window_state.envelope_widget)
+            .chain(self.window_state.lane)
             .any(|w| i64::from(w) == widget)
             || self.dialog_name(widget).is_some()
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
-        if self.envelope_widget.map(i64::from) == Some(widget) {
+        if self.window_state.envelope_widget.map(i64::from) == Some(widget) {
             self.envelope_corrections()
         } else {
             resync(widget)
@@ -232,14 +233,15 @@ impl Converse for AudioEditor {
         // no data a gesture was made against, so it is never stale: a hand
         // clicking down the list faster than the answers come back still
         // lands on the file it clicked last.
-        if message.addr == "/gui_event" && self.files_widget.map(i64::from) == Some(message.widget)
+        if message.addr == "/gui_event"
+            && self.window_state.files_widget.map(i64::from) == Some(message.widget)
         {
             out.turn = Kind::Route;
             if matches!(message.tag.as_str(), "select" | "activate")
                 && let Some(file) = args
                     .get(4)
                     .and_then(Value::as_u64)
-                    .and_then(|i| self.files.get(i as usize))
+                    .and_then(|i| self.open_files.rows.get(i as usize))
             {
                 out.file_action = Some(json!({"verb": "focus_file", "file": file["id"]}));
             }
@@ -257,10 +259,10 @@ impl Converse for AudioEditor {
         if matches!(message.tag.as_str(), "toggle_files" | "close_file") {
             out.turn = Kind::Route;
             if message.tag == "toggle_files" {
-                self.files_visible = !self.files_visible;
+                self.window_state.files_visible = !self.window_state.files_visible;
                 out.restructure = true;
             } else {
-                out.file_action = Some(json!({"verb": "close_file", "file": self.display}));
+                out.file_action = Some(json!({"verb": "close_file", "file": self.file.display}));
             }
             out.answer = Some(conversation::answer(
                 message.seq,
@@ -338,7 +340,7 @@ impl Converse for AudioEditor {
         if message.tag == "play" || message.tag == "loop" {
             out.turn = Kind::Route;
             let looping = args.get(4).is_some_and(|v| int(v) != 0);
-            self.looping = looping;
+            self.file.presentation.looping = looping;
             // The space bar plays or stops; `L` changes the pass in progress.
             if message.tag == "play" {
                 out.play = Some(self.play(looping));
@@ -392,95 +394,94 @@ pub(crate) struct Kept(parts::Take, BTreeSet<i64>);
 /// join that list is drawn from, and one view's end of the conversation.
 #[derive(Clone, Debug)]
 pub struct AudioEditor {
-    /// The buffer the take was opened from. Never written, never freed here.
+    file: AudioFileState,
+    window_state: AudioWindowState,
+    open_files: AudioFiles,
+}
+
+/// An open object's identity, independent of its current server buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+struct FileId(i64);
+
+#[derive(Clone, Debug)]
+// Contents and sample-storage facts for one open object. No widget or
+// conversation belongs here, so this state can occupy the active slot or the
+// inactive collection without carrying a second window.
+struct AudioFileState {
+    id: FileId,
+    presentation: AudioFileViewState,
     take: i64,
     channels: u32,
     rate: f64,
-    /// The join the window draws: the list, stitched.
+    // The stitched join, distinct from the object's identity.
     display: i64,
-    /// **What a save writes**: the file the take was read from, or the server
-    /// buffer it was opened from -- or whichever a save-as last named.
     target: Target,
-    /// The buffer the editor was opened over. Written by a save and by
-    /// nothing else: the editor edits a private copy of it ([`Self::open`]).
+    // The input buffer is only written by save. Edits use a private copy.
     opened: i64,
-    /// Whether the private copy has been made.
     copied: bool,
     contents: parts::Take,
-    envelope_widget: Option<i32>,
-    preview_on: bool,
-    /// Whether the last pass asked for loops, restored with the file.
-    looping: bool,
-    /// Whether the take changed since it was opened or last saved.
     dirty: bool,
-    /// The sample format a save last wrote the file in, when one did.
     written_format: Option<String>,
-    /// The codec and sample format of the file the take was read from.
     codec: Option<String>,
     sample_format: Option<String>,
-    /// Whether the buffer the take was opened over is this editor's to free
-    /// on close: one it read from a file or made empty, not one handed over.
     owns_opened: bool,
     effect_installed: bool,
-    /// Frames of every take this editor knows -- the one it opened and each it
-    /// made -- by buffer.
     frames: BTreeMap<i64, u64>,
-    /// The rate of each take that is not at the editor's: a block pasted from
-    /// a file at another rate keeps its own, and is read at the ratio.
     rates: BTreeMap<SourceId, f64>,
-    /// Buffers the caller handed over for new takes, next first.
     spare: Vec<i64>,
-    /// Where a take only the history holds is written when it leaves memory,
-    /// or `None` when none may.
-    scratch: Option<String>,
-    /// The takes that are on disk rather than in a buffer: each keeps its
-    /// buffer number as its identity, and is read back into it when a list
-    /// that reads it is stitched again.
     spilled: BTreeSet<i64>,
-    chunk: usize,
     name: Option<String>,
-    /// The visualization layers of the view in the take's lane.
+}
+
+#[derive(Clone, Debug)]
+// Presentation restored with a file, outside the content history. Host-local
+// navigation is projected through the existing window and navigation groups.
+struct AudioFileViewState {
+    preview_on: bool,
+    looping: bool,
     layers: Stack,
-    /// Which views the window shows ([`Views`]).
     views: Views,
-    /// The id the client numbered the spectrogram's lane with, for the
-    /// stacked views.
+    edit_layer: String,
+    cursor: Option<u64>,
+    selection: Option<(u64, u64)>,
+    folded: BTreeSet<u32>,
+}
+
+#[derive(Clone, Debug)]
+// One view's conversation and component identities survive every file switch.
+struct AudioWindowState {
+    // Diagnostic binding identity; content-event validation uses Editing's
+    // version and Conversation, not a second wire staleness mechanism.
+    binding_generation: u64,
+    meter_widget: Option<i32>,
+    envelope_widget: Option<i32>,
+    scratch: Option<String>,
+    chunk: usize,
     lane: Option<i32>,
     title: String,
     size: (i64, i64),
-    /// Whether the window is composed with no chrome ([`Window::bare`]).
     bare: bool,
     window: Option<i32>,
     widget: Option<i32>,
     pane: Option<i32>,
-    edit_layer: String,
-    /// Where the position cursor stands, in frames of the take, once placed.
-    cursor: Option<u64>,
-    /// The selection, as a half-open span of frames, while there is one.
-    selection: Option<(u64, u64)>,
-    /// Where the level meter is read from, once a playback measures the take.
     meters: Option<(i32, usize)>,
-    /// The channels drawn folded, a view state outside the history.
-    folded: BTreeSet<u32>,
-    /// The dialogs' widgets, by name ([`dialogs::names`]).
     dialogs: dialogs::Ids,
-    /// The form that is up, when one is.
     dialog: Option<dialogs::Open>,
     conversation: Conversation,
-    /// The open files in the list's order, each `{id, label, file}`; the id
-    /// is the file's display buffer.
-    files: Vec<Value>,
-    /// The files not in focus, each the whole editor state it left, by id.
-    parked: BTreeMap<i64, Box<AudioEditor>>,
-    /// The id the client numbered the file list with.
     files_widget: Option<i32>,
-    /// Whether the file list is shown.
     files_visible: bool,
-    /// Whether a file is open: the last one closed leaves none.
-    file_open: bool,
-    /// The file a pass is playing, marked in the list: it need not be the
-    /// one in focus.
     playing: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+// Ordered list projection and inactive file states. The editor's `file` is
+// the active slot; these states never recursively hold another AudioEditor.
+struct AudioFiles {
+    rows: Vec<Value>,
+    parked: BTreeMap<FileId, AudioFileState>,
+    open: bool,
+    next_id: i64,
 }
 
 /// A part reading frames `start..end` of `buffer`.
@@ -521,53 +522,65 @@ impl AudioEditor {
         version: i64,
     ) -> Result<Self, String> {
         let mut editor = Self {
-            take,
-            channels: channels.max(1),
-            rate: if rate > 0.0 { rate } else { 48_000.0 },
-            display,
-            target: Target::Buffer(take),
-            opened: take,
-            copied: false,
-            contents: parts::Take::default(),
-            envelope_widget: None,
-            preview_on: false,
-            looping: false,
-            dirty: false,
-            written_format: None,
-            codec: None,
-            sample_format: None,
-            owns_opened: false,
-            effect_installed: false,
-            frames: BTreeMap::new(),
-            rates: BTreeMap::new(),
-            spare: Vec::new(),
-            scratch: None,
-            spilled: BTreeSet::new(),
-            chunk: DEFAULT_CHUNK,
-            name: None,
-            layers: Stack::checked(&json!(layers))?,
-            views: Views::Waveform,
-            lane: None,
-            title: "Audio".into(),
-            size: (1000, 520),
-            bare: false,
-            window: None,
-            widget: None,
-            pane: None,
-            edit_layer: "take".into(),
-            cursor: None,
-            selection: None,
-            meters: None,
-            folded: BTreeSet::new(),
-            dialogs: dialogs::Ids::new(),
-            dialog: None,
-            conversation: Conversation::new(version),
-            files: Vec::new(),
-            parked: BTreeMap::new(),
-            files_widget: None,
-            files_visible: true,
-            file_open: true,
-            playing: None,
+            file: AudioFileState {
+                id: FileId(1),
+                presentation: AudioFileViewState {
+                    preview_on: false,
+                    looping: false,
+                    layers: Stack::checked(&json!(layers))?,
+                    views: Views::Waveform,
+                    edit_layer: "take".into(),
+                    cursor: None,
+                    selection: None,
+                    folded: BTreeSet::new(),
+                },
+                take,
+                channels: channels.max(1),
+                rate: if rate > 0.0 { rate } else { 48_000.0 },
+                display,
+                target: Target::Buffer(take),
+                opened: take,
+                copied: false,
+                contents: parts::Take::default(),
+                dirty: false,
+                written_format: None,
+                codec: None,
+                sample_format: None,
+                owns_opened: false,
+                effect_installed: false,
+                frames: BTreeMap::new(),
+                rates: BTreeMap::new(),
+                spare: Vec::new(),
+                spilled: BTreeSet::new(),
+                name: None,
+            },
+            window_state: AudioWindowState {
+                binding_generation: 0,
+                meter_widget: None,
+                envelope_widget: None,
+                scratch: None,
+                chunk: DEFAULT_CHUNK,
+                lane: None,
+                title: "Audio".into(),
+                size: (1000, 520),
+                bare: false,
+                window: None,
+                widget: None,
+                pane: None,
+                meters: None,
+                dialogs: dialogs::Ids::new(),
+                dialog: None,
+                conversation: Conversation::new(version),
+                files_widget: None,
+                files_visible: true,
+                playing: None,
+            },
+            open_files: AudioFiles {
+                rows: Vec::new(),
+                parked: BTreeMap::new(),
+                open: true,
+                next_id: 2,
+            },
         };
         editor.reopen(take, frames);
         editor.ensure_envelope();
@@ -576,9 +589,9 @@ impl AudioEditor {
 
     /// Starts over on the take in `take`: the list is the whole of it.
     fn reopen(&mut self, take: i64, frames: u64) {
-        self.take = take;
-        self.frames.insert(take, frames);
-        self.contents.parts = if frames > 0 {
+        self.file.take = take;
+        self.file.frames.insert(take, frames);
+        self.file.contents.parts = if frames > 0 {
             vec![part(take, 0, frames)]
         } else {
             Vec::new()
@@ -587,43 +600,46 @@ impl AudioEditor {
 
     /// The list the take is now.
     pub fn list(&self) -> &[Part] {
-        &self.contents.parts
+        &self.file.contents.parts
     }
 
     /// How many frames the take is now.
     pub fn length(&self) -> u64 {
-        parts::length(&self.contents.parts, &self.rates_of()).unwrap_or(0)
+        parts::length(&self.file.contents.parts, &self.rates_of()).unwrap_or(0)
     }
 
     /// How the list counts its takes: at the editor's rate, and each take
     /// at another rate at its own.
     fn rates_of(&self) -> parts::Rates<'_> {
         parts::Rates {
-            join: self.rate,
-            of: &self.rates,
+            join: self.file.rate,
+            of: &self.file.rates,
         }
     }
 
     /// The canonical array of layers, back to front.
     pub fn layers(&self) -> Value {
-        self.layers.to_value()
+        self.file.presentation.layers.to_value()
     }
 
     /// Set a stack of names, through the shared validator.
     pub fn set_layers(&mut self, stack: &[String]) -> Result<(), String> {
-        self.layers = Stack::checked(&json!(stack))?;
+        self.file.presentation.layers = Stack::checked(&json!(stack))?;
         Ok(())
     }
 
     fn edit_layer(&mut self, name: &str) -> Result<Vec<Correction>, String> {
         if !matches!(name, "take" | "placement")
-            && !(matches!(name, "points" | "points:0") && self.envelope_widget.is_some())
+            && !(matches!(name, "points" | "points:0")
+                && self.window_state.envelope_widget.is_some())
         {
             return Err(format!("this pane has no '{name}' body"));
         }
-        let relabel = self.edit_layer.starts_with("points") || name.starts_with("points");
-        self.edit_layer = name.into();
+        let relabel =
+            self.file.presentation.edit_layer.starts_with("points") || name.starts_with("points");
+        self.file.presentation.edit_layer = name.into();
         Ok(self
+            .window_state
             .pane
             .into_iter()
             .map(|id| Correction {
@@ -638,11 +654,12 @@ impl AudioEditor {
     }
 
     fn layer_corrections(&self) -> Vec<Correction> {
-        self.widget
+        self.window_state
+            .widget
             .into_iter()
             .map(|widget| Correction {
                 widget: i64::from(widget),
-                props: json!({"layers": self.layers.to_wire()}),
+                props: json!({"layers": self.file.presentation.layers.to_wire()}),
             })
             .collect()
     }
@@ -651,13 +668,13 @@ impl AudioEditor {
         let next = match verb {
             "layers" => match request.get("stack") {
                 Some(stack) => Stack::checked(stack)?,
-                None => self.layers.clone(),
+                None => self.file.presentation.layers.clone(),
             },
             // The two alternatives in the take's lane, and both stacked: the
             // waveform in the take's lane over the spectrogram's own.
             "view_wave" | "view_both" => Stack::checked(&json!(["peak", "rms"]))?,
             "view_spectrogram" => Stack::checked(&json!(["spectrogram"]))?,
-            _ => self.layers.edit(
+            _ => self.file.presentation.layers.edit(
                 request
                     .get("name")
                     .and_then(Value::as_str)
@@ -666,17 +683,17 @@ impl AudioEditor {
                 request.get("alpha").and_then(Value::as_f64),
             )?,
         };
-        self.layers = next;
-        let before = self.views;
-        self.views = match verb {
+        self.file.presentation.layers = next;
+        let before = self.file.presentation.views;
+        self.file.presentation.views = match verb {
             "view_wave" => Views::Waveform,
             "view_spectrogram" => Views::Spectrogram,
             "view_both" => Views::Stacked,
-            _ => self.views,
+            _ => self.file.presentation.views,
         };
         Ok(Outcome {
             turn: Kind::Route,
-            restructure: before.lanes() != self.views.lanes(),
+            restructure: before.lanes() != self.file.presentation.views.lanes(),
             layers: Some(self.layers()),
             answer: Some(conversation::answer(0, 0, None, self.layer_corrections())),
             ..Outcome::default()
@@ -686,41 +703,52 @@ impl AudioEditor {
     /// **The takes this editor cannot let go of**: the one it opened, which is
     /// the caller's, and every take the list reads now.
     pub fn rooted(&self) -> Vec<SourceId> {
-        let mut out = parts::sources(&self.contents.parts);
-        let opened = SourceId(self.take as u64);
+        let mut out = parts::sources(&self.file.contents.parts);
+        let opened = SourceId(self.file.take as u64);
         if !out.contains(&opened) {
             out.push(opened);
         }
-        out.extend(self.parked.values().flat_map(|file| file.rooted()));
+        out.extend(
+            self.open_files
+                .parked
+                .values()
+                .flat_map(|file| file.rooted()),
+        );
         out
     }
 
     /// How many bytes the take in `buffer` holds, or `None` for one this editor
     /// never knew.
     pub fn bytes(&self, buffer: i64) -> Option<u64> {
-        self.frames
+        self.file
+            .frames
             .get(&buffer)
-            .map(|frames| frames * u64::from(self.channels) * 4)
-            .or_else(|| self.parked.values().find_map(|f| f.bytes(buffer)))
+            .map(|frames| frames * u64::from(self.file.channels) * 4)
+            .or_else(|| {
+                self.open_files
+                    .parked
+                    .values()
+                    .find_map(|f| f.bytes(buffer))
+            })
     }
 
     /// Forgets a take the caller is about to free, so nothing here names it.
     pub fn forget(&mut self, buffer: i64) {
-        if buffer != self.take {
-            self.frames.remove(&buffer);
-            self.spilled.remove(&buffer);
+        if buffer != self.file.take {
+            self.file.frames.remove(&buffer);
+            self.file.spilled.remove(&buffer);
         }
     }
 
     /// Whether the take in `buffer` is on disk rather than in its buffer --
     /// so freeing it gives back a number and frees no buffer.
     pub fn is_spilled(&self, buffer: i64) -> bool {
-        self.spilled.contains(&buffer)
+        self.file.spilled.contains(&buffer)
     }
 
     /// Where the take in `buffer` is written when it leaves memory.
     fn path(&self, buffer: i64) -> Option<String> {
-        let scratch = self.scratch.as_deref()?;
+        let scratch = self.window_state.scratch.as_deref()?;
         Some(format!(
             "{}/take-{buffer}.wav",
             scratch.trim_end_matches('/')
@@ -734,12 +762,12 @@ impl AudioEditor {
     /// read back is what was written.
     pub fn spill(&mut self, buffer: i64) -> Option<Value> {
         let path = self.path(buffer)?;
-        let reads = parts::sources(&self.contents.parts).contains(&SourceId(buffer as u64));
-        if buffer == self.take || reads || self.spilled.contains(&buffer) {
+        let reads = parts::sources(&self.file.contents.parts).contains(&SourceId(buffer as u64));
+        if buffer == self.file.take || reads || self.file.spilled.contains(&buffer) {
             return None;
         }
-        self.frames.get(&buffer)?;
-        self.spilled.insert(buffer);
+        self.file.frames.get(&buffer)?;
+        self.file.spilled.insert(buffer);
         let index = buffer as i32;
         Some(steps_json(&[
             send(
@@ -781,13 +809,13 @@ impl AudioEditor {
     /// refuse. A new buffer is the caller's to hand over, as every buffer
     /// number here is.
     pub fn save(&mut self, to: Option<Target>, format: &str) -> Result<Value, String> {
-        let to = to.unwrap_or_else(|| self.target.clone());
+        let to = to.unwrap_or_else(|| self.file.target.clone());
         if !matches!(format, "float" | "int24" | "int16") {
             return Err(format!(
                 "'{format}' is not a sample format (float, int24, int16)"
             ));
         }
-        let display = self.display as i32;
+        let display = self.file.display as i32;
         let steps = match &to {
             Target::File(path) if path.is_empty() => {
                 return Err("a file is saved under a path".into());
@@ -808,13 +836,13 @@ impl AudioEditor {
                 },
             ],
             Target::Buffer(buffer) => {
-                if *buffer == self.display || self.frames.contains_key(buffer) {
+                if *buffer == self.file.display || self.file.frames.contains_key(buffer) {
                     return Err(format!(
                         "buffer {buffer} is one this editor reads: save into another"
                     ));
                 }
                 let frames = self.length();
-                let width = u64::from(self.channels);
+                let width = u64::from(self.file.channels);
                 let mut steps = self.allocate(*buffer, frames);
                 steps.push(send(
                     "/buffer_gen",
@@ -835,38 +863,38 @@ impl AudioEditor {
             }
         };
         if matches!(to, Target::File(_)) {
-            self.written_format = Some(format.to_string());
+            self.file.written_format = Some(format.to_string());
         }
-        self.dirty = false;
-        self.target = to;
+        self.file.dirty = false;
+        self.file.target = to;
         Ok(steps_json(&steps))
     }
 
     /// What a save writes over.
     pub fn target(&self) -> &Target {
-        &self.target
+        &self.file.target
     }
 
     /// A spill the caller could not carry out -- the write was refused, a
     /// quota full -- so the take is still in its buffer.
     pub fn kept(&mut self, buffer: i64) {
-        self.spilled.remove(&buffer);
+        self.file.spilled.remove(&buffer);
     }
 
     /// The steps that read back every take on disk the list now reads, before
     /// the join over it is stitched.
     fn restored(&mut self) -> Vec<Step> {
-        let wanted: Vec<i64> = parts::sources(&self.contents.parts)
+        let wanted: Vec<i64> = parts::sources(&self.file.contents.parts)
             .iter()
             .map(|s| s.0 as i64)
-            .filter(|b| self.spilled.contains(b))
+            .filter(|b| self.file.spilled.contains(b))
             .collect();
         let mut steps = Vec::new();
         for buffer in wanted {
             let Some(path) = self.path(buffer) else {
                 continue;
             };
-            self.spilled.remove(&buffer);
+            self.file.spilled.remove(&buffer);
             steps.push(send(
                 "/buffer_allocRead",
                 vec![OscType::Int(buffer as i32), OscType::String(path)],
@@ -889,8 +917,13 @@ impl AudioEditor {
     /// with none, the editor cannot open.
     pub fn open(&mut self) -> Result<Value, String> {
         let mut steps = Vec::new();
-        if !self.copied {
-            let frames = self.frames.get(&self.opened).copied().unwrap_or(0);
+        if !self.file.copied {
+            let frames = self
+                .file
+                .frames
+                .get(&self.file.opened)
+                .copied()
+                .unwrap_or(0);
             let copy = self.next_buffer()?;
             steps.extend(self.allocate(copy, frames));
             steps.push(send(
@@ -899,18 +932,18 @@ impl AudioEditor {
                     OscType::Int(copy as i32),
                     OscType::String("copy".into()),
                     OscType::Int(0),
-                    OscType::Int(self.opened as i32),
+                    OscType::Int(self.file.opened as i32),
                     OscType::Int(0),
-                    OscType::Int((frames * u64::from(self.channels)) as i32),
+                    OscType::Int((frames * u64::from(self.file.channels)) as i32),
                 ],
             ));
             steps.push(Step::AwaitDone {
                 command: "/buffer_gen".into(),
                 index: Some(copy as i32),
             });
-            self.frames.remove(&self.opened);
+            self.file.frames.remove(&self.file.opened);
             self.reopen(copy, frames);
-            self.copied = true;
+            self.file.copied = true;
         }
         steps.extend(self.stitched());
         Ok(steps_json(&steps))
@@ -919,6 +952,7 @@ impl AudioEditor {
     /// The list, stitched into the display buffer, and the `/done` awaited.
     fn stitched(&self) -> Vec<Step> {
         let held: HashMap<SourceId, Held> = self
+            .file
             .frames
             .iter()
             .map(|(buffer, frames)| {
@@ -926,26 +960,30 @@ impl AudioEditor {
                     SourceId(*buffer as u64),
                     Held {
                         buffer: *buffer as i32,
-                        channels: self.channels as usize,
+                        channels: self.file.channels as usize,
                         frames: *frames,
                         rate: self
+                            .file
                             .rates
                             .get(&SourceId(*buffer as u64))
                             .copied()
-                            .unwrap_or(self.rate),
+                            .unwrap_or(self.file.rate),
                     },
                 )
             })
             .collect();
-        let mut source =
-            Source::volatile(Lifetime::Temporary).shaped(self.channels, self.length(), self.rate);
+        let mut source = Source::volatile(Lifetime::Temporary).shaped(
+            self.file.channels,
+            self.length(),
+            self.file.rate,
+        );
         source.location = Location::Segments {
-            parts: self.contents.parts.clone(),
+            parts: self.file.contents.parts.clone(),
         };
         let Some(made) = stitch(&source, &held) else {
             return Vec::new();
         };
-        let display = self.display as i32;
+        let display = self.file.display as i32;
         vec![
             Step::Send(stitch_message(display, &made)),
             Step::AwaitDone {
@@ -960,29 +998,35 @@ impl AudioEditor {
     /// `meter` is the id the level meter is drawn under; the meter is there
     /// once a playback has said where it writes ([`Self::set_meters`]).
     pub fn window(&mut self, widget: i32, meter: Option<i32>) -> Value {
-        self.widget = Some(widget);
-        let meter = meter.zip(self.meters).map(|(id, (bus, channels))| MeterAt {
-            widget: id,
-            bus,
-            channels,
-        });
+        self.window_state.widget = Some(widget);
+        self.window_state.meter_widget = meter;
+        let meter = meter
+            .zip(self.window_state.meters)
+            .map(|(id, (bus, channels))| MeterAt {
+                widget: id,
+                bus,
+                channels,
+            });
         let label = self.pane_label();
         let mut tree = window(&Window {
-            buffer: self.display,
-            channels: self.channels,
+            buffer: self.file.display,
+            channels: self.file.channels,
             name: Some(&label),
-            layers: &self.layers,
-            rate: self.rate,
+            layers: &self.file.presentation.layers,
+            rate: self.file.rate,
             widget,
-            pane: self.pane,
-            layer: &self.edit_layer,
-            title: &self.title,
-            size: self.size,
+            pane: self.window_state.pane,
+            layer: &self.file.presentation.edit_layer,
+            title: &self.window_state.title,
+            size: self.window_state.size,
             meter,
-            bare: self.bare,
-            dialogs: dialogs::stack(&self.dialogs),
+            bare: self.window_state.bare,
+            dialogs: dialogs::stack(&self.window_state.dialogs),
             folded: &self.folded(),
-            lane: self.lane.filter(|_| self.views == Views::Stacked),
+            lane: self
+                .window_state
+                .lane
+                .filter(|_| self.file.presentation.views == Views::Stacked),
         });
         self.compose_envelope(&mut tree);
         self.refresh_files();
@@ -993,25 +1037,37 @@ impl AudioEditor {
     /// **Where the level is read from**: the first control bus the
     /// playback's meter writes and how many there are, or `None`.
     pub fn set_meters(&mut self, meters: Option<(i32, usize)>) {
-        self.meters = meters;
+        self.window_state.meters = meters;
     }
 
     /// **What the space bar plays**, with the loop switch `looping`: from the
     /// selection or the position cursor, to the end of the selection or the
     /// take, and back to the cursor -- or over and over.
     pub fn play(&self, looping: bool) -> Play {
-        let (start, pass) = space(looping, self.selection, self.cursor, self.length());
+        let (start, pass) = space(
+            looping,
+            self.file.presentation.selection,
+            self.file.presentation.cursor,
+            self.length(),
+        );
         Play {
             start,
             pass,
-            back: self.cursor.unwrap_or(start),
+            back: self.file.presentation.cursor.unwrap_or(start),
         }
     }
 
     /// The span a loop repeats over, as the view stands: the selection, or
     /// the take with none -- what [`space`] says a looping pass covers.
     fn follow(&self, place: bool) -> Option<Follow> {
-        match space(true, self.selection, self.cursor, self.length()).1 {
+        match space(
+            true,
+            self.file.presentation.selection,
+            self.file.presentation.cursor,
+            self.length(),
+        )
+        .1
+        {
             Pass::Loop { from, to } => Some(Follow { from, to, place }),
             Pass::Until { .. } => None,
         }
@@ -1020,13 +1076,13 @@ impl AudioEditor {
     /// **What a history step is put back to** when another structure of the
     /// same step refuses it: the list, and which takes are on disk.
     pub(crate) fn before_step(&self) -> Kept {
-        Kept(self.contents.clone(), self.spilled.clone())
+        Kept(self.file.contents.clone(), self.file.spilled.clone())
     }
 
     /// Puts back what [`before_step`](Self::before_step) kept.
     pub(crate) fn put_back(&mut self, kept: Kept) {
-        self.contents = kept.0;
-        self.spilled = kept.1;
+        self.file.contents = kept.0;
+        self.file.spilled = kept.1;
     }
 
     /// **A step of the history, applied**: the list a payload states becomes
@@ -1037,12 +1093,18 @@ impl AudioEditor {
         // Visibility is view state: walking the edit order restores the curve,
         // not which body the user has chosen to look at since the edit.
         for curve in &mut next.automation {
-            if let Some(held) = self.contents.automation.iter().find(|a| a.id == curve.id) {
+            if let Some(held) = self
+                .file
+                .contents
+                .automation
+                .iter()
+                .find(|a| a.id == curve.id)
+            {
                 curve.visible = held.visible;
             }
         }
-        self.contents = next;
-        self.dirty = true;
+        self.file.contents = next;
+        self.file.dirty = true;
         self.ensure_envelope();
         let mut steps = self.restored();
         steps.extend(self.stitched());
@@ -1052,16 +1114,18 @@ impl AudioEditor {
     /// **One message from the host**, read and answered ([`turn::turn`]).
     pub fn event(&mut self, event: &Event, version: i64) -> Outcome {
         let outcome = turn::turn(self, event, version);
-        self.dirty |= outcome.changed;
+        self.file.dirty |= outcome.changed;
         outcome
     }
 
     /// **The widgets that draw the take**: the view in its lane and, stacked,
     /// the spectrogram's lane under it.
     pub(super) fn pictures(&self) -> impl Iterator<Item = i32> + '_ {
-        self.widget
-            .into_iter()
-            .chain(self.lane.filter(|_| self.views == Views::Stacked))
+        self.window_state.widget.into_iter().chain(
+            self.window_state
+                .lane
+                .filter(|_| self.file.presentation.views == Views::Stacked),
+        )
     }
 
     /// **Every picture of the take, read again** ([`resync`]).
@@ -1083,29 +1147,32 @@ impl AudioEditor {
     }
 
     fn secs_at(&self, units: f64) -> f64 {
-        samples_to_secs(units.round() as i64, self.rate)
+        samples_to_secs(units.round() as i64, self.file.rate)
     }
 
     /// The frame of the take at `secs`, clamped to it.
     fn frame_at(&self, secs: f64) -> u64 {
-        (secs_to_samples(secs, self.rate).max(0) as u64).min(self.length())
+        (secs_to_samples(secs, self.file.rate).max(0) as u64).min(self.length())
     }
 
     /// **The time range, set by the caller** -- `[start, end]` in seconds, or
     /// `None` -- as a sweep leaves it: what the space bar plays. Answers the
     /// band the window draws, `(sel_start, sel_len)` in frames.
     pub fn set_span(&mut self, span: Option<(f64, f64)>) -> (u64, u64) {
-        self.selection = span
+        self.file.presentation.selection = span
             .map(|(a, b)| (self.frame_at(a), self.frame_at(b)))
             .filter(|(a, b)| b > a);
-        self.selection.map_or((0, 0), |(a, b)| (a, b - a))
+        self.file
+            .presentation
+            .selection
+            .map_or((0, 0), |(a, b)| (a, b - a))
     }
 
     /// **The position cursor, placed by the caller** at `secs`, as a click on
     /// the ruler places it. Answers its frame, where a stopped playback cues.
     pub fn set_cursor(&mut self, secs: f64) -> u64 {
         let frame = self.frame_at(secs);
-        self.cursor = Some(frame);
+        self.file.presentation.cursor = Some(frame);
         frame
     }
 
@@ -1129,7 +1196,7 @@ impl AudioEditor {
             "show_all_channels" => return self.show_all_channels(),
             _ => {}
         }
-        if tag == "points" && self.envelope_widget.map(i64::from) == Some(widget) {
+        if tag == "points" && self.window_state.envelope_widget.map(i64::from) == Some(widget) {
             return self.set_envelope_event(values, out);
         }
         if matches!(tag, "preview_on" | "preview_off" | "remove_effect") {
@@ -1184,8 +1251,8 @@ impl AudioEditor {
         };
         match edited {
             Ok(Some((label, list, mut steps))) => {
-                let before = self.contents.clone();
-                self.contents.parts = list;
+                let before = self.file.contents.clone();
+                self.file.contents.parts = list;
                 steps.extend(self.restored());
                 steps.extend(self.stitched());
                 out.record = Some(self.record(&label, &before));
@@ -1218,10 +1285,10 @@ impl AudioEditor {
         Record {
             label: label.into(),
             legs: vec![Leg {
-                forward: json!({ "edit": self.contents.payload().0 }),
+                forward: json!({ "edit": self.file.contents.payload().0 }),
                 backward: before.payload().0,
                 key: String::new(),
-                holds_forward: ids(&self.contents.parts),
+                holds_forward: ids(&self.file.contents.parts),
                 holds_backward: ids(&before.parts),
             }],
         }
@@ -1229,15 +1296,15 @@ impl AudioEditor {
 
     /// A buffer for a new take, or the reason there is none.
     fn next_buffer(&mut self) -> Result<i64, String> {
-        if self.spare.is_empty() {
+        if self.file.spare.is_empty() {
             return Err("no buffer was handed over for the take this edit writes".into());
         }
-        Ok(self.spare.remove(0))
+        Ok(self.file.spare.remove(0))
     }
 
     /// The steps that make `buffer` a take `frames` long at the editor's rate.
     fn allocate(&self, buffer: i64, frames: u64) -> Vec<Step> {
-        self.allocate_at(buffer, frames, self.rate)
+        self.allocate_at(buffer, frames, self.file.rate)
     }
 
     /// The steps that make `buffer` a take `frames` long at `rate`.
@@ -1248,7 +1315,7 @@ impl AudioEditor {
                 vec![
                     OscType::Int(buffer as i32),
                     OscType::Int(frames as i32),
-                    OscType::Int(self.channels as i32),
+                    OscType::Int(self.file.channels as i32),
                     OscType::Float(rate as f32),
                 ],
             ),
@@ -1275,24 +1342,24 @@ impl AudioEditor {
             .cloned()
             .unwrap_or_default();
         let total = self.length();
-        if start >= total || channel >= self.channels {
+        if start >= total || channel >= self.file.channels {
             return Err("the stroke is outside the take".into());
         }
         drawn.truncate((total - start) as usize);
         let frames = drawn.len() as u64;
         let buffer = self.next_buffer()?;
         let mut steps = self.allocate(buffer, frames);
-        if self.channels > 1 {
+        if self.file.channels > 1 {
             // The frames it was drawn over, every channel: the other channels
             // keep what they held, and the server is what copies them.
-            let width = i64::from(self.channels);
+            let width = i64::from(self.file.channels);
             steps.push(send(
                 "/buffer_gen",
                 vec![
                     OscType::Int(buffer as i32),
                     OscType::String("copy".into()),
                     OscType::Int(0),
-                    OscType::Int(self.display as i32),
+                    OscType::Int(self.file.display as i32),
                     OscType::Int((start as i64 * width) as i32),
                     OscType::Int((frames as i64 * width) as i32),
                 ],
@@ -1304,13 +1371,13 @@ impl AudioEditor {
         }
         steps.extend(samples::write_steps(
             buffer as i32,
-            self.channels,
+            self.file.channels,
             &json!({ "channel": channel, "start": 0, "values": drawn }),
-            self.chunk,
+            self.window_state.chunk,
         ));
-        self.frames.insert(buffer, frames);
+        self.file.frames.insert(buffer, frames);
         let list = parts::replace(
-            &self.contents.parts,
+            &self.file.contents.parts,
             start,
             start + frames,
             &[part(buffer, 0, frames)],
@@ -1332,12 +1399,12 @@ impl AudioEditor {
         }
         let buffer = self.next_buffer()?;
         let mut steps = self.allocate(buffer, len);
-        steps.extend(self.copied(buffer, self.display, start, len));
+        steps.extend(self.copied(buffer, self.file.display, start, len));
         let clip = Clipboard {
             content: Content::Buffer {
-                channels: self.channels,
+                channels: self.file.channels,
                 frames: len,
-                sample_rate: self.rate,
+                sample_rate: self.file.rate,
                 buffer: buffer as i32,
             },
             origin: None,
@@ -1351,7 +1418,7 @@ impl AudioEditor {
     /// The steps that copy `frames` frames of `from`, from frame `start`,
     /// into `into` from its first, and wait for it.
     fn copied(&self, into: i64, from: i64, start: u64, frames: u64) -> Vec<Step> {
-        let width = u64::from(self.channels);
+        let width = u64::from(self.file.channels);
         vec![
             send(
                 "/buffer_gen",
@@ -1378,7 +1445,12 @@ impl AudioEditor {
         if len == 0 {
             return Ok(None);
         }
-        let list = parts::remove(&self.contents.parts, start, start + len, &self.rates_of())?;
+        let list = parts::remove(
+            &self.file.contents.parts,
+            start,
+            start + len,
+            &self.rates_of(),
+        )?;
         if list.is_empty() {
             return Err("a take cannot be cut down to nothing".into());
         }
@@ -1398,19 +1470,19 @@ impl AudioEditor {
             return Ok(Some(pasted));
         }
         let (position, samples, rate) = self.block(values)?;
-        let frames = samples.len() as u64 / u64::from(self.channels);
+        let frames = samples.len() as u64 / u64::from(self.file.channels);
         if frames == 0 {
             return Ok(None);
         }
         let buffer = self.next_buffer()?;
         let mut steps = self.allocate_at(buffer, frames, rate);
         steps.extend(self.fill(buffer, &samples));
-        self.frames.insert(buffer, frames);
-        if rate != self.rate {
-            self.rates.insert(SourceId(buffer as u64), rate);
+        self.file.frames.insert(buffer, frames);
+        if rate != self.file.rate {
+            self.file.rates.insert(SourceId(buffer as u64), rate);
         }
         let list = parts::insert(
-            &self.contents.parts,
+            &self.file.contents.parts,
             position,
             &[part(buffer, 0, frames)],
             &self.rates_of(),
@@ -1431,13 +1503,13 @@ impl AudioEditor {
         let (position, mut samples, rate) = self.block(values)?;
         // A sum is taken sample for sample, so the two have to be one rate:
         // fitting one to the other is a resampling nobody asked for.
-        if rate != self.rate {
+        if rate != self.file.rate {
             return Err(format!(
                 "a block at {rate} Hz does not mix into a take at {} Hz",
-                self.rate
+                self.file.rate
             ));
         }
-        let width = u64::from(self.channels);
+        let width = u64::from(self.file.channels);
         let total = self.length();
         if position >= total {
             return Err("the mix lands past the end of the take".into());
@@ -1447,10 +1519,10 @@ impl AudioEditor {
         if frames == 0 {
             return Ok(None);
         }
-        if self.spare.len() < 2 {
+        if self.file.spare.len() < 2 {
             return Err("a mix needs two buffers handed over: the take and a scratch one".into());
         }
-        let (take, scratch) = (self.spare.remove(0), self.spare.remove(0));
+        let (take, scratch) = (self.file.spare.remove(0), self.file.spare.remove(0));
         let mut steps = self.allocate(take, frames);
         steps.push(send(
             "/buffer_gen",
@@ -1458,7 +1530,7 @@ impl AudioEditor {
                 OscType::Int(take as i32),
                 OscType::String("copy".into()),
                 OscType::Int(0),
-                OscType::Int(self.display as i32),
+                OscType::Int(self.file.display as i32),
                 OscType::Int((position * width) as i32),
                 OscType::Int((frames * width) as i32),
             ],
@@ -1489,10 +1561,10 @@ impl AudioEditor {
             command: "/buffer_free".into(),
             index: Some(scratch as i32),
         });
-        self.spare.push(scratch);
-        self.frames.insert(take, frames);
+        self.file.spare.push(scratch);
+        self.file.frames.insert(take, frames);
         let list = parts::replace(
-            &self.contents.parts,
+            &self.file.contents.parts,
             position,
             position + frames,
             &[part(take, 0, frames)],
@@ -1520,10 +1592,10 @@ impl AudioEditor {
         else {
             return Ok(None);
         };
-        if channels != self.channels {
+        if channels != self.file.channels {
             return Err(format!(
                 "a block of {channels} channels does not paste into a take of {}",
-                self.channels
+                self.file.channels
             ));
         }
         if frames == 0 {
@@ -1532,17 +1604,17 @@ impl AudioEditor {
         let rate = if sample_rate > 0.0 {
             sample_rate
         } else {
-            self.rate
+            self.file.rate
         };
         let buffer = self.next_buffer()?;
         let mut steps = self.allocate_at(buffer, frames, rate);
         steps.extend(self.copied(buffer, i64::from(held), 0, frames));
-        self.frames.insert(buffer, frames);
-        if rate != self.rate {
-            self.rates.insert(SourceId(buffer as u64), rate);
+        self.file.frames.insert(buffer, frames);
+        if rate != self.file.rate {
+            self.file.rates.insert(SourceId(buffer as u64), rate);
         }
         let list = parts::insert(
-            &self.contents.parts,
+            &self.file.contents.parts,
             position,
             &[part(buffer, 0, frames)],
             &self.rates_of(),
@@ -1571,22 +1643,22 @@ impl AudioEditor {
                 clip.content.kind()
             ));
         };
-        if channels != self.channels {
+        if channels != self.file.channels {
             return Err(format!(
                 "a block of {channels} channels does not paste into a take of {}",
-                self.channels
+                self.file.channels
             ));
         }
         let rate = if sample_rate > 0.0 {
             sample_rate
         } else {
-            self.rate
+            self.file.rate
         };
         let mut samples: Vec<f32> = match values.get(3 + blob) {
             Some(Value::Array(items)) => items.iter().map(|v| number(v) as f32).collect(),
             _ => return Err("the clipboard's samples did not travel with it".into()),
         };
-        let width = u64::from(self.channels);
+        let width = u64::from(self.file.channels);
         let frames = frames.min(samples.len() as u64 / width);
         samples.truncate((frames * width) as usize);
         Ok((position, samples, rate))
@@ -1595,7 +1667,7 @@ impl AudioEditor {
     /// The steps that write `samples`, interleaved, into `buffer` from its
     /// first frame, and wait for the last write.
     fn fill(&self, buffer: i64, samples: &[f32]) -> Vec<Step> {
-        let chunk = self.chunk.max(1);
+        let chunk = self.window_state.chunk.max(1);
         let mut steps: Vec<Step> = samples
             .chunks(chunk)
             .enumerate()
@@ -1623,21 +1695,26 @@ impl AudioEditor {
             "locate" if !values.is_empty() => {
                 let frame = number(&values[0]);
                 let cursor = frame.max(0.0).round() as u64;
-                self.cursor = Some(cursor);
-                out.cue = self.cursor;
+                self.file.presentation.cursor = Some(cursor);
+                out.cue = self.file.presentation.cursor;
                 out.locate = Some(self.secs_at(frame));
                 // **A sweep let go puts the cursor on the selection's start**
                 // (a click empties the selection at its press), and that is
                 // when a loop in progress is put into the span it was moved
                 // to: a head past the loop's end would run on and never wrap.
-                if self.selection.is_some_and(|(from, _)| from == cursor) {
+                if self
+                    .file
+                    .presentation
+                    .selection
+                    .is_some_and(|(from, _)| from == cursor)
+                {
                     out.follow = self.follow(true);
                 }
             }
             "selection" => {
                 let frame = |i: usize| values.get(i).map_or(0.0, number).max(0.0);
                 let (from, len) = (frame(0), frame(1));
-                self.selection =
+                self.file.presentation.selection =
                     (len > 0.0).then(|| (from.round() as u64, (from + len).round() as u64));
                 let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 out.selection = Some(json!({ "start": at(0), "len": at(1) }));
@@ -1729,56 +1806,56 @@ where
 impl AudioEditor {
     fn adopt(&mut self, facts: Facts) {
         if let Some(channels) = facts.channels {
-            self.channels = channels.max(1);
+            self.file.channels = channels.max(1);
         }
         if let Some(rate) = facts.rate.filter(|r| *r > 0.0) {
-            self.rate = rate;
+            self.file.rate = rate;
         }
         if let Some(take) = facts.take {
             let frames = facts
                 .frames
-                .unwrap_or_else(|| self.frames.get(&take).copied().unwrap_or(0));
+                .unwrap_or_else(|| self.file.frames.get(&take).copied().unwrap_or(0));
             self.reopen(take, frames);
         } else if let Some(frames) = facts.frames {
-            self.reopen(self.take, frames);
+            self.reopen(self.file.take, frames);
         }
         if let Some(display) = facts.display {
-            self.display = display;
+            self.file.display = display;
         }
         if let Some(buffers) = facts.buffers {
-            self.spare.extend(buffers);
+            self.file.spare.extend(buffers);
         }
         if let Some(path) = facts.path.filter(|p| !p.is_empty()) {
-            self.target = Target::File(path);
+            self.file.target = Target::File(path);
         } else if facts.untitled == Some(true) {
-            self.target = Target::File(String::new());
+            self.file.target = Target::File(String::new());
         }
         if let Some(scratch) = facts.scratch.filter(|s| !s.is_empty()) {
-            self.scratch = Some(scratch);
+            self.window_state.scratch = Some(scratch);
         }
         if let Some(chunk) = facts.chunk {
-            self.chunk = chunk.max(1);
+            self.window_state.chunk = chunk.max(1);
         }
         if let Some(name) = facts.name {
-            self.name = name;
+            self.file.name = name;
         }
         if let Some(title) = facts.title {
-            self.title = title;
+            self.window_state.title = title;
         }
         if let Some(chrome) = facts.chrome {
-            self.bare = !chrome;
+            self.window_state.bare = !chrome;
         }
         if let Some(w) = facts.w {
-            self.size.0 = w;
+            self.window_state.size.0 = w;
         }
         if let Some(h) = facts.h {
-            self.size.1 = h;
+            self.window_state.size.1 = h;
         }
         if let Some(window) = facts.window {
-            self.window = window;
+            self.window_state.window = window;
         }
         if let Some(meters) = facts.meters {
-            self.meters = meters.map(|m| (m.bus, m.channels));
+            self.window_state.meters = meters.map(|m| (m.bus, m.channels));
         }
     }
 }
@@ -1804,10 +1881,10 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
         &names,
         facts.version.unwrap_or(0),
     )?;
-    editor.layers = stack;
-    editor.codec = facts.codec.clone();
-    editor.sample_format = facts.sample_format.clone();
-    editor.owns_opened =
+    editor.file.presentation.layers = stack;
+    editor.file.codec = facts.codec.clone();
+    editor.file.sample_format = facts.sample_format.clone();
+    editor.file.owns_opened =
         facts.path.as_ref().is_some_and(|p| !p.is_empty()) || facts.untitled == Some(true);
     editor.adopt(Facts {
         layers: None,
@@ -1857,7 +1934,7 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// - `open_file` -- `paths`, a path or array: an outcome asking the client to
 ///   load the files through SoundFile. `add_file` -- the loaded buffer facts,
 ///   display and spare buffers: add it and return the server steps and binding.
-/// - `focus_file`, `close_file` -- `index` (zero-based) or `file` (join id):
+/// - `focus_file`, `close_file` -- `index` (zero-based) or `file` (open-object id):
 ///   restore its state or free it. Closing without either names the focused file.
 /// - `show_files`, `hide_files`, `toggle_files` -- the independent left list.
 /// - `kept` -- `buffer`: a spill the caller could not carry out, so that take
@@ -1885,7 +1962,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
     {
         "sync" => {
             if let Some(visible) = request.get("filesVisible").and_then(Value::as_bool) {
-                editor.files_visible = visible;
+                editor.window_state.files_visible = visible;
             }
             if let Ok(facts) = serde_json::from_value::<Facts>(request.clone()) {
                 editor.adopt(Facts {
@@ -1893,7 +1970,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                     ..facts
                 });
             }
-            json!({ "spare": editor.spare.len() }).to_string()
+            json!({ "spare": editor.file.spare.len() }).to_string()
         }
         verb @ ("layers" | "show_layer" | "hide_layer" | "solo_layer" | "layer_alpha"
         | "view_wave" | "view_spectrogram" | "view_both") => {
@@ -1907,7 +1984,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                         editor.layer_corrections(),
                     ));
                     let mut value = serde_json::to_value(outcome).unwrap();
-                    value["measure"] = json!(editor.layers.to_wire());
+                    value["measure"] = json!(editor.file.presentation.layers.to_wire());
                     value.to_string()
                 }
                 Err(error) => json!({"error": error}).to_string(),
@@ -1920,29 +1997,29 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 request.get("name").and_then(Value::as_str)
             };
             match name.map(|name| editor.edit_layer(name)).transpose() {
-                Ok(corrections) => json!({"turn": "route", "layer": editor.edit_layer,
+                Ok(corrections) => json!({"turn": "route", "layer": editor.file.presentation.edit_layer,
                     "answer": conversation::answer(0, version, None, corrections.unwrap_or_default())}).to_string(),
                 Err(error) => json!({"error": error}).to_string(),
             }
         }
         "window" => {
-            editor.files_widget = request.get("filesWidget").and_then(Value::as_i64).map(|n| n as i32);
+            editor.window_state.files_widget = request.get("filesWidget").and_then(Value::as_i64).map(|n| n as i32);
             if let Some(ids) = request.get("dialogs").and_then(Value::as_object) {
-                editor.dialogs = ids
+                editor.window_state.dialogs = ids
                     .iter()
                     .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
                     .collect();
             }
-            editor.envelope_widget = request
+            editor.window_state.envelope_widget = request
                 .get("envelope")
                 .and_then(Value::as_i64)
                 .map(|n| n as i32);
             editor.ensure_envelope();
-            editor.pane = request
+            editor.window_state.pane = request
                 .get("pane")
                 .and_then(Value::as_i64)
                 .map(|n| n as i32);
-            editor.lane = request
+            editor.window_state.lane = request
                 .get("lane")
                 .and_then(Value::as_i64)
                 .map(|n| n as i32);
@@ -1960,7 +2037,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
         "folded" => json!({"folded": editor.folded()}).to_string(),
         "file" => editor.file().to_string(),
-        "files" => { editor.refresh_files(); json!({"files": editor.files, "visible": editor.files_visible}).to_string() },
+        "files" => { editor.refresh_files(); json!({"files": editor.open_files.rows, "visible": editor.window_state.files_visible}).to_string() },
         "binding" => editor.binding().to_string(),
         "add_file" => match new_json(&request.to_string()).and_then(|mut file| {
             let steps = file.open()?;
@@ -1968,26 +2045,26 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             Ok(steps)
         }) {
             Ok(steps) => json!({"turn": "route", "steps": steps, "binding": editor.binding(), "focusChanged": true, "restructure": true,
-                "answer": conversation::answer(0, editor.conversation.applied, None, editor.focus_corrections())}).to_string(),
+                "answer": conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections())}).to_string(),
             Err(error) => json!({"error": error}).to_string(),
         },
         "focus_file" | "close_file" => {
             let verb = request["verb"].as_str().unwrap();
             editor.refresh_files();
             let file = if let Some(index) = request.get("index") {
-                match index.as_u64().and_then(|i| editor.files.get(i as usize)).and_then(|f| f["id"].as_i64()) {
+                match index.as_u64().and_then(|i| editor.open_files.rows.get(i as usize)).and_then(|f| f["id"].as_i64()) {
                     Some(id) => id,
                     None => return json!({"error": "the file index is outside the open files"}).to_string(),
                 }
-            } else { request.get("file").and_then(Value::as_i64).unwrap_or(editor.display) };
-            let before = editor.display;
+            } else { request.get("file").and_then(Value::as_i64).unwrap_or(editor.file.id.0) };
+            let before = editor.file.id.0;
             let result = if verb == "focus_file" {
                 editor.focus_file(file).map(|()| (json!([]), Vec::<i64>::new()))
             } else { editor.close_file(file) };
             match result {
-                Ok((steps, freed)) => json!({"turn": "route", "steps": steps, "freedBuffers": freed, "binding": editor.binding(), "focusChanged": before != editor.display,
-                    "restructure": true, "fileAction": {"verb": verb, "file": file}, "close": editor.files.is_empty(),
-                    "answer": (before != editor.display).then(|| conversation::answer(0, editor.conversation.applied, None, editor.focus_corrections()))}).to_string(),
+                Ok((steps, freed)) => json!({"turn": "route", "steps": steps, "freedBuffers": freed, "binding": editor.binding(), "focusChanged": before != editor.file.id.0,
+                    "restructure": true, "fileAction": {"verb": verb, "file": file}, "close": editor.open_files.rows.is_empty(),
+                    "answer": (before != editor.file.id.0).then(|| conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections()))}).to_string(),
                 Err(error) => json!({"error": error}).to_string(),
             }
         }
@@ -2001,12 +2078,25 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             json!({"turn": "route", "openFile": {"paths": paths}}).to_string()
         }
         "playing" => {
-            editor.playing = request.get("file").and_then(Value::as_i64);
-            json!({"corrections": editor.files_corrections()}).to_string()
+            editor.window_state.playing = request.get("file").and_then(Value::as_i64);
+            if let Ok(facts) = serde_json::from_value::<Facts>(request.clone())
+                && let Some(meters) = facts.meters {
+                editor.set_meters(meters.map(|m| (m.bus, m.channels)));
+            }
+            let mut corrections = editor.files_corrections();
+            let follows = editor.window_state.playing.is_none_or(|file| file == editor.file.id.0);
+            let targets: BTreeSet<_> = editor.pictures().chain(editor.window_state.pane).collect();
+            corrections.extend(targets.into_iter().map(|widget| Correction {
+                widget: i64::from(widget), props: json!({"playhead_at": if follows { 0.0 } else { -1.0 }})
+            }));
+            if let (Some(widget), Some((bus, channels))) = (editor.window_state.meter_widget, editor.window_state.meters) {
+                corrections.push(Correction { widget: i64::from(widget), props: json!({"bus": bus, "channels": channels}) });
+            }
+            json!({"corrections": corrections}).to_string()
         }
         "show_files" | "hide_files" | "toggle_files" => {
-            editor.files_visible = match request["verb"].as_str().unwrap() {
-                "show_files" => true, "hide_files" => false, _ => !editor.files_visible,
+            editor.window_state.files_visible = match request["verb"].as_str().unwrap() {
+                "show_files" => true, "hide_files" => false, _ => !editor.window_state.files_visible,
             };
             json!({"turn": "route", "restructure": true}).to_string()
         }
@@ -2015,7 +2105,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         | "remove_effect" | "fold_channel" | "solo_channel" | "show_all_channels" => {
             serde_json::to_string(&editor.act(&request, version)).unwrap()
         }
-        "props" if editor.envelope_widget == Some(widget) => editor
+        "props" if editor.window_state.envelope_widget == Some(widget) => editor
             .envelope_corrections()
             .first()
             .map_or_else(|| "{}".into(), |c| c.props.to_string()),
@@ -2044,8 +2134,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             json!({ "cue": editor.set_cursor(get("at").as_f64().unwrap_or(0.0)) }).to_string()
         }
         "play" => {
-            editor.looping = get("looping").as_bool().unwrap_or(false);
-            json!(editor.play(editor.looping)).to_string()
+            editor.file.presentation.looping = get("looping").as_bool().unwrap_or(false);
+            json!(editor.play(editor.file.presentation.looping)).to_string()
         },
         "save" => {
             let format = get("format").as_str().unwrap_or("float").to_string();
@@ -2101,7 +2191,7 @@ mod layer_tests {
     #[test]
     fn edit_body_calls_and_menu_verbs_correct_the_pane_without_editing_samples() {
         let mut editor = new_json(r#"{"take":1,"frames":1000}"#).unwrap();
-        editor.bare = true;
+        editor.window_state.bare = true;
         let tree = call(&mut editor, json!({"verb":"window","widget":17,"pane":18}));
         assert_eq!(tree["children"][0]["type"], "pane");
         let out = call(
@@ -2204,7 +2294,7 @@ mod layer_tests {
     #[test]
     fn the_views_are_alternatives_in_a_lane_or_stacked_lanes() {
         let mut editor = new_json(r#"{"take":1,"frames":1000}"#).unwrap();
-        editor.bare = true;
+        editor.window_state.bare = true;
         let window = |editor: &mut AudioEditor| {
             call(
                 editor,

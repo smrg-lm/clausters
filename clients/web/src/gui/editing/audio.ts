@@ -191,7 +191,7 @@ class AudioDriver implements TransportDriver {
     paused = false;
     private readonly editor: AudioEditor;
     private readonly playback: AudioPlayback;
-    private get display(): number { return Number(this.editor.coreCall("binding").display); }
+    private get fileId(): number { return Number(this.editor.coreCall("binding").id); }
 
     constructor(editor: AudioEditor, playback: AudioPlayback) {
         this.editor = editor;
@@ -199,23 +199,27 @@ class AudioDriver implements TransportDriver {
     }
 
     async #focused(): Promise<boolean> {
-        return (await this.playback.call("state")).focus === this.display;
+        return (await this.playback.call("state")).focus === this.fileId;
     }
 
     async playing(): Promise<boolean> {
-        return (await this.playback.rolling()) && (await this.#focused());
+        const was = (await this.playback.call("state")).rolling === true;
+        const rolling = await this.playback.rolling();
+        if (was !== rolling) await this.editor.showTransport();
+        return rolling && (await this.#focused());
     }
 
     async play(at?: number): Promise<void> {
         if (at === undefined && this.paused && (await this.#focused())) {
             this.paused = false;
             await this.playback.call("resume");
+            await this.editor.showTransport();
             return;
         }
         this.paused = false;
         if (at !== undefined) await this.locate(at);
         const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
-        await this.playback.call("play", { file: this.display, start: Math.trunc(play.start), pass: play.pass });
+        await this.playback.call("play", { file: this.fileId, start: Math.trunc(play.start), pass: play.pass });
         await this.editor.showTransport();
     }
 
@@ -223,6 +227,7 @@ class AudioDriver implements TransportDriver {
         if (!(await this.#focused())) return;
         await this.playback.call("pause");
         this.paused = true;
+        await this.editor.showTransport();
     }
 
     /**
@@ -233,7 +238,7 @@ class AudioDriver implements TransportDriver {
         this.paused = false;
         if (!(await this.#focused()) && !(await this.playback.rolling())) return;
         const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
-        await this.playback.call("stop", { back: Math.trunc(play.back), file: this.display });
+        await this.playback.call("stop", { back: Math.trunc(play.back), file: this.fileId });
         await this.editor.showTransport();
     }
 
@@ -463,7 +468,6 @@ export class AudioEditor extends Editor<Buffer> {
         );
         this.member = opened.member;
         this.structureId = opened.identity;
-        this.windowStructure = opened.identity;
         if (options.historyBytes !== undefined && options.historyBytes !== null) {
             this.editing.limitBytes(options.historyBytes);
         }
@@ -627,17 +631,14 @@ export class AudioEditor extends Editor<Buffer> {
     hideFiles(): void { this.take(this.coreCall("hide_files") as Outcome); }
 
     /** The identity the window's own widgets are named by. */
-    private windowStructure = 0;
 
     /**
-     * The id of a widget that is the **window's** rather than the file's:
-     * named by the structure the editor opened over, so it is the same widget
-     * whichever file is in focus and a click in flight still finds it. The
-     * take's own widgets are named by the file in focus, so a gesture over the
-     * file before a switch never lands on the next one.
+     * A component of this window, rebound to the focused file's data.
+     * Component ids survive switches; the context version rejects gestures
+     * made against the previous file's binding.
      */
     windowWidget(role: string, key = ""): number {
-        return this.app.idFor(this.windowStructure, role, key, this);
+        return this.app.viewIdFor(role, key, this);
     }
 
     // ---- the history: the order of the file in focus ----
@@ -703,21 +704,22 @@ export class AudioEditor extends Editor<Buffer> {
         this.#driver.span = b.span as [number, number] | null;
         this.#driver.looping = b.looping === true;
         this.#driver.paused = false;
-        await this.sound();
+        await this.sound(false);
         // a pass in progress goes on: the window only looks elsewhere
         await this.playback.rolling();
-        await this.playback.call("view", { file: this.display, frame: Number(b.cursor) });
+        await this.playback.call("view", { file: this.fileId, frame: Number(b.cursor) });
         if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
+        await this.sound();
         // the switch moved the version: the answer hands it to the host, with
         // the incoming file's cursor and selection
         this.echo.send(answer.answer as never);
         await this.showTransport();
     }
 
-    private async sound(): Promise<void> {
+    private async sound(publishPreview = true): Promise<void> {
         const frames = Number(this.coreCall("parts").frames ?? 0);
         await this.playback.call("sync", {
-            file: this.display,
+            file: this.fileId,
             buffer: this.display,
             channels: Math.max(1, Math.trunc(this.structure.channels || 1)),
             frames,
@@ -726,16 +728,16 @@ export class AudioEditor extends Editor<Buffer> {
         });
         const preview = this.coreCall("preview");
         if (preview.installed) {
-            await this.playback.call("gain", { file: this.display, points: preview.points, on: preview.on, revision: preview.revision });
+            await this.playback.call("gain", { file: this.fileId, points: preview.points, on: preview.on, revision: preview.revision });
         } else {
-            await this.playback.call("removeEffect", { file: this.display });
+            await this.playback.call("removeEffect", { file: this.fileId });
         }
         const state = await this.playback.call("state");
-        if (this.host !== null && this.window !== null) {
+        if (publishPreview && this.host !== null && this.window !== null) {
             const previews = state.previews as Record<string, number | null> | undefined;
             // every view of the take, each drawing the preview as itself
             for (const wid of (preview.pictures as number[] | undefined) ?? []) {
-                await this.host.set(wid, { preview_buffer: previews?.[String(this.display)] ?? -1 });
+                await this.host.set(wid, { preview_buffer: previews?.[String(this.fileId)] ?? -1 });
             }
         }
         this.coreCall("sync", { meters: state.meters ?? null });
@@ -758,10 +760,10 @@ export class AudioEditor extends Editor<Buffer> {
     private async play(play: Play): Promise<void> {
         if (await this.playback.rolling()) {
             // whichever file plays stops, and the one shown comes into focus
-            await this.playback.call("stop", { back: Math.trunc(play.back), file: this.display });
+            await this.playback.call("stop", { back: Math.trunc(play.back), file: this.fileId });
         } else {
             await this.playback.call("play", {
-                file: this.display,
+                file: this.fileId,
                 start: Math.trunc(play.start),
                 pass: play.pass,
             });
@@ -784,6 +786,8 @@ export class AudioEditor extends Editor<Buffer> {
         this.host?.clipboard(doc);
     }
 
+    private get fileId(): number { return Number(this.coreCall("binding").id); }
+
     /**
      * **The window's play cursor and the list's play mark, as the playback
      * stands**: the line is drawn over the file shown unless another file is
@@ -795,11 +799,7 @@ export class AudioEditor extends Editor<Buffer> {
         const state = await this.playback.call("state");
         const host = this.host;
         if (host === null || this.window === null) return;
-        for (const wid of (this.view as SamplesView).widgets.keys()) {
-            await host.set(wid, { playhead_at: state.follows === false ? -1 : 0 });
-            break;
-        }
-        const playing = this.coreCall("playing", { file: state.playing ?? null });
+        const playing = this.coreCall("playing", { file: state.playing ?? null, meters: state.meters ?? null });
         type Correction = { widget: number; props: Parameters<typeof host.set>[1] };
         for (const correction of (playing.corrections ?? []) as Correction[]) {
             await host.set(Number(correction.widget), correction.props);
@@ -1095,7 +1095,7 @@ export class AudioEditor extends Editor<Buffer> {
         // to say.
         const follow = outcome.follow;
         if (follow !== undefined) {
-            domain.after(() => this.playback.call("follow", { file: this.display, ...follow }).then(() => {}));
+            domain.after(() => this.playback.call("follow", { file: this.fileId, ...follow }).then(() => {}));
         }
         const cue = outcome.cue;
         if (cue !== undefined) domain.after(() => this.cue(cue));

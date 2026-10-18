@@ -275,6 +275,12 @@ class Application:
         table = self._ids(drawer)
         return table.id_for(self._owner(drawer, table), int(structure), role, str(key))
 
+    def _view_id_for(self, role: str, key: str = "", drawer=None) -> int:
+        """An instance's component identity, independent of its contents."""
+        table = self._ids(drawer)
+        owner = self._owner(drawer, table)
+        return table.id_for(owner, 0, "window:" + role, f"{owner}:{key}")
+
     def reset_ids(self, drawer=None) -> None:
         """Start ``drawer``'s draw: from here, every name it asks for counts as
         drawn, and `retire_ids` takes back the rest.

@@ -6,7 +6,7 @@ use super::*;
 impl AudioEditor {
     /// The folded channels, in order.
     pub fn folded(&self) -> Vec<u32> {
-        self.folded.iter().copied().collect()
+        self.file.presentation.folded.iter().copied().collect()
     }
 
     /// What the take's pictures are corrected with: its folded channels.
@@ -22,10 +22,10 @@ impl AudioEditor {
     /// The channel a request names, or why it names none of the take's.
     fn channel_of(&self, channel: Option<u64>) -> Result<u32, String> {
         match channel {
-            Some(c) if c < u64::from(self.channels) => Ok(c as u32),
+            Some(c) if c < u64::from(self.file.channels) => Ok(c as u32),
             Some(c) => Err(format!(
                 "channel {c} is not one of the take's {} channels",
-                self.channels
+                self.file.channels
             )),
             None => Err("a channel is named by its index, from 0".into()),
         }
@@ -38,8 +38,8 @@ impl AudioEditor {
     ) -> (Option<String>, Vec<Correction>) {
         match self.channel_of(channel) {
             Ok(c) => {
-                if !self.folded.remove(&c) {
-                    self.folded.insert(c);
+                if !self.file.presentation.folded.remove(&c) {
+                    self.file.presentation.folded.insert(c);
                 }
                 (None, self.folded_corrections())
             }
@@ -54,7 +54,7 @@ impl AudioEditor {
     ) -> (Option<String>, Vec<Correction>) {
         match self.channel_of(channel) {
             Ok(c) => {
-                self.folded.remove(&c);
+                self.file.presentation.folded.remove(&c);
                 (None, self.folded_corrections())
             }
             Err(why) => (Some(why), Vec::new()),
@@ -68,7 +68,8 @@ impl AudioEditor {
     ) -> (Option<String>, Vec<Correction>) {
         match self.channel_of(channel) {
             Ok(c) => {
-                self.folded = (0..self.channels).filter(|o| *o != c).collect();
+                self.file.presentation.folded =
+                    (0..self.file.channels).filter(|o| *o != c).collect();
                 (None, self.folded_corrections())
             }
             Err(why) => (Some(why), Vec::new()),
@@ -77,7 +78,7 @@ impl AudioEditor {
 
     /// **Unfolds every channel.**
     pub(super) fn show_all_channels(&mut self) -> (Option<String>, Vec<Correction>) {
-        self.folded.clear();
+        self.file.presentation.folded.clear();
         (None, self.folded_corrections())
     }
 }

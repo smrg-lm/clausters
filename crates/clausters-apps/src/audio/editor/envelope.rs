@@ -15,8 +15,8 @@ impl AudioEditor {
     pub(super) fn preview_state(&self) -> Value {
         // `pictures` are the widgets the preview is drawn in: every view of
         // the take, each drawing it as the view it is.
-        json!({"on":self.preview_on, "installed":self.effect_installed,
-            "points":self.envelope_quads(false),"revision":self.contents.payload().0,
+        json!({"on":self.file.presentation.preview_on, "installed":self.file.effect_installed,
+            "points":self.envelope_quads(false),"revision":self.file.contents.payload().0,
             "pictures": self.pictures().collect::<Vec<_>>()})
     }
 
@@ -28,13 +28,13 @@ impl AudioEditor {
         self.ensure_envelope();
         match verb {
             "preview_on" => {
-                self.preview_on = true;
-                self.effect_installed = true;
+                self.file.presentation.preview_on = true;
+                self.file.effect_installed = true;
             }
-            "preview_off" => self.preview_on = false,
+            "preview_off" => self.file.presentation.preview_on = false,
             "remove_effect" => {
-                self.preview_on = false;
-                self.effect_installed = false;
+                self.file.presentation.preview_on = false;
+                self.file.effect_installed = false;
             }
             _ => unreachable!(),
         }
@@ -43,8 +43,8 @@ impl AudioEditor {
     }
 
     pub(super) fn pane_label(&self) -> String {
-        let take = crate::samples::label(self.take_name().as_deref(), self.display);
-        if self.edit_layer.starts_with("points") {
+        let take = crate::samples::label(self.take_name().as_deref(), self.file.display);
+        if self.file.presentation.edit_layer.starts_with("points") {
             format!("{take} -- gain 0..{GAIN_MAX}")
         } else {
             take
@@ -52,26 +52,32 @@ impl AudioEditor {
     }
 
     pub(super) fn ensure_envelope(&mut self) {
-        if self.contents.automation.is_empty() {
+        if self.file.contents.automation.is_empty() {
             let mut curve = Automation::new(
                 NodeId(1),
                 Opaque(json!({"port":"gain", "min":0, "max":GAIN_MAX})),
             );
             curve.points = vec![
                 points::point(Second(0.0), 1.0, 1.0, 0.0),
-                points::point(Second(self.length() as f64 / self.rate), 1.0, 1.0, 0.0),
+                points::point(Second(self.length() as f64 / self.file.rate), 1.0, 1.0, 0.0),
             ];
-            self.contents.automation.push(curve);
+            self.file.contents.automation.push(curve);
         }
     }
 
     pub(super) fn envelope_quads(&self, frames: bool) -> Vec<f64> {
-        self.contents.automation.first().map_or_else(Vec::new, |a| {
-            a.points
-                .iter()
-                .flat_map(|p| points::quad(p.at.0 * if frames { self.rate } else { 1.0 }, p))
-                .collect()
-        })
+        self.file
+            .contents
+            .automation
+            .first()
+            .map_or_else(Vec::new, |a| {
+                a.points
+                    .iter()
+                    .flat_map(|p| {
+                        points::quad(p.at.0 * if frames { self.file.rate } else { 1.0 }, p)
+                    })
+                    .collect()
+            })
     }
 
     fn envelope_props(&self) -> Value {
@@ -87,7 +93,8 @@ impl AudioEditor {
     }
 
     pub(super) fn envelope_corrections(&self) -> Vec<Correction> {
-        self.envelope_widget
+        self.window_state
+            .envelope_widget
             .into_iter()
             .map(|widget| Correction {
                 widget: i64::from(widget),
@@ -97,7 +104,8 @@ impl AudioEditor {
     }
 
     pub(super) fn compose_envelope(&self, tree: &mut Value) {
-        if let (Some(id), Some(pane)) = (self.envelope_widget, self.pane) {
+        if let (Some(id), Some(pane)) = (self.window_state.envelope_widget, self.window_state.pane)
+        {
             fn append(tree: &mut Value, pane: i32, body: &Value, visible: bool) {
                 if tree.get("id").and_then(Value::as_i64) == Some(i64::from(pane)) {
                     tree["children"].as_array_mut().unwrap().push(body.clone());
@@ -117,21 +125,25 @@ impl AudioEditor {
                 tree,
                 pane,
                 &body,
-                self.contents.automation.first().is_some_and(|a| a.visible),
+                self.file
+                    .contents
+                    .automation
+                    .first()
+                    .is_some_and(|a| a.visible),
             );
         }
     }
 
     pub(super) fn show_envelope(&mut self) -> (Option<String>, Vec<Correction>) {
-        if self.envelope_widget.is_none() || self.pane.is_none() {
+        if self.window_state.envelope_widget.is_none() || self.window_state.pane.is_none() {
             return (Some("this window has no envelope body".into()), Vec::new());
         }
         self.ensure_envelope();
-        self.contents.automation[0].visible = true;
+        self.file.contents.automation[0].visible = true;
         let mut corrections = self.envelope_corrections();
         corrections.extend(self.edit_layer("points").unwrap());
         corrections.push(Correction {
-            widget: i64::from(self.pane.unwrap()),
+            widget: i64::from(self.window_state.pane.unwrap()),
             props: json!({"hidden":""}),
         });
         (None, corrections)
@@ -180,7 +192,7 @@ impl AudioEditor {
         } else {
             conversation::answer(0, out.version, reason, corrections)
         });
-        self.dirty |= out.changed;
+        self.file.dirty |= out.changed;
         out
     }
 
@@ -191,7 +203,7 @@ impl AudioEditor {
     ) -> (Option<String>, Vec<Correction>) {
         let mut flat: Vec<f64> = values.iter().map(number).collect();
         for quad in flat.as_chunks_mut::<4>().0 {
-            quad[0] /= self.rate;
+            quad[0] /= self.file.rate;
         }
         self.set_envelope(&flat, out)
     }
@@ -210,7 +222,7 @@ impl AudioEditor {
         let mut flat = flat.to_vec();
         crate::points::Rules {
             values: Some((0.0, GAIN_MAX)),
-            time: Some((0.0, self.length() as f64 / self.rate)),
+            time: Some((0.0, self.length() as f64 / self.file.rate)),
         }
         .keep(&mut flat);
         if flat
@@ -231,11 +243,12 @@ impl AudioEditor {
         let points: Vec<clausters_document::Point<Second>> =
             serde_json::from_value(intake.payloads[0]["points"].clone()).unwrap();
         self.ensure_envelope();
-        if points::same(&self.contents.automation[0].points, &points) {
+        if points::same(&self.file.contents.automation[0].points, &points) {
             return (None, self.envelope_corrections());
         }
-        let before = self.contents.clone();
-        self.contents
+        let before = self.file.contents.clone();
+        self.file
+            .contents
             .set_automation(&MultitrackIntent::SetAutomation {
                 automation: NodeId(1),
                 points,
@@ -252,7 +265,7 @@ impl AudioEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         self.ensure_envelope();
-        let curve = &self.contents.automation[0];
+        let curve = &self.file.contents.automation[0];
         if !curve.enabled || curve.points.iter().all(|p| p.value == 1.0) || self.length() == 0 {
             return (None, Vec::new());
         }
@@ -262,10 +275,10 @@ impl AudioEditor {
         // segment even if it now ends past the samples, then keep only the
         // take's span. Shortening a fade must not accelerate its shape.
         let rendered = curve.last().map_or(frames, |p| {
-            frames.max(secs_to_samples(p.at.0, self.rate).max(0) as u64)
+            frames.max(secs_to_samples(p.at.0, self.file.rate).max(0) as u64)
         });
         if rendered
-            .checked_mul(u64::from(self.channels))
+            .checked_mul(u64::from(self.file.channels))
             .is_none_or(|n| n > i32::MAX as u64)
         {
             return (
@@ -284,9 +297,9 @@ impl AudioEditor {
                 OscType::Int(buffer as i32),
                 OscType::String("copy".into()),
                 OscType::Int(0),
-                OscType::Int(self.display as i32),
+                OscType::Int(self.file.display as i32),
                 OscType::Int(0),
-                OscType::Int((frames * u64::from(self.channels)) as i32),
+                OscType::Int((frames * u64::from(self.file.channels)) as i32),
             ],
         ));
         steps.push(Step::AwaitDone {
@@ -296,15 +309,15 @@ impl AudioEditor {
         steps.extend(clausters_editing::gain::steps(
             buffer as i32,
             rendered,
-            self.rate,
+            self.file.rate,
             &curve,
         ));
-        let before = self.contents.clone();
-        self.frames.insert(buffer, rendered);
-        self.contents.parts = vec![part(buffer, 0, frames)];
-        self.contents.automation[0].points = vec![
+        let before = self.file.contents.clone();
+        self.file.frames.insert(buffer, rendered);
+        self.file.contents.parts = vec![part(buffer, 0, frames)];
+        self.file.contents.automation[0].points = vec![
             points::point(Second(0.0), 1.0, 1.0, 0.0),
-            points::point(Second(frames as f64 / self.rate), 1.0, 1.0, 0.0),
+            points::point(Second(frames as f64 / self.file.rate), 1.0, 1.0, 0.0),
         ];
         steps.extend(self.stitched());
         out.record = Some(self.record("apply gain envelope", &before));
@@ -352,7 +365,7 @@ mod tests {
         assert_eq!(pane["children"][1]["points"][4], 48000.0);
         let show = e.act(&json!({"verb":"show_envelope"}), 1);
         assert!(!show.changed);
-        assert_eq!(e.edit_layer, "points");
+        assert_eq!(e.file.presentation.edit_layer, "points");
         let out = e.event(
             &Event {
                 addr: "/gui_event".into(),
@@ -435,13 +448,13 @@ mod tests {
     #[test]
     fn unchanged_refused_and_unity_apply_do_not_consume_buffers_or_history() {
         let mut e = editor();
-        let available = e.spare.clone();
+        let available = e.file.spare.clone();
         assert!(!e.act(&json!({"verb":"apply_envelope"}), 1).changed);
-        let before = e.contents.clone();
+        let before = e.file.contents.clone();
         let out = e.act(&json!({"verb":"setautomation","points":[0,1,1]}), 1);
         assert!(serde_json::to_value(out.answer.unwrap()).unwrap()["reason"].is_string());
-        assert_eq!(e.contents, before);
-        assert_eq!(e.spare, available);
+        assert_eq!(e.file.contents, before);
+        assert_eq!(e.file.spare, available);
         let out = e.act(
             &json!({"verb":"setautomation","points":e.envelope_quads(false)}),
             1,
@@ -449,13 +462,13 @@ mod tests {
         assert!(!out.changed);
         assert!(out.record.is_none());
         e.act(&json!({"verb":"setautomation","points":[0,0.5,1,0]}), 1);
-        e.spare.clear();
-        let before = e.contents.clone();
+        e.file.spare.clear();
+        let before = e.file.contents.clone();
         assert!(
             serde_json::to_value(e.act(&json!({"verb":"apply_envelope"}), 2).answer.unwrap())
                 .unwrap()["reason"]
                 .is_string()
         );
-        assert_eq!(e.contents, before);
+        assert_eq!(e.file.contents, before);
     }
 }

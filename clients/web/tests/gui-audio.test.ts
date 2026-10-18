@@ -18,6 +18,7 @@ import { AudioEditor, Editing, edit, measures } from "../src/gui/editing/index.t
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 import { Transport } from "../src/defs/server/transport.ts";
+import { GuiIdAllocator } from "../src/gui/ids.ts";
 import { SoundFile } from "../src/soundfile.ts";
 
 /**
@@ -42,10 +43,10 @@ class FakeHost {
     trees: GuiNode[] = [];
     clock = "device";
     clockOf = -1;
-    private next = 20_000;
+    readonly ids = new GuiIdAllocator(20_000);
 
     allocId(): number {
-        return this.next++;
+        return this.ids.alloc();
     }
     open(tree: GuiNode): { id: number } {
         this.trees.push(tree);
@@ -675,7 +676,7 @@ test("files asked for in the window are delivered to the handler", async () => {
 
 
 test("files share one handler and transport but keep state and history", async () => {
-    const [editor, host] = await opened(new FakeBuffer());
+    const [editor, host, wid] = await opened(new FakeBuffer());
     const transportId = editor.transport!.id;
     const originalRead = SoundFile.prototype.toBuffer;
     const originalOpen = SoundFile.open;
@@ -695,6 +696,7 @@ test("files share one handler and transport but keep state and history", async (
         await editor.openFile(["/takes/b.wav", "/takes/c.wav"]);
         assert.equal(listed(), filesList, "the list is the window's: a click in flight still finds it");
         assert.equal(editor.files.length, 3);
+        assert.equal(picture(host.trees.at(-1)).id, wid);
         assert.equal(editor.file!.path, "/takes/c.wav");
         assert.equal(editor.transport!.id, transportId);
         assert.equal(editor.canUndo, false);
@@ -726,4 +728,64 @@ test("files share one handler and transport but keep state and history", async (
         SoundFile.prototype.toBuffer = originalRead;
         SoundFile.open = originalOpen;
     }
+});
+
+test("playing a file while viewing another keeps the signal and meter", async () => {
+    const take = new FakeBuffer(100, 1);
+    const [editor, host] = await opened(take);
+    const props = new Map<number, Record<string, unknown>>();
+    host.set = ((id: number, values: Record<string, unknown>) => {
+        props.set(id, { ...props.get(id), ...values });
+    }) as typeof host.set;
+    const originalRead = SoundFile.prototype.toBuffer;
+    const originalOpen = SoundFile.open;
+    SoundFile.prototype.toBuffer = async function({ server } = {}) {
+        const endpoint = server as unknown as FakeServer;
+        return { bufnum: endpoint.buffers.alloc(), frames: this.frames, channels: this.channels,
+            sampleRate: this.sampleRate, server: endpoint, path: this.path } as never;
+    };
+    SoundFile.open = async (path: string) => new SoundFile(path, 200, path.includes("six") ? 6 : 2, SR);
+    const driver = (editor.transport as unknown as { driver: { play(): Promise<void>; stop(): Promise<void> } }).driver;
+    try {
+        let first = editor.coreCall("binding").id;
+        await driver.play();
+        take.server.playing = true;
+        await editor.openFile(["/takes/stereo.wav", "/takes/six.wav"]);
+        for (const [index, channels] of [[2, 6], [1, 2], [0, 1], [1, 2], [2, 6]]) {
+            await editor.focusFile(index!);
+            const playback = (editor as unknown as { playback: { call(v: string): Promise<Record<string, any>> } }).playback;
+            const state = await playback.call("state");
+            assert.equal(state.playing, first);
+            const wid = Number(picture(host.trees.at(-1)).id);
+            assert.equal(props.get(wid)?.playhead_at, editor.coreCall("binding").id === first ? 0 : -1);
+            await driver.stop();
+            take.server.playing = false;
+            assert.deepEqual((await playback.call("state")).meters, { bus: -channels!, channels });
+            await driver.play();
+            take.server.playing = true;
+            first = editor.coreCall("binding").id;
+            assert.equal((await playback.call("state")).meters.channels, channels);
+        }
+        editor.close();
+    } finally {
+        SoundFile.prototype.toBuffer = originalRead;
+        SoundFile.open = originalOpen;
+    }
+});
+
+
+test("two audio windows keep distinct component bindings on one host", async () => {
+    const take = new FakeBuffer();
+    const [first, host, wid, context] = await opened(take);
+    const second = new AudioEditor(take as never, { sampleRate: SR, context });
+    await second.open(host as unknown as GuiHost);
+    const otherIds = [...second.view!.widgets.keys()];
+    for (const id of first.view!.widgets.keys()) assert.ok(!otherIds.includes(id));
+    first.viewBoth();
+    await settle();
+    assert.equal(picture(host.trees.at(-1)).id, wid);
+    assert.deepEqual([...second.view!.widgets.keys()], otherIds);
+    first.close();
+    assert.equal(second.closed, false);
+    second.close();
 });

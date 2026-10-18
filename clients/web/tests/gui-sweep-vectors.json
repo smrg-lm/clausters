@@ -514,6 +514,16 @@
  },
  {
   "builder": "files",
+  "option": "multiple",
+  "value": true,
+  "tree": {
+   "type": "files",
+   "path": ".",
+   "multiple": 1
+  }
+ },
+ {
+  "builder": "files",
   "option": "text_size",
   "value": 3.5,
   "tree": {
@@ -1305,6 +1315,49 @@
   "tree": {
    "type": "number",
    "color": "q"
+  }
+ },
+ {
+  "builder": "pane",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "pane",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "pane",
+  "option": "layer",
+  "value": "take",
+  "tree": {
+   "type": "pane",
+   "layer": "take"
+  }
+ },
+ {
+  "builder": "pane",
+  "option": "hidden",
+  "value": "sel",
+  "tree": {
+   "type": "pane",
+   "hidden": "sel"
   }
  },
  {
@@ -2699,6 +2752,15 @@
  },
  {
   "builder": "signal",
+  "option": "preview_buffer",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "preview_buffer": 7
+  }
+ },
+ {
+  "builder": "signal",
   "option": "path",
   "value": "q",
   "tree": {
@@ -3069,6 +3131,16 @@
    "type": "signal",
    "view": "spectrogram",
    "buffer": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "preview_buffer",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "preview_buffer": 7
   }
  },
  {
@@ -4421,6 +4493,16 @@
    "type": "signal",
    "view": "trace",
    "buffer": 7
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "preview_buffer",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "preview_buffer": 7
   }
  },
  {

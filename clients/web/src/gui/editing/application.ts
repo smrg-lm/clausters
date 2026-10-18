@@ -280,6 +280,13 @@ export class Application {
         return table.idFor(this.#owner(drawer, table), Math.trunc(structure), role, String(key));
     }
 
+    /** @internal An instance's component identity, independent of its contents. */
+    viewIdFor(role: string, key = "", drawer?: object): number {
+        const table = this.#ids(drawer);
+        const owner = this.#owner(drawer, table);
+        return table.idFor(owner, 0, "window:" + role, `${owner}:${key}`);
+    }
+
     /**
      * Start `drawer`'s draw: from here, every name it asks for counts as drawn,
      * and {@link Application.retireIds} takes back the rest.

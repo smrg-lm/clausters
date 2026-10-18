@@ -1339,9 +1339,10 @@ than the window. `docs/decisions.md` records why for each of the three.
 ### Application state and services: implementation contract
 
 The following is the target contract for the application-state migration,
-audited against the current audio editor on 2026-10-18. It is a design for
-implementation; the existing editor and adapters still have the ownership
-and ordering described below. The application milestones in the apps plan
+audited against the audio editor on 2026-10-18. The ownership table records
+that audit's starting point. The file/window separation described immediately
+below is implemented; coordinator, service and completion contracts remain
+designs for the subsequent migration. The application milestones in the apps plan
 own its delivery. No new public API, wire message or ABI symbol is introduced
 by this contract.
 
@@ -1381,6 +1382,44 @@ object observe the same contents/history. Separate windows keep their own
 navigation, selection and interaction. This clarifies the ordinary-window
 rule in [Application behavior](app-behavior.md) without removing explicit
 shared contexts.
+
+#### Audio files and window bindings
+
+`AudioEditor` now composes `AudioFileState`, `AudioFileViewState`,
+`AudioWindowState` and `AudioFiles`. The active file occupies one slot and the
+other file states are indexed by `FileId`; none contains another editor or a
+window. Changing focus moves only a file state into the active slot. The
+conversation, widget ids, dialogs, scratch configuration and playback
+association stay on the window, with no copied list of window fields.
+
+Each file receives an instance-local identity distinct from its display
+buffer. The existing JSON `binding` answer carries `id` and `generation`
+alongside `display`, and file-list entries use that id. The clients pass the
+object id to playback and continue using `display` for the samples. Changing
+a buffer or save path cannot change the object's identity. Bindings advance a
+generation on focus changes; the editing context also advances its version,
+so a gesture from an old file is refused by the existing conversation.
+Redraw does not advance the binding generation or recreate file resources.
+Window components use the allocator's drawer identity in their names, so two
+windows over one object have distinct component ids. File focus keeps those
+ids; the context version rejects events from the previous binding. Preview
+corrections wait until the replacement tree has been published, and cursor
+corrections address only lanes that composition actually includes.
+
+| Component | Observes | Rebinding and demand |
+|---|---|---|
+| Waveform, spectrogram and take pane | Focused file's display, rate, length, channel rows and visualization/edit layers | Same window role ids, new source props and explicit cursor/selection corrections; time shared through the pane/navigation group, vertical state remains each view's |
+| Gain envelope | Focused file's automation on the take's time axis | Points and extent projected from that file; no separate history or sample ownership |
+| File list | Ordered open-object ids, focus and playing mark | Window identity stays fixed; choosing a row resolves its object id and does not apply content-edit staleness rules |
+| Playhead | Playback's playing object and the viewed object's time axis | Shared Rust corrections address every picture and pane; a playing object's line is hidden over any other file |
+| Output meter | Playing file's playback-output channels, or the viewed file's layout when stopped | Existing meter id receives `bus`/`channels` corrections in both directions; stopped buses are negative and read as zero. Allocated routing capacity remains private to playback |
+| Client event subscription | Window's event route | One subscription for the window lifetime, not one observer per file; switching does not retain a callback over the previous buffer |
+
+The host's existing source/fetch reconciliation handles a changed source
+binding; the adapters update their current structure and layers, publish the
+window and send the explicit corrections. Host-local navigation remains
+host-local. This separation does not implement a new operation scheduler,
+clipboard service or persistent workspace.
 
 #### Composition and extension
 

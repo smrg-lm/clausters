@@ -2538,7 +2538,7 @@ mod tests {
         );
         call(
             &mut editing,
-            json!({"verb": "member", "member": member, "call": {"verb": "close_file", "file": 9}}),
+            json!({"verb": "member", "member": member, "call": {"verb": "close_file", "file": 1}}),
         );
         let context = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
         assert_ne!(
@@ -2584,7 +2584,7 @@ mod tests {
         assert!(editing.step(Direction::Undo).stepped);
         assert!(!editing.can_undo());
         assert!(editing.can_redo());
-        let restored = member_call(&mut editing, json!({"verb": "focus_file", "file": 9}));
+        let restored = member_call(&mut editing, json!({"verb": "focus_file", "file": 1}));
         assert_eq!(restored["binding"]["cursor"], 24);
         // the host learns the version the switch moved to, with the cursor
         // and selection the incoming file left
@@ -2607,10 +2607,10 @@ mod tests {
         );
         assert!(editing.step(Direction::Undo).stepped);
         assert!(!editing.can_undo());
-        member_call(&mut editing, json!({"verb": "focus_file", "file": 51}));
+        member_call(&mut editing, json!({"verb": "focus_file", "file": 2}));
         assert!(editing.can_redo(), "the other file retains its redo");
         assert!(editing.step(Direction::Redo).stepped);
-        let closed = member_call(&mut editing, json!({"verb": "close_file", "file": 9}));
+        let closed = member_call(&mut editing, json!({"verb": "close_file", "file": 1}));
         assert_eq!(
             closed["binding"]["display"], 51,
             "closing a background file keeps focus"
@@ -2626,5 +2626,36 @@ mod tests {
             editing.can_undo(),
             "closing another file keeps this history"
         );
+    }
+    #[test]
+    fn a_gesture_from_the_previous_file_cannot_edit_the_new_binding() {
+        let mut editing = Editing::new();
+        editing.moved();
+        let member = an_audio_take(&mut editing);
+        let old_version = editing.version();
+        call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{
+            "verb":"add_file", "take":50, "frames":200, "channels":2,
+            "rate":48000, "display":51, "buffers":[52,53,54]}}),
+        );
+        let before = call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"parts"}}),
+        );
+        let late = call(
+            &mut editing,
+            json!({"verb":"event", "member":member,
+            "addr":"/gui_event", "args":[12, 9, old_version, "draw", 0, 10, [0.5], [0.0]]}),
+        );
+        assert_eq!(late["outcome"]["turn"], "stale");
+        assert_eq!(
+            call(
+                &mut editing,
+                json!({"verb":"member", "member":member, "call":{"verb":"parts"}})
+            ),
+            before
+        );
+        assert!(!editing.can_undo());
     }
 }

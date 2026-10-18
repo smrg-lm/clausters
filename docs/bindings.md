@@ -517,6 +517,14 @@ The audio member's existing JSON call door also carries `layer` (active edit
 body), and `window` accepts a caller-named `pane` id. These use the same
 correction/Outcome path as visual `layers`; no binary symbol is added.
 
+Audio `binding` also answers a stable instance-local file `id`, distinct from
+its `display` buffer, and a view-binding `generation`. File-list entries and
+`focus_file`/`close_file` use the object id; their public client methods still
+accept file-list indices. Both clients use the id for playback association.
+The existing `playing` JSON verb accepts the playback's `file` and `meters`
+and answers corrections for the playhead, file mark and meter shape. No C
+signature or wasm export changes.
+
 
 ## OSC
 

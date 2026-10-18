@@ -72,8 +72,11 @@ edit back into the file it was opened from, and
 <b>new file</b> button does; its first save asks where it goes. File -&gt;
 Open file... uses the host's chooser; Ctrl/Shift selects several files.
 The independent file list is on the left and View -&gt; Files hides or shows
-it. Each file keeps its cursor, selection and undo/redo history; switching
-files stops the shared transport.</div>
+it. Each file keeps its cursor, selection and undo/redo history. A playing
+file continues while another is shown, with its playhead hidden there.
+Try File -&gt; New file with two and six channels, then switch back and forth
+while the original loops: the meter keeps the playing file's channel count.
+Stop from another file: its channel layout appears with zero levels.</div>
 
       <button id="run">open the take</button>
       <div id="stage"></div>
@@ -202,7 +205,7 @@ files stops the shared transport.</div>
           }
           const wide = await gui.edit(
             await SoundFile.write("out/edit_audio_8ch.wav", tones, 8, rate, { sampleFormat: "float" }),
-            { title: "eight channels", server, stage: $("stage") },
+            { title: "eight channels", server },
           );
           wide.foldChannel(1);
           wide.foldChannel(4);

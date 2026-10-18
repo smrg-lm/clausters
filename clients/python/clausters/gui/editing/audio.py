@@ -130,22 +130,27 @@ class _AudioDriver:
         return self.editor._playback
 
     def _focused(self) -> bool:
-        return self._playback.state().get("focus") == self.editor._display
+        return self._playback.state().get("focus") == self.editor._file_id
 
     def playing(self) -> bool:
-        return self._playback.rolling() and self._focused()
+        was = bool(self._playback.state().get("rolling"))
+        rolling = self._playback.rolling()
+        if was != rolling:
+            self.editor._show_transport()
+        return rolling and self._focused()
 
     def play(self, at=None) -> None:
         if at is None and self._paused and self._focused():
             self._paused = False
             self._playback.call("resume")
+            self.editor._show_transport()
             return
         self._paused = False
         if at is not None:
             self.locate(at)
         ed = self.editor
         play = ed._call("play", looping=self.looping)
-        self._playback.call("play", file=ed._display, start=int(play["start"]),
+        self._playback.call("play", file=ed._file_id, start=int(play["start"]),
                             **{"pass": play["pass"]})
         ed._show_transport()
 
@@ -153,6 +158,7 @@ class _AudioDriver:
         if self._focused():
             self._playback.call("pause")
             self._paused = True
+            self.editor._show_transport()
 
     def stop(self) -> None:
         """Stop whichever file plays, from the window showing another file
@@ -161,7 +167,7 @@ class _AudioDriver:
         if self._focused() or self._playback.rolling():
             ed = self.editor
             play = ed._call("play", looping=self.looping)
-            self._playback.call("stop", back=int(play["back"]), file=ed._display)
+            self._playback.call("stop", back=int(play["back"]), file=ed._file_id)
             ed._show_transport()
 
     def locate(self, at: float) -> None:
@@ -315,9 +321,6 @@ class AudioEditor(Marking, Editor):
              "codec": getattr(file, "codec", None),
              "sample_format": getattr(file, "sample_format", None),
              "layers": list(view.layers)}, take, domain)
-        #: The identity the window's own widgets are named by (the list, the
-        #: meter, the dialogs), which stay while the files change.
-        self._window_structure = self._structure_id
         if history_bytes is not None:
             self._editing.limit_bytes(history_bytes)
         if resident_bytes is not None:
@@ -386,24 +389,28 @@ class AudioEditor(Marking, Editor):
                 self._host.set(wid, looping=1 if on else 0)
                 break
 
-    def _sound(self) -> None:
+    @property
+    def _file_id(self) -> int:
+        return int(self._call("binding")["id"])
+
+    def _sound(self, *, publish_preview: bool = True) -> None:
         """Make what sounds be the take as it now is -- the join and its
         length -- and tell the window where its level is read from."""
         frames = int(self._call("parts").get("frames", 0))
         self._playback.call(
-            "sync", file=self._display, buffer=self._display,
+            "sync", file=self._file_id, buffer=self._display,
             channels=max(1, int(getattr(self.structure, "channels", 1) or 1)),
             frames=frames, takeRate=self.sample_rate, rate=self._playback.rate)
         preview = self._call("preview")
         if preview["installed"]:
-            self._playback.call("gain", file=self._display,
+            self._playback.call("gain", file=self._file_id,
                                 points=preview["points"], on=preview["on"],
                                 revision=preview["revision"])
         else:
-            self._playback.call("removeEffect", file=self._display)
+            self._playback.call("removeEffect", file=self._file_id)
         state = self._playback.state()
-        if self._host is not None and self._window is not None:
-            buffer = (state.get("previews") or {}).get(str(self._display))
+        if publish_preview and self._host is not None and self._window is not None:
+            buffer = (state.get("previews") or {}).get(str(self._file_id))
             # every view of the take, each drawing the preview as itself
             for wid in preview.get("pictures") or ():
                 self._host.set(int(wid), preview_buffer=-1 if buffer is None else buffer)
@@ -421,9 +428,9 @@ class AudioEditor(Marking, Editor):
         and goes back to the position cursor; a stopped one plays the pass."""
         if self._playback.rolling():
             # whichever file plays stops, and the one shown comes into focus
-            self._playback.call("stop", back=int(play["back"]), file=self._display)
+            self._playback.call("stop", back=int(play["back"]), file=self._file_id)
         else:
-            self._playback.call("play", file=self._display, start=int(play["start"]),
+            self._playback.call("play", file=self._file_id, start=int(play["start"]),
                                 **{"pass": play["pass"]})
         self._show_transport()
 
@@ -448,10 +455,7 @@ class AudioEditor(Marking, Editor):
         state = self._playback.state()
         if self._host is None or self._window is None:
             return
-        for wid in self.view.widgets:
-            self._host.set(wid, playhead_at=0.0 if state.get("follows", True) else -1.0)
-            break
-        for correction in self._call("playing", file=state.get("playing"))["corrections"]:
+        for correction in self._call("playing", file=state.get("playing"), meters=state.get("meters"))["corrections"]:
             self._host.set(int(correction["widget"]), **correction["props"])
 
     def open(self, host=None, id: "int | None" = None):
@@ -533,12 +537,12 @@ class AudioEditor(Marking, Editor):
         self._take(self._call("hide_files"))
 
     def _window_widget(self, role: str, key: str = "") -> int:
-        """The id of a widget that is the **window's** rather than the file's:
-        named by the structure the editor opened over, so it is the same widget
-        whichever file is in focus and a click in flight still finds it. The
-        take's own widgets are named by the file in focus, so a gesture over
-        the file before a switch never lands on the next one."""
-        return self.app.id_for(self._window_structure, role, key, drawer=self)
+        """A component of this window, rebound to the focused file's data.
+
+        Component ids survive file switches. The context version rejects
+        gestures made against the previous file's binding.
+        """
+        return self.app._view_id_for(role, key, drawer=self)
 
     # ---- the history: the order of the file in focus ----
 
@@ -746,10 +750,10 @@ class AudioEditor(Marking, Editor):
                 return False
             if outcome.get("focusChanged"):
                 self._bind_file(outcome["binding"])
-                self._sound()
+                self._sound(publish_preview=False)
                 # a pass in progress goes on: the window only looks elsewhere
                 self._playback.rolling()
-                self._playback.call("view", file=self._display,
+                self._playback.call("view", file=self._file_id,
                                     frame=int(outcome["binding"]["cursor"]))
         if "layers" in outcome:
             self.view.layers = tuple(outcome["layers"])
@@ -796,7 +800,7 @@ class AudioEditor(Marking, Editor):
             # the new span, and the head goes into it once the sweep is let
             # go. Whether it loops, and whether it is this take, is the
             # playback's to say.
-            self._playback.call("follow", file=self._display, **outcome["follow"])
+            self._playback.call("follow", file=self._file_id, **outcome["follow"])
         if outcome.get("cue") is not None:
             self._cue(int(outcome["cue"]))
         if outcome.get("locate") is not None:

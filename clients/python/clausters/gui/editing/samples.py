@@ -75,14 +75,14 @@ class SamplesView(View):
         self.layers = measures(layers)
 
     def build(self, editor) -> dict:
-        wid = self.widget(editor, "waveform", editor.structure)
+        wid = self.register(editor._window_widget("waveform"), editor.structure)
         # the window's own widgets keep their ids while the files change
         meter = self.register(editor._window_widget("meter"), editor.structure)
-        pane = self.widget(editor, "pane", editor.structure)
+        pane = self.register(editor._window_widget("pane"), editor.structure)
         editor._sync_core()
-        envelope = self.widget(editor, "envelope", editor.structure)
+        envelope = self.register(editor._window_widget("envelope"), editor.structure)
         # the spectrogram's lane, drawn when the views are stacked
-        lane = self.widget(editor, "lane", editor.structure)
+        lane = self.register(editor._window_widget("lane"), editor.structure)
         # the crate names the widgets of its dialogs and this numbers them
         dialogs = {str(name): self.register(editor._window_widget("dialog", str(name)),
                                             editor.structure)

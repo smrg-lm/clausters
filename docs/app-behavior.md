@@ -15,6 +15,12 @@ code that keeps it lives.
   a multitrack editor's is one multitrack; a score editor's is one symbolic
   score. Two windows over two objects share nothing
   that moves: not a time window, not a cursor, not a meter.
+- **A window owns its component bindings.** Switching files changes the
+  observed contents and context version while keeping component ids stable.
+  Two windows have separate component ids even over one object. A replacement
+  tree is published before preview corrections, and cursor/selection
+  corrections address only the lanes included in that tree. Old content
+  gestures are still refused by the context's version.
 - **Views of one object share what the object has.** Two views of the same
   file (a waveform and a spectrogram, a roll and a score over one sequence)
   share its time axis, its play cursor and its history, because what they
@@ -30,6 +36,12 @@ code that keeps it lives.
   the one playing, and the file list marks the one that plays. Stop stops
   it from any file; play is over the file shown. Stopped, switching files
   locates the transport to the incoming file's cursor.
+- **The meter describes the signal, not allocated capacity.** While a file
+  plays, the audio editor's output meter keeps that file's channel count even
+  when another file is viewed. Stopped, it shows the viewed file's channel
+  layout with zero levels. Mono, stereo and multichannel switches resize the
+  existing meter in both directions (`AudioEditorPlayback::meters` and the
+  audio application's `playing` corrections).
 - **A play cursor is drawn in its take's frames.** A transport counts the
   engine's samples, and every view of a take at another rate, the pane
   that draws its play cursor included, reads it by the take's rate over the

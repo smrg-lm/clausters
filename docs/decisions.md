@@ -10517,4 +10517,25 @@ an undo there never reaches a file that is gone.
 The rest of what a file keeps (parts, gain curve, cursor, selection, layers,
 loop switch, unsaved changes) is the application's state for that file, parked
 in Rust while another is in focus. All files share the editor's one playback
-and transport: a switch stops it and locates it to the incoming file's cursor.
+and transport: a running pass continues while another file is viewed;
+stopped, a switch locates it to the incoming file's cursor.
+
+
+## Audio component ids belong to the window binding
+
+*2026-10-18.* A file switch changes which contents an audio window observes.
+Naming its components by the focused structure gave the next picture new ids,
+while focus corrections had already been calculated against the previous
+picture. Sending those corrections after publication addressed widgets that
+were gone. A real-window run exposed this as `no such widget`; a fake host
+without the real allocator could not exercise that lifetime.
+
+Audio components now use the drawing instance's allocator identity, through
+`Application`'s internal view-id helper. Separate windows retain separate
+component names even when they observe one structure. Switching files keeps
+the window's component ids and rebinds their data; the editing context's
+version rejects a gesture from the old file. The host's existing named-id
+retention and renderer reconciliation remain the mechanisms underneath.
+Preview corrections follow publication, and only composed lanes receive
+cursor corrections. History and sample resources remain attached to the
+file's stable object identity, independent of the display buffer.

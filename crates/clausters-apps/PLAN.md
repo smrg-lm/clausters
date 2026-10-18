@@ -2286,8 +2286,8 @@ opened it.
 *Opened 2026-10-18 by the user after recurring audio-editor defects exposed
 unclear ownership and call ordering. This plan owns the work, including its
 host and client adapters; the GUI plan's completed AP track is the precedent,
-not a second implementation plan. These milestones plan the implementation;
-none of the proposed types or contracts below is shipped yet.*
+not a second implementation plan. The checkboxes track the staged migration;
+`docs/architecture.md` distinguishes migrated code from target contracts.*
 
 **The purpose: one modular application framework.** Applications follow one
 consistent design, even if this project remains its only consumer. State,
@@ -2395,7 +2395,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   Contract and audit: `docs/architecture.md`, "Application state and services:
   implementation contract".
 
-- ⬜ **X16 - Separate audio files, windows and view relationships.** After
+- ✅ **X16 - Separate audio files, windows and view relationships.** After
   `X15`, introduce explicit file identities, open-file collection, focus,
   per-file contents/presentation, window bindings and playback association.
   Replace whole-editor swaps and `bind_window`'s copied field list. Define
@@ -3138,6 +3138,18 @@ Every entry carries a checkbox.
   that already name one.
 
 ## Found by use: the running list of fixes
+
+- ✅ **Audio focus corrections addressed retired widgets** *(found
+  2026-10-18 during the native multi-file review)*. Focus answers were built
+  against the previous file's component ids, then delivered after a redraw
+  gave the new file different ids. The native host reported `no such widget`,
+  and restored cursor/selection corrections could miss their views. Window
+  bindings now retain instance-scoped component ids, including across file
+  switches, while context versions reject old gestures. Preview corrections
+  follow publication; hidden spectrogram lanes receive no cursor correction.
+  Both clients test with a real allocator and with two windows on one host.
+  The web example's second editor also gets its own canvas; reusing the
+  first editor's explicit stage had hidden one window behind the other.
 
 - ⬜ **The audio editor's switches are menu entries, not checks** *(the user,
   2026-10-17)*. The preview of the gain envelope is two entries of the Edit

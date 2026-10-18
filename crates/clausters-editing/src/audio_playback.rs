@@ -810,10 +810,25 @@ impl AudioEditorPlayback {
     }
 
     /// **Where the level is read from**: the first of the control buses the
-    /// meter writes and how many there are, one per channel of the editor's
-    /// bus; `None` before anything is built.
+    /// meter writes and the channel count of the playing file, or the viewed
+    /// file while stopped. Allocated bus capacity does not set visible width.
+    /// A stopped meter reads no bus and therefore shows zero levels.
     pub fn meters(&self) -> Option<(i32, usize)> {
-        self.applier.bus(METER)
+        let (bus, _) = self.applier.bus(METER)?;
+        let file = if self.rolling {
+            self.focus
+        } else {
+            self.viewed.or(self.focus)
+        }?;
+        let channels = self.files.get(&file)?.channels;
+        Some((
+            if self.rolling {
+                bus
+            } else {
+                -(channels as i32)
+            },
+            channels,
+        ))
     }
 
     /// How many nodes it holds.
@@ -1229,7 +1244,7 @@ mod tests {
         assert_eq!(fade.args, vec![OscType::Int(1), OscType::Long(240)]);
         let (bus, channels) = playback.meters().expect("a meter");
         assert_eq!(channels, 2);
-        assert!(bus >= 0);
+        assert_eq!(bus, -2, "a stopped meter reads silence");
         assert_eq!(playback.focus(), Some(7));
         let slot = sent(&steps, "/graph_addSlot")[1];
         assert!(
@@ -1510,7 +1525,7 @@ mod tests {
             serde_json::from_str(&call_json(&mut playback, r#"{"verb": "state"}"#, &mut ids))
                 .unwrap();
         assert_eq!(state["focus"], 3);
-        assert_eq!(state["meters"]["channels"], 2);
+        assert_eq!(state["meters"]["channels"], 1);
         let space: Value = serde_json::from_str(&call_json(
             &mut playback,
             r#"{"verb": "space", "looping": true, "selection": [2, 5], "frames": 10}"#,
@@ -1588,5 +1603,49 @@ mod tests {
         );
         assert_eq!(playback.focus(), Some(1));
         assert!(!viewed["steps"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    fn visible_meter_width_follows_the_signal_in_both_directions() {
+        let mut playback = AudioEditorPlayback::new(Endpoint::default());
+        let mut ids = spaces();
+        for (file, channels) in [(1, 1), (2, 2), (3, 6)] {
+            playback
+                .sync(
+                    file,
+                    file as i32 + 10,
+                    channels,
+                    48000,
+                    48000.0,
+                    48000.0,
+                    &mut ids,
+                )
+                .unwrap();
+        }
+        for (file, channels) in [(3, 6), (2, 2), (1, 1), (2, 2), (3, 6)] {
+            playback.view(file, 0);
+            assert_eq!(playback.meters(), Some((-(channels as i32), channels)));
+            playback.play(
+                file,
+                0,
+                Pass::Until {
+                    end: 48000,
+                    back: 0,
+                },
+            );
+            let (bus, count) = playback.meters().unwrap();
+            assert!(bus >= 0);
+            assert_eq!(count, channels);
+            let other = if file == 1 { 3 } else { 1 };
+            assert!(
+                playback.view(other, 17).is_empty(),
+                "viewing another file preserves the pass"
+            );
+            assert_eq!(playback.playing(), Some(file));
+            assert!(!playback.follows());
+            assert_eq!(playback.meters(), Some((bus, channels)));
+            playback.stop_viewing(other, 17);
+            let count = if other == 1 { 1 } else { 6 };
+            assert_eq!(playback.meters(), Some((-(count as i32), count)));
+        }
     }
 }

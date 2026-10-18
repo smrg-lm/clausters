@@ -108,15 +108,15 @@ export class SamplesView extends View<Buffer> {
     }
 
     build(editor: Editor<Buffer>): GuiNode {
-        const wid = this.widget(editor, "waveform", editor.structure);
         const ed = editor as unknown as TakeWindow;
+        const wid = this.register(ed.windowWidget("waveform"), editor.structure);
         // the window's own widgets keep their ids while the files change
         const meter = this.register(ed.windowWidget("meter"), editor.structure);
-        const pane = this.widget(editor, "pane", editor.structure);
+        const pane = this.register(ed.windowWidget("pane"), editor.structure);
         ed.syncCore();
-        const envelope = this.widget(editor, "envelope", editor.structure);
+        const envelope = this.register(ed.windowWidget("envelope"), editor.structure);
         // the spectrogram's lane, drawn when the views are stacked
-        const lane = this.widget(editor, "lane", editor.structure);
+        const lane = this.register(ed.windowWidget("lane"), editor.structure);
         // the crate names the widgets of its dialogs and this numbers them
         const named = ed.coreCall("dialogs").dialogs;
         const dialogs: Record<string, number> = {};
