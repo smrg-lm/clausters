@@ -356,6 +356,7 @@ pub struct Stepped {
 pub struct Editing {
     history: Histories,
     resources: Resources,
+    clipboard: crate::application::clipboard::Exchange,
     version: i64,
     seats: Vec<Seat>,
     /// The most bytes of takes only the history holds, when there is a limit.
@@ -383,6 +384,7 @@ impl Editing {
         Self {
             history,
             resources,
+            clipboard: Default::default(),
             version: FIRST_VERSION,
             seats: Vec::new(),
             bytes: None,
@@ -1241,7 +1243,11 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             let editor = points::new_json(curve, &request.to_string());
             joined(editing, &key, Member::Points(Box::new(editor)))
         }
-        "resources" => serde_json::to_string(&editing.resources.sources()).unwrap(),
+        "exchange" => editing.clipboard.call(&request).to_string(),
+        "resources" => {
+            editing.sync_resources();
+            serde_json::to_string(&editing.resources.sources()).unwrap()
+        }
         "retainMember" => {
             editing.sync_resources();
             let retained = if let Some(seat) = editing.seats.get(member as usize)
@@ -1636,6 +1642,52 @@ mod tests {
 
     /// **A notes editor edits the sequence its holder shares**, and an undo
     /// through the context puts it back there.
+    #[test]
+    fn owned_file_buffers_stay_rooted_until_close_even_behind_another_file() {
+        let mut editing = Editing::new();
+        let member = call(&mut editing, json!({"verb":"openAudio","key":"owned","take":3,"frames":100,"channels":1,"rate":48000,"display":9,"buffers":[20,21,22],"path":"owned.wav"}))["member"].clone();
+        call(
+            &mut editing,
+            json!({"verb":"member","member":member,"call":{"verb":"open"}}),
+        );
+        let retained = call(
+            &mut editing,
+            json!({"verb":"retainMember","member":member,"kind":"playback"}),
+        );
+        assert!(retained["freed"].as_array().is_none_or(|f| f.is_empty()));
+        call(
+            &mut editing,
+            json!({"verb":"member","member":member,"call":{"verb":"add_file","take":50,"frames":100,"display":51,"buffers":[52,53],"untitled":true}}),
+        );
+        let retained = call(
+            &mut editing,
+            json!({"verb":"retainMember","member":member,"kind":"playback"}),
+        );
+        assert!(retained["freed"].as_array().is_none_or(|f| f.is_empty()));
+        let closing = call(
+            &mut editing,
+            json!({"verb":"member","member":member,"call":{"verb":"close_file","file":1}}),
+        );
+        assert!(
+            !closing["freedBuffers"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(3)),
+            "playback lease defers final release"
+        );
+        let released = call(
+            &mut editing,
+            json!({"verb":"retainMember","member":member,"kind":"playback"}),
+        );
+        assert!(
+            released["freed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f["buffers"].as_array().unwrap().contains(&json!(3)))
+        );
+    }
+
     #[test]
     fn a_notes_editor_edits_the_shared_sequence_and_undoes_through_the_context() {
         use clausters_document::EventSequence;

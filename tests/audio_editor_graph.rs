@@ -532,3 +532,171 @@ fn application_sources_spill_restore_and_release_without_a_renderer() {
     drop(server);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+/// Clipboard lifetime is independent of source windows and destination undo.
+/// The destination's pasted sources still spill and restore through the
+/// existing disk resource service when the resident budget is zero.
+#[test]
+fn clipboard_paste_mix_and_disk_history_keep_independent_sample_ownership() {
+    use clausters_apps::application::clipboard::Exchange;
+    use clausters_apps::editing::{Editing, call_json};
+    use clausters_editing::apply::steps_from_json;
+    use serde_json::{Value, json};
+    fn call(editing: &mut Editing, request: Value) -> Value {
+        serde_json::from_str(&call_json(editing, &request.to_string())).unwrap()
+    }
+    fn execute(server: &mut NrtSession, answer: &Value) {
+        for steps in [&answer["steps"], &answer["outcome"]["steps"]] {
+            run(server, steps_from_json(steps));
+        }
+        for name in ["effects", "stored"] {
+            for effect in answer[name].as_array().into_iter().flatten() {
+                run(server, steps_from_json(&effect["steps"]));
+            }
+        }
+        for freed in answer["freed"].as_array().into_iter().flatten() {
+            for buffer in freed["buffers"].as_array().into_iter().flatten() {
+                if !freed["spilled"]
+                    .as_array()
+                    .is_some_and(|spilled| spilled.contains(buffer))
+                {
+                    send(
+                        server,
+                        "/buffer_free",
+                        vec![OscType::Int(buffer.as_i64().unwrap() as i32)],
+                    );
+                }
+            }
+        }
+        assert!(fails(server).is_empty());
+    }
+    fn samples(server: &mut NrtSession, frames: i32) -> Vec<f32> {
+        send(
+            server,
+            "/buffer_getRange",
+            vec![OscType::Int(50), OscType::Int(0), OscType::Int(frames)],
+        );
+        server.settle_for(4);
+        let mut bytes = vec![0; 65536];
+        while let Some(len) = server.poll_into(&mut bytes) {
+            if let Ok(clausters::rosc::OscPacket::Message(message)) =
+                clausters::osc::decode_packet(&bytes[..len])
+                && message.addr == "/buffer_getRange.reply"
+                && let OscType::Blob(values) = &message.args[2]
+            {
+                return values
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|v| f32::from_le_bytes(*v))
+                    .collect();
+            }
+        }
+        panic!("no sample reply");
+    }
+    let directory = std::env::temp_dir().join(format!(
+        "clausters-clipboard-{}-{}",
+        std::process::id(),
+        clausters_core::rng::entropy_seed()
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let mut server = session();
+    take(&mut server, 100, 0.125);
+    let mut origin = Editing::new();
+    let member = call(&mut origin, json!({"verb":"openAudio","key":"origin","take":0,"frames":100,"channels":1,"rate":SR,"display":1,"buffers":[2,3,4,5]}))["member"].clone();
+    execute(
+        &mut server,
+        &call(
+            &mut origin,
+            json!({"verb":"member","member":member,"call":{"verb":"open"}}),
+        ),
+    );
+    call(
+        &mut origin,
+        json!({"verb":"member","member":member,"call":{"verb":"window","widget":10}}),
+    );
+    let copied = call(
+        &mut origin,
+        json!({"verb":"event","member":member,"addr":"/gui_event","args":[10,1,0,"copy",10,20]}),
+    );
+    execute(&mut server, &copied);
+    let mut exchange = Exchange::default();
+    let published =
+        exchange.call(&json!({"action":"publish","document":copied["outcome"]["clipboard"]}));
+    assert!(published["document"].is_string());
+    execute(
+        &mut server,
+        &call(
+            &mut origin,
+            json!({"verb":"member","member":member,"call":{"verb":"close_file"}}),
+        ),
+    );
+    let mut destination = Editing::new();
+    let member = call(&mut destination, json!({"verb":"openAudio","key":"destination","take":0,"frames":100,"channels":1,"rate":SR,"display":50,"buffers":[51,52,53,54,55,56]}))["member"].clone();
+    execute(
+        &mut server,
+        &call(
+            &mut destination,
+            json!({"verb":"member","member":member,"call":{"verb":"open"}}),
+        ),
+    );
+    call(
+        &mut destination,
+        json!({"verb":"member","member":member,"call":{"verb":"window","widget":10}}),
+    );
+    call(
+        &mut destination,
+        json!({"verb":"member","member":member,"call":{"verb":"sync","scratch":directory.to_str().unwrap()}}),
+    );
+    destination.set_resident(Some(0));
+    for (seq, tag, position) in [(1, "paste", 50), (2, "mix", 50)] {
+        let acquired = exchange.call(&json!({"action":"acquire","document":published["document"]}));
+        assert!(acquired["lease"].is_u64());
+        let version = destination.version();
+        execute(
+            &mut server,
+            &call(
+                &mut destination,
+                json!({"verb":"event","member":member,"addr":"/gui_event","args":[10,seq,version,tag,position,"buffer",published["document"]]}),
+            ),
+        );
+        exchange.call(&json!({"action":"release","lease":acquired["lease"]}));
+    }
+    let mixed = samples(&mut server, 120);
+    assert_eq!(mixed.len(), 120);
+    for (i, sample) in mixed.iter().enumerate() {
+        assert!((*sample - if (50..70).contains(&i) { 0.25 } else { 0.125 }).abs() < 1e-6);
+    }
+    let released = exchange.call(&json!({"action":"clear"}));
+    assert_eq!(released["released"].as_array().unwrap().len(), 1);
+    send(
+        &mut server,
+        "/buffer_free",
+        vec![OscType::Int(
+            released["released"][0]["buffer"].as_i64().unwrap() as i32,
+        )],
+    );
+    let resources = call(&mut destination, json!({"verb":"resources"}));
+    assert!(
+        resources
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["stored"].is_string())
+    );
+    for frames in [120, 100] {
+        execute(
+            &mut server,
+            &call(
+                &mut destination,
+                json!({"verb":"step","direction":"undo","member":member}),
+            ),
+        );
+        let values = samples(&mut server, frames);
+        assert_eq!(values.len(), frames as usize);
+        assert!(values.iter().all(|value| (*value - 0.125).abs() < 1e-6));
+    }
+    assert!(fails(&mut server).is_empty());
+    drop(server);
+    std::fs::remove_dir_all(directory).unwrap();
+}

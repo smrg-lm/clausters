@@ -5,4 +5,6 @@
 
 pub mod histories;
 
+pub mod clipboard;
+
 pub mod resources;

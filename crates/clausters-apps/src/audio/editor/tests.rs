@@ -912,3 +912,64 @@ fn a_copy_is_made_on_the_server_and_a_paste_copies_it_again() {
     assert_eq!(alloc["args"][3], json!({"f": 44100.0}));
     assert_eq!(spans(&mut other), [(30, 0, 50), (40, 0, 20), (30, 50, 100)]);
 }
+
+#[test]
+fn a_cut_waits_for_copy_completion_and_checks_its_original_target() {
+    let mut editor = opened(1);
+    let prepared = event(&mut editor, json!([12, 1, 0, "copy_cut", 10, 20]));
+    assert!(prepared["clipboardCut"].is_object());
+    assert!(!prepared["changed"].as_bool().unwrap_or(false));
+    assert_eq!(spans(&mut editor), [(3, 0, 100)]);
+    let completed = editor.act(&prepared["clipboardCut"], 0);
+    assert!(completed.changed);
+    assert_eq!(spans(&mut editor), [(3, 0, 10), (3, 30, 100)]);
+    let duplicate = editor.act(&prepared["clipboardCut"], 1);
+    assert!(!duplicate.changed);
+    assert_eq!(spans(&mut editor), [(3, 0, 10), (3, 30, 100)]);
+}
+
+#[test]
+fn copied_buffers_mix_without_transferring_samples_and_width_or_rate_mismatch_refuses() {
+    let mut editor = opened(1);
+    let copied = event(&mut editor, json!([12, 1, 0, "copy", 0, 20]));
+    let doc = copied["clipboard"].as_str().unwrap();
+    let mixed = event(&mut editor, json!([12, 2, 0, "mix", 90, "buffer", doc]));
+    assert!(mixed["changed"].as_bool().unwrap());
+    assert_eq!(spans(&mut editor), [(3, 0, 90), (21, 0, 10)]);
+    assert!(walk(&mixed["steps"]).contains(&"/buffer_mix".to_string()));
+    assert!(!walk(&mixed["steps"]).contains(&"/buffer_setRange".to_string()));
+    let mut invalid: Value = serde_json::from_str(doc).unwrap();
+    invalid["content"]["sample_rate"] = json!(48000);
+    let refused = event(
+        &mut editor,
+        json!([12, 3, 1, "mix", 0, "buffer", invalid.to_string()]),
+    );
+    assert!(refused["answer"]["reason"].is_string());
+    assert!(refused.get("steps").is_none());
+    invalid["content"]["channels"] = json!(2);
+    let refused = event(
+        &mut editor,
+        json!([12, 4, 1, "paste", 0, "buffer", invalid.to_string()]),
+    );
+    assert!(refused["answer"]["reason"].is_string());
+    assert!(refused.get("steps").is_none());
+}
+
+#[test]
+fn truncated_and_non_numeric_sample_payloads_refuse_without_allocating() {
+    for samples in [
+        json!([0.1]),
+        json!([0.1, 0.2, 0.3, 0.4]),
+        json!([0.1, "bad", 0.3]),
+    ] {
+        let mut editor = opened(1);
+        let doc = Clipboard::samples(1, 3, 44100.0, 0).to_json();
+        let refused = event(
+            &mut editor,
+            json!([12, 1, 0, "paste", 0, "samples", doc, samples]),
+        );
+        assert!(refused["answer"]["reason"].is_string());
+        assert!(refused.get("steps").is_none());
+        assert_eq!(spans(&mut editor), [(3, 0, 100)]);
+    }
+}

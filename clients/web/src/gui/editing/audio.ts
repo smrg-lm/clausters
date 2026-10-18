@@ -46,6 +46,7 @@ import { Segment } from "../../segments.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import { runSteps } from "../../steps.ts";
 import { serviceInstance } from "./application.ts";
+import { exchange } from "./clipboard.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
@@ -58,13 +59,6 @@ import type { Measure } from "./samples.ts";
  * paste takes one, a mix two.
  */
 const SPARE = 2;
-
-/**
- * **The buffer each server's clipboard copy is in**, by server: a copy made on
- * the server (an audio editor over a take of minutes) is the clipboard's
- * until the next one, which frees it.
- */
-const CLIPBOARD = new WeakMap<object, { instance: { connection: number; generation: number }; buffer: number }>();
 
 /** What one turn of the core came to. */
 interface Outcome {
@@ -99,6 +93,8 @@ interface Outcome {
     clipboard?: string;
     /** The buffer that copy is in. */
     clipboardBuffer?: number;
+    clipboardCut?: Record<string, unknown>;
+    clipboardLease?: number;
 }
 
 /** A press of the space bar, as the editor read it: frames of the take. */
@@ -804,13 +800,7 @@ export class AudioEditor extends Editor<Buffer> {
      */
     private clipboard(doc: string, buffer: number): void {
         this.checkServer();
-        const held = CLIPBOARD.get(this.server);
-        if (held !== undefined && held.instance.connection === this.instance.connection
-            && held.instance.generation === this.instance.generation && held.buffer !== buffer) {
-            void this.server.sendMsg("/buffer_free", ["i", held.buffer]);
-            this.server.buffers.free(held.buffer);
-        }
-        CLIPBOARD.set(this.server, { instance: { ...this.instance }, buffer });
+        doc = exchange(this.server, "publish", { document: doc }).document as string;
         this.host?.clipboard(doc);
     }
 
@@ -1047,8 +1037,12 @@ export class AudioEditor extends Editor<Buffer> {
 
     protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
         this.syncCore();
-        const turned = this.editing.event(this.member, addr, plain([...rawArgs]) as unknown[]);
+        const prepared = addr === "/gui_event"
+            ? exchange(this.server, "event", { args: plain([...rawArgs]) })
+            : { args: plain([...rawArgs]) };
+        const turned = this.editing.event(this.member, addr, prepared.args as unknown[]);
         const outcome = (turned.outcome ?? {}) as Outcome;
+        outcome.clipboardLease = prepared.lease as number | undefined;
         if (outcome.turn === "closed") return this.closedWindow();
         if (outcome.turn === "step") {
             const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
@@ -1064,16 +1058,8 @@ export class AudioEditor extends Editor<Buffer> {
 
     /** One `/gui_event` payload, with the stamp already taken off. */
     protected override route(args: readonly unknown[]): boolean {
-        this.syncCore();
         const [wid, tag, ...values] = args;
-        const turned = this.editing.event(
-            this.member,
-            "/gui_event",
-            plain([wid, 0, 0, tag, ...values]) as unknown[],
-        );
-        const changed = this.take((turned.outcome ?? {}) as Outcome);
-        this.editing.release(turned.freed, turned.stored);
-        return changed;
+        return this.deliver("/gui_event", [wid, 0, 0, tag, ...values]);
     }
 
     /**
@@ -1081,7 +1067,10 @@ export class AudioEditor extends Editor<Buffer> {
      * take changed.
      */
     private take(outcome: Outcome): boolean {
-        if (outcome.turn === undefined || outcome.turn === "nothing") return false;
+        if (outcome.turn === undefined || outcome.turn === "nothing") {
+            if (outcome.clipboardLease !== undefined) exchange(this.server, "release", { lease: outcome.clipboardLease });
+            return false;
+        }
         if (outcome.fileAction !== undefined && outcome.binding === undefined) {
             const action = outcome.fileAction;
             this.echo.send(outcome.answer);
@@ -1103,10 +1092,46 @@ export class AudioEditor extends Editor<Buffer> {
         // turn needed one and the join stitched over the list -- or, for a save
         // from the window, the file written.
         const steps = outcome.steps ?? [];
-        (this.domain as AudioDomain).run(this.structure, steps);
         const domain = this.domain as AudioDomain;
-        if (outcome.clipboard !== undefined && outcome.clipboardBuffer !== undefined) {
-            this.clipboard(outcome.clipboard, outcome.clipboardBuffer);
+        if (outcome.clipboard !== undefined || outcome.clipboardLease !== undefined) {
+            domain.after(async () => {
+                let published = false;
+                try {
+                    this.checkServer();
+                    await runSteps(this.server, new StepRunner(), steps as never);
+                    if (outcome.clipboard !== undefined && outcome.clipboardBuffer !== undefined) {
+                        this.clipboard(outcome.clipboard, outcome.clipboardBuffer);
+                        published = true;
+                        if (outcome.clipboardCut !== undefined) {
+                            this.syncCore();
+                            this.editing.turn(this, () => {
+                                const continued = this.editing.act(this.member, outcome.clipboardCut!);
+                                const next = (continued.outcome ?? {}) as Outcome;
+                                if (next.answer !== undefined) next.answer.seq = outcome.answer?.seq ?? 0;
+                                this.take(next);
+                                this.editing.release(continued.freed, continued.stored);
+                            });
+                        }
+                    }
+                } catch (error) {
+                    if (!published && outcome.clipboardBuffer !== undefined) {
+                        this.checkServer();
+                        void this.server.sendMsg("/buffer_free", ["i", outcome.clipboardBuffer]);
+                        this.server.buffers.free(outcome.clipboardBuffer);
+                    }
+                    if (outcome.clipboard !== undefined && outcome.answer !== undefined) {
+                        outcome.answer.reason = String(error);
+                        outcome.answer.docVersion = this.editing.version;
+                        if (outcome.clipboardCut !== undefined) this.echo.send(outcome.answer);
+                    } else {
+                        throw error;
+                    }
+                } finally {
+                    if (outcome.clipboardLease !== undefined) exchange(this.server, "release", { lease: outcome.clipboardLease });
+                }
+            });
+        } else {
+            domain.run(this.structure, steps);
         }
         if (outcome.newFile !== undefined || outcome.openFile !== undefined) {
             this.echo.send(outcome.answer);
@@ -1167,7 +1192,7 @@ export class AudioEditor extends Editor<Buffer> {
         // the steps that replace the join have landed.
         const answer = outcome.answer;
         (this.domain as AudioDomain).after(() => {
-            this.echo.send(answer);
+            if (outcome.clipboardCut === undefined) this.echo.send(answer);
             this.closing(outcome);
         });
         return changed;

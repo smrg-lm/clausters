@@ -1136,6 +1136,9 @@ the document: a cut whose selection covers a clip removes that placement
 its reason, because that is a new length for the samples under it and samples
 belong to whoever owns them.
 
+
+The audio editor copies on the server through an application clipboard exchange. A copy becomes available after the server completes it, and Cut removes samples only after a valid copy is published. Paste and Paste mixed work across files and windows sharing the same live client connection, even after closing the origin; they create samples owned by the destination. Another connection, an expired copy, text and incompatible channels are refused. Paste preserves a block's sample rate through the parts ratio; Paste mixed requires matching rates. There is no implicit channel conversion or resampling. Clipboard replacement cannot alter a previous paste or its history. History-only samples continue to spill and restore under `resident_bytes` on disk or OPFS. New system text is treated as text, even if it looks like a typed clipboard document.
+
 ## The instrument without the script: a bundle
 
 Everything so far kept Python in the loop. A **bundle** is the other posture:

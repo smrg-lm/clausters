@@ -247,15 +247,15 @@ test("the history is held to its byte limit", async () => {
     assert.equal(editor.canUndo, true);
 });
 
-test("a cut moves no samples", async () => {
+test("a cut copies before removing samples", async () => {
     const take = new FakeBuffer();
     const [editor, , wid] = await opened(take);
     take.server.sent = [];
     editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0]);
     await settle();
     assert.deepEqual(
-        take.server.addrs(),
-        ["/buffer_stitch", "/node_set", "/transport_locateSample"],
+        take.server.addrs().slice(0, 4),
+        ["/buffer_alloc", "/server_sync", "/buffer_gen", "/buffer_stitch"],
         "the join stitched, the readers' window set to its new length, and the transport cued to where the span was",
     );
     assert.equal(editor.buffer.frames, 80);
@@ -845,7 +845,7 @@ test("clipboard replacement does not free a previous server incarnations id", as
     const take = new FakeBuffer();
     const [first] = await opened(take);
     const publish = (editor: AudioEditor, buffer: number) =>
-        (editor as unknown as { clipboard(doc: string, buffer: number): void }).clipboard("{}", buffer);
+        (editor as unknown as { clipboard(doc: string, buffer: number): void }).clipboard(JSON.stringify({ content: { kind: "buffer", channels: 1, frames: 4, sample_rate: SR, buffer } }), buffer);
     publish(first, 700);
     take.server.ids = new IdSpaces(8192, 1024, 2, 16384, 4096, 16, 64, 0, 1);
     const second = new AudioEditor(take as never, { context: new Editing(), sampleRate: SR });
@@ -856,4 +856,88 @@ test("clipboard replacement does not free a previous server incarnations id", as
     publish(second, 702);
     assert.ok(take.server.sent.some(([addr, args]) => addr === "/buffer_free" && Number(args[0]) === 701));
     second.close();
+});
+
+test("clipboard copy survives origin close and paste owns its samples", async () => {
+    const take = new FakeBuffer();
+    const [first, host, wid, context] = await opened(take);
+    first.apply("/gui_event", [wid, 1, context.version, "copy", 10, 20]);
+    await settle();
+    const copied = host.clip;
+    const source = JSON.parse(copied).content.buffer as number;
+    assert.ok(JSON.parse(copied).content.location.publication >= 0);
+    first.close();
+    await settle();
+    assert.ok(!take.server.buffers.freed.includes(source));
+    const [second, otherHost, otherWid, otherContext] = await opened(take);
+    second.apply("/gui_event", [otherWid, 1, otherContext.version, "paste", 50, "buffer", copied]);
+    await settle();
+    assert.equal(second.buffer.frames, 120);
+    assert.ok(second.parts.every((p) => (p.source as { source: number }).source !== source));
+    second.apply("/gui_event", [otherWid, 2, otherContext.version, "mix", 0, "buffer", copied]);
+    await settle();
+    assert.equal(second.buffer.frames, 120);
+    assert.ok(take.server.addrs().includes("/buffer_mix"));
+    second.apply("/gui_event", [otherWid, 3, otherContext.version, "copy", 0, 3]);
+    await settle();
+    assert.ok(take.server.buffers.freed.includes(source));
+    assert.notEqual(otherHost.clip, copied);
+    second.undo();
+    await settle();
+    assert.equal(second.buffer.frames, 120);
+    second.undo();
+    await settle();
+    assert.equal(second.buffer.frames, 100);
+    second.close();
+    await settle();
+});
+
+test("paste refuses other servers stale publications and external text", async () => {
+    const take = new FakeBuffer();
+    const [editor, host, wid, context] = await opened(take);
+    editor.apply("/gui_event", [wid, 1, context.version, "copy", 0, 4]);
+    await settle();
+    const copied = host.clip;
+    const [other, , otherWid, otherContext] = await opened(new FakeBuffer());
+    other.apply("/gui_event", [otherWid, 1, otherContext.version, "paste", 0, "buffer", copied]);
+    await settle();
+    assert.equal(other.buffer.frames, 100);
+    assert.equal(other.canUndo, false);
+    editor.apply("/gui_event", [wid, 2, context.version, "copy", 10, 4]);
+    await settle();
+    editor.apply("/gui_event", [wid, 3, context.version, "paste", 0, "buffer", copied]);
+    await settle();
+    assert.equal(editor.buffer.frames, 100);
+    const current = host.clip;
+    editor.apply("/gui_event", [wid, 4, context.version, "paste", 0, "text", JSON.stringify({ content: { kind: "text", text: "external" } })]);
+    await settle();
+    assert.ok(take.server.buffers.freed.includes(Number(JSON.parse(current).content.buffer)));
+    assert.equal(editor.buffer.frames, 100);
+    other.close();
+    editor.close();
+    await settle();
+});
+
+test("failed cut copy keeps contents and previous publication", async () => {
+    const take = new FakeBuffer();
+    const [editor, host, wid, context] = await opened(take);
+    editor.apply("/gui_event", [wid, 1, context.version, "copy", 0, 4]);
+    await settle();
+    const previous = host.clip;
+    const request = take.server.request.bind(take.server);
+    take.server.request = (addr, args) => addr === "/buffer_gen"
+        ? Promise.resolve({ addr: "/fail", args: [addr, "copy failed"] })
+        : request(addr, args);
+    editor.apply("/gui_event", [wid, 2, context.version, "cut", 10, 20]);
+    await settle();
+    assert.equal(editor.buffer.frames, 100);
+    assert.equal(editor.canUndo, false);
+    assert.equal(host.clip, previous);
+    take.server.request = request;
+    editor.apply("/gui_event", [wid, 3, context.version, "cut", 10, 20]);
+    await settle();
+    assert.equal(editor.buffer.frames, 80);
+    assert.notEqual(host.clip, previous);
+    editor.close();
+    await settle();
 });

@@ -764,6 +764,21 @@ impl Gestures {
             // one cut worse than none.
             ClipVerb::Cut => {
                 let (start, len) = (start?, len?);
+                if element_owner_copies(host, ctx, id) {
+                    emit(
+                        host,
+                        &mut out,
+                        ctx.def_id,
+                        id,
+                        vec![
+                            OscType::String("cut".into()),
+                            OscType::Double(start),
+                            OscType::Double(len),
+                        ],
+                    );
+                    out.push(GestureEffect::Redraw(ctx.def_id));
+                    return Some(out);
+                }
                 if !copy_selection(host, ctx, id, start, len, clip, &mut out, "cut")? {
                     out.push(GestureEffect::Redraw(ctx.def_id));
                     return Some(out);

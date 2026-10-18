@@ -10564,3 +10564,12 @@ input to trimming; neither an editor class nor a window decides which subset
 of an entry can be undone. Source ownership lives in the resource service,
 with independent roots, rather than treating a history release as permission
 to free a buffer immediately.
+
+
+## Audio clipboard publications are leases, not undo sources
+
+An audio editor copies a potentially large range on the server. Moving its samples through the client and host would add two bulk transfers; naming only a buffer number instead lets another server or a recycled id be mistaken for the copy. A source window also cannot own a copy that must survive its close. The application exchange therefore owns an immutable publication scoped by connection incarnation and publication identity, using the common resource service for clipboard and pending-reader roots. A paste copies into destination-owned samples, whose ordinary history may spill to disk or OPFS. Replacing the publication releases it after its readers finish and cannot release a destination's undo sources.
+
+Copy is published after server completion; Cut records removal only after publication and a matching original-target checkpoint. The checkpoint crosses language adapters as opaque serialized text, avoiding numeric normalization of its contents by JavaScript. General operation scheduling and failure rollback remain separate work. Server-backed copies across connections are explicitly refused rather than silently transferring samples or trusting matching endpoint addresses. Channel conversions and resampling likewise require explicit domain operations; insertion preserves a source rate through the existing parts ratio, while mixing requires matching rates.
+
+The host mirrors typed publication as text and remembers the observed platform value. An unchanged mirror preserves the typed payload; newly observed external text is always text, including text that resembles clipboard JSON. Remote publication ownership is reconciled on the next application clipboard action rather than by background polling. This can retain one unused publication per endpoint until the next action or endpoint disposal; a pending reader can additionally retain a replaced publication until completion. A browser host uses the same policy without acquiring platform clipboard access.

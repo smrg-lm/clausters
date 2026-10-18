@@ -575,6 +575,12 @@ impl AudioFileState {
         if !roots.contains(&opened) {
             roots.push(opened);
         }
+        // A file-loaded buffer is still owned until close, including while
+        // parked behind another file. Its private edited copy is not its id.
+        let loaded = SourceId(self.opened as u64);
+        if self.owns_opened && !roots.contains(&loaded) {
+            roots.push(loaded);
+        }
         roots
     }
     pub(super) fn bytes(&self, buffer: i64) -> Option<u64> {

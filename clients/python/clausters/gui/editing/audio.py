@@ -33,13 +33,12 @@ redo. ``history_bytes`` caps what only the history holds; past it the oldest
 entries go first.
 """
 
-import weakref
-
 from ... import _native
 from ..._steps import run_steps
 from ...errors import CommandError
 from ...defs._wire import resolve as _resolve
 from .application import _service_instance
+from ._clipboard import exchange
 from .domain import Domain
 from .editor import Editor
 from .marking import Marking
@@ -48,11 +47,6 @@ from .samples import MEASURES, SamplesView, _plain, measures
 #: How many buffers the crate holds for new takes before a turn: a stroke or a
 #: paste takes one, a mix two.
 _SPARE = 2
-
-#: **The buffer each server's clipboard copy is in**, by server: a copy made
-#: on the server (`AudioEditor` over a take of minutes) is the clipboard's
-#: until the next one, which frees it.
-_CLIPBOARD = weakref.WeakKeyDictionary()
 
 
 class _AudioPlayback:
@@ -455,11 +449,7 @@ class AudioEditor(Marking, Editor):
         clipboard's now, the one the previous copy was in goes, and the host's
         clipboard names it."""
         self._check_server()
-        held = _CLIPBOARD.get(self._server)
-        if held is not None and held[0] == self._instance and held[1] != buffer:
-            self._server.send_msg("/buffer_free", held[1])
-            self._server.buffers.free(held[1])
-        _CLIPBOARD[self._server] = (dict(self._instance), buffer)
+        doc = exchange(self._server, "publish", document=doc)["document"]
         if self._host is not None:
             self._host.clipboard(doc)
 
@@ -736,8 +726,10 @@ class AudioEditor(Marking, Editor):
 
     def _deliver(self, addr: str, args) -> bool:
         self._sync_core()
-        turned = self._editing.event(self._member, str(addr), _plain(list(args)))
+        prepared = exchange(self._server, "event", args=_plain(list(args))) if addr == "/gui_event" else {"args": _plain(list(args))}
+        turned = self._editing.event(self._member, str(addr), prepared["args"])
         outcome = turned.get("outcome") or {}
+        outcome["clipboardLease"] = prepared.get("lease")
         if outcome.get("turn") == "closed":
             return self._closed()
         if outcome.get("turn") == "step":
@@ -752,13 +744,8 @@ class AudioEditor(Marking, Editor):
 
     def _route(self, args) -> bool:
         """One ``/gui_event`` payload, with the stamp already taken off."""
-        self._sync_core()
         wid, tag, values = args[0], args[1], list(args[2:])
-        turned = self._editing.event(self._member, "/gui_event",
-                                     _plain([wid, 0, 0, tag, *values]))
-        changed = self._take(turned.get("outcome") or {})
-        self._editing.release(turned.get("freed"), turned.get("stored"))
-        return changed
+        return self._deliver("/gui_event", [wid, 0, 0, tag, *values])
 
     def _take(self, outcome: dict) -> bool:
         """Carry out what a turn came to, and answer the host. Returns whether
@@ -766,6 +753,8 @@ class AudioEditor(Marking, Editor):
         if "error" in outcome:
             raise ValueError(outcome["error"])
         if outcome.get("turn") in (None, "nothing"):
+            if outcome.get("clipboardLease") is not None:
+                exchange(self._server, "release", lease=outcome["clipboardLease"])
             return False
         action = outcome.get("fileAction")
         if action is not None and "binding" not in outcome:
@@ -803,9 +792,35 @@ class AudioEditor(Marking, Editor):
         # the turn needed one and the join stitched over the list -- or, for a
         # save from the window, the file written.
         steps = outcome.get("steps") or []
-        self.domain.run(self.structure, steps)
-        if outcome.get("clipboard") is not None:
-            self._clipboard(outcome["clipboard"], int(outcome["clipboardBuffer"]))
+        published = False
+        try:
+            if outcome.get("clipboard") is not None or outcome.get("clipboardLease") is not None:
+                self._check_server()
+                run_steps(self._server, _native.StepRunner(), steps)
+            else:
+                self.domain.run(self.structure, steps)
+            if outcome.get("clipboard") is not None:
+                self._clipboard(outcome["clipboard"], int(outcome["clipboardBuffer"]))
+                published = True
+                if outcome.get("clipboardCut") is not None:
+                    self._sync_core()
+                    continued = self._editing.act(self._member, outcome["clipboardCut"])
+                    next_outcome = continued.get("outcome") or {}
+                    if next_outcome.get("answer") is not None:
+                        next_outcome["answer"]["seq"] = (outcome.get("answer") or {}).get("seq", 0)
+                    changed = self._take(next_outcome)
+                    self._editing.release(continued.get("freed"), continued.get("stored"))
+        except Exception as error:
+            if outcome.get("clipboard") is not None:
+                self.echo.send(dict(outcome.get("answer") or {}, reason=str(error), docVersion=self._editing.version))
+            if not published and outcome.get("clipboardBuffer") is not None and self._instance == _service_instance(self._server):
+                buffer = int(outcome["clipboardBuffer"])
+                self._server.send_msg("/buffer_free", buffer)
+                self._server.buffers.free(buffer)
+            raise
+        finally:
+            if outcome.get("clipboardLease") is not None:
+                exchange(self._server, "release", lease=outcome["clipboardLease"])
         if outcome.get("newFile") is not None or outcome.get("openFile") is not None:
             self.echo.send(outcome.get("answer"))
             outcome = dict(outcome, answer=None)
@@ -851,7 +866,8 @@ class AudioEditor(Marking, Editor):
             swept = outcome["selection"]
             start, length = float(swept.get("start", 0.0)), float(swept.get("len", 0.0))
             self._driver.span = (start, start + length) if length > 0 else None
-        self.echo.send(outcome.get("answer"))
+        if outcome.get("clipboardCut") is None:
+            self.echo.send(outcome.get("answer"))
         if outcome.get("focusChanged"):
             self._show_transport()
         self._closing(outcome)

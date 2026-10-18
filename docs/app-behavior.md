@@ -42,10 +42,16 @@ code that keeps it lives.
   layout with zero levels. Mono, stereo and multichannel switches resize the
   existing meter in both directions (`AudioEditorPlayback::meters` and the
   audio application's `playing` corrections).
-- **Undo targets the registered object.** In a shared editing context, a
-  step can restore an audio file that is out of focus. It updates that file's
-  playback graph and keeps the window's focused file and binding generation.
-  An additional independent file keeps its own order.
+- **Undo/redo resolves its editing context explicitly.** Menus and shortcuts
+  target the active document's history; an empty history disables the action
+  and never falls back to another document or the application context. Text
+  inputs resolve their own editing actions before document actions. Sharing
+  an undo order across objects requires an explicit application composition;
+  neither opening order nor a shared service instance establishes that policy.
+  A script can explicitly address such a shared context. Within that context,
+  a step restores the objects recorded in the entry, including objects out of
+  focus, and updates their playback graphs without changing the active
+  document, starting playback or rebinding its views.
 - **Services retain sources independently.** Contents, all undo orders,
   playback, clipboard and pending work are separate resource roots. Dropping
   one root never frees a source held by another. A source on a lost connection
@@ -136,10 +142,34 @@ code that keeps it lives.
 - **A copy of a take is made on the server.** Copy and cut in the audio
   editor copy the span into a server buffer the clipboard names, whatever
   its length; a paste copies it again on the server. No sample crosses the
-  wire, and any audio editor on that server can paste it.
+  wire. Editors sharing the same live client connection can paste it across
+  files and windows, including after closing the origin. Other connections,
+  expired publications and legacy buffer numbers without an exchange refuse.
+- **Copy publishes only when ready; cut removes only after publication.** A
+  failed copy keeps both the previous clipboard and the file unchanged. A cut
+  whose target changed during the copy refuses removal. Paste and Paste mixed
+  create destination-owned samples; later clipboard replacement cannot change
+  them or their undo history. An in-flight paste retains its snapshot until
+  its sample-producing steps finish. Remote clipboard replacement is reconciled
+  at the next clipboard action; no periodic clipboard polling is introduced.
+- **Typed contents and system text have distinct authority.** A typed copy
+  updates the host's system-text mirror. Unchanged mirrored text preserves the
+  typed document and blobs. New external text replaces them as text, even when
+  it looks like JSON; it cannot establish a buffer lease. Samples must match
+  their declared shape exactly; malformed or truncated payloads refuse.
 - **A block keeps its rate.** A block pasted from a file at another rate is
   a take at its own rate, read at the ratio; a mix needs one rate and is
   refused across two.
+- **Clipboard storage and undo storage have separate lifetimes.** The remote
+  publication holds one immutable buffer independently of the source document.
+  Pasted samples enter the destination's ordinary resource/history mechanism:
+  history-only samples still spill to float WAVs on disk or OPFS under the
+  existing resident limit, and restore before use. Replacing the clipboard
+  neither clears history nor forces spilled samples to stay resident. A
+  file-owned loaded buffer stays rooted until that file closes, including
+  while another file is focused; making a private copy cannot release the
+  loaded buffer early and then release it again on close.
+
 - **A choice in the file list is navigation.** It is never refused as stale,
   and the list keeps its widget across switches, so a hand clicking down it
   lands on the file it clicked last.

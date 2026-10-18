@@ -39,6 +39,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Member, NodeId};
 
+/// The publication that owns a remote buffer, independent of its source view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BufferLocation {
+    /// The client connection identity.
+    pub connection: u64,
+    /// The connection incarnation.
+    pub generation: u64,
+    /// A unique immutable publication, not a buffer number.
+    pub publication: u64,
+}
+
 /// What was copied.
 ///
 /// **Not [`crate::multitrack::Content`]**, which is what fills a region. This
@@ -106,6 +117,10 @@ pub enum Content {
         sample_rate: f64,
         /// The server buffer holding it.
         buffer: i32,
+        /// The owning exchange. Legacy unscoped buffers cannot cross an
+        /// application clipboard boundary without explicit publication.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        location: Option<BufferLocation>,
     },
 }
 
@@ -207,7 +222,9 @@ impl Clipboard {
     /// **truncated** paste, and pasting silence would be worse than declining.
     pub fn blobs(&self) -> usize {
         match &self.content {
-            Content::Samples { blob, .. } | Content::Spectral { blob, .. } => blob + 1,
+            Content::Samples { blob, .. } | Content::Spectral { blob, .. } => {
+                blob.saturating_add(1)
+            }
             Content::Text { .. } | Content::Elements { .. } | Content::Buffer { .. } => 0,
         }
     }
@@ -232,13 +249,17 @@ impl Clipboard {
         match &self.content {
             Content::Samples {
                 channels, frames, ..
-            } => Some(*channels as usize * *frames as usize),
+            } => usize::try_from(*frames)
+                .ok()?
+                .checked_mul(*channels as usize),
             Content::Spectral {
                 frames,
                 bins,
                 values_per_bin,
                 ..
-            } => Some(*frames as usize * *bins as usize * *values_per_bin as usize),
+            } => (*frames as usize)
+                .checked_mul(*bins as usize)?
+                .checked_mul(*values_per_bin as usize),
             Content::Text { .. } | Content::Elements { .. } | Content::Buffer { .. } => None,
         }
     }

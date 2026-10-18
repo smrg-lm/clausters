@@ -237,8 +237,8 @@ The **edit-back payloads**:
 | `"selection"` | `start len` (samples, always whole, as OSC **doubles**: a float holds a whole frame only for the first 16.7 million, under six minutes of audio), plus `min max` where the sweep restricted the y axis too | a selection dragged on a timeline view |
 | `"sample"` | `channel frame value previous` — the frame as an OSC **long** (a float runs out of integers at 16.7 million, six minutes of audio, and a sample index is exact or it is the wrong sample) | one sample dragged on a navigable trace, under the `sample` gesture step. **Absolute and carrying its own inverse**, so the owner can apply it and undo it without having remembered anything. The host draws the held value over the picture, marked, and lets go when the edit is acknowledged — so an owner acknowledges *after* pushing the samples that now holds, or the old value blinks back |
 | `"draw"` | `channel start <values blob> <previous blob>` — the two runs as little-endian `f32` blobs, the bulk convention `/buffer_setRange` and the clipboard already follow | one **stroke** over a navigable trace, under the `draw` gesture step. **One intent per stroke**, not per sample: what the hand did on the way is the pending drawing's business, and the owner gets the run it ended with — plus what it replaced, so the edit is invertible |
-| `"cut"` | `start len` (samples, as doubles, the way `"selection"` reports them) | Ctrl+X over a selection. A cut is a copy and a removal: the **copy is the host's**, so the selected block goes on the clipboard first, exactly as Ctrl+C puts it there, and a view whose samples the host cannot read declines the cut out loud rather than removing what nothing holds. The removal is a **request**: the host owns no data, so the owner cuts and answers with what the document now is, and the length change a cut implies is the owner's to decide |
-| `"copy"` | `start len`, as `"cut"` | Ctrl+C over a view whose owner copies (`copies: "owner"`): the copy is the owner's to make, and it puts what it made on the clipboard with `/gui_clipboard`. A cut over such a view is this and the `"cut"` |
+| `"cut"` | `start len` (samples, as doubles, the way `"selection"` reports them) | Ctrl+X over a selection. A cut is a copy and a removal: the **copy is the host's**, so the selected block goes on the clipboard first, exactly as Ctrl+C puts it there, and a view whose samples the host cannot read declines the cut out loud rather than removing what nothing holds. For `copies: "owner"`, the owner performs both phases from one request and removes only after publication succeeds. The removal is a **request**: the host owns no data, so the owner cuts and answers with what the document now is, and the length change a cut implies is the owner's to decide |
+| `"copy"` | `start len`, as `"cut"` | Ctrl+C over a view whose owner copies (`copies: "owner"`): the copy is the owner's to make, and it puts what it made on the clipboard with `/gui_clipboard`. A cut over such a view emits one `"cut"` request; the owner copies and publishes successfully before removing the span |
 | `"paste"` | `position kind json` plus one **blob** per bulk payload — the position in samples, a double | Ctrl+V. The clipboard travels *with* the request — it is the host's, so a block copied in one window pastes against an owner that never saw it. `kind` is the clipboard's (`text`/`elements`/`samples`/`spectral`/`buffer`), `json` the whole typed document, and the blobs are the payloads it names, interleaved little-endian `f32`. `position` is on the **timeline's** axis: the position cursor, or where a click left a selection of zero length when none is placed, and never the start of a selection swept elsewhere. An owner writing onto a clip converts it into the clip's own time |
 | `"mix"` | the same as `"paste"` | Ctrl+Shift+V: a paste that **adds** the block onto what is under it rather than putting it in. Same payload, its own word, so an owner that has no mix declines it rather than inserting by mistake |
 | `"refused"` | `verb reason` | the host could not do its own half — a copy whose source it cannot read (a mapped overview, a live view), a paste whose payload did not travel, a **stroke where the samples are not drawn one by one**. Said out loud, because a key or a pencil that silently does nothing teaches that it sometimes does not work |
@@ -280,13 +280,14 @@ is the one answer worse than no.
 
 **An owner may copy instead** (`copies: "owner"` on a `signal`): the copy
 leaves as a `"copy" start len` event and the owner puts what it made on the
-clipboard with `/gui_clipboard`, and a cut is that copy and the removal. The
+clipboard with `/gui_clipboard`. A cut emits one `"cut"` request: the owner completes the copy and publication before removing the span. The
 audio editor does, because a take is the server's: it copies the span on the
 server into a buffer of its own and the clipboard names that buffer (the
 `buffer` kind), so a cut of minutes sends no samples across the wire, and a
 paste on the same server copies it again there into a take of the pasting
-editor's own. The buffer is the clipboard's until the next such copy, which
-frees it.
+editor's own. The application exchange owns that immutable buffer independently of the source window. Its document includes `location: {connection, generation, publication}`; a buffer number alone is insufficient. Replacement releases it after pending paste readers finish. The audio editor accepts references from its own live exchange and refuses other server connections or expired publications.
+
+Typed publication updates the system-text mirror along with the host document. A refresh preserves the typed document and its blobs while that mirror is unchanged. New external system text is always text, even if it looks like a clipboard JSON document; it cannot recreate a remote buffer lease. A page uses the same host exchange without system clipboard access. An application's remote lease is reconciled on its next clipboard action, so no polling is needed and at most one otherwise unused publication is retained per endpoint.
 
 A **cut, a paste and a mix change data the host does not own**, so they leave as
 the `"cut"`, `"paste"` and `"mix"` events above and the owner answers with what the
@@ -294,6 +295,19 @@ document now is. A paste carries the clipboard **with** it rather than the
 owner keeping one of its own: the clipboard is the host's precisely so that a
 block copied in one window can be pasted in another, against an owner that never
 saw the copy.
+
+The audio editor applies this compatibility contract:
+
+| Contents and destination | Paste | Paste mixed |
+| --- | --- | --- |
+| Complete `samples`, matching channels and rate | Insert a destination-owned block at the cursor | Add onto existing frames, clipped at the file end |
+| Live `buffer` publication, same exchange, matching channels and rate | Copy on the server into destination-owned samples and insert | Copy destination frames into a new buffer, then add the published buffer |
+| Matching channels, different positive sample rate | Preserve source rate; the parts list reads it at its rate ratio | Refuse; no implicit resampling |
+| Different channel count | Refuse; no implicit conversion | Refuse |
+| Remote buffer on another connection/incarnation, missing owner or expired publication | Refuse; no automatic cross-server sample transfer | Refuse |
+| Text, elements, spectral contents, malformed or incomplete sample payload | Refuse with a reason | Refuse with a reason |
+
+Insertion uses the position cursor and leaves no selection. It does not replace an unrelated selection. Mixing keeps the file length and the existing selection; a cursor at or after the end refuses. Cut cannot remove the entire file under the editor's existing nonempty-take rule. A pasted buffer's history uses the existing resident limit and float-WAV spill/restore mechanism on disk or OPFS; replacing the clipboard does not remove destination history.
 
 **Which view answers** is the one under the pointer, since a selection is
 already where the pointer has been — and, when the pointer is over none of them,

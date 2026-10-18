@@ -1139,11 +1139,8 @@ fn a_copy_goes_to_an_owner_that_copies() {
         .collect();
     assert_eq!(
         tags,
-        [
-            OscType::String("copy".into()),
-            OscType::String("cut".into())
-        ],
-        "a cut is the owner's copy and the removal"
+        [OscType::String("cut".into())],
+        "the owner completes copy and publication before removal"
     );
 
     // The owner's document goes on the host's clipboard.

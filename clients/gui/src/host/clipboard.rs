@@ -111,7 +111,7 @@ impl Clip {
             return;
         };
         if self.mirrored.as_deref() != Some(text.as_str()) {
-            self.doc = Some(Clipboard::parse(&text));
+            self.doc = Some(Clipboard::text(&text));
             self.blobs.clear();
             self.mirrored = Some(text);
         }
@@ -167,8 +167,33 @@ impl Clip {
         if self.blobs.len() < doc.blobs() {
             return false;
         }
-        match doc.values() {
-            Some(values) => self.blobs.last().is_some_and(|b| b.len() >= values),
+        let shape = match &doc.content {
+            Content::Samples {
+                channels,
+                frames,
+                blob,
+                ..
+            } => Some((*blob, frames.checked_mul(u64::from(*channels)))),
+            Content::Spectral {
+                frames,
+                bins,
+                values_per_bin,
+                blob,
+                ..
+            } => Some((
+                *blob,
+                u64::from(*frames)
+                    .checked_mul(u64::from(*bins))
+                    .and_then(|n| n.checked_mul(u64::from(*values_per_bin))),
+            )),
+            _ => None,
+        };
+        match shape {
+            Some((blob, Some(values))) => self
+                .blobs
+                .get(blob)
+                .is_some_and(|b| b.len() as u64 == values),
+            Some((_, None)) => false,
             None => true,
         }
     }
@@ -177,6 +202,20 @@ impl Clip {
     pub fn put(&mut self, doc: Clipboard, blobs: Vec<Arc<[f32]>>) {
         self.doc = Some(doc);
         self.blobs = blobs;
+        // The mirror must advance with typed copies too; otherwise refresh
+        // mistakes the previous system text for a new external replacement.
+        let text = self.text();
+        self.mirrored = self
+            .system
+            .as_ref()
+            .and_then(|sys| {
+                sys.with(|s| {
+                    s.write_text(&text);
+                    s.read_text()
+                })
+            })
+            .flatten()
+            .or(Some(text));
     }
 
     /// Puts a block of interleaved samples on it -- the copy an editor makes.
@@ -342,5 +381,25 @@ mod tests {
         back.push_blob_bytes(&bytes);
         assert!(back.is_whole());
         assert_eq!(&back.blobs()[0][..], &[1.0, -0.5, 0.25]);
+    }
+
+    #[test]
+    fn typed_publication_advances_the_mirror_and_external_json_stays_text() {
+        let fake = Fake::default();
+        fake.0.lock().unwrap().0 = Some("previous external text".into());
+        let mut clip = Clip::default();
+        clip.attach(Box::new(fake.clone()));
+        for buffer in [70, 71] {
+            let doc = format!(
+                r#"{{"content":{{"kind":"buffer","channels":1,"frames":4,"sample_rate":48000,"buffer":{buffer}}}}}"#
+            );
+            clip.put(Clipboard::parse(&doc), vec![]);
+            clip.refresh();
+            assert_eq!(clip.doc().map(Clipboard::kind), Some("buffer"));
+        }
+        fake.0.lock().unwrap().0 = Some(Clipboard::samples(1, 4, 48000.0, 0).to_json());
+        clip.refresh();
+        assert_eq!(clip.doc().map(Clipboard::kind), Some("text"));
+        assert!(clip.blobs().is_empty());
     }
 }

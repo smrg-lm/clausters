@@ -202,7 +202,9 @@ class Editing:
         gesture: the turn, with the corrections it owes."""
         if self.core is None:
             return {}
-        return self.core.call("act", member=int(member), call=call) or {}
+        turned = self.core.call("act", member=int(member), call=call) or {}
+        self.version = int(turned.get("version", self.version))
+        return turned
 
     def open_multitrack(self, key: str, multitrack, request: dict, handler) -> tuple:
         """**Open a multitrack editor over ``multitrack``** -- a

@@ -6,7 +6,7 @@ edits a private copy of it and writes nothing it was handed until it is saved.
 The window draws a **join** -- a buffer made of spans of other buffers -- and
 every edit leaves a new list of those spans:
 
-- a **cut** takes a span out of the list, and moves no samples;
+- a **cut** copies the span on the server, then removes it from the list;
 - a **paste** writes the block into a take of its own and puts it in;
 - a **mix** writes a new take over the frames the block lands on, the block
   added onto them;
@@ -17,6 +17,14 @@ So an undo is the list before, stitched again: it costs the list, not the
 samples. The takes a stroke or a paste made are kept while an undo or a redo
 can still reach them and freed when neither can -- ``history_bytes`` below caps
 what only the history holds, and the oldest entries go first past it.
+
+To check the clipboard across files: copy a selection, add a file with the same
+channel count and rate, then paste and mix at its cursor. Close the origin and
+paste again; the copy remains available. Copy another span and undo the paste:
+clipboard replacement leaves destination history intact. A different channel
+count is refused; Paste preserves a different rate, while Paste mixed refuses
+it. History-only samples still spill under ``resident_bytes`` independently of
+the clipboard's current copy.
 
 The View menu chooses waveform (W), spectrogram (S) or both (B). Call ``wave()``,
 ``spectrogram()`` and ``both()`` from a cell to make the same changes.

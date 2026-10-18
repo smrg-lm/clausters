@@ -7,6 +7,7 @@ list is the crate's and is tested there.
 """
 
 import types
+import json
 
 import pytest
 
@@ -14,6 +15,7 @@ from clausters import _native
 from clausters.gui.ids import GuiIdAllocator
 from clausters.gui import edit
 from clausters.gui.editing import AudioEditor, Editing, measures
+from clausters.errors import CommandError
 
 SR = 48_000.0
 
@@ -222,12 +224,12 @@ def test_the_history_is_held_to_its_byte_limit():
     assert editor.can_undo
 
 
-def test_a_cut_moves_no_samples():
+def test_a_cut_copies_before_removing_samples():
     take = FakeBuffer()
     editor, _host, wid, _context = opened(take)
     take.server.sent.clear()
     editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0])
-    assert take.server.addrs() == ["/buffer_stitch", "/node_set", "/transport_locateSample"], \
+    assert take.server.addrs()[:4] == ["/buffer_alloc", "/server_sync", "/buffer_gen", "/buffer_stitch"], \
         "the join stitched, the readers' window set to its new length, and the " \
         "transport cued to where the span was"
     assert editor.buffer.frames == 80
@@ -757,13 +759,121 @@ def test_shared_undo_updates_an_unfocused_file_without_moving_focus(monkeypatch)
 def test_clipboard_replacement_does_not_free_a_previous_server_incarnations_id():
     take = FakeBuffer()
     first, _host, _wid, _context = opened(take)
-    first._clipboard("{}", 700)
+    first._clipboard(json.dumps({"content": {"kind": "buffer", "channels": 1, "frames": 4, "sample_rate": SR, "buffer": 700}}), 700)
     take.server.ids = _native.IdSpaces(max_nodes=8192, audio_buses=1024, outputs=2,
                                       control_buses=16384, buffers=4096)
     second = AudioEditor(take, context=Editing())
     take.server.sent.clear()
-    second._clipboard("{}", 701)
+    second._clipboard(json.dumps({"content": {"kind": "buffer", "channels": 1, "frames": 4, "sample_rate": SR, "buffer": 701}}), 701)
     assert not any(addr == "/buffer_free" and args == (700,) for addr, args in take.server.sent)
-    second._clipboard("{}", 702)
+    second._clipboard(json.dumps({"content": {"kind": "buffer", "channels": 1, "frames": 4, "sample_rate": SR, "buffer": 702}}), 702)
     assert ("/buffer_free", (701,)) in take.server.sent
     second.close()
+
+
+def test_clipboard_copy_survives_origin_close_and_paste_owns_its_samples():
+    take = FakeBuffer()
+    first, host, wid, context = opened(take)
+    first.apply("/gui_event", [wid, 1, context.version, "copy", 10, 20])
+    copied = host.clip
+    assert json.loads(copied)["content"]["location"]["publication"] >= 0
+    source = json.loads(copied)["content"]["buffer"]
+    first.close()
+    assert source not in take.server.buffers.freed
+    second, other_host, other_wid, other_context = opened(take)
+    second.apply("/gui_event", [other_wid, 1, other_context.version, "paste", 50, "buffer", copied])
+    assert second.buffer.frames == 120
+    assert all(p["source"]["source"] != source for p in second.parts)
+    second.apply("/gui_event", [other_wid, 2, other_context.version, "mix", 0, "buffer", copied])
+    assert second.buffer.frames == 120
+    assert "/buffer_mix" in take.server.addrs()
+    second.apply("/gui_event", [other_wid, 3, other_context.version, "copy", 0, 3])
+    assert source in take.server.buffers.freed
+    assert other_host.clip != copied
+    second.undo()
+    assert second.buffer.frames == 120
+    second.undo()
+    assert second.buffer.frames == 100
+    second.close()
+
+
+def test_failed_cut_copy_keeps_contents_and_previous_publication():
+    take = FakeBuffer()
+    editor, host, wid, context = opened(take)
+    editor.apply("/gui_event", [wid, 1, context.version, "copy", 0, 4])
+    previous = host.clip
+    request = take.server.request
+
+    def refuse_copy(addr, *args, **options):
+        if addr == "/buffer_gen":
+            return "/fail", [addr, "copy failed"]
+        return request(addr, *args, **options)
+
+    take.server.request = refuse_copy
+    with pytest.raises(CommandError, match="failed"):
+        editor.apply("/gui_event", [wid, 2, context.version, "cut", 10, 20])
+    assert editor.buffer.frames == 100
+    assert not editor.can_undo
+    assert host.clip == previous
+    take.server.request = request
+    editor.apply("/gui_event", [wid, 3, context.version, "cut", 10, 20])
+    assert editor.buffer.frames == 80
+    assert host.clip != previous
+    editor.close()
+
+
+def test_paste_refuses_other_servers_stale_publications_and_external_text():
+    take = FakeBuffer()
+    editor, host, wid, context = opened(take)
+    editor.apply("/gui_event", [wid, 1, context.version, "copy", 0, 4])
+    copied = host.clip
+    other, _host, other_wid, other_context = opened(FakeBuffer())
+    other.apply("/gui_event", [other_wid, 1, other_context.version, "paste", 0, "buffer", copied])
+    assert other.buffer.frames == 100
+    assert not other.can_undo
+    editor.apply("/gui_event", [wid, 2, context.version, "copy", 10, 4])
+    editor.apply("/gui_event", [wid, 3, context.version, "paste", 0, "buffer", copied])
+    assert editor.buffer.frames == 100
+    current = host.clip
+    editor.apply("/gui_event", [wid, 4, context.version, "paste", 0, "text", json.dumps({"content": {"kind": "text", "text": "external"}})])
+    assert json.loads(current)["content"]["buffer"] in take.server.buffers.freed
+    assert editor.buffer.frames == 100
+    other.close()
+    editor.close()
+
+
+def test_native_editing_handle_serializes_size_and_fill_between_threads(monkeypatch):
+    import ctypes
+    import concurrent.futures
+    import time
+
+    cached = b""
+
+    def call(_handle, data, length, out, cap):
+        nonlocal cached
+        if out is None:
+            cached = json.dumps({"token": json.loads(ctypes.string_at(data, length))["token"]}).encode()
+            time.sleep(0.002)
+            return len(cached)
+        ctypes.memmove(out, cached, min(len(cached), cap))
+        return len(cached)
+
+    real_lib = _native.lib()
+
+    class FakeLibrary:
+        clausters_apps_editing_new = staticmethod(lambda: 1)
+        clausters_apps_editing_free = staticmethod(lambda handle: None if handle.value == 1 else real_lib.clausters_apps_editing_free(handle))
+        clausters_apps_editing_call = staticmethod(call)
+
+        def __getattr__(self, name):
+            return getattr(real_lib, name)
+
+    fake = FakeLibrary()
+    monkeypatch.setattr(_native, "lib", lambda: fake)
+    core = _native.EditingCore()
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as workers:
+            results = list(workers.map(lambda token: core.call("state", token=token)["token"], range(8)))
+        assert results == list(range(8))
+    finally:
+        core.free()

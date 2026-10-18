@@ -2239,6 +2239,9 @@ class EditingCore:
     """
 
     def __init__(self):
+        # A response is cached between size and fill. ctypes releases the GIL,
+        # so script queries and host callbacks must serialize the whole pair.
+        self._lock = _threading.RLock()
         self._handle = lib().clausters_apps_editing_new()
 
     def __del__(self):
@@ -2246,41 +2249,45 @@ class EditingCore:
 
     def free(self) -> None:
         """Free the context, with every editor opened in it."""
-        handle, self._handle = getattr(self, "_handle", None), None
-        if handle:
-            lib().clausters_apps_editing_free(ctypes.c_void_p(handle))
+        with self._lock:
+            handle, self._handle = getattr(self, "_handle", None), None
+            if handle:
+                lib().clausters_apps_editing_free(ctypes.c_void_p(handle))
 
     def call(self, verb: str, **args):
         """One verb, with its arguments; the answer, parsed."""
-        if not self._handle:
-            return {}
-        body = json.dumps({"verb": verb, **args}).encode("utf-8")
-        raw = size_then_fill(lib().clausters_apps_editing_call,
-                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
-        return json.loads(raw) if raw else {}
+        with self._lock:
+            if not self._handle:
+                return {}
+            body = json.dumps({"verb": verb, **args}).encode("utf-8")
+            raw = size_then_fill(lib().clausters_apps_editing_call,
+                                 ctypes.c_void_p(self._handle), as_u8(body), len(body))
+            return json.loads(raw) if raw else {}
 
     def open_notes(self, sequence: "SequenceHandle", **request) -> dict:
         """Open a notes editor over ``sequence``, which it then edits in place
         (`clausters_apps_editing_open_notes`): ``{"member", "structure"}``."""
-        if not self._handle:
-            return {}
-        body = json.dumps(request).encode("utf-8")
-        raw = size_then_fill(lib().clausters_apps_editing_open_notes,
-                             ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
-                             as_u8(body), len(body))
-        return json.loads(raw) if raw else {}
+        with self._lock:
+            if not self._handle:
+                return {}
+            body = json.dumps(request).encode("utf-8")
+            raw = size_then_fill(lib().clausters_apps_editing_open_notes,
+                                 ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
+                                 as_u8(body), len(body))
+            return json.loads(raw) if raw else {}
 
     def open_score(self, score_handle, **request) -> dict:
         """Open a score editor over the score behind ``score_handle`` (a
         `clausters.gui.notation.Score`'s), which it then edits in place
         (`clausters_apps_editing_open_score`): ``{"member", "structure"}``."""
-        if not self._handle:
-            return {}
-        body = json.dumps(request).encode("utf-8")
-        raw = size_then_fill(lib().clausters_apps_editing_open_score,
-                             ctypes.c_void_p(self._handle), ctypes.c_void_p(score_handle),
-                             as_u8(body), len(body))
-        return json.loads(raw) if raw else {}
+        with self._lock:
+            if not self._handle:
+                return {}
+            body = json.dumps(request).encode("utf-8")
+            raw = size_then_fill(lib().clausters_apps_editing_open_score,
+                                 ctypes.c_void_p(self._handle), ctypes.c_void_p(score_handle),
+                                 as_u8(body), len(body))
+            return json.loads(raw) if raw else {}
 
     def open_score_over(self, score_handle, sequence: "SequenceHandle", **request) -> dict:
         """Open a score editor over ``sequence``, on the page it is read into
@@ -2288,51 +2295,55 @@ class EditingCore:
         edit on the page is an edit of the sequence
         (`clausters_apps_editing_open_score_over`): ``{"member",
         "structure"}``, or ``{"error"}``."""
-        if not self._handle:
-            return {}
-        body = json.dumps(request).encode("utf-8")
-        raw = size_then_fill(lib().clausters_apps_editing_open_score_over,
-                             ctypes.c_void_p(self._handle), ctypes.c_void_p(score_handle),
-                             ctypes.c_void_p(sequence._handle),
-                             as_u8(body), len(body))
-        return json.loads(raw) if raw else {}
+        with self._lock:
+            if not self._handle:
+                return {}
+            body = json.dumps(request).encode("utf-8")
+            raw = size_then_fill(lib().clausters_apps_editing_open_score_over,
+                                 ctypes.c_void_p(self._handle), ctypes.c_void_p(score_handle),
+                                 ctypes.c_void_p(sequence._handle),
+                                 as_u8(body), len(body))
+            return json.loads(raw) if raw else {}
 
     def open_multitrack(self, multitrack: "MultitrackHandle", **request) -> dict:
         """Open a multitrack editor over ``multitrack``, which it then edits in
         place (`clausters_apps_editing_open_multitrack`): ``{"member",
         "structure"}``, or ``{"error"}``."""
-        if not self._handle:
-            return {}
-        body = json.dumps(request).encode("utf-8")
-        raw = size_then_fill(lib().clausters_apps_editing_open_multitrack,
-                             ctypes.c_void_p(self._handle), ctypes.c_void_p(multitrack._handle),
-                             as_u8(body), len(body))
-        return json.loads(raw) if raw else {}
+        with self._lock:
+            if not self._handle:
+                return {}
+            body = json.dumps(request).encode("utf-8")
+            raw = size_then_fill(lib().clausters_apps_editing_open_multitrack,
+                                 ctypes.c_void_p(self._handle), ctypes.c_void_p(multitrack._handle),
+                                 as_u8(body), len(body))
+            return json.loads(raw) if raw else {}
 
     def bind_engraver(self, member: int, score_handle) -> dict:
         """Hand the multitrack editor ``member`` the engraver its boxes' pages
         are engraved with -- the score behind ``score_handle``, made for that
         (`clausters_apps_editing_bind_engraver`): the member's corrected
         picture, or ``{}``."""
-        if not self._handle:
-            return {}
-        raw = size_then_fill(lib().clausters_apps_editing_bind_engraver,
-                             ctypes.c_void_p(self._handle), ctypes.c_uint32(int(member)),
-                             ctypes.c_void_p(score_handle))
-        return json.loads(raw) if raw else {}
+        with self._lock:
+            if not self._handle:
+                return {}
+            raw = size_then_fill(lib().clausters_apps_editing_bind_engraver,
+                                 ctypes.c_void_p(self._handle), ctypes.c_uint32(int(member)),
+                                 ctypes.c_void_p(score_handle))
+            return json.loads(raw) if raw else {}
 
     def bind_sequence(self, sequence: "SequenceHandle", member: int, source: int) -> dict:
         """Bind a multitrack member's ``source`` to ``sequence``, so a region
         over it draws the sequence's notes
         (`clausters_apps_editing_bind_sequence`): the member's corrected
         picture, or ``{}``."""
-        if not self._handle:
-            return {}
-        body = json.dumps({"member": int(member), "source": int(source)}).encode("utf-8")
-        raw = size_then_fill(lib().clausters_apps_editing_bind_sequence,
-                             ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
-                             as_u8(body), len(body))
-        return json.loads(raw) if raw else {}
+        with self._lock:
+            if not self._handle:
+                return {}
+            body = json.dumps({"member": int(member), "source": int(source)}).encode("utf-8")
+            raw = size_then_fill(lib().clausters_apps_editing_bind_sequence,
+                                 ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
+                                 as_u8(body), len(body))
+            return json.loads(raw) if raw else {}
 
 
 def samples_measures(stack) -> tuple:

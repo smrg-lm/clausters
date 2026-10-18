@@ -227,6 +227,30 @@
         if (editor.editing.serviceCall("resources").some((source) => source.id.buffer === redo.id.buffer))
           throw new Error("a discarded spilled redo source was not released");
         log("application services: OPFS spill/restore and final source release, without a renderer");
+        let clipboard = "";
+        editor.host = { clipboard: (document) => { clipboard = document; } };
+        editor.apply("/gui_event", [1234, 4, editor.editing.version, "copy", 10, 1]);
+        await idle();
+        if (!JSON.parse(clipboard).content.location) throw new Error("copy has no exchange identity");
+        const copied = clipboard;
+        editor.apply("/gui_event", [1234, 5, editor.editing.version, "paste", 40, "buffer", copied]);
+        await idle();
+        editor.apply("/gui_event", [1234, 6, editor.editing.version, "mix", 40, "buffer", copied]);
+        await idle();
+        const mixed = await editor.buffer.getSamples({ start: 80, count: 2 });
+        if (Math.abs(mixed[0] - 1.5) > 1e-6 || Math.abs(mixed[1] + 0.5) > 1e-6)
+          throw new Error(`clipboard mix changed samples: ${mixed}`);
+        editor.apply("/gui_event", [1234, 7, editor.editing.version, "copy", 0, 1]);
+        await idle();
+        if (clipboard === copied) throw new Error("clipboard was not replaced");
+        if (!editor.undo()) throw new Error("clipboard replacement lost destination history");
+        await idle();
+        const pasted = await editor.buffer.getSamples({ start: 80, count: 2 });
+        if (Math.abs(pasted[0] - 0.75) > 1e-6 || Math.abs(pasted[1] + 0.25) > 1e-6)
+          throw new Error(`clipboard OPFS restore changed samples: ${pasted}`);
+        log("clipboard: destination-owned paste/mix, replacement and OPFS history restore");
+        editor.host = null;
+
         editor.close();
         await idle();
 

@@ -18,13 +18,13 @@
 //! the program owns. What the history lets go of comes back to the caller as
 //! buffers to free, through the editing context ([`crate::editing`]).
 //!
-//! # Every take is at the edited take's rate
+//! # A pasted block keeps its own rate
 //!
-//! A take drawn or pasted is allocated at the rate of the take the editor
-//! opened, whatever the server runs at, so a list is always one rate and a
-//! frame of it is a frame of every part ([`clausters_document::parts`]). A
-//! pasted block at another rate is refused: resampling is an edit, and nothing
-//! here asked for one.
+//! A drawn take uses the edited file's rate. A pasted block keeps its source
+//! rate and the parts list reads it at the existing ratio. Paste mixed needs
+//! matching rates and channels; no implicit resampling or channel conversion
+//! is performed. Clipboard publications and readers use the application
+//! exchange rather than history entries.
 
 pub mod dialogs;
 pub mod editor;

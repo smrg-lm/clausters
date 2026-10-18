@@ -158,6 +158,25 @@ impl AudioEditor {
         };
         let (reason, corrections) = match request.get("verb").and_then(Value::as_str).unwrap_or("")
         {
+            "finish_cut" => {
+                if request.get("file").and_then(Value::as_i64) != Some(self.focused_file())
+                    || request["before"].as_str()
+                        != Some(self.file.contents.payload().0.to_string().as_str())
+                {
+                    (
+                        Some("the cut target changed while the copy was pending".into()),
+                        Vec::new(),
+                    )
+                } else {
+                    let values = request["values"].as_array().cloned().unwrap_or_default();
+                    self.gesture(
+                        i64::from(self.window_state.widget.unwrap_or_default()),
+                        "cut",
+                        &values,
+                        &mut out,
+                    )
+                }
+            }
             "show_envelope" => self.show_envelope(),
             "setautomation" => {
                 let flat = request

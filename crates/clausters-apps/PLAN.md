@@ -2333,6 +2333,16 @@ explicitly at construction. Track
 resource references from contents, history, clipboard, playback and pending
 operations before freeing a source; buffer ids are local to their server.
 
+**History policy is explicit application composition.** Menus and shortcuts
+resolve undo/redo to the active document's history, after resolving text-input
+editing where applicable. An empty order disables the action; it never falls
+back to another document or the application context. Independent audio files
+have independent orders, including the initial file. Sharing a service does
+not merge orders. An application must explicitly compose a shared context;
+scripts may explicitly address that context. Its entries restore their
+registered objects even out of focus, updating playback graphs without
+starting playback or changing the active document or its view bindings.
+
 **Placement and compatibility.** Application states and coordination live in
 `clausters-apps`; reusable projections, playback and step mechanisms stay in
 `clausters-editing`; document structures, edit semantics and `History` stay
@@ -2425,7 +2435,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   spill/restore and final release work on disk and OPFS. Services work
   without a renderer and two applications do not share transport state.
 
-- ⬜ **X18 - Define and implement the clipboard exchange contract.** After
+- ✅ **X18 - Define and implement the clipboard exchange contract.** After
   `X17`, separate immutable copied contents, their storage, resource leases,
   destination compatibility and edit policy. Audit `Content::Samples`,
   `Content::Buffer`, host `Clip`, system-text mirroring and the clients'
@@ -2440,6 +2450,16 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   is committed. Pasting produces destination-owned contents independent of
   later clipboard replacement. Platform text and typed payloads have an
   explicit synchronization policy and do not silently reinterpret each other.
+  **Exchange policy:** server-backed publications are scoped to one client
+  connection incarnation; cross-connection transfer refuses explicitly.
+  Insertion preserves source rate through the existing parts ratio; mixing
+  requires matching rates, and both require matching channels. Publications
+  outlive source windows; pending readers defer replacement release. New
+  external system text stays text, including JSON-looking text. Reconcile
+  unused remote publications at the next clipboard action instead of polling;
+  at most one otherwise unused publication remains per endpoint. Pasted
+  sources keep the destination's existing history budgets and disk/OPFS
+  spill/restore path; clipboard ownership is separate from undo ownership.
   **Acceptance:** repeat copy/cut/paste/mix across files and windows, close
   the origin, replace typed contents with external text, vary channels/rates,
   and disconnect/reconnect the server. Every case follows the compatibility
@@ -2471,10 +2491,17 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   action; the presentation chooses its layout and reads state from it.
   Resolve text-field focus versus edited-content targets explicitly, and
   keep user shortcut overrides and the host's direct bound-control path.
+  Apply the history policy above: remove the legacy implicit enrollment of
+  an audio editor's initial file in the shared context, preserved in `X17`.
+  Shared history must be selected by explicit composition rather than file
+  opening order; document actions never fall back to the context's order.
   **Acceptance:** menu/key/script paths resolve the same intended target;
   disabled and checked entries reflect current file, selection and clipboard;
   pending operations update availability; shortcut help matches actual
-  bindings. No menu/button keeps a second copy of application state.
+  bindings. With edits in A and an empty focused B, undo is disabled and A
+  stays unchanged, whether A or B was opened first. Explicit shared-context
+  undo restores its recorded objects without switching focus or starting
+  playback. No menu/button keeps a second copy of application state.
 
 - ⬜ **X21 - Consolidate shared visual compositions and file selection.**
   After `X20`, compose existing `forms`, `files`, chrome and shortcut views
@@ -3138,6 +3165,30 @@ Every entry carries a checkbox.
   that already name one.
 
 ## Found by use: the running list of fixes
+
+- ⬜ **Audio undo can still correct a retired widget after closing a file**
+  *(native clipboard acceptance, 2026-10-18).* The `edit_audio` example,
+  after pasting/mixing into a new file and closing its origin, restores the
+  correct samples on undo but emits `/gui_set 1004: no such widget` for a
+  retired component. Trace correction targets against the current binding;
+  cover the sequence in contextual-action and reference-app acceptance.
+
+
+- ✅ **Closing an audio clipboard origin could free its loaded buffer twice**
+  *(found in the native example, 2026-10-18).* The resource service could
+  collect a file-owned loaded buffer after its private edited copy was made,
+  while close still owned its release. Keep loaded-buffer ownership rooted
+  for every open file, including inactive ones, until close; clipboard
+  publications retain their separate snapshots.
+
+
+- ✅ **Concurrent Python editing queries could corrupt FFI responses**
+  *(found while validating the audio clipboard, 2026-10-18).* Script queries
+  and host callbacks could interleave the size/fill calls on one EditingCore
+  handle. Serialize the complete handle call and disposal in the adapter;
+  serialize endpoint clipboard-service lookup/publication as well. Keep this
+  transport synchronization separate from application operation policy.
+
 
 - ✅ **Audio focus corrections addressed retired widgets** *(found
   2026-10-18 during the native multi-file review)*. Focus answers were built

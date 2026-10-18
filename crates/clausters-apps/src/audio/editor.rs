@@ -176,6 +176,9 @@ pub struct Outcome {
     /// The buffer that copy is in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clipboard_buffer: Option<i64>,
+    /// A cut continuation, committed only after copy and publication succeed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clipboard_cut: Option<Value>,
 }
 
 turn::turned!(Outcome);
@@ -708,11 +711,7 @@ impl AudioEditor {
         if !self.open_files.open {
             return Vec::new();
         }
-        let mut out = parts::sources(&self.file.contents.parts);
-        let opened = SourceId(self.file.take as u64);
-        if !out.contains(&opened) {
-            out.push(opened);
-        }
+        let mut out = self.file.rooted();
         out.extend(
             self.open_files
                 .parked
@@ -982,7 +981,9 @@ impl AudioEditor {
                 command: "/buffer_gen".into(),
                 index: Some(copy as i32),
             });
-            self.file.frames.remove(&self.file.opened);
+            if !self.file.owns_opened {
+                self.file.frames.remove(&self.file.opened);
+            }
             self.reopen(copy, frames);
             self.file.copied = true;
         }
@@ -1277,9 +1278,23 @@ impl AudioEditor {
             self.observe(tag, values, out);
             return (None, Vec::new());
         }
-        if tag == "copy" {
+        if matches!(tag, "copy" | "copy_cut") {
+            if tag == "copy_cut" {
+                match self.cut(values) {
+                    Ok(Some(_)) => {}
+                    Ok(None) => return (None, Vec::new()),
+                    Err(reason) => return (Some(reason), Vec::new()),
+                }
+            }
             return match self.copy_span(values, out) {
-                Ok(()) => (None, Vec::new()),
+                Ok(()) => {
+                    if tag == "copy_cut" && out.clipboard.is_some() {
+                        out.clipboard_cut =
+                            Some(json!({"verb":"finish_cut", "file":self.focused_file(),
+                            "before":self.file.contents.payload().0.to_string(), "values":values}));
+                    }
+                    (None, Vec::new())
+                }
                 Err(why) => (Some(why), Vec::new()),
             };
         }
@@ -1447,6 +1462,7 @@ impl AudioEditor {
                 frames: len,
                 sample_rate: self.file.rate,
                 buffer: buffer as i32,
+                location: None,
             },
             origin: None,
         };
@@ -1541,6 +1557,59 @@ impl AudioEditor {
     /// steps and goes back to the ones this editor holds. A block that runs
     /// past the end of the take is mixed as far as the take goes.
     fn mix(&mut self, values: &[Value]) -> Result<Edited, String> {
+        let raw = values.get(2).map(text).unwrap_or_default();
+        if let Ok(Clipboard {
+            content:
+                Content::Buffer {
+                    channels,
+                    frames,
+                    sample_rate,
+                    buffer,
+                    location,
+                },
+            ..
+        }) = serde_json::from_str::<Clipboard>(&raw)
+        {
+            self.check_location(location)?;
+            if channels != self.file.channels || sample_rate != self.file.rate {
+                return Err("paste mixed requires matching channel count and sample rate".into());
+            }
+            let position = values.first().map_or(0.0, number).round().max(0.0) as u64;
+            if position >= self.length() {
+                return Err("the mix lands past the end of the take".into());
+            }
+            let frames = frames.min(self.length() - position);
+            if frames == 0 {
+                return Ok(None);
+            }
+            let take = self.next_buffer()?;
+            let mut steps = self.allocate(take, frames);
+            steps.extend(self.copied(take, self.file.display, position, frames));
+            steps.push(send(
+                "/buffer_mix",
+                vec![
+                    OscType::Int(take as i32),
+                    OscType::Int(0),
+                    OscType::Int(buffer),
+                    OscType::Int(0),
+                    OscType::Int(frames as i32),
+                    OscType::Float(1.0),
+                ],
+            ));
+            steps.push(Step::AwaitDone {
+                command: "/buffer_mix".into(),
+                index: Some(take as i32),
+            });
+            self.file.frames.insert(take, frames);
+            let list = parts::replace(
+                &self.file.contents.parts,
+                position,
+                position + frames,
+                &[part(take, 0, frames)],
+                &self.rates_of(),
+            )?;
+            return Ok(Some(("mix".into(), list, steps)));
+        }
         let (position, mut samples, rate) = self.block(values)?;
         // A sum is taken sample for sample, so the two have to be one rate:
         // fitting one to the other is a resampling nobody asked for.
@@ -1629,10 +1698,12 @@ impl AudioEditor {
             frames,
             sample_rate,
             buffer: held,
+            location,
         } = clip.content
         else {
             return Ok(None);
         };
+        self.check_location(location)?;
         if channels != self.file.channels {
             return Err(format!(
                 "a block of {channels} channels does not paste into a take of {}",
@@ -1642,11 +1713,10 @@ impl AudioEditor {
         if frames == 0 {
             return Ok(None);
         }
-        let rate = if sample_rate > 0.0 {
-            sample_rate
-        } else {
-            self.file.rate
-        };
+        if !sample_rate.is_finite() || sample_rate <= 0.0 {
+            return Err("the clipboard sample rate must be finite and positive".into());
+        }
+        let rate = sample_rate;
         let buffer = self.next_buffer()?;
         let mut steps = self.allocate_at(buffer, frames, rate);
         steps.extend(self.copied(buffer, i64::from(held), 0, frames));
@@ -1690,19 +1760,43 @@ impl AudioEditor {
                 self.file.channels
             ));
         }
-        let rate = if sample_rate > 0.0 {
-            sample_rate
-        } else {
-            self.file.rate
-        };
-        let mut samples: Vec<f32> = match values.get(3 + blob) {
-            Some(Value::Array(items)) => items.iter().map(|v| number(v) as f32).collect(),
+        if !sample_rate.is_finite() || sample_rate <= 0.0 {
+            return Err("the clipboard sample rate must be finite and positive".into());
+        }
+        let rate = sample_rate;
+        let samples: Vec<f32> = match values.get(3 + blob) {
+            Some(Value::Array(items)) => items
+                .iter()
+                .map(|v| {
+                    v.as_f64()
+                        .filter(|v| v.is_finite() && (*v as f32).is_finite())
+                        .map(|v| v as f32)
+                })
+                .collect::<Option<Vec<_>>>()
+                .ok_or("the clipboard contains invalid samples")?,
             _ => return Err("the clipboard's samples did not travel with it".into()),
         };
         let width = u64::from(self.file.channels);
-        let frames = frames.min(samples.len() as u64 / width);
-        samples.truncate((frames * width) as usize);
+        if frames.checked_mul(width) != Some(samples.len() as u64) {
+            return Err("the clipboard sample payload does not match its shape".into());
+        }
         Ok((position, samples, rate))
+    }
+
+    fn check_location(
+        &self,
+        location: Option<clausters_document::clipboard::BufferLocation>,
+    ) -> Result<(), String> {
+        let server = self.window_state.scratch_scope.server;
+        if let Some(location) = location {
+            if location.connection != server.connection || location.generation != server.generation
+            {
+                return Err("the clipboard buffer belongs to another server instance".into());
+            }
+        } else if server != Default::default() {
+            return Err("the clipboard buffer has no owning exchange".into());
+        }
+        Ok(())
     }
 
     /// The steps that write `samples`, interleaved, into `buffer` from its
