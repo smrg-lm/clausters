@@ -8490,3 +8490,10 @@ module of its own.
   and the top label of the next (`1`) are drawn a few pixels apart. The ruler
   could drop the end labels where a row is short, or rule shared edges once.
 
+
+- ⬜ **The audio editor's meter is cut at the window's right edge** *(found
+  2026-10-17, in the captures of the edit-audio example)*. The level reading
+  at its foot shows as `-...` and the column has no room beside its ladder,
+  with or without the file list. It predates the file list: the window's
+  width does not leave the meter its natural size. The meter should keep
+  the width it asks for and the take's pane yield it.
