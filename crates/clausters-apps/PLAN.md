@@ -2281,6 +2281,301 @@ opened it.
 - ✅ **X14 - Gain envelope over an audio take.** The take holds the region's existing `Automation<Second>` alongside its parts. Project a curve body through the shared points intake and SetAutomation intent; edit and apply share the existing Editing undo order. View -> Gain envelope selects the body; Edit -> Apply gain envelope copies the take and chains existing `/buffer_gain` shaped segments, resetting the curve to unity in the same history entry. Both clients expose the same verbs through existing JSON doors. Acceptance: model/history, gesture/verb, client and server-render signal tests; paired example captures and docs. No protocol or ABI addition. Preview remains separate work. The user runs the full feature matrix.
 
 
+## Application state and services
+
+*Opened 2026-10-18 by the user after recurring audio-editor defects exposed
+unclear ownership and call ordering. This plan owns the work, including its
+host and client adapters; the GUI plan's completed AP track is the precedent,
+not a second implementation plan. These milestones plan the implementation;
+none of the proposed types or contracts below is shipped yet.*
+
+**The purpose: one modular application framework.** Applications follow one
+consistent design, even if this project remains its only consumer. State,
+services, actions, component relationships and lifecycle are composable
+modules with explicit contracts. The audio editor is the first composition
+that proves them, not a special architecture for the other editors to copy.
+An application's options come from capabilities, configuration and domain
+operations over its contents; adding an option does not require designing
+its own history, clipboard, menu, view synchronization or resource lifecycle.
+Domain semantics still need definition when new; their integration into the
+application follows the common contracts. Extend a shared contract when a
+real capability requires it, with all consumers kept consistent.
+
+**The design.** Compose an application from hierarchical instance state,
+scoped services and explicit transitions. `AppState` describes what the
+instance holds; an application coordinator processes actions and service
+results. Document/View separates edited contents from presentation; Command
+and undo contexts keep reversible edits together; a unidirectional update
+path and state machines make pending operations explicit; ports and adapters
+keep platform I/O outside the shared logic. Build the internal framework
+with Rust composition and enums over existing mechanisms, without requiring
+an external application framework, inheritance hierarchy or global service
+locator. Applications select the modules they need through explicit
+dependencies; a single all-purpose state object is not the framework.
+
+**Ownership is not the widget tree.** The application holds open objects,
+their presentation state, windows and pending operations. Objects reference
+their editing contexts; a context may span several objects and views, and
+must not be copied into each window. Each view keeps its own conversation
+and stale-event checks. Host-owned navigation and interaction remain the
+host's; application-owned state restored per file has an explicit projection
+to the host, never a second independently mutable copy. A redraw does not
+change the lifetime of edited contents, playback or history.
+
+**Services have scopes, not global instances.** Start from `History` and
+`Editing`, `AudioEditorPlayback`, the typed clipboard, and the existing
+source, spill and step mechanisms. Audit their contracts before adopting
+them as services: reuse does not require retaining defective ownership or
+representations. Clipboard contents, storage and resource ownership are
+separate responsibilities. A service may serve several applications while
+retaining separate state per context, server or object. Pass dependencies
+explicitly at construction. Track
+resource references from contents, history, clipboard, playback and pending
+operations before freeing a source; buffer ids are local to their server.
+
+**Placement and compatibility.** Application states and coordination live in
+`clausters-apps`; reusable projections, playback and step mechanisms stay in
+`clausters-editing`; document structures, edit semantics and `History` stay
+in `clausters-document`. The crate never links the renderer. Host services
+are reached through ports; native/browser shells and language adapters
+execute effects and report results. Existing Python/TypeScript `Application`
+classes are adapters to reconcile with this design, not a second owner of
+application policy. Preserve `edit`'s contract and supported public verbs;
+a defective behavior may change under an explicit migration and parity
+contract. Compatibility must not freeze a bug into the new design.
+
+**A GuiDef remains an interface definition.** Its running instance can use
+services without becoming an audio editor. Neither undo entries nor live
+resources are serialized into the widget tree. Persisting authored GuiDefs
+and persisting application/session data remain separate contracts.
+
+**Boundaries to settle first.** Saving one audio file, persisting a
+multi-file workspace and crash recovery are different contracts. This track
+implements the first; it defines what state is transient and records any
+proposal for the other two under Future directions, without silently adding
+a session format or persistent undo. Applications initially use a supplied
+server connection. Launching or supervising different server processes is
+outside this track and needs its own ownership/lifecycle design.
+
+**Order and closure.** Take `X15` through `X27` in order, with the audio
+editor as the reference through the acceptance gate in `X24`. Port the
+proven contracts to other editors only in `X25`, and to simple GuiDef
+instances in `X26`. Each implementation lands with every affected endpoint
+in the same commit: Python and TypeScript bind the same Rust behavior, and
+the standalone host uses it wherever that application is supported. No
+milestone adds an unsupported standalone application. Parity, regression
+checks and documentation accompany each change; final acceptance does not
+postpone them. Concrete type and module names are settled against existing
+code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
+
+- ⬜ **X15 - Audit ownership, boundaries and governing instructions.** Map
+  the audio editor, `Editing`, `closing`, both clients' `Application`, audio
+  drivers/outcome handlers, host services and standalone `Owner`. Record
+  each state's owner, lifetime, identity, persistence, undo scope and every
+  adapter-held projection. Classify the server commands used for samples,
+  storage, playback and resource management: semantics, consumers, waits and
+  failure behavior. Server buffers store/process samples; clipboard/history
+  policy belongs to application services. Identify protocol/ABI gaps before
+  adding commands, preferring existing general operations where suitable.
+  Reconcile stale `clausters.form`/`FormEditor` skill guidance, the renderer
+  versus standalone document owner, and the difference between executing a
+  resource operation and owning its policy. Check higher-priority project
+  rules before changing guidance. Define transient workspace, file-save and
+  recovery boundaries, and preserve `docs/app-behavior.md`'s valid rules.
+  **Acceptance:** the architecture has an ownership/service table and action,
+  effect and completion contracts; conflicting guidance is corrected at its
+  source; an audit names justified reuse, changes and remaining decisions.
+  Define the module composition and extension recipe: required contracts,
+  optional capabilities and where domain-specific operations attach. Common
+  infrastructure neither enumerates application classes to decide which
+  edits exist nor grows a separate lifecycle per application option.
+  Build regression cases for reported symptoms without claiming reproduction
+  or a cause where none was demonstrated. No implementation depends on
+  private agent state, a speculative registry or a new process supervisor.
+
+- ⬜ **X16 - Separate audio files, windows and view relationships.** After
+  `X15`, introduce explicit file identities, open-file collection, focus,
+  per-file contents/presentation, window bindings and playback association.
+  Replace whole-editor swaps and `bind_window`'s copied field list. Define
+  each component's observed object, shared axes, dimensions, subscriptions
+  and rebinding behavior. Distinguish the viewed file, playing file and
+  output infrastructure: allocated bus capacity does not set visible meter
+  channels. Settle which signal the meter represents and project its channel
+  count accordingly; draw a playhead only over the file whose time it names.
+  **Acceptance:** two files restore parts, envelope, selection, cursor,
+  layers and history independently; playing A while viewing B preserves A's
+  pass without drawing its cursor over B. Mono/stereo/multichannel switches
+  show the specified meter shape in both directions. Two windows keep their
+  conversations, meters and navigation apart. Rebinding drops old observers;
+  redraw retains resources and stale gestures remain refused.
+
+- ⬜ **X17 - Compose editing, playback and resource services.** After `X16`,
+  pass scoped dependencies explicitly. Generalize history-scope routing out
+  of `Editing`'s audio-file bookkeeping while preserving the initial file's
+  shared context and additional files' independent orders. Keep the history
+  engine and playback implementation where their audited contracts fit.
+  Coordinate source retention, budgets and scratch storage through one
+  resource mechanism. Contents, history, clipboard, playback and pending
+  operations are independent roots; identify a remote resource by server
+  instance and local id, including invalidation on reconnect/restart.
+  **Acceptance:** a shared context undoes across members in one order;
+  independent files select independent orders; no retained source is freed;
+  spill/restore and final release work on disk and OPFS. Services work
+  without a renderer and two applications do not share transport state.
+
+- ⬜ **X18 - Define and implement the clipboard exchange contract.** After
+  `X17`, separate immutable copied contents, their storage, resource leases,
+  destination compatibility and edit policy. Audit `Content::Samples`,
+  `Content::Buffer`, host `Clip`, system-text mirroring and the clients'
+  per-server buffer tables; one service owns publication and replacement.
+  Define Copy, Cut, Paste and Paste mixed, insertion/selection behavior,
+  channel/rate handling, and accepted conversion or refusal paths. Specify
+  same-file, cross-file/window and cross-server behavior, including closing
+  the origin, replacing clipboard contents and losing a server connection.
+  A buffer-backed copy may avoid transferring samples but carries a valid
+  server-instance reference and lifetime; its number alone is insufficient.
+  Publish a copy only when ready; cut must retain a valid copy before removal
+  is committed. Pasting produces destination-owned contents independent of
+  later clipboard replacement. Platform text and typed payloads have an
+  explicit synchronization policy and do not silently reinterpret each other.
+  **Acceptance:** repeat copy/cut/paste/mix across files and windows, close
+  the origin, replace typed contents with external text, vary channels/rates,
+  and disconnect/reconnect the server. Every case follows the compatibility
+  matrix, succeeds or refuses without data loss, and retains/releases sources
+  correctly. Test semantic contents as well as lifetime in both clients.
+
+- ⬜ **X19 - Make pending operations and their results explicit.** After
+  `X18`, represent opening, sample-producing edits, clipboard publication,
+  saving, spilling, restoring and closing with operation identities,
+  completions, errors and cleanup. Reuse `Step` waits; define commit points,
+  dependencies and queue/refusal rules. A delayed result addresses its
+  original object, not the file now in focus; freed/recreated views and
+  duplicate replies cannot receive another operation's completion.
+  Confirm saved destination and clean checkpoint after successful I/O.
+  Content/history identity is separate from the conversation version: undo
+  to the saved state is clean, while an edit during save remains dirty.
+  **Acceptance:** failed save remains dirty/retryable; failed spill retains
+  samples; restore precedes stitch; save-and-close waits for success. Failure
+  after partial allocation, cancellation, late and duplicate replies leave
+  recoverable contents/history and release resources once. Platform-specific
+  scheduling does not decide commit or cleanup policy.
+
+- ⬜ **X20 - Give actions one definition and contextual state.** After
+  `X19`, extend the existing `clausters-editing::verbs` and chrome mechanisms
+  with target resolution, availability/reason, command/toggle/choice kind,
+  checked/value state and pending status. An action is not a history entry:
+  play, navigation and dialogs are actions without undoable content edits.
+  Menus, tools, shortcuts, the key sheet and script calls invoke the same
+  action; the presentation chooses its layout and reads state from it.
+  Resolve text-field focus versus edited-content targets explicitly, and
+  keep user shortcut overrides and the host's direct bound-control path.
+  **Acceptance:** menu/key/script paths resolve the same intended target;
+  disabled and checked entries reflect current file, selection and clipboard;
+  pending operations update availability; shortcut help matches actual
+  bindings. No menu/button keeps a second copy of application state.
+
+- ⬜ **X21 - Consolidate shared visual compositions and file selection.**
+  After `X20`, compose existing `forms`, `files`, chrome and shortcut views
+  through common contracts. Separate directory/read/write services, chooser
+  interaction state and application decisions about opening selected paths.
+  Specify filters, multiple selection, pending/error/cancel states, focus,
+  dimensions and disposal; a stale directory listing cannot replace the
+  directory now being viewed. Reuse the same host component on disk and
+  OPFS, with I/O adapters at the platform boundary. Keep musical rulers and
+  data views in their existing shared host/domain mechanisms.
+  **Acceptance:** the audio editor uses the reusable chooser/forms and
+  action-backed menu/key sheet; navigation while loading, cancellation,
+  errors, multiple selection and reopening restore only intended state.
+  Test the composition in isolation and inside the audio editor, without
+  adding a second renderer or an editor-specific file browser.
+
+- ⬜ **X22 - Centralize audio transitions and effect ordering in Rust.**
+  After `X21`, make menu, key and scripted actions enter one coordinator.
+  It dispatches edits to `Editing`, updates instance state, orders service
+  requests and publishes host corrections. Move policy from Python's `_take`,
+  TypeScript's `take` and audio drivers into that shared path; keep socket
+  operations, language-object projection and awaiting in adapters. The
+  client holds a handle to the application and does not assemble its internal
+  lifecycle. Service results re-enter the coordinator to determine next work.
+  **Acceptance:** shared action/completion traces produce equal state and
+  semantic effect order through both clients and supported host adapters;
+  readiness precedes reload, preview reattachment follows restructure, and
+  release follows the last dependent effect. Adapters contain no duplicate
+  focus/playback/clipboard/close policy; `edit` and supported verbs work.
+
+- ⬜ **X23 - Define activity, subscriptions and invalidation.** After
+  `X22`, connect application activity to existing host demand/tick machinery.
+  Define redraw, clock queries, meter/tap subscriptions and preview analysis
+  needs for stopped, playing, processing, hidden and closing states. Separate
+  visibility from resource lifetime: hiding a view need not stop playback,
+  but must not keep unnecessary drawing or data transfers alive. Audit live
+  demand and native/browser scheduling before introducing new machinery.
+  **Acceptance:** instrument redraws, queries, transfers and pending work;
+  a settled static editor has no recurring work without a documented reason.
+  Measure CPU against a recorded baseline for stopped/playing, one/many files
+  and visible/hidden views. Use deterministic demand tests plus runtime
+  profiles, not an arbitrary CPU percentage or a presumed cause of the report.
+  Reactivation updates the view, and closing releases subscriptions/timers.
+
+- ⬜ **X24 - Accept the audio editor as the reference application.** After
+  `X23`, close the audio lifecycle before migrating another editor. Remove
+  superseded audio orchestration and state mirrors. Replay shared traces with
+  fake services that delay, fail and reorder completions; use the real server
+  to verify edited samples, copy/paste/mix, undo/redo, save and spill/restore.
+  **Acceptance:** paired examples cover two windows, multiple files, playback
+  across focus changes, meter channel changes, independent/shared history,
+  clipboard lifetime/type changes, failed save, edit-during-save and close
+  during pending work. Check demand/CPU as well as data correctness. Run
+  affected Rust, binding and client checks, native/browser gates and docs;
+  inspect the paired examples by eye and playback by ear with refreshed
+  native artifacts. An outstanding manual gate prevents reference acceptance.
+
+- ⬜ **X25 - Port the proven lifecycle to the other existing editors.** After
+  `X24`, compose multitrack, notes, points and score editors with the same
+  contracts, retaining domain-specific state and verbs. Preserve external
+  client objects and standalone `Owner` session data. Closing a view does
+  not free an object the client retains; the last holder with unsaved work
+  follows the common save/discard/cancel rule. Keep notation optional.
+  **Acceptance:** roll and symbolic-score views over one sequence share
+  edits/history with separate conversations; standalone save/close uses the
+  same completion rules; shared actions, forms and clipboard compatibility
+  follow the same mechanisms without inventing domain conversions. A points
+  editor requires no audio-only service; the common layer builds without
+  notation. Each port passes its affected example pair before the next one.
+  Each editor is a composition of the established modules, with its domain
+  adapters and configuration identified. A missing general capability
+  extends the shared contract rather than introducing a private mechanism.
+
+- ⬜ **X26 - Use scoped services from simple GuiDef instances.** After
+  `X25`, provide the lightweight instance context for synthesis panels
+  without editor state. Before parameter undo, define its owner/baseline,
+  gesture coalescing, bound-target identity, external/MIDI changes, missing
+  targets and what reversing a live parameter means. Use the ordinary binding
+  path; widget value and server parameter cannot become two undo targets.
+  Ordinary GuiDefs remain valid without history; compatible subtree redraws
+  retain instance services. Wire extensions land with reference and clients.
+  **Acceptance:** one paired panel example exercises opt-in undo and the
+  shared clipboard; instances stay independent, a drag is one entry and
+  external updates/target loss follow the specified policy. Loading an
+  authored GuiDef starts a fresh runtime context without silently restoring
+  previous session resources or history. No new server process is launched.
+
+- ⬜ **X27 - Finish cross-application validation and documentation.** After
+  `X26`, check there is one owner and one policy implementation per contract,
+  and remove remaining obsolete coordination. Complete the architecture,
+  behavior rules, binding table and affected user docs; curate non-obvious
+  decisions and keep unresolved designs at the end of their owning plan.
+  **Acceptance:** relevant crate tests, fmt/clippy, feature/wasm gates, Python
+  call-site checks, web build before tests, binding parity and all three
+  books pass. Existing examples show equivalent behavior in both clients;
+  native/browser visual and audible gates are named and completed where
+  applicable. The audit names no required work deferred to private notes;
+  no shipped claim rests solely on automated checks.
+  The developer guide explains how to compose an application and add an
+  action, view or service capability using the existing contracts. Verify
+  that an additional option in a migrated editor requires no new lifecycle
+  orchestration in clients or application-specific shared infrastructure.
+
 ## Definition of done (per milestone)
 
 The project rule: code plus tests, a clear commit message, this file's checkbox,
