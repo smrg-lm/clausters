@@ -266,9 +266,15 @@ fn a_cut_takes_the_span_out_and_writes_no_samples() {
     assert_eq!(out["record"]["label"], "cut");
     assert_eq!(
         out["answer"]["corrections"],
-        json!([{"widget": 12, "props": {"reload": 1}}]),
-        "the join is replaced whole, so the picture reads it again"
+        json!([
+            {"widget": 12, "props": {"reload": 1}},
+            {"widget": 12, "props": {"cursor": 10, "sel_start": 10, "sel_len": 0}}
+        ]),
+        "the join is replaced whole, so the picture reads it again; and the \
+         selection is gone, the cursor where the span was"
     );
+    assert_eq!(out["selection"]["len"], 0.0);
+    assert_eq!(out["cue"], 10);
     assert_eq!(call(&mut editor, json!({"verb": "parts"}))["frames"], 80);
 
     let all = event(&mut editor, json!([12, 2, 1, "cut", 0.0, 80.0]));

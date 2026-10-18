@@ -220,7 +220,7 @@ impl Converse for AudioEditor {
 
     fn window_verb(&mut self, message: &Message, args: &[Value], out: &mut Outcome) -> bool {
         // **A file chosen in the list is navigation, not an edit**: it names
-        // no data a gesture was made against, so it is never stale -- a hand
+        // no data a gesture was made against, so it is never stale: a hand
         // clicking down the list faster than the answers come back still
         // lands on the file it clicked last.
         if message.addr == "/gui_event" && self.files_widget.map(i64::from) == Some(message.widget)
@@ -466,6 +466,9 @@ pub struct AudioEditor {
     files_visible: bool,
     /// Whether a file is open: the last one closed leaves none.
     file_open: bool,
+    /// The file a pass is playing, marked in the list: it need not be the
+    /// one in focus.
+    playing: Option<i64>,
 }
 
 /// A part reading frames `start..end` of `buffer`.
@@ -551,6 +554,7 @@ impl AudioEditor {
             files_widget: None,
             files_visible: true,
             file_open: true,
+            playing: None,
         };
         editor.reopen(take, frames);
         editor.ensure_envelope();
@@ -1160,7 +1164,15 @@ impl AudioEditor {
                 // the host holds: the join it draws is replaced whole by the
                 // stitch, and only the answer can say so. A caller sends the
                 // answer once the steps have landed.
-                (None, self.reread())
+                let mut corrections = self.reread();
+                // **A cut or a paste leaves nothing selected**: the frames a
+                // selection named have moved, so it would stand over other
+                // samples. The position cursor stays where the edit landed.
+                if matches!(tag, "cut" | "paste") {
+                    let at = values.first().map_or(0.0, number).round().max(0.0) as u64;
+                    corrections.extend(self.land_at(at, out));
+                }
+                (None, corrections)
             }
             Ok(None) => (None, Vec::new()),
             Err(why) => (Some(why), self.reread()),
@@ -1826,6 +1838,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 _ => return json!({"error": "open_file needs a path or an array of paths"}).to_string(),
             };
             json!({"turn": "route", "openFile": {"paths": paths}}).to_string()
+        }
+        "playing" => {
+            editor.playing = request.get("file").and_then(Value::as_i64);
+            json!({"corrections": editor.files_corrections()}).to_string()
         }
         "show_files" | "hide_files" | "toggle_files" => {
             editor.files_visible = match request["verb"].as_str().unwrap() {

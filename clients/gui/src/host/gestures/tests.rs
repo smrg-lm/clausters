@@ -1053,6 +1053,16 @@ fn copy_reads_the_samples_and_cut_and_paste_leave_as_intents() {
     let args = emitted_args(&effects, 50).expect("a paste reports");
     assert_eq!(args[1], OscType::Double(6.0), "at the cursor");
 
+    // **The position cursor wins over a selection swept elsewhere**: a paste
+    // lands where the reader put the cursor, not at the selection's start.
+    host.set_timeline_cursor(50, 1.0);
+    host.select_timeline(50, 3.0, 5.0);
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Paste, 400.0, 150.0, &mut clip)
+        .expect("answered");
+    let args = emitted_args(&effects, 50).expect("a paste reports");
+    assert_eq!(args[1], OscType::Double(1.0), "at the position cursor");
+
     // A mix is the same payload under its own word: the owner adds the block
     // onto what is there rather than putting it in.
     let effects = g

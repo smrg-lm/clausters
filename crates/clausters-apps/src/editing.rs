@@ -58,7 +58,7 @@ pub const FIRST_VERSION: i64 = 1;
 pub type MemberId = u32;
 
 /// **Whose order a step walks**: the context's, or one audio file's that an
-/// editor opened beside the file it was opened over -- `(member, display)`.
+/// editor opened beside the file it was opened over, as `(member, display)`.
 type Scope = Option<(MemberId, i64)>;
 
 /// An order not being walked: its history and the keys it numbered.
@@ -627,9 +627,9 @@ impl Editing {
         id
     }
 
-    /// **Selects whose order the next step and state read**: `member`'s --
-    /// for an audio editor, the order of the file in focus -- or, with `None`,
-    /// the context's. A turn of a member selects its own; a caller stepping
+    /// **Selects whose order the next step and state read**: `member`'s (for
+    /// an audio editor, the order of the file in focus) or, with `None`, the
+    /// context's. A turn of a member selects its own; a caller stepping
     /// for a window names it here first.
     pub fn select(&mut self, member: Option<MemberId>) {
         match member {
@@ -656,9 +656,9 @@ impl Editing {
         self.audio_scope = scope;
     }
 
-    /// Forgets the order of file `file` of `member`, closed: its own, or --
-    /// for the file the editor was opened over -- its structure in the
-    /// context's order, unless another window still holds that structure.
+    /// Forgets the order of file `file` of `member`, closed: its own or, for
+    /// the file the editor was opened over, its structure in the context's
+    /// order, unless another window still holds that structure.
     fn close_audio_file(&mut self, member: MemberId, file: i64) {
         let scope = Some((member, file));
         let structure = self.audio_structures.remove(&(member, file));

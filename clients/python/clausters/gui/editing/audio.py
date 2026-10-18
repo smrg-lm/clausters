@@ -52,10 +52,10 @@ class _AudioPlayback:
     """**What sounds one audio editor** -- the shared crate's playback, the
     steps it answers carried out on the editor's server.
 
-    One per editor, shared by its open files: its transport, its play
-    cursor and meter follow the focused file, and playing one window moves
-    nothing in another. All but the focused file stay paused; switching files
-    stops and locates the same server transport to the incoming cursor.
+    One per editor, shared by its open files: one file plays at a time and
+    all others stay paused, and playing one window moves nothing in another.
+    A pass goes on while the window shows another file until it is stopped,
+    from any file, and a play is over the file shown.
     """
 
     def __init__(self, server):
@@ -141,6 +141,7 @@ class _AudioDriver:
         play = ed._call("play", looping=self.looping)
         self._playback.call("play", file=ed._display, start=int(play["start"]),
                             **{"pass": play["pass"]})
+        ed._show_transport()
 
     def pause(self) -> None:
         if self._focused():
@@ -148,10 +149,14 @@ class _AudioDriver:
             self._paused = True
 
     def stop(self) -> None:
+        """Stop whichever file plays, from the window showing another file
+        too, and bring the file shown into focus at its cursor."""
         self._paused = False
-        if self._focused():
-            play = self.editor._call("play", looping=self.looping)
-            self._playback.call("stop", back=int(play["back"]))
+        if self._focused() or self._playback.rolling():
+            ed = self.editor
+            play = ed._call("play", looping=self.looping)
+            self._playback.call("stop", back=int(play["back"]), file=ed._display)
+            ed._show_transport()
 
     def locate(self, at: float) -> None:
         ed = self.editor
@@ -304,8 +309,8 @@ class AudioEditor(Marking, Editor):
              "codec": getattr(file, "codec", None),
              "sample_format": getattr(file, "sample_format", None),
              "layers": list(view.layers)}, take, domain)
-        #: The identity the window's own widgets are named by -- the list,
-        #: the meter, the dialogs -- which stay while the files change.
+        #: The identity the window's own widgets are named by (the list, the
+        #: meter, the dialogs), which stay while the files change.
         self._window_structure = self._structure_id
         if history_bytes is not None:
             self._editing.limit_bytes(history_bytes)
@@ -403,15 +408,33 @@ class AudioEditor(Marking, Editor):
         nothing plays, and a rolling pass is left alone."""
         self._playback.rolling()
         self._playback.call("cue", frame=frame)
+        self._show_transport()
 
     def _play(self, play: dict) -> None:
         """**The space bar**, as the editor read it: a rolling transport stops
         and goes back to the position cursor; a stopped one plays the pass."""
         if self._playback.rolling():
-            self._playback.call("stop", back=int(play["back"]))
+            # whichever file plays stops, and the one shown comes into focus
+            self._playback.call("stop", back=int(play["back"]), file=self._display)
         else:
             self._playback.call("play", file=self._display, start=int(play["start"]),
                                 **{"pass": play["pass"]})
+        self._show_transport()
+
+    def _show_transport(self) -> None:
+        """**The window's play cursor and the list's play mark, as the
+        playback stands**: the line is drawn over the file shown unless another
+        file is playing, and the list marks the file that plays. Read off what
+        the playback was last told: an engine asked right after a play may not
+        be rolling yet."""
+        state = self._playback.state()
+        if self._host is None or self._window is None:
+            return
+        for wid in self.view.widgets:
+            self._host.set(wid, playhead_at=0.0 if state.get("follows", True) else -1.0)
+            break
+        for correction in self._call("playing", file=state.get("playing"))["corrections"]:
+            self._host.set(int(correction["widget"]), **correction["props"])
 
     def open(self, host=None, id: "int | None" = None):
         """Open the window, with its play cursor drawn from the transport.
@@ -706,7 +729,9 @@ class AudioEditor(Marking, Editor):
             if outcome.get("focusChanged"):
                 self._bind_file(outcome["binding"])
                 self._sound()
-                self._playback.call("focusFile", file=self._display,
+                # a pass in progress goes on: the window only looks elsewhere
+                self._playback.rolling()
+                self._playback.call("view", file=self._display,
                                     frame=int(outcome["binding"]["cursor"]))
         if "layers" in outcome:
             self.view.layers = tuple(outcome["layers"])
@@ -768,6 +793,8 @@ class AudioEditor(Marking, Editor):
             start, length = float(swept.get("start", 0.0)), float(swept.get("len", 0.0))
             self._driver.span = (start, start + length) if length > 0 else None
         self.echo.send(outcome.get("answer"))
+        if outcome.get("focusChanged"):
+            self._show_transport()
         self._closing(outcome)
         return changed
 

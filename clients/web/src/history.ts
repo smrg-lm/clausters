@@ -802,8 +802,8 @@ export class Editing {
     }
 
     /**
-     * What an undo menu reads -- `canUndo`, `canRedo`, `undoLabel`,
-     * `redoLabel` -- of the order {@link Editing.step} walks for `member`.
+     * What an undo menu reads of the order {@link Editing.step} walks for
+     * `member`: `canUndo`, `canRedo`, `undoLabel`, `redoLabel`.
      */
     state(member?: number): { canUndo?: boolean; canRedo?: boolean; undoLabel?: string | null; redoLabel?: string | null } {
         if (this.#core === null) return {};

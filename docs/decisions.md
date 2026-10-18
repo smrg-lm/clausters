@@ -10488,7 +10488,7 @@ order: two windows over one take share an undo, and a multitrack and the take
 of one of its regions do too. Both hold. The file an editor was opened over
 is a structure of the context like any other, and its edits stay in the
 context's order, which every window over that take shares. A file the editor
-adds -- opened beside it or made empty -- is reachable from that window alone,
+adds, opened beside it or made empty, is reachable from that window alone,
 so it walks a `History` of its own, held by the context and swapped in while
 that file is in focus. No new history type was made; the existing one is
 instantiated per added file.
@@ -10498,8 +10498,8 @@ state name the window's member (`step` and `state` with `member`), and the
 member's file in focus picks the order; a step that names no member walks the
 context's. A turn of a member selects its own, so a key pressed in the window
 needs nothing more. Closing the opened file while others stay forgets its
-structure in the context's order -- unless another window still holds it --
-so an undo there never reaches a file that is gone.
+structure in the context's order (unless another window still holds it), so
+an undo there never reaches a file that is gone.
 
 The rest of what a file keeps (parts, gain curve, cursor, selection, layers,
 loop switch, unsaved changes) is the application's state for that file, parked

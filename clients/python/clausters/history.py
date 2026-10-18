@@ -497,8 +497,8 @@ class Editing:
                 handler.store(structure, int(entry["buffer"]), entry.get("steps") or [])
 
     def state(self, member: "int | None" = None) -> dict:
-        """What an undo menu reads -- ``{"canUndo", "canRedo", "undoLabel",
-        "redoLabel"}`` -- of the order `step` walks for ``member``."""
+        """What an undo menu reads of the order `step` walks for ``member``:
+        ``{"canUndo", "canRedo", "undoLabel", "redoLabel"}``."""
         if self.core is None:
             return {}
         return self.core.call("state", **({} if member is None else {"member": int(member)}))

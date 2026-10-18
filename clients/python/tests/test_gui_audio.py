@@ -224,8 +224,9 @@ def test_a_cut_moves_no_samples():
     editor, _host, wid, _context = opened(take)
     take.server.sent.clear()
     editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0])
-    assert take.server.addrs() == ["/buffer_stitch", "/node_set"], \
-        "the join stitched, and the readers' window set to its new length"
+    assert take.server.addrs() == ["/buffer_stitch", "/node_set", "/transport_locateSample"], \
+        "the join stitched, the readers' window set to its new length, and the " \
+        "transport cued to where the span was"
     assert editor.buffer.frames == 80
     assert editor.undo() is True
     assert editor.buffer.frames == 100

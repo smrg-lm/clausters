@@ -741,11 +741,12 @@ impl Gestures {
         let key = host.timeline_key(id)?;
         let state = *host.timelines().state(key)?;
         let (start, len) = state.selection().unzip();
-        // **Where a paste lands is the cursor, span or no span**: a click
-        // leaves a selection of zero length whose start is the cursor, which
-        // `selection()` -- the spans only -- does not answer, and a paste read
-        // that way always landed at frame 0. The same reading `play_key` makes.
-        let cursor = state.sel_start.max(0.0);
+        // **Where a paste lands is the position cursor, span or no span**:
+        // the line a click puts down, never the start of a selection swept
+        // elsewhere. With no cursor placed, a click's selection of zero length
+        // still names where the reader is; `selection()`, which answers spans
+        // only, does not, and a paste read that way landed at frame 0.
+        let cursor = state.cursor().unwrap_or(state.sel_start).max(0.0);
         let mut out = Vec::new();
         match verb {
             ClipVerb::Copy => {
@@ -797,9 +798,8 @@ impl Gestures {
                 }
                 let mut args = vec![
                     OscType::String(tag.into()),
-                    // Where: the selection's start, which is where a locate or a
-                    // sweep last put the axis -- a paste has no pointer of its
-                    // own, and the cursor is what the reader was looking at.
+                    // Where: the position cursor. A paste has no pointer of
+                    // its own, and the cursor is where the reader put it.
                     OscType::Double(cursor),
                     OscType::String(doc.kind().into()),
                     OscType::String(doc.to_json()),

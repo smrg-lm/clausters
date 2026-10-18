@@ -24,9 +24,16 @@ code that keeps it lives.
 - **A transport belongs to an object.** Each audio editor plays on a
   transport of its own (the clients' `AudioPlayback`, one per editor), so
   playing one window moves the play cursor and the meter of that window only.
-  The playback can hold several files of one editor, all but the one played
-  last paused. Switching files stops the shared server transport and locates
-  it to the incoming file's saved cursor; only that file can play.
+  The playback holds several files of one editor and one plays at a time.
+  **A pass goes on while the window shows another file**: switching files
+  does not touch it, the play cursor is not drawn over a file that is not
+  the one playing, and the file list marks the one that plays. Stop stops
+  it from any file; play is over the file shown. Stopped, switching files
+  locates the transport to the incoming file's cursor.
+- **A play cursor is drawn in its take's frames.** A transport counts the
+  engine's samples, and every view of a take at another rate, the pane
+  that draws its play cursor included, reads it by the take's rate over the
+  engine's.
 
 ## Views and layers
 
@@ -101,6 +108,14 @@ code that keeps it lives.
   restores its cursor, selection, gain curve and view settings. Undo/redo
   steps only the focused file. The independent file list is on the left and
   can be hidden; hiding it changes neither focus nor playback.
+- **A paste lands at the position cursor, and a cut or a paste leaves
+  nothing selected.** The cursor is the line a click puts down; a selection
+  swept elsewhere does not move where a paste goes. After a cut or a paste
+  the frames a selection named have moved, so the selection is cleared and
+  the cursor stands where the edit landed.
+- **A choice in the file list is navigation.** It is never refused as stale,
+  and the list keeps its widget across switches, so a hand clicking down it
+  lands on the file it clicked last.
 - **An edit is in the history; a view state is not.** Cuts, pastes, strokes,
   curve points and Apply are history entries; which layer is shown, which
   channels are folded, the preview switch, the scroll and the zoom are not.

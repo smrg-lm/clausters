@@ -1511,7 +1511,7 @@ fn a_set_of_a_live_prop_asks_for_the_live_layers_alone() {
 }
 
 /// **A pane draws its take's play cursor, so it reads the transport in the
-/// take's frames** -- the pane owns the axis, and its rate is the take's.
+/// take's frames**: the pane owns the axis, and its rate is the take's.
 #[test]
 fn a_pane_over_a_take_at_another_rate_reads_the_transport_as_its_frames() {
     struct At;

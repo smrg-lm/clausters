@@ -143,6 +143,9 @@ pub struct AudioEditorPlayback {
     files: BTreeMap<u64, File>,
     /// The file that plays: every other one is paused.
     focus: Option<u64>,
+    /// The file the window shows, which need not be the one that plays: a
+    /// pass goes on while the window looks at another file.
+    viewed: Option<u64>,
     /// Whether the transport was last told to roll.
     rolling: bool,
     /// Whether the pass last asked for loops, which is what a selection
@@ -187,6 +190,7 @@ impl AudioEditorPlayback {
             sent: BTreeSet::new(),
             files: BTreeMap::new(),
             focus: None,
+            viewed: None,
             rolling: false,
             looping: false,
             effects: BTreeMap::new(),
@@ -659,6 +663,44 @@ impl AudioEditorPlayback {
         steps
     }
 
+    /// **The window shows file `file` now, its position cursor at `frame`.**
+    /// A pass in progress goes on, whichever file it plays: the window only
+    /// looks elsewhere. Stopped, the file shown comes into focus and the
+    /// transport stands on its cursor, so a play starts there and the play
+    /// cursor is drawn on it.
+    pub fn view(&mut self, file: u64, frame: u64) -> Vec<Step> {
+        self.viewed = Some(file);
+        if self.rolling {
+            return Vec::new();
+        }
+        let mut steps = self.focus_on(file);
+        steps.extend(self.locate(frame));
+        steps
+    }
+
+    /// **Stops, from the window showing `file`**, and goes back to `back`, a
+    /// frame of that file: whichever file was playing stops, and the one
+    /// shown comes into focus, so the next play is over what is seen.
+    pub fn stop_viewing(&mut self, file: u64, back: u64) -> Vec<Step> {
+        self.viewed = Some(file);
+        let mut steps = self.pause();
+        steps.extend(self.focus_on(file));
+        steps.extend(self.locate(back));
+        steps
+    }
+
+    /// **Whether the window draws the transport's line over the file it
+    /// shows**: always, but while another file plays, since that line is a
+    /// position in the other file's frames.
+    pub fn follows(&self) -> bool {
+        !self.rolling || self.viewed.is_none() || self.focus == self.viewed
+    }
+
+    /// The file a pass is playing, if one is.
+    pub fn playing(&self) -> Option<u64> {
+        self.focus.filter(|_| self.rolling)
+    }
+
     /// **The position cursor moved to `frame`**: a stopped transport is
     /// located there, so the play cursor stands on it, and a rolling one is
     /// left alone -- moving the mark mid-pass must not move the music.
@@ -998,20 +1040,24 @@ fn out_ports(outs: usize) -> Ports {
 ///
 /// - `sync` -- `file`, `buffer`, `channels`, `frames`, `takeRate`, `rate`
 /// - `closeFile` -- `file`
-/// - `focusFile` -- `file`, `frame`: stop, focus its reader and restore its cursor
+/// - `view` -- `file`, `frame`: the window shows `file`; stopped, its reader
+///   comes into focus at its cursor, and a pass in progress goes on
 /// - `play` -- `file`, `start`, `pass` (`{"kind": "loop", "from", "to"}` or
 ///   `{"kind": "until", "end", "back"}`)
 /// - `pass` -- `pass`, as for `play`: the loop switch changed while it plays
 /// - `follow` -- `file`, `from`, `to`, `place`: the selection of `file` was
 ///   redrawn while it loops, and with `place` the head goes to its start
-/// - `resume`, `pause`, `stop` (`back`), `locate` (`frame`), `cue`
-///   (`frame`: a locate while stopped, nothing while rolling), `close`
+/// - `resume`, `pause`, `stop` (`back`, and `file`: the file the window
+///   shows, which comes into focus), `locate` (`frame`), `cue` (`frame`: a
+///   locate while stopped, nothing while rolling), `close`
 /// - `setRolling` -- `rolling`
 /// - `open` -- allocates the transport it plays on, when it has none, and
 ///   answers `{"transport"}`; refused when the server has none left
-/// - `state` -- answers `{"transport", "rolling", "focus", "meters", "nodes"}`,
-///   `meters` being `{"bus", "channels"}` or `null`, and `transport` `null`
-///   before it has one
+/// - `state` -- answers `{"transport", "rolling", "focus", "playing",
+///   "follows", "meters", "nodes"}`: `playing` the file a pass plays or
+///   `null`, `follows` whether the window draws the transport's line over the
+///   file it shows; `meters` being `{"bus", "channels"}` or `null`, and
+///   `transport` `null` before it has one
 /// - `space` -- `looping`, `selection` (`[from, to]` or `null`), `cursor`,
 ///   `frames`: answers `{"start", "pass"}`
 pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut IdSpaces) -> String {
@@ -1043,12 +1089,7 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
         }
         "removeEffect" => answer(playback.remove_effect(int("file"),ids)),
         "closeFile" => answer(playback.close_file(int("file"), ids)),
-        "focusFile" => {
-            let mut steps = playback.pause();
-            steps.extend(playback.focus_on(int("file")));
-            steps.extend(playback.locate(int("frame")));
-            answer(Ok(steps))
-        }
+        "view" => answer(Ok(playback.view(int("file"), int("frame")))),
         "play" => match request
             .get("pass")
             .cloned()
@@ -1076,7 +1117,10 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
         ))),
         "resume" => answer(Ok(playback.resume())),
         "pause" => answer(Ok(playback.pause())),
-        "stop" => answer(Ok(playback.stop(int("back")))),
+        "stop" => match request.get("file").and_then(Value::as_u64) {
+            Some(file) => answer(Ok(playback.stop_viewing(file, int("back")))),
+            None => answer(Ok(playback.stop(int("back")))),
+        },
         "locate" => answer(Ok(playback.locate(int("frame")))),
         "cue" => answer(Ok(playback.cue(int("frame")))),
         "close" => answer(playback.close(ids)),
@@ -1098,6 +1142,8 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
             "transport": playback.transport(),
             "rolling": playback.rolling(),
             "focus": playback.focus(),
+            "playing": playback.playing(),
+            "follows": playback.follows(),
             "meters": playback.meters().map(|(bus, channels)| json!({"bus": bus, "channels": channels})),
             "nodes": playback.node_count(),
         })
@@ -1484,7 +1530,7 @@ mod tests {
         assert!(unknown["error"].is_string());
     }
     #[test]
-    fn switching_files_pauses_the_old_reader_and_locates_at_the_incoming_rate() {
+    fn a_pass_goes_on_while_the_window_shows_another_file() {
         let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
         let mut ids = spaces();
         playback
@@ -1493,26 +1539,54 @@ mod tests {
         playback
             .sync(2, 20, 2, 44100, 44100.0, 48000.0, &mut ids)
             .unwrap();
+        playback.view(1, 0);
         playback.play(1, 0, Pass::Loop { from: 0, to: 48000 });
-        let answer: Value = serde_json::from_str(&call_json(
+        let call = |playback: &mut AudioEditorPlayback, ids: &mut IdSpaces, request: Value| {
+            serde_json::from_str::<Value>(&call_json(playback, &request.to_string(), ids)).unwrap()
+        };
+        let viewed = call(
             &mut playback,
-            r#"{"verb":"focusFile","file":2,"frame":22050}"#,
             &mut ids,
-        ))
-        .unwrap();
-        assert_eq!(playback.focus(), Some(2));
-        assert!(!playback.rolling());
-        let steps = answer["steps"].as_array().unwrap();
-        let messages: Vec<_> = steps.iter().filter_map(|s| s.get("send")).collect();
+            json!({"verb": "view", "file": 2, "frame": 22050}),
+        );
+        assert_eq!(viewed["steps"], json!([]), "the pass goes on");
+        let state = call(&mut playback, &mut ids, json!({"verb": "state"}));
+        assert_eq!(state["playing"], 1);
+        assert_eq!(state["follows"], false, "the line is the other file's");
+
+        // Stopped from the window showing the other file: that one comes into
+        // focus at its cursor, in its own frames.
+        let stopped = call(
+            &mut playback,
+            &mut ids,
+            json!({"verb": "stop", "file": 2, "back": 22050}),
+        );
+        let messages: Vec<_> = stopped["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|s| s.get("send"))
+            .collect();
         assert_eq!(messages[0]["addr"], "/transport_stop");
         let runs: Vec<_> = messages
             .iter()
             .filter(|m| m["addr"] == "/node_run")
             .collect();
         assert_eq!(runs.len(), 2);
-        assert_eq!(runs[0]["args"][1], json!({"i": 0}));
-        assert_eq!(runs[1]["args"][1], json!({"i": 1}));
         assert_eq!(messages.last().unwrap()["addr"], "/transport_locateSample");
         assert_eq!(messages.last().unwrap()["args"][1], json!({"h": 24000}));
+        let state = call(&mut playback, &mut ids, json!({"verb": "state"}));
+        assert_eq!(state["playing"], Value::Null);
+        assert_eq!(state["follows"], true);
+        assert_eq!(playback.focus(), Some(2));
+
+        // Stopped, showing a file focuses it at its cursor.
+        let viewed = call(
+            &mut playback,
+            &mut ids,
+            json!({"verb": "view", "file": 1, "frame": 100}),
+        );
+        assert_eq!(playback.focus(), Some(1));
+        assert!(!viewed["steps"].as_array().unwrap().is_empty());
     }
 }

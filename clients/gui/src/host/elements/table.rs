@@ -197,14 +197,11 @@ impl Rows {
 
     fn set_selected(&mut self, v: &Value) {
         let n = self.rows.len();
+        // A list in a def, its JSON text in a `/gui_set` (read as `rows`
+        // reads it), or one index.
         let mut picked: Vec<usize> = match v {
-            Value::Array(items) => items
-                .iter()
-                .filter_map(Value::as_u64)
-                .map(|i| i as usize)
-                .collect(),
             Value::Number(i) => i.as_u64().map(|i| vec![i as usize]).unwrap_or_default(),
-            _ => Vec::new(),
+            _ => list_of(v, |i| i.as_u64().map(|i| i as usize)),
         };
         picked.retain(|&i| i < n);
         if !self.multiple {
@@ -737,6 +734,19 @@ mod tests {
         );
         let info = t.info();
         assert!(info[1].1.as_str().unwrap().contains(r#""open":false"#));
+    }
+
+    /// **A `/gui_set` carries the selection as its JSON text**, as it carries
+    /// the rows, and the selection is read from it rather than cleared.
+    #[test]
+    fn a_selection_set_as_json_text_is_read() {
+        let mut t = table(r#"{"rows":[["a"],["b"],["c"]]}"#);
+        assert!(t.rows.set("selected", &Value::String("[2]".into())));
+        assert_eq!(t.rows.selected, vec![2]);
+        assert!(t.rows.set("selected", &serde_json::json!([1])));
+        assert_eq!(t.rows.selected, vec![1]);
+        assert!(t.rows.set("selected", &serde_json::json!(0)));
+        assert_eq!(t.rows.selected, vec![0]);
     }
 
     #[test]

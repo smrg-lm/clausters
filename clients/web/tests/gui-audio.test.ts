@@ -252,8 +252,8 @@ test("a cut moves no samples", async () => {
     await settle();
     assert.deepEqual(
         take.server.addrs(),
-        ["/buffer_stitch", "/node_set"],
-        "the join stitched, and the readers' window set to its new length",
+        ["/buffer_stitch", "/node_set", "/transport_locateSample"],
+        "the join stitched, the readers' window set to its new length, and the transport cued to where the span was",
     );
     assert.equal(editor.buffer.frames, 80);
     assert.equal(editor.undo(), true);

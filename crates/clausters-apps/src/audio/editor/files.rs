@@ -15,6 +15,9 @@ fn corrected(list: Vec<(i32, Value)>) -> Vec<Correction> {
         .collect()
 }
 
+/// How wide the list's column for the playing mark is.
+const FILE_MARK_W: f64 = 18.0;
+
 impl AudioEditor {
     /// The server buffer currently drawn; also the open file's identity.
     pub fn focused_file(&self) -> i64 {
@@ -63,6 +66,7 @@ impl AudioEditor {
         file.lane = self.lane;
         file.files_widget = self.files_widget;
         file.files_visible = self.files_visible;
+        file.playing = self.playing;
         file.dialogs = self.dialogs.clone();
         file.title = self.title.clone();
         file.size = self.size;
@@ -164,9 +168,19 @@ impl AudioEditor {
     /// **What the window is corrected with when this file comes into
     /// focus**: its cursor, its selection and its loop switch on every view
     /// of the take. They are the host's screen state, which a definition does
-    /// not overwrite, so they travel as an answer -- which also hands the
+    /// not overwrite, so they travel as an answer, which also hands the
     /// host the version the switch moved to.
     pub(super) fn focus_corrections(&self) -> Vec<Correction> {
+        let mut corrections = self.band_corrections();
+        for correction in &mut corrections {
+            correction.props["looping"] = json!(self.looping);
+        }
+        corrections
+    }
+
+    /// The cursor and the selection, as every view of the take is corrected
+    /// with them.
+    fn band_corrections(&self) -> Vec<Correction> {
         let (start, end) = self.selection.unwrap_or((0, 0));
         let cursor = self.cursor.unwrap_or(0);
         [self.widget, self.pane, self.lane]
@@ -178,10 +192,61 @@ impl AudioEditor {
                     "cursor": cursor,
                     "sel_start": if end > start { start } else { cursor },
                     "sel_len": end.saturating_sub(start),
-                    "looping": self.looping,
                 }),
             })
             .collect()
+    }
+
+    /// **An edit landed at frame `at`**: nothing is selected, the position
+    /// cursor stands there and the playback is cued to it. Answers the
+    /// corrections that tell the window.
+    pub(super) fn land_at(&mut self, at: u64, out: &mut Outcome) -> Vec<Correction> {
+        let at = at.min(self.length());
+        self.selection = None;
+        self.cursor = Some(at);
+        let secs = self.secs_at(at as f64);
+        out.selection = Some(json!({ "start": secs, "len": 0.0 }));
+        out.locate = Some(secs);
+        out.cue = Some(at);
+        out.follow = self.follow(false);
+        self.band_corrections()
+    }
+
+    /// **The list's rows and the row in focus**: each open file's name, the
+    /// one a pass is playing marked with the transport's play sign.
+    fn file_rows(&self) -> (Vec<Value>, Vec<usize>) {
+        let selected = self
+            .files
+            .iter()
+            .position(|f| f["id"].as_i64() == Some(self.display))
+            .into_iter()
+            .collect();
+        let rows = self
+            .files
+            .iter()
+            .map(|f| {
+                let mark = if f["id"].as_i64().is_some() && f["id"].as_i64() == self.playing {
+                    crate::chrome::PLAY
+                } else {
+                    ""
+                };
+                json!([mark, f["label"]])
+            })
+            .collect();
+        (rows, selected)
+    }
+
+    /// What the list is corrected with when the file a pass plays changes.
+    pub(super) fn files_corrections(&mut self) -> Vec<Correction> {
+        self.refresh_files();
+        let (Some(widget), true) = (self.files_widget, self.files_visible) else {
+            return Vec::new();
+        };
+        let (rows, selected) = self.file_rows();
+        vec![Correction {
+            widget: i64::from(widget),
+            props: json!({"rows": rows, "selected": selected}),
+        }]
     }
 
     pub(super) fn compose_files(&self, tree: &mut Value) {
@@ -191,13 +256,7 @@ impl AudioEditor {
         if !self.files_visible {
             return;
         }
-        let selected: Vec<usize> = self
-            .files
-            .iter()
-            .position(|f| f["id"].as_i64() == Some(self.display))
-            .into_iter()
-            .collect();
-        let rows: Vec<Value> = self.files.iter().map(|f| json!([f["label"]])).collect();
+        let (rows, selected) = self.file_rows();
         // Chrome and dialogs stay outside the editing row. The independent
         // list is a table; its selection is the application's focused file.
         let Some(children) = tree.get_mut("children").and_then(Value::as_array_mut) else {
@@ -208,9 +267,13 @@ impl AudioEditor {
             .position(|c| c["weight"].as_f64().is_some_and(|w| w > 0.0));
         if let Some(index) = index {
             let picture = children.remove(index);
-            children.insert(index, json!({"type": "layout", "flow": "row", "margin": 0, "weight": 1,
-                "children": [{"type": "table", "id": widget, "name": "files", "label": "Files", "w": 180,
-                    "rows": rows, "selected": selected, "multiple": false}, picture]}));
+            children.insert(
+                index,
+                json!({"type": "layout", "flow": "row", "margin": 0, "weight": 1,
+                "children": [{"type": "table", "id": widget, "name": "files", "w": 180,
+                    "columns": [{"title": "", "w": FILE_MARK_W}, "Files"],
+                    "rows": rows, "selected": selected, "multiple": false}, picture]}),
+            );
         }
     }
     /// **Whether the take is a file not written yet**: a save has nowhere to
@@ -427,5 +490,28 @@ mod tests {
         assert_eq!(tree["children"][0]["children"][1]["id"], 10);
         editor.files_visible = false;
         assert_eq!(editor.window(10, None)["children"][0]["id"], 10);
+    }
+
+    /// **The list marks the file a pass plays**, which need not be the one in
+    /// focus, and keeps the row in focus selected.
+    #[test]
+    fn the_list_marks_the_file_that_plays() {
+        let mut editor = super::super::new_json(r#"{"take":1,"frames":1000,"display":2}"#).unwrap();
+        editor.files_widget = Some(20);
+        let answer: serde_json::Value = serde_json::from_str(&super::super::call_json(
+            &mut editor,
+            r#"{"verb":"playing","file":2}"#,
+        ))
+        .unwrap();
+        let props = &answer["corrections"][0]["props"];
+        assert_eq!(answer["corrections"][0]["widget"], 20);
+        assert_eq!(props["rows"][0][0], crate::chrome::PLAY);
+        assert_eq!(props["selected"], serde_json::json!([0]));
+        let stopped: serde_json::Value = serde_json::from_str(&super::super::call_json(
+            &mut editor,
+            r#"{"verb":"playing","file":null}"#,
+        ))
+        .unwrap();
+        assert_eq!(stopped["corrections"][0]["props"]["rows"][0][0], "");
     }
 }

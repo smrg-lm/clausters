@@ -100,10 +100,10 @@ interface Play {
  * **What sounds one audio editor** -- the shared crate's playback, the steps
  * it answers carried out on the editor's server.
  *
- * One per editor, shared by its open files: its transport, play cursor and
- * meter follow the focused file, and playing one window moves nothing in
- * another. All but the focused file stay paused; switching files stops and
- * locates the same server transport to the incoming cursor.
+ * One per editor, shared by its open files: one file plays at a time and
+ * all others stay paused, and playing one window moves nothing in another. A
+ * pass goes on while the window shows another file until it is stopped,
+ * from any file, and a play is over the file shown.
  */
 class AudioPlayback {
     #native: AudioEditorPlayback | null = null;
@@ -205,6 +205,7 @@ class AudioDriver implements TransportDriver {
         if (at !== undefined) await this.locate(at);
         const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
         await this.playback.call("play", { file: this.display, start: Math.trunc(play.start), pass: play.pass });
+        await this.editor.showTransport();
     }
 
     async pause(): Promise<void> {
@@ -213,11 +214,16 @@ class AudioDriver implements TransportDriver {
         this.paused = true;
     }
 
+    /**
+     * Stop whichever file plays, from the window showing another file too,
+     * and bring the file shown into focus at its cursor.
+     */
     async stop(): Promise<void> {
         this.paused = false;
-        if (!(await this.#focused())) return;
+        if (!(await this.#focused()) && !(await this.playback.rolling())) return;
         const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
-        await this.playback.call("stop", { back: Math.trunc(play.back) });
+        await this.playback.call("stop", { back: Math.trunc(play.back), file: this.display });
+        await this.editor.showTransport();
     }
 
     async locate(at: number): Promise<void> {
@@ -653,9 +659,9 @@ export class AudioEditor extends Editor<Buffer> {
 
     /**
      * **Carry out a file verb's answer**: the server steps, the buffers it
-     * freed and, when the focus moved, the file now in focus bound -- its
-     * buffers, cursor, selection, layers and loop switch -- and the shared
-     * transport located to its cursor.
+     * freed and, when the focus moved, the file now in focus bound (its
+     * buffers, cursor, selection, layers and loop switch) and the playback
+     * shown the file.
      */
     private async applyFile(answer: Record<string, unknown>): Promise<void> {
         if (typeof answer.error === "string") throw new RangeError(answer.error);
@@ -687,11 +693,14 @@ export class AudioEditor extends Editor<Buffer> {
         this.#driver.looping = b.looping === true;
         this.#driver.paused = false;
         await this.sound();
-        await this.playback.call("focusFile", { file: this.display, frame: Number(b.cursor) });
+        // a pass in progress goes on: the window only looks elsewhere
+        await this.playback.rolling();
+        await this.playback.call("view", { file: this.display, frame: Number(b.cursor) });
         if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
         // the switch moved the version: the answer hands it to the host, with
         // the incoming file's cursor and selection
         this.echo.send(answer.answer as never);
+        await this.showTransport();
     }
 
     private async sound(): Promise<void> {
@@ -728,6 +737,7 @@ export class AudioEditor extends Editor<Buffer> {
     private async cue(frame: number): Promise<void> {
         await this.playback.rolling();
         await this.playback.call("cue", { frame: Math.trunc(frame) });
+        await this.showTransport();
     }
 
     /**
@@ -736,13 +746,37 @@ export class AudioEditor extends Editor<Buffer> {
      */
     private async play(play: Play): Promise<void> {
         if (await this.playback.rolling()) {
-            await this.playback.call("stop", { back: Math.trunc(play.back) });
+            // whichever file plays stops, and the one shown comes into focus
+            await this.playback.call("stop", { back: Math.trunc(play.back), file: this.display });
         } else {
             await this.playback.call("play", {
                 file: this.display,
                 start: Math.trunc(play.start),
                 pass: play.pass,
             });
+        }
+        await this.showTransport();
+    }
+
+    /**
+     * **The window's play cursor and the list's play mark, as the playback
+     * stands**: the line is drawn over the file shown unless another file is
+     * playing, and the list marks the file that plays. Read off what the
+     * playback was last told: an engine asked right after a play may not be
+     * rolling yet.
+     */
+    async showTransport(): Promise<void> {
+        const state = await this.playback.call("state");
+        const host = this.host;
+        if (host === null || this.window === null) return;
+        for (const wid of (this.view as SamplesView).widgets.keys()) {
+            await host.set(wid, { playhead_at: state.follows === false ? -1 : 0 });
+            break;
+        }
+        const playing = this.coreCall("playing", { file: state.playing ?? null });
+        type Correction = { widget: number; props: Parameters<typeof host.set>[1] };
+        for (const correction of (playing.corrections ?? []) as Correction[]) {
+            await host.set(Number(correction.widget), correction.props);
         }
     }
 
