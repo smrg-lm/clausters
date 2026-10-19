@@ -4257,3 +4257,31 @@ wrong.
   resource roots. A source without a scratch port must not prevent another
   source from spilling. Clipboard replacement must not free a previous
   connection incarnation's reused buffer number.
+
+- ✅ **Audio file navigation carries another file's presentation**
+  (2026-10-19, native paired-window review). In the `take` window with
+  three mono files, zoom, selection and other presentation changes appear
+  in the other files too. Restore each file's own viewport, selection and
+  position cursor across file-list navigation, including the host's retained
+  widget state. Review the actual window path as well as the core file swap.
+  Fixed by retaining observed horizontal and vertical viewports per file and
+  restoring them with the incoming file's cursor and selection. Directed
+  file-state tests and a native headless host probe cover navigation; the
+  real-window acceptance above remains open for the combined fixes.
+
+- ⬜ **Eight-channel playback starts late and stalls the GUI**
+  (2026-10-19, native paired-window review). Starting playback in the
+  `eight channels` window is delayed and makes interaction slow or stalled.
+  Interval samples in this debug run show about 60-62% of one logical CPU
+  in the server, including about 44% in `pw_out`, and GUI samples reaching
+  about 66%. Separate idle, redraw and playback work, locate the expensive
+  path and compare an optimized build before attributing the cause. Acceptance
+  requires responsive real windows and prompt playback, not only log success.
+
+- ⬜ **Audio paste uses the selection end and leaves the selection visible**
+  (2026-10-19, native paired-window review). Copy correctly keeps the
+  selection, but paste was observed at its end instead of the position
+  cursor, with the old selection still visible. Follow the existing behavior
+  rule: paste at the position cursor, clear selection after successful paste
+  and keep the cursor at the edit's landing position. Check both host verb
+  dispatch and the confirmed operation's projection into the current view.

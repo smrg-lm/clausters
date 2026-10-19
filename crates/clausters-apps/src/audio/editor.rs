@@ -481,6 +481,8 @@ struct AudioFileViewState {
     edit_layer: String,
     cursor: Option<u64>,
     selection: Option<(u64, u64)>,
+    viewport: Option<(f64, f64)>,
+    vertical: BTreeMap<String, (f64, f64)>,
     folded: BTreeSet<u32>,
 }
 
@@ -571,6 +573,8 @@ impl AudioEditor {
                     edit_layer: "take".into(),
                     cursor: None,
                     selection: None,
+                    viewport: None,
+                    vertical: BTreeMap::new(),
                     folded: BTreeSet::new(),
                 },
                 take,
@@ -1337,7 +1341,7 @@ impl AudioEditor {
             };
         }
         if NOT_AN_EDIT.contains(&tag) {
-            self.observe(tag, values, out);
+            self.observe(widget, tag, values, out);
             return (None, Vec::new());
         }
         if matches!(tag, "copy" | "copy_cut") {
@@ -1900,8 +1904,26 @@ impl AudioEditor {
     }
 
     /// A tag that says what the view is looking at rather than what changed.
-    fn observe(&mut self, tag: &str, values: &[Value], out: &mut Outcome) {
+    fn observe(&mut self, widget: i64, tag: &str, values: &[Value], out: &mut Outcome) {
         match tag {
+            "view" if values.len() >= 2 => {
+                let start = number(&values[0]);
+                let len = number(&values[1]);
+                if start.is_finite() && len.is_finite() && len > 0.0 {
+                    self.file.presentation.viewport = Some((start.max(0.0), len));
+                }
+            }
+            "view_y" if values.len() >= 2 => {
+                let start = number(&values[0]);
+                let len = number(&values[1]);
+                if start.is_finite() && len.is_finite() && len > 0.0 {
+                    let measure = self.vertical_measure(widget).to_owned();
+                    self.file
+                        .presentation
+                        .vertical
+                        .insert(measure, (start, len));
+                }
+            }
             "locate" if !values.is_empty() => {
                 let frame = number(&values[0]);
                 let cursor = frame.max(0.0).round() as u64;

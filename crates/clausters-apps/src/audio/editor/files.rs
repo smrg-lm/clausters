@@ -163,8 +163,32 @@ impl AudioEditor {
         let mut corrections = self.band_corrections();
         for correction in &mut corrections {
             correction.props["looping"] = json!(self.file.presentation.looping);
+            let (start, len) = self.file.presentation.viewport.unwrap_or((0.0, 0.0));
+            correction.props["view_start"] = json!(start);
+            correction.props["view_len"] = json!(len);
+            let (start, len) = self
+                .file
+                .presentation
+                .vertical
+                .get(self.vertical_measure(correction.widget))
+                .copied()
+                .unwrap_or((0.0, 1.0));
+            correction.props["y_start"] = json!(start);
+            correction.props["y_len"] = json!(len);
         }
         corrections
+    }
+
+    pub(super) fn vertical_measure(&self, widget: i64) -> &'static str {
+        if self.window_state.envelope_widget.map(i64::from) == Some(widget) {
+            "gain"
+        } else if self.window_state.lane.map(i64::from) == Some(widget)
+            || self.file.presentation.views == Views::Spectrogram
+        {
+            "frequency"
+        } else {
+            "amplitude"
+        }
     }
 
     /// The cursor and the selection, as every view of the take is corrected
@@ -632,6 +656,46 @@ mod ownership_tests {
 
     fn call(editor: &mut AudioEditor, request: Value) -> Value {
         serde_json::from_str(&call_json(editor, &request.to_string())).unwrap()
+    }
+
+    #[test]
+    fn file_navigation_restores_the_observed_viewport_and_selection() {
+        let mut editor = new_json(r#"{"take":3,"frames":10000,"display":9}"#).unwrap();
+        editor.window(10, None);
+        for (tag, values) in [
+            ("view", vec![json!(1200), json!(2000)]),
+            ("view_y", vec![json!(0.25), json!(0.5)]),
+            ("locate", vec![json!(100)]),
+            ("selection", vec![json!(300), json!(50)]),
+        ] {
+            let mut args = vec![json!(10), json!(1), json!(0), json!(tag)];
+            args.extend(values);
+            editor.event(
+                &Event {
+                    addr: "/gui_event".into(),
+                    args,
+                },
+                0,
+            );
+        }
+        editor.add_file(new_json(r#"{"take":50,"frames":20000,"display":51}"#).unwrap());
+        let fresh = editor.focus_corrections();
+        assert_eq!(
+            fresh[0].props["view_len"], 0.0,
+            "a new file fits its own extent"
+        );
+        assert_eq!(fresh[0].props["sel_len"], 0);
+        assert_eq!(fresh[0].props["y_start"], 0.0);
+        assert_eq!(fresh[0].props["y_len"], 1.0);
+        editor.focus_file(1).unwrap();
+        let restored = editor.focus_corrections();
+        assert_eq!(restored[0].props["view_start"], 1200.0);
+        assert_eq!(restored[0].props["view_len"], 2000.0);
+        assert_eq!(restored[0].props["y_start"], 0.25);
+        assert_eq!(restored[0].props["y_len"], 0.5);
+        assert_eq!(restored[0].props["cursor"], 100);
+        assert_eq!(restored[0].props["sel_start"], 300);
+        assert_eq!(restored[0].props["sel_len"], 50);
     }
 
     #[test]
