@@ -697,7 +697,15 @@ def test_playing_a_file_while_viewing_another_silences_the_viewed_meter(monkeypa
         assert state["meters"]["channels"] == channels
         assert (state["meters"]["bus"] >= 0) == (editor._file_id == first)
         wid = picture(host.trees[-1])["id"]
-        assert host.props[wid]["playhead_at"] == (0.0 if editor._file_id == first else -1.0)
+        expected = 0.0 if editor._file_id == first else -1.0
+        assert host.props[wid]["playhead_at"] == expected
+        editor.hide_files()
+        def find_pane(node):
+            if node.get("id") == editor._window_widget("pane"):
+                return node
+            return next((found for child in node.get("children", ())
+                         if (found := find_pane(child)) is not None), None)
+        assert find_pane(host.trees[-1])["axes"]["x"]["playhead_at"] == expected
         editor._driver.stop()
         take.server.playing = False
         assert editor._playback.state()["meters"] == {"bus": -channels, "channels": channels}

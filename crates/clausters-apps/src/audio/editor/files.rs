@@ -748,6 +748,42 @@ mod ownership_tests {
     }
 
     #[test]
+    fn redraw_keeps_the_playhead_bound_to_the_playing_file() {
+        fn anchor(tree: &Value, widget: i64) -> Option<f64> {
+            if tree["id"] == widget {
+                return tree["axes"]["x"]["playhead_at"].as_f64();
+            }
+            tree["children"]
+                .as_array()?
+                .iter()
+                .find_map(|child| anchor(child, widget))
+        }
+        let mut editor = new_json(r#"{"take":3,"frames":100,"display":9}"#).unwrap();
+        call(
+            &mut editor,
+            json!({"verb":"window", "widget":10, "pane":11, "lane":13}),
+        );
+        let first = editor.focused_file();
+        editor.add_file(new_json(r#"{"take":50,"frames":200,"display":51}"#).unwrap());
+        let second = editor.focused_file();
+        call(&mut editor, json!({"verb":"playing", "file":first}));
+        for (file, expected) in [(second, -1.0), (first, 0.0), (second, -1.0)] {
+            editor.focus_file(file).unwrap();
+            for views in [Views::Waveform, Views::Stacked] {
+                editor.file.presentation.views = views;
+                let tree = editor.window(10, None);
+                assert_eq!(anchor(&tree, 11), Some(expected));
+                // Repeated structural redraws must preserve the same association.
+                let tree = editor.window(10, None);
+                assert_eq!(anchor(&tree, 11), Some(expected));
+            }
+        }
+        call(&mut editor, json!({"verb":"playing", "file":null}));
+        let tree = editor.window(10, None);
+        assert_eq!(anchor(&tree, 11), Some(0.0));
+    }
+
+    #[test]
     fn transport_projects_only_its_file_and_resizes_the_existing_meter() {
         let mut editor = new_json(r#"{"take":3,"frames":100,"display":9}"#).unwrap();
         call(

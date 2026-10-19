@@ -35,7 +35,9 @@ code that keeps it lives.
   does not touch it, the play cursor is not drawn over a file that is not
   the one playing, and the file list marks the one that plays. Stop stops
   it from any file; play is over the file shown. Stopped, switching files
-  locates the transport to the incoming file's cursor.
+  locates the transport to the incoming file's cursor. Rebuilding the view
+  (layers, file-list visibility, channel folding or edited contents) keeps
+  this association: a hidden play cursor stays hidden on the inactive file.
 - **The meter belongs to the viewed file.** Its channel count always matches
   that file. It shows live levels only while that file plays; stopped or while
   another file plays, all its channels show zero. Returning to the playing

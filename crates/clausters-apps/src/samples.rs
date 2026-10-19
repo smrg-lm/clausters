@@ -71,6 +71,8 @@ pub struct Window<'a> {
     pub widget: i32,
     /// The axis container id, when composed as a pane.
     pub pane: Option<i32>,
+    /// The transport-position anchor; negative hides the play cursor.
+    pub playhead_at: f64,
     /// The body currently in hand.
     pub layer: &'a str,
     /// The window's title.
@@ -119,14 +121,10 @@ pub fn window(w: &Window<'_>) -> Value {
         ruler: "time".into(),
         sample_rate: w.rate,
         label: label(w.name, w.buffer),
-        // **Both cursors are there from the start.** The position cursor
-        // stands at the take's first frame, where a play with nothing placed
-        // starts; the play cursor is anchored at 0 because the counter it is
-        // drawn from is the transport's position (the editor asks for that
-        // clock when it opens), so it stands on the position cursor until
-        // something plays and goes back there when it stops.
+        // The application decides whether this file reads the transport.
+        // Rebuilding a view must not re-enable another file's play cursor.
         cursor: Some(0.0),
-        playhead_at: Some(0.0),
+        playhead_at: Some(w.playhead_at),
         ..Waveform::default()
     });
     picture.insert("id".into(), json!(w.widget));
@@ -288,6 +286,7 @@ mod tests {
             rate: 48_000.0,
             widget: 9,
             pane: None,
+            playhead_at: 0.0,
             layer: "take",
             title: "take",
             meter: None,

@@ -4322,3 +4322,14 @@ wrong.
   clip lamps from the previous source. Directed transport, host and paired
   client regressions cover navigation and source changes; combined manual
   window acceptance remains open above.
+
+
+- ✅ **Structural redraw enables an inactive file's play cursor**
+  (2026-10-19, native window review). Focus corrections hid the cursor of
+  another file's running transport, but the next window definition restored
+  an unconditional zero anchor. Use the same viewed/playing-file rule for
+  both the full definition and incremental corrections. A failing regression
+  reproduced the zero anchor before the fix; directed tests cover repeated
+  waveform/stacked redraws, file switches and stopping. The native host probe
+  checks the projected anchor after file-list visibility changes during play.
+  Combined visual acceptance remains open above.

@@ -769,7 +769,13 @@ test("playing a file while viewing another silences the viewed meter", async () 
             assert.equal(state.meters.channels, channels);
             assert.equal(state.meters.bus >= 0, editor.coreCall("binding").id === first);
             const wid = Number(picture(host.trees.at(-1)).id);
-            assert.equal(props.get(wid)?.playhead_at, editor.coreCall("binding").id === first ? 0 : -1);
+            const expected = editor.coreCall("binding").id === first ? 0 : -1;
+            assert.equal(props.get(wid)?.playhead_at, expected);
+            await editor.hideFiles();
+            const pane = editor.windowWidget("pane");
+            const findPane = (node: any): any => node.id === pane ? node :
+                (node.children ?? []).map(findPane).find((found: unknown) => found);
+            assert.equal(findPane(host.trees.at(-1)).axes.x.playhead_at, expected);
             await driver.stop();
             take.server.playing = false;
             assert.deepEqual((await playback.call("state")).meters, { bus: -channels!, channels });

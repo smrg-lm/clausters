@@ -1110,6 +1110,7 @@ impl AudioEditor {
             rate: self.file.rate,
             widget,
             pane: self.window_state.pane,
+            playhead_at: self.playhead_anchor(),
             layer: &self.file.presentation.edit_layer,
             title: &self.window_state.title,
             size: self.window_state.size,
@@ -1126,6 +1127,18 @@ impl AudioEditor {
         self.refresh_files();
         self.compose_files(&mut tree);
         tree
+    }
+
+    fn playhead_anchor(&self) -> f64 {
+        if self
+            .window_state
+            .playing
+            .is_none_or(|file| file == self.file.id.0)
+        {
+            0.0
+        } else {
+            -1.0
+        }
     }
 
     /// **Where the level is read from**: the first control bus the
@@ -2306,10 +2319,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 editor.set_meters(meters.map(|m| (m.bus, m.channels)));
             }
             let mut corrections = editor.files_corrections();
-            let follows = editor.window_state.playing.is_none_or(|file| file == editor.file.id.0);
+            let anchor = editor.playhead_anchor();
             let targets: BTreeSet<_> = editor.pictures().chain(editor.window_state.pane).collect();
             corrections.extend(targets.into_iter().map(|widget| Correction {
-                widget: i64::from(widget), props: json!({"playhead_at": if follows { 0.0 } else { -1.0 }})
+                widget: i64::from(widget), props: json!({"playhead_at": anchor})
             }));
             if let (Some(widget), Some((bus, channels))) = (editor.window_state.meter_widget, editor.window_state.meters) {
                 corrections.push(Correction { widget: i64::from(widget), props: json!({"bus": bus, "channels": channels}) });
