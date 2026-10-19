@@ -42,6 +42,11 @@ code that keeps it lives.
   layout with zero levels. Mono, stereo and multichannel switches resize the
   existing meter in both directions (`AudioEditorPlayback::meters` and the
   audio application's `playing` corrections).
+- **Playback connects only negotiated hardware outputs.** A multichannel
+  audio file keeps its channels separate for editing and metering. Its first
+  channels feed the available device outputs; remaining channels go to a
+  private unused bus, with no automatic downmix and no writes into other
+  consumers' buses.
 - **Undo/redo resolves its editing context explicitly.** Menus and shortcuts
   target the active document's history; an empty history disables the action
   and never falls back to another document or the application context. Text

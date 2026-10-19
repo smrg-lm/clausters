@@ -4289,3 +4289,12 @@ wrong.
   the selected loop span independently, while copy retains selection and paste
   uses the last click. Gesture regressions and the native headless copy/paste
   probe check the position and the cleared selection after confirmation.
+
+- ✅ **Multichannel output aliases private audio buses and corrupts meters**
+  (2026-10-19, eight-channel window review). An eight-channel output used
+  `OUT:2` through `OUT:7` even on a two-output server. Those indices overlapped
+  client audio buses and summed channels back into the editor's input. Connect
+  only negotiated device outputs; remaining channels use the output graph's
+  private discard bus. A native NRT regression reproduces the wrong amplitude
+  before the fix and checks eight distinct channel levels and stereo output
+  after it. Waveform capture confirms that the multichannel samples are drawn.

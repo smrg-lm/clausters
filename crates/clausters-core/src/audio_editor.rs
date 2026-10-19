@@ -316,12 +316,13 @@ pub fn play_graph(channels: usize) -> Result<Value, String> {
 
 /// **The output**: the editor's bus, read on the ports `in0..`, measured and
 /// sent to the hardware through the declick. Each channel's level lands on the
-/// control bus its [`meter_port`] is set to.
+/// control bus its [`meter_port`] is set to. The caller connects `out0..` only
+/// to negotiated hardware outputs; unconnected channels use a private bus.
 pub fn output_graph(width: usize) -> Result<Value, String> {
     check(width)?;
     let mut declick = serde_json::Map::new();
     for channel in 0..width {
-        declick.insert(bus_port("out", channel), json!(format!("OUT:{channel}")));
+        declick.insert(bus_port("out", channel), json!("discard"));
     }
     let mut surface = serde_json::Map::new();
     for channel in 0..width {
@@ -334,9 +335,14 @@ pub fn output_graph(width: usize) -> Result<Value, String> {
             meter_port(channel),
             json!([{"member": 0, "control": bus_port("out", channel)}]),
         );
+        surface.insert(
+            bus_port("out", channel),
+            json!([{"member":1,"control":bus_port("out", channel)}]),
+        );
     }
     Ok(json!({
         "name": output_name(width),
+        "buses": [{"name":"discard", "rate":"audio", "channels":1}],
         "members": [
             {"def": meter_name(width)},
             {"def": declick_name(width), "controls": declick},
@@ -399,7 +405,8 @@ mod tests {
         assert_eq!(muls.len(), 2);
         assert!(muls.iter().all(|u| u["inputs"][1]["ugen"] == 0));
         let output = output_graph(2).unwrap();
-        assert_eq!(output["members"][1]["controls"]["out1"], "OUT:1");
+        assert_eq!(output["members"][1]["controls"]["out1"], "discard");
+        assert!(output["surface"].get("out1").is_some());
     }
 
     /// **One port per channel of the editor's bus reaches both readers of

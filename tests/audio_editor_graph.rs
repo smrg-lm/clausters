@@ -123,6 +123,61 @@ fn bus_value(s: &mut NrtSession, index: i32) -> f32 {
     panic!("the bus never answered")
 }
 
+#[test]
+fn eight_channel_meters_read_each_channels_amplitude() {
+    let mut s = session();
+    let frames = 512;
+    send(
+        &mut s,
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(frames), OscType::Int(8)],
+    );
+    s.settle_for(4);
+    let expected = [0.125_f32, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0];
+    let bytes = (0..frames)
+        .flat_map(|_| expected)
+        .flat_map(f32::to_le_bytes)
+        .collect();
+    send(
+        &mut s,
+        "/buffer_setRange",
+        vec![OscType::Int(0), OscType::Int(0), OscType::Blob(bytes)],
+    );
+    s.settle_for(4);
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut playback = AudioEditorPlayback::new(Endpoint::default());
+    run(
+        &mut s,
+        playback
+            .sync(1, 0, 8, frames as u64, SR, SR, &mut ids)
+            .unwrap(),
+    );
+    run(
+        &mut s,
+        playback.play(
+            1,
+            0,
+            Pass::Loop {
+                from: 0,
+                to: frames as u64,
+            },
+        ),
+    );
+    let (left, right) = render(&mut s, 100);
+    assert!((left.last().unwrap() - expected[0]).abs() < 1e-4);
+    assert!((right.last().unwrap() - expected[1]).abs() < 1e-4);
+    assert!(fails(&mut s).is_empty());
+    let (bus, channels) = playback.meters().unwrap();
+    assert_eq!(channels, 8);
+    for (channel, expected) in expected.iter().enumerate() {
+        let level = bus_value(&mut s, bus + channel as i32);
+        assert!(
+            (level - expected).abs() < 1e-4,
+            "channel {channel}: expected {expected}, got {level}"
+        );
+    }
+}
+
 /// **A pass is heard on both sides, ramps in, ends where the take does, and
 /// is silent after**: a mono take plays on the left and the right, the play
 /// rises over the ramp rather than stepping, the end mark's ramp brings the

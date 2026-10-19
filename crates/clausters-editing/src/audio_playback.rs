@@ -923,6 +923,12 @@ impl AudioEditorPlayback {
         for channel in 0..width {
             output.insert(ae::bus_port("in", channel), bus(BUS, channel));
             output.insert(ae::meter_port(channel), bus(METER, channel));
+            // Only negotiated hardware outputs are addressed numerically.
+            // Other channels keep the output graph's private discard bus;
+            // OUT:N past the hardware could alias this editor's input buses.
+            if channel < ids.shape().outputs {
+                output.insert(ae::bus_port("out", channel), Port::from(channel as f64));
+            }
         }
         let mut ops = vec![
             Op::AudioBus {
