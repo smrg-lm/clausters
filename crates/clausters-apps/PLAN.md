@@ -4305,3 +4305,9 @@ wrong.
   private discard bus. A native NRT regression reproduces the wrong amplitude
   before the fix and checks eight distinct channel levels and stereo output
   after it. Waveform capture confirms that the multichannel samples are drawn.
+
+- ✅ **The interactive review launcher keeps the server alive after windows close**
+  (2026-10-19). A persistent Python prompt kept the review session, GUI host
+  and server alive after the visual review. The example's `run()` now waits
+  for all its windows and closes its session in `finally`; review launches use
+  that blocking entry point instead of an interpreter left waiting for input.

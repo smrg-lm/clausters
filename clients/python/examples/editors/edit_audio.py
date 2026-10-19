@@ -32,8 +32,8 @@ The View menu chooses waveform (W), spectrogram (S) or both (B). Call ``wave()``
 What to do in the window: **drag** to select, then **Ctrl+X** to cut,
 **Ctrl+C** to copy, **Ctrl+V** to paste at the cursor and
 **Ctrl+Shift+V** to mix there. **Click** to put the position cursor down --
-the play cursor goes with it while nothing plays, and a selection puts both
-at its start -- and **Home** and **End** to put it at the take's first and
+the play cursor goes with it while nothing plays; dragging a selection keeps
+the position cursor where it was -- and **Home** and **End** to put it at the take's first and
 last frame. **Space**
 plays from the cursor to the end of the take, or of the selection, with the
 play cursor following the sound and going back to the position cursor when
@@ -264,10 +264,13 @@ def close_file():
 
 # %%
 def run():
-    """Keep the window open until it is closed."""
+    """Wait for every example window, then close the session and its processes."""
     print("drag to select, Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V, Alt+drag to draw.")
     print("Ctrl+Z walks back. Call hear() to play it, parts() to read it.")
-    editor.wait()
+    try:
+        session.gui().wait()
+    finally:
+        session.close()
 
 
 # %%
