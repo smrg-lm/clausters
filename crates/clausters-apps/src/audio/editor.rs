@@ -1930,18 +1930,6 @@ impl AudioEditor {
                 self.file.presentation.cursor = Some(cursor);
                 out.cue = self.file.presentation.cursor;
                 out.locate = Some(self.secs_at(frame));
-                // **A sweep let go puts the cursor on the selection's start**
-                // (a click empties the selection at its press), and that is
-                // when a loop in progress is put into the span it was moved
-                // to: a head past the loop's end would run on and never wrap.
-                if self
-                    .file
-                    .presentation
-                    .selection
-                    .is_some_and(|(from, _)| from == cursor)
-                {
-                    out.follow = self.follow(true);
-                }
             }
             "selection" => {
                 let frame = |i: usize| values.get(i).map_or(0.0, number).max(0.0);
@@ -1950,9 +1938,9 @@ impl AudioEditor {
                     (len > 0.0).then(|| (from.round() as u64, (from + len).round() as u64));
                 let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 out.selection = Some(json!({ "start": at(0), "len": at(1) }));
-                // The span follows the hand while a loop plays; the head does
-                // not, until the sweep is let go.
-                out.follow = self.follow(false);
+                // The release confirms the loop span without moving the
+                // independent position cursor used by paste and stop.
+                out.follow = self.follow(values.last().and_then(Value::as_bool).unwrap_or(false));
             }
             _ => {}
         }

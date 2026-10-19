@@ -432,7 +432,7 @@ test("a loop follows the selection redrawn while it plays", async () => {
     await settle();
     assert.deepEqual(sent("/transport_loop").at(-1), [1, 40, 70], "the span follows the hand");
     assert.equal(sent("/transport_locateSample").length, 0, "and the head does not");
-    editor.apply("/gui_event", [wid, 5, 0, "locate", 40]);
+    editor.apply("/gui_event", [wid, 5, 0, "selection", 40, 30, true]);
     await settle();
     assert.deepEqual(sent("/transport_locateSample").at(-1), [1, 40], "let go: into the span");
 
@@ -441,7 +441,7 @@ test("a loop follows the selection redrawn while it plays", async () => {
     await settle();
     server.sent = [];
     editor.apply("/gui_event", [wid, 7, 0, "selection", 5, 10]);
-    editor.apply("/gui_event", [wid, 8, 0, "locate", 5]);
+    editor.apply("/gui_event", [wid, 8, 0, "selection", 5, 10, true]);
     await settle();
     assert.deepEqual(server.addrs().filter((addr) => addr.startsWith("/transport_")), []);
 });

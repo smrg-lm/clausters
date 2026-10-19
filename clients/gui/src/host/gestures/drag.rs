@@ -545,11 +545,23 @@ impl Gestures {
                 // is [`Gestures::release`]'s: what this arm answers for is the
                 // *span*, which is the transport's loop and not its position.
                 transport_follows_selection(host, def_id, id, start, len, true);
-                // **A selection puts the position cursor at its start**, where
-                // its play starts and a stop goes back to -- placed as a click
-                // places it, so the owner is told.
+                // Selecting a span does not move the position cursor. A
+                // paste uses the last click, even after a sweep elsewhere.
                 if len > 0.0 {
-                    super::nav::locate_at(host, &mut out, ctx, id, start);
+                    let mut args = vec![
+                        OscType::String("selection".into()),
+                        OscType::Double(start),
+                        OscType::Double(len),
+                    ];
+                    if let Some(axis) = host
+                        .widget_kind(def_id, id)
+                        .and_then(|kind| kind.editor())
+                        .filter(|axis| axis.sel_max > axis.sel_min)
+                    {
+                        args.extend([OscType::Double(axis.sel_min), OscType::Double(axis.sel_max)]);
+                    }
+                    args.push(OscType::Bool(true));
+                    emit(host, &mut out, def_id, id, args);
                 }
             }
         }

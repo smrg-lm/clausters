@@ -543,8 +543,8 @@ fn the_loop_key_asks_the_pass_in_progress_to_follow() {
 }
 
 /// **A selection redrawn is the span a loop in progress follows**: every
-/// move of the sweep says the span, the locate it is let go with says to put
-/// the head into it, and a click -- which empties the selection at its press
+/// move of the sweep says the span; its release marker says to put the head
+/// into it without moving the cursor. A click empties the selection at its press
 /// -- gives the loop the whole take back and places nothing.
 #[test]
 fn a_redrawn_selection_is_the_span_a_loop_in_progress_follows() {
@@ -560,7 +560,7 @@ fn a_redrawn_selection_is_the_span_a_loop_in_progress_follows() {
         swept["follow"],
         json!({"from": 10, "to": 30, "place": false})
     );
-    let let_go = event(&mut editor, json!([12, 3, 0, "locate", 10]));
+    let let_go = event(&mut editor, json!([12, 3, 0, "selection", 10, 20, true]));
     assert_eq!(
         let_go["follow"],
         json!({"from": 10, "to": 30, "place": true})
@@ -573,9 +573,8 @@ fn a_redrawn_selection_is_the_span_a_loop_in_progress_follows() {
     assert!(clicked.get("follow").is_none(), "a click places no head");
 }
 
-/// **A sweep's start and the locate it is let go with are one frame**,
-/// however far into a take: both reach the editor as doubles, so a cursor a
-/// frame away from the selection's start is a mark and not the sweep's end.
+/// A release names the exact selected frames even far into a take, while
+/// preserving an independently placed position cursor.
 #[test]
 fn a_selection_far_into_a_take_is_matched_to_the_frame() {
     // An hour at 48 kHz, and an odd frame in it.
@@ -590,8 +589,9 @@ fn a_selection_far_into_a_take_is_matched_to_the_frame() {
     event(&mut editor, json!([12, 1, 0, "selection", far, 20]));
     let beside = event(&mut editor, json!([12, 2, 0, "locate", far + 1]));
     assert!(beside.get("follow").is_none(), "a frame away is elsewhere");
-    let let_go = event(&mut editor, json!([12, 3, 0, "locate", far]));
+    let let_go = event(&mut editor, json!([12, 3, 0, "selection", far, 20, true]));
     assert_eq!(let_go["follow"]["place"], json!(true));
+    assert_eq!(editor.file.presentation.cursor, Some(far + 1));
 }
 
 /// **The level meter stands beside the take** once a playback says where it

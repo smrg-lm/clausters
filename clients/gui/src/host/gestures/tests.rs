@@ -860,10 +860,12 @@ fn a_selection_far_into_a_take_is_reported_to_the_frame() {
 #[test]
 fn waveform_press_and_drag_select_a_range() {
     let mut host = host_from(
-        r#"{"type":"window","children":[
-            {"id":50,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+        &serde_json::json!({"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace","data":vec![0.1; 1000],"base_bucket":2}]})
+        .to_string(),
     );
     host.set_timeline_total(50, 1000);
+    host.set_timeline_cursor(50, 100.0);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
     // Press inside the view body (right of the y-ruler strip), then drag.
@@ -875,12 +877,28 @@ fn waveform_press_and_drag_select_a_range() {
     // reader of it looks -- with a positive length.
     let key = host.timeline_key(50).unwrap();
     assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
-    // **Letting go puts the position cursor at the selection's start**, and
-    // the owner is told where, as a click tells it.
+    // Letting go keeps the cursor placed by the previous click. Copy keeps
+    // this span; a later paste lands at that cursor, not a selection edge.
     let effects = g.release(&mut host, &ctx, 600.0, 150.0);
-    assert!(has_emit_tag(&effects, 50, "locate"));
+    assert!(!has_emit_tag(&effects, 50, "locate"));
+    assert_eq!(
+        emitted_args(&effects, 50).unwrap().last(),
+        Some(&OscType::Bool(true))
+    );
     let state = host.timelines().state(key).unwrap();
-    assert_eq!(state.cursor(), Some(state.sel_start));
+    assert_eq!(state.cursor(), Some(100.0));
+    let selection = state.selection();
+    let mut clip = crate::host::clipboard::Clip::default();
+    g.clipboard_key(&mut host, &ctx, ClipVerb::Copy, 600.0, 150.0, &mut clip)
+        .unwrap();
+    assert_eq!(host.timelines().state(key).unwrap().selection(), selection);
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Paste, 600.0, 150.0, &mut clip)
+        .unwrap();
+    assert_eq!(
+        emitted_args(&effects, 50).unwrap()[1],
+        OscType::Double(100.0)
+    );
 }
 
 /// **A plain drag over a waveform is the time span it has always been**, and

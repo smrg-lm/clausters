@@ -4278,10 +4278,14 @@ wrong.
   path and compare an optimized build before attributing the cause. Acceptance
   requires responsive real windows and prompt playback, not only log success.
 
-- ⬜ **Audio paste uses the selection end and leaves the selection visible**
+- ✅ **Audio paste uses the selection end and leaves the selection visible**
   (2026-10-19, native paired-window review). Copy correctly keeps the
   selection, but paste was observed at its end instead of the position
   cursor, with the old selection still visible. Follow the existing behavior
   rule: paste at the position cursor, clear selection after successful paste
   and keep the cursor at the edit's landing position. Check both host verb
   dispatch and the confirmed operation's projection into the current view.
+  Fixed the host's implicit cursor move on sweep release. Release now confirms
+  the selected loop span independently, while copy retains selection and paste
+  uses the last click. Gesture regressions and the native headless copy/paste
+  probe check the position and the cleared selection after confirmation.
