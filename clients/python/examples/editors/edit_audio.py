@@ -59,8 +59,8 @@ the left and View -> Files hides or shows it. Each file keeps its cursor,
 selection and undo/redo history. A playing file continues while another is
 shown, with its playhead hidden there. Try File -> New file with two and six
 channels, then switch back and forth while the original loops: the meter
-keeps the playing file's channel count. Stop from another file: its channel
-layout appears with zero levels.
+shows the viewed file's channels, with zero levels when another file plays.
+Return to the playing file to see its live levels again.
 
 Run it as a script, or step through the cells::
 

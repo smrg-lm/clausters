@@ -305,7 +305,18 @@ impl Meter {
 impl Element for Meter {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
-            "bus" => v.as_i64().map(|n| self.bus = n as i32).is_some(),
+            "bus" => match v.as_i64() {
+                Some(n) => {
+                    let bus = n as i32;
+                    if self.bus != bus {
+                        self.bus = bus;
+                        // Levels, held peaks and clip lamps belong to this source.
+                        self.state.fill(ChannelState::default());
+                    }
+                    true
+                }
+                None => false,
+            },
             "rate" => parse::set_rate(&mut self.rate, v),
             "channels" => match v.as_i64() {
                 Some(n) => {
@@ -643,6 +654,32 @@ mod tests {
         };
         assert_eq!(read(r#"{"bus":5,"rate":"control"}"#), 0.5);
         assert_eq!(read(r#"{"bus":5}"#), 0.05);
+    }
+
+    #[test]
+    fn changing_the_bus_clears_the_previous_sources_levels_and_marks() {
+        let mut m = from_props(&props(r#"{"bus":5,"channels":6}"#));
+        tick(&mut m, &Fixed(1.2, 0.0), 0.1);
+        assert!(m.set("bus", &Value::from(5)));
+        assert!(
+            m.reads()
+                .iter()
+                .all(|ch| ch.level > 0.0 && ch.clipped.is_some())
+        );
+        assert!(m.set("bus", &Value::from(-1)));
+        assert!(m.set("channels", &Value::from(1)));
+        assert_eq!(m.reads().len(), 1);
+        for ch in m.reads() {
+            assert_eq!(ch.level, 0.0);
+            assert_eq!(ch.mark, 0.0);
+            assert!(ch.clipped.is_none());
+        }
+        assert!(m.set("bus", &Value::from(5)));
+        assert!(m.set("channels", &Value::from(6)));
+        assert_eq!(m.reads().len(), 6);
+        assert!(m.reads().iter().all(|ch| ch.level == 0.0 && ch.mark == 0.0));
+        tick(&mut m, &Fixed(0.5, 0.0), 0.1);
+        assert!(m.reads().iter().all(|ch| ch.level == 0.5 && ch.mark == 0.5));
     }
 
     /// The mark holds where the level was, then falls at the declared rate --

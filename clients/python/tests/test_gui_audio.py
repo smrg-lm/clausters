@@ -674,7 +674,7 @@ def test_files_share_one_handler_and_transport_but_keep_state_and_history(monkey
     assert editor.files == ()
 
 
-def test_playing_a_file_while_viewing_another_keeps_the_signal_and_meter(monkeypatch):
+def test_playing_a_file_while_viewing_another_silences_the_viewed_meter(monkeypatch):
     from clausters import SoundFile
     take = FakeBuffer(channels=1)
     editor, host, _wid, _context = opened(take)
@@ -685,17 +685,17 @@ def test_playing_a_file_while_viewing_another_keeps_the_signal_and_meter(monkeyp
     monkeypatch.setattr(SoundFile, "open", staticmethod(
         lambda path: SoundFile(str(path), 200, 6 if "six" in str(path) else 2, SR)))
     first = editor._file_id
-    playing_channels = 1
     editor._driver.play()
     take.server.playing = True
     editor.open_file(["/takes/stereo.wav", "/takes/six.wav"])
     assert editor._playback.state()["playing"] == first
-    assert editor._playback.state()["meters"]["channels"] == 1
+    assert editor._playback.state()["meters"] == {"bus": -6, "channels": 6}
     for index, channels in [(2, 6), (1, 2), (0, 1), (1, 2), (2, 6)]:
         editor.focus_file(index)
         state = editor._playback.state()
         assert state["playing"] == first
-        assert state["meters"]["channels"] == playing_channels
+        assert state["meters"]["channels"] == channels
+        assert (state["meters"]["bus"] >= 0) == (editor._file_id == first)
         wid = picture(host.trees[-1])["id"]
         assert host.props[wid]["playhead_at"] == (0.0 if editor._file_id == first else -1.0)
         editor._driver.stop()
@@ -704,7 +704,6 @@ def test_playing_a_file_while_viewing_another_keeps_the_signal_and_meter(monkeyp
         editor._driver.play()
         take.server.playing = True
         first = editor._file_id
-        playing_channels = channels
         assert editor._playback.state()["meters"]["channels"] == channels
     editor.close()
 

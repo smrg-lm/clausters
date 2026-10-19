@@ -4311,3 +4311,14 @@ wrong.
   and server alive after the visual review. The example's `run()` now waits
   for all its windows and closes its session in `finally`; review launches use
   that blocking entry point instead of an interpreter left waiting for input.
+
+
+- ✅ **Meters show the previously playing file after navigation**
+  (2026-10-19, native window review). Switching files during playback kept
+  the previous file's levels and channel count. The meter now always takes
+  its width from the viewed file and reads live buses only when that file
+  plays. Viewing another file shows zero without stopping playback; returning
+  restores live levels. Rebinding the meter bus also clears held peaks and
+  clip lamps from the previous source. Directed transport, host and paired
+  client regressions cover navigation and source changes; combined manual
+  window acceptance remains open above.

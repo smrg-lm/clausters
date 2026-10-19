@@ -810,19 +810,15 @@ impl AudioEditorPlayback {
     }
 
     /// **Where the level is read from**: the first of the control buses the
-    /// meter writes and the channel count of the playing file, or the viewed
-    /// file while stopped. Allocated bus capacity does not set visible width.
-    /// A stopped meter reads no bus and therefore shows zero levels.
+    /// meter writes, only while the viewed file plays. The viewed file always
+    /// sets the channel count; another file's playback shows zero levels.
+    /// Allocated bus capacity does not set visible width.
     pub fn meters(&self) -> Option<(i32, usize)> {
         let (bus, _) = self.applier.bus(METER)?;
-        let file = if self.rolling {
-            self.focus
-        } else {
-            self.viewed.or(self.focus)
-        }?;
+        let file = self.viewed.or(self.focus)?;
         let channels = self.files.get(&file)?.channels;
         Some((
-            if self.rolling {
+            if self.rolling && self.focus == Some(file) {
                 bus
             } else {
                 -(channels as i32)
@@ -1611,7 +1607,7 @@ mod tests {
         assert!(!viewed["steps"].as_array().unwrap().is_empty());
     }
     #[test]
-    fn visible_meter_width_follows_the_signal_in_both_directions() {
+    fn meters_follow_the_viewed_file_and_only_read_its_playback() {
         let mut playback = AudioEditorPlayback::new(Endpoint::default());
         let mut ids = spaces();
         for (file, channels) in [(1, 1), (2, 2), (3, 6)] {
@@ -1648,9 +1644,12 @@ mod tests {
             );
             assert_eq!(playback.playing(), Some(file));
             assert!(!playback.follows());
-            assert_eq!(playback.meters(), Some((bus, channels)));
-            playback.stop_viewing(other, 17);
             let count = if other == 1 { 1 } else { 6 };
+            assert_eq!(playback.meters(), Some((-(count as i32), count)));
+            assert!(playback.view(file, 0).is_empty());
+            assert_eq!(playback.meters(), Some((bus, channels)));
+            playback.view(other, 17);
+            playback.stop_viewing(other, 17);
             assert_eq!(playback.meters(), Some((-(count as i32), count)));
         }
     }

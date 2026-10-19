@@ -760,7 +760,7 @@ mod ownership_tests {
         editor.file.presentation.views = Views::Stacked;
         let out = call(
             &mut editor,
-            json!({"verb":"playing", "file":first, "meters":{"bus":100,"channels":6}}),
+            json!({"verb":"playing", "file":first, "meters":{"bus":-1,"channels":1}}),
         );
         for widget in [10, 11, 13] {
             let correction = out["corrections"]
@@ -777,7 +777,7 @@ mod ownership_tests {
             .iter()
             .find(|c| c["widget"] == 12)
             .unwrap();
-        assert_eq!(meter["props"], json!({"bus":100,"channels":6}));
+        assert_eq!(meter["props"], json!({"bus":-1,"channels":1}));
         let stopped = call(
             &mut editor,
             json!({"verb":"playing", "file":null, "meters":{"bus":-1,"channels":1}}),

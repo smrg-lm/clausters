@@ -740,7 +740,7 @@ test("files share one handler and transport but keep state and history", async (
     }
 });
 
-test("playing a file while viewing another keeps the signal and meter", async () => {
+test("playing a file while viewing another silences the viewed meter", async () => {
     const take = new FakeBuffer(100, 1);
     const [editor, host] = await opened(take);
     const props = new Map<number, Record<string, unknown>>();
@@ -766,6 +766,8 @@ test("playing a file while viewing another keeps the signal and meter", async ()
             const playback = (editor as unknown as { playback: { call(v: string): Promise<Record<string, any>> } }).playback;
             const state = await playback.call("state");
             assert.equal(state.playing, first);
+            assert.equal(state.meters.channels, channels);
+            assert.equal(state.meters.bus >= 0, editor.coreCall("binding").id === first);
             const wid = Number(picture(host.trees.at(-1)).id);
             assert.equal(props.get(wid)?.playhead_at, editor.coreCall("binding").id === first ? 0 : -1);
             await driver.stop();

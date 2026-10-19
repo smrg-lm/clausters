@@ -36,12 +36,14 @@ code that keeps it lives.
   the one playing, and the file list marks the one that plays. Stop stops
   it from any file; play is over the file shown. Stopped, switching files
   locates the transport to the incoming file's cursor.
-- **The meter describes the signal, not allocated capacity.** While a file
-  plays, the audio editor's output meter keeps that file's channel count even
-  when another file is viewed. Stopped, it shows the viewed file's channel
-  layout with zero levels. Mono, stereo and multichannel switches resize the
-  existing meter in both directions (`AudioEditorPlayback::meters` and the
-  audio application's `playing` corrections).
+- **The meter belongs to the viewed file.** Its channel count always matches
+  that file. It shows live levels only while that file plays; stopped or while
+  another file plays, all its channels show zero. Returning to the playing
+  file restores live metering without restarting playback. Mono, stereo and
+  multichannel switches resize the existing meter in both directions
+  (`AudioEditorPlayback::meters` and the audio application's `playing`
+  corrections). Changing a meter's bus clears the previous source's levels,
+  held peaks and clip lamps immediately.
 - **Playback connects only negotiated hardware outputs.** A multichannel
   audio file keeps its channels separate for editing and metering. Its first
   channels feed the available device outputs; remaining channels go to a
