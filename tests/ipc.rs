@@ -447,6 +447,17 @@ fn segment_control_buses_feed_the_engine_directly() {
 
     // And the handle's /bus_get path sees external writes too (same memory).
     assert_eq!(handle.control_buses().get(7), 0.625);
+    assert_eq!(segment.level(0), 0.625, "written buses publish their peak");
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    engine.process_block(&mut out);
+    assert!(
+        out.iter().all(|sample| *sample == 0.0),
+        "a freed node leaves no samples"
+    );
+    assert!(
+        segment.level(0) > 0.0 && segment.level(0) < 0.625,
+        "an unwritten bus still decays its previous meter level"
+    );
 }
 
 /// The sync scientific call of the embed C ABI, exercised as a plain Rust

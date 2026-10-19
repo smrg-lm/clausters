@@ -93,7 +93,7 @@ pub mod unop;
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Frames per processing block, like scsynth.
 pub const BLOCK_SIZE: usize = 64;
@@ -112,9 +112,9 @@ impl Block {
 /// Audio buses (scsynth `-a`); buses `0..channels` are the hardware outputs.
 ///
 /// The default count, not a ceiling -- `--audio-buses` takes any power of two
-/// and the only cost is memory plus the per-block clear (`tests/bus_scale.rs`
-/// measures it: 1024 buses are 256 KB and a quarter of one percent of a
-/// block). It is 1024 because half of the space is private to GraphDef
+/// and the idle cost is memory plus per-block write-marker checks
+/// (`tests/bus_scale.rs` measures it). Written buses are cleared at the next
+/// block. It is 1024 because half of the space is private to GraphDef
 /// instances and a multitrack spends four of those per track, so this is the
 /// count at which a multitrack stops running out of buses before it runs out of
 /// anything else.
@@ -522,6 +522,7 @@ impl StageMask {
 /// overlapping buses (and that nothing reads what the stage writes).
 pub struct Buses {
     audio: Vec<UnsafeCell<Block>>,
+    audio_written: Vec<AtomicBool>,
     pub control: ControlBuses,
     /// This block's events, every event bus's ([`events::EventBuses`]).
     events: events::EventBuses,
@@ -544,6 +545,9 @@ impl Buses {
         Self {
             audio: (0..audio_count.max(1))
                 .map(|_| UnsafeCell::new(Block::SILENCE))
+                .collect(),
+            audio_written: (0..audio_count.max(1))
+                .map(|_| AtomicBool::new(false))
                 .collect(),
             control,
             events: events::EventBuses::new(event_count),
@@ -575,8 +579,20 @@ impl Buses {
     }
 
     pub fn clear_audio(&mut self) {
-        for bus in &mut self.audio {
-            bus.get_mut().0.fill(0.0);
+        for (bus, written) in self.audio.iter_mut().zip(&mut self.audio_written) {
+            if *written.get_mut() {
+                bus.get_mut().0.fill(0.0);
+                *written.get_mut() = false;
+            }
+        }
+    }
+
+    /// Whether this block requested writable samples on `bus`. Untouched
+    /// buses are silent, so publishing their levels need not scan samples.
+    pub fn audio_written(&self, bus: usize) -> bool {
+        match self.view {
+            Some((parent, _)) => unsafe { (*parent).audio_written(bus) },
+            None => self.audio_written[bus.min(self.audio.len() - 1)].load(Ordering::Relaxed),
         }
     }
 
@@ -615,6 +631,7 @@ impl Buses {
             return unsafe { (*parent).audio_mut(bus) };
         }
         let bus = bus.min(self.audio.len() - 1);
+        self.audio_written[bus].store(true, Ordering::Relaxed);
         unsafe { &mut (*self.audio[bus].get()).0 }
     }
     /// Mutable overwrite access, preserving ReplaceOut through compensation.
@@ -636,6 +653,7 @@ impl Buses {
     pub(crate) unsafe fn compensated(parent: &Buses, delay: &mut compensation::NodeDelay) -> Self {
         Self {
             audio: Vec::new(),
+            audio_written: Vec::new(),
             control: parent.control.clone(),
             events: events::EventBuses::none(),
             view: Some((parent, delay)),

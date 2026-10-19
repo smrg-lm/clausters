@@ -1054,7 +1054,7 @@ pub fn engine_pair_full(
 ) -> (Engine, EngineHandle) {
     let limits = limits.clamped();
     // No ceiling: how many buses there are is a configured resource, and what
-    // it costs is memory plus the per-block clear (`tests/bus_scale.rs`
+    // it costs is memory plus the per-block write checks (`tests/bus_scale.rs`
     // measures both). The floor is the hardware channels, which are buses.
     let audio_buses = audio_buses.max(channels.max(1));
     assert!(channels > 0 && channels <= audio_buses);
@@ -1704,11 +1704,14 @@ impl Engine {
             // the same bus at once. One pass over the block per bus, one load
             // and one relaxed store: no allocation, no lock.
             for bus in 0..self.buses.audio_count().min(segment.audio_buses()) {
-                let peak = self
-                    .buses
-                    .audio(bus)
-                    .iter()
-                    .fold(0.0f32, |acc, s| acc.max(s.abs()));
+                let peak = if self.buses.audio_written(bus) {
+                    self.buses
+                        .audio(bus)
+                        .iter()
+                        .fold(0.0f32, |acc, s| acc.max(s.abs()))
+                } else {
+                    0.0
+                };
                 let held = segment.level(bus) * self.level_release;
                 segment.set_level(bus, peak.max(held));
             }

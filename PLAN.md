@@ -4481,3 +4481,12 @@ should confirm before the fix.
   awaits an allocation's `/done` before writing, which is why nothing has hit
   it; closing it means the chain learning the shared buffer, or the share
   happening on the NRT thread before the result is returned.
+
+- ✅ **Idle shared-memory level publication scans every allocated audio bus**
+  (2026-10-19, audio-editor window review). Each block cleared all bus samples
+  and scanned them again to publish peak levels, even for unused capacity.
+  Preallocated atomic write markers now identify buses that need clearing on
+  the next block and peak scans in the current block. Silent buses still decay
+  their published levels. Directed IPC, parallel/compensation and no-allocation
+  regressions preserve samples, bus clearing and meter decay; the native
+  multichannel review also checks the live endpoint.

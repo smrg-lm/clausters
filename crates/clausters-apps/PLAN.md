@@ -4269,7 +4269,7 @@ wrong.
   file-state tests and a native headless host probe cover navigation; the
   real-window acceptance above remains open for the combined fixes.
 
-- ⬜ **Eight-channel playback starts late and stalls the GUI**
+- ✅ **Eight-channel playback starts late and stalls the GUI**
   (2026-10-19, native paired-window review). Starting playback in the
   `eight channels` window is delayed and makes interaction slow or stalled.
   Interval samples in this debug run show about 60-62% of one logical CPU
@@ -4277,6 +4277,13 @@ wrong.
   about 66%. Separate idle, redraw and playback work, locate the expensive
   path and compare an optimized build before attributing the cause. Acceptance
   requires responsive real windows and prompt playback, not only log success.
+  Removed full sample clears and peak scans for unwritten buses, fixed the
+  multichannel output alias below and refreshed the release artifacts used by
+  the example. The directed native run starts in 128 ms, answers host queries
+  within 1 ms and captures the signal with eight matching meters. That run
+  measures about 5.2% server / 0.6% GUI CPU idle and 7.4% / 4.6% looping,
+  with 100% meaning one logical CPU. Closing the windows stops the example's
+  session. Combined hand review remains under the open acceptance above.
 
 - ✅ **Audio paste uses the selection end and leaves the selection visible**
   (2026-10-19, native paired-window review). Copy correctly keeps the

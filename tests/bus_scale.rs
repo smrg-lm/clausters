@@ -3,8 +3,8 @@
 //! Buses are a configured resource (`--audio-buses`, `--control-buses`) and
 //! the count is a partition: half the space is private to GraphDef instances,
 //! so a multitrack's tracks come out of the same number a patch's scopes do. Raising
-//! it is not free -- every audio bus is a block of samples that is **cleared
-//! every block**, on the audio thread -- so the default is a measurement and
+//! it is not free -- every audio bus has a write marker checked each block,
+//! and written buses are cleared on the next block -- so the default is a measurement and
 //! not a taste.
 //!
 //! Ignored by default, because it is a measurement and not an assertion:
@@ -17,7 +17,7 @@ const SR: f32 = 48_000.0;
 const BLOCKS: usize = 20_000;
 
 /// The mean nanoseconds one empty `process_block` takes with `buses` audio
-/// buses -- which is the clear, since nothing else is running.
+/// buses -- including the write-marker checks, with nothing else running.
 fn idle_block(buses: usize) -> f64 {
     let (mut engine, _handle) = engine_pair_full(
         SR,
@@ -62,9 +62,45 @@ fn what_an_audio_bus_costs_a_block() {
         );
     }
     println!(
-        "\nEvery audio bus is a block of samples cleared on the audio thread \
-         every block, so the count is paid whether or not anything is patched \
-         through it. The tracks column is the private half divided by what a \
+        "\nEvery audio bus checks a write marker on the audio thread each \
+         block; only written buses clear samples. The tracks column is the private half divided by what a \
          track spends, which is the number the default is chosen for."
     );
+}
+
+#[test]
+fn untouched_audio_buses_stay_silent_and_written_buses_clear_once() {
+    use clausters::dsp::{Buses, ControlBuses};
+    let mut buses = Buses::new(ControlBuses::new(8), 128);
+    assert!((0..128).all(|bus| !buses.audio_written(bus)));
+    std::thread::scope(|scope| {
+        for bus in [0, 17, 127] {
+            let shared = &buses;
+            scope.spawn(move || {
+                // SAFETY: each thread has exclusive access to its bus.
+                unsafe { shared.audio_mut(bus) }.fill(0.25);
+            });
+        }
+    });
+    for bus in 0..128 {
+        let written = [0, 17, 127].contains(&bus);
+        assert_eq!(buses.audio_written(bus), written);
+        assert!(
+            buses
+                .audio(bus)
+                .iter()
+                .all(|sample| *sample == if written { 0.25 } else { 0.0 })
+        );
+    }
+    for _ in 0..2 {
+        buses.clear_audio();
+        assert!((0..128).all(|bus| !buses.audio_written(bus)));
+        assert!((0..128).all(|bus| buses.audio(bus).iter().all(|sample| *sample == 0.0)));
+    }
+    // Clamped writes and ReplaceOut go through the same activity tracking.
+    // SAFETY: this thread exclusively owns every bus.
+    (unsafe { buses.audio_replace(1000) })[0] = 0.5;
+    assert!(buses.audio_written(127));
+    buses.clear_audio();
+    assert_eq!(buses.audio(127)[0], 0.0);
 }
