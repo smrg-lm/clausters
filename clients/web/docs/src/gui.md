@@ -277,6 +277,9 @@ needs composing is not entered through a host field today.
 
 The audio editor uses the shared application clipboard exchange: completed server-side copies can be pasted or mixed across files and windows on the same live client connection, including after closing the origin. Paste creates destination-owned samples and preserves source rate through the parts ratio; Paste mixed requires matching rate and channels. Other connections, expired copies and incompatible kinds are refused without implicit conversion. Cut removes only after copy/publication succeed. Clipboard replacement leaves pasted contents and history intact, including the existing `residentBytes` spill/restore path on OPFS. The host clipboard stays page-wide and does not acquire system clipboard access.
 
+Audio edits and saves are prepared before their server steps run and confirmed only when those steps succeed. A failed save preserves the previous destination and leaves unsaved edits dirty. Saving captures a content revision: editing during the write stays dirty, while undoing to the saved revision is clean. A late result addresses its original file and cannot rebind a different file's views. Cleanup waits for its server acknowledgement before returning a buffer id for reuse; a failed cleanup remains reserved for retry or connection invalidation.
+
+
 ## Notation: engraving in the page
 
 The `score` widget draws a page of music, and what it draws is a **display

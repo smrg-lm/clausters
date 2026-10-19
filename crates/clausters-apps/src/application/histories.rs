@@ -1,10 +1,9 @@
 //! Editing orders and object membership, independent of an editor vocabulary.
 
 use std::collections::{BTreeSet, HashMap};
-use std::ops::{Deref, DerefMut};
 
 use clausters_document::SourceId;
-use clausters_document::history::{History, StructureId};
+use clausters_document::history::{Direction, Entry, History, StructureId, Undone, Walked};
 
 /// An undo order within an application service. Zero is the shared context.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -65,6 +64,83 @@ impl Histories {
     #[cfg(test)]
     pub(crate) fn orders_len(&self) -> usize {
         self.orders.len()
+    }
+
+    /// Read the explicitly selected order. This never routes a recorded entry.
+    pub fn selected_history(&self) -> &History {
+        &self.orders[&self.selected].history
+    }
+
+    /// Mutate the explicitly selected order, for a history walk or external applier.
+    pub fn selected_history_mut(&mut self) -> &mut History {
+        &mut self
+            .orders
+            .get_mut(&self.selected)
+            .expect("selected order")
+            .history
+    }
+
+    /// Record in the order bound to the entry's structures, regardless of focus.
+    /// An entry spanning independent orders is refused atomically.
+    pub fn record(&mut self, entry: Entry) -> bool {
+        let structures = entry.structures();
+        let mut scopes = structures
+            .iter()
+            .filter_map(|structure| {
+                self.objects
+                    .values()
+                    .find(|binding| binding.structure == *structure)
+                    .map(|binding| binding.scope)
+            })
+            .collect::<Vec<_>>();
+        if scopes.len() != structures.len() {
+            return false;
+        }
+        scopes.sort_by_key(|scope| scope.0);
+        scopes.dedup();
+        if scopes.len() != 1 {
+            return false;
+        }
+        self.orders
+            .get_mut(&scopes[0])
+            .is_some_and(|order| order.history.record(entry))
+    }
+
+    /// Whether the selected order can undo.
+    pub fn can_undo(&self) -> bool {
+        self.selected_history().can_undo()
+    }
+    /// Whether the selected order can redo.
+    pub fn can_redo(&self) -> bool {
+        self.selected_history().can_redo()
+    }
+    /// Label in the selected order.
+    pub fn undo_label(&self) -> Option<String> {
+        self.selected_history().undo_label()
+    }
+    /// Label in the selected order.
+    pub fn redo_label(&self) -> Option<String> {
+        self.selected_history().redo_label()
+    }
+    /// Preview a selected walk without consuming its cursor.
+    pub fn peek_walk(&self, direction: Direction) -> Option<Walked> {
+        self.selected_history().peek_walk(direction)
+    }
+    /// Commit a selected walk.
+    pub fn walk(&mut self, direction: Direction) -> Option<Walked> {
+        self.selected_history_mut().walk(direction)
+    }
+    /// Walk a selected cursor.
+    pub fn step(&mut self, direction: Direction) -> bool {
+        self.selected_history_mut().step(direction)
+    }
+    /// Undo the selected order.
+    pub fn undo(&mut self) -> Option<Undone> {
+        self.selected_history_mut().undo()
+    }
+    /// Clear the selected order.
+    pub fn clear(&mut self) {
+        self.selected_history_mut().clear();
     }
 
     /// The selected order.
@@ -171,6 +247,11 @@ impl Histories {
         }
     }
 
+    /// Resolve a recorded object's structure without changing the selected order.
+    pub fn structure_of(&self, object: Object) -> Option<StructureId> {
+        self.objects.get(&object).map(|binding| binding.structure)
+    }
+
     /// The object a member observes for a recorded structure, even out of focus.
     pub fn object_for(&self, member: u32, structure: StructureId) -> Option<Object> {
         self.objects.iter().find_map(|(object, binding)| {
@@ -204,23 +285,6 @@ impl Histories {
             self.released.remove(source);
         }
         ready
-    }
-}
-
-impl Deref for Histories {
-    type Target = History;
-    fn deref(&self) -> &History {
-        &self.orders[&self.selected].history
-    }
-}
-
-impl DerefMut for Histories {
-    fn deref_mut(&mut self) -> &mut History {
-        &mut self
-            .orders
-            .get_mut(&self.selected)
-            .expect("selected order")
-            .history
     }
 }
 
@@ -266,6 +330,20 @@ mod tests {
             [SourceId(7), SourceId(8), SourceId(9)]
         );
         assert_eq!(histories.sources_for(0), [SourceId(7), SourceId(9)]);
+    }
+
+    #[test]
+    fn recording_a_shared_structure_ignores_the_focused_independent_order() {
+        let mut histories = Histories::new();
+        let joined = Object { member: 0, id: 1 };
+        let shared = histories.join(joined, "shared", "samples");
+        let extra = Object { member: 0, id: 2 };
+        let independent = histories.focus(extra, "samples");
+        record(&mut histories, independent, "extra", 8);
+        record(&mut histories, shared, "shared edit", 7);
+        assert_eq!(histories.undo_label().as_deref(), Some("extra"));
+        histories.focus(joined, "samples");
+        assert_eq!(histories.undo_label().as_deref(), Some("shared edit"));
     }
 
     #[test]

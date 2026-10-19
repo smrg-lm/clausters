@@ -260,8 +260,13 @@ def test_a_save_writes_the_edited_take_over_its_file_or_as_another():
     editor, _host, _wid, _context = opened(take)
     take.server.sent.clear()
     assert editor.save() == "/takes/a.wav"
-    assert take.server.sent == [("/buffer_write", (editor.buffer.bufnum,
-                                                   "/takes/a.wav", "wav", "float"))]
+    write = next(args for addr, args in take.server.sent if addr == "/buffer_write")
+    snapshot = write[0]
+    assert snapshot != editor.buffer.bufnum
+    assert write[1:] == ("/takes/a.wav", "wav", "float")
+    assert any(addr == "/buffer_gen" and args[0] == snapshot and args[3] == editor.buffer.bufnum
+               for addr, args in take.server.sent)
+    assert ("/buffer_free", (snapshot,)) in take.server.sent
     assert editor.save("/takes/b.wav", sample_format="int24") == "/takes/b.wav"
     assert editor.save() == "/takes/b.wav"
 
@@ -273,7 +278,9 @@ def test_a_save_over_a_buffer_rewrites_it_or_writes_a_new_one():
     take.server.sent.clear()
     saved = editor.save()
     assert saved.bufnum == take.bufnum and saved.frames == 80
-    assert take.server.addrs() == ["/buffer_alloc", "/server_sync", "/buffer_gen"]
+    copies = [args for addr, args in take.server.sent if addr == "/buffer_gen"]
+    assert copies[0][3] == editor.buffer.bufnum
+    assert copies[-1][0] == take.bufnum and copies[-1][3] == copies[0][0]
     fresh = editor.save(buffer=True)
     assert fresh.bufnum not in (take.bufnum, editor.buffer.bufnum)
     assert editor.save().bufnum == fresh.bufnum, "a later save writes there"
@@ -904,4 +911,78 @@ def test_undo_redo_correct_only_composed_views_while_optional_ids_stay_stable():
             assert corrections
             assert all(widget in present for widget, _props in corrections)
             assert any(widget == wid for widget, _props in corrections)
+    editor.close()
+
+
+def test_failed_save_keeps_destination_and_undo_to_saved_revision_is_clean():
+    take = FakeBuffer()
+    editor, _host, wid, context = opened(take)
+    editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]])
+    editor.save("/takes/saved.wav")
+    editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 20, [0.25], [0.0]])
+    request = take.server.request
+    take.server.request = lambda addr, *args, **kw: (
+        ("/fail", [addr, "quota exceeded"]) if addr == "/buffer_write" else request(addr, *args, **kw))
+    with pytest.raises(CommandError, match="quota"):
+        editor.save("/takes/refused.wav")
+    assert editor.file.path == "/takes/saved.wav"
+    assert editor.dirty
+    take.server.request = request
+    assert editor.undo()
+    assert not editor.dirty
+    assert editor.redo()
+    assert editor.dirty
+    assert editor.save() == "/takes/saved.wav"
+    assert not editor.dirty
+    editor.close()
+
+
+def test_failed_file_open_keeps_existing_files_and_returns_reserved_ids(monkeypatch):
+    from clausters import SoundFile
+    take = FakeBuffer()
+    editor, _host, _wid, _context = opened(take)
+    allocated = []
+
+    def load(file, *, server=None, **options):
+        number = server.buffers.alloc()
+        allocated.append(number)
+        return types.SimpleNamespace(bufnum=number, frames=file.frames, channels=file.channels,
+                                     sample_rate=file.sample_rate, server=server, path=file.path)
+
+    monkeypatch.setattr(SoundFile, "to_buffer", load)
+    request = take.server.request
+    take.server.request = lambda addr, *args, **kw: (
+        ("/fail", [addr, "copy refused"]) if addr == "/buffer_gen" else request(addr, *args, **kw))
+    before = len(editor.files)
+    with pytest.raises(CommandError, match="copy refused"):
+        editor.new_file(1, 50, SR)
+    assert len(editor.files) == before
+    assert allocated[0] in take.server.buffers.freed
+    assert len(take.server.buffers.freed) == len(set(take.server.buffers.freed))
+    take.server.request = request
+    editor.new_file(1, 50, SR)
+    assert len(editor.files) == before + 1
+    editor.close()
+
+
+def test_failed_cleanup_keeps_buffer_id_reserved_until_successful_retry():
+    take = FakeBuffer()
+    editor, _host, wid, context = opened(take)
+    editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 10, [0.5], [0.0]])
+    first = editor.parts[1]["source"]["source"]
+    assert editor.undo()
+    request = take.server.request
+    take.server.request = lambda addr, *args, **kw: (
+        ("/fail", [addr, "free refused"]) if addr == "/buffer_free" else request(addr, *args, **kw))
+    editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 30, [0.5], [0.0]])
+    assert first not in take.server.buffers.freed
+    pending = context._service_call("cleanup", action="pending")["tickets"]
+    assert len(pending) == 1
+    assert pending[0]["ticket"]["resource"]["buffer"] == first
+    assert "free refused" in pending[0]["reason"]
+    take.server.request = request
+    editor.domain.free(editor.structure, [first])
+    editor.domain.free(editor.structure, [first])
+    assert take.server.buffers.freed.count(first) == 1
+    assert context._service_call("cleanup", action="pending")["tickets"] == []
     editor.close()

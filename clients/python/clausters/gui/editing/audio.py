@@ -38,7 +38,8 @@ from ..._steps import run_steps
 from ...errors import CommandError
 from ...defs._wire import resolve as _resolve
 from .application import _service_instance
-from ._clipboard import exchange
+from ._clipboard import exchange, bind_exchange
+from ._cleanup import execute_steps, release_buffer
 from .domain import Domain
 from .editor import Editor
 from .marking import Marking
@@ -63,7 +64,6 @@ class _AudioPlayback:
         self.server = server
         self._instance = _service_instance(server)
         self._native = _native.AudioEditorPlayback(chunk=server._bulk_chunk())
-        self._runner = _native.StepRunner()
         # Node ids come back on their `/node_end`, which only a registered
         # client hears.
         server._ensure_recycler()
@@ -92,7 +92,7 @@ class _AudioPlayback:
         answer = self._native.call(verb, self.server.ids, **args)
         steps = answer.get("steps")
         if steps:
-            run_steps(self.server, self._runner, steps)
+            execute_steps(self.server, self._instance, steps)
         return answer
 
     def state(self) -> dict:
@@ -236,6 +236,30 @@ class AudioDomain(Domain):
         run_steps(editor._server, editor._runner, steps)
         return True
 
+    def execute_operation(self, structure, prepared):
+        if self.editor is None:
+            raise RuntimeError("the operation owner is absent")
+        return self.editor._operation({}, prepared=prepared)
+
+    def execute_batch(self, structure, server, steps):
+        editor = self.editor
+        if editor is None:
+            raise RuntimeError("the operation owner is absent")
+        editor._check_server()
+        if server != editor._instance:
+            raise RuntimeError("the batch belongs to another server instance")
+        execute_steps(editor._server, server, steps)
+
+    def operation_returned(self, structure, server, buffers):
+        editor = self.editor
+        if editor is not None and server == editor._instance and server == _service_instance(editor._server):
+            for buffer in buffers:
+                editor._server.buffers.free(int(buffer))
+
+    def operation_echo(self, structure, answer):
+        if self.editor is not None:
+            self.editor.echo.send(answer)
+
     def sound_file(self, structure, file):
         if self.editor is not None:
             self.editor._sync_sound(file)
@@ -249,11 +273,10 @@ class AudioDomain(Domain):
             return
         editor._check_server()
         for bufnum in buffers:
-            if bufnum not in spilled:
-                editor._server.send_msg("/buffer_free", int(bufnum))
-            editor._server.buffers.free(int(bufnum))
+            release_buffer(editor._server, editor._editing.core,
+                           {"server": editor._instance, "buffer": int(bufnum)})
 
-    def store(self, structure, buffer: int, steps) -> None:
+    def store(self, structure, buffer: int, steps, *, operation=None) -> None:
         """Write a take to disk and free its buffer. A write the server refuses
         -- no room -- leaves the take in memory, and the crate is told so."""
         editor = self.editor
@@ -261,9 +284,13 @@ class AudioDomain(Domain):
             return
         editor._check_server()
         try:
-            run_steps(editor._server, editor._runner, steps)
+            if operation is not None:
+                editor._operation({}, prepared=operation)
+            else:
+                run_steps(editor._server, _native.StepRunner(), steps)
         except CommandError:
-            editor._call("kept", buffer=int(buffer))
+            if operation is None:
+                editor._call("kept", buffer=int(buffer))
 
 
 class AudioEditor(Marking, Editor):
@@ -337,12 +364,10 @@ class AudioEditor(Marking, Editor):
             self._call("sync", scratch=str(scratch))
             self._editing.limit_resident(resident_bytes)
         self._top_up()
-        opened = self._call("open")
-        if "error" in opened:
-            raise ValueError(opened["error"])
+        opened = self._operation({"kind": "open"})
         # **A private copy of the take**, and the join over it: the buffer the
         # editor was handed is written by a save and by nothing else.
-        domain.run(take, opened.get("steps") or [])
+
         #: What sounds the take: the server's audio editor playback, where
         #: this editor's take is the file its join is.
         self._playback = _AudioPlayback(self._server)
@@ -404,6 +429,8 @@ class AudioEditor(Marking, Editor):
         """Make what sounds be the take as it now is -- the join and its
         length -- and tell the window where its level is read from."""
         file = self._call("playback")
+        if file.get("active") is False:
+            return
         self._sync_sound(file)
         preview = file["preview"]
         state = self._playback.state()
@@ -415,6 +442,9 @@ class AudioEditor(Marking, Editor):
         self._call("sync", meters=self._playback.state().get("meters"))
 
     def _sync_sound(self, file):
+        self.dirty = bool(self._call("binding").get("dirty"))
+        if file.get("active") is False:
+            return
         self._playback.call("sync", file=int(file["id"]), buffer=int(file["display"]),
                             channels=int(file["channels"]), frames=int(file["frames"]),
                             takeRate=float(file["rate"]), rate=self._playback.rate)
@@ -444,12 +474,15 @@ class AudioEditor(Marking, Editor):
                                 **{"pass": play["pass"]})
         self._show_transport()
 
-    def _clipboard(self, doc: str, buffer: int) -> None:
+    def _clipboard(self, doc: str, buffer: int, *, ready: bool = False) -> None:
         """**A copy made on the server**: the buffer it is in is the
         clipboard's now, the one the previous copy was in goes, and the host's
         clipboard names it."""
         self._check_server()
-        doc = exchange(self._server, "publish", document=doc)["document"]
+        if ready:
+            bind_exchange(self._server, self._editing.core)
+        else:
+            doc = exchange(self._server, "publish", document=doc)["document"]
         if self._host is not None:
             self._host.clipboard(doc)
 
@@ -473,6 +506,8 @@ class AudioEditor(Marking, Editor):
         monitor plays from. A multitrack editor asks for the same clock when
         it opens, for the same reason.
         """
+        if self._window is None:
+            self._call("attach_view")
         window = super().open(host, id)
         if self._host is not None and window is not None:
             self._host.head_clock(window, "transport", self._playback.transport_id)
@@ -507,6 +542,9 @@ class AudioEditor(Marking, Editor):
             untitled=file.path is None, codec=file.codec,
             sample_format=file.sample_format,
             buffers=[self._server.buffers.alloc() for _ in range(_SPARE)])
+        if "error" in answer:
+            self._editing._operation_returned(answer.get("returned"))
+            self._editing.release(answer.get("freed"), answer.get("stored"))
         self._take(answer)
 
     def open_file(self, paths) -> None:
@@ -597,15 +635,22 @@ class AudioEditor(Marking, Editor):
     def _closed(self) -> bool:
         """The window closed: the take stops being one the editor plays, and
         the last one closed frees the editor's nodes."""
+        self._call("detach_view")
         self._playback.call("close")
         self._drop_playback()
         return super()._closed()
 
     def close(self):
         """Close the window, and free what sounded the take."""
+        self._call("detach_view")
         self._playback.call("close")
         self._drop_playback()
         return super().close()
+
+    def reflect_step(self) -> None:
+        """Reflect the committed history position, including its clean checkpoint."""
+        super().reflect_step()
+        self.dirty = bool(self._call("binding").get("dirty"))
 
     def _facts(self) -> dict:
         take = self.structure
@@ -662,6 +707,43 @@ class AudioEditor(Marking, Editor):
         """Paste onto what is there, mixed with it -- the window's ``mix`` (`verb`)."""
         return self.verb("mix")
 
+    def _operation(self, command, prepared=None):
+        """Execute typed batches; commit, refusal and cleanup come from Rust."""
+        answer = prepared or self._editing._service_call(
+            "operation", action="prepare", member=self._member, command=command)
+        while not answer.get("complete"):
+            if answer.get("accepted") is False:
+                raise RuntimeError("the operation is no longer available")
+            if "error" in answer:
+                raise ValueError(answer["error"])
+            try:
+                self._editing._run_batch(answer["member"], answer["server"], answer.get("steps") or [])
+                result = {"status": "success"}
+            except Exception as error:
+                result = {"status": "failed", "reason": str(error)}
+            answer = self._editing._service_call("operation", action="complete",
+                                                ticket=answer["ticket"], batch=answer["batch"], result=result)
+        if answer.get("repair") is not None:
+            ticket = answer["repair"]
+            try:
+                for recovery in answer.get("recoveries") or ():
+                    self._editing._run_batch(recovery["member"], recovery["server"], recovery.get("steps") or [])
+            except Exception as error:
+                answer = self._editing._service_call("operation", action="repairFailed", ticket=ticket, reason=str(error))
+            else:
+                answer = self._editing._service_call("operation", action="repaired", ticket=ticket)
+        self._editing.version = int(answer.get("version", self._editing.version))
+        self._editing._operation_returned(answer.get("returned"))
+        self._editing._operation_echo(answer.get("echo"))
+        self._editing.release(answer.get("freed"), answer.get("stored"))
+        self.dirty = bool(self._call("binding").get("dirty"))
+        if not answer.get("committed"):
+            outcome = answer.get("outcome") or {}
+            if answer.get("echo") is None:
+                self.echo.send(outcome.get("answer"))
+            raise CommandError(answer.get("reason") or (outcome.get("answer") or {}).get("reason", "the operation was refused"))
+        return answer
+
     def save(self, path: "str | None" = None, *, buffer=None,
              sample_format: str = "float"):
         """**Write the take as the edits have left it** -- over what it was
@@ -689,16 +771,14 @@ class AudioEditor(Marking, Editor):
             request["buffer"] = self._server.buffers.alloc()
         elif buffer is not None:
             request["buffer"] = int(buffer.bufnum)
-        answer = self._call("save", **request)
-        if "error" in answer:
-            raise ValueError(answer["error"])
-        self.domain.run(self.structure, answer.get("steps") or [])
+        self._sync_core()
+        completed = self._operation({"kind": "save", **request})
+        self._take(completed.get("outcome") or {})
+        answer = completed["destination"]
         if "path" in answer:
             return str(answer["path"])
-        frames = int(self._call("parts").get("frames", 0))
-        return Buffer(int(answer["buffer"]), frames,
-                      max(1, int(getattr(self.structure, "channels", 1) or 1)),
-                      self.sample_rate, server=self._server)
+        return Buffer(int(answer["buffer"]), int(answer["frames"]),
+                      int(answer["channels"]), float(answer["rate"]), server=self._server)
 
     @property
     def file(self):
@@ -750,6 +830,13 @@ class AudioEditor(Marking, Editor):
     def _take(self, outcome: dict) -> bool:
         """Carry out what a turn came to, and answer the host. Returns whether
         the take changed."""
+        if outcome.get("operation") is not None:
+            try:
+                completed = self._operation({}, prepared=outcome["operation"])
+                return self._take(completed.get("outcome") or {})
+            finally:
+                if outcome.get("clipboardLease") is not None:
+                    exchange(self._server, "release", lease=outcome["clipboardLease"])
         if "error" in outcome:
             raise ValueError(outcome["error"])
         if outcome.get("turn") in (None, "nothing"):
@@ -764,8 +851,7 @@ class AudioEditor(Marking, Editor):
             self._playback.call("closeFile", file=int(action["file"]))
         if "binding" in outcome:
             self.domain.run(self.structure, outcome.get("steps") or [])
-            for buffer in outcome.get("freedBuffers") or ():
-                self._server.buffers.free(int(buffer))
+            self.domain.free(self.structure, outcome.get("freedBuffers") or [])
             if action is not None and action["verb"] == "close_file":
                 self._retain_playback()
             outcome = dict(outcome, steps=[])
@@ -800,7 +886,7 @@ class AudioEditor(Marking, Editor):
             else:
                 self.domain.run(self.structure, steps)
             if outcome.get("clipboard") is not None:
-                self._clipboard(outcome["clipboard"], int(outcome["clipboardBuffer"]))
+                self._clipboard(outcome["clipboard"], int(outcome["clipboardBuffer"]), ready=bool(outcome.get("clipboardReady")))
                 published = True
                 if outcome.get("clipboardCut") is not None:
                     self._sync_core()
@@ -828,10 +914,16 @@ class AudioEditor(Marking, Editor):
             self._new_file(outcome["newFile"])
         if outcome.get("openFile") is not None:
             self._open_file(outcome["openFile"]["paths"])
+        if outcome.get("playbackUpdate") is not None:
+            update = outcome["playbackUpdate"]
+            self._sync_sound(update["file"])
+            if update.get("publish"):
+                self._sound()
         if changed:
-            self.dirty = True
+            self.dirty = bool(self._call("binding").get("dirty"))
             self._editing.changed()
-            self._sound()
+            if not outcome.get("preparedComplete"):
+                self._sound()
         if outcome.get("preview") is not None and not changed:
             self._sound()
         if outcome.get("play") is not None:

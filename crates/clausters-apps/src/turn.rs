@@ -107,6 +107,12 @@ pub trait Turned: Default {
     fn set_step(&mut self, seq: i64, redo: bool);
     /// The version after the turn -- moved by a route that edited.
     fn version(&self) -> i64;
+    /// Whether confirmation changes document contents.
+    fn changed(&self) -> bool;
+    /// Stamp a completed turn and its acknowledgement with the context version.
+    fn confirm(&mut self, version: i64);
+    /// Consume the correction answer after an aborted operation.
+    fn take_answer(&mut self) -> Option<Answer>;
     /// Whether its holder closes the window ([`crate::closing`]).
     fn set_close(&mut self, close: bool);
 }
@@ -133,6 +139,22 @@ macro_rules! turned {
             }
             fn version(&self) -> i64 {
                 self.version
+            }
+            fn changed(&self) -> bool {
+                self.changed
+            }
+            fn take_answer(&mut self) -> Option<clausters_editing::conversation::Answer> {
+                self.answer.take()
+            }
+            fn confirm(&mut self, version: i64) {
+                self.version = version;
+                if let Some(
+                    clausters_editing::conversation::Answer::Ack { doc_version, .. }
+                    | clausters_editing::conversation::Answer::Push { doc_version, .. },
+                ) = &mut self.answer
+                {
+                    *doc_version = version;
+                }
             }
             fn set_close(&mut self, close: bool) {
                 self.close = close;

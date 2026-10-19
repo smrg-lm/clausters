@@ -100,9 +100,39 @@ impl ScratchScope {
     }
 }
 
+/// One exact release attempt, independent of a recycled buffer number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReleaseTicket {
+    /// Composition-scoped release identity.
+    pub id: u64,
+    /// Original endpoint and buffer.
+    pub resource: ResourceId,
+}
+
+/// Server work required before an allocator id can be returned.
+#[derive(Debug, Serialize)]
+pub struct Release {
+    /// Echoed after the waits settle.
+    pub ticket: ReleaseTicket,
+    /// Endpoint owner, even after its document closes.
+    pub member: u32,
+    /// Existing Step encoding for the executor.
+    pub steps: serde_json::Value,
+}
+
+#[derive(Debug)]
+struct Retiring {
+    ticket: ReleaseTicket,
+    source: Source,
+    waiting: bool,
+    reason: Option<String>,
+}
+
 /// Shared source ownership and resident-budget policy.
 #[derive(Debug, Default)]
 pub struct Resources {
+    next_owner: u64,
+    retiring: BTreeMap<ResourceId, Retiring>,
     sources: BTreeMap<ResourceId, Source>,
     roots: BTreeMap<Root, BTreeSet<ResourceId>>,
     invalid: BTreeSet<ServerInstance>,
@@ -110,6 +140,15 @@ pub struct Resources {
 }
 
 impl Resources {
+    /// Reserve a consumer identity shared by all services in this composition.
+    pub fn new_owner(&mut self) -> u64 {
+        self.next_owner = self
+            .next_owner
+            .checked_add(1)
+            .expect("resource owner identity exhausted");
+        self.next_owner
+    }
+
     /// Registered locations and owners, for a storage port or diagnostics.
     pub fn sources(&self) -> Vec<Source> {
         self.sources.values().cloned().collect()
@@ -120,9 +159,14 @@ impl Resources {
         !self.invalid.contains(&server)
     }
 
+    /// Whether a new allocation may reserve this remote id.
+    pub fn available(&self, id: ResourceId) -> bool {
+        self.valid(id.server) && !self.sources.contains_key(&id) && !self.retiring.contains_key(&id)
+    }
+
     /// Register metadata. Invalidated instances cannot regain resources.
     pub fn register(&mut self, mut source: Source) -> bool {
-        if self.invalid.contains(&source.id.server) {
+        if self.invalid.contains(&source.id.server) || self.retiring.contains_key(&source.id) {
             return false;
         }
         if let Some(previous) = self.sources.get(&source.id) {
@@ -161,6 +205,13 @@ impl Resources {
         self.roots.values().any(|sources| sources.contains(&id))
     }
 
+    /// Whether a source is retained for this particular reason.
+    pub fn retained_as(&self, id: ResourceId, kind: RootKind) -> bool {
+        self.roots
+            .iter()
+            .any(|(root, sources)| root.kind == kind && sources.contains(&id))
+    }
+
     /// Whether a consumer outside the history still needs this source.
     pub fn retained_outside_history(&self, id: ResourceId) -> bool {
         self.roots
@@ -173,14 +224,100 @@ impl Resources {
         self.sources.get(&id)
     }
 
-    /// Remove an unretained source whose release is already in a close effect.
+    /// Transfer a close effect's unretained source to acknowledged cleanup.
     pub fn released(&mut self, id: ResourceId) -> bool {
         if self.retained(id) {
             return false;
         }
-        self.sources.remove(&id);
+        if let Some(source) = self.sources.remove(&id).filter(|source| source.owned) {
+            self.retire(source);
+        }
         self.order.retain(|source| *source != id);
         true
+    }
+
+    fn retire(&mut self, source: Source) {
+        let ticket = ReleaseTicket {
+            id: self.new_owner(),
+            resource: source.id,
+        };
+        self.retiring.insert(
+            source.id,
+            Retiring {
+                ticket,
+                source,
+                waiting: false,
+                reason: None,
+            },
+        );
+    }
+
+    /// Dispatch cleanup once. Failed attempts may be retried with the same
+    /// ticket; ids cannot be registered or acquired while they are retiring.
+    pub fn begin_release(&mut self, id: ResourceId) -> Option<Release> {
+        let retiring = self.retiring.get_mut(&id)?;
+        if retiring.waiting {
+            return None;
+        }
+        retiring.waiting = true;
+        let steps = if retiring.source.stored.is_some() {
+            serde_json::json!([])
+        } else {
+            use clausters_core::osc::{OscMessage, OscType};
+            use clausters_editing::apply::{Step, steps_json};
+            steps_json(&[
+                Step::Send(OscMessage {
+                    addr: "/buffer_free".into(),
+                    args: vec![OscType::Int(id.buffer as i32)],
+                }),
+                Step::AwaitDone {
+                    command: "/buffer_free".into(),
+                    index: Some(id.buffer as i32),
+                },
+            ])
+        };
+        Some(Release {
+            ticket: retiring.ticket,
+            member: retiring.source.member,
+            steps,
+        })
+    }
+
+    /// Confirm exactly one dispatched release. Failure keeps the source and
+    /// reservation retryable; a duplicate result cannot return an id twice.
+    pub fn finish_release(&mut self, ticket: ReleaseTicket, result: Result<(), String>) -> bool {
+        let Some(retiring) = self.retiring.get_mut(&ticket.resource) else {
+            return false;
+        };
+        if retiring.ticket != ticket || !retiring.waiting {
+            return false;
+        }
+        if let Err(reason) = result {
+            retiring.waiting = false;
+            retiring.reason = Some(reason);
+            return false;
+        }
+        self.retiring.remove(&ticket.resource);
+        true
+    }
+
+    /// Unsettled cleanup identities for an executor that is reconnecting or
+    /// retrying. This is metadata, never restored sample payloads.
+    pub fn pending_releases(&self) -> Vec<ReleaseTicket> {
+        self.retiring
+            .values()
+            .filter(|release| !release.waiting)
+            .map(|release| release.ticket)
+            .collect()
+    }
+
+    /// The last cleanup refusal, retained until a successful retry or invalidation.
+    pub fn release_error(&self, ticket: ReleaseTicket) -> Option<&str> {
+        self.retiring
+            .get(&ticket.resource)
+            .filter(|release| release.ticket == ticket)?
+            .reason
+            .as_deref()
     }
 
     /// Owned sources no consumer can reach, reported once, in creation order.
@@ -194,6 +331,7 @@ impl Resources {
         let mut out = Vec::new();
         for id in free {
             if let Some(source) = self.sources.remove(&id).filter(|s| s.owned) {
+                self.retire(source.clone());
                 out.push(source);
             }
         }
@@ -251,6 +389,7 @@ impl Resources {
     /// The returned ids let consumers cancel work and discard stale bindings.
     pub fn invalidate(&mut self, server: ServerInstance) -> Vec<ResourceId> {
         self.invalid.insert(server);
+        self.retiring.retain(|id, _| id.server != server);
         let removed: Vec<_> = self
             .sources
             .keys()
@@ -288,6 +427,50 @@ mod tests {
     }
     fn root(kind: RootKind) -> Root {
         Root { kind, owner: 1 }
+    }
+
+    #[test]
+    fn cleanup_failure_keeps_ids_reserved_until_the_exact_successful_retry() {
+        let mut resources = Resources::default();
+        let source = Source {
+            id: ResourceId {
+                server: ServerInstance {
+                    connection: 1,
+                    generation: 1,
+                },
+                buffer: 7,
+            },
+            member: 2,
+            bytes: 16,
+            owned: true,
+            stored: None,
+        };
+        resources.register(source.clone());
+        assert_eq!(
+            resources.collect().as_slice(),
+            std::slice::from_ref(&source)
+        );
+        let release = resources.begin_release(source.id).unwrap();
+        assert!(resources.begin_release(source.id).is_none());
+        assert!(
+            !resources.register(source.clone()),
+            "an unsettled free cannot race reuse"
+        );
+        assert!(!resources.finish_release(release.ticket, Err("offline".into())));
+        assert_eq!(resources.release_error(release.ticket), Some("offline"));
+        assert_eq!(resources.pending_releases(), [release.ticket]);
+        let retry = resources.begin_release(source.id).unwrap();
+        assert_eq!(retry.ticket, release.ticket);
+        assert!(resources.finish_release(retry.ticket, Ok(())));
+        assert!(!resources.finish_release(retry.ticket, Ok(())));
+        assert!(resources.register(source.clone()));
+        resources.collect();
+        let next = resources.begin_release(source.id).unwrap();
+        assert_ne!(next.ticket, retry.ticket);
+        assert!(!resources.finish_release(retry.ticket, Ok(())));
+        resources.invalidate(source.id.server);
+        assert!(resources.pending_releases().is_empty());
+        assert!(!resources.finish_release(next.ticket, Ok(())));
     }
 
     #[test]

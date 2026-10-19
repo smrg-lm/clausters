@@ -1424,15 +1424,23 @@ clipboard service or persistent workspace.
 
 #### Implemented editing, playback and resource services
 
+`application::services::Services` is a non-generic composition of `Histories`, one `Resources` graph and a clipboard `Exchange`. Services are injected explicitly. Each application keeps a typed `application::runtime::Runtime<Commit, Outcome>` and borrows those same services; audio and another application can therefore retain sources in one graph without sharing a commit enum or using `Any`.
+
+`Application::prepare` takes `&self` and `&Services`. The composition synchronizes source metadata before preparation and decodes host events at its boundary, including the leased `ResourceId` for paste/mix. Audio drafts clone only the edited file's take and metadata. They never checkpoint the history, reload spilled payloads or snapshot other members. The resulting `Operation<C>` declares its original object/server, batches, allocations, reads, access policy and unpublished delta. `Pending` retains its sources before any I/O. Content/history commit follows successful waits and revision validation. A save uses an immutable snapshot; releasing its write dependency allows further edits while preserving the saved revision captured at preparation.
+
+The common runtime handles batch identity and ordering, cancellation, commit refusal, repair, retry and connection invalidation. `application::walks` confirms an entire history entry or aborts its typed participants; the composition supplies domain routing through `WalkHost`. A successful transport result is not necessarily an accepted commit. Either kind of refusal keeps the pending root and object lock until repair succeeds. Invalidation retires operations, repairs and their locks without addressing the replacement server. A late completion updates the original file's playback projection and only corrects the view binding it was prepared against. The core also stamps versions and originating gesture acknowledgements; the adapters execute the same steps and report their results.
+
+Resource collection transfers an unreferenced owned source into retiring storage within `Resources`. A `ReleaseTicket` identifies the exact buffer incarnation and release attempt. Cleanup uses the existing `/buffer_free` wait, or no server effects for stored samples; only a successful acknowledgement returns its id to the allocator. A refused cleanup retains the reservation and error for an explicit retry. Duplicate tickets cannot return an id twice or acknowledge a later reuse. Closing a file commits its removal from the open list, then executes these tracked cleanups; playback and clipboard roots can defer collection. Closing a view leaves the application object intact and prevents a later completion from recreating its playback graph. Execution adapters serialize application batches and cleanup per endpoint, checking the incarnation after waiting for their turn.
+
 `clausters_apps::application::histories::Histories` maps an `Object` (member plus stable object id) to an undo `ScopeId` and the structure registered in that order. `Editing::with_services` accepts this service and `application::resources::Resources` explicitly; its default constructor supplies independent instances. The history engine remains `clausters_document::history::History`. Joining a member under a shared key registers its initial object in the context's order; another object gets an independent order. Selection changes the order being walked without exchanging histories or cloning them into a window. Closing its last observer removes an independent order; shared orders retain the history engine's existing forgotten-structure semantics.
 
 A step resolves each structure back to the object that was registered, including an inactive audio file. The audio composition applies to that file's contents while retaining the focused file, binding generation and conversation. Its `Effect::Audio` includes both ordered server steps and the edited file's playback projection. Both adapters execute the steps and update that file's playback graph; they do not infer the target from whatever is now focused. Whole-step rollback also restores the original target object.
 
 `Resources` records a `ResourceId` as a `ServerInstance` plus a local buffer number, its byte size, release endpoint and resident/stored location. `RootKind` separates contents, history, clipboard, playback and pending operations. Replacing one root does not drop another consumer's lease; invalid acquisitions leave the previous root intact. Collection reports each unreferenced owned source once, and never frees a borrowed source. History roots include inactive orders. The audio adapters retain playback roots after their graph updates and drop them after closing the graph, so trimming a history or closing a file cannot free a source playback still holds. Clipboard publications and paste readers use those resource leases through `application::clipboard::Exchange`; general operation commit integration remains pending.
 
-The byte limit applies independently to each undo order, with endpoint-aware accounting that excludes sources held by another service. The resident limit applies across the composition's history-only sources. Candidates are chosen in creation order; the owning audio file supplies the existing write/free steps even when out of focus, and a restore precedes the dependent stitch. A refused spill is marked `kept` on its owning file. `ScratchScope` names files by endpoint incarnation, composition namespace and buffer, under the supplied scratch directory. Existing disk and OPFS execution ports write float WAVs. The caller owns the scratch directory and its cleanup; a final source release gives back its buffer lease, or only its id when stored.
+The byte limit applies independently to each undo order, with endpoint-aware accounting that excludes sources held by another service. The resident limit applies across the composition's history-only sources. Candidates are chosen in creation order; the owning audio file supplies the existing write/free steps even when out of focus, and a restore precedes the dependent stitch. A refused spill keeps its samples resident; successful write and free are separate dependencies, and restoration precedes the dependent stitch. `ScratchScope` names files by endpoint incarnation, composition namespace and buffer, under the supplied scratch directory. Existing disk and OPFS execution ports write float WAVs. The caller owns the scratch directory and its cleanup; a final source release gives back its buffer lease, or only its id when stored.
 
-Each adapter supplies a random connection identity and an allocator incarnation. Reattaching with reconciled allocators advances that incarnation; old editors and playback handles refuse work before addressing the replacement endpoint, and the resource service invalidates the old leases without sending frees to the replacement. This is conservative connection identity: two handles are not assumed to be the same endpoint merely because their addresses or local buffer ids match. A server restarted without reattaching has not established a new valid application connection. In-flight completion admission and cancellation remain part of the operation coordinator contract below.
+Each adapter supplies a random connection identity and an allocator incarnation. Reattaching with reconciled allocators advances that incarnation; old editors and playback handles refuse work before addressing the replacement endpoint, and the resource service invalidates the old leases without sending frees to the replacement. This is conservative connection identity: two handles are not assumed to be the same endpoint merely because their addresses or local buffer ids match. A server restarted without reattaching has not established a new valid application connection. Operation admission, cancellation and cleanup validate that same incarnation.
 
 The services need no renderer. The real native NRT endpoint and the browser NRT/OPFS acceptance execute the same spill, restore and release decisions and compare restored samples. Playback remains `clausters_editing::audio_playback::AudioEditorPlayback`, with one transport per editor; injecting an editing context does not share a transport.
 
@@ -1442,12 +1450,7 @@ The host `Clip` continues to own the typed document, blobs and system-text mirro
 
 #### Composition and extension
 
-Use `clausters_apps::application` for the shared application contracts and
-coordinator support, and the existing `clausters_apps::audio` module for the
-first composition. `AppState` names common instance state, not every editor's
-data in one enum. `AudioAppState` composes it with audio contents, files and
-windows. `Application` names the coordinator over that state. These names
-are implementation targets, not declarations of existing exported types.
+Use `clausters_apps::application` for shared services, the `Application` lifecycle trait and typed operation/repair support. The existing audio editor supplies its domain commands, state deltas and completion effects. Its file/window state stays in the audio module; no universal state enum or mandatory `AppState` wrapper is required to use the services. JSON decoding and endpoint scheduling belong at the boundary.
 
 Every composition supplies stable identity, action routing, view bindings,
 operation tracking and disposal. Capabilities are explicit constructor
@@ -1573,19 +1576,7 @@ and reason. Concurrent indistinguishable waits on one connection must be
 serialized by the adapter/shared runner. `/server_sync` is an ordering barrier,
 not proof that every preceding command succeeded.
 
-`Content::Buffer` currently contains a bare buffer number, channel count,
-frame count and rate. It lacks server identity, connection generation and a
-storage lease. The host's payload and the client weak-map ownership cannot
-form a safe cross-window lifetime contract on their own. The migration needs
-a scoped clipboard reference and publication/replacement acknowledgements,
-and a completion envelope for the shared application bindings. Existing
-C/wasm JSON entry points may carry these contracts; audit their consumers
-before widening the ABI or wire. No new server command is justified yet.
-Cross-server paste must explicitly transfer supported storage or refuse
-without changing the destination; it must never reuse an integer on another
-server. Transfer policy and channel compatibility are settled with clipboard
-implementation, preserving the existing rate-preserving paste and refusal of
-mixing different rates.
+`Content::Buffer` carries server identity, connection generation and a publication nonce through its optional location. The host stores the typed document while the owning composition retains its source; adapter tables route service handles and leases rather than duplicating ownership policy. Publication refuses a source retained as mutable contents. The existing C/wasm JSON entry points adapt typed operation and cleanup contracts, without new ABI symbols or server commands. Cross-server paste refuses without changing the destination. Insertion preserves source rate and mixing requires matching rates and channels.
 
 #### Regression cases and remaining decisions
 

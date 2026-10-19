@@ -2482,6 +2482,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   recoverable contents/history and release resources once. Platform-specific
   scheduling does not decide commit or cleanup policy.
 
+  - ✅ Non-generic shared services, read-only typed preparation and per-application operation registries over one resource graph; shared completion, repair and history-walk orchestration.
+  - ✅ Audio open/add-file, sample edits, clipboard publication, save snapshots and spill/restore use prepared deltas; menu/shortcut undo waits for confirmation. Retiring sources keep exact cleanup tickets until acknowledgement, including after file close.
+  - ✅ Headless regression coverage for rejected commits, distinct application commit types sharing services, failure/retry, saved revisions, original-object routing, invalidation and exactly-once id return in the Rust core and both adapters.
+  - ✅ Execute lifetime and spill/restore decisions against the native NRT endpoint and browser NRT/OPFS, asserting samples after undo, clipboard source close and publication replacement.
+  - ⬜ Review the paired editor example with real windows, including save-and-close and delayed completion after view replacement. Keep this milestone open until that acceptance is recorded in the implementing commit.
+
 - ⬜ **X20 - Give actions one definition and contextual state.** After
   `X19`, extend the existing `clausters-editing::verbs` and chrome mechanisms
   with target resolution, availability/reason, command/toggle/choice kind,

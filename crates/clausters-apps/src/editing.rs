@@ -52,6 +52,9 @@ use crate::points::editor::{self as points, PointsEditor};
 use crate::score::editor::{self as score, ScoreEditor};
 use crate::turn::{Event, Kind, Record, int};
 
+mod audio_operations;
+mod exchange;
+
 /// The version an unedited context is at. One rather than zero, because zero is
 /// what an edit means by *unstated* when it names the state it was made against.
 pub const FIRST_VERSION: i64 = 1;
@@ -324,6 +327,9 @@ pub struct Stored {
     pub buffer: i64,
     /// The steps that write it and free the buffer.
     pub steps: Value,
+    /// A prepared storage operation whose waits and confirmation must be executed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<crate::application::operations::Prepared>,
 }
 
 /// **What a step of the history came to.**
@@ -332,6 +338,9 @@ pub struct Stored {
 pub struct Stepped {
     /// Whether anything moved.
     pub stepped: bool,
+    /// A prepared walk whose cursor is still uncommitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<crate::application::operations::Prepared>,
     /// Why nothing did, where it is worth saying: the entry named structures no
     /// member could apply it to, and it is still there.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -354,9 +363,8 @@ pub struct Stepped {
 /// **The editing context**: a history, its version, and the members it holds.
 #[derive(Debug)]
 pub struct Editing {
-    history: Histories,
-    resources: Resources,
-    clipboard: crate::application::clipboard::Exchange,
+    services: crate::application::services::Services,
+    audio_runtime: crate::application::runtime::Runtime<audio::operations::Commit, audio::Outcome>,
     version: i64,
     seats: Vec<Seat>,
     /// The most bytes of takes only the history holds, when there is a limit.
@@ -382,9 +390,8 @@ impl Editing {
     /// Neither service needs a renderer, a server connection or playback.
     pub fn with_services(history: Histories, resources: Resources) -> Self {
         Self {
-            history,
-            resources,
-            clipboard: Default::default(),
+            services: crate::application::services::Services::new(history, resources),
+            audio_runtime: Default::default(),
             version: FIRST_VERSION,
             seats: Vec::new(),
             bytes: None,
@@ -411,6 +418,10 @@ impl Editing {
     /// every member and handed back as the buffers to free -- after the byte
     /// limit, when there is one, has trimmed the pile.
     fn release(&mut self) -> (Vec<Freed>, Vec<Stored>) {
+        self.release_with_storage(true)
+    }
+
+    fn release_with_storage(&mut self, schedule_storage: bool) -> (Vec<Freed>, Vec<Stored>) {
         let editors: Vec<&AudioEditor> = self
             .seats
             .iter()
@@ -436,14 +447,15 @@ impl Editing {
                 .iter()
                 .enumerate()
                 .flat_map(|(member, seat)| {
-                    self.history
+                    self.services
+                        .histories
                         .structures_for(member as MemberId)
                         .into_iter()
                         .map(move |structure| (structure, seat.server))
                 })
                 .collect();
-            let resources = &self.resources;
-            self.history.trim_orders(bytes, &|history| {
+            let resources = &self.services.resources;
+            self.services.histories.trim_orders(bytes, &|history| {
                 let ids: std::collections::BTreeSet<_> = history
                     .structures()
                     .into_iter()
@@ -467,8 +479,8 @@ impl Editing {
             });
             self.sync_resources();
         }
-        let released = self.resources.collect();
-        let released_joins = self.history.released_sources();
+        let released = self.services.resources.collect();
+        let released_joins = self.services.histories.released_sources();
         // Each take goes back under the member that made it: the one that
         // knows its size is the one whose server it is on.
         let mut out: Vec<Freed> = Vec::new();
@@ -515,7 +527,11 @@ impl Editing {
                 }
             }
         }
-        let stored = self.store();
+        let stored = if schedule_storage {
+            self.store()
+        } else {
+            Vec::new()
+        };
         (out, stored)
     }
 
@@ -526,29 +542,41 @@ impl Editing {
         let Some(limit) = self.resident else {
             return Vec::new();
         };
-        let candidates = self.resources.spill_candidates(limit, |id| {
-            self.resources.source(id).is_some_and(|source| {
+        let candidates = self.services.resources.spill_candidates(limit, |id| {
+            self.services.resources.source(id).is_some_and(|source| {
                 matches!(&self.seats[source.member as usize].member,
                     Member::Audio(editor) if editor.storage_available())
             })
         });
+        let selected = self.services.histories.selected();
         let mut out = Vec::new();
         for id in candidates {
-            let Some(source) = self.resources.source(id) else {
+            let Some(source) = self.services.resources.source(id) else {
                 continue;
             };
             let owner = source.member as usize;
             let buffer = id.buffer;
-            if let Member::Audio(editor) = &mut self.seats[owner].member
-                && let Some(steps) = editor.spill(buffer)
+            if let Ok(ticket) = self.prepare_audio(
+                owner as MemberId,
+                audio::operations::Command::Spill(buffer),
+                0,
+            ) && let Some((batch, work)) = self.audio_runtime.operations.next(ticket)
             {
                 out.push(Stored {
                     member: owner as MemberId,
                     buffer,
-                    steps,
+                    steps: clausters_editing::apply::steps_json(&work.steps),
+                    operation: Some(crate::application::operations::Prepared {
+                        member: work.member,
+                        ticket,
+                        batch,
+                        server: work.server,
+                        steps: work.steps,
+                    }),
                 });
             }
         }
+        self.services.histories.select(selected);
         out
     }
 
@@ -558,44 +586,19 @@ impl Editing {
                 continue;
             };
             let member = member as MemberId;
-            for (buffer, bytes, stored, owned) in editor.resource_sources() {
-                self.resources.register(Source {
-                    id: ResourceId {
-                        server: seat.server,
-                        buffer,
-                    },
-                    member,
-                    bytes,
-                    owned,
-                    stored,
-                });
-            }
-            let ids = |sources: Vec<SourceId>| {
-                sources.into_iter().map(|source| ResourceId {
-                    server: seat.server,
-                    buffer: source.0 as i64,
-                })
-            };
-            self.resources.retain(
-                Root {
-                    kind: RootKind::Contents,
-                    owner: u64::from(member),
-                },
-                ids(editor.rooted()),
-            );
-            self.resources.retain(
-                Root {
-                    kind: RootKind::History,
-                    owner: u64::from(member),
-                },
-                ids(self.history.sources_for(member)),
-            );
+            editor.sync_resources(member, seat.server, &mut self.services);
         }
+    }
+
+    fn invalidate_server(&mut self, server: ServerInstance) -> Vec<ResourceId> {
+        self.audio_runtime
+            .invalidate(&mut self.services.resources, server);
+        self.services.resources.invalidate(server)
     }
 
     /// Resources explicitly supplied to this composition, independent of views.
     pub fn resources(&mut self) -> &mut Resources {
-        &mut self.resources
+        &mut self.services.resources
     }
 
     /// Associate a member with a connection incarnation before it allocates.
@@ -617,22 +620,22 @@ impl Editing {
 
     /// Whether there is an edit to step back over.
     pub fn can_undo(&self) -> bool {
-        self.history.can_undo()
+        self.services.histories.can_undo()
     }
 
     /// Whether there is an undone edit to step forward into.
     pub fn can_redo(&self) -> bool {
-        self.history.can_redo()
+        self.services.histories.can_redo()
     }
 
     /// What an undo would be called.
     pub fn undo_label(&self) -> Option<String> {
-        self.history.undo_label()
+        self.services.histories.undo_label()
     }
 
     /// What a redo would be called.
     pub fn redo_label(&self) -> Option<String> {
-        self.history.redo_label()
+        self.services.histories.redo_label()
     }
 
     /// The structure `member` is in the order: the identity every member with
@@ -649,7 +652,7 @@ impl Editing {
             Member::Audio(editor) => editor.focused_file(),
             _ => 0,
         };
-        let structure = self.history.join(
+        let structure = self.services.histories.join(
             Object {
                 member: id,
                 id: object,
@@ -672,12 +675,12 @@ impl Editing {
     pub fn select(&mut self, member: Option<MemberId>) {
         match member {
             Some(member) => self.select_member(member),
-            None => self.history.select(ScopeId(0)),
+            None => self.services.histories.select(ScopeId(0)),
         }
     }
 
     fn close_audio_file(&mut self, member: MemberId, file: i64) {
-        self.history.close(Object { member, id: file });
+        self.services.histories.close(Object { member, id: file });
     }
 
     fn select_member(&mut self, member: MemberId) {
@@ -690,7 +693,10 @@ impl Editing {
             _ => 0,
         };
         let domain = seat.member.domain();
-        let structure = self.history.focus(Object { member, id: object }, &domain);
+        let structure = self
+            .services
+            .histories
+            .focus(Object { member, id: object }, &domain);
         self.seats[member as usize].structure = structure;
     }
 
@@ -735,7 +741,7 @@ impl Editing {
     /// vocabulary's own types (the document's log, say) rather than as JSON.
     /// Answers whether the history took it, and moves the version when it did.
     pub fn record_entry(&mut self, entry: Entry) -> bool {
-        let taken = self.history.record(entry);
+        let taken = self.services.histories.record(entry);
         if taken {
             self.version += 1;
         }
@@ -756,7 +762,7 @@ impl Editing {
         let Some(structure) = self.structure(member) else {
             return false;
         };
-        let taken = apply(&mut self.history, structure);
+        let taken = apply(self.services.histories.selected_history_mut(), structure);
         if taken {
             self.version += 1;
         }
@@ -785,7 +791,8 @@ impl Editing {
             });
         }
         entry.is_some_and(|entry| {
-            self.history
+            self.services
+                .histories
                 .record(if coalesce { entry.continuing() } else { entry })
         })
     }
@@ -819,11 +826,18 @@ impl Editing {
         let mut stepped = None;
         if outcome.kind() == Kind::Step {
             let (seq, redo) = outcome.step();
-            let step = self.step(if redo {
+            let direction = if redo {
                 Direction::Redo
             } else {
                 Direction::Undo
-            });
+            };
+            let step = self
+                .prepare_audio_walk(direction)
+                .unwrap_or_else(|| self.step(direction));
+            let pending = step.operation.as_ref().map(|prepared| prepared.ticket);
+            if let Some(ticket) = pending {
+                self.audio_runtime.acknowledge_walk(ticket, member, seq);
+            }
             let version = self.version;
             let reason = step.reason.clone();
             if let Some(seat) = self.seats.get(member as usize) {
@@ -846,6 +860,11 @@ impl Editing {
                     }
                     Member::External { .. } => {}
                 }
+            }
+            if pending.is_some()
+                && let Outcome::Audio(audio) = &mut outcome
+            {
+                audio.answer = None;
             }
             stepped = Some(step);
         }
@@ -904,12 +923,13 @@ impl Editing {
     /// entry is still there.
     pub fn step(&mut self, direction: Direction) -> Stepped {
         let label = match direction {
-            Direction::Undo => self.history.undo_label(),
-            Direction::Redo => self.history.redo_label(),
+            Direction::Undo => self.services.histories.undo_label(),
+            Direction::Redo => self.services.histories.redo_label(),
         }
         .unwrap_or_default();
         let mut out = Stepped {
             stepped: false,
+            operation: None,
             reason: None,
             effects: Vec::new(),
             corrections: Vec::new(),
@@ -918,16 +938,18 @@ impl Editing {
             version: self.version,
         };
         let targets: Vec<_> = self
-            .history
+            .services
+            .histories
             .peek_walk(direction)
             .into_iter()
             .flat_map(|walked| walked.legs.into_iter().map(|(structure, _)| structure))
             .collect();
         if self.seats.iter().enumerate().any(|(member, seat)| {
             matches!(seat.member, Member::Audio(_))
-                && !self.resources.valid(seat.server)
+                && !self.services.resources.valid(seat.server)
                 && self
-                    .history
+                    .services
+                    .histories
                     .structures_for(member as MemberId)
                     .iter()
                     .any(|structure| targets.contains(structure))
@@ -935,7 +957,7 @@ impl Editing {
             out.reason = Some("the editing order references a previous server instance".into());
             return out;
         }
-        let Some(walked) = self.history.walk(direction) else {
+        let Some(walked) = self.services.histories.walk(direction) else {
             return out;
         };
         // **Whole on every structure, or on none**: what each member was before
@@ -950,7 +972,7 @@ impl Editing {
             let mut stepped = false;
             for (id, seat) in self.seats.iter_mut().enumerate() {
                 let member = id as MemberId;
-                let object = self.history.object_for(member, *structure);
+                let object = self.services.histories.object_for(member, *structure);
                 if seat.structure != *structure && object.is_none() {
                     continue;
                 }
@@ -1067,7 +1089,7 @@ impl Editing {
                     state.put_back(&mut seat.member);
                 }
             }
-            self.history.step(match direction {
+            self.services.histories.step(match direction {
                 Direction::Undo => Direction::Redo,
                 Direction::Redo => Direction::Undo,
             });
@@ -1243,10 +1265,44 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             let editor = points::new_json(curve, &request.to_string());
             joined(editing, &key, Member::Points(Box::new(editor)))
         }
-        "exchange" => editing.clipboard.call(&request).to_string(),
+        "operation" => editing.audio_operation_json(&request).to_string(),
+        "cleanup" => {
+            let value = match request["action"].as_str().unwrap_or_default() {
+                "prepare" => serde_json::from_value::<ResourceId>(get(&request, "resource"))
+                    .ok()
+                    .and_then(|id| editing.services.resources.begin_release(id))
+                    .map(|release| serde_json::to_value(release).unwrap())
+                    .unwrap_or_else(|| json!({"accepted":false})),
+                "complete" => {
+                    let accepted = serde_json::from_value::<
+                        crate::application::resources::ReleaseTicket,
+                    >(get(&request, "ticket"))
+                    .is_ok_and(|ticket| {
+                        editing.services.resources.finish_release(
+                            ticket,
+                            if request["success"] == true {
+                                Ok(())
+                            } else {
+                                Err(request["reason"]
+                                    .as_str()
+                                    .unwrap_or("cleanup was refused")
+                                    .to_string())
+                            },
+                        )
+                    });
+                    json!({"accepted":accepted})
+                }
+                "pending" => {
+                    json!({"tickets":editing.services.resources.pending_releases().into_iter().map(|ticket|json!({"ticket":ticket,"reason":editing.services.resources.release_error(ticket)})).collect::<Vec<_>>()})
+                }
+                _ => json!({"error":"unknown cleanup action"}),
+            };
+            value.to_string()
+        }
+        "exchange" => editing.exchange_json(&request).to_string(),
         "resources" => {
             editing.sync_resources();
-            serde_json::to_string(&editing.resources.sources()).unwrap()
+            serde_json::to_string(&editing.services.resources.sources()).unwrap()
         }
         "retainMember" => {
             editing.sync_resources();
@@ -1255,7 +1311,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 && let Ok(kind) = serde_json::from_value::<RootKind>(get(&request, "kind"))
                 && !matches!(kind, RootKind::Contents | RootKind::History)
             {
-                editing.resources.retain(
+                editing.services.resources.retain(
                     Root {
                         kind,
                         owner: u64::from(member),
@@ -1276,21 +1332,21 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             let root = serde_json::from_value::<Root>(get(&request, "root"));
             let sources = serde_json::from_value::<Vec<ResourceId>>(get(&request, "sources"));
             let retained = match (root, sources) {
-                (Ok(root), Ok(sources)) => editing.resources.retain(root, sources),
+                (Ok(root), Ok(sources)) => editing.services.resources.retain(root, sources),
                 _ => false,
             };
             json!({"retained": retained}).to_string()
         }
         "dropRoot" => {
             if let Ok(root) = serde_json::from_value::<Root>(get(&request, "root")) {
-                editing.resources.drop_root(root);
+                editing.services.resources.drop_root(root);
             }
             let (freed, stored) = editing.release();
             json!({"freed": freed, "stored": stored}).to_string()
         }
         "invalidate" => {
             let invalidated = serde_json::from_value::<ServerInstance>(get(&request, "server"))
-                .map(|server| editing.resources.invalidate(server))
+                .map(|server| editing.invalidate_server(server))
                 .unwrap_or_default();
             json!({"invalidated": invalidated}).to_string()
         }
@@ -1311,9 +1367,14 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
         }
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
-            to_json(&editing.event(member, &event))
+            let prepared = editing.prepare_audio_event(member, &event);
+            to_json(&prepared.or_else(|| editing.event(member, &event)))
         }
-        "act" => to_json(&editing.act(member, &get(&request, "call"))),
+        "act" => {
+            let call = get(&request, "call");
+            let prepared = editing.prepare_audio_action(member, &call);
+            to_json(&prepared.or_else(|| editing.act(member, &call)))
+        }
         "step" => {
             editing.select(
                 request
@@ -1325,7 +1386,8 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 .as_str()
                 .and_then(Direction::parse)
                 .unwrap_or(Direction::Undo);
-            to_json(&editing.step(direction))
+            let prepared = editing.prepare_audio_walk(direction);
+            to_json(&prepared.unwrap_or_else(|| editing.step(direction)))
         }
         "record" => {
             let coalesce = get(&request, "coalesce").as_bool().unwrap_or(false);
@@ -1361,6 +1423,38 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string();
+            if inner == "close_file"
+                && let Some(seat) = editing.seats.get(member as usize)
+                && let Member::Audio(editor) = &seat.member
+            {
+                let file = if let Some(index) = request["call"]["index"].as_u64() {
+                    editor.file_at(index as usize)
+                } else {
+                    Some(
+                        request["call"]["file"]
+                            .as_i64()
+                            .unwrap_or(editor.focused_file()),
+                    )
+                };
+                if file.is_some_and(|object| {
+                    editing
+                        .audio_runtime
+                        .operations
+                        .busy(crate::application::operations::Target {
+                            member,
+                            object,
+                            server: seat.server,
+                        })
+                }) {
+                    return json!({"error":"the file has pending work; close after it completes"})
+                        .to_string();
+                }
+            }
+            if inner == "add_file" && matches!(editing.member(member), Some(Member::Audio(_))) {
+                return editing
+                    .prepare_add_file(member, &get(&request, "call"))
+                    .to_string();
+            }
             if matches!(inner.as_str(), "event" | "apply") {
                 return "{}".into();
             }
@@ -1409,24 +1503,30 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                     .into_iter()
                     .flatten()
                     .filter_map(Value::as_i64)
-                    .filter(|&buffer| editing.resources.retained(ResourceId { server, buffer }))
+                    .filter(|&buffer| {
+                        editing
+                            .services
+                            .resources
+                            .retained(ResourceId { server, buffer })
+                    })
                     .collect();
                 if let Some(buffers) = value["freedBuffers"].as_array_mut() {
                     buffers.retain(|buffer| !protected.contains(&buffer.as_i64().unwrap_or(-1)));
                     for buffer in buffers.iter().filter_map(Value::as_i64) {
-                        editing.resources.released(ResourceId { server, buffer });
+                        let id = ResourceId { server, buffer };
+                        if editing.services.resources.source(id).is_none() {
+                            editing.services.resources.register(Source {
+                                id,
+                                member,
+                                bytes: 0,
+                                owned: true,
+                                stored: None,
+                            });
+                        }
+                        editing.services.resources.released(id);
                     }
                 }
-                if let Some(steps) = value["steps"].as_array_mut() {
-                    steps.retain(|step| {
-                        let buffer = step["send"]["args"][0]["i"]
-                            .as_i64()
-                            .or_else(|| step["await"]["index"].as_i64());
-                        let free = step["send"]["addr"] == "/buffer_free"
-                            || step["await"]["command"] == "/buffer_free";
-                        !free || !buffer.is_some_and(|buffer| protected.contains(&buffer))
-                    });
-                }
+                value["steps"] = json!([]);
                 if value["close"] != true {
                     editing.select_member(member);
                 }
@@ -1535,7 +1635,7 @@ impl Editing {
     /// The curve a points editor under `key` already edits, so a second
     /// window over it edits the same one.
     fn shared_curve(&self, key: &str) -> Option<crate::points::Shared> {
-        let structure = self.history.named(key)?;
+        let structure = self.services.histories.named(key)?;
         self.seats.iter().find_map(|seat| match &seat.member {
             Member::Points(editor) if seat.structure == structure => Some(editor.curve().clone()),
             _ => None,
@@ -2381,23 +2481,116 @@ mod tests {
         let Outcome::Audio(outcome) = &turned.outcome else {
             panic!()
         };
-        assert_eq!(
-            outcome.answer,
-            Some(Answer::Ack {
-                seq: 2,
-                doc_version: 3,
-                reason: None
-            })
-        );
+        assert!(outcome.answer.is_none(), "the receipt waits for I/O");
+        let prepared = serde_json::to_value(stepped.operation.unwrap()).unwrap();
+        let (completed, _) = settle_operation(&mut editing, prepared);
+        assert_eq!(completed["echo"]["answer"]["seq"], 2);
+        assert_eq!(completed["echo"]["answer"]["docVersion"], 3);
     }
 
     /// The JSON door opens members, turns, steps and reports the state.
     #[test]
+    fn failed_add_file_keeps_the_open_list_and_returns_only_settled_ids() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        let opening = raw_call(
+            &mut editing,
+            json!({"verb":"member","member":member,
+            "call":{"verb":"add_file","take":50,"frames":100,"display":51,"buffers":[52,53],"untitled":true}}),
+        );
+        assert!(opening["operation"].is_object());
+        let files = raw_call(
+            &mut editing,
+            json!({"verb":"member","member":member,"call":{"verb":"files"}}),
+        );
+        assert_eq!(files["files"].as_array().unwrap().len(), 1);
+        let prepared = &opening["operation"];
+        let failed = raw_call(
+            &mut editing,
+            json!({"verb":"operation","action":"complete",
+            "ticket":prepared["ticket"],"batch":prepared["batch"],"result":{"status":"failed","reason":"allocation refused"}}),
+        );
+        assert!(failed["repair"].is_object());
+        assert!(
+            failed.get("returned").is_none(),
+            "ids remain reserved during recovery"
+        );
+        let repaired = raw_call(
+            &mut editing,
+            json!({"verb":"operation","action":"repaired","ticket":failed["repair"]}),
+        );
+        assert_eq!(repaired["returned"]["buffers"], json!([51, 53]));
+        let freed = repaired["freed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|entry| entry["buffers"].as_array().unwrap())
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(freed, [json!(50), json!(52)]);
+        assert_eq!(
+            raw_call(
+                &mut editing,
+                json!({"verb":"member","member":member,"call":{"verb":"files"}})
+            )["files"],
+            files["files"]
+        );
+        assert_eq!(
+            raw_call(
+                &mut editing,
+                json!({"verb":"operation","action":"repaired","ticket":failed["repair"]})
+            )["accepted"],
+            false
+        );
+    }
+
+    #[test]
+    fn window_save_keeps_its_destination_and_dirty_checkpoint_until_confirmation() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        let opening = raw_call(
+            &mut editing,
+            json!({"verb":"operation","action":"prepare","member":member,"command":{"kind":"open"}}),
+        );
+        settle_operation(&mut editing, opening);
+        draw(&mut editing, member, 1, 10);
+        let window = 49;
+        raw_call(
+            &mut editing,
+            json!({"verb":"member","member":member,"call":{"verb":"sync","window":window}}),
+        );
+        let version = editing.version();
+        let pending = raw_call(
+            &mut editing,
+            json!({"verb":"event","member":member,"addr":"/gui_event",
+            "args":[window,2,version,"save"]}),
+        );
+        let prepared = pending["outcome"]["operation"].clone();
+        assert!(
+            prepared.is_object(),
+            "window save uses prepared batches: {pending}"
+        );
+        assert_eq!(
+            raw_call(
+                &mut editing,
+                json!({"verb":"member","member":member,"call":{"verb":"binding"}})
+            )["dirty"],
+            true
+        );
+        let (saved, _) = settle_operation(&mut editing, prepared);
+        assert_eq!(saved["committed"], true);
+        assert_eq!(
+            raw_call(
+                &mut editing,
+                json!({"verb":"member","member":member,"call":{"verb":"binding"}})
+            )["dirty"],
+            false
+        );
+    }
+
+    #[test]
     fn the_door_opens_turns_and_steps() {
         let mut editing = Editing::default();
-        let call = |editing: &mut Editing, request: Value| -> Value {
-            serde_json::from_str(&call_json(editing, &request.to_string())).unwrap()
-        };
         let take = call(
             &mut editing,
             json!({"verb": "openAudio", "key": "buffer:7", "take": 7, "frames": 100,
@@ -2435,8 +2628,69 @@ mod tests {
         );
     }
 
-    fn call(editing: &mut Editing, request: Value) -> Value {
+    fn raw_call(editing: &mut Editing, request: Value) -> Value {
         serde_json::from_str(&call_json(editing, &request.to_string())).unwrap()
+    }
+
+    // A headless executor: acknowledge declared batches, keeping their steps
+    // for ordering assertions. The document is inspected only after commit.
+    fn settle_operation(editing: &mut Editing, mut prepared: Value) -> (Value, Vec<Value>) {
+        let mut steps = Vec::new();
+        while prepared["complete"] != true {
+            steps.extend(prepared["steps"].as_array().unwrap().iter().cloned());
+            prepared = raw_call(
+                editing,
+                json!({"verb":"operation", "action":"complete",
+                "ticket":prepared["ticket"], "batch":prepared["batch"], "result":{"status":"success"}}),
+            );
+        }
+        (prepared, steps)
+    }
+
+    fn call(editing: &mut Editing, request: Value) -> Value {
+        let mut answer = raw_call(editing, request);
+        if answer["outcome"]["operation"].is_object() {
+            let (completed, _) = settle_operation(editing, answer["outcome"]["operation"].clone());
+            for key in ["outcome", "freed", "stored", "version"] {
+                if let Some(value) = completed.get(key) {
+                    answer[key] = value.clone();
+                }
+            }
+        } else if answer["operation"].is_object() {
+            let (completed, steps) = settle_operation(editing, answer["operation"].clone());
+            answer = if completed["outcome"].is_object() {
+                completed["outcome"].clone()
+            } else {
+                completed["stepped"].clone()
+            };
+            if let Some(effects) = answer["effects"].as_array_mut() {
+                for effect in effects {
+                    if effect["kind"] == "audio" {
+                        effect["steps"] = json!(steps);
+                    }
+                }
+            }
+            for key in ["freed", "stored", "version"] {
+                if let Some(value) = completed.get(key) {
+                    answer[key] = value.clone();
+                }
+            }
+        }
+        if let Some(stored) = answer["stored"].as_array_mut() {
+            for entry in stored {
+                if entry["operation"].is_object() {
+                    let (_, steps) = settle_operation(editing, entry["operation"].clone());
+                    entry["steps"] = json!(steps);
+                }
+            }
+        }
+        // Keep the original sparse encoding used by the assertions below.
+        for key in ["freed", "stored"] {
+            if answer[key].as_array().is_some_and(Vec::is_empty) {
+                answer.as_object_mut().unwrap().remove(key);
+            }
+        }
+        answer
     }
 
     /// Two windows over one curve edit one curve, and an undo in either hands
@@ -2708,8 +2962,8 @@ mod tests {
             json!({"verb": "member", "member": member, "call": {"verb": "close_file"}}),
         );
         assert_eq!(closed["close"], true);
-        assert_eq!(editing.history.orders_len(), 1);
-        assert_eq!(editing.history.selected(), ScopeId(0));
+        assert_eq!(editing.services.histories.orders_len(), 1);
+        assert_eq!(editing.services.histories.selected(), ScopeId(0));
     }
 
     #[test]
@@ -2839,7 +3093,7 @@ mod tests {
             json!([{"member":member, "buffers":[20]}])
         );
         assert_eq!(
-            call(&mut editing, json!({"verb":"dropRoot", "root":root}))["freed"],
+            raw_call(&mut editing, json!({"verb":"dropRoot", "root":root}))["freed"],
             json!([])
         );
     }
@@ -2910,9 +3164,15 @@ mod tests {
                 .collect::<Vec<_>>(),
             [20]
         );
-        call(
+        let prepared = stored[0].operation.as_ref().unwrap();
+        let refused = raw_call(
             &mut editing,
-            json!({"verb":"member", "member":member, "call":{"verb":"kept", "buffer":20}}),
+            json!({"verb":"operation","action":"complete",
+            "ticket":prepared.ticket,"batch":prepared.batch,"result":{"status":"failed","reason":"quota"}}),
+        );
+        raw_call(
+            &mut editing,
+            json!({"verb":"operation","action":"repaired", "ticket":refused["repair"]}),
         );
         assert!(
             matches!(editing.member(member), Some(Member::Audio(editor)) if !editor.is_spilled(20))

@@ -45,8 +45,9 @@ import type { Transport, TransportDriver } from "../../defs/server/transport.ts"
 import { Segment } from "../../segments.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import { runSteps } from "../../steps.ts";
+import { executeSteps, releaseBuffer } from "./cleanup.ts";
 import { serviceInstance } from "./application.ts";
-import { exchange } from "./clipboard.ts";
+import { exchange, bindExchange, type ExchangeLease } from "./clipboard.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
@@ -94,7 +95,11 @@ interface Outcome {
     /** The buffer that copy is in. */
     clipboardBuffer?: number;
     clipboardCut?: Record<string, unknown>;
-    clipboardLease?: number;
+    clipboardLease?: ExchangeLease;
+    clipboardReady?: boolean;
+    operation?: Record<string, unknown>;
+    preparedComplete?: boolean;
+    playbackUpdate?: { file: Record<string, unknown>; publish: boolean };
 }
 
 /** A press of the space bar, as the editor read it: frames of the take. */
@@ -115,7 +120,6 @@ interface Play {
  */
 class AudioPlayback {
     #native: AudioEditorPlayback | null = null;
-    readonly #runner = new StepRunner();
     readonly #instance: { connection: number; generation: number };
     readonly #ready: Promise<void>;
     /** The engine's sample rate, asked once; 0 when it will not say. */
@@ -161,7 +165,7 @@ class AudioPlayback {
         if (typeof answer.error === "string") throw new RangeError(answer.error);
         const steps = answer.steps as unknown[] | undefined;
         if (steps !== undefined && steps.length > 0) {
-            await runSteps(this.server, this.#runner, steps);
+            await executeSteps(this.server as unknown as Server, this.#instance, steps);
         }
         return answer;
     }
@@ -332,7 +336,31 @@ export class AudioDomain extends Domain<Buffer> {
         return true;
     }
 
+    executeOperation(_structure: Buffer, prepared: Record<string, unknown>, complete: (result: Record<string, any>) => void): void {
+        this.after(async () => {
+            if (this.editor === null) throw new Error("the operation owner is absent");
+            complete(await this.editor.operation({}, prepared));
+        });
+    }
+
+    async executeBatch(_structure: Buffer, server: { connection: number; generation: number }, steps: unknown[]): Promise<void> {
+        const editor = this.editor;
+        if (editor === null) throw new Error("the operation owner is absent");
+        editor.checkServer();
+        const instance = serviceInstance(editor.server);
+        if (server.connection !== instance.connection || server.generation !== instance.generation) throw new Error("the batch belongs to another server instance");
+        await executeSteps(editor.server as unknown as Server, server, steps);
+    }
+
     /** Keep a stepped object's playback current even when another file is viewed. */
+    operationReturned(_structure: Buffer, server: { connection: number; generation: number }, buffers: number[]): void {
+        if (this.editor !== null) this.editor.returned(server, buffers);
+    }
+
+    operationEcho(_structure: Buffer, answer: unknown): void {
+        this.editor?.echo.send(answer as never);
+    }
+
     soundFile(_structure: Buffer, file: Record<string, unknown>): void {
         this.#queue(async () => { await this.editor?.syncSound(file); });
     }
@@ -344,15 +372,14 @@ export class AudioDomain extends Domain<Buffer> {
     free(_structure: Buffer, buffers: number[], spilled: number[] = []): void {
         const editor = this.editor;
         if (editor === null || buffers.length === 0) return;
-        this.#queue(async () => {
-            editor.checkServer();
-            for (const bufnum of buffers) {
-                if (!spilled.includes(bufnum)) {
-                    editor.server.sendMsg("/buffer_free", ["i", Math.trunc(bufnum)]);
-                }
-                editor.server.buffers.free(Math.trunc(bufnum));
-            }
-        });
+        this.#queue(() => this.cleanup(buffers));
+    }
+
+    async cleanup(buffers: number[]): Promise<void> {
+        const editor = this.editor;
+        if (editor === null) return;
+        editor.checkServer();
+        await editor.releaseBuffers(buffers);
     }
 
     /**
@@ -360,15 +387,16 @@ export class AudioDomain extends Domain<Buffer> {
      * the page's storage full -- leaves the take in memory, and the crate is
      * told so.
      */
-    store(_structure: Buffer, buffer: number, steps: unknown[]): void {
+    store(_structure: Buffer, buffer: number, steps: unknown[], operation?: Record<string, unknown>): void {
         const editor = this.editor;
         if (editor === null) return;
         this.#work = this.#work.then(async () => {
             editor.checkServer();
             try {
-                await runSteps(editor.server, editor.runner, steps as never);
+                if (operation !== undefined) await editor.operation({}, operation);
+                else await executeSteps(editor.server as unknown as Server, serviceInstance(editor.server), steps);
             } catch {
-                editor.coreCall("kept", { buffer });
+                if (operation === undefined) editor.coreCall("kept", { buffer });
             }
         });
     }
@@ -392,11 +420,8 @@ export class AudioDomain extends Domain<Buffer> {
 
     /** One piece of work after the last, and a failure reported rather than swallowed. */
     #queue(run: () => Promise<void>): void {
-        this.#work = this.#work.then(run).catch((error: unknown) => {
-            queueMicrotask(() => {
-                throw error;
-            });
-        });
+        this.#work = this.#work.catch(() => {}).then(run);
+        void this.#work.catch(() => {});
     }
 }
 
@@ -492,11 +517,10 @@ export class AudioEditor extends Editor<Buffer> {
             this.editing.limitResident(options.residentBytes);
         }
         this.topUp();
-        const copied = this.coreCall("open");
-        if (typeof copied.error === "string") throw new RangeError(copied.error);
-        // **A private copy of the take**, and the join over it: the buffer the
-        // editor was handed is written by a save and by nothing else.
-        domain.run(take, (copied.steps as unknown[] | undefined) ?? []);
+        const opening = this.editing.serviceCall<Record<string, unknown>>("operation", {
+            action: "prepare", member: this.member, command: { kind: "open" },
+        });
+        domain.after(async () => { await this.operation({ kind: "open" }, opening); });
         this.playback = new AudioPlayback(this.server);
         this.#driver = new AudioDriver(this, this.playback);
         domain.after(() => this.sound());
@@ -597,6 +621,10 @@ export class AudioEditor extends Editor<Buffer> {
             codec: file.codec, sample_format: file.sampleFormat,
             buffers: Array.from({ length: SPARE }, () => this.server.buffers.alloc()),
         });
+        if (typeof answer.error === "string") {
+            this.editing.operationReturned(answer.returned as never);
+            this.editing.release(answer.freed as never, answer.stored as never);
+        }
         await this.applyFile(answer);
     }
 
@@ -694,12 +722,17 @@ export class AudioEditor extends Editor<Buffer> {
     private async applyFile(answer: Record<string, unknown>): Promise<void> {
         this.checkServer();
         if (typeof answer.error === "string") throw new RangeError(answer.error);
+        if (answer.operation !== undefined) {
+            const completed = await this.operation({}, answer.operation as Record<string, unknown>);
+            await this.applyFile(completed.outcome ?? {});
+            return;
+        }
         const action = answer.fileAction as { verb: string; file: number } | undefined;
         if (action?.verb === "close_file") {
             await this.playback.call("closeFile", { file: action.file });
         }
         await runSteps(this.server, this.runner, (answer.steps ?? []) as never);
-        for (const buffer of (answer.freedBuffers ?? []) as number[]) this.server.buffers.free(buffer);
+        await (this.domain as AudioDomain).cleanup((answer.freedBuffers ?? []) as number[]);
         if (action?.verb === "close_file") this.retainPlayback();
         if (answer.close === true) { this.close(); return; }
         if (answer.focusChanged !== true) {
@@ -738,6 +771,7 @@ export class AudioEditor extends Editor<Buffer> {
 
     private async sound(publishPreview = true): Promise<void> {
         const file = this.coreCall("playback");
+        if (file.active === false) return;
         await this.syncSound(file);
         const preview = file.preview as Record<string, unknown>;
         const state = await this.playback.call("state");
@@ -753,6 +787,8 @@ export class AudioEditor extends Editor<Buffer> {
 
     /** Sync one object's graph independently of the window's focus. @internal */
     async syncSound(file: Record<string, unknown>): Promise<void> {
+        this.dirty = this.coreCall("binding").dirty === true;
+        if (file.active === false) return;
         const id = Number(file.id);
         await this.playback.call("sync", { file: id, buffer: Number(file.display), channels: Number(file.channels),
             frames: Number(file.frames), takeRate: Number(file.rate), rate: this.playback.rate });
@@ -798,9 +834,10 @@ export class AudioEditor extends Editor<Buffer> {
      * now, the one the previous copy was in goes, and the host's clipboard
      * names it.
      */
-    private clipboard(doc: string, buffer: number): void {
+    private clipboard(doc: string, buffer: number, ready = false): void {
         this.checkServer();
-        doc = exchange(this.server, "publish", { document: doc }).document as string;
+        if (ready) bindExchange(this.server, this.editing.serviceCore);
+        else doc = exchange(this.server, "publish", { document: doc }).document as string;
         this.host?.clipboard(doc);
     }
 
@@ -839,6 +876,7 @@ export class AudioEditor extends Editor<Buffer> {
         options: Parameters<Editor<Buffer>["open"]>[1] = {},
     ): ReturnType<Editor<Buffer>["open"]> {
         await (this.domain as AudioDomain).idle();
+        if (this.windowId === null) this.coreCall("attach_view");
         const handle = await super.open(host, options);
         const transport = Number((await this.playback.call("state")).transport);
         this.host?.headClock(handle, "transport", transport);
@@ -854,6 +892,7 @@ export class AudioEditor extends Editor<Buffer> {
      * last one closed frees the editor's nodes.
      */
     protected override closedWindow(): boolean {
+        this.coreCall("detach_view");
         (this.domain as AudioDomain).after(async () => {
             await this.playback.call("close");
             this.dropPlayback();
@@ -863,6 +902,7 @@ export class AudioEditor extends Editor<Buffer> {
 
     /** Close the window, and free what sounded the take. */
     override close(): this {
+        this.coreCall("detach_view");
         (this.domain as AudioDomain).after(async () => {
             await this.playback.call("close");
             this.dropPlayback();
@@ -955,6 +995,61 @@ export class AudioEditor extends Editor<Buffer> {
         return this.verb("mix");
     }
 
+    /** Execute resource cleanup against this composition's exact tickets. @internal */
+    async releaseBuffers(buffers: number[]): Promise<void> {
+        const server = serviceInstance(this.server);
+        for (const buffer of buffers) {
+            await releaseBuffer(this.server as unknown as Server, this.editing.serviceCore, { server, buffer });
+        }
+    }
+
+    /** Return ids only to the allocator for their original incarnation. @internal */
+    returned(server: { connection: number; generation: number }, buffers: number[]): void {
+        const current = serviceInstance(this.server);
+        if (server.connection !== current.connection || server.generation !== current.generation) return;
+        for (const buffer of buffers) this.server.buffers.free(buffer);
+    }
+
+    /** Execute typed batches; commit, refusal and cleanup come from Rust. @internal */
+    async operation(command: Record<string, unknown>, prepared?: Record<string, unknown>): Promise<Record<string, any>> {
+        let answer: Record<string, any> = prepared ?? this.editing.serviceCall("operation", {
+            action: "prepare", member: this.member, command,
+        });
+        while (answer.complete !== true) {
+            if (answer.accepted === false) throw new Error("the operation is no longer available");
+            if (typeof answer.error === "string") throw new RangeError(answer.error);
+            let result: { status: string; reason?: string };
+            try {
+                await this.editing.executeBatch(Number(answer.member), answer.server, answer.steps ?? []);
+                result = { status: "success" };
+            } catch (error) {
+                result = { status: "failed", reason: String(error) };
+            }
+            answer = this.editing.serviceCall("operation", {
+                action: "complete", ticket: answer.ticket, batch: answer.batch, result,
+            });
+        }
+        if (answer.repair !== undefined) {
+            const ticket = answer.repair;
+            try {
+                for (const recovery of answer.recoveries ?? []) await this.editing.executeBatch(Number(recovery.member), recovery.server, recovery.steps ?? []);
+            } catch (error) {
+                answer = this.editing.serviceCall("operation", { action: "repairFailed", ticket, reason: String(error) });
+            }
+            if (answer.repair !== undefined) answer = this.editing.serviceCall("operation", { action: "repaired", ticket });
+        }
+        this.editing.version = Number(answer.version ?? this.editing.version);
+        this.editing.operationReturned(answer.returned);
+        this.editing.operationEcho(answer.echo);
+        this.editing.release(answer.freed, answer.stored);
+        this.dirty = Boolean(this.coreCall("binding").dirty);
+        if (answer.committed !== true) {
+            if (answer.echo == null) this.echo.send(answer.outcome?.answer);
+            throw new Error(answer.reason ?? answer.outcome?.answer?.reason ?? "the operation was refused");
+        }
+        return answer;
+    }
+
     /**
      * **Writes the take as the edits have left it** -- over what it was opened
      * from (the file it was read from, or the server buffer it was opened
@@ -982,22 +1077,16 @@ export class AudioEditor extends Editor<Buffer> {
         if (path !== undefined) request.path = path;
         else if (buffer === true) request.buffer = this.server.buffers.alloc();
         else if (buffer !== undefined) request.buffer = Math.trunc(buffer.bufnum);
-        const answer = this.coreCall("save", request);
-        if (typeof answer.error === "string") throw new RangeError(answer.error);
-        const domain = this.domain as AudioDomain;
-        domain.run(this.structure, (answer.steps as unknown[] | undefined) ?? []);
-        await domain.idle();
+        await (this.domain as AudioDomain).idle();
+        this.syncCore();
+        const completed = await this.operation({ kind: "save", ...request });
+        this.take((completed.outcome ?? {}) as Outcome);
+        const answer = completed.destination;
         if (typeof answer.path === "string") {
             return answer.path;
         }
-        const frames = Number(this.coreCall("parts").frames ?? 0);
-        return new Buffer(
-            Number(answer.buffer),
-            frames,
-            Math.max(1, Math.trunc(this.structure.channels || 1)),
-            this.sampleRate,
-            this.server,
-        );
+        return new Buffer(Number(answer.buffer), Number(answer.frames), Number(answer.channels),
+            Number(answer.rate), this.server);
     }
 
     /**
@@ -1042,7 +1131,7 @@ export class AudioEditor extends Editor<Buffer> {
             : { args: plain([...rawArgs]) };
         const turned = this.editing.event(this.member, addr, prepared.args as unknown[]);
         const outcome = (turned.outcome ?? {}) as Outcome;
-        outcome.clipboardLease = prepared.lease as number | undefined;
+        outcome.clipboardLease = prepared.lease as ExchangeLease | undefined;
         if (outcome.turn === "closed") return this.closedWindow();
         if (outcome.turn === "step") {
             const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
@@ -1067,6 +1156,18 @@ export class AudioEditor extends Editor<Buffer> {
      * take changed.
      */
     private take(outcome: Outcome): boolean {
+        if (outcome.operation !== undefined) {
+            const work = outcome.operation;
+            (this.domain as AudioDomain).after(async () => {
+                try {
+                    const completed = await this.operation({}, work);
+                    this.editing.turn(this, () => this.take((completed.outcome ?? {}) as Outcome));
+                } finally {
+                    if (outcome.clipboardLease !== undefined) exchange(this.server, "release", { lease: outcome.clipboardLease });
+                }
+            });
+            return outcome.changed === true;
+        }
         if (outcome.turn === undefined || outcome.turn === "nothing") {
             if (outcome.clipboardLease !== undefined) exchange(this.server, "release", { lease: outcome.clipboardLease });
             return false;
@@ -1100,14 +1201,14 @@ export class AudioEditor extends Editor<Buffer> {
                     this.checkServer();
                     await runSteps(this.server, new StepRunner(), steps as never);
                     if (outcome.clipboard !== undefined && outcome.clipboardBuffer !== undefined) {
-                        this.clipboard(outcome.clipboard, outcome.clipboardBuffer);
+                        this.clipboard(outcome.clipboard, outcome.clipboardBuffer, outcome.clipboardReady === true);
                         published = true;
                         if (outcome.clipboardCut !== undefined) {
                             this.syncCore();
                             this.editing.turn(this, () => {
                                 const continued = this.editing.act(this.member, outcome.clipboardCut!);
                                 const next = (continued.outcome ?? {}) as Outcome;
-                                if (next.answer !== undefined) next.answer.seq = outcome.answer?.seq ?? 0;
+                                if (next.answer != null) next.answer.seq = outcome.answer?.seq ?? 0;
                                 this.take(next);
                                 this.editing.release(continued.freed, continued.stored);
                             });
@@ -1145,10 +1246,17 @@ export class AudioEditor extends Editor<Buffer> {
             const paths = outcome.openFile.paths;
             domain.after(() => this.openPaths(paths));
         }
+        if (outcome.playbackUpdate !== undefined) {
+            const update = outcome.playbackUpdate;
+            domain.after(async () => {
+                await this.syncSound(update.file);
+                if (update.publish) await this.sound();
+            });
+        }
         if (changed) {
-            this.dirty = true;
+            this.dirty = this.coreCall("binding").dirty === true;
             this.editing.changed();
-            domain.after(() => this.sound());
+            if (outcome.preparedComplete !== true) domain.after(() => this.sound());
         }
         if (outcome.preview !== undefined && !changed) domain.after(() => this.sound());
         const play = outcome.play;
@@ -1203,7 +1311,10 @@ export class AudioEditor extends Editor<Buffer> {
      * again has landed, since what the window is told is to read it again.
      */
     override reflectStep(): void {
-        (this.domain as AudioDomain).after(() => super.reflectStep());
+        (this.domain as AudioDomain).after(() => {
+            super.reflectStep();
+            this.dirty = this.coreCall("binding").dirty === true;
+        });
     }
 
     /**

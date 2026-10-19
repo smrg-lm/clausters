@@ -260,6 +260,7 @@ test("a cut copies before removing samples", async () => {
     );
     assert.equal(editor.buffer.frames, 80);
     assert.equal(editor.undo(), true);
+    await settle();
     assert.equal(editor.buffer.frames, 100);
 });
 
@@ -289,9 +290,13 @@ test("a save writes the edited take over its file or as another", async () => {
     const [editor] = await opened(take);
     take.server.sent = [];
     assert.equal(await editor.save(), "/takes/a.wav");
-    assert.deepEqual(take.server.sent, [
-        ["/buffer_write", [editor.buffer.bufnum, "/takes/a.wav", "wav", "float"]],
-    ]);
+    await settle();
+    const write = take.server.sent.find(([addr]) => addr === "/buffer_write")![1];
+    const snapshot = write[0];
+    assert.notEqual(snapshot, editor.buffer.bufnum);
+    assert.deepEqual(write.slice(1), ["/takes/a.wav", "wav", "float"]);
+    assert.ok(take.server.sent.some(([addr, args]) => addr === "/buffer_gen" && args[0] === snapshot && args[3] === editor.buffer.bufnum));
+    assert.ok(take.server.sent.some(([addr, args]) => addr === "/buffer_free" && args[0] === snapshot));
     assert.equal(await editor.save({ path: "/takes/b.wav", sampleFormat: "int24" }), "/takes/b.wav");
     assert.equal(await editor.save(), "/takes/b.wav");
 });
@@ -304,7 +309,10 @@ test("a save over a buffer rewrites it or writes a new one", async () => {
     take.server.sent = [];
     const saved = (await editor.save()) as { bufnum: number; frames: number };
     assert.deepEqual([saved.bufnum, saved.frames], [take.bufnum, 80]);
-    assert.deepEqual(take.server.addrs(), ["/buffer_alloc", "/server_sync", "/buffer_gen"]);
+    const copies = take.server.sent.filter(([addr]) => addr === "/buffer_gen").map(([, args]) => args);
+    assert.equal(copies[0]![3], editor.buffer.bufnum);
+    assert.equal(copies.at(-1)![0], take.bufnum);
+    assert.equal(copies.at(-1)![3], copies[0]![0]);
     const fresh = (await editor.save({ buffer: true })) as { bufnum: number };
     assert.ok(![take.bufnum, editor.buffer.bufnum].includes(fresh.bufnum));
     assert.equal(((await editor.save()) as { bufnum: number }).bufnum, fresh.bufnum, "a later save writes there");
@@ -854,6 +862,7 @@ test("clipboard replacement does not free a previous server incarnations id", as
     publish(second, 701);
     assert.ok(!take.server.sent.some(([addr, args]) => addr === "/buffer_free" && Number(args[0]) === 700));
     publish(second, 702);
+    await settle();
     assert.ok(take.server.sent.some(([addr, args]) => addr === "/buffer_free" && Number(args[0]) === 701));
     second.close();
 });
@@ -979,4 +988,91 @@ test("undo redo correct only composed views while optional ids stay stable", asy
         }
     }
     editor.close();
+});
+
+test("failed save keeps destination and undo to saved revision is clean", async () => {
+    const take = new FakeBuffer();
+    const [editor, _host, wid, context] = await opened(take);
+    editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]]);
+    await settle();
+    await editor.save({ path: "/takes/saved.wav" });
+    editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 20, [0.25], [0.0]]);
+    await settle();
+    const request = take.server.request.bind(take.server);
+    take.server.request = (addr, args) => addr === "/buffer_write"
+        ? Promise.resolve({ addr: "/fail", args: [addr, "quota exceeded"] }) : request(addr, args);
+    await assert.rejects(editor.save({ path: "/takes/refused.wav" }), /quota/);
+    assert.equal(editor.file!.path, "/takes/saved.wav");
+    assert.equal(editor.dirty, true);
+    take.server.request = request;
+    assert.equal(editor.undo(), true);
+    await settle();
+    assert.equal(editor.dirty, false);
+    assert.equal(editor.redo(), true);
+    await settle();
+    assert.equal(editor.dirty, true);
+    assert.equal(await editor.save(), "/takes/saved.wav");
+    assert.equal(editor.dirty, false);
+    editor.close();
+    await settle();
+});
+
+test("failed file open keeps existing files and returns reserved ids", async () => {
+    const take = new FakeBuffer();
+    const [editor] = await opened(take);
+    const allocated: number[] = [];
+    const originalRead = SoundFile.prototype.toBuffer;
+    const request = take.server.request.bind(take.server);
+    SoundFile.prototype.toBuffer = async function({ server } = {}) {
+        const endpoint = server as unknown as FakeServer;
+        const number = endpoint.buffers.alloc();
+        allocated.push(number);
+        return { bufnum: number, frames: this.frames, channels: this.channels, sampleRate: this.sampleRate,
+            server, path: this.path } as never;
+    };
+    try {
+        take.server.request = (addr, args) => addr === "/buffer_gen"
+            ? Promise.resolve({ addr: "/fail", args: [addr, "copy refused"] }) : request(addr, args);
+        const before = editor.files.length;
+        await assert.rejects(editor.newFile(1, 50, SR), /copy refused/);
+        await settle();
+        assert.equal(editor.files.length, before);
+        assert.ok(take.server.buffers.freed.includes(allocated[0]!));
+        assert.equal(take.server.buffers.freed.length, new Set(take.server.buffers.freed).size);
+        take.server.request = request;
+        await editor.newFile(1, 50, SR);
+        assert.equal(editor.files.length, before + 1);
+    } finally {
+        SoundFile.prototype.toBuffer = originalRead;
+        take.server.request = request;
+        editor.close();
+        await settle();
+    }
+});
+
+test("failed cleanup keeps buffer id reserved until successful retry", async () => {
+    const take = new FakeBuffer();
+    const [editor, _host, wid, context] = await opened(take);
+    editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 10, [0.5], [0.0]]);
+    await settle();
+    const first = spans(editor)[1]![0];
+    assert.equal(editor.undo(), true);
+    await settle();
+    const request = take.server.request.bind(take.server);
+    take.server.request = (addr, args) => addr === "/buffer_free"
+        ? Promise.resolve({ addr: "/fail", args: [addr, "free refused"] }) : request(addr, args);
+    editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 30, [0.5], [0.0]]);
+    await settle();
+    assert.equal(take.server.buffers.freed.includes(first), false);
+    const pending = context.serviceCall<{ tickets: { ticket: { resource: { buffer: number } }; reason: string }[] }>("cleanup", { action: "pending" }).tickets;
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0]!.ticket.resource.buffer, first);
+    assert.match(pending[0]!.reason, /free refused/);
+    take.server.request = request;
+    await editor.releaseBuffers([first]);
+    await editor.releaseBuffers([first]);
+    assert.equal(take.server.buffers.freed.filter((id) => id === first).length, 1);
+    assert.deepEqual(context.serviceCall("cleanup", { action: "pending" }).tickets, []);
+    editor.close();
+    await settle();
 });

@@ -8,3 +8,15 @@ pub mod histories;
 pub mod clipboard;
 
 pub mod resources;
+
+/// Typed preparation and completion of pending work.
+pub mod operations;
+
+/// Explicit application composition and its typed lifecycle.
+pub mod services;
+
+/// Reusable operation and recovery orchestration.
+pub mod runtime;
+
+/// Multi-object history confirmation over typed application participants.
+pub mod walks;

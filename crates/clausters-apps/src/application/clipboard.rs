@@ -5,26 +5,42 @@
 //! replacement and whether a remote reference is still usable.
 
 use clausters_document::clipboard::{BufferLocation, Clipboard, Content};
-use serde_json::{Value, json};
 
 use super::resources::{ResourceId, Resources, Root, RootKind, ServerInstance, Source};
 
 /// A clipboard exchange, usable without a renderer or an open document.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Exchange {
-    resources: Resources,
+    owner: u64,
+    readers: std::collections::BTreeMap<u64, Root>,
     published: Option<Clipboard>,
     next: u64,
 }
 
 impl Exchange {
+    /// A clipboard consumer with its own composition-scoped owner identity.
+    pub fn new(owner: u64) -> Self {
+        Self {
+            owner,
+            readers: std::collections::BTreeMap::new(),
+            published: None,
+            next: 0,
+        }
+    }
+
     fn root(kind: RootKind, owner: u64) -> Root {
         Root { kind, owner }
     }
 
-    fn publish(&mut self, raw: &str, server: ServerInstance) -> Result<String, String> {
-        let mut doc: Clipboard =
-            serde_json::from_str(raw).map_err(|_| "invalid clipboard document")?;
+    /// Publish immutable buffer contents after their producing work completes.
+    pub fn publish(
+        &mut self,
+        resources: &mut Resources,
+        document: Clipboard,
+        server: ServerInstance,
+        member: u32,
+    ) -> Result<String, String> {
+        let mut doc = document;
         let Content::Buffer {
             channels,
             frames,
@@ -51,7 +67,7 @@ impl Exchange {
             server,
             buffer: i64::from(*buffer),
         };
-        if !self.resources.valid(server) || self.resources.source(id).is_some() {
+        if !resources.valid(server) || self.published.as_ref().is_some_and(|doc| matches!(&doc.content, Content::Buffer { buffer, .. } if i64::from(*buffer) == id.buffer)) {
             return Err("a publication needs a fresh buffer on a live instance".into());
         }
         self.next += 1;
@@ -62,28 +78,39 @@ impl Exchange {
                 clausters_core::rng::entropy_seed() ^ self.next,
             ) & ((1u64 << 52) - 1),
         });
-        self.resources.register(Source {
-            id,
-            member: 0,
-            bytes,
-            owned: true,
-            stored: None,
-        });
-        self.resources
-            .retain(Self::root(RootKind::Clipboard, 0), [id]);
+        if resources.source(id).is_some_and(|source| {
+            source.bytes != bytes || !source.owned || resources.retained_as(id, RootKind::Contents)
+        }) {
+            return Err("the publication does not match its owned source".into());
+        }
+        if resources.source(id).is_none() {
+            resources.register(Source {
+                id,
+                member,
+                bytes,
+                owned: true,
+                stored: None,
+            });
+        }
+        resources.retain(Self::root(RootKind::Clipboard, self.owner), [id]);
         let raw = doc.to_json();
         self.published = Some(doc);
         Ok(raw)
     }
 
-    fn acquire(&mut self, raw: &str, server: ServerInstance) -> Result<Option<u64>, String> {
-        let doc = Clipboard::parse(raw);
+    /// Retain one publication for a reader on the same server incarnation.
+    pub fn acquire(
+        &mut self,
+        resources: &mut Resources,
+        doc: Clipboard,
+        server: ServerInstance,
+    ) -> Result<Option<u64>, String> {
         let Content::Buffer {
             buffer, location, ..
         } = &doc.content
         else {
             // Reconcile external text/typed replacement at the next exchange.
-            self.clear();
+            self.clear(resources);
             return Ok(None);
         };
         let location = location.ok_or("the clipboard buffer has no owning exchange")?;
@@ -93,9 +120,8 @@ impl Exchange {
         if self.published.as_ref() != Some(&doc) {
             return Err("the clipboard buffer publication is no longer available".into());
         }
-        self.next += 1;
-        let lease = self.next;
-        if !self.resources.retain(
+        let lease = resources.new_owner();
+        if !resources.retain(
             Self::root(RootKind::Pending, lease),
             [ResourceId {
                 server,
@@ -104,135 +130,142 @@ impl Exchange {
         ) {
             return Err("the clipboard server instance is no longer available".into());
         }
+        self.readers
+            .insert(lease, Self::root(RootKind::Pending, lease));
         Ok(Some(lease))
     }
 
-    fn clear(&mut self) {
-        self.published = None;
-        self.resources.drop_root(Self::root(RootKind::Clipboard, 0));
+    /// End a reader without interpreting an editor action or host event.
+    pub fn release(&mut self, resources: &mut Resources, lease: u64) {
+        if let Some(root) = self.readers.remove(&lease) {
+            resources.drop_root(root);
+        }
     }
 
-    /// Internal JSON port through the existing editing door. `publish` is
-    /// called only after copy steps succeeded; `acquire` brackets paste I/O.
-    /// `release` ends a reader even on failure. `clear` reconciles replacement;
-    /// `invalidate` forgets a lost endpoint without freeing on its replacement.
-    pub fn call(&mut self, request: &Value) -> Value {
-        let server = serde_json::from_value(request["server"].clone()).unwrap_or_default();
-        let raw = request["document"].as_str().unwrap_or_default();
-        let mut result = match request["action"].as_str().unwrap_or_default() {
-            "event" => {
-                let mut args = request["args"].as_array().cloned().unwrap_or_default();
-                let tag = args
-                    .get(3)
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned();
-                if tag == "cut" {
-                    args[3] = json!("copy_cut");
-                }
-                let mut result = json!({});
-                if matches!(tag.as_str(), "paste" | "mix") {
-                    let raw = args.get(6).and_then(Value::as_str).unwrap_or_default();
-                    match self.acquire(raw, server) {
-                        Ok(lease) => result["lease"] = json!(lease),
-                        Err(error) => {
-                            args.truncate(3);
-                            args.extend([json!("refused"), json!(tag), json!(error)]);
-                        }
-                    }
-                }
-                result["args"] = json!(args);
-                result
-            }
-            "publish" => match self.publish(raw, server) {
-                Ok(document) => json!({"document": document}),
-                Err(error) => json!({"error": error}),
-            },
-            "acquire" => match self.acquire(raw, server) {
-                Ok(lease) => json!({"lease": lease}),
-                Err(error) => json!({"error": error}),
-            },
-            "release" => {
-                if let Some(lease) = request["lease"].as_u64() {
-                    self.resources
-                        .drop_root(Self::root(RootKind::Pending, lease));
-                }
-                json!({})
-            }
-            "clear" => {
-                self.clear();
-                json!({})
-            }
-            "invalidate" => {
-                self.resources.invalidate(server);
-                self.published = None;
-                json!({})
-            }
-            _ => json!({"error": "unknown clipboard exchange action"}),
-        };
-        result["released"] = json!(
-            self.resources
-                .collect()
-                .into_iter()
-                .map(|s| s.id)
-                .collect::<Vec<_>>()
-        );
-        result
+    /// End this publication while retaining independent readers.
+    pub fn clear(&mut self, resources: &mut Resources) {
+        self.published = None;
+        resources.drop_root(Self::root(RootKind::Clipboard, self.owner));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
-    fn copy(exchange: &mut Exchange, buffer: i64) -> Value {
-        exchange.call(&json!({"action":"publish", "server":{"connection":1,"generation":1},
-            "document":json!({"content":{"kind":"buffer","buffer":buffer,"channels":1,"frames":4,"sample_rate":48000}}).to_string()}))
+    fn doc(buffer: i64) -> Clipboard {
+        serde_json::from_value(json!({"content":{"kind":"buffer","buffer":buffer,"channels":1,"frames":4,"sample_rate":48000}})).unwrap()
     }
-
-    #[test]
-    fn replacement_waits_for_readers_and_stale_references_refuse() {
-        let mut exchange = Exchange::default();
-        let first = copy(&mut exchange, 20);
-        let acquired = exchange.call(&json!({"action":"acquire","server":{"connection":1,"generation":1},"document":first["document"]}));
-        let second = copy(&mut exchange, 21);
-        assert_eq!(second["released"], json!([]));
-        let stale = exchange.call(&json!({"action":"acquire","server":{"connection":1,"generation":1},"document":first["document"]}));
-        assert!(stale["error"].is_string());
-        let release = exchange.call(&json!({"action":"release","lease":acquired["lease"]}));
-        assert_eq!(release["released"][0]["buffer"], 20);
-        assert_eq!(
-            exchange.call(&json!({"action":"release","lease":acquired["lease"]}))["released"],
-            json!([])
-        );
-    }
-
-    #[test]
-    fn text_replacement_releases_and_foreign_incarnations_refuse() {
-        let mut exchange = Exchange::default();
-        let first = copy(&mut exchange, 20);
-        for server in [
-            json!({"connection":2,"generation":1}),
-            json!({"connection":1,"generation":2}),
-        ] {
-            let refused = exchange
-                .call(&json!({"action":"acquire","server":server,"document":first["document"]}));
-            assert!(refused["error"].is_string());
-            assert_eq!(refused["released"], json!([]));
+    fn server() -> ServerInstance {
+        ServerInstance {
+            connection: 1,
+            generation: 1,
         }
-        let text = exchange.call(&json!({"action":"acquire","document":"external text"}));
-        assert_eq!(text["released"][0]["buffer"], 20);
     }
 
     #[test]
-    fn invalidation_does_not_release_buffers_on_a_replacement() {
-        let mut exchange = Exchange::default();
-        copy(&mut exchange, 20);
-        assert_eq!(
-            exchange.call(&json!({"action":"invalidate","server":{"connection":1,"generation":1}}))
-                ["released"],
-            json!([])
+    fn publishing_mutable_contents_preserves_the_previous_clipboard() {
+        let mut resources = Resources::default();
+        let mut exchange = Exchange::new(resources.new_owner());
+        let previous = exchange
+            .publish(&mut resources, doc(20), server(), 7)
+            .unwrap();
+        let id = ResourceId {
+            server: server(),
+            buffer: 30,
+        };
+        resources.register(Source {
+            id,
+            member: 7,
+            bytes: 16,
+            owned: true,
+            stored: None,
+        });
+        let contents = Root {
+            kind: RootKind::Contents,
+            owner: 7,
+        };
+        resources.retain(contents, [id]);
+        assert!(
+            exchange
+                .publish(&mut resources, doc(30), server(), 7)
+                .is_err()
         );
-        assert!(copy(&mut exchange, 21)["error"].is_string());
+        assert!(
+            exchange
+                .acquire(&mut resources, Clipboard::parse(&previous), server())
+                .unwrap()
+                .is_some()
+        );
+        resources.drop_root(contents);
+        assert!(
+            exchange
+                .publish(&mut resources, doc(30), server(), 7)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn clipboard_and_history_retain_the_same_source_in_one_graph() {
+        let mut resources = Resources::default();
+        let mut exchange = Exchange::new(resources.new_owner());
+        let raw = exchange
+            .publish(&mut resources, doc(20), server(), 7)
+            .unwrap();
+        let id = ResourceId {
+            server: server(),
+            buffer: 20,
+        };
+        let history = Root {
+            kind: RootKind::History,
+            owner: 2,
+        };
+        assert!(resources.retain(history, [id]));
+        let lease = exchange
+            .acquire(&mut resources, Clipboard::parse(&raw), server())
+            .unwrap()
+            .unwrap();
+        exchange.clear(&mut resources);
+        assert!(resources.collect().is_empty());
+        exchange.release(&mut resources, lease);
+        assert!(resources.collect().is_empty());
+        resources.drop_root(history);
+        assert_eq!(resources.collect()[0].member, 7);
+        assert!(resources.collect().is_empty());
+    }
+
+    #[test]
+    fn replacement_readers_and_foreign_incarnations_are_independent() {
+        let mut resources = Resources::default();
+        let mut a = Exchange::new(resources.new_owner());
+        let mut b = Exchange::new(resources.new_owner());
+        let raw = a.publish(&mut resources, doc(20), server(), 1).unwrap();
+        b.publish(&mut resources, doc(21), server(), 2).unwrap();
+        assert!(
+            a.acquire(
+                &mut resources,
+                Clipboard::parse(&raw),
+                ServerInstance {
+                    generation: 2,
+                    ..server()
+                }
+            )
+            .is_err()
+        );
+        let lease = a
+            .acquire(&mut resources, Clipboard::parse(&raw), server())
+            .unwrap()
+            .unwrap();
+        a.publish(&mut resources, doc(22), server(), 1).unwrap();
+        assert!(resources.collect().is_empty());
+        a.release(&mut resources, lease);
+        assert_eq!(resources.collect()[0].id.buffer, 20);
+        a.clear(&mut resources);
+        assert_eq!(resources.collect()[0].id.buffer, 22);
+        assert!(resources.retained(ResourceId {
+            server: server(),
+            buffer: 21
+        }));
     }
 }

@@ -47,7 +47,7 @@ impl AudioEditor {
 
     pub(crate) fn playback_file(&self) -> Value {
         json!({"id":self.file.id, "display":self.file.display, "channels":self.file.channels,
-            "frames":self.length(), "rate":self.file.rate, "preview":self.preview_state()})
+            "frames":self.length(), "rate":self.file.rate, "preview":self.preview_state(), "active":self.window_state.active})
     }
 
     pub(super) fn binding(&self) -> Value {
@@ -57,6 +57,10 @@ impl AudioEditor {
             "rate": self.file.rate, "frames": self.length(), "cursor": self.file.presentation.cursor.unwrap_or(0),
             "span": if end > start { json!([start as f64 / self.file.rate, end as f64 / self.file.rate]) } else { Value::Null },
             "file": self.file(), "layers": self.layers(), "looping": self.file.presentation.looping, "dirty": self.file.dirty})
+    }
+
+    pub(crate) fn file_at(&self, index: usize) -> Option<i64> {
+        self.open_files.rows.get(index)?.get("id")?.as_i64()
     }
 
     pub(super) fn refresh_files(&mut self) {
@@ -80,9 +84,19 @@ impl AudioEditor {
 
     pub(super) fn add_file(&mut self, file: AudioEditor) {
         self.refresh_files();
-        let mut next = file.file;
+        self.add_file_state(file.file, true);
+    }
+
+    pub(super) fn add_file_state(&mut self, mut next: AudioFileState, focus: bool) {
+        self.refresh_files();
         next.id = FileId(self.open_files.next_id);
         self.open_files.next_id += 1;
+        if !focus && self.open_files.open {
+            self.open_files.rows.push(next.description());
+            self.open_files.parked.insert(next.id, next);
+            self.refresh_files();
+            return;
+        }
         let was = std::mem::replace(&mut self.file, next);
         if self.open_files.open {
             self.open_files.parked.insert(was.id, was);
@@ -318,6 +332,26 @@ impl AudioEditor {
         (None, corrected(shown))
     }
 
+    pub(crate) fn saves_from(&self, widget: i64, tag: &str, values: &[Value]) -> bool {
+        if tag == "save" {
+            return !(self.untitled() && dialogs::numbered(&self.window_state.dialogs));
+        }
+        let Some(open) = self
+            .window_state
+            .dialog
+            .as_ref()
+            .filter(|open| open.form == Form::SaveAs)
+        else {
+            return false;
+        };
+        self.dialog_name(widget).is_some_and(|name| {
+            matches!(
+                forms::read(open.form, &name, tag, values),
+                Some(Said::Accept)
+            )
+        })
+    }
+
     /// **A save from the window**: over what the take was opened from, or --
     /// for a file not written yet, in a window with dialogs -- the save-as
     /// form, which asks where.
@@ -331,6 +365,7 @@ impl AudioEditor {
         match self.save(None, "float") {
             Ok(steps) => {
                 out.steps = Some(steps);
+                out.save_requested = true;
                 (None, Vec::new())
             }
             Err(why) => (Some(why), Vec::new()),
@@ -414,6 +449,7 @@ impl AudioEditor {
                             match self.save(Some(Target::File(path)), "float") {
                                 Ok(steps) => {
                                     out.steps = Some(steps);
+                                    out.save_requested = true;
                                     None
                                 }
                                 Err(why) => Some(why),
@@ -494,7 +530,7 @@ impl AudioFileState {
             .frames
             .keys()
             .copied()
-            .filter(|b| !self.spilled.contains(b))
+            .filter(|b| !self.spilled.contains(b) && (*b != self.opened || self.owns_opened))
             .chain(self.spare.iter().copied())
             .chain([self.display])
             .collect();

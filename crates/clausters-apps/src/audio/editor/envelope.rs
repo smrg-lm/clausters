@@ -160,8 +160,13 @@ impl AudioEditor {
         {
             "finish_cut" => {
                 if request.get("file").and_then(Value::as_i64) != Some(self.focused_file())
-                    || request["before"].as_str()
-                        != Some(self.file.contents.payload().0.to_string().as_str())
+                    || request["beforeRevision"].as_u64().map_or_else(
+                        || {
+                            request["before"].as_str()
+                                != Some(self.file.contents.payload().0.to_string().as_str())
+                        },
+                        |revision| revision != self.file.revision,
+                    )
                 {
                     (
                         Some("the cut target changed while the copy was pending".into()),
@@ -211,7 +216,9 @@ impl AudioEditor {
         } else {
             conversation::answer(0, out.version, reason, corrections)
         });
-        self.file.dirty |= out.changed;
+        if out.changed {
+            self.file.dirty = self.file.revision != self.file.saved_revision;
+        }
         out
     }
 
@@ -227,7 +234,7 @@ impl AudioEditor {
         self.set_envelope(&flat, out)
     }
 
-    fn set_envelope(
+    pub(super) fn set_envelope(
         &mut self,
         flat: &[f64],
         out: &mut Outcome,
@@ -340,6 +347,7 @@ impl AudioEditor {
         ];
         steps.extend(self.stitched());
         out.record = Some(self.record("apply gain envelope", &before));
+        out.planned_steps = steps.clone();
         out.steps = Some(steps_json(&steps));
         out.changed = true;
         out.version += 1;

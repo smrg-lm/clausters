@@ -228,7 +228,10 @@
           throw new Error("a discarded spilled redo source was not released");
         log("application services: OPFS spill/restore and final source release, without a renderer");
         let clipboard = "";
-        editor.host = { clipboard: (document) => { clipboard = document; } };
+        // No renderer: accept the normal host acknowledgement/correction
+        // messages while inspecting the copied document and real samples.
+        editor.host = { clipboard: (document) => { clipboard = document; },
+          ack: () => {}, push: () => {}, set: () => {} };
         editor.apply("/gui_event", [1234, 4, editor.editing.version, "copy", 10, 1]);
         await idle();
         if (!JSON.parse(clipboard).content.location) throw new Error("copy has no exchange identity");

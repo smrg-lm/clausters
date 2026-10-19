@@ -61,13 +61,18 @@ code that keeps it lives.
   that draws its play cursor included, reads it by the take's rate over the
   engine's.
 
+- **Successful I/O still requires application confirmation.** A sample edit changes contents/history only after its batches succeed and the original revision is accepted. A rejected commit retains its pending sources until repair settles. A save confirms its destination and saved content revision after I/O; undo to that revision is clean, and edits made during save remain dirty. A completion for a closed/recreated view cannot update its widgets or recreate playback.
+- **Collection does not return allocator ids before acknowledgement.** Unreferenced owned sources enter retiring storage in the resource service. Failed cleanup keeps the reservation and its error for retry; an exact release ticket is consumed once. Closing a file follows this same cleanup path. Invalidating a server retires its operations, repairs, locks and cleanup tickets without sending frees to its replacement.
+
 ## Views and layers
 
 - **Corrections address composed components.** A view's event and correction
   registry includes only widgets present in its current tree. Reserving a
   stable id for an optional component does not make it a correction target;
   removing a stacked lane stops its corrections, and showing it again reuses
-  its id. Undo/redo keeps this rule when files or view layouts change.
+  its id. Pending operations rebuild corrections from the current composed
+  state when they finish; a recreated binding receives a fresh state push,
+  rather than the old gesture receipt. Undo/redo keeps this rule when files or view layouts change.
 
 - **Four words, each its own question.** A **view** is one picture of an
   object on a lane (the waveform, the spectrogram). A **visualization layer** is

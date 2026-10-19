@@ -460,6 +460,15 @@ class Editing:
         self.release(stepped.get("freed"), stepped.get("stored"))
 
     def _carry(self, stepped: dict) -> None:
+        if stepped.get("operation") is not None:
+            prepared = stepped["operation"]
+            member = int(prepared["member"])
+            structure, handler = self._handlers.get(member, (None, None))
+            if handler is None or not hasattr(handler, "execute_operation"):
+                raise RuntimeError("the history operation has no executor")
+            completed = handler.execute_operation(structure, prepared)
+            self._carry(completed.get("stepped") or {})
+            return
         for effect in stepped.get("effects") or ():
             structure, handler = self._handlers.get(int(effect.get("member", -1)),
                                                     (None, None))
@@ -479,6 +488,26 @@ class Editing:
             for payload in effect.get("payloads") or ():
                 if isinstance(payload, dict):
                     handler.project(structure, payload)
+
+    def _operation_returned(self, returned):
+        if returned is None:
+            return
+        structure, handler = self._handlers.get(int(returned["member"]), (None, None))
+        if handler is not None and hasattr(handler, "operation_returned"):
+            handler.operation_returned(structure, returned["server"], returned.get("buffers") or [])
+
+    def _operation_echo(self, echo):
+        if echo is None:
+            return
+        structure, handler = self._handlers.get(int(echo["member"]), (None, None))
+        if handler is not None and hasattr(handler, "operation_echo"):
+            handler.operation_echo(structure, echo["answer"])
+
+    def _run_batch(self, member, server, steps):
+        structure, handler = self._handlers.get(int(member), (None, None))
+        if handler is None or not hasattr(handler, "execute_batch"):
+            raise RuntimeError("the operation has no endpoint executor")
+        handler.execute_batch(structure, server, steps)
 
     def release(self, freed, stored=None) -> None:
         """**Free the takes nothing reaches any more, and write to disk the
@@ -501,7 +530,8 @@ class Editing:
             member = int(entry.get("member", -1))
             structure, handler = self._handlers.get(member, (None, None))
             if handler is not None and hasattr(handler, "store"):
-                handler.store(structure, int(entry["buffer"]), entry.get("steps") or [])
+                handler.store(structure, int(entry["buffer"]), entry.get("steps") or [],
+                              operation=entry.get("operation"))
 
     def state(self, member: "int | None" = None) -> dict:
         """What an undo menu reads of the order `step` walks for ``member``:

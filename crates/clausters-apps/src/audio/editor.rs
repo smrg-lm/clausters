@@ -102,6 +102,24 @@ pub struct Outcome {
     /// A preview-chain change, independent of the take and its history.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview: Option<Value>,
+    /// Playback update for the original object, independent of current focus.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playback_update: Option<Value>,
+    /// This completion's effects were selected by the operation coordinator.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub prepared_complete: bool,
+    /// New file binding published only after opening has completed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding: Option<Value>,
+    /// Whether confirmation focused another file.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub focus_changed: bool,
+    /// Destination and shape of the successfully written snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saved: Option<Value>,
+    /// Internal marker used when a draft decodes a window save.
+    #[serde(skip)]
+    pub(crate) save_requested: bool,
     /// What to send the host, `silent` for nothing.
     pub answer: Option<Answer>,
     /// The stamp a [`Kind::Step`] is answered with.
@@ -121,6 +139,12 @@ pub struct Outcome {
     /// these have landed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<Value>,
+    /// Prepared I/O whose delta is still unpublished.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<crate::application::operations::Prepared>,
+    /// Typed steps retained for application preparation, without a JSON round trip.
+    #[serde(skip)]
+    pub(crate) planned_steps: Vec<Step>,
     /// Where the position cursor was placed, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locate: Option<f64>,
@@ -173,6 +197,9 @@ pub struct Outcome {
     /// the one the previous copy left goes when this one lands.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clipboard: Option<String>,
+    /// The producing operation has published this document in its composition.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub clipboard_ready: bool,
     /// The buffer that copy is in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clipboard_buffer: Option<i64>,
@@ -196,6 +223,8 @@ impl Converse for AudioEditor {
 
     fn closed(&mut self) {
         self.window_state.window = None;
+        self.window_state.active = false;
+        self.window_state.binding_generation += 1;
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
@@ -391,12 +420,13 @@ pub struct Follow {
 
 /// What an audio editor is put back to when a step it took part in is
 /// refused elsewhere ([`AudioEditor::before_step`]).
-pub(crate) struct Kept(parts::Take, BTreeSet<i64>);
+pub(crate) struct Kept(parts::Take, BTreeSet<i64>, u64);
 
 /// **An audio editor**: the take it opened, the list of parts it is now, the
 /// join that list is drawn from, and one view's end of the conversation.
 #[derive(Clone, Debug)]
 pub struct AudioEditor {
+    planned_allocations: Option<Vec<(i64, u64, f64)>>,
     file: AudioFileState,
     window_state: AudioWindowState,
     open_files: AudioFiles,
@@ -425,6 +455,9 @@ struct AudioFileState {
     copied: bool,
     contents: parts::Take,
     dirty: bool,
+    revision: u64,
+    next_revision: u64,
+    saved_revision: u64,
     written_format: Option<String>,
     codec: Option<String>,
     sample_format: Option<String>,
@@ -454,6 +487,7 @@ struct AudioFileViewState {
 #[derive(Clone, Debug)]
 // One view's conversation and component identities survive every file switch.
 struct AudioWindowState {
+    active: bool,
     // Diagnostic binding identity; content-event validation uses Editing's
     // version and Conversation, not a second wire staleness mechanism.
     binding_generation: u64,
@@ -526,6 +560,7 @@ impl AudioEditor {
         version: i64,
     ) -> Result<Self, String> {
         let mut editor = Self {
+            planned_allocations: None,
             file: AudioFileState {
                 id: FileId(1),
                 presentation: AudioFileViewState {
@@ -547,6 +582,9 @@ impl AudioEditor {
                 copied: false,
                 contents: parts::Take::default(),
                 dirty: false,
+                revision: 1,
+                next_revision: 1,
+                saved_revision: 1,
                 written_format: None,
                 codec: None,
                 sample_format: None,
@@ -559,6 +597,7 @@ impl AudioEditor {
                 name: None,
             },
             window_state: AudioWindowState {
+                active: true,
                 binding_generation: 0,
                 meter_widget: None,
                 envelope_widget: None,
@@ -847,6 +886,10 @@ impl AudioEditor {
     /// refuse. A new buffer is the caller's to hand over, as every buffer
     /// number here is.
     pub fn save(&mut self, to: Option<Target>, format: &str) -> Result<Value, String> {
+        self.save_steps(to, format).map(|steps| steps_json(&steps))
+    }
+
+    fn save_steps(&mut self, to: Option<Target>, format: &str) -> Result<Vec<Step>, String> {
         let to = to.unwrap_or_else(|| self.file.target.clone());
         if !matches!(format, "float" | "int24" | "int16") {
             return Err(format!(
@@ -903,9 +946,10 @@ impl AudioEditor {
         if matches!(to, Target::File(_)) {
             self.file.written_format = Some(format.to_string());
         }
+        self.file.saved_revision = self.file.revision;
         self.file.dirty = false;
         self.file.target = to;
-        Ok(steps_json(&steps))
+        Ok(steps)
     }
 
     /// What a save writes over.
@@ -956,6 +1000,10 @@ impl AudioEditor {
     /// The copy is a buffer the caller handed over, as every new take is;
     /// with none, the editor cannot open.
     pub fn open(&mut self) -> Result<Value, String> {
+        self.open_steps().map(|steps| steps_json(&steps))
+    }
+
+    fn open_steps(&mut self) -> Result<Vec<Step>, String> {
         let mut steps = Vec::new();
         if !self.file.copied {
             let frames = self
@@ -988,7 +1036,7 @@ impl AudioEditor {
             self.file.copied = true;
         }
         steps.extend(self.stitched());
-        Ok(steps_json(&steps))
+        Ok(steps)
     }
 
     /// The list, stitched into the display buffer, and the `/done` awaited.
@@ -1118,13 +1166,19 @@ impl AudioEditor {
     /// **What a history step is put back to** when another structure of the
     /// same step refuses it: the list, and which takes are on disk.
     pub(crate) fn before_step(&self) -> Kept {
-        Kept(self.file.contents.clone(), self.file.spilled.clone())
+        Kept(
+            self.file.contents.clone(),
+            self.file.spilled.clone(),
+            self.file.revision,
+        )
     }
 
     /// Puts back what [`before_step`](Self::before_step) kept.
     pub(crate) fn put_back(&mut self, kept: Kept) {
         self.file.contents = kept.0;
         self.file.spilled = kept.1;
+        self.file.revision = kept.2;
+        self.file.dirty = self.file.revision != self.file.saved_revision;
     }
 
     /// **A step of the history, applied**: the list a payload states becomes
@@ -1146,7 +1200,13 @@ impl AudioEditor {
             }
         }
         self.file.contents = next;
-        self.file.dirty = true;
+        if let Some(revision) = payload["contentRevision"].as_u64() {
+            self.file.revision = revision;
+        } else {
+            self.file.next_revision += 1;
+            self.file.revision = self.file.next_revision;
+        }
+        self.file.dirty = self.file.revision != self.file.saved_revision;
         self.ensure_envelope();
         let mut steps = self.restored();
         steps.extend(self.stitched());
@@ -1156,7 +1216,9 @@ impl AudioEditor {
     /// **One message from the host**, read and answered ([`turn::turn`]).
     pub fn event(&mut self, event: &Event, version: i64) -> Outcome {
         let outcome = turn::turn(self, event, version);
-        self.file.dirty |= outcome.changed;
+        if outcome.changed {
+            self.file.dirty = self.file.revision != self.file.saved_revision;
+        }
         outcome
     }
 
@@ -1291,7 +1353,7 @@ impl AudioEditor {
                     if tag == "copy_cut" && out.clipboard.is_some() {
                         out.clipboard_cut =
                             Some(json!({"verb":"finish_cut", "file":self.focused_file(),
-                            "before":self.file.contents.payload().0.to_string(), "values":values}));
+                            "beforeRevision":self.file.revision, "values":values}));
                     }
                     (None, Vec::new())
                 }
@@ -1312,6 +1374,7 @@ impl AudioEditor {
                 steps.extend(self.restored());
                 steps.extend(self.stitched());
                 out.record = Some(self.record(&label, &before));
+                out.planned_steps = steps.clone();
                 out.steps = Some(steps_json(&steps));
                 out.changed = true;
                 out.version += 1;
@@ -1336,13 +1399,21 @@ impl AudioEditor {
 
     /// The entry a turn leaves: the list after, the list before, and the takes
     /// each reads.
-    fn record(&self, label: &str, before: &parts::Take) -> Record {
+    fn record(&mut self, label: &str, before: &parts::Take) -> Record {
+        let previous = self.file.revision;
+        self.file.next_revision += 1;
+        self.file.revision = self.file.next_revision;
+        self.file.dirty = self.file.revision != self.file.saved_revision;
+        let mut forward = self.file.contents.payload().0;
+        forward["contentRevision"] = json!(self.file.revision);
+        let mut backward = before.payload().0;
+        backward["contentRevision"] = json!(previous);
         let ids = |list: &[Part]| parts::sources(list).iter().map(|s| s.0).collect();
         Record {
             label: label.into(),
             legs: vec![Leg {
-                forward: json!({ "edit": self.file.contents.payload().0 }),
-                backward: before.payload().0,
+                forward: json!({ "edit": forward }),
+                backward,
                 key: String::new(),
                 holds_forward: ids(&self.file.contents.parts),
                 holds_backward: ids(&before.parts),
@@ -1359,12 +1430,15 @@ impl AudioEditor {
     }
 
     /// The steps that make `buffer` a take `frames` long at the editor's rate.
-    fn allocate(&self, buffer: i64, frames: u64) -> Vec<Step> {
+    fn allocate(&mut self, buffer: i64, frames: u64) -> Vec<Step> {
         self.allocate_at(buffer, frames, self.file.rate)
     }
 
     /// The steps that make `buffer` a take `frames` long at `rate`.
-    fn allocate_at(&self, buffer: i64, frames: u64, rate: f64) -> Vec<Step> {
+    fn allocate_at(&mut self, buffer: i64, frames: u64, rate: f64) -> Vec<Step> {
+        if let Some(allocations) = &mut self.planned_allocations {
+            allocations.push((buffer, frames, rate));
+        }
         vec![
             send(
                 "/buffer_alloc",
@@ -1466,6 +1540,7 @@ impl AudioEditor {
             },
             origin: None,
         };
+        out.planned_steps = steps.clone();
         out.steps = Some(steps_json(&steps));
         out.clipboard = Some(clip.to_json());
         out.clipboard_buffer = Some(buffer);
@@ -2168,6 +2243,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 )
                 .to_string()
         }
+        "attach_view"=>{editor.window_state.active=true;editor.window_state.binding_generation+=1;"{}".into()},
+        "detach_view"=>{editor.window_state.active=false;editor.window_state.window=None;editor.window_state.binding_generation+=1;"{}".into()},
         "preview" => editor.preview_state().to_string(),
         "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
         "folded" => json!({"folded": editor.folded()}).to_string(),
@@ -2311,7 +2388,10 @@ pub const DOMAIN: &str = PARTS;
 
 mod channels;
 mod envelope;
+
 mod files;
+/// Typed two-phase audio operations.
+pub mod operations;
 
 #[cfg(test)]
 mod tests;

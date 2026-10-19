@@ -213,6 +213,7 @@ mod tests {
         answer: Option<Answer>,
         seq: i64,
         redo: bool,
+        changed: bool,
         version: i64,
         close: bool,
     }

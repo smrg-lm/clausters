@@ -84,12 +84,18 @@ export interface Applier {
  * onto the object a page holds.
  */
 export interface StepHandler extends Applier {
+    /** Execute a prepared history operation on its declared endpoint. */
+    executeOperation?(structure: never | object, prepared: Record<string, unknown>, complete: (result: Record<string, any>) => void): void;
+    /** Execute one routed I/O batch; policy remains in the application core. */
+    executeBatch?(structure: never | object, server: { connection: number; generation: number }, steps: unknown[]): Promise<void>;
     stepped?(structure: never | object, applied: Record<string, unknown>): void;
     /** A points editor's: write the curve's points back, as flat quads. */
     write?(structure: never | object, points: readonly number[]): void;
     /** An audio editor's: carry out the steps that stitch its take again. */
     run?(structure: never | object, steps: unknown[]): void;
     /** Update an edited object's playback independently of the viewed object. */
+    operationReturned?(structure: never | object, server: { connection: number; generation: number }, buffers: number[]): void;
+    operationEcho?(structure: never | object, answer: unknown): void;
     soundFile?(structure: never | object, file: Record<string, unknown>): void;
     /**
      * An audio editor's: free takes nothing reaches any more. A take on disk
@@ -97,7 +103,7 @@ export interface StepHandler extends Applier {
      */
     free?(structure: never | object, buffers: number[], spilled: number[]): void;
     /** An audio editor's: write a take to disk and free its buffer. */
-    store?(structure: never | object, buffer: number, steps: unknown[]): void;
+    store?(structure: never | object, buffer: number, steps: unknown[], operation?: Record<string, unknown>): void;
     /**
      * A multitrack's: free joins no box reads and no undo or redo can put
      * back, by source id -- the buffer built for each, and its place in the
@@ -185,10 +191,14 @@ export interface Stored {
     buffer: number;
     /** The steps that write it and free the buffer. */
     steps: unknown[];
+    /** Prepared storage work confirmed by the shared service. */
+    operation?: Record<string, unknown>;
 }
 
 /** **What a step of the order came to.** */
 export interface Stepped {
+    /** Uncommitted I/O prepared by the application core. */
+    operation?: Record<string, unknown>;
     /** Whether anything moved. */
     stepped?: boolean;
     /** Why nothing did, where the crate says. */
@@ -705,6 +715,12 @@ export class Editing {
         return this.version;
     }
 
+    /** The explicit service handle retained by endpoint adapters. @internal */
+    get serviceCore(): EditingCore {
+        if (this.#core === null) throw new Error("the editing context is closed");
+        return this.#core;
+    }
+
     /** One shared application-service request. @internal */
     serviceCall<T = Record<string, unknown>>(verb: string, args: Record<string, unknown> = {}): T {
         return this.#call(verb, args) as T;
@@ -762,6 +778,13 @@ export class Editing {
     }
 
     #carry(stepped: Stepped): void {
+        if (stepped.operation !== undefined) {
+            const prepared = stepped.operation;
+            const held = this.handlers.get(Number(prepared.member));
+            if (held?.handler?.executeOperation === undefined) throw new Error("the history operation has no executor");
+            held.handler.executeOperation(held.structure as never, prepared, (completed) => this.#carry(completed.stepped ?? {}));
+            return;
+        }
         for (const effect of stepped.effects ?? []) {
             const held = this.handlers.get(Number(effect.member));
             if (held === undefined || held.handler === null) continue;
@@ -786,6 +809,27 @@ export class Editing {
         }
     }
 
+    /** Return unused ids after the core has confirmed cleanup. @internal */
+    operationReturned(returned: { member: number; server: { connection: number; generation: number }; buffers: number[] } | null | undefined): void {
+        if (returned == null) return;
+        const held = this.handlers.get(returned.member);
+        held?.handler?.operationReturned?.(held.structure as never, returned.server, returned.buffers);
+    }
+
+    /** Deliver the originating gesture receipt selected by the core. @internal */
+    operationEcho(echo: { member: number; answer: unknown } | null | undefined): void {
+        if (echo == null) return;
+        const held = this.handlers.get(echo.member);
+        held?.handler?.operationEcho?.(held.structure as never, echo.answer);
+    }
+
+    /** Execute a batch on its member's original endpoint. @internal */
+    async executeBatch(member: number, server: { connection: number; generation: number }, steps: unknown[]): Promise<void> {
+        const held = this.handlers.get(member);
+        if (held?.handler?.executeBatch === undefined) throw new Error("the operation has no endpoint executor");
+        await held.handler.executeBatch(held.structure as never, server, steps);
+    }
+
     /**
      * **Free the takes nothing reaches any more, and write to disk the ones past
      * the resident budget** -- what a turn or a step hands back as `freed` and
@@ -807,7 +851,7 @@ export class Editing {
         for (const entry of stored ?? []) {
             const held = this.handlers.get(Number(entry.member));
             if (held === undefined || held.handler === null) continue;
-            held.handler.store?.(held.structure as never, Number(entry.buffer), entry.steps ?? []);
+            held.handler.store?.(held.structure as never, Number(entry.buffer), entry.steps ?? [], entry.operation);
         }
     }
 
