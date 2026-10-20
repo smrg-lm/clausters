@@ -2466,7 +2466,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   matrix, succeeds or refuses without data loss, and retains/releases sources
   correctly. Test semantic contents as well as lifetime in both clients.
 
-- ⬜ **X19 - Make pending operations and their results explicit.** After
+- ✅ **X19 - Make pending operations and their results explicit.** After
   `X18`, represent opening, sample-producing edits, clipboard publication,
   saving, spilling, restoring and closing with operation identities,
   completions, errors and cleanup. Reuse `Step` waits; define commit points,
@@ -2499,10 +2499,16 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   - ✅ AudioEditor classifies operation-producing gestures; Editing only
     supplies endpoint-scoped clipboard reads, without a second gesture
     whitelist.
-  - ⬜ Review the paired editor example with real windows, including
-    save-and-close and delayed completion after view replacement. Keep this
-    milestone open until that acceptance is recorded in the implementing
-    commit.
+  - ✅ Native delayed-completion review accepted by the user (2026-10-19):
+    cut/paste, view replacement before save confirmation, then selection and
+    zoom work without a spurious refusal. Playback cursors and viewed-file
+    meters were also accepted. Browser visual acceptance is separate.
+  - ✅ Native save-and-close script over the existing Python API: a real
+    write failure keeps the window open and dirty; retry with delayed I/O
+    keeps it open until save confirms, then closes it. Reading the saved WAV
+    verifies the edited samples. This tests sequential save/close, without
+    adding a dialog or changing ownership of client-held objects.
+
 
 - ⬜ **X20 - Give actions one definition and contextual state.** After
   `X19`, extend the existing `clausters-editing::verbs` and chrome mechanisms
@@ -4292,7 +4298,7 @@ wrong.
   Fixed by retaining observed horizontal and vertical viewports per file and
   restoring them with the incoming file's cursor and selection. Directed
   file-state tests and a native headless host probe cover navigation; the
-  real-window acceptance above remains open for the combined fixes.
+  native real-window acceptance is recorded above.
 
 - ✅ **Eight-channel playback starts late and stalls the GUI**
   (2026-10-19, native paired-window review). Starting playback in the
@@ -4345,8 +4351,8 @@ wrong.
   plays. Viewing another file shows zero without stopping playback; returning
   restores live levels. Rebinding the meter bus also clears held peaks and
   clip lamps from the previous source. Directed transport, host and paired
-  client regressions cover navigation and source changes; combined manual
-  window acceptance remains open above.
+  client regressions cover navigation and source changes; native manual
+  window acceptance is recorded above.
 
 
 - ✅ **Structural redraw enables an inactive file's play cursor**
@@ -4357,7 +4363,7 @@ wrong.
   reproduced the zero anchor before the fix; directed tests cover repeated
   waveform/stacked redraws, file switches and stopping. The native host probe
   checks the projected anchor after file-list visibility changes during play.
-  Combined visual acceptance remains open above.
+  Native visual acceptance is recorded above.
 
 
 - ✅ **Saving one audio window rejects the gesture in another**
@@ -4368,4 +4374,4 @@ wrong.
   and unwrap menu verbs only for the owning window. A failing regression
   reproduced the duplicate acknowledgement; directed coverage checks key and
   menu saves across independent contexts and leaves the other file dirty.
-  The delayed-completion visual review remains open above.
+  The delayed-completion native visual review is accepted above.
