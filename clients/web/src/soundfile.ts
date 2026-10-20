@@ -1,19 +1,16 @@
 /**
- * **A sound file on the client's side**: its path and its shape, read from the
- * header, and the one place a client reads or writes audio files.
+ * Read and write audio files from the web client.
  *
- * A {@link Buffer} is memory on the **server**; a `SoundFile` is a file, with a
- * path or -- made with {@link SoundFile.empty} -- not written anywhere yet. The
- * two meet through reads and writes: {@link SoundFile.toBuffer} (or
- * {@link Buffer.read}) loads one into a buffer, and {@link Buffer.write}
- * answers with the `SoundFile` it wrote.
+ * `SoundFile` stores a file's path and audio metadata: frame count, channel
+ * count, sample rate, codec and sample format. Use {@link SoundFile.open} to
+ * inspect a file, {@link SoundFile.read} to decode samples and
+ * {@link SoundFile.write} to save samples as WAV. {@link SoundFile.empty}
+ * describes silence without creating a file.
  *
- * Every byte goes through the server's own codecs, bound in the module the NRT
- * worker decodes with, so the page needs no audio library of its own: the
- * header and the samples come from the decoder `/buffer_allocRead` uses, and
- * {@link SoundFile.write} writes the bytes the Python client writes for the
- * same samples. A path is the page's own storage (`opfs`) in a tab and the
- * disk under node.
+ * Paths refer to OPFS in a browser and the local filesystem in Node.js.
+ * Local file operations use the shared Clausters codecs and do not require
+ * a running server. {@link SoundFile.toBuffer} loads samples into a server
+ * buffer; the selected server must be able to read the file path.
  *
  * @module
  */
@@ -28,21 +25,22 @@ import { Source } from "./multitrack.ts";
 export type SoundFileFormat = "int16" | "int24" | "float";
 
 /**
- * A sound file: where it is and what shape it has.
+ * An audio file path and its metadata.
  *
- * Made by {@link SoundFile.open} (a file, its header read), by
- * {@link SoundFile.empty} (a shape with no file yet) or by
- * {@link SoundFile.write} and {@link Buffer.write} (the file just written).
- * Nothing here holds samples: {@link SoundFile.read} decodes them when they
- * are asked for.
+ * {@link SoundFile.open} reads metadata from an existing file.
+ * {@link SoundFile.write} creates a WAV file and returns its metadata.
+ * {@link SoundFile.empty} creates a descriptor for silence with `path=null`.
+ * Samples are loaded when {@link SoundFile.read} or {@link SoundFile.toBuffer}
+ * is called.
  */
 export class SoundFile {
-    /** Where the file is, or `null` for one not written yet. */
+    /** File path, or `null` for a descriptor created by {@link SoundFile.empty}. */
     readonly path: string | null;
     /** Frames per channel. */
     readonly frames: number;
+    /** Number of audio channels. */
     readonly channels: number;
-    /** The file's own rate; nothing resamples. */
+    /** Sample rate in Hz. */
     readonly sampleRate: number;
     /**
      * The container's short name (`"wav"`, `"flac"`, `"mp3"`, ...); `null` for
@@ -72,10 +70,11 @@ export class SoundFile {
     }
 
     /**
-     * The file at `path`, its shape read from the header -- no sample is kept.
-     * WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the rest: whatever
-     * the server's decoder reads. Rejects when the file is missing or not
-     * audio.
+     * Read an audio file's metadata and return a `SoundFile`.
+     *
+     * Reads the frame count, channel count, sample rate, codec and sample format.
+     * Supported formats include WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC and AIFF.
+     * Rejects if the file cannot be opened or its format is unsupported.
      */
     static async open(path: string): Promise<SoundFile> {
         const info = await probeSoundfile(await readFileAt(path), path);
@@ -90,8 +89,15 @@ export class SoundFile {
     }
 
     /**
-     * A file of this shape that is not written anywhere yet: silence to open
-     * in an editor, which asks for a path when it is saved.
+     * Describe silence with the given channels, frame count and sample rate.
+     *
+     * Returns a `SoundFile` with `path=null`. This does not create a file or
+     * allocate samples. {@link SoundFile.read} returns zeros and
+     * {@link SoundFile.toBuffer} allocates a zeroed server buffer. An audio editor
+     * asks for a destination on its first save.
+     *
+     * Throws `RangeError` if channels or sample rate are not positive, or frames
+     * is negative.
      */
     static empty(channels: number, frames: number, sampleRate: number): SoundFile {
         if (!(channels >= 1) || !(frames >= 0) || !(sampleRate > 0)) {
@@ -104,13 +110,15 @@ export class SoundFile {
     }
 
     /**
-     * Writes interleaved `samples` to a WAV file at `path`, and resolves with
-     * the file. What a render returns is saved this way:
+     * Write interleaved samples to a WAV file and return its `SoundFile`.
      *
-     * ```ts
-     * const stats = await render(...);
-     * await SoundFile.write("take.wav", stats.samples!, stats.channels, stats.sampleRate);
-     * ```
+     * `samples` contains floating-point samples in frame-major order (for stereo:
+     * left, right, left, right, ...). Each frame must contain `channels` samples.
+     * `sampleRate` is in Hz. `sampleFormat` selects the WAV encoding: `"int16"`
+     * (default), `"int24"` or `"float"`.
+     *
+     * Rejects if the samples, format or metadata are invalid, or the file cannot
+     * be written.
      */
     static async write(
         path: string,
@@ -132,14 +140,16 @@ export class SoundFile {
         return new SoundFile(path, data.length / channels, channels, sampleRate, "wav", sampleFormat);
     }
 
-    /** Length in seconds. */
+    /** Duration in seconds, calculated as frames divided by sample rate. */
     get duration(): number {
         return this.sampleRate > 0 ? this.frames / this.sampleRate : 0;
     }
 
     /**
-     * The document {@link Source} this file is: a file source, or a volatile
-     * one for a file not written yet, with its shape.
+     * Return a document {@link Source} for this file.
+     *
+     * The source includes the channel count, frame count and sample rate. It
+     * references the file path when available; otherwise it is a volatile source.
      */
     get source(): Source {
         const source = this.path !== null ? Source.file(this.path) : Source.volatile();
@@ -147,9 +157,13 @@ export class SoundFile {
     }
 
     /**
-     * Decodes `frames` frames from `start` (`-1`, the default, to the end)
-     * into interleaved samples in `[-1, 1]`, at the file's own rate. A file
-     * not written yet reads as the silence it holds.
+     * Decode a frame range into an interleaved `Float32Array` of samples.
+     *
+     * `start` is a zero-based frame offset. `frames=-1` reads to the end of the
+     * file. Each frame contains one float32 sample per channel, in channel order.
+     * Integer audio is scaled to `[-1, 1]`; floating-point audio can exceed that
+     * range. The sample rate is unchanged. If `path` is `null`, returns zeros
+     * for the requested range.
      */
     async read(start = 0, frames = -1): Promise<Float32Array> {
         if (this.path === null) {
@@ -162,9 +176,14 @@ export class SoundFile {
     }
 
     /**
-     * Loads the file into a new server buffer ({@link Buffer.read}); a file
-     * not written yet becomes a zeroed buffer of its shape
-     * ({@link Buffer.alloc}).
+     * Load this file into a new server {@link Buffer}.
+     *
+     * Uses {@link Buffer.read} when the file has a path. The selected server must
+     * be able to read that path. For `path=null`, uses {@link Buffer.alloc} to
+     * create a zeroed buffer with the specified frame count, channel count and
+     * sample rate. `options` is passed to the corresponding buffer method.
+     *
+     * Rejects if a file without a path has zero frames.
      */
     async toBuffer(options: BufferOptions = {}): Promise<Buffer> {
         if (this.path === null) {

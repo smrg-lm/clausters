@@ -1,18 +1,14 @@
-"""**A sound file on the client's side**: its path and its shape, read from the
-header, and the one place a client reads or writes audio files.
+"""Read and write audio files from the Python client.
 
-A `clausters.defs.Buffer` is memory on the **server**; a `SoundFile` is a file,
-with a path or -- made with `SoundFile.empty` -- not written anywhere yet. The
-two meet through reads and writes: `SoundFile.to_buffer` (or
-`clausters.defs.Buffer.read`) loads one into a buffer, and
-`clausters.defs.Buffer.write` answers with the `SoundFile` it wrote.
+`SoundFile` stores a file's path and audio metadata: frame count, channel
+count, sample rate, codec and sample format. Use `open` to inspect an existing
+file, `read` to decode its samples, and `write` to save samples as WAV.
+`empty` describes silence without creating a file.
 
-Every byte goes through the server's own codecs, through the same library a
-render runs in, so the client needs no audio library of its own: the header
-and the samples come from the decoder ``/buffer_allocRead`` uses, and
-`SoundFile.write` writes the bytes the web client writes for the same samples.
-The path is the client's filesystem; `to_buffer` hands it to the server, which
-reads its own -- the same disk when both run on one machine.
+`to_buffer` loads the samples into a `clausters.defs.Buffer` on a server.
+Local file operations use the codecs provided by the Clausters native
+library and do not require a running server. Loading a file into a buffer
+requires its path to be accessible to the selected server.
 """
 
 from __future__ import annotations
@@ -25,34 +21,43 @@ __all__ = ["SoundFile"]
 
 @dataclass(frozen=True)
 class SoundFile:
-    """A sound file: where it is and what shape it has.
+    """Audio file metadata and an optional filesystem path.
 
-    Made by `SoundFile.open` (a file on disk, its header read), by
-    `SoundFile.empty` (a shape with no file yet) or by `SoundFile.write` and
-    `clausters.defs.Buffer.write` (the file just written). Nothing here holds
-    samples: `read` decodes them when they are asked for.
+    `open` reads metadata from an existing file. `write` creates a WAV file and
+    returns its metadata. `empty` creates a descriptor for silence with
+    `path=None`. Samples are loaded only when `read` or `to_buffer` is called.
     """
 
-    #: Where the file is, or ``None`` for one not written yet.
+    #: File path, or `None` for a descriptor created by `empty`.
     path: "str | None"
     #: Frames per channel.
     frames: int
+    #: Number of audio channels.
     channels: int
-    #: The file's own rate; nothing resamples.
+    #: Sample rate in Hz.
     sample_rate: float
-    #: The container's short name (``"wav"``, ``"flac"``, ``"mp3"``, ...);
-    #: ``None`` for a file not written yet.
+    #: The container's short name (`"wav"`, `"flac"`, `"mp3"`, ...);
+    #: `None` for a file not written yet.
     codec: "str | None" = None
-    #: A WAV's sample format (``"int16"``, ``"int24"``, ``"int32"``,
-    #: ``"float"``); ``None`` for other formats and for a file not written yet.
+    #: A WAV's sample format (`"int16"`, `"int24"`, `"int32"`,
+    #: `"float"`); `None` for other formats and for a file not written yet.
     sample_format: "str | None" = None
 
     @classmethod
     def open(cls, path) -> "SoundFile":
-        """The file at `path`, its shape read from the header -- no sample is
-        decoded. WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the rest:
-        whatever the server's decoder reads. Raises `clausters.ipc.RenderError`
-        when the file is missing or not audio."""
+        """Read an audio file's metadata and return a `SoundFile`.
+
+        Reads the frame count, channel count, sample rate, codec and sample format
+        without loading the samples. Supported formats include WAV, FLAC,
+        OGG/Vorbis, MP3, MP4/AAC, ALAC and AIFF.
+
+        Args:
+            path: Path to an existing audio file on the client's filesystem.
+
+        Raises:
+            clausters.ipc.RenderError: The file cannot be opened or its format
+                is unsupported.
+        """
         from . import ipc
 
         frames, channels, rate, codec, sample_format = ipc.soundfile_info(path)
@@ -60,8 +65,16 @@ class SoundFile:
 
     @classmethod
     def empty(cls, channels: int, frames: int, sample_rate: float) -> "SoundFile":
-        """A file of this shape that is not written anywhere yet: silence to
-        open in an editor, which asks for a path when it is saved."""
+        """Describe silence with the given channels, frame count and sample rate.
+
+        Returns a `SoundFile` with `path=None`. This does not create a file or
+        allocate samples. `read` returns zeros and `to_buffer` allocates a zeroed
+        server buffer. An audio editor asks for a destination on its first save.
+
+        Raises:
+            ValueError: Channels or sample rate are not positive, or frames
+                is negative.
+        """
         if channels < 1 or frames < 0 or not sample_rate > 0:
             raise ValueError(
                 f"an empty sound file needs channels >= 1, frames >= 0 and a "
@@ -71,13 +84,21 @@ class SoundFile:
     @classmethod
     def write(cls, path, samples, channels: int, sample_rate: float, *,
               sample_format: str = "int16") -> "SoundFile":
-        """Write interleaved `samples` (any sequence of floats, an
-        ``array('f')`` without a copy) to a WAV file at `path`, and answer the
-        file. ``sample_format`` is ``"int16"``, ``"int24"`` or ``"float"``.
-        What a render returns is saved this way::
+        """Write interleaved samples to a WAV file and return its `SoundFile`.
 
-            stats = render(...)
-            SoundFile.write("take.wav", stats.samples, stats.channels, stats.sample_rate)
+        Args:
+            path: Destination path on the client's filesystem.
+            samples: Sequence of floating-point samples in frame-major order
+                (for stereo: left, right, left, right, ...).
+            channels: Number of channels. Each frame must contain this many
+                samples.
+            sample_rate: Sample rate in Hz.
+            sample_format: WAV encoding: `"int16"` (default), `"int24"` or
+                `"float"`.
+
+        Raises:
+            clausters.ipc.RenderError: The samples, format or metadata are invalid,
+                or the file cannot be written.
         """
         from . import ipc
 
@@ -88,22 +109,30 @@ class SoundFile:
 
     @property
     def duration(self) -> float:
-        """Length in seconds."""
+        """Duration in seconds, calculated as frames divided by sample rate."""
         return self.frames / self.sample_rate if self.sample_rate else 0.0
 
     @property
     def source(self):
-        """The `clausters.multitrack.Source` this file is in a document: a file
-        source, or a volatile one for a file not written yet, with its shape."""
+        """Return a document `clausters.multitrack.Source` for this file.
+
+        The source includes the channel count, frame count and sample rate. It
+        references the file path when available; otherwise it is a volatile source.
+        """
         from .multitrack import Source
 
         source = Source.file(self.path) if self.path else Source.volatile()
         return source.shaped(self.channels, self.frames, self.sample_rate)
 
     def read(self, start: int = 0, frames: int = -1) -> array:
-        """Decode `frames` frames from `start` (``-1``, the default, to the
-        end) into interleaved float32 samples in ``[-1, 1]``, at the file's own
-        rate. A file not written yet reads as the silence it holds."""
+        """Decode a frame range into an interleaved `array('f')` of samples.
+
+        `start` is a zero-based frame offset. `frames=-1` reads to the end of the
+        file. Each frame contains one float32 sample per channel, in channel order.
+        Integer audio is scaled to `[-1, 1]`; floating-point audio can exceed that
+        range. The sample rate is unchanged. If `path` is `None`, returns zeros
+        for the requested range.
+        """
         if self.path is None:
             start = min(max(0, start), self.frames)
             count = self.frames - start if frames < 0 else min(frames, self.frames - start)
@@ -115,9 +144,20 @@ class SoundFile:
 
     def to_buffer(self, *, wait: bool = True, timeout: "float | None" = None,
                   server=None):
-        """Load the file into a new server buffer (`clausters.defs.Buffer.read`);
-        a file not written yet becomes a zeroed buffer of its shape
-        (`clausters.defs.Buffer.alloc`)."""
+        """Load this file into a new server `clausters.defs.Buffer`.
+
+        Uses `Buffer.read` when the file has a path. The selected server must be
+        able to read that path. For `path=None`, uses `Buffer.alloc` to create a
+        zeroed buffer with the specified frame count, channel count and sample rate.
+
+        Args:
+            wait: Wait for the server to finish loading or allocating the buffer.
+            timeout: Maximum time to wait, using the buffer method's default if None.
+            server: Server to use, or the default server if omitted.
+
+        Raises:
+            ValueError: A file without a path has zero frames.
+        """
         from .defs import Buffer
 
         if self.path is None:

@@ -261,9 +261,10 @@ file is read back by the same decoder, whichever wrote it.
 
 ### Sound files: `SoundFile`
 
-A file on the client's side is a `SoundFile`: its path and its shape, read from
-the header without decoding a sample. Reading it, writing one and loading one
-into the server all go through it:
+`SoundFile` stores an audio file's path and metadata: frame count, channel
+count, sample rate, codec and sample format. `open` reads this metadata,
+`read` decodes samples into an interleaved `array('f')`, and `write` saves
+samples as WAV:
 
 ```python
 from clausters import SoundFile
@@ -278,28 +279,26 @@ stats = render(sine(440.0) * 0.2, dur=2.0)
 SoundFile.write("beep.wav", stats.samples, stats.channels, stats.sample_rate)
 
 buf = take.to_buffer()                 # the same command as Buffer.read(take)
-copy = buf.write("copy.wav")           # answers the SoundFile it wrote
+copy = buf.write("copy.wav")           # returns a SoundFile for the saved file
 ```
 
-Decoding goes through **the server's decoder**, not a Python one: WAV through
-hound and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC and AIFF through symphonia — the
-same path `/buffer_allocRead` takes, so client and server never disagree about
-a file. Integer files are scaled to `[-1, 1]` on the way out: whatever the file
-holds, what you get is `float32`. Nothing resamples; `sample_rate` is the
-file's own. `SoundFile.write` writes WAV (`sample_format` `"int16"`, `"int24"`
-or `"float"`) with the encoder the web client writes its files with, so the
-same samples are the same bytes in both.
+These local file operations use the Clausters native library and do not
+require a running server. Reading supports WAV, FLAC, OGG/Vorbis, MP3,
+MP4/AAC, ALAC and AIFF. Integer audio is scaled to `[-1, 1]`; floating-point
+audio can exceed that range. Reading preserves the file's sample rate.
+Writing produces WAV with `sample_format="int16"`, `"int24"` or `"float"`.
 
-This is not a convenience wrapper over the standard library. Python's `wave`
-module cannot read a float32 WAV at all — the format `render` writes — so
-borrowing the server's codecs is what keeps the client free of an audio
-dependency.
+`to_buffer()` loads the file into a new `Buffer` on the selected server.
+The server must be able to read the path; for a remote server, a path on the
+client's machine may not be accessible there. `Buffer.write(path)` saves a
+server buffer and returns a `SoundFile` describing the saved file.
 
-A `SoundFile` is a **file**, and a `Buffer` is memory on the **server**: they
-meet only through reads and writes. `SoundFile.empty(channels, frames, rate)`
-is a file of that shape that is not written anywhere yet — silence an editor
-opens and asks a path for when it is saved; its `to_buffer` allocates a zeroed
-buffer. `take.source` is the document's `Source` for the file.
+`SoundFile.empty(channels, frames, sample_rate)` describes silence with
+`path=None`, without creating a file or allocating samples. Its `read()`
+returns zeros and its `to_buffer()` allocates a zeroed server buffer. An
+audio editor asks for a destination on its first save. `take.source` returns
+a document `Source` with the file's path and metadata, or a volatile source
+when there is no path.
 
 ### Interleaved, and how to split it
 

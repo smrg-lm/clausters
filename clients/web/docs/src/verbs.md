@@ -156,7 +156,11 @@ The file is where every path this client takes is: the page's own storage — th
 
 ### Sound files: `SoundFile`
 
-A file on the page's side is a `SoundFile`: its path and its shape, read from the header. Reading it, writing one and loading one into the engine all go through it, with the codecs the server decodes and writes with — WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF in, WAV out — so the page and the engine never disagree about a file:
+`SoundFile` stores an audio file's path and metadata: frame count, channel
+count, sample rate, codec and sample format. `open` reads this metadata,
+`read` decodes samples into an interleaved `Float32Array`, and `write` saves
+samples as WAV. Paths refer to OPFS in a browser and the local filesystem
+in Node.js. These operations do not require a running server.
 
 ```js
 const take = await SoundFile.open("out/take.wav");
@@ -167,10 +171,25 @@ const stats = await render(sine(440.0).mul(0.2), { dur: 2.0 });
 await SoundFile.write("out/beep.wav", stats.samples, stats.channels, stats.sampleRate);
 
 const buf = await take.toBuffer();        // the same command as Buffer.read(take)
-const copy = await buf.write("out/copy.wav");   // resolves with the SoundFile it wrote
+const copy = await buf.write("out/copy.wav");   // returns a SoundFile for the saved file
 ```
 
-Integer files are scaled to `[-1, 1]`, nothing resamples, and `read(start, frames)` reads a span. `channels` deinterleaves and `interleave` weaves back. A `SoundFile` is a **file** and a `Buffer` is memory in the **engine**: they meet only through reads and writes. `SoundFile.empty(channels, frames, rate)` is a file of that shape not written anywhere yet — silence an editor opens and asks a path for when it is saved — and its `toBuffer` allocates a zeroed buffer. `take.source` is the document's `Source` for the file.
+Reading supports WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC and AIFF.
+Integer audio is scaled to `[-1, 1]`; floating-point audio can exceed that
+range. Reading preserves the file's sample rate. `read(start, frames)` reads
+a frame range. Writing produces WAV with `sampleFormat: "int16"`, `"int24"`
+or `"float"`.
+
+`toBuffer()` loads the file into a new server `Buffer`. The selected server
+must be able to read the path. `Buffer.write(path)` saves a server buffer and
+returns a `SoundFile` describing the saved file.
+
+`SoundFile.empty(channels, frames, sampleRate)` describes silence with
+`path=null`, without creating a file or allocating samples. Its `read()`
+returns zeros and its `toBuffer()` allocates a zeroed server buffer. An audio
+editor asks for a destination on its first save. `take.source` returns a
+document `Source` with the file's path and metadata, or a volatile source
+when there is no path.
 
 `examples/buffers/render-then-load.html` runs the whole loop — render to a file, read it back, load it into a buffer and play it.
 
