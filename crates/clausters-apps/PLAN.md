@@ -4358,3 +4358,14 @@ wrong.
   waveform/stacked redraws, file switches and stopping. The native host probe
   checks the projected anchor after file-list visibility changes during play.
   Combined visual acceptance remains open above.
+
+
+- ✅ **Saving one audio window rejects the gesture in another**
+  (2026-10-19, native window review). Operation classification bypassed the
+  ordinary conversation's target ownership check, so a broadcast Save was
+  prepared for unrelated editors and emitted a false refusal alongside the
+  real completion. Check window/component ownership before classification,
+  and unwrap menu verbs only for the owning window. A failing regression
+  reproduced the duplicate acknowledgement; directed coverage checks key and
+  menu saves across independent contexts and leaves the other file dirty.
+  The delayed-completion visual review remains open above.

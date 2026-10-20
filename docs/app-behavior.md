@@ -21,6 +21,9 @@ code that keeps it lives.
   tree is published before preview corrections, and cursor/selection
   corrections address only the lanes included in that tree. Old content
   gestures are still refused by the context's version.
+  Broadcast events are classified for operations only by the window or
+  component that owns their target. Other editors neither reserve resources
+  nor acknowledge or reject that gesture, including Save from a key or menu.
 - **Views of one object share what the object has.** Two views of the same
   file (a waveform and a spectrogram, a roll and a score over one sequence)
   share its time axis, its play cursor and its history, because what they

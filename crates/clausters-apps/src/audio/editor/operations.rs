@@ -122,13 +122,24 @@ impl AudioEditor {
             return None;
         }
         let raw_tag = event.args.get(3)?.as_str()?;
+        let widget = event.args.first().map_or(0, int);
+        let is_window = self.window_id().map(i64::from) == Some(widget);
+        // Broadcast events must pass the same ownership boundary as a turn,
+        // before preparation can reserve resources or produce an acknowledgement.
+        if !is_window && !self.owns(widget, raw_tag) {
+            return None;
+        }
         let tag = if raw_tag == crate::turn::MENU {
+            if !is_window {
+                return None;
+            }
             event.args.get(4)?.as_str()?
         } else {
             raw_tag
         };
-        let widget = event.args.first().map_or(0, int);
-        if self.saves_from(widget, tag, event.args.get(4..).unwrap_or_default()) {
+        if (tag != "save" || is_window)
+            && self.saves_from(widget, tag, event.args.get(4..).unwrap_or_default())
+        {
             return Some(Command::WindowSave(event.clone()));
         }
         match tag {
@@ -1024,7 +1035,8 @@ mod tests {
 
     #[test]
     fn gesture_commands_leave_navigation_and_dialog_setup_out_of_operations() {
-        let editor = editor();
+        let mut editor = editor();
+        editor.window_state.window = Some(17);
         let Command::Edit(mut event) = stroke() else {
             unreachable!()
         };

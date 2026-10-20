@@ -607,6 +607,12 @@ mod tests {
         let member = serde_json::from_str::<Value>(&opened).unwrap()["member"]
             .as_u64()
             .unwrap() as MemberId;
+        call_json(
+            &mut editing,
+            &json!({"verb":"member", "member":member,
+            "call":{"verb":"window", "widget":12}})
+            .to_string(),
+        );
         let document = clausters_document::clipboard::Clipboard {
             content: clausters_document::clipboard::Content::Buffer {
                 buffer: 77,
@@ -622,6 +628,23 @@ mod tests {
             server: editing.seats[member as usize].server,
             buffer: 77,
         };
+        let foreign = Event {
+            addr: "/gui_event".into(),
+            args: vec![
+                json!(999),
+                json!(1),
+                json!(0),
+                json!("paste"),
+                json!(0),
+                json!(0),
+                json!(document),
+            ],
+        };
+        assert!(editing.decode_audio_event(member, &foreign).is_none());
+        assert!(
+            editing.services.resources.source(id).is_none(),
+            "foreign gestures cannot register clipboard resources"
+        );
         for tag in ["paste", "mix"] {
             let event = Event {
                 addr: "/gui_event".into(),

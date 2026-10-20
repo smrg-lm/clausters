@@ -2589,6 +2589,58 @@ mod tests {
     }
 
     #[test]
+    fn saving_one_audio_window_does_not_acknowledge_in_another_context() {
+        let mut origin = Editing::new();
+        let mut other = Editing::new();
+        let member = an_audio_take(&mut origin);
+        let unrelated = an_audio_take(&mut other);
+        for (context, member, window) in [(&mut origin, member, 49), (&mut other, unrelated, 99)] {
+            let opening = raw_call(
+                context,
+                json!({
+                    "verb":"operation", "action":"prepare", "member":member,
+                    "command":{"kind":"open"}
+                }),
+            );
+            settle_operation(context, opening);
+            raw_call(
+                context,
+                json!({"verb":"member", "member":member,
+                "call":{"verb":"sync", "window":window}}),
+            );
+            draw(context, member, 1, 10);
+        }
+        for args in [json!([49, 2, 0, "save"]), json!([49, 3, 0, "menu", "save"])] {
+            let wrong = raw_call(
+                &mut other,
+                json!({"verb":"event", "member":unrelated,
+                "addr":"/gui_event", "args":args}),
+            );
+            assert!(
+                wrong["outcome"]["answer"].is_null(),
+                "foreign window must not acknowledge: {wrong}"
+            );
+            assert!(wrong["outcome"]["operation"].is_null());
+            let own = raw_call(
+                &mut origin,
+                json!({"verb":"event", "member":member,
+                "addr":"/gui_event", "args":args}),
+            );
+            assert!(own["outcome"]["operation"].is_object(), "{own}");
+            let (saved, _) = settle_operation(&mut origin, own["outcome"]["operation"].clone());
+            assert_eq!(saved["committed"], true);
+            assert_eq!(
+                raw_call(
+                    &mut other,
+                    json!({"verb":"member", "member":unrelated,
+                "call":{"verb":"binding"}})
+                )["dirty"],
+                true
+            );
+        }
+    }
+
+    #[test]
     fn the_door_opens_turns_and_steps() {
         let mut editing = Editing::default();
         let take = call(
