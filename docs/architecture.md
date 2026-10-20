@@ -1426,7 +1426,20 @@ clipboard service or persistent workspace.
 
 `application::services::Services` is a non-generic composition of `Histories`, one `Resources` graph and a clipboard `Exchange`. Services are injected explicitly. Each application keeps a typed `application::runtime::Runtime<Commit, Outcome>` and borrows those same services; audio and another application can therefore retain sources in one graph without sharing a commit enum or using `Any`.
 
-`Application::prepare` takes `&self` and `&Services`. The composition synchronizes source metadata before preparation and decodes host events at its boundary, including the leased `ResourceId` for paste/mix. Audio drafts clone only the edited file's take and metadata. They never checkpoint the history, reload spilled payloads or snapshot other members. The resulting `Operation<C>` declares its original object/server, batches, allocations, reads, access policy and unpublished delta. `Pending` retains its sources before any I/O. Content/history commit follows successful waits and revision validation. A save uses an immutable snapshot; releasing its write dependency allows further edits while preserving the saved revision captured at preparation.
+`Application::prepare` takes `&self` and `&Services`. The composition
+synchronizes source metadata before preparation and decodes host events at its
+boundary, including the leased `ResourceId` for paste/mix.
+`AudioEditor::command_for` owns classification of operation-producing
+gestures; navigation and dialog setup remain ordinary events. Editing supplies
+clipboard leases to the typed paste command without maintaining a second
+gesture whitelist. Audio drafts clone only the edited file's take and
+metadata. They never checkpoint the history, reload spilled payloads or
+snapshot other members. The resulting `Operation<C>` declares its original
+object/server, batches, allocations, reads, access policy and unpublished
+delta. `Pending` retains its sources before any I/O. Content/history commit
+follows successful waits and revision validation. A save uses an immutable
+snapshot; releasing its write dependency allows further edits while preserving
+the saved revision captured at preparation.
 
 The common runtime handles batch identity and ordering, cancellation, commit refusal, repair, retry and connection invalidation. `application::walks` confirms an entire history entry or aborts its typed participants; the composition supplies domain routing through `WalkHost`. A successful transport result is not necessarily an accepted commit. Either kind of refusal keeps the pending root and object lock until repair succeeds. Invalidation retires operations, repairs and their locks without addressing the replacement server. A late completion updates the original file's playback projection and only corrects the view binding it was prepared against. The core also stamps versions and originating gesture acknowledgements; the adapters execute the same steps and report their results.
 

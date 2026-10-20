@@ -115,6 +115,33 @@ impl Commit {
 pub type Completion = crate::application::services::Completion<Outcome>;
 
 impl AudioEditor {
+    // Classify only operation-producing gestures. Navigation and dialog setup
+    // continue through the ordinary event path; the composition supplies leases.
+    pub(crate) fn command_for(&self, event: &Event) -> Option<Command> {
+        if event.addr != "/gui_event" {
+            return None;
+        }
+        let raw_tag = event.args.get(3)?.as_str()?;
+        let tag = if raw_tag == crate::turn::MENU {
+            event.args.get(4)?.as_str()?
+        } else {
+            raw_tag
+        };
+        let widget = event.args.first().map_or(0, int);
+        if self.saves_from(widget, tag, event.args.get(4..).unwrap_or_default()) {
+            return Some(Command::WindowSave(event.clone()));
+        }
+        match tag {
+            "paste" | "mix" => Some(Command::Paste {
+                event: event.clone(),
+                clipboard: None,
+            }),
+            "draw" | "sample" | "cut" | "copy" | "copy_cut" | "apply_envelope" | "apply"
+            | "points" => Some(Command::Edit(event.clone())),
+            _ => None,
+        }
+    }
+
     pub(crate) fn unused_buffers(&self) -> Vec<i64> {
         std::iter::once(self.file.display)
             .chain(self.file.spare.iter().copied())
@@ -993,6 +1020,29 @@ mod tests {
                 json!([0.0]),
             ],
         })
+    }
+
+    #[test]
+    fn gesture_commands_leave_navigation_and_dialog_setup_out_of_operations() {
+        let editor = editor();
+        let Command::Edit(mut event) = stroke() else {
+            unreachable!()
+        };
+        assert!(matches!(editor.command_for(&event), Some(Command::Edit(_))));
+        event.args[3] = json!(crate::turn::MENU);
+        event.args[4] = json!("apply_envelope");
+        assert!(matches!(editor.command_for(&event), Some(Command::Edit(_))));
+        event.args[4] = json!("save");
+        assert!(matches!(
+            editor.command_for(&event),
+            Some(Command::WindowSave(_))
+        ));
+        for tag in ["locate", "selection", "view_both", "save_as", "unknown"] {
+            event.args[4] = json!(tag);
+            assert!(editor.command_for(&event).is_none(), "{tag}");
+        }
+        event.args.clear();
+        assert!(editor.command_for(&event).is_none());
     }
 
     #[test]

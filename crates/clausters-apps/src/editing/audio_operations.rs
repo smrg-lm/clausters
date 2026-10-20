@@ -114,66 +114,45 @@ impl Editing {
     }
 
     fn decode_audio_event(&mut self, member: MemberId, event: &Event) -> Option<Command> {
-        if event.addr != "/gui_event" {
+        let Member::Audio(editor) = self.member(member)? else {
             return None;
-        }
-        let raw_tag = event.args.get(3)?.as_str()?;
-        let tag = if raw_tag == crate::turn::MENU {
-            event.args.get(4)?.as_str()?
-        } else {
-            raw_tag
         };
-        if let Some(Member::Audio(editor)) = self.member(member) {
-            let widget = event.args.first().map_or(0, int);
-            if editor.saves_from(widget, tag, event.args.get(4..).unwrap_or_default()) {
-                return Some(Command::WindowSave(event.clone()));
-            }
-        } else {
-            return None;
-        }
-        match tag {
-            "paste" | "mix" => {
-                let doc = clausters_document::clipboard::Clipboard::parse(
-                    event
-                        .args
-                        .get(6)
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                );
-                let clipboard = if let clausters_document::clipboard::Content::Buffer {
-                    buffer,
-                    frames,
-                    channels,
-                    ..
-                } = doc.content
-                {
-                    let server = self.seats.get(member as usize)?.server;
-                    let id = ResourceId {
-                        server,
-                        buffer: i64::from(buffer),
-                    };
-                    if self.services.resources.source(id).is_none() {
-                        self.services.resources.register(Source {
-                            id,
-                            member,
-                            bytes: frames.saturating_mul(u64::from(channels)).saturating_mul(4),
-                            owned: false,
-                            stored: None,
-                        });
-                    }
-                    Some(id)
-                } else {
-                    None
+        let mut command = editor.command_for(event)?;
+        if let Command::Paste { clipboard, .. } = &mut command {
+            let doc = clausters_document::clipboard::Clipboard::parse(
+                event
+                    .args
+                    .get(6)
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+            );
+            *clipboard = if let clausters_document::clipboard::Content::Buffer {
+                buffer,
+                frames,
+                channels,
+                ..
+            } = doc.content
+            {
+                let server = self.seats.get(member as usize)?.server;
+                let id = ResourceId {
+                    server,
+                    buffer: i64::from(buffer),
                 };
-                Some(Command::Paste {
-                    event: event.clone(),
-                    clipboard,
-                })
-            }
-            "draw" | "sample" | "cut" | "copy" | "copy_cut" | "apply_envelope" | "apply"
-            | "points" => Some(Command::Edit(event.clone())),
-            _ => None,
+                if self.services.resources.source(id).is_none() {
+                    self.services.resources.register(Source {
+                        id,
+                        member,
+                        bytes: frames.saturating_mul(u64::from(channels)).saturating_mul(4),
+                        owned: false,
+                        stored: None,
+                    });
+                }
+                Some(id)
+            } else {
+                None
+            };
         }
+        Some(command)
     }
 
     pub(super) fn prepare_audio_event(
@@ -181,13 +160,7 @@ impl Editing {
         member: MemberId,
         event: &Event,
     ) -> Option<Turned> {
-        if event.addr != "/gui_event" {
-            return None;
-        }
         let command = self.decode_audio_event(member, event)?;
-        if !matches!(self.member(member), Some(Member::Audio(_))) {
-            return None;
-        }
         Some(self.prepare_audio_turn(member, command, event.args.get(1).map_or(0, int)))
     }
 
@@ -613,5 +586,72 @@ impl crate::application::walks::WalkHost<audio::operations::Commit> for Editing 
     }
     fn walk_server(&self, member: u32) -> ServerInstance {
         self.seats[member as usize].server
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_gesture_decoding_supplies_endpoint_scoped_clipboard_reads() {
+        let mut editing = Editing::new();
+        let opened = call_json(
+            &mut editing,
+            &json!({
+                "verb":"openAudio", "key":"take:3", "take":3, "frames":100,
+                "display":9, "buffers":[20,21,22,23]
+            })
+            .to_string(),
+        );
+        let member = serde_json::from_str::<Value>(&opened).unwrap()["member"]
+            .as_u64()
+            .unwrap() as MemberId;
+        let document = clausters_document::clipboard::Clipboard {
+            content: clausters_document::clipboard::Content::Buffer {
+                buffer: 77,
+                frames: 10,
+                channels: 2,
+                sample_rate: 48000.0,
+                location: None,
+            },
+            origin: None,
+        }
+        .to_json();
+        let id = ResourceId {
+            server: editing.seats[member as usize].server,
+            buffer: 77,
+        };
+        for tag in ["paste", "mix"] {
+            let event = Event {
+                addr: "/gui_event".into(),
+                args: vec![
+                    json!(12),
+                    json!(1),
+                    json!(0),
+                    json!(tag),
+                    json!(0),
+                    json!(0),
+                    json!(document),
+                ],
+            };
+            let Some(audio::operations::Command::Paste {
+                clipboard,
+                event: decoded,
+            }) = editing.decode_audio_event(member, &event)
+            else {
+                panic!("paste command expected")
+            };
+            assert_eq!(clipboard, Some(id));
+            assert_eq!(decoded.args, event.args);
+            let source = editing.services.resources.source(id).unwrap();
+            assert_eq!(source.bytes, 80);
+            assert!(!source.owned);
+        }
+        let event = Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(12), json!(1), json!(0), json!("locate")],
+        };
+        assert!(editing.prepare_audio_event(member, &event).is_none());
     }
 }

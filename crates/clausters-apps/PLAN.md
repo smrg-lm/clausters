@@ -2482,11 +2482,27 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   recoverable contents/history and release resources once. Platform-specific
   scheduling does not decide commit or cleanup policy.
 
-  - ✅ Non-generic shared services, read-only typed preparation and per-application operation registries over one resource graph; shared completion, repair and history-walk orchestration.
-  - ✅ Audio open/add-file, sample edits, clipboard publication, save snapshots and spill/restore use prepared deltas; menu/shortcut undo waits for confirmation. Retiring sources keep exact cleanup tickets until acknowledgement, including after file close.
-  - ✅ Headless regression coverage for rejected commits, distinct application commit types sharing services, failure/retry, saved revisions, original-object routing, invalidation and exactly-once id return in the Rust core and both adapters.
-  - ✅ Execute lifetime and spill/restore decisions against the native NRT endpoint and browser NRT/OPFS, asserting samples after undo, clipboard source close and publication replacement.
-  - ⬜ Review the paired editor example with real windows, including save-and-close and delayed completion after view replacement. Keep this milestone open until that acceptance is recorded in the implementing commit.
+  - ✅ Non-generic shared services, read-only typed preparation and
+    per-application operation registries over one resource graph; shared
+    completion, repair and history-walk orchestration.
+  - ✅ Audio open/add-file, sample edits, clipboard publication, save snapshots
+    and spill/restore use prepared deltas; menu/shortcut undo waits for
+    confirmation. Retiring sources keep exact cleanup tickets until
+    acknowledgement, including after file close.
+  - ✅ Headless regression coverage for rejected commits, distinct application
+    commit types sharing services, failure/retry, saved revisions,
+    original-object routing, invalidation and exactly-once id return in the
+    Rust core and both adapters.
+  - ✅ Execute lifetime and spill/restore decisions against the native NRT
+    endpoint and browser NRT/OPFS, asserting samples after undo, clipboard
+    source close and publication replacement.
+  - ✅ AudioEditor classifies operation-producing gestures; Editing only
+    supplies endpoint-scoped clipboard reads, without a second gesture
+    whitelist.
+  - ⬜ Review the paired editor example with real windows, including
+    save-and-close and delayed completion after view replacement. Keep this
+    milestone open until that acceptance is recorded in the implementing
+    commit.
 
 - ⬜ **X20 - Give actions one definition and contextual state.** After
   `X19`, extend the existing `clausters-editing::verbs` and chrome mechanisms
@@ -2532,6 +2548,11 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   operations, language-object projection and awaiting in adapters. The
   client holds a handle to the application and does not assemble its internal
   lifecycle. Service results re-enter the coordinator to determine next work.
+  Reuse the existing generic `application::walks::finish` and `WalkHost`;
+  do not introduce a second participant-routing abstraction. Consolidate the
+  remaining common repair construction and finish/walk finalization in the
+  runtime. Keep domain command decoding, completion decoration and JSON
+  projection in the application adapters; file length is not the boundary.
   **Acceptance:** shared action/completion traces produce equal state and
   semantic effect order through both clients and supported host adapters;
   readiness precedes reload, preview reattachment follows restructure, and
@@ -2577,6 +2598,10 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   follow the same mechanisms without inventing domain conversions. A points
   editor requires no audio-only service; the common layer builds without
   notation. Each port passes its affected example pair before the next one.
+  Demonstrate a second real application through Editing with its typed
+  runtime over the same Services, including failure/repair and history walks,
+  without copying audio lifecycle orchestration. The synthetic distinct-commit
+  runtime test proves service sharing, not this integration acceptance.
   Each editor is a composition of the established modules, with its domain
   adapters and configuration identified. A missing general capability
   extends the shared contract rather than introducing a private mechanism.
