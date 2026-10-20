@@ -1376,12 +1376,29 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             to_json(&prepared.or_else(|| editing.act(member, &call)))
         }
         "step" => {
-            editing.select(
-                request
-                    .get("member")
-                    .and_then(Value::as_u64)
-                    .map(|m| m as MemberId),
-            );
+            let target = match request.get("member") {
+                None | Some(Value::Null) => None,
+                Some(value) => {
+                    let target = value
+                        .as_u64()
+                        .and_then(|id| MemberId::try_from(id).ok())
+                        .filter(|id| editing.member(*id).is_some());
+                    let Some(target) = target else {
+                        return to_json(&Stepped {
+                            stepped: false,
+                            operation: None,
+                            reason: Some("the history step member is invalid".into()),
+                            effects: Vec::new(),
+                            corrections: Vec::new(),
+                            freed: Vec::new(),
+                            stored: Vec::new(),
+                            version: editing.version(),
+                        });
+                    };
+                    Some(target)
+                }
+            };
+            editing.select(target);
             let direction = get(&request, "direction")
                 .as_str()
                 .and_then(Direction::parse)
@@ -2933,6 +2950,76 @@ mod tests {
             json!([{"member": take, "buffers": [20], "spilled": [20]}])
         );
     }
+    #[test]
+    fn context_history_steps_accept_an_omitted_or_null_member() {
+        for target in [None, Some(Value::Null)] {
+            let mut editing = Editing::new();
+            let member = an_audio_take(&mut editing);
+            draw(&mut editing, member, 1, 10);
+            let mut request = json!({"verb":"step", "direction":"undo"});
+            if let Some(target) = target {
+                request["member"] = target;
+            }
+            let stepped = call(&mut editing, request);
+            assert_eq!(stepped["stepped"], true, "{stepped}");
+            assert_eq!(stepped["effects"][0]["member"], member);
+        }
+    }
+
+    #[test]
+    fn invalid_history_step_members_never_use_another_order() {
+        for direction in ["undo", "redo"] {
+            let mut editing = Editing::new();
+            let member = an_audio_take(&mut editing);
+            draw(&mut editing, member, 1, 10);
+            call(
+                &mut editing,
+                json!({"verb":"member", "member":member,
+                "call":{"verb":"add_file", "take":50, "frames":100,
+                    "display":51, "buffers":[52,53,54]}}),
+            );
+            draw(&mut editing, member, 2, 20);
+            if direction == "redo" {
+                call(
+                    &mut editing,
+                    json!({"verb":"step", "member":member,
+                    "direction":"undo"}),
+                );
+            }
+            let selected = editing.services.histories.selected();
+            let version = editing.version();
+            let before = reads(&editing, member);
+            for target in [
+                json!(999),
+                json!(1_u64 << 32),
+                json!(u64::MAX),
+                json!(-1),
+                json!(0.5),
+                json!("0"),
+                json!(false),
+            ] {
+                let refused = raw_call(
+                    &mut editing,
+                    json!({"verb":"step",
+                    "member":target, "direction":direction}),
+                );
+                assert_eq!(refused["stepped"], false, "{target}: {refused}");
+                assert_eq!(refused["reason"], "the history step member is invalid");
+                assert!(refused["operation"].is_null());
+                assert_eq!(refused["effects"], json!([]));
+                assert_eq!(editing.services.histories.selected(), selected);
+                assert_eq!(editing.version(), version);
+                assert_eq!(reads(&editing, member), before);
+            }
+            let valid = call(
+                &mut editing,
+                json!({"verb":"step", "member":member,
+                "direction":direction}),
+            );
+            assert_eq!(valid["stepped"], true, "{valid}");
+        }
+    }
+
     /// **A window's undo walks the order of its file in focus**, whichever
     /// member had the last turn, and the context's order is the other window's.
     #[test]

@@ -60,6 +60,10 @@ code that keeps it lives.
   inputs resolve their own editing actions before document actions. Sharing
   an undo order across objects requires an explicit application composition;
   neither opening order nor a shared service instance establishes that policy.
+  A scripted history step with a malformed or unknown member is refused
+  before selecting an order or preparing I/O. It cannot use the previously
+  selected order or truncate an oversized id to address another member.
+  Omitting the member, or passing null, still explicitly targets the context.
   A script can explicitly address such a shared context. Within that context,
   a step restores the objects recorded in the entry, including objects out of
   focus, and updates their playback graphs without changing the active

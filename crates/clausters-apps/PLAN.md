@@ -4375,3 +4375,14 @@ wrong.
   reproduced the duplicate acknowledgement; directed coverage checks key and
   menu saves across independent contexts and leaves the other file dirty.
   The delayed-completion native visual review is accepted above.
+
+
+- ✅ **An invalid undo target steps the previous history order**
+  (2026-10-19, action-target review). A scripted `step` naming an unknown
+  member kept the last selected order; malformed ids selected the shared
+  context, and oversized ids could wrap to a valid member. Validate an
+  explicit member before selecting or preparing undo/redo, and return an
+  ordinary refused step without effects or version changes. Omitted/null
+  members retain the existing explicit context behavior. Directed tests
+  reproduce the failure and cover invalid numeric, string and boolean ids,
+  undo/redo and a valid step after refusal. This does not complete `X20`.
