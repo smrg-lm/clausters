@@ -1010,8 +1010,23 @@ export class AudioEditor extends Editor<Buffer> {
         for (const buffer of buffers) this.server.buffers.free(buffer);
     }
 
+    /**
+     * Retry failed repairs for this editor's files without repeating edits.
+     * Call after resolving the I/O failure. Contents and history stay unchanged;
+     * successful repair permits editing, saving and closing again. Rejects if
+     * repair fails again. Does nothing if none remain.
+     */
+    async retryPending(): Promise<void> {
+        this.checkServer();
+        const pending = this.editing.serviceCall<{ repairs: { ticket: unknown }[] }>("operation", { action: "pendingRepairs", member: this.member });
+        for (const repair of pending.repairs ?? []) {
+            const prepared = this.editing.serviceCall("operation", { action: "retryRepair", ticket: repair.ticket });
+            await this.operation({}, prepared, true);
+        }
+    }
+
     /** Execute typed batches; commit, refusal and cleanup come from Rust. @internal */
-    async operation(command: Record<string, unknown>, prepared?: Record<string, unknown>): Promise<Record<string, any>> {
+    async operation(command: Record<string, unknown>, prepared?: Record<string, unknown>, repairing = false): Promise<Record<string, any>> {
         let answer: Record<string, any> = prepared ?? this.editing.serviceCall("operation", {
             action: "prepare", member: this.member, command,
         });
@@ -1043,7 +1058,7 @@ export class AudioEditor extends Editor<Buffer> {
         this.editing.operationEcho(answer.echo);
         this.editing.release(answer.freed, answer.stored);
         this.dirty = Boolean(this.coreCall("binding").dirty);
-        if (answer.committed !== true) {
+        if (answer.committed !== true && !(repairing && answer.repaired === true)) {
             if (answer.echo == null) this.echo.send(answer.outcome?.answer);
             throw new Error(answer.reason ?? answer.outcome?.answer?.reason ?? "the operation was refused");
         }

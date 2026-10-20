@@ -1198,11 +1198,7 @@ impl AudioEditor {
         self.file.dirty = self.file.revision != self.file.saved_revision;
     }
 
-    /// **A step of the history, applied**: the list a payload states becomes
-    /// the take, and the answer is the steps that stitch it. Nothing when the
-    /// payload is not a list.
-    pub fn apply(&mut self, payload: &Value) -> Option<Value> {
-        let mut next = parts::Take::read(&Opaque(payload.clone()))?;
+    fn keep_visibility(&self, next: &mut parts::Take) {
         // Visibility is view state: walking the edit order restores the curve,
         // not which body the user has chosen to look at since the edit.
         for curve in &mut next.automation {
@@ -1216,6 +1212,14 @@ impl AudioEditor {
                 curve.visible = held.visible;
             }
         }
+    }
+
+    /// **A step of the history, applied**: the list a payload states becomes
+    /// the take, and the answer is the steps that stitch it. Nothing when the
+    /// payload is not a list.
+    pub fn apply(&mut self, payload: &Value) -> Option<Value> {
+        let mut next = parts::Take::read(&Opaque(payload.clone()))?;
+        self.keep_visibility(&mut next);
         self.file.contents = next;
         if let Some(revision) = payload["contentRevision"].as_u64() {
             self.file.revision = revision;

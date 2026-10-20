@@ -8,7 +8,7 @@ use super::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Control messages common to all applications, decoded at the JSON boundary.
 #[derive(Deserialize)]
@@ -24,7 +24,9 @@ pub enum Control {
     Cancel { ticket: Ticket },
     /// All repair effects settled successfully.
     Repaired { ticket: Ticket },
-    /// Read the existing repair without consuming it.
+    /// List repairs involving a member, including attempts still in flight.
+    PendingRepairs { member: u32 },
+    /// Claim a failed repair for one executor without consuming its ownership.
     RetryRepair { ticket: Ticket },
     /// Keep the repair and its lock after an unsuccessful attempt.
     RepairFailed { ticket: Ticket, reason: String },
@@ -91,6 +93,7 @@ pub struct Runtime<C, O> {
     /// Typed operation identity, dependency and access rules.
     pub operations: Operations<C>,
     repairs: BTreeMap<u64, Repair<O>>,
+    repairing: BTreeSet<u64>,
     walks: BTreeMap<u64, PendingWalk<C>>,
 }
 impl<C, O> Default for Runtime<C, O> {
@@ -98,6 +101,7 @@ impl<C, O> Default for Runtime<C, O> {
         Self {
             operations: Operations::default(),
             repairs: BTreeMap::new(),
+            repairing: BTreeSet::new(),
             walks: BTreeMap::new(),
         }
     }
@@ -184,6 +188,7 @@ impl<C, O> Runtime<C, O> {
     /// Store an explicit recovery plan, retaining the operation's pending root.
     pub fn repair(&mut self, repair: Repair<O>, resources: &Resources, version: i64) -> Value {
         let response = repair.response(resources, version);
+        self.repairing.insert(repair.ticket.id);
         self.repairs.insert(repair.ticket.id, repair);
         response
     }
@@ -246,19 +251,35 @@ impl<C, O> Runtime<C, O> {
                     .repairs
                     .get(&ticket.id)
                     .is_some_and(|repair| repair.ticket == ticket)
+                    || !self.repairing.contains(&ticket.id)
                     || !self.operations.finish_abort(resources, ticket)
                 {
                     return Dispatch::Response(json!({"accepted":false}));
                 }
+                self.repairing.remove(&ticket.id);
                 Dispatch::Repaired(self.repairs.remove(&ticket.id).unwrap())
             }
-            Control::RetryRepair { ticket } => Dispatch::Response(
-                self.repairs
+            Control::PendingRepairs { member } => {
+                Dispatch::Response(json!({"repairs":self.repairs.values()
+                .filter(|repair| repair.ticket.target.member == member || repair.batches.iter().any(|batch| batch.member == member))
+                .map(|repair| json!({"ticket":repair.ticket,"reason":repair.reason,"running":self.repairing.contains(&repair.ticket.id)}))
+                .collect::<Vec<_>>()}))
+            }
+            Control::RetryRepair { ticket } => {
+                let Some(repair) = self
+                    .repairs
                     .get(&ticket.id)
                     .filter(|repair| repair.ticket == ticket)
-                    .map(|repair| repair.response(resources, version))
-                    .unwrap_or_else(|| json!({"accepted":false})),
-            ),
+                else {
+                    return Dispatch::Response(json!({"accepted":false}));
+                };
+                if !self.repairing.insert(ticket.id) {
+                    return Dispatch::Response(
+                        json!({"accepted":false,"error":"the repair already has an executor"}),
+                    );
+                }
+                Dispatch::Response(repair.response(resources, version))
+            }
             Control::RepairFailed { ticket, reason } => {
                 let Some(repair) = self
                     .repairs
@@ -267,11 +288,14 @@ impl<C, O> Runtime<C, O> {
                 else {
                     return Dispatch::Response(json!({"accepted":false}));
                 };
+                if !self.repairing.remove(&ticket.id) {
+                    return Dispatch::Response(json!({"accepted":false}));
+                }
                 repair.reason = format!("{}; recovery is pending: {}", repair.reason, reason);
-                let echo = repair.receipt.map(|(member, seq)| json!({"member":member,
+                let echo = repair.receipt.take().map(|(member, seq)| json!({"member":member,
                     "answer":clausters_editing::conversation::answer(seq, version, Some(repair.reason.clone()), Vec::new())}));
                 Dispatch::Response(
-                    json!({"complete":true,"committed":false,"reason":repair.reason,"echo":echo,"version":version}),
+                    json!({"complete":true,"committed":false,"reason":repair.reason,"echo":echo,"version":version,"ticket":ticket}),
                 )
             }
         }
@@ -282,6 +306,7 @@ impl<C, O> Runtime<C, O> {
         let retired = self.operations.invalidate(resources, server);
         for id in &retired {
             self.repairs.remove(id);
+            self.repairing.remove(id);
             self.walks.remove(id);
         }
         retired
@@ -460,6 +485,46 @@ mod tests {
             &services.resources,
             1,
         );
+        let pending = first_runtime.control(
+            &mut services.resources,
+            Control::PendingRepairs { member: 10 },
+            1,
+        );
+        assert!(
+            matches!(pending, Dispatch::Response(v) if v["repairs"][0]["ticket"]["id"] == ticket.id && v["repairs"][0]["running"] == true)
+        );
+        let foreign = first_runtime.control(
+            &mut services.resources,
+            Control::PendingRepairs { member: 20 },
+            1,
+        );
+        assert!(
+            matches!(foreign, Dispatch::Response(v) if v["repairs"].as_array().unwrap().is_empty())
+        );
+        assert!(
+            matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v["accepted"] == false)
+        );
+        for _ in 0..2 {
+            first_runtime.control(
+                &mut services.resources,
+                Control::RepairFailed {
+                    ticket,
+                    reason: "temporary failure".into(),
+                },
+                1,
+            );
+            assert!(first_runtime.operations.busy(ticket.target));
+            assert!(services.resources.collect().is_empty());
+            assert!(
+                matches!(first_runtime.control(&mut services.resources, Control::Repaired { ticket }, 1), Dispatch::Response(v) if v["accepted"] == false)
+            );
+            assert!(
+                matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v["repair"]["id"] == ticket.id)
+            );
+            assert!(
+                matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v["accepted"] == false)
+            );
+        }
         assert!(matches!(
             first_runtime.control(&mut services.resources, Control::Repaired { ticket }, 1),
             Dispatch::Repaired(_)

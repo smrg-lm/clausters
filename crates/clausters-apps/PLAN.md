@@ -4386,3 +4386,8 @@ wrong.
   members retain the existing explicit context behavior. Directed tests
   reproduce the failure and cover invalid numeric, string and boolean ids,
   undo/redo and a valid step after refusal. This does not complete `X20`.
+
+
+- ✅ **A failed repair leaves the audio file locked without a client retry** (2026-10-20, branch review). When both an edit and its repair failed, adapters discarded the ticket while the runtime retained the lock. Member-scoped repair discovery and paired client retry methods now retain access to recovery without repeating the edit. Exclusive retry claims, repeated failures, original gesture acknowledgement, successful release and invalidation are covered by directed tests.
+
+- ✅ **Pending content confirmation restores old envelope visibility** (2026-10-20, branch review). Showing the gain envelope during a sample edit was overwritten by the prepared contents, leaving an active but hidden points body. Content confirmation and history restoration now preserve current visibility by curve identity; directed core and paired client regressions cover delayed confirmation and redraw.

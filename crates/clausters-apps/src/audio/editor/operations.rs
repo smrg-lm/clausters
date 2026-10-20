@@ -455,17 +455,7 @@ impl Application for AudioEditor {
                     Command::Restore(payload) => {
                         let mut next = parts::Take::read(&payload)
                             .ok_or("the history payload is not a take")?;
-                        for curve in &mut next.automation {
-                            if let Some(previous) = self
-                                .file
-                                .contents
-                                .automation
-                                .iter()
-                                .find(|held| held.id == curve.id)
-                            {
-                                curve.visible = previous.visible;
-                            }
-                        }
+                        self.keep_visibility(&mut next);
                         draft.file.contents = next;
                         draft.file.revision = payload.0["contentRevision"]
                             .as_u64()
@@ -643,7 +633,8 @@ impl Application for AudioEditor {
                     .retain(|buffer| !delta.reserved.contains(buffer));
                 match delta.change {
                     Change::AddFile(_) => unreachable!(),
-                    Change::Contents(contents) => {
+                    Change::Contents(mut contents) => {
+                        editor.keep_visibility(&mut contents.contents);
                         editor.file.contents = contents.contents;
                         editor.file.revision = contents.revision;
                         editor.file.next_revision = contents.next_revision;
@@ -1055,6 +1046,23 @@ mod tests {
         }
         event.args.clear();
         assert!(editor.command_for(&event).is_none());
+    }
+
+    #[test]
+    fn pending_edits_and_restores_keep_current_curve_visibility() {
+        let (mut editor, mut services) = opened();
+        editor.ensure_envelope();
+        for visible in [true, false] {
+            let previous = editor.file.contents.payload();
+            let ticket = begin(&mut editor, &mut services, stroke());
+            editor.file.contents.automation[0].visible = visible;
+            assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
+            assert_eq!(editor.file.contents.automation[0].visible, visible);
+            let ticket = begin(&mut editor, &mut services, Command::Restore(previous));
+            editor.file.contents.automation[0].visible = !visible;
+            assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
+            assert_eq!(editor.file.contents.automation[0].visible, !visible);
+        }
     }
 
     #[test]

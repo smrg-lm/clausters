@@ -274,7 +274,7 @@ impl Editing {
                 let (freed, stored) = self.release_with_storage(false);
                 let echo = repair.receipt.map(|(member, seq)| json!({"member":member,
                     "answer":clausters_editing::conversation::answer(seq, self.version, Some(repair.reason.clone()), Vec::new())}));
-                json!({"complete":true,"committed":false,"outcome":repair.outcome,"echo":echo,"returned":{"member":repair.ticket.target.member,"server":repair.ticket.target.server,"buffers":repair.returned},
+                json!({"complete":true,"committed":false,"repaired":true,"outcome":repair.outcome,"echo":echo,"returned":{"member":repair.ticket.target.member,"server":repair.ticket.target.server,"buffers":repair.returned},
                     "reason":repair.reason,"freed":freed,"stored":stored,"version":self.version})
             }
         }

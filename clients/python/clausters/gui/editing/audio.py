@@ -707,7 +707,20 @@ class AudioEditor(Marking, Editor):
         """Paste onto what is there, mixed with it -- the window's ``mix`` (`verb`)."""
         return self.verb("mix")
 
-    def _operation(self, command, prepared=None):
+    def retry_pending(self) -> None:
+        """Retry failed repairs for this editor's files without repeating edits.
+
+        Call after resolving the I/O failure. Pending contents and history stay
+        unchanged; successful repair permits editing, saving and closing again.
+        Raises `CommandError` if repair fails again. Does nothing if none remain.
+        """
+        self._check_server()
+        pending = self._editing._service_call("operation", action="pendingRepairs", member=self._member)
+        for repair in pending.get("repairs") or ():
+            prepared = self._editing._service_call("operation", action="retryRepair", ticket=repair["ticket"])
+            self._operation({}, prepared=prepared, repairing=True)
+
+    def _operation(self, command, prepared=None, *, repairing=False):
         """Execute typed batches; commit, refusal and cleanup come from Rust."""
         answer = prepared or self._editing._service_call(
             "operation", action="prepare", member=self._member, command=command)
@@ -737,7 +750,7 @@ class AudioEditor(Marking, Editor):
         self._editing._operation_echo(answer.get("echo"))
         self._editing.release(answer.get("freed"), answer.get("stored"))
         self.dirty = bool(self._call("binding").get("dirty"))
-        if not answer.get("committed"):
+        if not answer.get("committed") and not (repairing and answer.get("repaired")):
             outcome = answer.get("outcome") or {}
             if answer.get("echo") is None:
                 self.echo.send(outcome.get("answer"))

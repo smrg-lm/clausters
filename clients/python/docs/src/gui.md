@@ -1139,6 +1139,8 @@ belong to whoever owns them.
 
 The audio editor copies on the server through an application clipboard exchange. A copy becomes available after the server completes it, and Cut removes samples only after a valid copy is published. Paste and Paste mixed work across files and windows sharing the same live client connection, even after closing the origin; they create samples owned by the destination. Another connection, an expired copy, text and incompatible channels are refused. Paste preserves a block's sample rate through the parts ratio; Paste mixed requires matching rates. There is no implicit channel conversion or resampling. Clipboard replacement cannot alter a previous paste or its history. History-only samples continue to spill and restore under `resident_bytes` on disk or OPFS. New system text is treated as text, even if it looks like a typed clipboard document.
 
+If an audio edit and its repair both fail, resolve the I/O problem and call `editor.retry_pending()`. It retries pending repairs without repeating the failed edits. Successful repair allows editing, saving and closing again; another failure keeps the affected files protected and reports an error.
+
 Audio edits and saves are prepared before their server steps run and confirmed only when those steps succeed. A failed save preserves the previous destination and leaves unsaved edits dirty. Saving captures a content revision: editing during the write stays dirty, while undoing to the saved revision is clean. A late result addresses its original file and cannot rebind a different file's views. Cleanup waits for its server acknowledgement before returning a buffer id for reuse; a failed cleanup remains reserved for retry or connection invalidation.
 
 

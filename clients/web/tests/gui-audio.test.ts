@@ -1084,3 +1084,71 @@ test("failed cleanup keeps buffer id reserved until successful retry", async () 
     editor.close();
     await settle();
 });
+
+
+test("failed repair is discoverable and retryable without repeating the edit", async () => {
+    const take = new FakeBuffer();
+    const [editor, host, wid, context] = await opened(take);
+    const before = spans(editor);
+    const version = context.version;
+    const request = take.server.request.bind(take.server);
+    take.server.request = (addr, args) => addr === "/buffer_stitch"
+        ? Promise.resolve({ addr: "/fail", args: [addr, "temporary failure"] }) : request(addr, args);
+    // Execute through the same operation adapter without the GUI's error sink.
+    await assert.rejects(editor.operation({ kind: "edit", event: {
+        addr: "/gui_event", args: [wid, 1, version, "draw", 0, 10, [0.5], [0.0]],
+    } }), /recovery is pending/);
+    const pending = context.serviceCall<{ repairs: { running: boolean }[] }>("operation", { action: "pendingRepairs", member: (editor as any).member }).repairs;
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0]!.running, false);
+    await assert.rejects(editor.retryPending(), /recovery is pending/);
+    assert.deepEqual(spans(editor), before);
+    assert.equal(context.version, version);
+    const echoes = host.acks.length;
+    take.server.request = request;
+    await editor.retryPending();
+    await settle();
+    assert.equal(host.acks.length, echoes);
+    assert.deepEqual(spans(editor), before);
+    assert.equal(context.version, version);
+    assert.equal(editor.canUndo, false);
+    assert.deepEqual(context.serviceCall("operation", { action: "pendingRepairs", member: (editor as any).member }).repairs, []);
+    const freed = [...take.server.buffers.freed];
+    await editor.retryPending();
+    await settle();
+    assert.deepEqual(take.server.buffers.freed, freed);
+    assert.equal(freed.length, new Set(freed).size);
+    editor.apply("/gui_event", [wid, 2, version, "draw", 0, 10, [0.5], [0.0]]);
+    await settle();
+    assert.equal(await editor.save({ path: "/takes/recovered.wav" }), "/takes/recovered.wav");
+    await editor.closeFile();
+    await settle();
+});
+
+test("envelope visibility changed during an edit survives confirmation and history", async () => {
+    const take = new FakeBuffer();
+    const [editor, _host, wid, context] = await opened(take);
+    const request = take.server.request.bind(take.server);
+    let shown = false;
+    take.server.request = (addr, args) => {
+        if (addr === "/buffer_stitch" && !shown) {
+            shown = true;
+            editor.showEnvelope();
+        }
+        return request(addr, args);
+    };
+    const pane = (node: any): any => node.type === "pane" ? node
+        : (node.children ?? []).map(pane).find((found: unknown) => found != null);
+    editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]]);
+    await settle();
+    for (const step of [null, () => editor.undo(), () => editor.redo()]) {
+        if (step !== null) {
+            assert.equal(step(), true);
+            await settle();
+        }
+        assert.equal(pane(editor.draw()).hidden, "");
+        assert.equal(editor.layer, "points");
+    }
+    editor.close();
+    await settle();
+});

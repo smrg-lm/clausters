@@ -218,6 +218,10 @@ code that keeps it lives.
   text; its focus (`"focus" 1|0`) is a notification and never a value
   (`forms::read`).
 
+
+- **A failed repair remains reachable.** After resolving an I/O failure, an audio editor's `retry_pending()` / `retryPending()` retries its pending repairs without repeating the edits. Until repair succeeds, the affected objects remain locked and their sources retained. Concurrent retries cannot dispatch the same repair twice; a successful retry does not repeat the original gesture receipt or change history.
+- **Content confirmation preserves current presentation.** Showing or hiding an envelope while an edit or history restore waits for I/O remains in effect after confirmation and redraw. Curve visibility is matched by identity against the current file, not restored from the prepared content snapshot.
+
 ## Checking a change
 
 A change to an application is checked, by test where the host allows it and

@@ -993,3 +993,62 @@ def test_failed_cleanup_keeps_buffer_id_reserved_until_successful_retry():
     assert take.server.buffers.freed.count(first) == 1
     assert context._service_call("cleanup", action="pending")["tickets"] == []
     editor.close()
+
+
+def test_failed_repair_is_discoverable_and_retryable_without_repeating_the_edit():
+    take = FakeBuffer()
+    editor, host, wid, context = opened(take)
+    before = editor.parts
+    version = context.version
+    request = take.server.request
+    take.server.request = lambda addr, *args, **kw: (
+        ("/fail", [addr, "temporary failure"]) if addr == "/buffer_stitch" else request(addr, *args, **kw))
+    with pytest.raises(CommandError, match="recovery is pending"):
+        editor.apply("/gui_event", [wid, 1, version, "draw", 0, 10, [0.5], [0.0]])
+    pending = context._service_call("operation", action="pendingRepairs", member=editor._member)["repairs"]
+    assert len(pending) == 1 and not pending[0]["running"]
+    with pytest.raises(CommandError, match="recovery is pending"):
+        editor.retry_pending()
+    assert editor.parts == before and context.version == version
+    echoes = len(host.acks)
+    take.server.request = request
+    editor.retry_pending()
+    assert len(host.acks) == echoes, "a later repair must not repeat the gesture receipt"
+    assert editor.parts == before and context.version == version
+    assert not editor.can_undo
+    assert context._service_call("operation", action="pendingRepairs", member=editor._member)["repairs"] == []
+    freed = list(take.server.buffers.freed)
+    editor.retry_pending()
+    assert take.server.buffers.freed == freed
+    assert len(freed) == len(set(freed))
+    assert editor.apply("/gui_event", [wid, 2, version, "draw", 0, 10, [0.5], [0.0]])
+    assert editor.save("/takes/recovered.wav") == "/takes/recovered.wav"
+    editor.close_file()
+
+
+def test_envelope_visibility_changed_during_an_edit_survives_confirmation_and_history():
+    take = FakeBuffer()
+    editor, _host, wid, context = opened(take)
+    request = take.server.request
+    shown = False
+
+    def delayed(addr, *args, **kwargs):
+        nonlocal shown
+        if addr == "/buffer_stitch" and not shown:
+            shown = True
+            editor.show_envelope()
+        return request(addr, *args, **kwargs)
+
+    def pane(node):
+        if node.get("type") == "pane":
+            return node
+        return next((found for child in node.get("children", ()) if (found := pane(child)) is not None), None)
+
+    take.server.request = delayed
+    assert editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]])
+    for step in [None, editor.undo, editor.redo]:
+        if step is not None:
+            assert step()
+        assert pane(editor.draw())["hidden"] == ""
+        assert editor.layer == "points"
+    editor.close()
