@@ -146,13 +146,14 @@ already carry it.
   by use)*. **Related:** `T10` writes the file this one points at.
 
 - ⬜ **Eight tracks bring the GUI's frame rate down, and the play cursor
-  jitters** (fixed, awaiting its eye pass), **The page draws much slower
-  than the native host**, **Two of the page's dialogs draw wrong**, **After
-  Save as and undo back to the original, the page's spectrogram keeps an
-  edited picture** and **A hidden native window on Wayland is still
-  ticked** *(`clients/gui/PLAN.md`, Found by use)*. Found in the audio
-  editor's review of 2026-10-21; measured with the host's profiler
-  (`host.profile`, beside the server's `/server_profile`).
+  jitters**, **Two of the page's dialogs draw wrong** and **A hidden native
+  window on Wayland is still ticked** (fixed, each awaiting its eye pass),
+  then **The page draws much slower than the native host** and **After Save
+  as and undo back to the original, the page's spectrogram keeps an edited
+  picture**, decided together: the first is a buffer's summary downloaded
+  again on every redefine, and carrying it across is where a stale picture
+  comes from *(`clients/gui/PLAN.md`, Found by use)*. Measured with the
+  host's profiler (`host.profile`, beside the server's `/server_profile`).
 
 ## 2. Tests and reviews pending
 
