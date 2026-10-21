@@ -700,7 +700,7 @@ fn application_sources_spill_restore_and_release_without_a_renderer() {
     let undone = application_run(
         &mut server,
         &mut editing,
-        json!({"verb":"step","direction":"undo"}),
+        json!({"verb":"step","direction":"undo","member":member}),
     );
     assert_eq!(undone["stepped"], true);
     assert_eq!(application_samples(&mut server, 1, 100)[10], 0.5);
