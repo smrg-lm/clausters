@@ -2658,8 +2658,9 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   - ✅ Common repair construction and finish/walk finalization move into
     `application::runtime`, beside `walks::finish`: `refuse_turn`,
     `refuse_walk`, `finish_walk` and `Repair::echo`.
-  - ⬜ Native and browser eye and ear pass over the `edit_audio` pair: play,
+  - ✅ Native eye and ear pass over the `edit_audio` pair (2026-10-21): play,
     stop, loop, files opened and closed, cut, paste and undo, save.
+  - ⬜ Browser eye and ear pass over the same.
 
 - ⬜ **X23 - Define activity, subscriptions and invalidation.** After
   `X22`, connect application activity to existing host demand/tick machinery.
