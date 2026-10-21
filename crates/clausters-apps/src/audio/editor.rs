@@ -2521,6 +2521,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 editor.set_meters(meters.map(|m| (m.bus, m.channels)));
             }
             let mut corrections = editor.files_corrections();
+            // with no file open the window draws no take, pane or meter
+            if !editor.open_files.open {
+                return json!({"corrections": corrections}).to_string();
+            }
             let anchor = editor.playhead_anchor();
             let targets: BTreeSet<_> = editor.pictures().chain(editor.window_state.pane).collect();
             corrections.extend(targets.into_iter().map(|widget| Correction {

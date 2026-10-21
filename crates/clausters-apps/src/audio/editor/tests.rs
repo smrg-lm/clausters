@@ -1095,6 +1095,15 @@ fn an_editor_opens_with_no_file_and_answers_only_the_window_s_verbs() {
         call(&mut editor, json!({"verb": "files"}))["files"],
         json!([])
     );
+    let playing = call(&mut editor, json!({"verb": "playing", "file": null}));
+    assert!(
+        playing["corrections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["widget"] == 20),
+        "nothing addressed to a take, pane or meter the window does not draw: {playing}"
+    );
     for verb in ["parts", "save", "span", "play", "view_wave", "envelope"] {
         assert_eq!(
             call(&mut editor, json!({"verb": verb}))["error"],
