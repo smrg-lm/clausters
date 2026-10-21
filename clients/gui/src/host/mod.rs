@@ -50,6 +50,7 @@
 // widget's value can go instead of the script -- plus the voices the host plays
 // on an element's behalf, which are its own and not the element's.
 pub mod ack;
+mod actions;
 pub mod bind;
 // The other way of a binding: what a bound widget writes, asked for and read
 // back onto it.

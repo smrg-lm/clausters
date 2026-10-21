@@ -239,7 +239,32 @@ pub(super) fn collect_widgets(
                 // Curves above a sampled body draw in the overlay pass, so
                 // a texture never paints over the annotation.
                 if p.pane(placed).is_none() || el.slotted().is_some() {
-                    el.draw(&mut Draw::new(mesh, m, th), &ctx);
+                    // A tool draws its verb's state as the window's owner
+                    // reads it now, its words greyed when it cannot be taken.
+                    let state = el
+                        .tool_verb()
+                        .zip(inputs.clipboard)
+                        .and_then(|(name, clip)| {
+                            let tree = placed.first()?.widget;
+                            crate::host::actions::resolve(
+                                tree,
+                                inputs.focused,
+                                inputs.selected,
+                                name,
+                                clip,
+                            )
+                        });
+                    let greyed;
+                    let th = if state.as_ref().is_some_and(|s| !s.enabled) {
+                        greyed = crate::host::theme::Theme {
+                            text: th.text_disabled,
+                            ..th.clone()
+                        };
+                        &greyed
+                    } else {
+                        th
+                    };
+                    el.draw_action(&mut Draw::new(mesh, m, th), &ctx, state.as_ref());
                 }
                 // ...and, for a view the shared mesh cannot carry, what its
                 // claimed slot draws this frame. The set of slots is closed and

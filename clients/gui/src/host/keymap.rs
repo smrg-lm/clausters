@@ -335,6 +335,14 @@ impl Keymap {
     /// what a press does in that window -- a scope's arrow hides the table's
     /// -- and a verb left with none is not listed, nor a section left empty.
     pub fn sheet(&self, scopes: &[String]) -> Vec<Section> {
+        self.sheet_offered(scopes, &|_| true)
+    }
+
+    /// [`sheet`](Self::sheet), listing a row of the table's own only where
+    /// `offered` says the window offers its verb -- what a window whose owner
+    /// describes its actions leaves out ([`crate::host::Host::offers`]).
+    /// A scope's rows are its application's, and always listed.
+    pub fn sheet_offered(&self, scopes: &[String], offered: &dyn Fn(&str) -> bool) -> Vec<Section> {
         let mut named: Vec<Option<&str>> = scopes.iter().rev().map(|s| Some(s.as_str())).collect();
         named.dedup();
         named.push(None);
@@ -345,6 +353,7 @@ impl Keymap {
                     .bindings
                     .iter()
                     .filter(|b| b.scope.as_deref() == scope)
+                    .filter(|b| scope.is_some() || offered(&b.verb))
                     .filter_map(|b| {
                         let live: Vec<String> = b
                             .chords

@@ -26,6 +26,7 @@
 use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
+use clausters_editing::verbs::ActionState;
 
 use crate::host::graphics::controls;
 use crate::host::metrics::Metrics;
@@ -145,14 +146,21 @@ impl Element for Button {
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
+        self.draw_action(d, ctx, None);
+    }
+
+    /// A tool reads its verb's state: a switch that is on, or the choice in
+    /// force, is drawn held, and an action that cannot be taken does not
+    /// light under the pointer (the frame greys its words).
+    fn draw_action(&self, d: &mut Draw, ctx: &Ctx, state: Option<&ActionState>) {
         controls::button(
             d,
             self.label.as_deref(),
             self.icon,
             ctx.rect,
             controls::ButtonLook {
-                active: self.held,
-                hovered: ctx.hovered,
+                active: self.held || state.and_then(|s| s.checked).unwrap_or(false),
+                hovered: ctx.hovered && state.is_none_or(|s| s.enabled),
                 flat: self.flat,
             },
             self.text_size * ctx.scale,

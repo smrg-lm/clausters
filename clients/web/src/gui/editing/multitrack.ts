@@ -734,6 +734,11 @@ export class MultitrackEditor extends Editor<Multitrack> {
     /** This editor's member in its editing context. */
     private readonly member: number;
 
+    /** This editor's member, whose actions its window reads. */
+    protected override actionMember(): number {
+        return this.member;
+    }
+
     /** The transport row's ids, once the window has numbered them. */
     private controls: { rewind: number; play: number; stop: number; clock: number } | null =
         null;

@@ -33,6 +33,8 @@ transport. **Transport and render are not here** -- a bare structure at most
 sounds; it has no multitrack to move over.
 """
 
+import json
+
 from ... import _native
 from .application import BASE_ID, Application, _resolve_host
 from ...history import Editing
@@ -461,7 +463,8 @@ class Editor:
             changed = self._deliver(addr, args)
             if changed:
                 self._editing.changed()
-            return changed
+        self._publish_actions()
+        return changed
 
     def _deliver(self, addr: str, args) -> bool:
         """`apply`, without the turn around it: what the message actually
@@ -944,6 +947,38 @@ class Editor:
         """
         return self.app.step(direction, self)
 
+    @property
+    def actions(self) -> dict:
+        """**The window's actions as they read now**, by verb: what each
+        addresses (``target``), whether it can be taken (``enabled``, and
+        ``reason`` when not), a switch's or a choice's ``checked``, and whether
+        work it depends on is ``pending``. The same readings the menu, the
+        tools and the keys are enabled and checked by; read again rather than
+        kept, since they follow the object, the selection and the history.
+        Empty for an editor whose application describes none yet.
+
+        A text field holding the window's focus answers its own editing before
+        these, and a dialog up keeps every one from the window behind it; the
+        host resolves both.
+        """
+        member = getattr(self, "_member", None)
+        if member is None:
+            return {}
+        return self._editing._service_call("actions", member=member)
+
+    def _publish_actions(self) -> None:
+        """Hand the window its actions' readings when they moved."""
+        if self._window is None or self._host is None:
+            return
+        actions = self.actions
+        sent = (int(self._window), json.dumps(actions, sort_keys=True))
+        last = getattr(self, "_actions_sent", None)
+        if sent == last or (not actions and last is None):
+            # unchanged, or an application that describes none
+            return
+        self._actions_sent = sent
+        self._host.set(int(self._window), actions=actions)
+
     def reflect_step(self) -> None:
         """Draw what a history walk left behind: every widget resynced, and the
         host told once.
@@ -958,6 +993,7 @@ class Editor:
         for wid in list(getattr(self.view, "widgets", {})):
             self._resync(wid)
         self._acknowledge(0)
+        self._publish_actions()
         self._corrections = []
 
     @property

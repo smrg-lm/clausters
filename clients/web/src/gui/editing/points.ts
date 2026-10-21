@@ -159,6 +159,11 @@ export interface PointsRules {
 export class PointsEditor extends Editor<EditableCurve> {
     /** This editor's member in its editing context. */
     private readonly member: number;
+
+    /** This editor's member, whose actions its window reads. */
+    protected override actionMember(): number {
+        return this.member;
+    }
     /** The curve's widget id, once drawn. @internal */
     curveId: number | null = null;
 

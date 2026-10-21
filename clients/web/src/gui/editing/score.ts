@@ -237,6 +237,11 @@ export interface PageOptions {
 export class ScoreEditor extends Editor<Score | EventSequence> {
     /** This editor's member in its editing context. */
     private readonly member: number;
+
+    /** This editor's member, whose actions its window reads. */
+    protected override actionMember(): number {
+        return this.member;
+    }
     readonly #score: Score;
     /**
      * The sequence this page is the reading of, in an editor opened over one

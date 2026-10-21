@@ -55,7 +55,9 @@ use clausters_editing::conversation::{self, Answer, Conversation, Correction, Me
 use clausters_editing::load::stitch_message;
 use clausters_editing::samples;
 use clausters_editing::sources::{Held, stitch};
+use clausters_editing::verbs::{self, ActionState, ActionTarget, PasteTarget};
 
+use crate::application::resources::ServerInstance;
 use crate::audio::dialogs;
 use crate::samples::{MEASURES, MeterAt, Window, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, number, text};
@@ -328,6 +330,7 @@ impl Converse for AudioEditor {
                 | "layer_take"
                 | "show_envelope"
                 | "apply_envelope"
+                | "toggle_preview"
                 | "preview_on"
                 | "preview_off"
                 | "remove_effect"
@@ -546,6 +549,117 @@ fn send(addr: &str, args: Vec<OscType>) -> Step {
         addr: addr.into(),
         args,
     })
+}
+
+impl AudioEditor {
+    /// **The window's actions as they read now**, by verb: what each
+    /// addresses, whether it is available and why not, a switch's state and a
+    /// choice's alternative in force. `undo`/`redo` and `pending` are the
+    /// focused file's, which the editing context supplies.
+    pub(crate) fn actions(
+        &self,
+        member: u32,
+        server: ServerInstance,
+        undo: bool,
+        redo: bool,
+        pending: bool,
+    ) -> BTreeMap<&'static str, ActionState> {
+        let view = &self.file.presentation;
+        let views = match view.views {
+            Views::Waveform => "view_wave",
+            Views::Spectrogram => "view_spectrogram",
+            Views::Stacked => "view_both",
+        };
+        let layer = if view.edit_layer.starts_with("points") {
+            "show_envelope"
+        } else {
+            "layer_take"
+        };
+        let selected = view.selection.is_some_and(|(a, b)| b > a);
+        let document = ActionTarget::Document {
+            member,
+            object: self.focused_file(),
+        };
+        // The window's verbs a take has no meaning for: a take has no grid,
+        // and its spans are not boxes to split, join or quantize. With no
+        // reading the host neither performs them nor lists their keys.
+        const NOT_A_TAKE_S: &[&str] = &["split", "join", "quantize", "snap"];
+        verbs::WINDOW
+            .iter()
+            .chain(verbs::AUDIO)
+            .filter(|verb| !NOT_A_TAKE_S.contains(&verb.name))
+            .map(|verb| {
+                let name = verb.name;
+                let window = matches!(name, "new_file" | "open_file" | "keys" | "toggle_files");
+                let target = if window {
+                    ActionTarget::Window
+                } else {
+                    document.clone()
+                };
+                let mut state = ActionState::new(verb, target);
+                state.value = match verb.group {
+                    Some("views") => Some(views.into()),
+                    Some("layer") => Some(layer.into()),
+                    _ => None,
+                };
+                state.checked = match name {
+                    "loop" => Some(view.looping),
+                    "toggle_files" => Some(self.window_state.files_visible),
+                    "toggle_preview" => Some(view.preview_on),
+                    _ => state.value.as_deref().map(|on| on == name),
+                };
+                if !window && !self.open_files.open {
+                    state.refuse("no file is open");
+                }
+                match name {
+                    "undo" if !undo => state.refuse("the file in focus has nothing to undo"),
+                    "redo" if !redo => state.refuse("the file in focus has nothing to redo"),
+                    "show_envelope" if self.window_state.envelope_widget.is_none() => {
+                        state.refuse("this window has no envelope body");
+                    }
+                    "remove_effect" if !self.file.effect_installed => {
+                        state.refuse("no effect is installed");
+                    }
+                    _ => {}
+                }
+                // Work on the file in focus holds back what would edit, save or
+                // close it; what only looks at it stays available.
+                if matches!(
+                    name,
+                    "undo"
+                        | "redo"
+                        | "cut"
+                        | "paste"
+                        | "mix"
+                        | "delete"
+                        | "save"
+                        | "save_as"
+                        | "close_file"
+                        | "apply"
+                        | "apply_envelope"
+                ) {
+                    state.pending = pending;
+                    if pending {
+                        state.refuse("the file has pending work");
+                    }
+                }
+                // Last: an empty selection is the one objection a host reads
+                // for itself, so it must not hide another.
+                if matches!(name, "cut" | "copy" | "delete") && !selected {
+                    state.refuse_unselected();
+                }
+                if matches!(name, "paste" | "mix") {
+                    state.paste = Some(PasteTarget::Samples {
+                        channels: self.file.channels,
+                        rate: self.file.rate,
+                        connection: server.connection,
+                        generation: server.generation,
+                    });
+                }
+                (name, state)
+            })
+            .collect()
+    }
 }
 
 impl AudioEditor {
@@ -1324,7 +1438,10 @@ impl AudioEditor {
         if tag == "points" && self.window_state.envelope_widget.map(i64::from) == Some(widget) {
             return self.set_envelope_event(values, out);
         }
-        if matches!(tag, "preview_on" | "preview_off" | "remove_effect") {
+        if matches!(
+            tag,
+            "toggle_preview" | "preview_on" | "preview_off" | "remove_effect"
+        ) {
             return self.preview_event(tag, out);
         }
         if matches!(tag, "apply_envelope" | "apply") {
@@ -1363,7 +1480,7 @@ impl AudioEditor {
         }
         if matches!(tag, "copy" | "copy_cut") {
             if tag == "copy_cut" {
-                match self.cut(values) {
+                match self.cut("cut", values) {
                     Ok(Some(_)) => {}
                     Ok(None) => return (None, Vec::new()),
                     Err(reason) => return (Some(reason), Vec::new()),
@@ -1383,7 +1500,7 @@ impl AudioEditor {
         }
         let edited = match tag {
             "draw" | "sample" => self.stroke(tag, values),
-            "cut" => self.cut(values),
+            "cut" | "delete" => self.cut(tag, values),
             "paste" => self.paste(values),
             "mix" => self.mix(values),
             _ => return (None, Vec::new()),
@@ -1407,7 +1524,7 @@ impl AudioEditor {
                 // **A cut or a paste leaves nothing selected**: the frames a
                 // selection named have moved, so it would stand over other
                 // samples. The position cursor stays where the edit landed.
-                if matches!(tag, "cut" | "paste") {
+                if matches!(tag, "cut" | "delete" | "paste") {
                     let at = values.first().map_or(0.0, number).round().max(0.0) as u64;
                     corrections.extend(self.land_at(at, out));
                 }
@@ -1591,8 +1708,11 @@ impl AudioEditor {
         ]
     }
 
-    /// **A cut takes the span out of the list**, and moves no samples.
-    fn cut(&mut self, values: &[Value]) -> Result<Edited, String> {
+    /// **A cut takes the span out of the list**, and moves no samples. A
+    /// delete is the same removal with nothing put on the clipboard: what
+    /// reaches here as a cut was copied first (`copy_cut`), so the two differ
+    /// only in the history's label (`tag`).
+    fn cut(&mut self, tag: &str, values: &[Value]) -> Result<Edited, String> {
         let at = |i: usize| values.get(i).map_or(0.0, number).round().max(0.0) as u64;
         let (start, len) = (at(0), at(1));
         if len == 0 {
@@ -1607,7 +1727,7 @@ impl AudioEditor {
         if list.is_empty() {
             return Err("a take cannot be cut down to nothing".into());
         }
-        Ok(Some(("cut".into(), list, Vec::new())))
+        Ok(Some((tag.into(), list, Vec::new())))
     }
 
     /// **A paste is a new take holding the block**, put in at the position.
@@ -2340,7 +2460,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             json!({"turn": "route", "restructure": true}).to_string()
         }
         "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
-        "show_envelope" | "setautomation" | "apply_envelope" | "preview_on" | "preview_off"
+        "show_envelope" | "setautomation" | "apply_envelope" | "toggle_preview" | "preview_on"
+        | "preview_off"
         | "remove_effect" | "fold_channel" | "solo_channel" | "show_all_channels" => {
             serde_json::to_string(&editor.act(&request, version)).unwrap()
         }

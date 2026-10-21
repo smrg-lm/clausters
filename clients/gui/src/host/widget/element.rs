@@ -108,6 +108,7 @@ use super::super::paint::Draw;
 use super::super::world::World;
 use super::GestureMap;
 use super::size::Natural;
+use clausters_editing::verbs::{ActionState, ActionTarget, Verb as ActionVerb};
 
 /// Where an element is being drawn and what it is being drawn *into*: the
 /// placement, and the [`World`] the frame reads from.
@@ -1933,6 +1934,36 @@ pub trait Element: fmt::Debug {
     /// [`Key::Tab`]: moving the focus is the window's, not the focused
     /// element's.
     fn key(&mut self, _key: &Key, _input: &mut KeyInput) -> Option<Events> {
+        None
+    }
+
+    /// **Draws this element as the control of an action**, whose state as its
+    /// owner reads it now is `state` (`None` when the action has no reading):
+    /// what a tool draws pressed or not, available or not. The element's own
+    /// [`draw`](Element::draw) unless it is such a control.
+    fn draw_action(&self, draw: &mut Draw, ctx: &Ctx, _state: Option<&ActionState>) {
+        self.draw(draw, ctx);
+    }
+
+    /// **The state of action `verb` when this element holds the focus**:
+    /// `Some` when the element answers that verb itself -- a text field's
+    /// copy, its paste, an undo it has no history for -- which is then read
+    /// before any document's, and `None` to leave it to whatever is behind.
+    /// `target` is what the reading addresses.
+    fn action_state(
+        &self,
+        _verb: &ActionVerb,
+        _target: ActionTarget,
+        _clipboard: &crate::host::clipboard::Clip,
+    ) -> Option<ActionState> {
+        None
+    }
+
+    /// **Whether this element holds a selection** an action can act on --
+    /// the notes of a roll, the clips of a multitrack -- as the hand left it,
+    /// before its owner hears of it. `None` for an element whose selection,
+    /// if any, is a span of its navigation group, which is read there.
+    fn holds_selection(&self) -> Option<bool> {
         None
     }
 

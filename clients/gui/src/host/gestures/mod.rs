@@ -480,6 +480,7 @@ use nav::*;
 
 // The rubber band is the patcher's alone (a marquee over its boxes).
 #[cfg(feature = "patcher")]
+pub(crate) use keys::sole_take;
 pub(crate) use nav::corner_rect;
 
 /// **Delivers what an element reported outside the machine** -- a note a

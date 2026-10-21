@@ -149,6 +149,39 @@ export interface GenericEditorOptions<S> {
     app?: Application | null;
 }
 
+/**
+ * **One action of a window, as it reads now** ({@link Editor.actions}):
+ * the shared crate's `verbs::ActionState`.
+ */
+export interface ActionState {
+    /** How it is presented: performed once, a switch, or one of a group. */
+    kind: "command" | "toggle" | "choice";
+    /** The group a choice belongs to. */
+    group?: string;
+    /** What an invocation now would address. */
+    target:
+        | { kind: "document"; member: number; object: number }
+        | { kind: "text"; widget: number }
+        | { kind: "window" };
+    /** Whether it can be taken now. */
+    enabled: boolean;
+    /** Why not, when it cannot. */
+    reason?: string;
+    /** Whether a switch is on, or a choice is the one in force. */
+    checked?: boolean;
+    /** The name of the choice in force in the group, for a choice. */
+    value?: string;
+    /** Whether work the action depends on is still pending. */
+    pending: boolean;
+    /** The destination a paste or a mix is checked against, by the kind of contents it takes. */
+    paste?: { kind: "samples"; channels: number; rate: number; connection: number; generation: number };
+    /**
+     * Whether the only objection is that nothing is selected -- which the
+     * host reads for itself, since a sweep is drawn there first.
+     */
+    unselected?: boolean;
+}
+
 /** One structure on screen, editable back into it. */
 export class Editor<S = unknown> implements Adopting {
     /**
@@ -648,11 +681,56 @@ export class Editor<S = unknown> implements Adopting {
      * view would go on drawing something that moved under it.
      */
     apply(addr: string, rawArgs: readonly unknown[]): boolean {
-        return this.editing.turn(this, () => {
+        const changed = this.editing.turn(this, () => {
             const changed = this.deliver(addr, rawArgs);
             if (changed) this.editing.changed();
             return changed;
         });
+        this.publishActions();
+        return changed;
+    }
+
+    /**
+     * **The window's actions as they read now**, by verb: what each addresses
+     * (`target`), whether it can be taken (`enabled`, and `reason` when not),
+     * a switch's or a choice's `checked`, and whether work it depends on is
+     * `pending`. The same readings the menu, the tools and the keys are
+     * enabled and checked by; read again rather than kept, since they follow
+     * the object, the selection and the history. Empty for an editor whose
+     * application describes none yet.
+     *
+     * A text field holding the window's focus answers its own editing before
+     * these, and a dialog up keeps every one from the window behind it; the
+     * host resolves both.
+     */
+    get actions(): Record<string, ActionState> {
+        const member = this.actionMember();
+        if (member === null) return {};
+        return this.editing.serviceCall("actions", { member });
+    }
+
+    /**
+     * The member of the editing context whose actions this editor's window
+     * reads, or `null` for an editor that is no member.
+     */
+    protected actionMember(): number | null {
+        return null;
+    }
+
+    /** The readings last handed to the window, and the window they went to. */
+    #actionsSent: string | null = null;
+
+    /** Hand the window its actions' readings when they moved. */
+    protected publishActions(): void {
+        const host = this.host;
+        if (this.windowId === null || host === null) return;
+        const actions = this.actions;
+        const sent = `${this.windowId}:${JSON.stringify(actions)}`;
+        // unchanged, or an application that describes none
+        if (sent === this.#actionsSent) return;
+        if (Object.keys(actions).length === 0 && this.#actionsSent === null) return;
+        this.#actionsSent = sent;
+        void host.set(this.windowId, { actions } as never);
     }
 
     /**
@@ -1202,6 +1280,7 @@ export class Editor<S = unknown> implements Adopting {
         for (const wid of [...(this.view?.widgets.keys() ?? [])]) this.resync(wid);
         this.acknowledge(0);
         this.corrections = [];
+        this.publishActions();
     }
 
     /** Whether there is an edit to step back over. */

@@ -256,6 +256,38 @@ impl Gestures {
         pointer: Option<(f64, f64)>,
         clipboard: &mut Clip,
     ) -> Vec<GestureEffect> {
+        // **An action that cannot be taken now is not performed**, whichever
+        // way it was asked for -- a key, a tool, a menu entry, a client's
+        // `/gui_verb` -- exactly as its disabled entry cannot be picked. A
+        // paste is read against the platform's clipboard as it is now. An
+        // action refused only for an empty selection goes on: the selection
+        // is the host's first, so the owner's reading may predate the sweep,
+        // and the owner refuses it again if nothing is selected.
+        if !host.offers(ctx.def_id, name) {
+            return Vec::new();
+        }
+        if matches!(name, "paste" | "mix") {
+            clipboard.refresh();
+        }
+        if host
+            .action_state(ctx.def_id, name, clipboard)
+            .is_some_and(|state| !state.enabled && !state.unselected)
+        {
+            return Vec::new();
+        }
+        // **Nothing behind a dialog is reached**, by a verb as by the pointer:
+        // while one is up only the element focused inside it performs one --
+        // a field's undo is the field's, and never the document's behind it.
+        if host.dialog(ctx.def_id).is_some() {
+            let Some(id) = host.focused_in_dialog(ctx.def_id) else {
+                return Vec::new();
+            };
+            let done = match Verb::named(name) {
+                Some(verb) => self.verb_focused(host, ctx, verb, clipboard),
+                None => self.command_to(host, ctx, id, name, clipboard),
+            };
+            return done.unwrap_or_default();
+        }
         if let Some(verb) = Verb::named(name) {
             // **A paste reads the platform's clipboard first**: what another
             // program copied since is what is pasted. Here, once, and never
@@ -961,7 +993,7 @@ fn element_block(
 
 /// The window's **only** timeline view, when there is exactly one and it
 /// draws samples -- what a key with no pointer is addressed to.
-fn sole_take(host: &Host, def_id: i32) -> Option<i32> {
+pub(crate) fn sole_take(host: &Host, def_id: i32) -> Option<i32> {
     // **The views that hold samples themselves**, not every member of the
     // axis: a pane answers for its take's samples, and a curve drawn over the
     // take is on the axis too, so counting members found three where there is

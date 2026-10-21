@@ -46,11 +46,11 @@ of the clipboard's current copy.
 The View menu chooses waveform (W), spectrogram (S) or both (B). The three buttons below
 call the same verbs as the menu.
 
-View -> Edit gain envelope selects the curve body, and the vertical ruler reads gain while it is in hand. Drag points, bend a segment,
+Edit -&gt; Edit gain envelope selects the curve body, and the vertical ruler reads gain while it is in hand. Drag points, bend a segment,
 or double-click to add a point. Curve edits keep samples intact. The gain envelope
 button shows a shaped fade; Apply envelope renders it into a new take and resets
 the curve to unity. Undo restores both. Preview on hears and draws gain without changing the take. Preview off ramps
-back to dry; Remove effect frees the insert and retains its curve.<br>
+back to dry -- the Edit menu's Preview edits switch, ticked while it is on; Remove effect frees the insert and retains its curve.<br>
 
 <b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
 <b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
@@ -84,7 +84,16 @@ file continues while another is shown, with its playhead hidden there.
 Try File -&gt; New file with two and six channels, then switch back and forth
 while the original loops: the meter shows the viewed file's channels, with
 zero levels when another file plays. Return to the playing file to see its
-live levels again.</div>
+live levels again.<br>
+
+The menus and the tools read each action's state from the file in focus:
+draw in the take, then add a new file -- Edit -&gt; Undo is disabled there, and
+Ctrl+Z does nothing, until you switch back. Cut, Copy and Delete are disabled
+with nothing selected, Paste mixed with a copy at another rate, and the View
+and Edit entries mark the view, the layer and the preview in force. With the
+File -&gt; New file dialog up, Ctrl+Z reaches neither the take nor anything
+behind the dialog; in its name field it undoes the typing.
+<code>editor.actions</code> holds the same readings.</div>
 
       <button id="run">open the take</button>
       <div id="stage"></div>

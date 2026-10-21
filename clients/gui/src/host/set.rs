@@ -141,8 +141,12 @@ impl Host {
             self.set_focused(id, on, effects);
         }
         if let Some(on) = looping {
+            // Said only when it moves: an owner re-sends the switch with every
+            // correction of a view (a copy's, an edit's), and a status line
+            // for a switch nobody turned reads as if one had been.
+            let moved = self.monitor_loops() != on;
             self.set_monitor_loop(on);
-            if let Some(root) = self.registry.root_of(id) {
+            if moved && let Some(root) = self.registry.root_of(id) {
                 self.say(
                     root,
                     crate::host::status::Line {

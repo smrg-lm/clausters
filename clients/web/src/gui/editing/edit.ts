@@ -153,6 +153,11 @@ export interface EditOptions {
     start?: PointsEditorOptions["start"];
     end?: PointsEditorOptions["end"];
     /**
+     * An audio editor's: whether its take's undo order is the editing
+     * context's shared one ({@link AudioEditorOptions.sharedHistory}).
+     */
+    sharedHistory?: boolean;
+    /**
      * **A buffer's own three**, ignored by every other structure: the audio
      * editor's history limits and where a take leaves memory for
      * ({@link AudioEditorOptions}).

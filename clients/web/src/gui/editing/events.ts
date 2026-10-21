@@ -124,6 +124,11 @@ export interface NotesEditor extends Marking<SeqEvent[], Iterable<SeqEvent>> {}
 export class NotesEditor extends Editor<EventSequence> {
     /** This editor's member in its editing context. */
     private readonly member: number;
+
+    /** This editor's member, whose actions its window reads. */
+    protected override actionMember(): number {
+        return this.member;
+    }
     /** Whether a hand may edit the notes (`false` for a rendering). */
     readonly editable: boolean;
     /** Whether the roll paints incoming MIDI into the sequence. */

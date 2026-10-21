@@ -550,6 +550,8 @@ impl App {
         // a front that copied it would be a second log.
         let statuses = self.host.statuses();
         let inputs = frame::FrameInputs {
+            clipboard: Some(&self.host.clipboard),
+            selected: self.host.window_selected(def_id),
             metrics: self.host.metrics_for(def_id),
             world: World {
                 bus: self.shm.as_deref(),

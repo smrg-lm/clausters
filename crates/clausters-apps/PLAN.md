@@ -2531,6 +2531,34 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   undo restores its recorded objects without switching focus or starting
   playback. No menu/button keeps a second copy of application state.
 
+  - ✅ One definition per verb: `verbs` rows carry their kind (command,
+    toggle, choice and its group); `ActionState` reads target, availability
+    and reason, checked/value and pending, computed on each call
+    (`Editing::action_states`, `AudioEditor::actions`) and published as the
+    window's `actions` prop by both clients only when it moves.
+  - ✅ The host reads that one object: menu lists open with disabled,
+    checked and grouped entries; tools draw held or greyed; a key, a tool, a
+    menu entry and `/gui_verb` refuse a disabled reading alike. A focused text
+    field answers its own editing first, and a paste is read against the
+    clipboard's shape, rate and server connection.
+  - ✅ An audio editor's first file has an independent order
+    (`Editing::open_independent`); `shared_history`/`sharedHistory` composes
+    it into the context's order explicitly. Directed tests cover empty B with
+    edits in A in both opening orders, across two windows and two files of
+    one window, in the Rust core and both clients.
+  - ✅ General host rules, for every window: a selection is read from the
+    addressed view (`Element::holds_selection`, else its axis), so a reading
+    predating a sweep or a pick never refuses; a dialog up keeps every verb
+    from what is behind it; a text field keeps its own undo history; a
+    window with readings offers no other verb of the host's table, on keys
+    or on its key sheet. Readings and their publication live in both
+    clients' base `Editor`; the paste destination is tagged by contents kind.
+    Other applications' readings are `X25`.
+  - ⬜ Native and browser eye pass over the `edit_audio` pair: disabled and
+    checked entries follow file, selection, clipboard and pending saves; the
+    key sheet matches the bindings. First native pass (2026-10-21) found the
+    entries below in "Found by use"; re-check them.
+
 - ⬜ **X21 - Consolidate shared visual compositions and file selection.**
   After `X20`, compose existing `forms`, `files`, chrome and shortcut views
   through common contracts. Separate directory/read/write services, chooser
@@ -3202,6 +3230,24 @@ Every entry carries a checkbox.
   that already name one.
 
 ## Found by use: the running list of fixes
+
+- ✅ **First native eye pass over X20's actions** (2026-10-21). A copy
+  announced "loop off": a completion re-sends the view's loop switch, and
+  the host now says the switch only when it moves. Delete/Backspace did
+  nothing: the audio editor now removes the span as a cut that copies
+  nothing. Preview on/off became one `toggle_preview` switch, "Preview
+  edits", ticked while on, and the edit layers moved to Edit. With a dialog
+  up and its field unfocused Ctrl+Z undid the file, and in the field it did
+  nothing: a dialog now keeps verbs from what is behind it and a field has
+  its own history. The key sheet listed `quantize`, `split`, `join` and
+  `snap`: a window with readings no longer offers table verbs it does not
+  read. Directed host and core tests cover each.
+
+- ✅ **A copy right after a sweep could be refused on a stale reading**
+  (2026-10-21, forced in the host harness). The host gated keys on the
+  owner's last reading, which may predate the sweep. Readings now mark an
+  empty selection (`unselected`), the host reads its own, and a key is never
+  refused on that objection alone; regressions mutation-checked.
 
 - ✅ **Audio undo corrected a component absent from the tree**
   *(native clipboard acceptance, 2026-10-18).* After closing a clipboard

@@ -144,15 +144,20 @@ pub fn menu(app: App, saves: bool) -> Value {
     ];
     if app == App::Audio {
         edit.push(entry(app, "mix"));
+    }
+    edit.extend([entry(app, "delete"), sep(), entry(app, "select_all")]);
+    if app == App::Audio {
+        // what the hand edits, and the effect it previews and applies
         edit.extend([
             sep(),
-            entry(app, "preview_on"),
-            entry(app, "preview_off"),
+            entry(app, "layer_take"),
+            entry(app, "show_envelope"),
+            sep(),
+            entry(app, "toggle_preview"),
             entry(app, "remove_effect"),
             entry(app, "apply_envelope"),
         ]);
     }
-    edit.extend([entry(app, "delete"), sep(), entry(app, "select_all")]);
     if app != App::Audio {
         edit.extend([
             sep(),
@@ -175,9 +180,6 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "view_spectrogram"),
             entry(app, "view_both"),
             entry(app, "toggle_files"),
-            sep(),
-            entry(app, "layer_take"),
-            entry(app, "show_envelope"),
         ]);
     }
     if app != App::Audio {

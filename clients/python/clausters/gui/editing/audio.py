@@ -316,6 +316,10 @@ class AudioEditor(Marking, Editor):
         resident_bytes: the most of those kept in memory, or ``None`` for all
             of them; past it the oldest are written to ``scratch`` and read
             back when an undo or a redo needs them.
+        shared_history: whether the take's undo order is the editing
+            context's shared one, which the other members of ``context`` walk
+            too. By default each file the editor holds has an order of its own,
+            whatever was opened before it.
         scratch: the directory, on the server's filesystem, a take leaves
             memory for. A temporary one when not given.
         file: the `clausters.SoundFile` `take` was loaded from, which a save
@@ -326,7 +330,8 @@ class AudioEditor(Marking, Editor):
     def __init__(self, take, *, sample_rate: float = 0.0, title: str = "Audio",
                  layers=MEASURES, history_bytes: "int | None" = None,
                  resident_bytes: "int | None" = None,
-                 scratch: "str | None" = None, file=None, **options):
+                 scratch: "str | None" = None, file=None,
+                 shared_history: bool = False, **options):
         #: The `clausters.SoundFile` the take was loaded from, when it was.
         self._file = file
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
@@ -350,6 +355,7 @@ class AudioEditor(Marking, Editor):
             {**self._facts(), "frames": int(getattr(take, "frames", 0) or 0),
              "take": int(take.bufnum), "display": self._display,
              "server": self._instance,
+             "sharedHistory": bool(shared_history),
              "path": getattr(take, "path", None),
              "untitled": self._file is not None and self._file.path is None,
              "codec": getattr(file, "codec", None),
@@ -663,9 +669,12 @@ class AudioEditor(Marking, Editor):
                 "chrome": self.chrome, "window": self._window}
 
     def _call(self, verb: str, **args) -> dict:
-        """One verb of this editor's member, through the context."""
+        """One verb of this editor's member, through the context. The window
+        is handed its actions' readings when the call moved them."""
         self._check_server()
-        return self._editing.member(self._member, verb, **args)
+        answer = self._editing.member(self._member, verb, **args)
+        self._publish_actions()
+        return answer
 
     def _check_server(self):
         if _service_instance(self._server) != self._instance:
@@ -724,6 +733,7 @@ class AudioEditor(Marking, Editor):
         """Execute typed batches; commit, refusal and cleanup come from Rust."""
         answer = prepared or self._editing._service_call(
             "operation", action="prepare", member=self._member, command=command)
+        self._publish_actions()
         while not answer.get("complete"):
             if answer.get("accepted") is False:
                 raise RuntimeError("the operation is no longer available")
@@ -750,6 +760,7 @@ class AudioEditor(Marking, Editor):
         self._editing._operation_echo(answer.get("echo"))
         self._editing.release(answer.get("freed"), answer.get("stored"))
         self.dirty = bool(self._call("binding").get("dirty"))
+        self._publish_actions()
         if not answer.get("committed") and not (repairing and answer.get("repaired")):
             outcome = answer.get("outcome") or {}
             if answer.get("echo") is None:
@@ -841,6 +852,12 @@ class AudioEditor(Marking, Editor):
         return self._deliver("/gui_event", [wid, 0, 0, tag, *values])
 
     def _take(self, outcome: dict) -> bool:
+        try:
+            return self._take_outcome(outcome)
+        finally:
+            self._publish_actions()
+
+    def _take_outcome(self, outcome: dict) -> bool:
         """Carry out what a turn came to, and answer the host. Returns whether
         the take changed."""
         if outcome.get("operation") is not None:

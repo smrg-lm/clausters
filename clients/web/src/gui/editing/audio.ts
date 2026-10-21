@@ -499,6 +499,7 @@ export class AudioEditor extends Editor<Buffer> {
                 take: Math.trunc(take.bufnum),
                 display: this.display,
                 server: this.instance,
+                sharedHistory: options.sharedHistory ?? false,
                 path: take.path ?? null,
                 untitled: this.#file !== null && this.#file.path === null,
                 codec: this.#file?.codec, sample_format: this.#file?.sampleFormat,
@@ -926,6 +927,12 @@ export class AudioEditor extends Editor<Buffer> {
         };
     }
 
+
+    /** This editor's member, whose actions its window reads. */
+    protected override actionMember(): number {
+        return this.member;
+    }
+
     /**
      * One verb of the core, with its arguments; the answer, parsed.
      *
@@ -933,7 +940,9 @@ export class AudioEditor extends Editor<Buffer> {
      */
     coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
         this.checkServer();
-        return this.editing.member(this.member, verb, args);
+        const answer = this.editing.member(this.member, verb, args);
+        this.publishActions();
+        return answer;
     }
 
     /**
@@ -1030,6 +1039,7 @@ export class AudioEditor extends Editor<Buffer> {
         let answer: Record<string, any> = prepared ?? this.editing.serviceCall("operation", {
             action: "prepare", member: this.member, command,
         });
+        this.publishActions();
         while (answer.complete !== true) {
             if (answer.accepted === false) throw new Error("the operation is no longer available");
             if (typeof answer.error === "string") throw new RangeError(answer.error);
@@ -1058,6 +1068,7 @@ export class AudioEditor extends Editor<Buffer> {
         this.editing.operationEcho(answer.echo);
         this.editing.release(answer.freed, answer.stored);
         this.dirty = Boolean(this.coreCall("binding").dirty);
+        this.publishActions();
         if (answer.committed !== true && !(repairing && answer.repaired === true)) {
             if (answer.echo == null) this.echo.send(answer.outcome?.answer);
             throw new Error(answer.reason ?? answer.outcome?.answer?.reason ?? "the operation was refused");
@@ -1171,6 +1182,15 @@ export class AudioEditor extends Editor<Buffer> {
      * take changed.
      */
     private take(outcome: Outcome): boolean {
+        try {
+            return this.takeOutcome(outcome);
+        } finally {
+            this.publishActions();
+        }
+    }
+
+    /** {@link take}'s body; the window's actions are handed over after it. */
+    private takeOutcome(outcome: Outcome): boolean {
         if (outcome.operation !== undefined) {
             const work = outcome.operation;
             (this.domain as AudioDomain).after(async () => {
@@ -1447,6 +1467,12 @@ marking(AudioEditor);
 
 /** {@link AudioEditor}'s options: the generic ones, the measures and the limit. */
 export interface AudioEditorOptions extends GenericEditorOptions<Buffer> {
+    /**
+     * Whether the take's undo order is the editing context's shared one, which
+     * the other members of `context` walk too. By default each file the editor
+     * holds has an order of its own, whatever was opened before it.
+     */
+    sharedHistory?: boolean;
     /** What the picture measures. Defaults to {@link MEASURES}. */
     layers?: string | readonly Measure[];
     /** The most bytes of takes only the history may hold; absent for no limit. */

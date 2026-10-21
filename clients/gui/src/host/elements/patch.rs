@@ -350,6 +350,11 @@ impl Element for Patch {
         Some(self)
     }
 
+    /// What is held: an action over the selection reads it here first.
+    fn holds_selection(&self) -> Option<bool> {
+        Some(!self.selected.is_empty())
+    }
+
     fn clone_box(&self) -> Box<dyn Element> {
         Box::new(self.clone())
     }

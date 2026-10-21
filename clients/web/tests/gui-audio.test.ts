@@ -56,7 +56,10 @@ class FakeHost {
         this.trees.push(tree);
         return { id };
     }
-    set(): void {}
+    props = new Map<number, Record<string, unknown>>();
+    set(id: number, props: Record<string, unknown>): void {
+        this.props.set(id, { ...this.props.get(id), ...props });
+    }
     clip = "";
     clipboard(document: string): void { this.clip = document; }
     close(): void {}
@@ -163,7 +166,7 @@ const settle = async (): Promise<void> => {
 async function opened(
     take: FakeBuffer,
     options: {
-        historyBytes?: number; residentBytes?: number; scratch?: string; file?: SoundFile;
+        historyBytes?: number; residentBytes?: number; scratch?: string; file?: SoundFile; sharedHistory?: boolean;
     } = {},
 ): Promise<[AudioEditor, FakeHost, number, Editing]> {
     const context = new Editing();
@@ -824,8 +827,47 @@ test("reconnecting refuses stale editor resources before sending", async () => {
 });
 
 
+test("the window reads its actions from the file in focus", async () => {
+    const [editor, host, wid, context] = await opened(new FakeBuffer());
+    const window = (editor as any).windowId as number;
+    const drawn = host.trees[0] as unknown as { actions: Record<string, { enabled: boolean }> };
+    assert.equal(drawn.actions.undo.enabled, false, "drawn with its actions");
+    assert.equal(editor.actions.copy.enabled, false);
+    assert.equal(editor.actions.copy.reason, "nothing is selected");
+    assert.equal(editor.actions.view_wave.checked, true);
+    editor.apply("/gui_event", [wid, 1, context.version, "selection", 10, 20]);
+    await settle();
+    const published = () => host.props.get(window)!.actions as Record<string, any>;
+    assert.equal(published().copy.enabled, true, "the sweep is read");
+    editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 10, [0.5], [0.0]]);
+    await settle();
+    const undo = published().undo;
+    assert.equal(undo.enabled, true);
+    assert.deepEqual(undo.target, {
+        kind: "document", member: (editor as any).member, object: editor.coreCall("binding").id,
+    });
+    editor.close();
+});
+
+test("a second editor never walks the first one's edits", async () => {
+    const [first, , wid, context] = await opened(new FakeBuffer());
+    first.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]]);
+    await settle();
+    const before = first.parts;
+    const second = new AudioEditor(new FakeBuffer() as never, { sampleRate: SR, context });
+    await second.open(new FakeHost() as unknown as GuiHost);
+    await settle();
+    assert.equal(second.canUndo, false);
+    assert.equal(second.actions.undo.enabled, false);
+    assert.equal(second.undo(), false);
+    assert.deepEqual(first.parts, before);
+    assert.equal(first.canUndo, true);
+    first.close();
+    second.close();
+});
+
 test("shared undo updates an unfocused file without moving focus", async () => {
-    const [editor, , , context] = await opened(new FakeBuffer());
+    const [editor, , , context] = await opened(new FakeBuffer(), { sharedHistory: true });
     const original = editor.envelope;
     editor.setEnvelope([0, 0.5, 1, 0, 100 / SR, 0.25, 1, 0]);
     await settle();

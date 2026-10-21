@@ -78,13 +78,17 @@ fn open_title(
     rect: Rect,
     walked: bool,
 ) {
-    let Some(entries) = host
+    // A list shows its actions as they read when it opens: a paste against
+    // whatever another program copied since.
+    host.clipboard.refresh();
+    let Some(mut entries) = host
         .window_def(ctx.def_id)
         .and_then(menubar::entries)
         .map(<[Entry]>::to_vec)
     else {
         return;
     };
+    host.action_entries(ctx.def_id, &mut entries);
     if !menubar::live(&entries, title) {
         return;
     }
@@ -272,7 +276,10 @@ fn holds_state(host: &Host, ctx: &GestureCtx, path: &[usize]) -> bool {
 pub(super) fn open_keys(host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
     let scopes = host.window_keys(ctx.def_id);
     let mut entries = Vec::new();
-    for section in host.keys.sheet(&scopes) {
+    let sheet = host
+        .keys
+        .sheet_offered(&scopes, &|verb| host.offers(ctx.def_id, verb));
+    for section in sheet {
         if !entries.is_empty() {
             entries.push(Entry::separator());
         }

@@ -462,6 +462,8 @@ impl WebApp {
         let tree = self.host.window_def(def)?;
         let slot = self.canvases.get_mut(&def)?;
         let inputs = frame::FrameInputs {
+            clipboard: Some(&self.host.clipboard),
+            selected: self.host.window_selected(def),
             metrics: self.host.metrics_for(def),
             world: World {
                 bus: Some(self.buses.as_ref() as &dyn BusSource),

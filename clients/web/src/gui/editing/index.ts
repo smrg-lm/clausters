@@ -96,6 +96,6 @@ export type { Measure } from "./samples.ts";
 export { Echo } from "./echo.ts";
 export type { Answer, Correction, Envelope, Turn } from "./echo.ts";
 export { Editor, notAnEdit, resolveEditorHost } from "./editor.ts";
-export type { GenericEditorOptions, Leg } from "./editor.ts";
+export type { ActionState, GenericEditorOptions, Leg } from "./editor.ts";
 export { log, watch } from "./trace.ts";
 export { View } from "./view.ts";

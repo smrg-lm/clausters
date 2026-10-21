@@ -26,6 +26,12 @@ impl AudioEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         self.ensure_envelope();
+        // `toggle_preview` is the menu's switch: whichever of the two it is not now
+        let verb = match verb {
+            "toggle_preview" if self.file.presentation.preview_on => "preview_off",
+            "toggle_preview" => "preview_on",
+            verb => verb,
+        };
         match verb {
             "preview_on" => {
                 self.file.presentation.preview_on = true;
@@ -198,7 +204,7 @@ impl AudioEditor {
                     ),
                 }
             }
-            "preview_on" | "preview_off" | "remove_effect" => {
+            "toggle_preview" | "preview_on" | "preview_off" | "remove_effect" => {
                 self.preview_event(request["verb"].as_str().unwrap(), &mut out)
             }
             "apply_envelope" | "apply" => self.apply_envelope_event(&mut out),

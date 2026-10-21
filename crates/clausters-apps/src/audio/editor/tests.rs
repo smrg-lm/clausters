@@ -286,6 +286,19 @@ fn a_cut_takes_the_span_out_and_writes_no_samples() {
     );
 }
 
+/// **A delete is a cut that copies nothing**: the span leaves the list, the
+/// history calls it a delete, and the selection goes as a cut's does.
+#[test]
+fn a_delete_takes_the_span_out_as_a_cut_does() {
+    let mut editor = opened(1);
+    let out = event(&mut editor, json!([12, 1, 0, "delete", 10.0, 20.0]));
+    assert_eq!(spans(&mut editor), [(3, 0, 10), (3, 30, 100)]);
+    assert_eq!(out["record"]["label"], "delete");
+    assert!(out.get("clipboard").is_none(), "nothing is copied");
+    assert_eq!(out["selection"]["len"], 0.0);
+    assert_eq!(out["cue"], 10);
+}
+
 #[test]
 fn a_paste_is_a_new_take_holding_the_block_put_in_at_the_position() {
     let mut editor = opened(1);
@@ -972,4 +985,25 @@ fn truncated_and_non_numeric_sample_payloads_refuse_without_allocating() {
         assert!(refused.get("steps").is_none());
         assert_eq!(spans(&mut editor), [(3, 0, 100)]);
     }
+}
+
+/// **The menu's preview is one switch**: each `toggle_preview` turns it the other way,
+/// and the reading checks it while it is on.
+#[test]
+fn the_preview_switch_turns_either_way_and_reads_checked() {
+    let mut editor = opened(1);
+    let on = |editor: &AudioEditor| {
+        editor.actions(0, ServerInstance::default(), false, false, false)["toggle_preview"].checked
+    };
+    assert_eq!(on(&editor), Some(false));
+    assert_eq!(
+        call(&mut editor, json!({"verb": "toggle_preview"}))["preview"]["on"],
+        true
+    );
+    assert_eq!(on(&editor), Some(true));
+    assert_eq!(
+        call(&mut editor, json!({"verb": "toggle_preview"}))["preview"]["on"],
+        false
+    );
+    assert_eq!(on(&editor), Some(false));
 }

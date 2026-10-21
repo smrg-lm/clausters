@@ -30,6 +30,156 @@
 
 use serde_json::{Map, Value, json};
 
+/// **How an action is presented and what its state reads as.** An action is
+/// not a history entry: a play, a view switch and a dialog are actions that
+/// record nothing, and the kind says only how a menu, a tool and a sheet show
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ActionKind {
+    /// Performed once per invocation: an undo, a copy, a save.
+    Command,
+    /// A switch, on or off: the loop, the file list.
+    Toggle,
+    /// One of a group, exactly one of which is in force: the views of a take.
+    Choice,
+}
+
+/// **What an invocation addresses**, resolved when it is asked rather than
+/// remembered by whoever shows the action.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ActionTarget {
+    /// An object a member of an editing context holds -- an audio editor's
+    /// file in focus.
+    Document {
+        /// The member of the editing context.
+        member: u32,
+        /// The member's stable object number.
+        object: i64,
+    },
+    /// A text field holding the keyboard focus, whose own editing is read
+    /// before any document's.
+    Text {
+        /// The field's widget id.
+        widget: i32,
+    },
+    /// The window itself: opening a file, the key sheet, the file list.
+    Window,
+}
+
+/// **The destination a paste must match**: what the clipboard's contents
+/// are compared with before a paste or a mix is offered, so a refusal is
+/// shown instead of performed. One kind per structure a paste lands in; an
+/// application whose paste lands in another adds its kind here.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum PasteTarget {
+    /// Samples, as an audio take holds them.
+    Samples {
+        /// The destination's channels; a paste needs as many.
+        channels: u32,
+        /// The destination's rate; a mix needs the same one.
+        rate: f64,
+        /// The server connection the destination's samples live on.
+        connection: u64,
+        /// That connection's incarnation.
+        generation: u64,
+    },
+}
+
+/// **An action's state as it reads now**: computed from what the owner holds
+/// each time it is asked, never a second copy of application state. A menu
+/// entry, a tool and the key sheet read it; a key, a pick and a script call
+/// are refused by it alike.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionState {
+    /// How it is presented.
+    pub kind: ActionKind,
+    /// The group a [`ActionKind::Choice`] belongs to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    /// What an invocation now would address.
+    pub target: ActionTarget,
+    /// Whether it can be invoked now.
+    pub enabled: bool,
+    /// Why not, when it cannot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Whether a toggle is on, or a choice is the one in force.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    /// The name of the choice in force in the group, for a choice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// Whether work the action depends on is still pending.
+    #[serde(default)]
+    pub pending: bool,
+    /// The destination a paste or a mix is checked against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paste: Option<PasteTarget>,
+    /// **Whether the only objection is that nothing is selected.** The
+    /// selection is the host's first -- a sweep is drawn there and the owner
+    /// hears of it after -- so a host reads its own selection for such an
+    /// action and never refuses an invocation on this reading alone: the owner
+    /// refuses it again if nothing is selected when it arrives.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unselected: bool,
+}
+
+impl ActionState {
+    /// The state of `verb` addressing `target`: available, unchecked, with
+    /// nothing pending.
+    #[must_use]
+    pub fn new(verb: &Verb, target: ActionTarget) -> Self {
+        Self {
+            kind: verb.kind,
+            group: verb.group.map(str::to_string),
+            target,
+            enabled: true,
+            reason: None,
+            checked: None,
+            value: None,
+            pending: false,
+            paste: None,
+            unselected: false,
+        }
+    }
+
+    /// Marks it unavailable, for `reason`. The first reason stays, except
+    /// that any reason outweighs an empty selection ([`refuse_unselected`]).
+    ///
+    /// [`refuse_unselected`]: Self::refuse_unselected
+    pub fn refuse(&mut self, reason: &str) {
+        if self.enabled || self.unselected {
+            self.enabled = false;
+            self.unselected = false;
+            self.reason = Some(reason.into());
+        }
+    }
+
+    /// Marks it unavailable because nothing is selected, unless it is
+    /// unavailable already ([`ActionState::unselected`]).
+    pub fn refuse_unselected(&mut self) {
+        if self.enabled {
+            self.enabled = false;
+            self.unselected = true;
+            self.reason = Some("nothing is selected".into());
+        }
+    }
+}
+
+/// **The verbs a focused text field answers itself**, before the document
+/// behind it is asked.
+#[must_use]
+pub fn text_action(name: &str) -> bool {
+    matches!(
+        name,
+        "undo" | "redo" | "cut" | "copy" | "paste" | "delete" | "select_all"
+    )
+}
+
 /// One verb of a scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Verb {
@@ -42,10 +192,41 @@ pub struct Verb {
     /// What every place that shows it calls it: a menu entry, a tool's tip, a
     /// row of the key sheet.
     pub label: &'static str,
+    /// How it is presented.
+    pub kind: ActionKind,
+    /// The group of a [`ActionKind::Choice`]: the verbs of one group are its
+    /// alternatives.
+    pub group: Option<&'static str>,
 }
 
 const fn verb(name: &'static str, keys: &'static [&'static str], label: &'static str) -> Verb {
-    Verb { name, keys, label }
+    Verb {
+        name,
+        keys,
+        label,
+        kind: ActionKind::Command,
+        group: None,
+    }
+}
+
+const fn toggle(name: &'static str, keys: &'static [&'static str], label: &'static str) -> Verb {
+    Verb {
+        kind: ActionKind::Toggle,
+        ..verb(name, keys, label)
+    }
+}
+
+const fn choice(
+    group: &'static str,
+    name: &'static str,
+    keys: &'static [&'static str],
+    label: &'static str,
+) -> Verb {
+    Verb {
+        kind: ActionKind::Choice,
+        group: Some(group),
+        ..verb(name, keys, label)
+    }
 }
 
 /// **The window's own verbs**: what every window answers, the host's key
@@ -60,7 +241,7 @@ pub const WINDOW: &[Verb] = &[
     verb("close", &[], "Close"),
     verb("view_all", &["R"], "Zoom to fit"),
     verb("play", &["Space"], "Play or stop"),
-    verb("loop", &["L"], "Loop, on or off"),
+    toggle("loop", &["L"], "Loop, on or off"),
     verb("to_start", &["Home"], "Go to start"),
     verb("to_end", &["End"], "Go to end"),
     verb("copy", &["Ctrl+C"], "Copy"),
@@ -72,7 +253,7 @@ pub const WINDOW: &[Verb] = &[
     verb("join", &["J"], "Join"),
     // the snap-to-grid switch: a drag, a paste, a split and step entry land
     // on the grid while it is on, where the hand puts them while it is off
-    verb("snap", &["G"], "Snap to grid, on or off"),
+    toggle("snap", &["G"], "Snap to grid, on or off"),
     verb("delete", &["Delete", "Backspace"], "Delete"),
     verb("select_all", &["Ctrl+A"], "Select all"),
     verb("keys", &["F1"], "Keyboard shortcuts"),
@@ -87,17 +268,17 @@ pub const AUDIO: &[Verb] = &[
     verb("open_file", &["Ctrl+O"], "Open file..."),
     verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
     verb("show_all_channels", &[], "Show all channels"),
-    verb("view_wave", &["W"], "Waveform"),
-    verb("layer_take", &[], "Edit audio"),
-    verb("show_envelope", &[], "Edit gain envelope"),
-    verb("preview_on", &[], "Preview on"),
-    verb("preview_off", &[], "Preview off"),
+    choice("views", "view_wave", &["W"], "Waveform"),
+    choice("layer", "layer_take", &[], "Edit audio"),
+    choice("layer", "show_envelope", &[], "Edit gain envelope"),
+    // the effect heard and drawn before it is applied: today the gain envelope
+    toggle("toggle_preview", &[], "Preview edits"),
     verb("remove_effect", &[], "Remove effect"),
     verb("apply", &[], "Apply effect"),
     verb("apply_envelope", &[], "Apply gain envelope"),
-    verb("view_spectrogram", &["S"], "Spectrogram"),
-    verb("view_both", &["B"], "Waveform and spectrogram"),
-    verb("toggle_files", &[], "Files"),
+    choice("views", "view_spectrogram", &["S"], "Spectrogram"),
+    choice("views", "view_both", &["B"], "Waveform and spectrogram"),
+    toggle("toggle_files", &[], "Files"),
     verb("close_file", &[], "Close file"),
 ];
 
@@ -110,13 +291,13 @@ pub const MULTITRACK_SCOPE: &str = "multitrack";
 pub const MULTITRACK: &[Verb] = &[
     verb("pause", &[], "Pause"),
     verb("stop", &[], "Stop"),
-    verb("stop_at_end", &["Shift+L"], "Stop at end, on or off"),
-    verb("crossfade", &[], "Crossfade overlaps, on or off"),
+    toggle("stop_at_end", &["Shift+L"], "Stop at end, on or off"),
+    toggle("crossfade", &[], "Crossfade overlaps, on or off"),
     verb("add_track", &[], "Add track"),
     verb("reset_heights", &[], "Reset track heights"),
     verb("compact_tracks", &[], "Compact tracks"),
-    verb("notes_roll", &[], "Notes as rolls"),
-    verb("notes_score", &[], "Notes as scores"),
+    choice("notes", "notes_roll", &[], "Notes as rolls"),
+    choice("notes", "notes_score", &[], "Notes as scores"),
 ];
 
 /// The score window's own scope, in force whenever it is open.
@@ -128,7 +309,7 @@ pub const NOTE_ENTRY_SCOPE: &str = "note_entry";
 /// **The score window's own keys**: over the selection, and into note entry.
 /// The chords are the settled ones of notation programs.
 pub const SCORE: &[Verb] = &[
-    verb("entry", &["N"], "Note entry on or off"),
+    toggle("entry", &["N"], "Note entry on or off"),
     // over the selection: what note entry's own rows, read first while the
     // window is in it, give the cursor and the note written
     verb(
@@ -147,7 +328,7 @@ pub const SCORE: &[Verb] = &[
 
 /// **Note entry's keys**: the letters write, the digits choose the value.
 pub const NOTE_ENTRY: &[Verb] = &[
-    verb("entry", &["N"], "Note entry on or off"),
+    toggle("entry", &["N"], "Note entry on or off"),
     verb("entry_off", &["Escape"], "Leave note entry"),
     verb("pitch_a", &["A"], "Write an A"),
     verb("pitch_b", &["B"], "Write a B"),
@@ -173,18 +354,18 @@ pub const NOTE_ENTRY: &[Verb] = &[
     verb("step_down", &["Down"], "Down a step"),
     verb("octave_up", &["Ctrl+Up"], "Up an octave"),
     verb("octave_down", &["Ctrl+Down"], "Down an octave"),
-    verb("voice_1", &["Ctrl+Alt+1"], "Voice 1"),
-    verb("voice_2", &["Ctrl+Alt+2"], "Voice 2"),
-    verb("voice_3", &["Ctrl+Alt+3"], "Voice 3"),
-    verb("voice_4", &["Ctrl+Alt+4"], "Voice 4"),
-    verb("value_64th", &["1"], "Sixty-fourth note"),
-    verb("value_32nd", &["2"], "Thirty-second note"),
-    verb("value_16th", &["3"], "Sixteenth note"),
-    verb("value_eighth", &["4"], "Eighth note"),
-    verb("value_quarter", &["5"], "Quarter note"),
-    verb("value_half", &["6"], "Half note"),
-    verb("value_whole", &["7"], "Whole note"),
-    verb("dot", &["."], "Dotted"),
+    choice("voice", "voice_1", &["Ctrl+Alt+1"], "Voice 1"),
+    choice("voice", "voice_2", &["Ctrl+Alt+2"], "Voice 2"),
+    choice("voice", "voice_3", &["Ctrl+Alt+3"], "Voice 3"),
+    choice("voice", "voice_4", &["Ctrl+Alt+4"], "Voice 4"),
+    choice("value", "value_64th", &["1"], "Sixty-fourth note"),
+    choice("value", "value_32nd", &["2"], "Thirty-second note"),
+    choice("value", "value_16th", &["3"], "Sixteenth note"),
+    choice("value", "value_eighth", &["4"], "Eighth note"),
+    choice("value", "value_quarter", &["5"], "Quarter note"),
+    choice("value", "value_half", &["6"], "Half note"),
+    choice("value", "value_whole", &["7"], "Whole note"),
+    toggle("dot", &["."], "Dotted"),
     verb("enter_rest", &["0"], "Rest"),
 ];
 
@@ -230,7 +411,7 @@ pub fn declaration(scopes: &[(&str, &[Verb])]) -> Value {
                 .map(|v| {
                     (
                         v.name.to_string(),
-                        json!({"keys": v.keys, "label": v.label}),
+                        json!({"keys": v.keys, "label": v.label, "kind": v.kind}),
                     )
                 })
                 .collect();

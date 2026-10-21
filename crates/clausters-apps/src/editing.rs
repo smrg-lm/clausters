@@ -613,6 +613,34 @@ impl Editing {
         true
     }
 
+    /// **The actions `member` answers, as they read now**: the editor's own
+    /// facts, the history of the object in focus and the work pending on it.
+    /// Read on every call and kept nowhere, so a menu or a tool never holds a
+    /// second copy of the state. An empty object for a member with no action
+    /// readings.
+    pub fn action_states(&mut self, member: MemberId) -> Value {
+        if self.member(member).is_none() {
+            return json!({});
+        }
+        self.select_member(member);
+        let (can_undo, can_redo) = (self.can_undo(), self.can_redo());
+        let seat = &self.seats[member as usize];
+        match &seat.member {
+            Member::Audio(editor) => {
+                let pending =
+                    self.audio_runtime
+                        .operations
+                        .busy(crate::application::operations::Target {
+                            member,
+                            object: editor.focused_file(),
+                            server: seat.server,
+                        });
+                json!(editor.actions(member, seat.server, can_undo, can_redo, pending))
+            }
+            _ => json!({}),
+        }
+    }
+
     /// The version a host names back.
     pub fn version(&self) -> i64 {
         self.version
@@ -645,21 +673,35 @@ impl Editing {
     }
 
     /// **Takes a member in**, as the structure `key` names: the identity a
-    /// member with the same key already has, or a new one.
+    /// member with the same key already has, or a new one -- in the
+    /// context's shared order.
     pub fn join(&mut self, key: &str, member: Member) -> MemberId {
+        self.admit(member, Some(key))
+    }
+
+    /// **Takes a member in with an undo order of its own**: its object shares
+    /// no history with any other member's, whatever was opened before it.
+    /// Sharing an order is a composition the caller asks for ([`join`]).
+    ///
+    /// [`join`]: Self::join
+    pub fn open_independent(&mut self, member: Member) -> MemberId {
+        self.admit(member, None)
+    }
+
+    fn admit(&mut self, member: Member, shared: Option<&str>) -> MemberId {
         let id = self.seats.len() as MemberId;
-        let object = match &member {
-            Member::Audio(editor) => editor.focused_file(),
-            _ => 0,
-        };
-        let structure = self.services.histories.join(
-            Object {
-                member: id,
-                id: object,
+        let object = Object {
+            member: id,
+            id: match &member {
+                Member::Audio(editor) => editor.focused_file(),
+                _ => 0,
             },
-            key,
-            &member.domain(),
-        );
+        };
+        let domain = member.domain();
+        let structure = match shared {
+            Some(key) => self.services.histories.join(object, key, &domain),
+            None => self.services.histories.focus(object, &domain),
+        };
         self.seats.push(Seat {
             member,
             structure,
@@ -1188,7 +1230,8 @@ struct RecordedLeg {
 ///   `{"member", "structure"}`, or `{"error"}`.
 /// - `openAudio` -- `key`, and what an audio editor is built from
 ///   (`clausters_apps::audio::editor::new_json`): `{"member", "structure"}`,
-///   or `{"error"}`.
+///   or `{"error"}`. Its file has an undo order of its own; `sharedHistory`
+///   `true` joins it to the context's shared order under `key` instead.
 /// - `bytes` -- `bytes`, or `null` for none: the most bytes of takes only the
 ///   history may hold. Answers `{}`.
 /// - `resident` -- `bytes`, or `null` for none: the most of those kept in
@@ -1215,6 +1258,9 @@ struct RecordedLeg {
 ///   arguments, the version filled in: what that door answers. `event` and
 ///   `apply` are the context's and answer `{}` here.
 /// - `moved` -- an edit that leaves no entry: `{"version"}`, moved on.
+/// - `actions` -- `member`: each action the member answers, by verb, as
+///   [`clausters_editing::verbs::ActionState`] reads it now. A member's
+///   `window` answer carries the same object as `actions`.
 /// - `state` -- `{"version", "canUndo", "canRedo", "undoLabel", "redoLabel"}`.
 ///
 /// An unknown verb answers `{}`.
@@ -1243,7 +1289,14 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
         },
         "openAudio" => match audio::new_json(&request.to_string()) {
             Ok(editor) => {
-                let member = editing.join(&key, Member::Audio(Box::new(editor)));
+                // An audio file's history is its own unless the caller
+                // composes it into the context's shared order.
+                let editor = Member::Audio(Box::new(editor));
+                let member = if request["sharedHistory"] == true {
+                    editing.join(&key, editor)
+                } else {
+                    editing.open_independent(editor)
+                };
                 if let Ok(server) =
                     serde_json::from_value::<ServerInstance>(get(&request, "server"))
                 {
@@ -1499,6 +1552,9 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 editing.version += 1;
             }
             let mut value: Value = serde_json::from_str(&answer).unwrap_or_default();
+            if inner == "window" {
+                value["actions"] = editing.action_states(member);
+            }
             if value.get("binding").is_some() {
                 value["binding"]["structure"] = json!(editing.structure(member));
                 value["binding"]["version"] = json!(editing.version);
@@ -1551,6 +1607,15 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             value.to_string()
         }
         "moved" => json!({ "version": editing.moved() }).to_string(),
+        "actions" => match request
+            .get("member")
+            .and_then(Value::as_u64)
+            .and_then(|id| MemberId::try_from(id).ok())
+            .filter(|id| editing.member(*id).is_some())
+        {
+            Some(member) => editing.action_states(member).to_string(),
+            None => json!({"error": "the action member is invalid"}).to_string(),
+        },
         "state" => {
             editing.select(
                 request
@@ -1762,7 +1827,7 @@ mod tests {
     #[test]
     fn owned_file_buffers_stay_rooted_until_close_even_behind_another_file() {
         let mut editing = Editing::new();
-        let member = call(&mut editing, json!({"verb":"openAudio","key":"owned","take":3,"frames":100,"channels":1,"rate":48000,"display":9,"buffers":[20,21,22],"path":"owned.wav"}))["member"].clone();
+        let member = call(&mut editing, json!({"verb":"openAudio", "sharedHistory":true,"key":"owned","take":3,"frames":100,"channels":1,"rate":48000,"display":9,"buffers":[20,21,22],"path":"owned.wav"}))["member"].clone();
         call(
             &mut editing,
             json!({"verb":"member","member":member,"call":{"verb":"open"}}),
@@ -2662,7 +2727,7 @@ mod tests {
         let mut editing = Editing::default();
         let take = call(
             &mut editing,
-            json!({"verb": "openAudio", "key": "buffer:7", "take": 7, "frames": 100,
+            json!({"verb": "openAudio", "sharedHistory": true, "key": "buffer:7", "take": 7, "frames": 100,
                    "display": 9, "buffers": [20]}),
         )["member"]
             .clone();
@@ -2689,7 +2754,7 @@ mod tests {
         assert_eq!(
             call(
                 &mut editing,
-                json!({"verb": "openAudio", "key": "x", "layers": []})
+                json!({"verb": "openAudio", "sharedHistory": true, "key": "x", "layers": []})
             )["error"]
                 .as_str()
                 .map(|e| e.contains("measures something")),
@@ -2817,7 +2882,7 @@ mod tests {
     fn an_audio_take(editing: &mut Editing) -> MemberId {
         let opened = call(
             editing,
-            json!({"verb": "openAudio", "key": "take:3", "take": 3, "frames": 100,
+            json!({"verb": "openAudio", "sharedHistory": true, "key": "take:3", "take": 3, "frames": 100,
                    "rate": 48000, "display": 9, "buffers": [20, 21, 22, 23]}),
         );
         let member = opened["member"].as_u64().unwrap() as MemberId;
@@ -2950,6 +3015,130 @@ mod tests {
             json!([{"member": take, "buffers": [20], "spilled": [20]}])
         );
     }
+    /// **An empty file in focus has nothing to undo**, whether the edited one
+    /// was opened before it or after it: two windows, or two files of one
+    /// window, never fall back to each other's order or the context's.
+    #[test]
+    fn an_empty_focused_file_never_undoes_another_whichever_opened_first() {
+        let open = |editing: &mut Editing, n: i64| {
+            let member = call(
+                editing,
+                json!({"verb": "openAudio", "key": format!("file:{n}"), "take": 3 + n,
+                       "frames": 100, "rate": 48000, "display": 9 + n,
+                       "buffers": [20 + n * 10, 21 + n * 10, 22 + n * 10]}),
+            )["member"]
+                .as_u64()
+                .unwrap() as MemberId;
+            call(
+                editing,
+                json!({"verb": "member", "member": member,
+                       "call": {"verb": "window", "widget": 12}}),
+            );
+            member
+        };
+        for edited_first in [true, false] {
+            // two windows
+            let mut editing = Editing::new();
+            let members = [open(&mut editing, 0), open(&mut editing, 1)];
+            let (edited, empty) = if edited_first {
+                (members[0], members[1])
+            } else {
+                (members[1], members[0])
+            };
+            draw(&mut editing, edited, 1, 10);
+            let before = reads(&editing, edited);
+            let state = call(&mut editing, json!({"verb": "actions", "member": empty}));
+            assert_eq!(state["undo"]["enabled"], false, "{state}");
+            assert_eq!(state["undo"]["target"]["member"], empty);
+            for target in [json!(empty), Value::Null] {
+                let stepped = call(
+                    &mut editing,
+                    json!({"verb": "step", "member": target, "direction": "undo"}),
+                );
+                assert_ne!(stepped["stepped"], true, "{target}: {stepped}");
+            }
+            assert_eq!(reads(&editing, edited), before);
+            let state = call(&mut editing, json!({"verb": "actions", "member": edited}));
+            assert_eq!(state["undo"]["enabled"], true);
+
+            // two files of one window: the added one is edited or left empty
+            let mut editing = Editing::new();
+            let member = open(&mut editing, 0);
+            call(
+                &mut editing,
+                json!({"verb": "member", "member": member, "call": {"verb": "add_file",
+                       "take": 50, "frames": 100, "channels": 1, "rate": 48000,
+                       "display": 51, "buffers": [52, 53, 54], "untitled": true}}),
+            );
+            let (first, second) = (0, 1);
+            let (edited, empty) = if edited_first {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            let focus = |editing: &mut Editing, index: i64| {
+                call(
+                    editing,
+                    json!({"verb": "member", "member": member,
+                           "call": {"verb": "focus_file", "index": index}}),
+                );
+            };
+            focus(&mut editing, edited);
+            draw(&mut editing, member, 1, 10);
+            let before = reads(&editing, member);
+            focus(&mut editing, empty);
+            let state = call(&mut editing, json!({"verb": "actions", "member": member}));
+            assert_eq!(state["undo"]["enabled"], false, "{state}");
+            let stepped = call(
+                &mut editing,
+                json!({"verb": "step", "member": member, "direction": "undo"}),
+            );
+            assert_ne!(stepped["stepped"], true, "{stepped}");
+            focus(&mut editing, edited);
+            assert_eq!(reads(&editing, member), before, "the edited file is intact");
+            let state = call(&mut editing, json!({"verb": "actions", "member": member}));
+            assert_eq!(state["undo"]["enabled"], true);
+        }
+    }
+
+    #[test]
+    fn actions_read_current_presentation_and_pending_operations() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        let state = call(&mut editing, json!({"verb":"actions", "member":member}));
+        assert_eq!(state["copy"]["enabled"], false);
+        assert_eq!(
+            state["copy"]["unselected"], true,
+            "the host reads its own selection"
+        );
+        assert_eq!(state["view_wave"]["checked"], true);
+        call(
+            &mut editing,
+            json!({"verb":"member", "member":member, "call":{"verb":"view_both"}}),
+        );
+        let state = call(&mut editing, json!({"verb":"actions", "member":member}));
+        assert_eq!(state["view_wave"]["checked"], false);
+        assert_eq!(state["view_both"]["checked"], true);
+        let prepared = raw_call(
+            &mut editing,
+            json!({"verb":"operation", "action":"prepare", "member":member,
+            "command":{"kind":"save", "path":"/tmp/action.wav"}}),
+        );
+        assert!(prepared["ticket"].is_object(), "{prepared}");
+        let state = call(&mut editing, json!({"verb":"actions", "member":member}));
+        assert_eq!(state["save"]["pending"], true);
+        assert_eq!(state["save"]["enabled"], false);
+        // pending work outweighs an empty selection, which a host reads itself
+        assert_eq!(state["cut"]["reason"], "the file has pending work");
+        assert_eq!(state["cut"].get("unselected"), None);
+        assert_eq!(state["view_wave"]["enabled"], true);
+        settle_operation(&mut editing, prepared);
+        assert_eq!(
+            call(&mut editing, json!({"verb":"actions", "member":member}))["save"]["pending"],
+            false
+        );
+    }
+
     #[test]
     fn context_history_steps_accept_an_omitted_or_null_member() {
         for target in [None, Some(Value::Null)] {
@@ -3038,7 +3227,7 @@ mod tests {
         );
         let other = call(
             &mut editing,
-            json!({"verb": "openAudio", "key": "take:4", "take": 4, "frames": 100,
+            json!({"verb": "openAudio", "sharedHistory": true, "key": "take:4", "take": 4, "frames": 100,
                    "rate": 48000, "display": 19, "buffers": [40, 41, 42, 43]}),
         )["member"]
             .as_u64()
@@ -3366,7 +3555,7 @@ mod tests {
         );
         let b = call(
             &mut editing,
-            json!({"verb":"openAudio", "key":"another-server", "take":3,"frames":100,"display":9,
+            json!({"verb":"openAudio", "sharedHistory":true, "key":"another-server", "take":3,"frames":100,"display":9,
             "buffers":[20,21,22,23], "server":{"connection":2,"generation":1}}),
         )["member"]
             .as_u64()

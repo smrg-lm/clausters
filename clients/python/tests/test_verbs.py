@@ -60,7 +60,9 @@ def table() -> set:
     for const, scope in SCOPES.items():
         body = re.search(rf"pub const {const}: &\[Verb\] = &\[(.*?)\n\];", source, re.S)
         assert body, f"no {const} in {TABLE.name}"
-        rows |= {(scope, verb) for verb in re.findall(r'verb\(\s*"([a-z0-9_]+)"', body[1])}
+        # a row is `verb(name, ..)`, `toggle(name, ..)` or `choice(group, name, ..)`
+        rows |= {(scope, verb) for verb in re.findall(
+            r'(?:verb|toggle|choice\(\s*"[a-z_]+",)\(?\s*"([a-z0-9_]+)"', body[1])}
     return rows
 
 

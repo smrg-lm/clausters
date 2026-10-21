@@ -26,12 +26,15 @@
 use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
+use clausters_editing::verbs::{self, ActionState, ActionTarget, Verb as ActionVerb};
 
 use crate::host::graphics::controls;
 use crate::host::graphics::textedit::{self, Caret, Unit};
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
+use crate::host::widget::element::{
+    Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Mods, Verb,
+};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, body_inset, control_box, label_strip};
 
@@ -52,6 +55,47 @@ pub struct Text {
     /// extending it: a caret's point for one click, a word for two, a line
     /// for three -- and the drag grows the selection by the same unit.
     held: Option<((usize, usize), Unit)>,
+    /// **The field's own history**: what it held before each change, and
+    /// what an undo took back, for a redo. View state like the caret: a
+    /// `/gui_set` of the value starts it over.
+    history: History,
+}
+
+/// A text field's undo and redo, over whole values: a field's text is short,
+/// so a step is the string it was, with the caret where it stood.
+#[derive(Debug, Clone, Default)]
+struct History {
+    undo: Vec<(String, Caret)>,
+    redo: Vec<(String, Caret)>,
+    /// Whether the last change was a typed character: a run of them is one
+    /// step, as in every text field.
+    typing: bool,
+}
+
+impl History {
+    /// A change is about to be made over `before`; `typed` continues a run of
+    /// typing rather than starting a step.
+    fn change(&mut self, before: (String, Caret), typed: bool) {
+        if !(typed && self.typing) {
+            self.undo.push(before);
+        }
+        self.typing = typed;
+        self.redo.clear();
+    }
+
+    /// One step back (or, with `redo`, forward) from `now`: what the field
+    /// holds after it, or `None` with nothing to step over.
+    fn step(&mut self, now: (String, Caret), redo: bool) -> Option<(String, Caret)> {
+        let (from, to) = if redo {
+            (&mut self.redo, &mut self.undo)
+        } else {
+            (&mut self.undo, &mut self.redo)
+        };
+        let next = from.pop()?;
+        to.push(now);
+        self.typing = false;
+        Some(next)
+    }
 }
 
 pub(super) fn build(
@@ -76,6 +120,7 @@ fn from_props(props: &Map<String, Value>) -> Text {
             .unwrap_or(false),
         caret: Caret::default(),
         held: None,
+        history: History::default(),
     }
 }
 
@@ -97,6 +142,20 @@ impl Text {
     }
 
     /// The field's value as the one thing it reports.
+    /// One step of the field's history, delivered as any change of its value
+    /// is; nothing when there is nothing to step over.
+    fn step(&mut self, redo: bool) -> Events {
+        let now = (self.value.clone(), self.caret);
+        match self.history.step(now, redo) {
+            Some((value, caret)) => {
+                self.value = value;
+                self.caret = caret;
+                self.events()
+            }
+            None => Events::none(),
+        }
+    }
+
     fn events(&self) -> Events {
         Events::value(OscType::String(self.value.clone()))
     }
@@ -196,6 +255,7 @@ impl Element for Text {
                 .as_str()
                 .map(|s| {
                     self.value = s.to_string();
+                    self.history = History::default();
                     // The caret/selection may now point past the new string or
                     // off a char boundary -- re-land it.
                     textedit::clamp(&self.value, &mut self.caret);
@@ -316,8 +376,10 @@ impl Element for Text {
         } else {
             text.replace('\n', " ")
         };
+        let before = (self.value.clone(), self.caret);
         Some(
             if textedit::insert(&mut self.value, &mut self.caret, &text) {
+                self.history.change(before, false);
                 self.events()
             } else {
                 Events::none()
@@ -339,7 +401,24 @@ impl Element for Text {
     }
 
     fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+        // **Undo and redo are the field's own** while it is typed in: Ctrl+Z,
+        // and Ctrl+Shift+Z or Ctrl+Y.
+        if input.mods.ctrl
+            && let Key::Char(c) = key
+            && matches!(c.to_ascii_lowercase(), 'z' | 'y')
+        {
+            let redo = input.mods.shift || c.eq_ignore_ascii_case(&'y');
+            return Some(self.step(redo));
+        }
+        let before = (self.value.clone(), self.caret);
         let changed = edit_key(&mut self.value, &mut self.caret, self.multiline, key, input)?;
+        let typed = matches!(key, Key::Char(_)) && !input.mods.ctrl;
+        if changed {
+            self.history.change(before, typed);
+        } else if !typed {
+            // a caret moved: the next character starts a step of its own
+            self.history.typing = false;
+        }
         // Consumed either way -- the caret moved, which is a repaint -- and a
         // content change also delivers the new value, ungated.
         Some(if changed {
@@ -347,6 +426,59 @@ impl Element for Text {
         } else {
             Events::none()
         })
+    }
+
+    /// **A focused field answers its own editing**: its undo and redo walk
+    /// its own history (the document behind it is not what Ctrl+Z means while
+    /// typing), a cut, a copy and a delete need selected text, a paste needs
+    /// something on the clipboard.
+    fn action_state(
+        &self,
+        verb: &ActionVerb,
+        target: ActionTarget,
+        clipboard: &crate::host::clipboard::Clip,
+    ) -> Option<ActionState> {
+        if !verbs::text_action(verb.name) {
+            return None;
+        }
+        let mut state = ActionState::new(verb, target);
+        match verb.name {
+            "undo" if self.history.undo.is_empty() => state.refuse("the field has nothing to undo"),
+            "redo" if self.history.redo.is_empty() => state.refuse("the field has nothing to redo"),
+            "cut" | "copy" | "delete" if self.selected_text().is_none() => {
+                state.refuse("no text is selected");
+            }
+            "paste" if clipboard.is_empty() => state.refuse("the clipboard is empty"),
+            _ => {}
+        }
+        Some(state)
+    }
+
+    /// The window's clipboard verbs, performed as the chords that mean them
+    /// in a field -- one editing path, whichever way they were asked for.
+    fn verb(&mut self, verb: Verb, input: &mut KeyInput) -> Option<Events> {
+        let key = match verb {
+            Verb::Copy => Key::Char('c'),
+            Verb::Cut => Key::Char('x'),
+            Verb::Paste => Key::Char('v'),
+            Verb::SelectAll => Key::Char('a'),
+            Verb::Delete => Key::Delete,
+            _ => return None,
+        };
+        input.mods = Mods {
+            ctrl: key != Key::Delete,
+            ..Mods::default()
+        };
+        self.key(&key, input)
+    }
+
+    /// `undo` and `redo` from a menu or a script, as the chords do.
+    fn command(&mut self, name: &str, _input: &mut KeyInput) -> Option<Events> {
+        match name {
+            "undo" => Some(self.step(false)),
+            "redo" => Some(self.step(true)),
+            _ => None,
+        }
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

@@ -327,6 +327,12 @@ pub struct Widget {
     /// **window** it is the menu bar, drawn by the host as a band along the top
     /// edge; on a **button** it is the list a press opens under it.
     pub menu: Option<Vec<super::menu::Entry>>,
+    /// The `actions` prop: on a **window**, its owner's actions as they read
+    /// now, by verb -- what the bar's entries, the tools and the keys are
+    /// enabled, checked and refused by ([`crate::host::actions`]). Replaced
+    /// whole each time the owner sends it; empty for a window whose owner
+    /// describes none.
+    pub actions: std::collections::BTreeMap<String, clausters_editing::verbs::ActionState>,
     /// The `context` prop: the menu the secondary button (or a held press)
     /// opens at the pointer. The nearest ancestor that carries one answers, so
     /// a container's context menu serves everything inside it that has none.
@@ -441,6 +447,18 @@ fn resolve_style_under(
     }
 }
 
+/// The `actions` prop as the readings it carries: an object, or that object
+/// as the JSON string a `/gui_set` carries a structural value in. `None` for
+/// anything else, which leaves the readings as they were.
+fn actions_of(
+    v: &Value,
+) -> Option<std::collections::BTreeMap<String, clausters_editing::verbs::ActionState>> {
+    match v {
+        Value::String(s) => serde_json::from_str(s).ok(),
+        other => serde_json::from_value(other.clone()).ok(),
+    }
+}
+
 impl Widget {
     /// Interprets a generic [`GuiNode`] (and the blobs carried beside it in the
     /// `/gui_def` message) into a typed widget tree. `root_id` is the def id from
@@ -520,6 +538,10 @@ impl Widget {
             layer: super::layers::Layer::Placement,
             selected: false,
             menu: props.get("menu").map(super::menu::parse),
+            actions: props
+                .get("actions")
+                .and_then(actions_of)
+                .unwrap_or_default(),
             context: props.get("context").map(super::menu::parse),
             enabled: props.get("enabled").and_then(truthy).unwrap_or(true),
             live: true,
@@ -653,6 +675,13 @@ impl Widget {
                 selection.set_hidden(names);
                 true
             }
+            "actions" => match actions_of(v) {
+                Some(actions) => {
+                    self.actions = actions;
+                    true
+                }
+                None => false,
+            },
             "menu" => {
                 self.menu = (!v.is_null()).then(|| super::menu::parse(v));
                 true

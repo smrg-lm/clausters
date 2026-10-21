@@ -62,6 +62,15 @@ channels, then switch back and forth while the original loops: the meter
 shows the viewed file's channels, with zero levels when another file plays.
 Return to the playing file to see its live levels again.
 
+The menus and the tools read each action's state from the file in focus:
+draw in the take, then add a new file -- Edit -> Undo is disabled there, and
+Ctrl+Z does nothing, until you switch back. Cut, Copy and Delete are disabled
+with nothing selected, Paste mixed with a copy at another rate, and the View
+and Edit entries mark the view, the layer and the preview in force. With the
+File -> New file dialog up, Ctrl+Z reaches neither the take nor anything
+behind the dialog; in its name field it undoes the typing. ``editor.actions``
+prints the same readings.
+
 Run it as a script, or step through the cells::
 
     pip install -e clients/python
@@ -148,12 +157,13 @@ def both():
 # %% [markdown]
 # ## A gain envelope over the take
 #
-# View -> Edit gain envelope selects the curve body, and the vertical ruler
+# Edit -> Edit gain envelope selects the curve body, and the vertical ruler
 # reads gain while it is in hand. Drag its points or bend a
 # segment; double-click adds a point. These edits keep the samples intact.
 # `envelope()` shows a shaped fade; `apply_envelope()` renders it into a new
 # take and resets the curve to unity. Undo restores the take and the curve.
-# `preview_on()` hears and draws it; `preview_off()` ramps back to dry.
+# `preview_on()` hears and draws it; `preview_off()` ramps back to dry --
+# the Edit menu's Preview edits switch, ticked while it is on.
 # `remove_effect()` frees the insert and retains the unapplied curve.
 
 # %%

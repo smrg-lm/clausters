@@ -147,8 +147,8 @@ impl AudioEditor {
                 event: event.clone(),
                 clipboard: None,
             }),
-            "draw" | "sample" | "cut" | "copy" | "copy_cut" | "apply_envelope" | "apply"
-            | "points" => Some(Command::Edit(event.clone())),
+            "draw" | "sample" | "cut" | "delete" | "copy" | "copy_cut" | "apply_envelope"
+            | "apply" | "points" => Some(Command::Edit(event.clone())),
             _ => None,
         }
     }

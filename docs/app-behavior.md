@@ -60,6 +60,11 @@ code that keeps it lives.
   inputs resolve their own editing actions before document actions. Sharing
   an undo order across objects requires an explicit application composition;
   neither opening order nor a shared service instance establishes that policy.
+  Every file an audio editor holds -- the one it was opened over included --
+  has an order of its own; only an editor opened with `shared_history` /
+  `sharedHistory` puts its first file in the context's shared order. So with
+  edits in A and an empty B in focus, undo is disabled and A is untouched,
+  whichever was opened first.
   A scripted history step with a malformed or unknown member is refused
   before selecting an order or preparing I/O. It cannot use the previously
   selected order or truncate an oversized id to address another member.
@@ -206,6 +211,35 @@ code that keeps it lives.
 - **An application is an API; a menu is a caller.** Every action is a verb
   of the application in the shared crate, which both clients call by the same
   name; a menu entry, a key and a tool only call it and hold no state.
+- **An action's state is read, never kept.** The owner publishes each
+  action's reading -- what it addresses, whether it can be taken and why not,
+  a switch's or a choice's state, pending work -- as the window's `actions`,
+  recomputed from the file, the selection, the history and the pending
+  operations whenever a turn or an operation moves them
+  (`verbs::ActionState`, `AudioEditor::actions`). A menu entry, a tool and a
+  key read that one object: an action that cannot be taken is a disabled
+  entry, a tool that does not light, and a key or a `/gui_verb` that does
+  nothing. A text field holding the focus answers its own editing first
+  (`host::actions`): its copy and paste are the field's, and an undo while
+  typing addresses the field, which keeps no history, never the document.
+  A paste is offered only where the clipboard fits the destination: as many
+  channels, the same rate for a mix, a server copy on the same connection.
+  An empty selection is the one objection the host reads for itself: a sweep
+  or a pick is drawn there before the owner hears of it, so a Ctrl+C right
+  after one is never refused on a reading that predates it -- the host reads
+  what the addressed view holds (a take's span, a roll's notes, a
+  multitrack's clips) and the owner refuses it when nothing is selected on
+  arrival.
+- **A window that describes its actions offers nothing else of the host's
+  table.** A verb the owner gives no reading (the audio editor has no
+  `split`, `join`, `quantize` or `snap`) does nothing from its key and is not
+  on the key sheet, so the sheet lists what the window does.
+- **A dialog is modal for verbs as for the pointer.** While one is up, a key,
+  a menu entry or a tool reaches only the element focused inside it -- a
+  field's undo is the field's -- and never the object behind it.
+- **A text field keeps its own history.** Ctrl+Z undoes its last change (a
+  run of typing is one step), Ctrl+Shift+Z or Ctrl+Y redoes it, and the
+  document behind it is not reached while it holds the focus.
 - **A menu entry and its key are one verb, with or without a pointer.** A key
   addresses the view under the pointer; a menu entry has no pointer over the
   take, so it addresses the window's last selection or its one take, and a

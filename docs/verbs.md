@@ -73,8 +73,7 @@ The verdict is one of three:
 | `audio` | `view_both` | `AudioEditor.view_both` | `AudioEditor.viewBoth` | **api** |
 | `audio` | `layer_take` | `AudioEditor.layer` | `AudioEditor.layer` | **api** — `layer = "take"` |
 | `audio` | `show_envelope` | `AudioEditor.show_envelope` | `AudioEditor.showEnvelope` | **api** |
-| `audio` | `preview_on` | `AudioEditor.preview_on` | `AudioEditor.previewOn` | **api** |
-| `audio` | `preview_off` | `AudioEditor.preview_off` | `AudioEditor.previewOff` | **api** |
+| `audio` | `toggle_preview` | `AudioEditor.preview_on` `AudioEditor.preview_off` | `AudioEditor.previewOn` `AudioEditor.previewOff` | **api** — the switch, set either way |
 | `audio` | `remove_effect` | `AudioEditor.remove_effect` | `AudioEditor.removeEffect` | **api** |
 | `audio` | `apply` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** — the one effect today is the gain envelope |
 | `audio` | `apply_envelope` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** |

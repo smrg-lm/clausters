@@ -747,9 +747,40 @@ def test_reconnecting_refuses_stale_editor_resources_before_sending():
     assert previous_ids is not take.server.ids
 
 
+def test_the_window_reads_its_actions_from_the_file_in_focus():
+    editor, host, wid, context = opened(FakeBuffer())
+    window = editor._window
+    assert host.trees[0]["actions"]["undo"]["enabled"] is False, "drawn with its actions"
+    assert editor.actions["copy"] == {**editor.actions["copy"], "enabled": False,
+                                      "reason": "nothing is selected"}
+    assert editor.actions["view_wave"]["checked"] is True
+    editor.apply("/gui_event", [wid, 1, context.version, "selection", 10, 20])
+    assert host.props[window]["actions"]["copy"]["enabled"] is True, "the sweep is read"
+    editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 10, [0.5], [0.0]])
+    undo = host.props[window]["actions"]["undo"]
+    assert undo["enabled"] is True
+    assert undo["target"] == {"kind": "document", "member": editor._member,
+                              "object": editor._call("binding")["id"]}
+    editor.close()
+
+
+def test_a_second_editor_never_walks_the_first_one_s_edits():
+    take = FakeBuffer()
+    first, _host, wid, context = opened(take)
+    first.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]])
+    before = first.parts
+    second = AudioEditor(FakeBuffer(), context=context)
+    second.open(FakeHost())
+    assert second.can_undo is False and second.actions["undo"]["enabled"] is False
+    assert second.undo() is False
+    assert first.parts == before and first.can_undo is True
+    first.close()
+    second.close()
+
+
 def test_shared_undo_updates_an_unfocused_file_without_moving_focus(monkeypatch):
     from clausters import SoundFile
-    editor, _host, _wid, context = opened(FakeBuffer())
+    editor, _host, _wid, context = opened(FakeBuffer(), shared_history=True)
     original = editor.envelope
     editor.set_envelope([0, 0.5, 1, 0, 100 / SR, 0.25, 1, 0])
     monkeypatch.setattr(SoundFile, "to_buffer", lambda file, *, server=None, **options:

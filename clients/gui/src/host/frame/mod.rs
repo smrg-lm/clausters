@@ -514,6 +514,13 @@ pub(crate) struct FrameInputs<'a> {
     /// layer (see [`super::popup`]). The host's, like the status bar, and
     /// drawn last so it covers whatever it opened over.
     pub(crate) popups: Option<&'a super::popup::Popups>,
+    /// **The host's clipboard**, which a tool's paste is offered against
+    /// ([`super::actions`]). `None` draws every tool as its owner's reading
+    /// alone would.
+    pub(crate) clipboard: Option<&'a super::clipboard::Clip>,
+    /// Whether the view this window's actions address holds a selection
+    /// ([`super::Host::window_selected`]), for the tools that need one.
+    pub(crate) selected: Option<bool>,
 }
 
 impl Default for FrameInputs<'_> {
@@ -528,6 +535,8 @@ impl Default for FrameInputs<'_> {
             grab: Grab::None,
             status: None,
             popups: None,
+            clipboard: None,
+            selected: None,
         }
     }
 }
