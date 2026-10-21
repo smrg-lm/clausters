@@ -8498,7 +8498,7 @@ module of its own.
   width does not leave the meter its natural size. The meter should keep
   the width it asks for and the take's pane yield it.
 
-- ⬜ **Eight tracks bring the GUI's frame rate down, and the play cursor
+- ✅ **Eight tracks bring the GUI's frame rate down, and the play cursor
   jitters** (2026-10-21, the user, native, in the audio editor's review).
   With eight tracks on screen the window redraws visibly slower and the play
   cursor moves in uneven steps instead of following the sound smoothly.
@@ -8511,7 +8511,7 @@ module of its own.
   drawn at the display's rate (`Host::paced_by_display`): 60 live frames a
   second while the transport rolls, none once it stands, and the host's CPU
   while playing from 4.5% to 7.6%. Native eye pass 2026-10-21: the cursor
-  follows the sound evenly. Open for the browser pass.)*
+  follows the sound evenly; browser pass the same day, the same.)*
 - ⬜ **The page draws much slower than the native host** (2026-10-21, the
   user, browser). Switching the audio editor between waveform, spectrogram
   and both, and switching files, is visibly slower in the page than natively.
@@ -8529,7 +8529,7 @@ module of its own.
   is carrying a buffer's summary across a redefine where the buffer and its
   contents are unchanged, which is exactly where a stale picture comes from
   (the spectrogram entry below), so it is decided with that one.)*
-- ⬜ **Two of the page's dialogs draw wrong** (2026-10-21, the user's
+- ✅ **Two of the page's dialogs draw wrong** (2026-10-21, the user's
   captures of `edit-audio.html`). A dialog that reaches the meter is drawn
   under it: the meter's ladder and column cover the dialog's right edge. In
   the Save as dialog the OK button's label is drawn over another label (it
@@ -8543,8 +8543,9 @@ module of its own.
   it, in both fronts. The OK label and the green bar did not reproduce; text
   of the window through the dialog fits both. Native eye pass 2026-10-21: a
   Save as dialog over the meter in a narrow window is whole, the field
-  focused shows no stray bar. Open for the browser pass, where it was
-  seen.)*
+  focused shows no stray bar; browser pass the same day, where it was
+  seen, the same: nothing reads through, OK is clean and the field has no
+  bar.)*
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was
   right and switching the view away and back redrew it; until then the
@@ -8580,4 +8581,9 @@ module of its own.
   encode, present -- with its uploaded bytes and placements, counted in
   `/gui_activity`, and `host.profile(id, seconds)` / `editor.profile` with
   `format_window_profile` in both clients.)*
-
+- ⬜ **The Open file chooser gives its label too much of the width**
+  (2026-10-21, the user, in the browser pass over `edit-audio.html`). The
+  label beside the file browser in File -> Open file... takes more room than
+  it needs; it should narrow and give the width to the browser. The room it
+  frees is where a preview of the selected file could go later, which is a
+  design of its own and not part of this fix.
