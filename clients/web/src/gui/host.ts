@@ -121,6 +121,29 @@ export interface WidgetInfo {
 }
 
 /**
+ * What a window costs, as `/gui_activity` reports it ({@link GuiHost.activity}):
+ * counters as numbers, `visible` a boolean and `demand` the reasons it ticks.
+ */
+export type WindowActivity = Record<string, number | boolean | string[]>;
+
+/** A `/gui_activity.reply`'s key/value pairs as {@link GuiHost.activity} answers them. */
+function activityOf(pairs: readonly unknown[]): WindowActivity {
+    const out: WindowActivity = {};
+    for (let i = 0; i + 1 < pairs.length; i += 2) {
+        const key = String(pairs[i]);
+        const value = pairs[i + 1];
+        if (key === "demand") {
+            out[key] = String(value).split(",").filter((r) => r !== "");
+        } else if (key === "visible") {
+            out[key] = Boolean(Number(value));
+        } else {
+            out[key] = Number(value);
+        }
+    }
+    return out;
+}
+
+/**
  * A widget's readable line: `knob label=cutoff min=20 max=20000 value=800`, and
  * `(no such widget)` for the empty type the host answers a miss with.
  *
@@ -865,6 +888,37 @@ export class GuiHost {
             throw new CaptureError(`window ${window}: ${path}: ${String(args[2])}`);
         }
         return path;
+    }
+
+    /**
+     * `/gui_activity <window>` -- **what window `id` costs**, and why.
+     *
+     * What the host did for the window since it opened: `ticks` (frame ticks
+     * that reached it), `whole`, `live` and `still` (frames that drew the
+     * whole picture, only the live layers, or found nothing to draw) with
+     * `whole_us` and `live_us` (their time, in microseconds), `clock_queries`,
+     * `transport_queries`, `read_backs` and `tree_queries` (the questions a
+     * tick sent the server for it), `fetches` and `fetched_bytes` (what
+     * downloads brought it) and `streamed` (the buses and taps the page
+     * subscribes for it now). With them, `visible` (whether it can be seen)
+     * and `demand`: the reasons it is ticking now -- `"animated"`, `"fed"`,
+     * `"playhead"`, `"recording"`, `"fetching"`, `"timer"`, `"edge_scroll"`,
+     * `"read_back"`, `"node_tree"`, `"midi"` -- empty for a window with no
+     * recurring work. Two readings apart in time give what the window did in
+     * between.
+     *
+     * An empty object means the host has no such window. Rejects with
+     * `ReplyTimeout` when the host does not answer.
+     */
+    async activity(id: number | { id: number }, timeout = 1.0): Promise<WindowActivity> {
+        const window = typeof id === "number" ? id : id.id;
+        const reply = this.awaitReply(
+            (msg) => msg.addr === "/gui_activity.reply" && Number(msg.args[0]) === window,
+            timeout,
+            `/gui_activity.reply for window ${window}`,
+        );
+        this.send("/gui_activity", ["i", window]);
+        return activityOf((await reply).args.slice(1));
     }
 
     /**

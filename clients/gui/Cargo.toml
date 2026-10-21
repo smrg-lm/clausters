@@ -184,6 +184,8 @@ web-sys = { version = "0.3", features = [
     "BinaryType",
     "Window",
     "Document",
+    # `performance.now()`, what a frame is timed by for `/gui_activity`.
+    "Performance",
     "Element",
     # The server->host leg (streamed buses, buffer replies) and the bulk fetch.
     "MessageEvent",

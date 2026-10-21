@@ -2050,7 +2050,14 @@ pub trait Element: fmt::Debug {
     /// the reader can read, whatever the window's repaint rate happens to be.
     /// Everything it produces is the element's own state, so the draw that
     /// follows only ever *draws* it.
-    fn tick(&mut self, _live: &Live) {}
+    ///
+    /// **It answers whether what the element shows changed**, which is what
+    /// decides a frame: a tick that read the same level, or nothing at all,
+    /// is a picture already on screen, and a window full of meters over a
+    /// silent bus draws nothing. An element that cannot tell answers `true`.
+    fn tick(&mut self, _live: &Live) -> bool {
+        false
+    }
 
     /// The wheel turned over this element: `delta` in the front's scroll units,
     /// `None` to let it fall through to whatever is behind. Only reached when

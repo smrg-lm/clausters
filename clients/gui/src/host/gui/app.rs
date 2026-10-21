@@ -21,12 +21,13 @@ use winit::window::WindowId;
 
 use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
+use crate::host::activity::{Count, Reason};
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::{Gestures, Wheel, WheelDelta};
 use crate::host::graphics::nodetree::NodeTree;
-use crate::host::live::{self, tree_animates, tree_has_live_widget, tree_is_fed, tree_repaints};
+use crate::host::live::{self, TickFrame};
 use crate::host::widget::Widget;
 use crate::host::widget::element::Live;
 use crate::host::winit_keys::{command, to_key};
@@ -84,6 +85,11 @@ pub(super) struct WindowState {
     pub(super) histories: HashMap<i32, crate::host::live::BusHistory>,
     /// What this window's frames came to, for the `debug` line.
     pub(super) frames: FrameTally,
+    /// Whether the platform said nothing of the window can be seen --
+    /// covered, minimized, on another workspace. An occluded window is not
+    /// ticked or drawn; what it plays goes on, and it draws again whole when
+    /// it is seen.
+    pub(super) occluded: bool,
 }
 
 /// **What a window's frames came to over the last second**, for the `debug`
@@ -233,6 +239,9 @@ pub(super) struct App {
     pub(super) midi_warned: bool,
     /// How long the last tick was, for whatever advances in time.
     tick_clock: crate::host::live::TickClock,
+    /// Why each window asked for the frame tick when it was last read, once
+    /// a frame ([`App::tick_demand`]).
+    tick_reasons: HashMap<i32, Vec<Reason>>,
 }
 
 impl App {
@@ -280,6 +289,7 @@ impl App {
             #[cfg(feature = "midi")]
             midi_warned: false,
             tick_clock: Default::default(),
+            tick_reasons: HashMap::new(),
         }
     }
 
@@ -293,7 +303,11 @@ impl App {
     /// waterfall's transform -- reading a history where it needs one. Without a
     /// segment there is nothing to read and the live views stay empty, drawing
     /// their framed field; the tick still reaches what moves on its own.
-    fn advance_live(&mut self) {
+    ///
+    /// Only the windows in `shown` are ticked, and the answer is the ones
+    /// whose tick moved something they show.
+    fn advance_live(&mut self, shown: &[i32]) -> Vec<i32> {
+        let mut moved = Vec::new();
         let Some(shm) = self.shm.clone() else {
             // **No segment still ticks what moves on its own.** Nothing can be
             // read off a bus, but an element that animates by itself -- an
@@ -301,10 +315,13 @@ impl App {
             // it; it used to stand still in a window with no server behind it.
             let dt = self.tick_clock.delta();
             for (def_id, ws) in &mut self.windows {
+                if !shown.contains(def_id) {
+                    continue;
+                }
                 let Some(tree) = self.host.window_def_mut(*def_id) else {
                     continue;
                 };
-                live::tick_tree(
+                if live::tick_tree(
                     tree,
                     &Live {
                         bus: None,
@@ -312,15 +329,20 @@ impl App {
                         dt,
                         histories: &ws.histories,
                     },
-                );
+                ) {
+                    moved.push(*def_id);
+                }
             }
             self.refresh_slots();
-            return;
+            return moved;
         };
         let sample_rate = shm.sample_rate();
         let dt = self.tick_clock.delta();
         let window = live::retention_window(sample_rate, shm.window_limit());
         for (def_id, ws) in &mut self.windows {
+            if !shown.contains(def_id) {
+                continue;
+            }
             let Some(tree) = self.host.window_def_mut(*def_id) else {
                 continue;
             };
@@ -331,7 +353,7 @@ impl App {
                 |bus, out| shm.read_bus_at(bus, out),
                 &mut ws.histories,
             );
-            live::tick_tree(
+            if live::tick_tree(
                 tree,
                 &Live {
                     bus: Some(shm.as_ref()),
@@ -339,9 +361,12 @@ impl App {
                     dt,
                     histories: &ws.histories,
                 },
-            );
+            ) {
+                moved.push(*def_id);
+            }
         }
         self.refresh_slots();
+        moved
     }
 
     /// Uploads whatever the trees have for their GPU slots this tick -- the
@@ -387,13 +412,28 @@ impl App {
         self.host.apply_extents(extents);
     }
 
-    /// Whether window `def_id` should repaint continuously: it has a `canvas`
-    /// (time-driven, always), or a meter/scope with a shared segment to feed it.
-    fn window_is_animated(&self, def_id: i32) -> bool {
-        self.host.window_def(def_id).is_some_and(|tree| {
-            tree_animates(tree)
-                || (self.shm.is_some() && tree_has_live_widget(tree, self.host.timelines()))
-        })
+    /// The windows that can be seen: open and not occluded. Only these are
+    /// ticked, drawn on a period and asked about on the server's behalf.
+    fn shown_windows(&self) -> Vec<i32> {
+        let mut shown: Vec<i32> = self
+            .windows
+            .iter()
+            .filter(|(_, ws)| !ws.occluded)
+            .map(|(id, _)| *id)
+            .collect();
+        shown.sort_unstable();
+        shown
+    }
+
+    /// **Why window `def_id` needs the frame tick**: what its tree asks for
+    /// ([`Host::tree_demand`]) and what this front holds for it -- a clip
+    /// held against an edge, a gesture timer.
+    fn tick_demand(&self, def_id: i32) -> Vec<Reason> {
+        let mut out = self.host.tree_demand(def_id, self.shm.is_some());
+        if self.window_is_edge_scrolling(def_id) {
+            out.push(Reason::EdgeScroll);
+        }
+        out
     }
 
     pub(super) fn apply(&mut self, lp: Loop, from: ClientId, effects: Vec<HostEffect>) {
@@ -605,9 +645,9 @@ impl App {
                 &self.host.theme,
             ));
         }
-        // Timed only when somebody is reading it: what a window's frames
-        // come to, said once a second under `debug`.
-        let timed = tracing::enabled!(tracing::Level::DEBUG).then(Instant::now);
+        // Timed always: what a window's frames come to is counted for
+        // `/gui_activity`, and said once a second under `debug`.
+        let started = Instant::now();
         let drawn = frame::render(
             &mut ws.gpu,
             &mut ws.renderers,
@@ -620,8 +660,19 @@ impl App {
             &self.host.theme,
             whole,
         );
-        if let Some(started) = timed {
-            ws.frames.count(def_id, drawn, started.elapsed());
+        let took = started.elapsed();
+        drop(statuses);
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            ws.frames.count(def_id, drawn, took);
+        }
+        let counted = match drawn {
+            frame::Drawn::Whole => Some(Count::Whole(took)),
+            frame::Drawn::Live => Some(Count::Live(took)),
+            frame::Drawn::Still => Some(Count::Still),
+            frame::Drawn::Owed => None,
+        };
+        if let Some(what) = counted {
+            self.host.count(def_id, what);
         }
         None
     }
@@ -754,6 +805,25 @@ impl App {
         // the samples still resolves to the sample where the eye is.
         self.fetch_wanted_spans();
 
+        // **Only what can be seen is ticked.** An occluded window keeps what
+        // it plays and what it holds; it is not drawn, read back or queried
+        // for, and it draws again whole when it is seen.
+        let shown = self.shown_windows();
+        // **What the trees ask for is read once a frame**, not on every turn
+        // of the loop: a window that redraws wakes the loop twice a frame, and
+        // each reading walks every widget. Idle, the frame time has passed and
+        // the first event reads it again.
+        if now >= self.next_frame {
+            self.tick_reasons = shown
+                .iter()
+                .map(|id| (*id, self.tick_demand(*id)))
+                .collect();
+        }
+        let mut demand: HashMap<i32, Vec<Reason>> = shown
+            .iter()
+            .map(|id| (*id, self.tick_reasons.get(id).cloned().unwrap_or_default()))
+            .collect();
+
         // **A recording is drawn as it fills.** The samples are mapped, so
         // they need nothing; what moves is the frontier its writer
         // publishes, and the summary over the frames it added.
@@ -781,11 +851,14 @@ impl App {
             let follow = Duration::from_secs_f64(self.host.follow_block.max(0.0)).max(FRAME);
             self.next_follow = now + follow;
         }
-        if self
-            .windows
-            .keys()
-            .any(|id| self.window_follows_a_recording(*id))
-        {
+        let mut following = false;
+        for id in &shown {
+            if self.window_follows_a_recording(*id) {
+                following = true;
+                demand.entry(*id).or_default().push(Reason::Recording);
+            }
+        }
+        if following {
             next_wake = Some(next_wake.map_or(self.next_follow, |t| t.min(self.next_follow)));
         }
 
@@ -806,17 +879,36 @@ impl App {
         // sends an event when its time comes, so the loop has to come back and
         // ask.
         self.advance_timers();
-        if self.windows.values().any(|ws| ws.gestures.pending()) {
+        let mut timing = false;
+        for (id, ws) in &self.windows {
+            if ws.gestures.pending() {
+                timing = true;
+                demand.entry(*id).or_default().push(Reason::Timer);
+            }
+        }
+        if timing {
             let t = now + FRAME;
             next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
         }
 
-        // Meter/scope animation, driven from the shared segment.
-        let animated: Vec<i32> = self
-            .windows
-            .keys()
+        // **The frame tick**, for the windows whose tree asks for it: what
+        // moves on its own, what is fed, a playhead that can move, a clip
+        // held against an edge. A tick draws a frame only for what moved
+        // ([`live::tick_frame`]): a meter over a steady level, a playhead
+        // over a transport that stands, draw nothing.
+        let animated: Vec<i32> = shown
+            .iter()
             .copied()
-            .filter(|id| self.window_is_animated(*id) || self.window_is_edge_scrolling(*id))
+            .filter(|id| {
+                demand.get(id).is_some_and(|d| {
+                    d.iter().any(|r| {
+                        matches!(
+                            r,
+                            Reason::Animated | Reason::Fed | Reason::Playhead | Reason::EdgeScroll
+                        )
+                    })
+                })
+            })
             .collect();
         if !animated.is_empty() {
             if now >= self.next_frame {
@@ -825,26 +917,25 @@ impl App {
                 // keeps the scroll speed constant: extra repaints from a drag or a
                 // resize no longer push extra samples and speed the scope up. The
                 // audio-rate scopes refresh their triggered tap windows likewise.
-                self.advance_live();
+                let moved = self.advance_live(&animated);
+                self.host.settle_transports();
                 for id in &animated {
-                    // A frame is drawn for what moved. An edge scroll moves
-                    // the picture, and so does a fed element that draws its
-                    // values into it: a whole frame. What is fed and drawn on
-                    // a live layer, and a playhead whose counter moved, ask
-                    // for the live layers alone.
-                    let tree = self.host.window_def(*id);
-                    let whole =
-                        tree.is_some_and(tree_repaints) || self.window_is_edge_scrolling(*id);
-                    let fed = tree.is_some_and(tree_is_fed);
+                    self.host.count(*id, Count::Tick);
                     let clocks = self.host.head_clocks(*id, self.shm.as_deref());
-                    let moved = self.host.playheads_moved(*id, clocks);
+                    let heads = self.host.playheads_moved(*id, clocks);
+                    let frame = self.host.window_def(*id).map_or(TickFrame::None, |tree| {
+                        live::tick_frame(tree, moved.contains(id), heads)
+                    });
+                    let edge = self.window_is_edge_scrolling(*id);
                     let Some(ws) = self.windows.get(id) else {
                         continue;
                     };
-                    if whole {
-                        ws.repaint();
-                    } else if fed || moved {
-                        ws.repaint_live();
+                    // An edge scroll moves the picture whatever the tick read.
+                    match frame {
+                        _ if edge => ws.repaint(),
+                        TickFrame::Whole => ws.repaint(),
+                        TickFrame::Live => ws.repaint_live(),
+                        TickFrame::None => {}
                     }
                 }
                 self.next_frame = now + FRAME;
@@ -862,6 +953,9 @@ impl App {
             if readers.is_empty() {
                 self.midi_in = None;
             } else {
+                for (def_id, _) in &readers {
+                    demand.entry(*def_id).or_default().push(Reason::Midi);
+                }
                 if self.midi_in.is_none() {
                     self.midi_in = clausters_midi::live::Input::open("clausters-gui");
                     if self.midi_in.is_none() && !self.midi_warned {
@@ -881,21 +975,23 @@ impl App {
         // the take appears when the pointer happens to move, which reads as a
         // picture that does not load.
         if self.fetches.pending() {
+            for id in self.windows.keys() {
+                if self.fetches.pending_for(*id) {
+                    demand.entry(*id).or_default().push(Reason::Fetching);
+                }
+            }
             let t = now + FRAME;
             next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
         }
 
         // **The bound widgets read back**: what each binding writes, asked
-        // for at the host's period ([`readback`](crate::host::readback)).
-        if self.host.server().is_some()
-            && self
-                .host
-                .reads_back(&self.windows.keys().copied().collect::<Vec<_>>())
-        {
+        // for at the host's period ([`readback`](crate::host::readback)) --
+        // for the windows that can be seen.
+        if self.host.server().is_some() && self.host.reads_back(&shown) {
             if now >= self.next_read_back {
                 // A node read back is let go on its `/node_end`.
                 self.ensure_notify();
-                self.read_back();
+                self.read_back(&shown);
                 let period = Duration::from_millis(crate::host::readback::READ_BACK_MS.into());
                 self.next_read_back = now + period;
             }
@@ -903,12 +999,36 @@ impl App {
         }
 
         // Node-tree polling, driven from the client leg (the `/node_set` poll).
-        if self.host.server().is_some() && !self.node_tree_groups().is_empty() {
+        if self.host.server().is_some() && !self.node_tree_groups(&shown).is_empty() {
             if now >= self.next_query {
-                self.requery_node_trees();
+                self.requery_node_trees(&shown);
                 self.next_query = now + NODETREE_POLL;
             }
             next_wake = Some(next_wake.map_or(self.next_query, |t| t.min(self.next_query)));
+        }
+
+        // **A playhead over a transport is told when it moves**: the pushes
+        // come to a host registered for notifications, which is what lets a
+        // stopped one stop being watched.
+        if self.host.server().is_some()
+            && shown
+                .iter()
+                .any(|id| !self.host.transports_drawn(*id).is_empty())
+        {
+            self.ensure_notify();
+        }
+
+        // What each window ticks for, kept for `/gui_activity`.
+        for id in self.windows.keys().copied().collect::<Vec<_>>() {
+            let reasons = demand.remove(&id).unwrap_or_default();
+            let visible = shown.contains(&id);
+            if self
+                .host
+                .activity(id)
+                .is_none_or(|a| a.demand != reasons || a.visible != visible)
+            {
+                self.host.set_demand(id, reasons, visible, 0);
+            }
         }
 
         next_wake
@@ -1091,6 +1211,17 @@ impl ApplicationHandler<UserEvent> for App {
                 let consumed = to_key(&pressed).is_some_and(|k| self.press_key(def_id, k));
                 if !consumed && matches!(pressed, Key::Named(NamedKey::Escape)) {
                     self.user_close(def_id, Loop::Shown(event_loop));
+                }
+            }
+            // **What cannot be seen is not drawn.** The platform says when a
+            // window is covered, minimized or on another workspace; its tick
+            // and its queries stop, and it is drawn whole when it is seen.
+            WindowEvent::Occluded(occluded) => {
+                if let Some(ws) = self.windows.get_mut(&def_id) {
+                    ws.occluded = occluded;
+                    if !occluded {
+                        ws.repaint();
+                    }
                 }
             }
             WindowEvent::RedrawRequested => self.render(def_id),

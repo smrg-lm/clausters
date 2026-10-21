@@ -873,6 +873,18 @@ class Editor:
             raise RuntimeError("capture() needs the editor's window open")
         return self._host.capture(self._window, path, timeout)
 
+    def activity(self, timeout: float = 1.0) -> dict:
+        """**What the window costs, and why** --
+        `clausters.gui.host.GuiHost.activity` on this editor's window: its
+        frames, ticks, queries and downloads since it opened, and the reasons
+        it is ticking now (``demand``, empty for a settled window).
+
+        Raises `RuntimeError` with no window open.
+        """
+        if self._host is None or self._window is None:
+            raise RuntimeError("activity() needs the editor's window open")
+        return self._host.activity(self._window, timeout)
+
     def view_all(self) -> bool:
         """The whole of what the window's view holds, in view -- the window's ``view_all`` (`verb`)."""
         return self.verb("view_all")

@@ -379,8 +379,16 @@ async function boot(
             // independently: a layout change, and a change of display scale
             // that leaves the CSS box untouched.
             const unwatch = onScaleChange(apply);
+            // **A canvas out of the viewport costs nothing**: the host drops
+            // it from its tick and its subscriptions, as it does for a
+            // `<clausters-gui>` element scrolled away.
+            const view = new IntersectionObserver((entries) => {
+                for (const entry of entries) bridge.set_visible(defId, entry.isIntersecting);
+            });
+            view.observe(element);
             return () => {
                 observer.disconnect();
+                view.disconnect();
                 unwatch();
             };
         },

@@ -97,6 +97,25 @@ editor.drag([450, 416], [700, 416]);    // a note, a little later
 await editor.capture("/out/dragged.png");
 ```
 
+**What a window costs** is asked for the same way: `editor.activity()`
+answers what the host did for it since it opened — frame ticks, frames drawn
+whole or only their live layers, the queries those ticks sent the server, the
+bytes downloads brought — and `demand`, the reasons it is ticking now. A
+window with nothing moving in it has an empty `demand`: an audio editor that
+is stopped draws nothing and asks the server for nothing until something
+changes, and a window that cannot be seen — scrolled away, or in a tab in the
+background — is not ticked at all. Two readings apart in time give what the
+window did in between:
+
+```javascript
+const before = await editor.activity();
+await new Promise((done) => setTimeout(done, 2000));
+const after = await editor.activity();
+console.log(after.demand, after.live - before.live); // [] 0 while stopped
+```
+
+`host.activity(window)` asks it of any window.
+
 **What a quantize, a drag and a paste land on is a grid in beats**, a
 sixteenth until you choose another: `editor.grid = 1.0` for whole beats, `0`
 for none. It is read through the structure's tempo map, so a line is a beat

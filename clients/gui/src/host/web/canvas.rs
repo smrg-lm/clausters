@@ -519,7 +519,8 @@ impl WebApp {
                 theme,
             ));
         }
-        frame::render(
+        let started = now_ms();
+        let drawn = frame::render(
             &mut render.gpu,
             &mut render.renderers,
             &mut render.batches,
@@ -531,10 +532,20 @@ impl WebApp {
             theme,
             whole,
         );
+        let took = std::time::Duration::from_secs_f64((now_ms() - started).max(0.0) / 1000.0);
         // The frame is drawn: the host's status log can be let go of, so the
         // fetch below has this canvas' host to itself. (`inputs` borrows it
         // and holds nothing to release; its borrow ended at the render.)
         drop(statuses);
+        let counted = match drawn {
+            frame::Drawn::Whole => Some(Count::Whole(took)),
+            frame::Drawn::Live => Some(Count::Live(took)),
+            frame::Drawn::Still => Some(Count::Still),
+            frame::Drawn::Owed => None,
+        };
+        if let Some(what) = counted {
+            self.host.count(def, what);
+        }
         // **What this frame could not draw.** A view zoomed finer than its
         // summary left the span it was asked for on its slot; a page cannot
         // map the samples, so it reads exactly that span back -- which is what
@@ -571,4 +582,12 @@ impl WebApp {
             log(&format!("def {def}: cannot release the keyboard: {e:?}"));
         }
     }
+}
+
+/// The page's monotonic clock, in milliseconds (`performance.now()`): what a
+/// frame is timed by for `/gui_activity`.
+fn now_ms() -> f64 {
+    web_sys::window()
+        .and_then(|w| w.performance())
+        .map_or(0.0, |p| p.now())
 }

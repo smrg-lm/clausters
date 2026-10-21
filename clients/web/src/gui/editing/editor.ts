@@ -37,7 +37,7 @@ import { TempoMap } from "../../base/time.ts";
 import type { Intent } from "../../document.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { WindowHandle } from "../handle.ts";
-import type { GuiHost, PropValue } from "../host.ts";
+import type { GuiHost, PropValue, WindowActivity } from "../host.ts";
 import { Editing, FIRST_VERSION } from "../../history.ts";
 import type { RecordingLeg } from "../../history.ts";
 import type { Server } from "../../defs/server/index.ts";
@@ -1180,6 +1180,21 @@ export class Editor<S = unknown> implements Adopting {
             throw new Error("capture() needs the editor's window open");
         }
         return this.host.capture(this.windowId, path, timeout);
+    }
+
+    /**
+     * **What the window costs, and why** -- {@link GuiHost.activity} on this
+     * editor's window: its frames, ticks, queries and downloads since it
+     * opened, and the reasons it is ticking now (`demand`, empty for a
+     * settled window).
+     *
+     * Rejects with no window open.
+     */
+    async activity(timeout = 1.0): Promise<WindowActivity> {
+        if (this.host === null || this.windowId === null) {
+            throw new Error("activity() needs the editor's window open");
+        }
+        return this.host.activity(this.windowId, timeout);
     }
 
     /** The whole of what the window's view holds, in view -- the window's `view_all` ({@link Editor.verb}). */

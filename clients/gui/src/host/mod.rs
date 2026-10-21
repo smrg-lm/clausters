@@ -51,6 +51,7 @@
 // on an element's behalf, which are its own and not the element's.
 pub mod ack;
 mod actions;
+pub mod activity;
 pub mod bind;
 // The other way of a binding: what a bound widget writes, asked for and read
 // back onto it.
@@ -240,6 +241,7 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType};
 use crate::host::world::HeadClocks;
 use serde_json::Value;
 
+pub use activity::{GUI_ACTIVITY, GUI_ACTIVITY_REPLY};
 pub use bind::Binding;
 #[cfg(not(target_arch = "wasm32"))]
 pub use client::ServerLeg;
@@ -1034,6 +1036,9 @@ pub struct Host {
     /// a box of notes asks for. Drained by the front ([`Host::take_effects`]),
     /// which is the side that can make a window.
     pending_effects: Vec<HostEffect>,
+    /// What each window costs and why, and the transports as the server
+    /// last pushed them ([`activity`]).
+    activity: activity::Activities,
 }
 
 impl Default for Host {
@@ -1099,6 +1104,7 @@ impl Host {
             resolved_metrics: HashMap::new(),
             focused: None,
             pending_effects: Vec::new(),
+            activity: Default::default(),
         }
     }
 

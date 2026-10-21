@@ -44,6 +44,7 @@ use crate::spectrogram::Stft;
 use crate::view::Renderers;
 use crate::waveform::WaveformData;
 
+use super::activity::{Count, Reason};
 use super::fetch::BufferFetches;
 use super::frame::{self, Batches, SlotAt, SpectrogramSlot, WaveformSlot};
 use super::gestures::{GestureCtx, GestureEffect, Gestures};
@@ -149,6 +150,9 @@ enum WebEvent {
     },
     /// The element entered or left the viewport (`IntersectionObserver`).
     SetVisible { def_id: i32, visible: bool },
+    /// The tab was put in the background or brought back
+    /// (`visibilitychange`).
+    PageShown,
     /// The async WebGPU device for one canvas is ready.
     /// Boxed: a `Gpu` is ~276 bytes and every other variant is a handful, so
     /// carrying it inline would size the whole event queue to it.
@@ -287,6 +291,9 @@ struct WebApp {
     /// The read-back interval, running while a server is attached and a
     /// canvas is open ([`crate::host::readback`]).
     read_back: Option<Interval>,
+    /// The document's `visibilitychange` listener: a tab put in the
+    /// background hides every canvas in it, as scrolling one away does.
+    _visibility: Option<Listener>,
     /// How long the last tick was, for whatever advances in time.
     tick_clock: live::TickClock,
     /// Whether the first streamed `/bus_stream.reply` snapshot was logged (one line as
@@ -337,6 +344,11 @@ impl WebApp {
             server_rate: 0.0,
             tick: None,
             read_back: None,
+            _visibility: Listener::on_document("visibilitychange", move || {
+                if let Some(proxy) = web_proxy() {
+                    let _ = proxy.send_event(HostEvent::To(id, WebEvent::PageShown));
+                }
+            }),
             tick_clock: Default::default(),
             stream_seen: false,
             fetches: BufferFetches::default(),
@@ -424,7 +436,12 @@ impl WebApp {
     /// Everything that costs something per frame or per packet -- the tick, the
     /// `/bus_stream` and `/bus_tapStream` subscriptions -- is derived from exactly
     /// this set, which is what makes a scrolled-away component free.
+    ///
+    /// A tab in the background shows nothing, so it has no visible canvas.
     fn visible_defs(&self) -> Vec<i32> {
+        if page_hidden() {
+            return Vec::new();
+        }
         let mut ids: Vec<i32> = self
             .canvases
             .iter()
@@ -464,10 +481,11 @@ impl WebApp {
     fn on_tree_changed(&mut self) {
         // The tick is local and settles now; the subscriptions are messages,
         // and they wait for the end of the turn (see `schedule_stream_sync`).
-        let demand = self.demand();
-        self.ensure_tick(demand.animated);
+        self.ensure_tick(self.tick_wanted());
         self.ensure_read_back();
         self.schedule_stream_sync();
+        self.ensure_notify_for_transports();
+        self.note_demand();
         // ...and a directory a newly defined chooser shows.
         self.start_listings();
         // ...and the MIDI inputs an element that listens is waiting on.
@@ -525,13 +543,45 @@ impl WebApp {
     /// the union over the **visible** set, so a scrolled-away component drops
     /// out of it. The derivation itself is platform-agnostic
     /// ([`live::demand`]), natively tested.
+    ///
+    /// Whether the tick runs and whether a playhead is polled are the host's
+    /// reading of each window ([`Host::tree_demand`]), the one the desktop
+    /// ticks by: a meter that reads nothing and a playhead over a transport
+    /// that stands ask for neither.
     fn demand(&self) -> live::LiveDemand {
-        let trees: Vec<&Widget> = self
-            .visible_defs()
-            .into_iter()
-            .filter_map(|def| self.host.window_def(def))
+        let visible = self.visible_defs();
+        let trees: Vec<&Widget> = visible
+            .iter()
+            .filter_map(|def| self.host.window_def(*def))
             .collect();
-        live::demand(trees, self.host.timelines(), self.server_rate)
+        let mut demand = live::demand(trees, self.host.timelines(), self.server_rate);
+        let reasons: Vec<Reason> = visible
+            .iter()
+            .flat_map(|def| self.host.tree_demand(*def, true))
+            .collect();
+        demand.animated = !reasons.is_empty();
+        demand.playhead = reasons.contains(&Reason::Playhead);
+        demand
+    }
+
+    /// **A page drawing a transport registers for notifications**: the
+    /// server pushes every change of a transport to the clients that asked,
+    /// and that push is what lets a playhead over a stopped one stop polling.
+    fn ensure_notify_for_transports(&mut self) {
+        if self.notified || self.host.server().is_none() {
+            return;
+        }
+        if self
+            .visible_defs()
+            .iter()
+            .any(|def| !self.host.transports_drawn(*def).is_empty())
+        {
+            self.notified = true;
+            self.send_to_server(OscMessage {
+                addr: "/server_notify".into(),
+                args: vec![OscType::Int(1)],
+            });
+        }
     }
 
     /// Starts or stops the ~30 fps animation tick to match the drawing
@@ -607,13 +657,21 @@ impl WebApp {
     }
 
     /// One beat of the read-back: what every bound widget writes, asked for.
+    ///
+    /// Of the visible canvases: one scrolled away or in a hidden tab is read
+    /// back by nobody until it is seen again.
     fn read_back_now(&mut self) {
         let Some(server) = self.host.server() else {
             return;
         };
-        let open: Vec<i32> = self.canvases.keys().copied().collect();
+        let open = self.visible_defs();
         for msg in self.host.read_back_asks(&open) {
             let _ = server.send(msg);
+        }
+        for def in open {
+            if self.host.reads_back(&[def]) {
+                self.host.count(def, Count::ReadBack);
+            }
         }
     }
 
@@ -623,14 +681,21 @@ impl WebApp {
     /// then repaint.
     fn on_tick(&mut self) {
         // The counters some visible playhead is drawn from: the device clock,
-        // and each transport whose position one reads.
-        let mut wants_device = false;
-        let mut wants_transports: Vec<usize> = Vec::new();
+        // and each transport whose position one reads -- only while it can
+        // move ([`Host::transport_ticks`]).
+        let mut wants_device: Vec<i32> = Vec::new();
+        let mut wants_transports: Vec<(usize, Vec<i32>)> = Vec::new();
         let dt = self.tick_clock.delta();
         // Applied after the loop: registering an axis' length borrows the
         // host, which the loop holds a tree of.
         let mut extents: Vec<(i32, frame::Extent)> = Vec::new();
+        let mut ticked: Vec<(i32, bool)> = Vec::new();
         for def in self.visible_defs() {
+            // **Only a canvas that asks is ticked**: one whose tree has
+            // nothing that can move costs the tick nothing.
+            if self.host.tree_demand(def, true).is_empty() {
+                continue;
+            }
             let Some(slot) = self.canvases.get_mut(&def) else {
                 continue;
             };
@@ -648,7 +713,7 @@ impl WebApp {
                 |tap, out| source.read_bus_at(tap, out),
                 &mut slot.histories,
             );
-            live::tick_tree(
+            let moved = live::tick_tree(
                 tree,
                 &Live {
                     bus: Some(&source),
@@ -658,55 +723,129 @@ impl WebApp {
                 },
             );
             extents.extend(refresh_slots(slot, tree));
-            // A frame is drawn for what moved. A fed element that draws its
-            // values into the picture asks for a whole one; what is fed and
-            // drawn on a live layer, and a playhead whose counter moved, ask
-            // for the live layers alone.
-            let whole = live::tree_repaints(tree);
-            let fed = live::tree_is_fed(tree);
+            ticked.push((def, moved));
+        }
+        self.host.apply_extents(extents);
+        self.host.settle_transports();
+        for (def, moved) in ticked {
+            self.host.count(def, Count::Tick);
+            // A frame is drawn for what moved ([`live::tick_frame`]): the
+            // same rule the desktop draws by.
             let clocks = self.host.head_clocks(def, Some(self.buses.as_ref()));
-            let moved = self.host.playheads_moved(def, clocks);
-            if whole {
-                slot.request_redraw();
-            } else if fed || moved {
-                slot.request_redraw_live();
+            let heads = self.host.playheads_moved(def, clocks);
+            let frame = self
+                .host
+                .window_def(def)
+                .map_or(live::TickFrame::None, |tree| {
+                    live::tick_frame(tree, moved, heads)
+                });
+            if let Some(slot) = self.canvases.get(&def) {
+                match frame {
+                    live::TickFrame::Whole => slot.request_redraw(),
+                    live::TickFrame::Live => slot.request_redraw_live(),
+                    live::TickFrame::None => {}
+                }
             }
             // Asked after the tick, so the mutable walk above is over: whether
             // this tree draws a moving playhead is what makes the page poll the
             // engine clock at all.
-            if let Some(tree) = self.host.window_def(def)
-                && live::tree_has_playhead(tree, self.host.timelines())
-            {
-                wants_device |= self.host.device_drawn(def);
+            if self.host.playhead_ticks(def) {
+                if self.host.device_drawn(def) {
+                    wants_device.push(def);
+                }
                 for t in self.host.transports_drawn(def) {
-                    if !wants_transports.contains(&t) {
-                        wants_transports.push(t);
+                    if !self.host.transport_ticks(t) {
+                        continue;
+                    }
+                    match wants_transports.iter_mut().find(|(have, _)| *have == t) {
+                        Some((_, defs)) => defs.push(def),
+                        None => wants_transports.push((t, vec![def])),
                     }
                 }
             }
         }
-        self.host.apply_extents(extents);
         // A visible playhead needs the engine clock: poll it once per tick (the
         // browser's stand-in for the shm header's sample clock) -- once for the
         // page, however many canvases show one.
         if let Some(server) = self.host.server() {
             // Which counters the lines are drawn from decides which are worth a
             // message: a position is its transport's own to report.
-            if wants_device {
+            if !wants_device.is_empty() {
                 let _ = server.send(OscMessage {
                     addr: "/clock_query".into(),
                     args: vec![],
                 });
             }
-            for transport in wants_transports {
+            for (transport, _) in &wants_transports {
                 let _ = server.send(OscMessage {
                     addr: "/transport_query".into(),
-                    args: vec![OscType::Int(transport as i32)],
+                    args: vec![OscType::Int(*transport as i32)],
                 });
+            }
+            for def in wants_device {
+                self.host.count(def, Count::ClockQuery);
+            }
+            for (_, defs) in wants_transports {
+                for def in defs {
+                    self.host.count(def, Count::TransportQuery);
+                }
             }
         }
         self.advance_edge_scroll();
         self.advance_timers();
+        // **A tick that found the page settled stops itself**: a meter that
+        // fell, a transport that stood still after its push.
+        self.ensure_tick(self.tick_wanted());
+        self.note_demand();
+    }
+
+    /// Whether the page needs its tick: a visible canvas asks for it
+    /// ([`Self::demand`]), a gesture timer runs or a clip is held against an
+    /// edge.
+    fn tick_wanted(&self) -> bool {
+        self.demand().animated
+            || self.canvases.values().any(|slot| {
+                slot.gestures.pending()
+                    || slot
+                        .cursor
+                        .is_some_and(|(cx, _)| slot.gestures.edge_scrolling(cx))
+            })
+    }
+
+    /// What each canvas ticks for and streams, kept for `/gui_activity`.
+    fn note_demand(&mut self) {
+        let shown = self.visible_defs();
+        for def in self.canvases.keys().copied().collect::<Vec<_>>() {
+            let visible = shown.contains(&def);
+            let (mut reasons, streamed) = match self.host.window_def(def) {
+                Some(tree) if visible => {
+                    let mut buses = Vec::new();
+                    let mut taps = Vec::new();
+                    live::collect_live_buses(tree, &mut buses);
+                    live::collect_live_taps(tree, &mut taps);
+                    (self.host.tree_demand(def, true), buses.len() + taps.len())
+                }
+                _ => (Vec::new(), 0),
+            };
+            if let Some(slot) = self.canvases.get(&def) {
+                if slot.gestures.pending() {
+                    reasons.push(Reason::Timer);
+                }
+                if slot
+                    .cursor
+                    .is_some_and(|(cx, _)| slot.gestures.edge_scrolling(cx))
+                {
+                    reasons.push(Reason::EdgeScroll);
+                }
+            }
+            if self.fetches.pending_for(def) {
+                reasons.push(Reason::Fetching);
+            }
+            if visible && self.host.server().is_some() && self.host.reads_back(&[def]) {
+                reasons.push(Reason::ReadBack);
+            }
+            self.host.set_demand(def, reasons, visible, streamed);
+        }
     }
 
     /// The frame step of a clip drag held against a lane's edge: pans the view
@@ -855,6 +994,14 @@ impl WebApp {
             WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
             WebEvent::SyncStreams => self.sync_streams(),
             WebEvent::Tick => self.on_tick(),
+            // The subscriptions and the tick follow the page as they follow
+            // the viewport, and a tab brought back draws what it shows again.
+            WebEvent::PageShown => {
+                for def in self.visible_defs() {
+                    self.request_redraw(def);
+                }
+                self.on_tree_changed();
+            }
             WebEvent::ReadBack => self.read_back_now(),
             WebEvent::HostEffects => {
                 let effects = self.host.take_effects();
@@ -918,6 +1065,43 @@ impl WebApp {
 /// interval before the closure goes: an instance closed with its tick running
 /// would otherwise leave the browser calling a freed closure every period,
 /// each call a thrown error, until the page stops answering.
+/// Whether the page's tab is in the background (`document.hidden`).
+fn page_hidden() -> bool {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .is_some_and(|d| d.hidden())
+}
+
+/// A listener on the document, removed when it is dropped.
+struct Listener {
+    document: web_sys::Document,
+    event: &'static str,
+    closure: Closure<dyn FnMut()>,
+}
+
+impl Listener {
+    fn on_document(event: &'static str, f: impl FnMut() + 'static) -> Option<Self> {
+        let document = web_sys::window()?.document()?;
+        let closure = Closure::<dyn FnMut()>::new(f);
+        document
+            .add_event_listener_with_callback(event, closure.as_ref().unchecked_ref())
+            .ok()?;
+        Some(Self {
+            document,
+            event,
+            closure,
+        })
+    }
+}
+
+impl Drop for Listener {
+    fn drop(&mut self) {
+        let _ = self
+            .document
+            .remove_event_listener_with_callback(self.event, self.closure.as_ref().unchecked_ref());
+    }
+}
+
 struct Interval {
     window: web_sys::Window,
     id: i32,

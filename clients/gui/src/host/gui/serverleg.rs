@@ -12,6 +12,7 @@ use tracing::{debug, warn};
 use crate::host::Host;
 #[cfg(feature = "standalone")]
 use crate::host::ServerLink;
+use crate::host::activity::Count;
 use crate::host::fetch::{BufferFetches, WaveWant};
 use crate::host::frame::{self, Owed};
 use crate::host::graphics::nodetree::NodeTree;
@@ -301,10 +302,10 @@ impl App {
         }
     }
 
-    /// The distinct server groups any open window's `nodetree` widgets mirror.
-    pub(super) fn node_tree_groups(&self) -> Vec<i32> {
+    /// The distinct server groups the `nodetree` widgets of `windows` mirror.
+    pub(super) fn node_tree_groups(&self, windows: &[i32]) -> Vec<i32> {
         let mut groups = Vec::new();
-        for id in self.windows.keys() {
+        for id in windows {
             if let Some(tree) = self.host.window_def(*id) {
                 collect_node_tree_groups(tree, &mut groups);
             }
@@ -340,29 +341,41 @@ impl App {
 
     /// Asks the server for what every bound widget of the open windows writes
     /// ([`Host::read_back_asks`]); the answers come back as replies.
-    pub(super) fn read_back(&self) {
+    ///
+    /// Of the windows in `open`, each counted for the pass it asked for.
+    pub(super) fn read_back(&mut self, open: &[i32]) {
         let Some(server) = self.host.server() else {
             return;
         };
-        let open: Vec<i32> = self.windows.keys().copied().collect();
-        for msg in self.host.read_back_asks(&open) {
+        for msg in self.host.read_back_asks(open) {
             if let Err(e) = server.send(msg) {
                 return warn!("failed to read the bound widgets back: {e}");
             }
         }
+        for id in open {
+            if self.host.reads_back(&[*id]) {
+                self.host.count(*id, Count::ReadBack);
+            }
+        }
     }
 
-    /// Sends a `/group_queryTree <group> 1` for every group an open `nodetree` shows.
-    pub(super) fn requery_node_trees(&self) {
+    /// Sends a `/group_queryTree <group> 1` for every group a `nodetree` of
+    /// `windows` shows, each window counted for the query it asked for.
+    pub(super) fn requery_node_trees(&mut self, windows: &[i32]) {
         let Some(server) = self.host.server() else {
             return;
         };
-        for group in self.node_tree_groups() {
+        for group in self.node_tree_groups(windows) {
             if let Err(e) = server.send(OscMessage {
                 addr: "/group_queryTree".into(),
                 args: vec![OscType::Int(group), OscType::Int(1)],
             }) {
                 warn!("failed to query node tree for group {group}: {e}");
+            }
+        }
+        for id in windows {
+            if !self.node_tree_groups(&[*id]).is_empty() {
+                self.host.count(*id, Count::TreeQuery);
             }
         }
     }

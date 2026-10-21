@@ -263,6 +263,11 @@ impl Host {
             (args.get(12), args.get(3))
         {
             self.transport_rolled(*transport, *playing != 0);
+            let position = match args.get(7) {
+                Some(OscType::Long(p)) => *p,
+                _ => 0,
+            };
+            self.transport_seen((*transport).max(0) as usize, *playing != 0, position);
         }
         let monitor = self.monitor.transport().map(OscType::Int);
         if monitor.is_none() || args.get(12) != monitor.as_ref() {

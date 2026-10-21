@@ -312,6 +312,25 @@ impl BufferFetches {
     /// schedules a wake-up, and the browser canvas asks for another animation
     /// frame -- either way, a conversation under way is what keeps the front
     /// looking.
+    /// The windows waiting on buffer `bufnum`, each once.
+    pub(crate) fn waiters_of(&self, bufnum: i32) -> Vec<i32> {
+        let mut defs: Vec<i32> = self
+            .wants
+            .get(&bufnum)
+            .map(|wants| wants.iter().map(|w| w.def_id).collect())
+            .unwrap_or_default();
+        defs.sort_unstable();
+        defs.dedup();
+        defs
+    }
+
+    /// Whether a download is still owed to window `def_id`.
+    pub(crate) fn pending_for(&self, def_id: i32) -> bool {
+        self.wants
+            .values()
+            .any(|wants| wants.iter().any(|w| w.def_id == def_id))
+    }
+
     pub(crate) fn pending(&self) -> bool {
         !self.wants.is_empty()
             || !self.fetches.is_empty()

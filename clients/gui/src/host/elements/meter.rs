@@ -94,6 +94,14 @@ pub struct Meter {
     /// What each channel reads, advanced once per tick. The element's own, so
     /// a window that repaints twice does not fall twice.
     state: Vec<ChannelState>,
+    /// What the columns showed after the last tick, at the resolution a
+    /// column is drawn at ([`Meter::shown`]): a tick that leaves it as it was
+    /// asks for no frame.
+    shown: Vec<[i32; 3]>,
+    /// Whether the last tick left every column and mark at the floor. A meter
+    /// that reads no bus keeps the tick only until it is: what it showed
+    /// falls on its own, and then nothing moves it.
+    quiet: bool,
 }
 
 /// One channel's running state: the mark that waits, and the lamp that stays.
@@ -195,6 +203,8 @@ fn from_props(props: &Map<String, Value>) -> Meter {
             .unwrap_or_default(),
         label: parse::label(props),
         state: vec![ChannelState::default(); channels],
+        shown: Vec::new(),
+        quiet: true,
     };
     meter.resize();
     meter
@@ -268,6 +278,28 @@ impl Meter {
         }
     }
 
+    /// **What the columns show**, by channel: the level's and the mark's
+    /// height in steps of a column far finer than any is drawn, and the over
+    /// a lit lamp reads in thousandths (`-1` for a lamp that is out). Two
+    /// ticks that agree here draw the same picture.
+    fn shown(&self) -> Vec<[i32; 3]> {
+        self.reads()
+            .iter()
+            .map(|r| {
+                [
+                    self.step(r.level),
+                    self.step(r.mark),
+                    r.clipped.map_or(-1, |max| (max * 1000.0).round() as i32),
+                ]
+            })
+            .collect()
+    }
+
+    /// How high `value` stands, in 1024ths of the column.
+    fn step(&self, value: f32) -> i32 {
+        (self.axis.fraction(value) * 1024.0).round() as i32
+    }
+
     fn reads(&self) -> Vec<ChannelRead> {
         self.state
             .iter()
@@ -312,6 +344,7 @@ impl Element for Meter {
                         self.bus = bus;
                         // Levels, held peaks and clip lamps belong to this source.
                         self.state.fill(ChannelState::default());
+                        self.quiet = true;
                     }
                     true
                 }
@@ -392,17 +425,27 @@ impl Element for Meter {
     /// that waits and the lamp that stays. All three are time-based, so they
     /// belong to the tick and not to the repaint -- a window that redraws twice
     /// must not let a peak fall twice.
-    fn tick(&mut self, live: &Live) {
+    ///
+    /// A meter that reads no bus (a negative `bus`) reads silence, so what
+    /// it showed falls to the floor and stays there.
+    fn tick(&mut self, live: &Live) -> bool {
         let ceiling = self.ceiling();
         let (decay, hold) = (self.decay, self.hold);
+        let reading = self.bus >= 0;
         for (i, ch) in self.state.iter_mut().enumerate() {
-            let bus = self.bus + i as i32;
+            let bus = if reading { self.bus + i as i32 } else { -1 };
             ch.level = live.level(bus, self.rate);
             ch.peak
                 .tick(ch.level, live.dt as f32, decay, hold.max(f32::EPSILON));
             let overs = self.clip.map(|first| live.control(first + i as i32));
             ch.latch.tick(ch.level, overs, ceiling);
         }
+        let shown = self.shown();
+        let floor = self.step(0.0);
+        self.quiet = shown.iter().all(|s| s[0] == floor && s[1] == floor);
+        let moved = shown != self.shown;
+        self.shown = shown;
+        moved
     }
 
     /// **A meter is thin, and says so.** It asks for one narrow column per
@@ -449,20 +492,33 @@ impl Element for Meter {
         // never recorded for a meter, at either rate. The clip counts are
         // control buses whatever the level's rate is -- they are a count, and a
         // count is a value.
-        let level: Vec<i32> = (0..self.channels as i32).map(|i| self.bus + i).collect();
+        //
+        // **A meter that reads no bus is fed by nothing**, so it declares no
+        // bus: an editor's meter over a file that is not playing reads
+        // silence, and a window holding it stops ticking once what the meter
+        // showed has fallen ([`Meter::tick`]). Until then it is animated.
+        let level: Vec<i32> = if self.bus >= 0 {
+            (0..self.channels as i32).map(|i| self.bus + i).collect()
+        } else {
+            Vec::new()
+        };
         let counts: Vec<i32> = self
             .clip
+            .filter(|first| *first >= 0)
             .map(|first| (0..self.channels as i32).map(|i| first + i).collect())
             .unwrap_or_default();
+        let animated = self.bus < 0 && !self.quiet;
         match self.rate {
             Rate::Audio => Needs {
                 levels: level,
                 buses: counts,
+                animated,
                 live: true,
                 ..Default::default()
             },
             Rate::Control => Needs {
                 buses: level.into_iter().chain(counts).collect(),
+                animated,
                 live: true,
                 ..Default::default()
             },
@@ -531,14 +587,66 @@ mod tests {
         }
     }
 
-    fn tick(meter: &mut Meter, source: &dyn BusSource, dt: f64) {
+    fn tick(meter: &mut Meter, source: &dyn BusSource, dt: f64) -> bool {
         let histories = HashMap::new();
         meter.tick(&Live {
             bus: Some(source),
             sample_rate: 48_000.0,
             dt,
             histories: &histories,
-        });
+        })
+    }
+
+    /// **A steady level is a picture already drawn**: the first tick that
+    /// reads it moves the column, the next ones do not, and a change moves
+    /// it again.
+    #[test]
+    fn a_tick_moves_only_when_what_the_meter_shows_changes() {
+        let mut m = from_props(&props(r#"{"bus":2,"rate":"audio","hold":0}"#));
+        assert!(tick(&mut m, &Fixed(0.5, 0.0), 1.0 / 30.0), "the first read");
+        assert!(
+            !tick(&mut m, &Fixed(0.5, 0.0), 1.0 / 30.0),
+            "the same level"
+        );
+        assert!(tick(&mut m, &Fixed(0.25, 0.0), 1.0 / 30.0), "a new level");
+    }
+
+    /// **A meter that reads no bus asks for no bus**: what an editor's meter
+    /// does when the file it shows stops. Its source went with the bus, so
+    /// there is nothing left to fall and nothing for a tick to read.
+    #[test]
+    fn a_meter_reading_no_bus_asks_for_nothing() {
+        let mut m = from_props(&props(r#"{"bus":4,"rate":"control","channels":2}"#));
+        // A control-rate meter reads the control table: the second number.
+        tick(&mut m, &Fixed(0.0, 0.9), 1.0 / 30.0);
+        assert_eq!(m.needs().buses, vec![4, 5], "a reading meter is fed");
+        assert!(!m.needs().animated);
+        m.set("bus", &Value::from(-2));
+        let needs = m.needs();
+        assert!(needs.buses.is_empty() && needs.levels.is_empty());
+        assert!(!needs.animated, "the levels went with the source");
+        assert!(
+            tick(&mut m, &Fixed(0.9, 0.9), 1.0 / 30.0),
+            "drawn empty once"
+        );
+        assert!(!tick(&mut m, &Fixed(0.9, 0.9), 1.0 / 30.0), "then settled");
+    }
+
+    /// **A mark still falling keeps the tick of a meter with no bus**, and
+    /// lets it go at the floor.
+    #[test]
+    fn a_falling_mark_animates_until_the_floor() {
+        let mut m = from_props(&props(r#"{"bus":-1,"hold":0.1}"#));
+        m.state[0].peak.tick(0.9, 0.0, 20.0, 0.1);
+        m.quiet = false;
+        let mut ticks = 0;
+        while m.needs().animated {
+            tick(&mut m, &Fixed(0.9, 0.0), 1.0 / 30.0);
+            ticks += 1;
+            assert!(ticks < 30 * 10, "the mark falls to the floor in seconds");
+        }
+        assert!(ticks > 30, "it fell rather than vanished: {ticks}");
+        assert!(!tick(&mut m, &Fixed(0.9, 0.0), 1.0 / 30.0), "settled");
     }
 
     #[test]

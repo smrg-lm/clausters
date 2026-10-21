@@ -177,6 +177,7 @@ impl App {
                 gestures,
                 histories,
                 frames: super::app::FrameTally::default(),
+                occluded: false,
             },
         );
         if let Some(ws) = self.windows.get(&id) {
@@ -196,7 +197,7 @@ impl App {
         if self.host.window_def(id).is_some_and(tree_has_node_tree) && self.host.server().is_some()
         {
             self.ensure_notify();
-            self.requery_node_trees();
+            self.requery_node_trees(&[id]);
             self.next_query = Instant::now() + NODETREE_POLL;
         }
     }
@@ -380,6 +381,10 @@ impl App {
     }
 
     pub(super) fn drop_window(&mut self, id: i32) {
+        // **Closing lets go of what the window ticked for**: its def may stay
+        // with the host until its owner frees it, and nothing is done for it
+        // meanwhile.
+        self.host.set_demand(id, Vec::new(), false, 0);
         if let Some(ws) = self.windows.remove(&id)
             && let Some(window) = ws.gpu.window()
         {

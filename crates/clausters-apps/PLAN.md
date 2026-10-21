@@ -2679,6 +2679,47 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   profiles, not an arbitrary CPU percentage or a presumed cause of the report.
   Reactivation updates the view, and closing releases subscriptions/timers.
 
+  - ✅ **The audit** found the host's demand machinery sound and three things
+    keeping a settled audio editor busy, in both fronts: the meter of a file
+    that was not playing still declared its (negative) buses, so the window
+    ticked and drew its live layer thirty times a second; every fed window
+    drew a frame per tick whether or not a value moved; and a page polled
+    `/transport_query` every tick for a transport that stood. A stage's
+    canvas in a page never reported leaving the viewport.
+  - ✅ **Activity is the host's** (`clients/gui/src/host/activity.rs`), one
+    rule for both fronts: a window ticks for named reasons (animated, fed,
+    playhead, recording, fetching, timer, edge scroll, read-back, node tree,
+    MIDI); an element's `tick` answers whether what it shows changed, and a
+    tick draws only what moved; a meter that reads no bus declares nothing;
+    a transport's pushes say when it rolls, so a playhead over a stopped one
+    is watched only for a moment after a push. The application states map
+    onto the meter's bus and the playhead the coordinator already corrects
+    (`docs/architecture.md`, "Activity: what an open application keeps
+    doing"); no client or application schedules a timer.
+  - ✅ **Hidden and closing**: an occluded native window and a canvas out of
+    view or in a background tab are not ticked, read back or queried for,
+    and draw whole when seen; playback goes on. Closing releases the window's
+    demand and counters.
+  - ✅ **Instrumented** with `/gui_activity` (`host.activity(id)`,
+    `editor.activity()` in both clients): ticks, frames by kind and time,
+    queries, download bytes, streams, visibility and the reasons in force.
+    Deterministic tests drive the editor's own window through the host:
+    stopped asks for nothing, playing for its meter and transport, a locate
+    is watched briefly, closing forgets.
+  - ✅ **Measured against a baseline** (2026-10-21, one 10 s stereo take,
+    6 s windows, two runs each). Native host: stopped 1.2% of a core to
+    0.0% (no tick, no frame), with one file or four; playing 5.0-5.3% before
+    and after (thirty ticks and live-layer frames a second: the meter and
+    the play cursor). Page, headless on a software adapter: stopped 3.3% to
+    0.3-0.6% and no `/transport_query` (thirty a second before); playing
+    about 65% before and after, the page's drawing cost already filed in
+    `clients/gui/PLAN.md`; scrolled away 0.3%. The server's idle cost per
+    open file did not move and is filed in the root `PLAN.md`, "Found by
+    use".
+  - ⬜ Native eye pass over the `edit_audio` pair: play, stop, locate, a
+    window covered or minimized and shown again, `editor.activity()`.
+  - ⬜ Browser eye pass over the same, with the tab put in the background.
+
 - ⬜ **X24 - Accept the audio editor as the reference application.** After
   `X23`, close the audio lifecycle before migrating another editor. Remove
   superseded audio orchestration and state mirrors. Replay shared traces with

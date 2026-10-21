@@ -283,6 +283,13 @@ code that keeps it lives.
   is not corrected until a redraw carries it. And a window drawn after the
   focused file changed reads the meter of the file it now shows: the playback
   is told which file is viewed before the window asks where its level is.
+- **A settled window does nothing on a period.** Stopped, an editor's meter
+  reads no bus and its playhead stands on a transport the server says is
+  stopped, so its window is neither ticked nor drawn until something changes
+  (`/gui_activity` answers an empty `demand`). Playing ticks only what reads
+  the playing file; hiding a window stops its drawing and queries but not the
+  playback; closing it releases what it ticked for (`docs/architecture.md`,
+  "Activity: what an open application keeps doing").
 
 
 - **A failed repair remains reachable.** After resolving an I/O failure, an audio editor's `retry_pending()` / `retryPending()` retries its pending repairs without repeating the edits. Until repair succeeds, the affected objects remain locked and their sources retained. Concurrent retries cannot dispatch the same repair twice; a successful retry does not repeat the original gesture receipt or change history.

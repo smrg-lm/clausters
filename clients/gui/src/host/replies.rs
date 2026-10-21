@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscType};
 
+use super::activity::Count;
 use super::fetch::{BufferFetches, FetchStep, SpanUse, WaveWant, align_span};
 use super::frame::{self, Owed};
 use super::instance::Leg;
@@ -77,6 +78,26 @@ pub(crate) trait Front {
         self.host_mut().on_server_reply(from, msg);
         for def_id in self.host_mut().forget_stitched(msg) {
             self.redraw_window(def_id);
+        }
+        // **What a download brought**, counted on the windows waiting on it
+        // (`/gui_activity`).
+        if matches!(
+            msg.addr.as_str(),
+            "/buffer_getRange.reply" | "/buffer_peaks.reply"
+        ) && let Some(OscType::Int(bufnum)) = msg.args.first()
+        {
+            let bytes: usize = msg
+                .args
+                .iter()
+                .map(|a| match a {
+                    OscType::Blob(b) => b.len(),
+                    OscType::Float(_) | OscType::Int(_) => 4,
+                    _ => 0,
+                })
+                .sum();
+            for def_id in self.fetches().waiters_of(*bufnum) {
+                self.host_mut().count(def_id, Count::Fetch(bytes));
+            }
         }
         match msg.addr.as_str() {
             "/buffer_query.reply" => {

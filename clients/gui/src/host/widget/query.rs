@@ -504,10 +504,10 @@ impl WidgetKind {
     /// A built-in answers from its variant, an element for itself
     /// ([`Element::tick`]) -- the single door, so the
     /// front drives one walk instead of one per kind of live view.
-    pub fn tick(&mut self, live: &super::element::Live) {
-        if let Some(el) = self.as_element_mut() {
-            el.tick(live);
-        }
+    /// Answers whether what the widget shows changed
+    /// ([`Element::tick`](super::element::Element::tick)).
+    pub fn tick(&mut self, live: &super::element::Live) -> bool {
+        self.as_element_mut().is_some_and(|el| el.tick(live))
     }
 
     /// **A declared bulk resource has arrived**: the element takes it home.

@@ -71,40 +71,6 @@ pub(crate) fn tree_has_live_widget(widget: &Widget, groups: &TimelineGroups) -> 
             .any(|child| tree_has_live_widget(child, groups))
 }
 
-/// Whether a tree shows anything **fed live** -- a bus-backed meter or scope,
-/// a view of an audio tap, a `canvas` that follows the clock: what moves on
-/// every frame whether or not a playhead does. A window that holds none of it
-/// and only a playhead is still for as long as the counter its line reads is,
-/// and is repainted when that moves ([`Host::playheads_moved`](super::Host::playheads_moved)).
-pub(crate) fn tree_is_fed(widget: &Widget) -> bool {
-    widget.descendants().any(|w| {
-        let needs = w.kind.needs();
-        needs.animated
-            || !needs.buses.is_empty()
-            || !needs.levels.is_empty()
-            || !needs.taps.is_empty()
-    })
-}
-
-/// Whether a tree holds something fed live that **draws it into the window's
-/// picture** -- an element that reads a bus, a level or a tap, or follows the
-/// clock on its own, and does not keep that to its live layer
-/// ([`Needs::live`](super::widget::Needs::live)).
-///
-/// The difference a tick reads: such a window is drawn whole on every one,
-/// as every fed window was, and one whose fed elements are all on their live
-/// layers keeps its picture and has those drawn again.
-pub(crate) fn tree_repaints(widget: &Widget) -> bool {
-    widget.descendants().any(|w| {
-        let needs = w.kind.needs();
-        !needs.live
-            && (needs.animated
-                || !needs.buses.is_empty()
-                || !needs.levels.is_empty()
-                || !needs.taps.is_empty())
-    })
-}
-
 /// Whether `widget` shows a live playhead -- so its window must animate, the
 /// line tracking the engine sample clock every frame.
 ///
@@ -392,6 +358,74 @@ pub(crate) fn tree_animates(tree: &Widget) -> bool {
     tree.descendants().any(|w| w.kind.needs().animated)
 }
 
+/// **The frame a tick asks of a window**: none, its live layers, or its
+/// whole picture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TickFrame {
+    /// Nothing the window shows changed: the frame on screen stands.
+    None,
+    /// Only what is drawn on the live layers moved.
+    Live,
+    /// The picture itself moved.
+    Whole,
+}
+
+/// **What frame a tick asks of `tree`**, given whether its tick moved anything
+/// ([`tick_tree`]) and whether its playheads moved
+/// ([`Host::playheads_moved`](super::Host::playheads_moved)).
+///
+/// The rule both fronts draw by. A picture that follows the clock -- a
+/// `canvas` shader -- moves on every tick whatever it read; anything else
+/// moves when its tick said so. What moved decides the layer: an element that
+/// draws its values into the picture asks for a whole frame, one that keeps
+/// them to its live layer and a playhead ask for the live layers alone.
+pub(crate) fn tick_frame(tree: &Widget, moved: bool, heads: bool) -> TickFrame {
+    let live = LiveNeeds::of(tree);
+    if live.clock_picture || (moved && live.repaints) {
+        TickFrame::Whole
+    } else if moved || heads || live.animated {
+        TickFrame::Live
+    } else {
+        TickFrame::None
+    }
+}
+
+/// **What a tree's live elements ask for, read in one walk**: the questions
+/// a tick asks of every window, which were four walks of their own and each
+/// asked every widget for its needs again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LiveNeeds {
+    /// Something moves on its own ([`tree_animates`]).
+    pub animated: bool,
+    /// Something moves on its own and draws into the picture: a frame is a
+    /// whole one on every tick.
+    pub clock_picture: bool,
+    /// Something reads a bus, a level or a tap: a value the server writes
+    /// with nothing to say it did.
+    pub fed: bool,
+    /// Something fed or animated **draws into the window's picture** rather
+    /// than keeping to its live layer ([`Needs::live`](super::widget::Needs::live)):
+    /// a tick that moved it draws the window whole, where one whose live
+    /// elements are all on their live layers keeps its picture and has those
+    /// drawn again.
+    pub repaints: bool,
+}
+
+impl LiveNeeds {
+    pub(crate) fn of(tree: &Widget) -> Self {
+        let mut out = Self::default();
+        for w in tree.descendants() {
+            let needs = w.kind.needs();
+            let fed = !needs.buses.is_empty() || !needs.levels.is_empty() || !needs.taps.is_empty();
+            out.animated |= needs.animated;
+            out.clock_picture |= needs.animated && !needs.live;
+            out.fed |= fed;
+            out.repaints |= !needs.live && (needs.animated || fed);
+        }
+        out
+    }
+}
+
 /// **The tick**: every widget of one window's tree advances whatever it keeps
 /// of the outside, once per animation frame.
 ///
@@ -400,11 +434,15 @@ pub(crate) fn tree_animates(tree: &Widget) -> bool {
 /// exists to end. The retained bus histories are the exception and are filled
 /// *before* this ([`update_retention`]), because a history is the bus's rather
 /// than any view's: this is where a view reads one.
-pub(crate) fn tick_tree(tree: &mut Widget, live: &super::widget::element::Live) {
-    tree.kind.tick(live);
+///
+/// Answers whether anything the tree shows changed, so a front draws a frame
+/// for a tick only when one did.
+pub(crate) fn tick_tree(tree: &mut Widget, live: &super::widget::element::Live) -> bool {
+    let mut moved = tree.kind.tick(live);
     for child in &mut tree.children {
-        tick_tree(child, live);
+        moved |= tick_tree(child, live);
     }
+    moved
 }
 
 /// The distinct, sorted control buses a tree reads live each frame: whatever
@@ -667,6 +705,17 @@ mod tests {
     use super::super::guidef::GuiNode;
     use super::*;
 
+    /// Whether anything in the tree moves on a tick of its own accord or
+    /// because a value fed it.
+    fn fed(tree: &Widget) -> bool {
+        let live = LiveNeeds::of(tree);
+        live.fed || live.animated
+    }
+
+    fn repaints(tree: &Widget) -> bool {
+        LiveNeeds::of(tree).repaints
+    }
+
     /// No navigation group registered: a timeline view then answers from its
     /// own def-time props, and a `score` (which is in no group ever) from its
     /// own either way.
@@ -693,13 +742,13 @@ mod tests {
             r#"{"type":"window","children":[
                 {"id":5,"type":"score","playhead_at":0,"vb":[100,100],"prims":[]}]}"#,
         );
-        assert!(!tree_is_fed(&page), "a page is fed by nothing");
+        assert!(!fed(&page), "a page is fed by nothing");
         let metered = tree(
             r#"{"type":"window","children":[
                 {"id":5,"type":"score","playhead_at":0,"vb":[100,100],"prims":[]},
                 {"id":6,"type":"meter","bus":0}]}"#,
         );
-        assert!(tree_is_fed(&metered), "a meter is");
+        assert!(fed(&metered), "a meter is");
         // **Fed, and still kept**: a multitrack's meters, a `meter` and a
         // scope are fed on every tick and drawn on their live layers, so the
         // window keeps its picture; a shader `canvas` that follows the clock
@@ -710,14 +759,11 @@ mod tests {
                  "meters":["one",10,12,2]},
                 {"id":7,"type":"scope","bus":3,"rate":"control"}]}"#,
         );
-        assert!(tree_is_fed(&tracks) && !tree_repaints(&tracks));
-        assert!(!tree_repaints(&metered), "a meter is its live layer");
+        assert!(fed(&tracks) && !repaints(&tracks));
+        assert!(!repaints(&metered), "a meter is its live layer");
         let shaded = tree(r#"{"type":"window","children":[{"id":6,"type":"canvas"}]}"#);
-        assert!(tree_is_fed(&shaded) && tree_repaints(&shaded));
-        assert!(
-            !tree_repaints(&page),
-            "a page's cursor is on its live layer"
-        );
+        assert!(fed(&shaded) && repaints(&shaded));
+        assert!(!repaints(&page), "a page's cursor is on its live layer");
 
         let mut host = Host::new();
         let at = |position: f64| HeadClocks::uniform(position);

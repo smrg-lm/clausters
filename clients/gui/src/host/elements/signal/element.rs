@@ -232,8 +232,8 @@ impl Element for SignalElement {
         needs
     }
 
-    fn tick(&mut self, live: &Live) {
-        SignalElement::tick(self, live);
+    fn tick(&mut self, live: &Live) -> bool {
+        SignalElement::tick(self, live)
     }
 
     fn body_role(&self) -> Option<BodyRole> {

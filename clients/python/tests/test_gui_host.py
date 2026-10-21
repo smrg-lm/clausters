@@ -333,6 +333,30 @@ def test_capture_waits_for_the_turns_before_it():
     assert seen == [("/gui_event", "/gui_query")]
 
 
+def test_activity_reads_what_a_window_costs():
+    """``/gui_activity`` answers counters, whether the window is seen and the
+    reasons it ticks; an event on the way is delivered, not taken for it."""
+    host = GuiHost(interface=_Answering({
+        "/gui_activity": [("/gui_event", [12, 3, 0, "value", 0.5]),
+                          ("/gui_activity.reply",
+                           [7, "ticks", 30, "live", 2, "visible", 1,
+                            "demand", "fed,playhead"])],
+    }))
+    seen = []
+    host.subscribe(lambda addr, args: seen.append(addr))
+    assert host.activity(7) == {"ticks": 30, "live": 2, "visible": True,
+                                "demand": ["fed", "playhead"]}
+    assert host._osc.sent == [("/gui_activity", 7)]
+    assert seen == ["/gui_event"]
+
+
+def test_activity_of_a_settled_window_has_no_demand():
+    host = GuiHost(interface=_Answering({
+        "/gui_activity": [("/gui_activity.reply", [7, "ticks", 0, "demand", ""])],
+    }))
+    assert host.activity(7)["demand"] == []
+
+
 def test_capture_raises_the_reason_the_host_gives():
     """A host that wrote nothing says why, and the call raises it."""
     from clausters.errors import CaptureError

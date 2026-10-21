@@ -282,6 +282,10 @@ impl WebApp {
                     self.buses
                         .set_position((*transport).max(0) as usize, *samples as f64);
                 }
+                // A push may be a transport starting to roll, or one that
+                // stands moved: the tick comes back for it
+                // ([`Host::transport_ticks`]).
+                self.ensure_tick(self.tick_wanted());
             }
             "/server_query.reply" => {
                 // The last field (appended, so a shorter reply is an older

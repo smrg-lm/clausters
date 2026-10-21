@@ -177,9 +177,13 @@ impl fmt::Debug for LiveState {
 impl SignalElement {
     /// One tick of whatever this element accumulates. A view over stored
     /// samples does nothing here -- its past is the data it was given.
-    pub fn tick(&mut self, live: &Live) {
+    ///
+    /// A live view answers that it moved on every tick: a trace scrolls and
+    /// a window re-triggers whether or not the signal changed, and telling a
+    /// still one from a moving one would cost the comparison a frame saves.
+    pub fn tick(&mut self, live: &Live) -> bool {
         let Some(bus) = self.source.bus().cloned() else {
-            return;
+            return false;
         };
         // **What a tick accumulates is what the stack draws**, not what the
         // presentation is named: a live view with a texture under its trace
@@ -188,8 +192,14 @@ impl SignalElement {
         // nothing. The spectrum and the phase view have no stack of their own
         // and answer for themselves.
         match self.presentation {
-            Presentation::Phase => return self.tick_phase(live, &bus),
-            Presentation::Spectrum => return self.tick_spectrum(live, &bus),
+            Presentation::Phase => {
+                self.tick_phase(live, &bus);
+                return true;
+            }
+            Presentation::Spectrum => {
+                self.tick_spectrum(live, &bus);
+                return true;
+            }
             _ => {}
         }
         if self.is_texture_view() {
@@ -205,6 +215,7 @@ impl SignalElement {
                 push_sample(&mut self.live.history, live.control(bus.bus));
             }
         }
+        true
     }
 
     /// The seconds of its bus this element wants kept addressable, `0.0` for

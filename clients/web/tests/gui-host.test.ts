@@ -122,6 +122,22 @@ test("GuiHost: a built panel defines, queries and frees on a native host", {
     });
 });
 
+test("GuiHost: activity answers what a window costs, and nothing for a closed one", {
+    skip: !hasHost,
+}, async () => {
+    await withHost(async (gui) => {
+        const win = gui.open(controlPanel());
+        const activity = await gui.activity(win);
+        assert.equal(activity.ticks, 0, "a still panel is not ticked");
+        assert.deepEqual(activity.demand, [], "and has no recurring work");
+        for (const key of ["whole", "live", "still", "clock_queries", "fetched_bytes", "streamed"]) {
+            assert.equal(typeof activity[key], "number", key);
+        }
+        win.close();
+        assert.deepEqual(await gui.activity(win.id), {}, "no such window");
+    });
+});
+
 test("GuiHost: a redefine replaces the tree under the same root", {
     skip: !hasHost,
 }, async () => {

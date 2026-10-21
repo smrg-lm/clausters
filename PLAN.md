@@ -4506,3 +4506,12 @@ should confirm before the fix.
   Found by use, "An automatic profiler for the host") the server's side of
   the same run, so a slow window is told from a slow engine. **Related:**
   "An automatic profiler for the host" (`clients/gui/PLAN.md`, Found by use).
+- ⬜ **A stopped audio editor costs the server CPU for every file it holds**
+  (2026-10-21, measured in `X23` of `crates/clausters-apps/PLAN.md`). The
+  bare server idles at about 4.2% of a core; with an audio editor open and
+  stopped it idles at 6.5% holding one stereo file and 9.2% holding four,
+  although the files not in focus have their readers paused and the one in
+  focus is in a governed group whose transport stands. Where the blocks go
+  is unmeasured: the host's side of the same editor does nothing while
+  stopped. Measured with the server's profiler before a cause is assumed.
+  **Related:** "An automatic profiler for the server", above.

@@ -147,10 +147,12 @@ impl Element for Progress {
         }
     }
 
-    fn tick(&mut self, live: &Live) {
-        if self.value.is_none() {
-            self.phase = (self.phase + live.dt / SWEEP_S).fract();
+    fn tick(&mut self, live: &Live) -> bool {
+        if self.value.is_some() {
+            return false;
         }
+        self.phase = (self.phase + live.dt / SWEEP_S).fract();
+        true
     }
 
     fn is_bare_surface(&self) -> bool {

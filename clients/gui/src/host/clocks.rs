@@ -124,7 +124,7 @@ impl Host {
     /// when it differs from what they read then.
     ///
     /// It is what a window that shows a playhead and nothing fed live
-    /// ([`live::tree_is_fed`]) is repainted by. A
+    /// ([`live::LiveNeeds`]) is repainted by. A
     /// playhead is drawn from a counter, and a transport that is stopped
     /// holds its position: the line is where it was, and a frame drawn for it
     /// is the frame already on screen. An editor's window sat at thirty

@@ -725,6 +725,35 @@ class GuiHost:
             raise CaptureError(f"window {window}: {path}: {args[2]}")
         return path
 
+    def activity(self, id, timeout: float = 1.0) -> dict:
+        """``/gui_activity <window>`` -- **what window ``id`` costs**, and why.
+
+        A dict of what the host did for the window since it opened: ``ticks``
+        (frame ticks that reached it), ``whole``, ``live`` and ``still`` (frames
+        that drew the whole picture, only the live layers, or found nothing to
+        draw) with ``whole_us`` and ``live_us`` (their time, in microseconds),
+        ``clock_queries``, ``transport_queries``, ``read_backs`` and
+        ``tree_queries`` (the questions a tick sent the server for it),
+        ``fetches`` and ``fetched_bytes`` (what downloads brought it) and
+        ``streamed`` (the buses and taps a page subscribes for it now). With
+        them, ``visible`` (whether it can be seen) and ``demand``: the reasons
+        it is ticking now -- ``"animated"``, ``"fed"``, ``"playhead"``,
+        ``"recording"``, ``"fetching"``, ``"timer"``, ``"edge_scroll"``,
+        ``"read_back"``, ``"node_tree"``, ``"midi"`` -- empty for a window with
+        no recurring work. Two readings apart in time give what the window did
+        in between.
+
+        An empty dict means the host has no such window. Raises
+        `clausters.errors.ReplyTimeout` when the host does not answer.
+        """
+        window = int(getattr(id, "id", id))
+        self._send("/gui_activity", window)
+        while True:
+            _, args = self._answer("/gui_activity.reply", timeout)
+            if args and int(args[0]) == window:
+                break
+        return _activity(args[1:])
+
     def _answer(self, want: str, timeout: float):
         """The next ``want`` reply as ``(addr, args)``, delivering every event
         that arrives before it; `clausters.errors.ReplyTimeout` past
@@ -1339,7 +1368,7 @@ class _HostSource:
 
     #: The addresses that answer a question somebody asked, rather than
     #: reporting something that happened.
-    REPLIES = ("/gui_info", "/gui_captured")
+    REPLIES = ("/gui_info", "/gui_captured", "/gui_activity.reply")
 
     def __init__(self, host):
         self.host = host
@@ -1366,3 +1395,18 @@ class _HostSource:
 
     def __repr__(self):
         return f"_HostSource({self.host.target})"
+
+
+def _activity(pairs) -> dict:
+    """A `/gui_activity.reply`'s key/value pairs as `GuiHost.activity`
+    answers them: counters as ints, ``visible`` a bool, ``demand`` a list."""
+    out = {}
+    for key, value in zip(pairs[0::2], pairs[1::2]):
+        key = str(key)
+        if key == "demand":
+            out[key] = [r for r in str(value).split(",") if r]
+        elif key == "visible":
+            out[key] = bool(value)
+        else:
+            out[key] = int(value)
+    return out
