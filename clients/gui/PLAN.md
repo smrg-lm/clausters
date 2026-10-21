@@ -8510,8 +8510,8 @@ module of its own.
   each position for two refreshes and then three. A moving playhead is now
   drawn at the display's rate (`Host::paced_by_display`): 60 live frames a
   second while the transport rolls, none once it stands, and the host's CPU
-  while playing from 4.5% to 7.6%. Open until an eye pass sees the cursor
-  follow the sound evenly, natively and in a page.)*
+  while playing from 4.5% to 7.6%. Native eye pass 2026-10-21: the cursor
+  follows the sound evenly. Open for the browser pass.)*
 - ⬜ **The page draws much slower than the native host** (2026-10-21, the
   user, browser). Switching the audio editor between waveform, spectrogram
   and both, and switching files, is visibly slower in the page than natively.
@@ -8541,8 +8541,10 @@ module of its own.
   and the dialog shared the batch that holds the window's overlays, so the
   window's text read through the dialog. The two now take the batch after
   it, in both fronts. The OK label and the green bar did not reproduce; text
-  of the window through the dialog fits both. Open until an eye pass over
-  the user's own sequence.)*
+  of the window through the dialog fits both. Native eye pass 2026-10-21: a
+  Save as dialog over the meter in a narrow window is whole, the field
+  focused shows no stray bar. Open for the browser pass, where it was
+  seen.)*
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was
   right and switching the view away and back redrew it; until then the
@@ -8552,7 +8554,7 @@ module of its own.
   sequence -- spectrogram, apply an envelope, save as, undo -- did not
   reproduce in the headless page, whose software renderer draws no
   spectrogram texture at all; it needs a browser with a GPU.)*
-- ⬜ **A hidden native window on Wayland is still ticked** (2026-10-21, the
+- ✅ **A hidden native window on Wayland is still ticked** (2026-10-21, the
   `X23` native pass in `crates/clausters-apps/PLAN.md`). The host stops
   ticking, reading back and querying for a window the platform reports
   occluded, but the windowing library (winit 0.30) reports occlusion on X11
@@ -8563,8 +8565,9 @@ module of its own.
   profiler for the host", below. *(2026-10-21: a window whose oldest
   frame request has waited past 500 ms now counts as hidden -- no tick, read
   back or query -- and is drawn whole when the compositor answers again. A
-  visible window on Wayland is unchanged; minimizing one is checked by
-  hand.)*
+  visible window on Wayland is unchanged. Eye pass 2026-10-21: a playing
+  editor minimized and restored keeps sounding and draws right on its
+  return.)*
 - ✅ **An automatic profiler for the host** (2026-10-21, the user, after the
   audio editor's review). A run that measures, without someone watching,
   where the host's time goes, natively and in a page: frames and what each

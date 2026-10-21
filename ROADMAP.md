@@ -146,8 +146,8 @@ already carry it.
   by use)*. **Related:** `T10` writes the file this one points at.
 
 - ⬜ **Eight tracks bring the GUI's frame rate down, and the play cursor
-  jitters**, **Two of the page's dialogs draw wrong** and **A hidden native
-  window on Wayland is still ticked** (fixed, each awaiting its eye pass),
+  jitters** and **Two of the page's dialogs draw wrong** (fixed and seen
+  natively, awaiting the browser pass),
   then **The page draws much slower than the native host** and **After Save
   as and undo back to the original, the page's spectrogram keeps an edited
   picture**, decided together: the first is a buffer's summary downloaded
