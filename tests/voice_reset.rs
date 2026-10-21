@@ -65,6 +65,10 @@ const STATELESS: &[(&str, &str)] = &[
     ("BufChannels", "a buffer's facts"),
     ("BufDur", "a buffer's facts"),
     ("TransportPos", "the transport's position, from the context"),
+    (
+        "TransportBufRd",
+        "reads the buffer at the transport's position, from the context",
+    ),
     ("TransportFade", "the transport's fade, from the context"),
     ("FreeSelf", "its action is recomputed every block"),
     ("PauseSelf", "its action is recomputed every block"),

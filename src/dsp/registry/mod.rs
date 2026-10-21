@@ -18,7 +18,7 @@ use clausters_core::rng::SEED_STRIDE;
 
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::bound::Bound;
-use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf};
+use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf, TransportBufRd};
 use crate::dsp::conv::Conv;
 use crate::dsp::delay::{Delay, Feedback, Interp};
 use crate::dsp::demand::{

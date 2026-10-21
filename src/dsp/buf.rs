@@ -223,6 +223,70 @@ impl UGen for BufRd {
     }
 }
 
+/// A buffer reader that **follows the transport** and keeps every frame:
+/// `BufRd` at `(position - offset) * rate + start`, all of it worked out here
+/// in `f64`. Inputs: 0 buffer index, 1 channel, 2 `offset` (where frame
+/// `start` is on the transport's axis, as `TransportPos` takes it), 3 `rate`
+/// (frames of the buffer per frame of the transport: `BufRateScale` for a
+/// buffer at another rate, times a playrate), 4 `start` (the buffer frame
+/// read at `offset`), 5 loop flag.
+///
+/// **Why it is one UGen and not `TransportPos` into `BufRd`.** A signal is
+/// `f32`, which counts single frames only up to 2^24 -- about 5.8 minutes at
+/// 48 kHz -- and in steps of 2, then 4, then 8 after that. A phase handed from
+/// one UGen to the next is such a signal, so a reader past that point reads
+/// the same frame twice and skips the next: the sound distorts more the
+/// further it plays. `TransportPos`'s `offset` keeps a clip's own phase small,
+/// but a take longer than that, or a window that starts deep into one, has a
+/// buffer index past 2^24 however it is subtracted. Here the position stays a
+/// `u64` and the phase an `f64` until the frame is read, so nothing that
+/// varies per sample is ever rounded to `f32`. The three operands are still
+/// signals: they are constant across a reader's life, so their rounding moves
+/// where it reads by a fixed amount, which plays every frame, rather than
+/// rounding the ramp, which repeats and drops frames.
+///
+/// Like `TransportPos` it ramps one frame per sample while the transport
+/// rolls and holds while it is stopped.
+pub struct TransportBufRd;
+
+impl UGen for TransportBufRd {
+    fn reset(&mut self) {}
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let index = inputs[0][0].max(0.0) as usize;
+        let channel = inputs[1][0].max(0.0) as usize;
+        let looping = inputs[5][0] != 0.0;
+        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+            output.fill(0.0);
+            return;
+        };
+        let frames = buf.frames() as f64;
+        if frames == 0.0 {
+            output.fill(0.0);
+            return;
+        }
+        let base = ctx.transport.position as f64;
+        let step = if ctx.sample_rate > 0.0 {
+            (ctx.full_sample_rate / ctx.sample_rate) as f64
+        } else {
+            1.0
+        };
+        let rolling = ctx.transport.rolling;
+        let mut reader = Reader::new(buf);
+        for (i, s) in output.iter_mut().enumerate() {
+            let played = if rolling { i as f64 * step } else { 0.0 };
+            let since = base + played - at(inputs[2], i) as f64;
+            let raw = since * at(inputs[3], i) as f64 + at(inputs[4], i) as f64;
+            let pos = if looping {
+                raw.rem_euclid(frames)
+            } else {
+                raw.clamp(0.0, frames - 1.0)
+            };
+            *s = reader.read(pos, channel, looping);
+        }
+    }
+}
+
 /// Writes a signal into a buffer at a **phase** in frames -- the write-side twin
 /// of [`BufRd`], and stateless in the same way. Inputs: 0 buffer index, 1
 /// channel, 2 phase, 3 loop flag (wrap vs clamp out-of-range phases), 4 the

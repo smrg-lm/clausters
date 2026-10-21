@@ -180,6 +180,7 @@ export {
     bufRd,
     bufWr,
     recordBuf,
+    transportBufRd,
     bufSampleRate,
     osc,
     oscN,

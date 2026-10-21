@@ -42,6 +42,24 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(BufRd),
     ),
+    desc(
+        "TransportBufRd",
+        Fixed(6),
+        &[
+            inp("bufnum", 0.0),
+            inp("chan", 0.0),
+            inp_opt("offset", 0.0),
+            inp_opt("rate", 1.0),
+            inp_opt("start", 0.0),
+            inp_opt("loop", 0.0),
+        ],
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(TransportBufRd),
+    ),
     // --- buffer writers; a buffer's contents are mutable (`dsp::buffer`) ---
     desc(
         "BufWr",

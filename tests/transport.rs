@@ -2175,3 +2175,87 @@ fn a_locate_during_the_stopping_phase_lands_on_the_freeze() {
         "rests on the locate"
     );
 }
+
+/// **A reader deep into a long take reads every frame.** At 2^25 frames
+/// (about 11.6 minutes at 48 kHz) an `f32` counts in steps of 4, so a phase
+/// handed from `TransportPos` to `BufRd` as a signal reads each frame four
+/// times and skips three: the distortion a long take grows. `TransportBufRd`
+/// keeps the position and the phase in `f64` until the frame is read, so the
+/// same ramp comes out one frame per sample.
+#[cfg(feature = "synth")]
+#[test]
+fn a_transport_reader_reads_every_frame_past_where_f32_counts_them() {
+    use clausters::dsp::buffer::Buffer;
+    const DEEP: u64 = 1 << 25;
+    let reader = |chain: &str| {
+        let json = format!(
+            r#"{{"name": "deep", "ugens": [{chain},
+                {{"kind": "ReplaceOut", "inputs": [{{"const": 0.0}}, {{"ugen": LAST}}]}}]}}"#
+        );
+        let last = json.matches("\"kind\"").count() - 2;
+        let json = json.replace("LAST", &last.to_string());
+        let spec: SynthDefSpec = serde_json::from_str(&json).unwrap();
+        Arc::new(compile(spec).unwrap())
+    };
+    // A short buffer whose every frame holds its own index, read from frame 0
+    // when the transport reaches 2^25: `start` is minus that, a power of two
+    // an `f32` holds exactly.
+    let start = -(DEEP as f64);
+    let old = reader(&format!(
+        r#"{{"kind": "TransportPos", "inputs": [{{"const": 0.0}}]}},
+           {{"kind": "Add", "inputs": [{{"ugen": 0}}, {{"const": {start}}}]}},
+           {{"kind": "BufRd", "inputs": [{{"const": 0.0}}, {{"const": 0.0}}, {{"ugen": 1}}, {{"const": 0.0}}]}}"#
+    ));
+    let new = reader(&format!(
+        r#"{{"kind": "TransportBufRd", "inputs": [{{"const": 0.0}}, {{"const": 0.0}},
+            {{"const": 0.0}}, {{"const": 1.0}}, {{"const": {start}}}, {{"const": 0.0}}]}}"#
+    ));
+    let read = |def: Arc<SynthDef>| {
+        let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+        let frames = 4096;
+        let ramp = (0..frames).map(|i| i as f32).collect();
+        handle
+            .send(Cmd::SetBuffer {
+                index: 0,
+                buffer: Some(Arc::new(Buffer::new(ramp, 1, frames, 48_000.0))),
+            })
+            .ok()
+            .unwrap();
+        handle
+            .send(Cmd::AddSynth {
+                id: 1000,
+                target: ROOT_NODE_ID,
+                action: AddAction::Tail,
+                synth: Box::new(UGenSynth::new(def, 48_000.0, SEED_STRIDE)),
+                usage: Default::default(),
+            })
+            .ok()
+            .unwrap();
+        handle
+            .send(Cmd::TransportLocate {
+                transport: 0,
+                position: DEEP,
+            })
+            .ok()
+            .unwrap();
+        handle
+            .send(Cmd::TransportRun {
+                transport: 0,
+                rolling: true,
+            })
+            .ok()
+            .unwrap();
+        block_of_bus_0(&mut engine)
+    };
+    let expected: Vec<f32> = (0..BLOCK_SIZE).map(|i| i as f32).collect();
+    let through_a_signal = read(old);
+    assert_ne!(
+        through_a_signal, expected,
+        "the old chain cannot count frames there"
+    );
+    assert_eq!(
+        through_a_signal[1], through_a_signal[0],
+        "it repeats a frame"
+    );
+    assert_eq!(read(new), expected, "one frame per sample");
+}

@@ -2524,6 +2524,36 @@
       ]
     },
     {
+      "name": "TransportBufRd",
+      "arity": 6,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        },
+        {
+          "name": "offset",
+          "default": 0.0
+        },
+        {
+          "name": "rate",
+          "default": 1.0
+        },
+        {
+          "name": "start",
+          "default": 0.0
+        },
+        {
+          "name": "loop",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "TransportFade",
       "arity": 0,
       "inputs": []

@@ -27,6 +27,30 @@ def buf_rd(bufnum, chan, phase, loop=0.0) -> Ugen:
     return Ugen("BufRd", [bufnum, chan, phase, loop])
 
 
+def transport_buf_rd(bufnum, chan, offset=0.0, rate=1.0, start=0.0, loop=0.0) -> Ugen:
+    """Reads a buffer **at the transport's position**: ``buf_rd`` at
+    ``(position - offset) * rate + start`` frames, the phase worked out inside
+    the UGen in double precision.
+
+    ``offset`` is where frame ``start`` sits on the transport's axis (as
+    `transport_pos` takes it), and ``rate`` the buffer's frames per frame of
+    the transport -- `buf_rate_scale` for a buffer at another rate, times a
+    playrate. Like `transport_pos` it seeks, loops and holds with the
+    transport.
+
+    It is one UGen rather than ``buf_rd(..., phase=transport_pos())`` because
+    a phase handed between UGens is a 32-bit signal, which past about six
+    minutes at 48 kHz repeats and drops frames: a long take read that way
+    distorts more the further it plays. Here nothing that changes per sample
+    is rounded to 32 bits.
+
+    ```python
+    take = transport_buf_rd(buf.bufnum, 0, rate=buf_rate_scale(buf.bufnum))
+    ```
+    """
+    return Ugen("TransportBufRd", [bufnum, chan, offset, rate, start, loop])
+
+
 def buf_wr(bufnum, chan, phase, loop, signal) -> Ugen:
     """**Writes** ``signal`` into a buffer at ``phase`` (frames) -- `buf_rd`'s
     write-side twin, and stateless in the same way.

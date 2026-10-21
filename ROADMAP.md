@@ -145,9 +145,8 @@ already carry it.
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
   by use)*. **Related:** `T10` writes the file this one points at.
 
-- ⬜ **A long take distorts more the further it plays** and **A stopped
-  audio editor costs the server CPU for every file it holds** *(root
-  `PLAN.md`, Found by use)*, the second measured with the server's profiler
+- ⬜ **A stopped audio editor costs the server CPU for every file it holds**
+  *(root `PLAN.md`, Found by use)*, measured with the server's profiler
   (`/server_profile`) before a cause is assumed. **Related:** "An automatic
   profiler for the host" (`clients/gui/PLAN.md`, Found by use), below.
 

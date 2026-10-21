@@ -43,7 +43,7 @@ sys.path.insert(0, os.path.join(ROOT, "clients", "python"))
 
 from clausters import Session  # noqa: E402
 from clausters.defs import Buffer, Group, Synth, SynthDef  # noqa: E402
-from clausters.defs import buf_rd, control, out, transport_pos  # noqa: E402
+from clausters.defs import control, out, transport_buf_rd  # noqa: E402
 
 SR = 48000
 SECONDS = 4
@@ -64,14 +64,14 @@ def samples():
 
 
 def follower_def():
-    """The reader: its phase is the transport's position, so it plays wherever
+    """The reader: it reads at the transport's position, so it plays wherever
     the transport is standing.
 
     `offset` is where these samples start on that axis -- 0 here, since the
-    take *is* the whole of it -- and it is subtracted inside `transport_pos` rather
-    than after it, which is what keeps the position exact in a long take (a
-    signal is 32-bit, and beyond about six minutes at 48 kHz it can no longer
-    count single frames).
+    take *is* the whole of it. The phase is worked out inside the reader, in
+    double precision, which is what keeps a long take exact: a phase passed
+    between UGens is a 32-bit signal, and beyond about six minutes at 48 kHz it
+    can no longer count single frames.
 
     `loop` on the reader stays off: the wrapping is the transport's, and a
     reader that also wrapped would be a second opinion about where the transport
@@ -80,7 +80,7 @@ def follower_def():
     bufnum = control("bufnum", 0.0)
     offset = control("offset", 0.0)
     amp = control("amp", 1.0)
-    take = buf_rd(bufnum, chan=0, phase=transport_pos(offset))
+    take = transport_buf_rd(bufnum, chan=0, offset=offset)
     return SynthDef("transport-follower", out(0, take * amp))
 
 

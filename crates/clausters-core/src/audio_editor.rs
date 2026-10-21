@@ -158,6 +158,11 @@ fn in_out_controls(ins: usize, outs: usize) -> Vec<Value> {
 /// transport's position in engine samples scaled by `BufRateScale`, so a
 /// 44.1 kHz take in a 48 kHz session plays at its true pitch.
 ///
+/// The read is a `TransportBufRd`, which works the phase out in `f64` from
+/// the transport's position itself: a phase passed as a signal is `f32`,
+/// which past about six minutes at 48 kHz repeats and drops frames, so a
+/// long take would distort more the further it played.
+///
 /// The gate is `0 <= position < span`, with no ramp: past the take's end the
 /// output is exactly zero, and neither the first nor the last sample is
 /// changed. `Out` writes `out + chan`, so each reader lands on its own channel
@@ -177,12 +182,12 @@ pub fn reader_def() -> Value {
             {"kind": "BinaryOpUGen", "op": "lt", "inputs": [{"ugen": 0}, {"control": 3}]},
             {"kind": "Mul", "inputs": [{"ugen": 1}, {"ugen": 2}]},
             {"kind": "BufRateScale", "inputs": [{"control": 1}]},
-            {"kind": "Mul", "inputs": [{"ugen": 0}, {"ugen": 4}]},
-            {"kind": "BufRd", "inputs": [
-                {"control": 1}, {"control": 2}, {"ugen": 5}, {"const": 0.0}]},
-            {"kind": "Mul", "inputs": [{"ugen": 6}, {"ugen": 3}]},
+            {"kind": "TransportBufRd", "inputs": [
+                {"control": 1}, {"control": 2}, {"const": 0.0}, {"ugen": 4},
+                {"const": 0.0}, {"const": 0.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 5}, {"ugen": 3}]},
             {"kind": "Add", "inputs": [{"control": 0}, {"control": 2}]},
-            {"kind": "Out", "inputs": [{"ugen": 8}, {"ugen": 7}]},
+            {"kind": "Out", "inputs": [{"ugen": 7}, {"ugen": 6}]},
         ],
     })
 }

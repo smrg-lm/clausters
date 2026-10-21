@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.join(ROOT, "clients", "python"))
 
 from clausters import Session  # noqa: E402
 from clausters.defs import Buffer, Group, Synth, SynthDef  # noqa: E402
-from clausters.defs import buf_rd, control, out, transport_pos  # noqa: E402
+from clausters.defs import control, out, transport_buf_rd  # noqa: E402
 
 SR = 48000
 SECONDS = 4
@@ -61,11 +61,11 @@ def samples(octave):
 
 
 def follower_def():
-    """The reader: its phase is its transport's position. Which transport is
+    """The reader: it reads at its transport's position. Which transport is
     not a control -- it is whichever governs the group the reader is in."""
     bufnum = control("bufnum", 0.0)
     side = control("out", 0.0)
-    take = buf_rd(bufnum, chan=0, phase=transport_pos(0.0))
+    take = transport_buf_rd(bufnum, chan=0)
     return SynthDef("transports-follower", out(side, take))
 
 

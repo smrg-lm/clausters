@@ -387,57 +387,59 @@ pub fn reader_def() -> Value {
             {"kind": "BinaryOpUGen", "op": "ge", "inputs": [{"ugen": 0}, {"const": 0.0}]},
             {"kind": "BinaryOpUGen", "op": "lt", "inputs": [{"ugen": 0}, {"control": 4}]},
             {"kind": "Mul", "inputs": [{"ugen": 1}, {"ugen": 2}]},
-            // 4..6: frames of the source per engine sample -- the buffer's own
-            // rate against the engine's, times the box's playrate -- and the
-            // frames that many make since the box began.
+            // 4..5: frames of the source per engine sample -- the buffer's own
+            // rate against the engine's, times the box's playrate.
             {"kind": "BufRateScale", "inputs": [{"control": 1}]},
             {"kind": "Mul", "inputs": [{"ugen": 4}, {"control": 7}]},
-            {"kind": "Mul", "inputs": [{"ugen": 0}, {"ugen": 5}]},
-            // 7..9: the window's own start, a second of the source crossed by
-            // the buffer's rate, and the frame that is, read interpolated.
+            // 6..7: the window's own start, a second of the source crossed by
+            // the buffer's rate.
             {"kind": "BufSampleRate", "inputs": [{"control": 1}]},
-            {"kind": "Mul", "inputs": [{"ugen": 7}, {"control": 5}]},
-            {"kind": "Add", "inputs": [{"ugen": 6}, {"ugen": 8}]},
-            {"kind": "BufRd", "inputs": [
-                {"control": 1}, {"control": 2}, {"ugen": 9}, {"control": 6}
+            {"kind": "Mul", "inputs": [{"ugen": 6}, {"control": 5}]},
+            // 8: the frame the transport is at, read interpolated. The phase
+            // is worked out inside the reader, in `f64`, from the transport's
+            // position: handed on as a signal it would be `f32`, which past
+            // about six minutes at 48 kHz repeats and drops frames.
+            {"kind": "TransportBufRd", "inputs": [
+                {"control": 1}, {"control": 2}, {"control": 3}, {"ugen": 5},
+                {"ugen": 7}, {"control": 6}
             ]},
-            // 11..12: gated and levelled.
-            {"kind": "Mul", "inputs": [{"ugen": 10}, {"ugen": 3}]},
-            {"kind": "Mul", "inputs": [{"ugen": 11}, {"control": 8}]},
-            // 13..16: the fade in -- how far through it the box is, frames in
+            // 9..10: gated and levelled.
+            {"kind": "Mul", "inputs": [{"ugen": 8}, {"ugen": 3}]},
+            {"kind": "Mul", "inputs": [{"ugen": 9}, {"control": 8}]},
+            // 11..14: the fade in -- how far through it the box is, frames in
             // counting the first as one over its length, read through its
             // segment from silence to full level. A length under a frame is
             // one frame, which is no fade, and keeps the division finite
             // outside the window, where the gate zeroes it.
             {"kind": "BinaryOpUGen", "op": "max", "inputs": [{"control": 10}, {"const": 1.0}]},
             {"kind": "Add", "inputs": [{"ugen": 0}, {"const": 1.0}]},
-            {"kind": "BinaryOpUGen", "op": "div", "inputs": [{"ugen": 14}, {"ugen": 13}]},
+            {"kind": "BinaryOpUGen", "op": "div", "inputs": [{"ugen": 12}, {"ugen": 11}]},
             {"kind": "EnvShape", "inputs": [
-                {"ugen": 15}, {"const": 0.0}, {"const": 1.0}, {"control": 12}, {"control": 13}
+                {"ugen": 13}, {"const": 0.0}, {"const": 1.0}, {"control": 12}, {"control": 13}
             ]},
-            // 17..21: the fade out -- frames left before the box ends over its
+            // 15..19: the fade out -- frames left before the box ends over its
             // length is how much of it is still to come, so one minus that is
             // how far through it the box is, read through its segment from
             // full level to silence. Before it starts the phase is below zero
             // and the segment holds full level.
             {"kind": "BinaryOpUGen", "op": "max", "inputs": [{"control": 11}, {"const": 1.0}]},
             {"kind": "BinaryOpUGen", "op": "sub", "inputs": [{"control": 4}, {"ugen": 0}]},
-            {"kind": "BinaryOpUGen", "op": "div", "inputs": [{"ugen": 18}, {"ugen": 17}]},
-            {"kind": "BinaryOpUGen", "op": "sub", "inputs": [{"const": 1.0}, {"ugen": 19}]},
+            {"kind": "BinaryOpUGen", "op": "div", "inputs": [{"ugen": 16}, {"ugen": 15}]},
+            {"kind": "BinaryOpUGen", "op": "sub", "inputs": [{"const": 1.0}, {"ugen": 17}]},
             {"kind": "EnvShape", "inputs": [
-                {"ugen": 20}, {"const": 1.0}, {"const": 0.0}, {"control": 14}, {"control": 15}
+                {"ugen": 18}, {"const": 1.0}, {"const": 0.0}, {"control": 14}, {"control": 15}
             ]},
-            // 22..23: both edges on what was read.
-            {"kind": "Mul", "inputs": [{"ugen": 16}, {"ugen": 21}]},
-            {"kind": "Mul", "inputs": [{"ugen": 12}, {"ugen": 22}]},
-            // 24..28: out, onto this reader's own channel of the clip's bus --
+            // 20..21: both edges on what was read.
+            {"kind": "Mul", "inputs": [{"ugen": 14}, {"ugen": 19}]},
+            {"kind": "Mul", "inputs": [{"ugen": 10}, {"ugen": 20}]},
+            // 22..26: out, onto this reader's own channel of the clip's bus --
             // `1 - chan` of it on the first and `chan` of it on the second.
             {"kind": "BinaryOpUGen", "op": "sub",
              "inputs": [{"const": 1.0}, {"control": 2}]},
-            {"kind": "Mul", "inputs": [{"ugen": 23}, {"ugen": 24}]},
-            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 25}]},
-            {"kind": "Mul", "inputs": [{"ugen": 23}, {"control": 2}]},
-            {"kind": "Out", "inputs": [{"control": 9}, {"ugen": 27}]}
+            {"kind": "Mul", "inputs": [{"ugen": 21}, {"ugen": 22}]},
+            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 23}]},
+            {"kind": "Mul", "inputs": [{"ugen": 21}, {"control": 2}]},
+            {"kind": "Out", "inputs": [{"control": 9}, {"ugen": 25}]}
         ]
     })
 }
@@ -950,7 +952,7 @@ pub fn input_def() -> Value {
     ]);
     let (at, span, fade_in, fade_out) = (edges, edges + 1, edges + 2, edges + 3);
     let (in_shape, in_curve, out_shape, out_curve) = (edges + 4, edges + 5, edges + 6, edges + 7);
-    // The reader's envelope, ugen for ugen ([`reader_def`], 0..3 and 13..22):
+    // The reader's envelope, ugen for ugen ([`reader_def`], 0..3 and 11..20):
     // the gate, the fade in and the fade out, multiplied.
     let mut ugens = vec![
         // 0..3: engine samples since the box began, and whether that is inside it.

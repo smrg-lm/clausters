@@ -4491,13 +4491,16 @@ should confirm before the fix.
   regressions preserve samples, bus clearing and meter decay; the native
   multichannel review also checks the live endpoint.
 
-- ⬜ **A long take distorts more the further it plays** (2026-10-21, the
+- ✅ **A long take distorts more the further it plays** (2026-10-21, the
   user, in the audio editor: a long file copied and pasted at its own end
   until it reached about 30 minutes). The sound distorts progressively as the
   position advances. Suspected, not verified: a position held in 32-bit
   float, which stops addressing single frames past 2^24 frames (about six
   minutes at 48 kHz); the reader's phase and the transport's position are
   where to check.
+  *(Fixed 2026-10-21: the suspicion was right. The phase crossed from
+  `TransportPos` to `BufRd` as an `f32` signal; `TransportBufRd` keeps it in
+  `f64` and the audio editor's and multitrack's readers use it.)*
 - ✅ **An automatic profiler for the server** (2026-10-21, the user, after
   the audio editor's review). A run that measures, without someone watching,
   where the server's time goes: blocks and their cost per node and per

@@ -38,6 +38,34 @@ export const bufRd = (
 ): Ugen => new Ugen("BufRd", [bufnum, chan, phase, loop]);
 
 /**
+ * Reads a buffer **at the transport's position**: `bufRd` at
+ * `(position - offset) * rate + start` frames, the phase worked out inside
+ * the UGen in double precision.
+ *
+ * `offset` is where frame `start` sits on the transport's axis (as
+ * `transportPos` takes it), and `rate` the buffer's frames per frame of the
+ * transport -- `bufRateScale` for a buffer at another rate, times a playrate.
+ * Like `transportPos` it seeks, loops and holds with the transport.
+ *
+ * It is one UGen rather than `bufRd(..., transportPos())` because a phase
+ * handed between UGens is a 32-bit signal, which past about six minutes at
+ * 48 kHz repeats and drops frames: a long take read that way distorts more the
+ * further it plays. Here nothing that changes per sample is rounded to 32 bits.
+ *
+ * ```ts
+ * const take = transportBufRd(buf.bufnum, 0, 0, bufRateScale(buf.bufnum));
+ * ```
+ */
+export const transportBufRd = (
+    bufnum: Channel,
+    chan: Channel,
+    offset: Channel = 0.0,
+    rate: Channel = 1.0,
+    start: Channel = 0.0,
+    loop: Channel = 0.0,
+): Ugen => new Ugen("TransportBufRd", [bufnum, chan, offset, rate, start, loop]);
+
+/**
  * **Writes** `signal` into a buffer at `phase` (frames) -- `bufRd`'s write-side
  * twin, and stateless in the same way.
  *
