@@ -2515,6 +2515,25 @@ pub trait Samples {
         false
     }
 
+    /// **What this element resolved of a resource the def names again**,
+    /// carried from the element the widget was -- with no word from the def,
+    /// unlike [`keep_bulk`](Self::keep_bulk), because the resource is not the
+    /// client's to vouch for: it is a server buffer the host itself loaded,
+    /// and the def naming the same buffer is saying it draws the same thing.
+    ///
+    /// Without it a redefine forgot every buffer's summary and asked for it
+    /// again. A host reading the server's memory found it at once; a page
+    /// downloads it, so a view switch -- which redefines the window --
+    /// re-fetched every drawn take's shape and peaks and drew a frame for
+    /// each reply. What is carried is exactly as fresh as what was drawn: an
+    /// element told to read again (`reload`), one the server announced a
+    /// write over or a restitch of, is told so after the carry as before it.
+    /// An element that has nothing resolved, or names another resource,
+    /// carries nothing and asks as it always did.
+    fn carry_resolved(&mut self, _from: &dyn Element) -> bool {
+        false
+    }
+
     /// **The samples this element holds over a span of its own frames**, as
     /// interleaved samples with the rate they were taken at -- what a copy puts
     /// on the clipboard.

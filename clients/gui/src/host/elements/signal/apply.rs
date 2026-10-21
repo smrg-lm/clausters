@@ -205,9 +205,22 @@ impl SignalElement {
                         // A newly enabled picture needs its existing loader
                         // and fill paths again. Opacity and axis changes only
                         // change uniforms; they do not rebuild the analysis.
+                        //
+                        // **Except a server buffer already resolved**: it is
+                        // one resource in every form -- a texture and a trace
+                        // both ask for `Bulk::Buffer` -- so what the element
+                        // holds is rebuilt into the new picture rather than
+                        // forgotten and downloaded again. A page re-fetched a
+                        // take's shape and peaks on every view switch for
+                        // exactly this. A file or a cache is two resources (an
+                        // analysis and a pyramid) and is read again.
                         if (self.is_texture_view() && !texture) || (self.draws_traces() && !traces)
                         {
-                            self.reread();
+                            if self.holds_resolved_buffer() {
+                                self.refresh_analysis();
+                            } else {
+                                self.reread();
+                            }
                             self.slot_dirty = true;
                         }
                         true

@@ -8512,7 +8512,7 @@ module of its own.
   second while the transport rolls, none once it stands, and the host's CPU
   while playing from 4.5% to 7.6%. Native eye pass 2026-10-21: the cursor
   follows the sound evenly; browser pass the same day, the same.)*
-- ⬜ **The page draws much slower than the native host** (2026-10-21, the
+- ✅ **The page draws much slower than the native host** (2026-10-21, the
   user, browser). Switching the audio editor between waveform, spectrogram
   and both, and switching files, is visibly slower in the page than natively.
   The host is one program compiled twice, so the difference is a defect of
@@ -8528,7 +8528,17 @@ module of its own.
   the native host reads the same samples from shared memory at once. The fix
   is carrying a buffer's summary across a redefine where the buffer and its
   contents are unchanged, which is exactly where a stale picture comes from
-  (the spectrogram entry below), so it is decided with that one.)*
+  (the spectrogram entry below), so it is decided with that one. *Fixed
+  2026-10-21*, in three causes found one under the other: a layer change
+  (texture on) re-read a resolved buffer although both pictures are the
+  same resource; the reconcile stopped at a container the client numbers
+  afresh on every def, so nothing inside it was carried; and nothing
+  carried a buffer's summary at all. A widget naming the same buffer now
+  keeps what the host loaded, until a write is announced or the owner says
+  `reload`. Nine switches draw 27 whole frames in the page instead of 57 --
+  the rest are the spectrogram lane of the both view, a widget that is new
+  each time -- and 18 natively, as before; an edit, a save and an undo leave
+  the picture equal to the original's.)*
 - ✅ **Two of the page's dialogs draw wrong** (2026-10-21, the user's
   captures of `edit-audio.html`). A dialog that reaches the meter is drawn
   under it: the meter's ladder and column cover the dialog's right edge. In
@@ -8554,7 +8564,14 @@ module of its own.
   the profiler can show what was redrawn and when. *(2026-10-21: the
   sequence -- spectrogram, apply an envelope, save as, undo -- did not
   reproduce in the headless page, whose software renderer draws no
-  spectrogram texture at all; it needs a browser with a GPU.)*
+  spectrogram texture at all; it needs a browser with a GPU. Later the same
+  day, headless Chrome on Vulkan draws it, and five sequences -- an
+  envelope, a cut, a copy and paste, several edits with several undos, each
+  with a save as -- left the picture after the undo equal to the original's
+  and to a redrawn one. Not reproduced; with the summary now carried across a
+  redefine, a view switch no longer redraws from a fresh download, so a stale
+  picture, if it happens again, stays until the owner's `reload` and is
+  worth a capture of the exact steps.)*
 - ✅ **A hidden native window on Wayland is still ticked** (2026-10-21, the
   `X23` native pass in `crates/clausters-apps/PLAN.md`). The host stops
   ticking, reading back and querying for a window the platform reports

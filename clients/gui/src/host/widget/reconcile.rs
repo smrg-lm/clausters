@@ -212,6 +212,20 @@ fn carry<'a>(
     {
         unkept(fresh.id);
     }
+    // **What the host loaded of a buffer the def names again** carries with
+    // no word from the def ([`Samples::carry_resolved`](super::element::Samples)):
+    // it is the host's own download, and the same buffer is the same samples
+    // until the server or the owner says they are not -- and a def that says
+    // `reload` is the owner saying exactly that.
+    let reloads = says
+        .get("reload")
+        .is_some_and(|v| v.as_bool() == Some(true) || v.as_f64().is_some_and(|n| n != 0.0));
+    if !reloads
+        && let (Some(before), Some(now)) = (held.kind.as_element(), fresh.kind.as_element_mut())
+        && let Some(samples) = now.samples_mut()
+    {
+        samples.carry_resolved(before);
+    }
     // Nothing on the wire sets the mark a marquee left, so there is no "the def
     // said so" case for it: it is the host's, always.
     fresh.selected = held.selected;
@@ -241,6 +255,8 @@ fn carry<'a>(
                         if said.props.get(&id).is_some_and(|p| keeps_bulk(p)) {
                             unkept(Some(id));
                         }
+                        let says = said.props.get(&id).copied().unwrap_or(says);
+                        descend(child, said, was, index, says);
                     }
                 }
             }
@@ -263,9 +279,41 @@ fn carry<'a>(
                         if keeps_bulk(says) {
                             unkept(fresh.id);
                         }
+                        descend(child, said, was, index, says);
                     }
                 }
             }
+        }
+    }
+}
+
+/// **Below a widget that matched nothing, the widgets that do.** A container
+/// a client numbers afresh on every def -- an id-less layout it names before
+/// sending -- has nothing to carry from, and the walk used to stop there: every
+/// widget inside it was rebuilt bare, its zoom, its selection and the summary
+/// the host had loaded with it, although each of them kept its own id. Identity
+/// is by id *anywhere* in the held tree, so the walk goes on through the
+/// stranger and matches what it holds.
+fn descend<'a>(
+    fresh: &mut Widget,
+    said: &Said<'a>,
+    was: &HashMap<i32, String>,
+    index: &HashMap<i32, &Widget>,
+    inherited: &'a Map<String, Value>,
+) {
+    for child in fresh.children.iter_mut() {
+        let says = child
+            .id
+            .and_then(|id| said.props.get(&id).copied())
+            .unwrap_or(inherited);
+        match child
+            .id
+            .and_then(|id| index.get(&id).map(|before| (id, before)))
+        {
+            Some((id, before)) if same_kind(said, was, id, &before.kind, &child.kind) => {
+                carry(before, child, said, was, index, says)
+            }
+            _ => descend(child, said, was, index, says),
         }
     }
 }

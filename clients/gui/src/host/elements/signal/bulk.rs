@@ -60,6 +60,14 @@ impl SignalElement {
         self.slot_dirty = true;
     }
 
+    /// Whether this element draws a server buffer it has already resolved:
+    /// a stored source naming a buffer and no file or cache, with its summary
+    /// (or its samples) here.
+    pub fn holds_resolved_buffer(&self) -> bool {
+        matches!(&self.source, Source::Data(d)
+            if d.buffer.is_some() && d.path.is_none() && d.cache.is_none() && d.body.is_some())
+    }
+
     /// The bulk resource this element was told to read **again**, if it was --
     /// and asking clears the ask, so one `reload` is one load.
     ///

@@ -221,3 +221,141 @@ fn a_standalone_signal_keeps_its_own_bulk() {
         _ => panic!("a stored source"),
     }
 }
+
+// ---- a server buffer's summary: the host's own download ----
+
+/// A window of one signal drawing server buffer `buffer`, viewed as `view`.
+fn buffer_view(buffer: i32, view: &str) -> String {
+    format!(
+        r#"{{"type":"window","title":"w","children":[
+             {{"id":40,"type":"signal","view":"{view}","buffer":{buffer},"channels":1}}]}}"#
+    )
+}
+
+/// Hands element 40 a resolved summary, as a download finishing does.
+fn resolve(host: &mut Host) {
+    let data = std::sync::Arc::new(crate::waveform::WaveformData::from_interleaved(
+        &[0.5, -0.5, 0.25, -0.25],
+        1,
+        2,
+    ));
+    let tree = host.window_def_mut(1).unwrap();
+    let took = tree
+        .find_mut(40)
+        .unwrap()
+        .take_bulk(|| crate::host::widget::element::Loaded::Peaks(data.clone()));
+    assert!(took, "the element takes the summary home");
+}
+
+fn summary(host: &Host) -> bool {
+    let tree = host.window_def(1).unwrap();
+    match &tree.find(40).unwrap().kind.signal().unwrap().source {
+        crate::host::elements::signal::Source::Data(d) => d.body.is_some(),
+        _ => panic!("a stored source"),
+    }
+}
+
+#[test]
+fn a_redefine_over_the_same_buffer_keeps_what_the_host_loaded() {
+    // A view switch redefines the window. A page downloads a buffer's
+    // summary, so forgetting it there meant every switch asked the server for
+    // every drawn take again and drew a frame for each reply.
+    let mut host = Host::new();
+    define(&mut host, &buffer_view(7, "trace"));
+    resolve(&mut host);
+    define(&mut host, &buffer_view(7, "spectrogram"));
+    assert!(summary(&host), "the same buffer is the same samples");
+    let want = host
+        .window_def_mut(1)
+        .unwrap()
+        .find_mut(40)
+        .unwrap()
+        .kind
+        .needs()
+        .bulk;
+    assert!(want.is_none(), "and nothing is asked for again: {want:?}");
+
+    // Another buffer is another picture.
+    define(&mut host, &buffer_view(8, "spectrogram"));
+    assert!(!summary(&host), "a different buffer starts empty");
+}
+
+#[test]
+fn a_take_told_to_read_again_carries_nothing() {
+    // `reload` is the owner saying the samples changed under the same
+    // buffer -- an undo over it. What was loaded is then exactly what must
+    // not survive.
+    let mut host = Host::new();
+    define(&mut host, &buffer_view(7, "trace"));
+    resolve(&mut host);
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_SET.into(),
+            args: vec![
+                OscType::Int(40),
+                OscType::String("reload".into()),
+                OscType::Int(1),
+            ],
+        }),
+        from(),
+    );
+    define(&mut host, &buffer_view(7, "trace"));
+    assert!(!summary(&host), "re-read, it asks again");
+}
+
+#[test]
+fn a_redefine_that_says_reload_carries_nothing() {
+    // The owner can say it in the def itself: the same buffer, read again.
+    let mut host = Host::new();
+    define(&mut host, &buffer_view(7, "trace"));
+    resolve(&mut host);
+    define(
+        &mut host,
+        &buffer_view(7, "trace").replace(r#""channels":1"#, r#""channels":1,"reload":true"#),
+    );
+    assert!(!summary(&host), "the def said the samples changed");
+}
+
+#[test]
+fn a_widget_inside_a_renumbered_container_still_carries() {
+    // A client names the id-less nodes it sends, afresh on every def: the
+    // layout around a take comes back under a new id each time, and the take
+    // inside it under its own. The walk goes through the stranger.
+    let wrapped = |layout: i32, view: &str| {
+        format!(
+            r#"{{"type":"window","title":"w","children":[
+                 {{"id":{layout},"type":"layout","children":[
+                   {{"id":40,"type":"signal","view":"{view}","buffer":7,"channels":1}}]}}]}}"#
+        )
+    };
+    let mut host = Host::new();
+    define(&mut host, &wrapped(500, "trace"));
+    resolve(&mut host);
+    define(&mut host, &wrapped(501, "spectrogram"));
+    assert!(
+        summary(&host),
+        "the take kept its summary through a new container"
+    );
+}
+
+#[test]
+fn turning_a_resolved_buffer_into_another_picture_keeps_it() {
+    // A view switch also sets the take's layers. A server buffer is one
+    // resource in every form, so turning the texture on rebuilds the picture
+    // from what is held instead of forgetting it and downloading it again.
+    let mut host = Host::new();
+    define(&mut host, &buffer_view(7, "trace"));
+    resolve(&mut host);
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_SET.into(),
+            args: vec![
+                OscType::Int(40),
+                OscType::String("measure".into()),
+                OscType::String("spectrogram".into()),
+            ],
+        }),
+        from(),
+    );
+    assert!(summary(&host), "the summary stands");
+}

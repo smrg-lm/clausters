@@ -562,6 +562,53 @@ impl Samples for SignalElement {
         self.refresh_analysis();
         true
     }
+    /// The summary of the same server buffer, carried: the pyramid (with the
+    /// spans read back and the finer grids under it, all behind one `Arc`)
+    /// and how far a recording had written. Only between two stored sources
+    /// naming the same buffer and no file or cache, holding the same channels
+    /// in the same form, from an element that holds a summary, and only when
+    /// neither def told it to read the buffer again.
+    fn carry_resolved(&mut self, from: &dyn Element) -> bool {
+        let Some(was_el) = from
+            .as_any()
+            .and_then(|a| a.downcast_ref::<SignalElement>())
+        else {
+            return false;
+        };
+        // Told to read again by either def -- the one it was or the one it is
+        // now, which can say `reload` in the same message -- it carries
+        // nothing: that is the owner saying these samples changed.
+        if was_el.reload_asked || self.reload_asked {
+            return false;
+        }
+        let Source::Data(was) = &was_el.source else {
+            return false;
+        };
+        let Source::Data(now) = &mut self.source else {
+            return false;
+        };
+        let same = now.buffer.is_some()
+            && now.buffer == was.buffer
+            && now.path.is_none()
+            && now.cache.is_none()
+            && was.path.is_none()
+            && was.cache.is_none()
+            && now.bulk == was.bulk
+            && now.channels == was.channels
+            && now.base_bucket == was.base_bucket;
+        if !same || now.body.is_some() {
+            return false;
+        }
+        let Some(body) = &was.body else {
+            return false;
+        };
+        now.body = Some(Arc::clone(body));
+        self.written = was_el.written;
+        self.slot_dirty = true;
+        self.refresh_analysis();
+        true
+    }
+
     fn patch_span(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
         SignalElement::patch_span(self, start, channels, samples)
     }
