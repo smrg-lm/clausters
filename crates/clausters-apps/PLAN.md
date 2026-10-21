@@ -2665,7 +2665,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     `PLAN.md` "Found by use": eight tracks, the page's speed and dialogs,
     a stale spectrogram after undo, a long take that distorts, a profiler.
 
-- ⬜ **X23 - Define activity, subscriptions and invalidation.** After
+- ✅ **X23 - Define activity, subscriptions and invalidation.** After
   `X22`, connect application activity to existing host demand/tick machinery.
   Define redraw, clock queries, meter/tap subscriptions and preview analysis
   needs for stopped, playing, processing, hidden and closing states. Separate
@@ -2722,7 +2722,9 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     window was not reported hidden: the windowing library the host uses
     reports occlusion on X11 but never on Wayland, where the pass ran. Filed
     in `clients/gui/PLAN.md`, "Found by use".
-  - ⬜ Browser eye pass over the same, with the tab put in the background.
+  - ✅ Browser eye pass over the same (2026-10-21): the page behaves as the
+    native window, and a tab put in the background or an editor scrolled
+    away comes back drawn and still playing.
 
 - ⬜ **X24 - Accept the audio editor as the reference application.** After
   `X23`, close the audio lifecycle before migrating another editor. Remove
