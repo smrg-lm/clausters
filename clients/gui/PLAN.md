@@ -8517,7 +8517,18 @@ module of its own.
   and both, and switching files, is visibly slower in the page than natively.
   The host is one program compiled twice, so the difference is a defect of
   the browser front or of what it is fed, to be measured with the same
-  profiler on both fronts.
+  profiler on both fronts. *(Measured 2026-10-21, nine view switches, both
+  clients sending the same six `/gui_def` and eighteen `/gui_set`: a frame
+  costs about a millisecond on both fronts, but the page draws 52 whole
+  frames to the native host's 18. Each switch redefines the window, and the
+  reconcile carries no buffer-backed summary across a redefine
+  (`SignalElement::keep_bulk` refuses a `buffer` source), so the page asks
+  the engine again for every drawn buffer's shape and peaks -- 9
+  `/buffer_query` and 54 `/buffer_peaks` replies -- and each reply redraws;
+  the native host reads the same samples from shared memory at once. The fix
+  is carrying a buffer's summary across a redefine where the buffer and its
+  contents are unchanged, which is exactly where a stale picture comes from
+  (the spectrogram entry below), so it is decided with that one.)*
 - ⬜ **Two of the page's dialogs draw wrong** (2026-10-21, the user's
   captures of `edit-audio.html`). A dialog that reaches the meter is drawn
   under it: the meter's ladder and column cover the dialog's right edge. In
@@ -8525,12 +8536,22 @@ module of its own.
   reads as overlapping glyphs), and the path field shows a stray green bar
   inside the text where the caret is. Both are host drawing, so the native
   window is checked for the same before either is fixed in one front.
+  *(Fixed 2026-10-21 for the meter, reproduced in the page at a narrow stage:
+  a batch draws all its flat geometry and then all its glyphs, and the scrim
+  and the dialog shared the batch that holds the window's overlays, so the
+  window's text read through the dialog. The two now take the batch after
+  it, in both fronts. The OK label and the green bar did not reproduce; text
+  of the window through the dialog fits both. Open until an eye pass over
+  the user's own sequence.)*
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was
   right and switching the view away and back redrew it; until then the
   spectrogram drew an earlier edited state of the take. A stale spectral
   cache that a restored join does not invalidate is the place to look, once
-  the profiler can show what was redrawn and when.
+  the profiler can show what was redrawn and when. *(2026-10-21: the
+  sequence -- spectrogram, apply an envelope, save as, undo -- did not
+  reproduce in the headless page, whose software renderer draws no
+  spectrogram texture at all; it needs a browser with a GPU.)*
 - ⬜ **A hidden native window on Wayland is still ticked** (2026-10-21, the
   `X23` native pass in `crates/clausters-apps/PLAN.md`). The host stops
   ticking, reading back and querying for a window the platform reports

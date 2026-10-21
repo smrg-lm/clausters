@@ -1625,9 +1625,16 @@ fn picture(
         // its elements draw over themselves.
         //
         // What moves in the window is under the scrim with the rest of it, and
-        // what moves in the dialog is over the dialog's own pictures: neither
-        // is where a live batch is drawn, so with a dialog up nothing is kept
-        // and every frame is a whole one.
+        // what moves in the dialog is over the dialog's own pictures, so with a
+        // dialog up nothing is kept and every frame is a whole one.
+        //
+        // **The scrim and the dialog take the live batch, which is free.** A
+        // batch draws all of its flat geometry and then all of its glyphs, so
+        // a dialog laid into the batch that holds the window's overlays came
+        // out under their text: a meter's ladder read through a dialog that
+        // reached it, and a label behind the OK button through the button.
+        // Drawn in the next batch, everything of the window is under the scrim
+        // and the dialog is whole over it.
         draw_timeline_heads(
             &mut over,
             &collected,
@@ -1668,10 +1675,10 @@ fn picture(
             inputs,
             theme,
         );
-        over.set_clip(None);
-        over.set_ink(Ink::default());
-        over.rect(area, with_alpha(theme.background, 0.6));
-        over.append(&under);
+        live.set_clip(None);
+        live.set_ink(Ink::default());
+        live.rect(area, with_alpha(theme.background, 0.6));
+        live.append(&under);
         top.append(&above);
         Some(inside)
     };
@@ -2599,9 +2606,10 @@ mod tests {
         );
     }
 
-    /// **With a dialog up nothing is kept.** What moves in the window is
-    /// under the scrim and what moves in the dialog is over the dialog's own
-    /// pictures, and neither is where the live batch is drawn.
+    /// **With a dialog up nothing is kept**, and the window's moving lines and
+    /// its overlays stay in the batch under the one the scrim and the dialog
+    /// are drawn in: a batch draws its glyphs after all its flat geometry, so
+    /// sharing one let the window's text show through the dialog.
     #[test]
     fn a_window_with_a_dialog_up_keeps_no_picture() {
         let dialog = picture_at(
@@ -2613,7 +2621,14 @@ mod tests {
             0.0,
         );
         assert!(!dialog.kept);
-        assert!(dialog.live.is_empty(), "its lines are under the scrim");
+        assert!(
+            !dialog.over.is_empty(),
+            "the window's lines are under the scrim"
+        );
+        assert!(
+            !dialog.live.is_empty(),
+            "the scrim and the dialog are in their own batch"
+        );
     }
 
     /// **A frame is the least it may be and never less.** Asked for what
