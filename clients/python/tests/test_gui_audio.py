@@ -237,6 +237,18 @@ def test_a_cut_copies_before_removing_samples():
     assert editor.buffer.frames == 100
 
 
+def test_a_delete_removes_samples_without_copying_them():
+    take = FakeBuffer()
+    editor, host, wid, _context = opened(take)
+    take.server.sent.clear()
+    editor.apply("/gui_event", [wid, 1, 0, "delete", 10.0, 20.0])
+    assert take.server.addrs()[0] == "/buffer_stitch", "no block was copied out"
+    assert not hasattr(host, "clip"), "and nothing went on the clipboard"
+    assert editor.buffer.frames == 80
+    assert editor.undo() is True
+    assert editor.buffer.frames == 100
+
+
 def test_a_take_past_the_resident_budget_goes_to_disk_and_comes_back():
     take = FakeBuffer()
     editor, _host, wid, context = opened(take, resident_bytes=0, scratch="/scratch")

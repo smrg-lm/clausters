@@ -753,3 +753,46 @@ fn an_element_s_own_selection_is_read_for_its_actions() {
             .enabled
     );
 }
+
+/// **A delete takes the span out and copies nothing**: the key asks the owner
+/// to remove the selection, as a cut does, but the clipboard keeps what it
+/// held -- a cut is a copy and a delete, and a delete is only the second.
+#[test]
+fn a_delete_asks_for_the_span_and_leaves_the_clipboard_alone() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+            {"id":50,"type":"signal","view":"trace",
+             "data":[0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(50, 8);
+    host.select_timeline(50, 2.0, 5.0);
+    let at = mid(rect_of(&host, &ctx(), 50));
+    let mut g = Gestures::default();
+    let effects = g
+        .press_key(&mut host, &ctx(), Key::Delete, Some(at))
+        .expect("the view answers");
+    let args = emitted(&effects)
+        .into_iter()
+        .find(|(id, _)| *id == 50)
+        .map(|(_, args)| args)
+        .expect("a delete reports");
+    assert_eq!(args[0], OscType::String("delete".into()));
+    assert_eq!(args.len(), 3, "the span it names: {args:?}");
+    assert!(host.clipboard.is_empty(), "nothing was copied");
+
+    // Backspace is the same verb, and a cut is the one that copies.
+    let effects = g
+        .press_key(&mut host, &ctx(), Key::Backspace, Some(at))
+        .expect("the view answers");
+    assert!(
+        emitted(&effects)
+            .iter()
+            .any(|(id, a)| *id == 50 && a.first() == Some(&OscType::String("delete".into())))
+    );
+    assert!(host.clipboard.is_empty());
+    let mut ctrl = ctx();
+    ctrl.ctrl = true;
+    g.press_key(&mut host, &ctrl, Key::Char('x'), Some(at))
+        .expect("the view answers");
+    assert!(!host.clipboard.is_empty(), "a cut copies");
+}

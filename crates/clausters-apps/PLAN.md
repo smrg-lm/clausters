@@ -2510,7 +2510,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     adding a dialog or changing ownership of client-held objects.
 
 
-- ⬜ **X20 - Give actions one definition and contextual state.** After
+- ✅ **X20 - Give actions one definition and contextual state.** After
   `X19`, extend the existing `clausters-editing::verbs` and chrome mechanisms
   with target resolution, availability/reason, command/toggle/choice kind,
   checked/value state and pending status. An action is not a history entry:
@@ -2554,10 +2554,11 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     or on its key sheet. Readings and their publication live in both
     clients' base `Editor`; the paste destination is tagged by contents kind.
     Other applications' readings are `X25`.
-  - ⬜ Native and browser eye pass over the `edit_audio` pair: disabled and
+  - ✅ Native and browser eye pass over the `edit_audio` pair: disabled and
     checked entries follow file, selection, clipboard and pending saves; the
     key sheet matches the bindings. First native pass (2026-10-21) found the
-    entries below in "Found by use"; re-check them.
+    entries below in "Found by use"; the second pass (2026-10-21) accepted
+    them, with a delete that removes and is history but copies nothing.
 
 - ⬜ **X21 - Consolidate shared visual compositions and file selection.**
   After `X20`, compose existing `forms`, `files`, chrome and shortcut views

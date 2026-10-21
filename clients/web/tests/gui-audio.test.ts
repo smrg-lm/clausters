@@ -267,6 +267,20 @@ test("a cut copies before removing samples", async () => {
     assert.equal(editor.buffer.frames, 100);
 });
 
+test("a delete removes samples without copying them", async () => {
+    const take = new FakeBuffer();
+    const [editor, host, wid] = await opened(take);
+    take.server.sent = [];
+    editor.apply("/gui_event", [wid, 1, 0, "delete", 10.0, 20.0]);
+    await settle();
+    assert.equal(take.server.addrs()[0], "/buffer_stitch", "no block was copied out");
+    assert.equal(host.clip, "", "and nothing went on the clipboard");
+    assert.equal(editor.buffer.frames, 80);
+    assert.equal(editor.undo(), true);
+    await settle();
+    assert.equal(editor.buffer.frames, 100);
+});
+
 test("a take past the resident budget goes to disk and comes back", async () => {
     const take = new FakeBuffer();
     const [editor, , wid, context] = await opened(take, { residentBytes: 0, scratch: "/scratch" });
