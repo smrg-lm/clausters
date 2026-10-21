@@ -967,7 +967,7 @@ def test_profile_reads_the_window_between_two_reports():
     assert [(r.node, r.name) for r in profile.synths] == [(1000, "tone"), (1001, "tone")]
     assert profile.synths[0].busy == pytest.approx(0.4)
     assert [r.name for r in profile.defs] == ["tone"]
-    assert profile.defs[0].nodes == 1 and profile.defs[0].count == 150
+    assert profile.defs[0].nodes == 2 and profile.defs[0].count == 150  # 1000 throughout, 1001 new
     assert [r.name for r in profile.commands] == ["/node_set", "/synth_new"]
     assert profile.commands[0].bytes == 96 and profile.commands[0].count == 4
     assert profile.replies[0].busy is None and profile.replies[0].bytes == 32

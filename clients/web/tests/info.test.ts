@@ -259,7 +259,7 @@ test("a profile reads the window between two reports", async () => {
     // A synth new in the window starts from nothing; costliest first.
     assert.deepEqual(profile.synths.map((r) => [r.node, r.name]), [[1000, "tone"], [1001, "tone"]]);
     assert.deepEqual(profile.defs.map((r) => r.name), ["tone"]);
-    assert.equal(profile.defs[0]!.nodes, 1);
+    assert.equal(profile.defs[0]!.nodes, 2); // 1000 throughout, 1001 new
     assert.equal(profile.defs[0]!.count, 150);
     assert.deepEqual(profile.commands.map((r) => r.name), ["/node_set", "/synth_new"]);
     assert.equal(profile.commands[0]!.bytes, 96);

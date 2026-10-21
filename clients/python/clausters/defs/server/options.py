@@ -533,12 +533,26 @@ def _profile_difference(first, second) -> Profile:
         return ProfileRow(name=str(row[0]), busy=busy, waited=waited,
                           count=int(row[2]) - (int(was[2]) if was else 0))
 
+    synths = section(1, lambda r: (r[0], r[1]), synth)
+    defs = section(2, lambda r: r[0], definition)
+    # A def's synths in the window are the ones that ran in it, not the
+    # difference of two counts: one alive throughout counts in both. So it is
+    # the synths that began in the window (the count's difference) plus those
+    # alive at both ends that moved, plus those alive at the start and gone by
+    # the end. The server lists at most its costliest synths, so in a tree
+    # larger than that this is a floor.
+    ended = {(row[0], row[1]) for row in after[1]}
+    for row in defs:
+        moved = sum(1 for s in synths if s.name == row.name
+                    and any(b[0] == s.node and b[1] == s.name for b in before[1]))
+        gone = sum(1 for b in before[1] if b[1] == row.name and (b[0], b[1]) not in ended)
+        row.nodes += moved + gone
     return Profile(
         seconds=seconds,
         timed_synths=timed,
         phases=section(0, lambda r: (r[0], r[1]), phase),
-        synths=section(1, lambda r: (r[0], r[1]), synth),
-        defs=section(2, lambda r: r[0], definition),
+        synths=synths,
+        defs=defs,
         commands=section(3, lambda r: r[0], command),
         replies=section(4, lambda r: r[0], reply),
         jobs=section(5, lambda r: r[0], job),

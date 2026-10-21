@@ -422,6 +422,33 @@ export function profileDifference(first: readonly Arg[], second: readonly Arg[])
     };
     const busyAt = (r: Arg[], was: Arg[] | undefined, at: number): number | null =>
         less(secondsOf(r[at]), was ? secondsOf(was[at]) : null);
+    const synths = section(1, (r) => `${r[0]} ${r[1]}`, (r, was) => row({
+        name: String(r[1]),
+        node: Number(r[0]),
+        busy: busyAt(r, was, 2),
+        count: counted(r[3], was, 3),
+    }));
+    const defs = section(2, (r) => String(r[0]), (r, was) => row({
+        name: String(r[0]),
+        busy: busyAt(r, was, 1),
+        count: counted(r[2], was, 2),
+        nodes: counted(r[3], was, 3),
+    }));
+    // A def's synths in the window are the ones that ran in it, not the
+    // difference of two counts: one alive throughout counts in both. So it is
+    // the synths that began in the window (the count's difference) plus those
+    // alive at both ends that moved, plus those alive at the start and gone by
+    // the end. The server lists at most its costliest synths, so in a tree
+    // larger than that this is a floor.
+    const key = (node: Arg, def: Arg): string => `${node} ${def}`;
+    const started = new Set(before.sections[1].map((b) => key(b[0], b[1])));
+    const ended = new Set(after.sections[1].map((r) => key(r[0], r[1])));
+    for (const def of defs) {
+        const moved = synths.filter((s) => s.name === def.name && started.has(key(s.node, s.name))).length;
+        const gone = before.sections[1]
+            .filter((b) => String(b[1]) === def.name && !ended.has(key(b[0], b[1]))).length;
+        def.nodes += moved + gone;
+    }
     return {
         seconds,
         timedSynths: after.timed,
@@ -431,18 +458,8 @@ export function profileDifference(first: readonly Arg[], second: readonly Arg[])
             busy: busyAt(r, was, 2),
             count: counted(r[3], was, 3),
         })),
-        synths: section(1, (r) => `${r[0]} ${r[1]}`, (r, was) => row({
-            name: String(r[1]),
-            node: Number(r[0]),
-            busy: busyAt(r, was, 2),
-            count: counted(r[3], was, 3),
-        })),
-        defs: section(2, (r) => String(r[0]), (r, was) => row({
-            name: String(r[0]),
-            busy: busyAt(r, was, 1),
-            count: counted(r[2], was, 2),
-            nodes: counted(r[3], was, 3),
-        })),
+        synths,
+        defs,
         commands: section(3, (r) => String(r[0]), (r, was) => row({
             name: String(r[0]),
             busy: busyAt(r, was, 1),
