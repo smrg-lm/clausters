@@ -10573,3 +10573,35 @@ An audio editor copies a potentially large range on the server. Moving its sampl
 Copy is published after server completion; Cut records removal only after publication and a matching original-target checkpoint. The checkpoint crosses language adapters as opaque serialized text, avoiding numeric normalization of its contents by JavaScript. General operation scheduling and failure rollback remain separate work. Server-backed copies across connections are explicitly refused rather than silently transferring samples or trusting matching endpoint addresses. Channel conversions and resampling likewise require explicit domain operations; insertion preserves a source rate through the existing parts ratio, while mixing requires matching rates.
 
 The host mirrors typed publication as text and remembers the observed platform value. An unchanged mirror preserves the typed payload; newly observed external text is always text, including text that resembles clipboard JSON. Remote publication ownership is reconciled on the next application clipboard action rather than by background polling. This can retain one unused publication per endpoint until the next action or endpoint disposal; a pending reader can additionally retain a replaced publication until completion. A browser host uses the same policy without acquiring platform clipboard access.
+
+
+## An audio action is a run of effects and awaits in the shared core (2026-10-21)
+
+Each client used to decide what an audio editor's action led to: which
+playback verb follows a focus change, when the meter is read, when a copy is
+published and its cut committed, when freed takes are released. The two
+clients drifted in exactly those places, and a fix in one (the meter read
+before the playback was told the file viewed) had to be made twice.
+
+The order now lives in one coordinator per audio member
+(`clausters_apps::editing::audio_session`), which owns that member's
+playback. A trait the clients implement would have put the order back in
+each binding's callback plumbing, and Python answers synchronously while a
+page cannot: so an action is a **run** that answers its effects in order and
+stops on an **await** for what only the client can do (steps on the server,
+whether the transport rolls, a file read, an operation's batch, a history
+step, a clipboard publication), resumed with the result. A failed await
+unwinds through the cleanups and handlers the run passed, as an exception
+would, and the client raises what failed, so a client never decides what a
+failure means.
+
+The order is Python's, because Python was the reference. Two consequences
+for the web client follow from keeping it. The effects a run decided before
+its first await are carried out at once, so what the page owes synchronously
+(whether the take changed, a refusal's reason, the layers it shows) is there
+when a setter returns; the rest waits in the page's queued work. And work a
+run's await sets off (the restore a history step needs, the store a release
+asks for) is carried out inside that await, before the run resumes, where
+queueing it behind the run would answer the window before the take it reads
+was stitched. A trace both client suites replay against
+`audio-trace-vectors.json` is what keeps the two from drifting again.

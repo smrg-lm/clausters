@@ -1295,3 +1295,67 @@ test("closing a file keeps the meter and corrects only what is drawn", async () 
         SoundFile.open = originalOpen;
     }
 });
+
+test("the shared trace is what the coordinator answers this page", async () => {
+    const { readFileSync } = await import("node:fs");
+    const expected = (JSON.parse(readFileSync(new URL("./audio-trace-vectors.json", import.meta.url), "utf8")) as {
+        trace: [string, string[]][];
+    }).trace;
+    const originalRead = SoundFile.prototype.toBuffer;
+    const originalOpen = SoundFile.open;
+    SoundFile.prototype.toBuffer = async function({ server } = {}) {
+        const endpoint = server as unknown as FakeServer;
+        return { bufnum: endpoint.buffers.alloc(), frames: this.frames, channels: this.channels,
+            sampleRate: this.sampleRate, server: endpoint, path: this.path } as never;
+    };
+    SoundFile.open = async (path: string) => new SoundFile(path, 200, 2, SR);
+    try {
+        const take = new FakeBuffer(100, 1);
+        const editor = new AudioEditor(take as never, { sampleRate: SR, context: new Editing() });
+        await settle();
+        const trace: [string, string[]][] = [];
+        const inner = editor as unknown as {
+            effect(entry: Record<string, unknown>, held?: unknown): Promise<void>;
+            answerAwait(entry: Record<string, unknown>): Promise<Record<string, unknown>>;
+        };
+        const effect = inner.effect.bind(editor);
+        const wait = inner.answerAwait.bind(editor);
+        inner.effect = (entry, held) => {
+            trace.at(-1)![1].push(String(entry.kind));
+            return effect(entry, held);
+        };
+        inner.answerAwait = (entry) => {
+            trace.at(-1)![1].push(`await:${String(entry.kind)}` + (entry.via !== undefined ? `:${String(entry.via)}` : ""));
+            return wait(entry);
+        };
+        const host = new FakeHost();
+        const step = async (name: string, act: () => unknown) => {
+            trace.push([name, []]);
+            await act();
+            await settle();
+        };
+        await step("open", () => editor.open(host as unknown as GuiHost));
+        const window = Number((editor as unknown as { windowId: number }).windowId);
+        await step("space bar, stopped", () => editor.apply("/gui_event", [window, 1, 0, "play", 0]));
+        take.server.playing = true;
+        await step("space bar, rolling", () => editor.apply("/gui_event", [window, 2, 0, "play", 0]));
+        take.server.playing = false;
+        const driver = (editor.transport as unknown as { driver: { setSpan(s: [number, number]): Promise<void>; setLooping(on: boolean): Promise<void> } }).driver;
+        await step("span", () => driver.setSpan([10 / SR, 40 / SR]));
+        await step("loop", () => driver.setLooping(true));
+        const wid = Number(picture(host.trees.at(-1)).id);
+        await step("cut", () => editor.apply("/gui_event", [wid, 3, (editor as unknown as { editing: Editing }).editing.version, "cut", 10.0, 20.0]));
+        await step("undo from the window", () => editor.apply("/gui_event", [window, 4, 0, "undo"]));
+        await step("save", () => editor.save({ path: "/takes/a.wav" }));
+        await step("open a file", () => editor.openFile(["/takes/b.wav"]));
+        await step("focus the first", () => editor.focusFile(0));
+        await step("close the focused", () => editor.closeFile());
+        await step("both views", () => editor.viewBoth());
+        await step("close", () => editor.close());
+        assert.deepEqual(trace, expected,
+            "the two clients drive the coordinator differently (or regenerate gen-audio-trace-vectors.py)");
+    } finally {
+        SoundFile.prototype.toBuffer = originalRead;
+        SoundFile.open = originalOpen;
+    }
+});

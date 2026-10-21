@@ -113,6 +113,8 @@ pub trait Turned: Default {
     fn confirm(&mut self, version: i64);
     /// Consume the correction answer after an aborted operation.
     fn take_answer(&mut self) -> Option<Answer>;
+    /// The stamp of the gesture the answer acknowledges, when it has one.
+    fn receipt(&self) -> Option<i64>;
     /// Whether its holder closes the window ([`crate::closing`]).
     fn set_close(&mut self, close: bool);
 }
@@ -145,6 +147,15 @@ macro_rules! turned {
             }
             fn take_answer(&mut self) -> Option<clausters_editing::conversation::Answer> {
                 self.answer.take()
+            }
+            fn receipt(&self) -> Option<i64> {
+                match self.answer {
+                    Some(
+                        clausters_editing::conversation::Answer::Ack { seq, .. }
+                        | clausters_editing::conversation::Answer::Push { seq, .. },
+                    ) => Some(seq),
+                    _ => None,
+                }
             }
             fn confirm(&mut self, version: i64) {
                 self.version = version;

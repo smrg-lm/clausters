@@ -61,6 +61,14 @@ pub struct Repair<O> {
     pub returned: Vec<i64>,
 }
 impl<O> Repair<O> {
+    /// The original gesture's answer, carrying the repair's reason.
+    pub fn echo(&self, version: i64) -> Option<Value> {
+        self.receipt.map(|(member, seq)| {
+            json!({"member": member, "answer": clausters_editing::conversation::answer(
+                seq, version, Some(self.reason.clone()), Vec::new())})
+        })
+    }
+
     /// Serialize existing steps only at the executor boundary.
     pub fn response(&self, resources: &Resources, version: i64) -> Value {
         let recoveries = self
@@ -185,6 +193,93 @@ impl<C, O> Runtime<C, O> {
         completion
     }
 
+    /// **A turn its application refused at confirmation**: the recovery its
+    /// abort answered is kept as a repair of the operation's target, and the
+    /// gesture is answered once recovery settles.
+    pub fn refuse_turn(
+        &mut self,
+        ticket: Ticket,
+        failure: IoResult,
+        completion: Completion<O>,
+        resources: &Resources,
+        version: i64,
+    ) -> Value
+    where
+        O: crate::turn::Turned,
+    {
+        let reason = match failure {
+            IoResult::Failed(reason) => reason,
+            IoResult::Cancelled => "the operation was cancelled".into(),
+            IoResult::Success => "the object changed before confirmation".into(),
+        };
+        let target = ticket.target;
+        let repair = Repair {
+            ticket,
+            batches: vec![Batch {
+                member: target.member,
+                server: target.server,
+                steps: completion.recovery,
+            }],
+            reason,
+            receipt: completion.outcome.receipt().map(|seq| (target.member, seq)),
+            outcome: completion.outcome,
+            returned: completion.returned,
+        };
+        self.repair(repair, resources, version)
+    }
+
+    /// **A history step refused**: every participant's recovery is kept as
+    /// one repair, the objects it locked stay locked until it settles, and
+    /// the target's correction is what its window is answered with.
+    pub fn refuse_walk(
+        &mut self,
+        ticket: Ticket,
+        locked: Vec<super::operations::Target>,
+        receipt: Option<(u32, i64)>,
+        refused: super::walks::Refused,
+        resources: &Resources,
+        version: i64,
+    ) -> Value
+    where
+        O: crate::turn::Turned,
+    {
+        let mut outcome = O::default();
+        if let Some((_, answer)) = refused
+            .corrections
+            .into_iter()
+            .find(|(member, _)| *member == ticket.target.member)
+        {
+            outcome.set_answer(answer);
+        }
+        self.operations.begin_abort(ticket, locked);
+        let repair = Repair {
+            ticket,
+            batches: refused.recoveries,
+            reason: refused.reason,
+            outcome,
+            receipt,
+            returned: Vec::new(),
+        };
+        self.repair(repair, resources, version)
+    }
+
+    /// **A history step confirmed**: the operation's pending ownership is
+    /// let go, and its gesture is answered with the step's reason, if any.
+    pub fn finish_walk(
+        &mut self,
+        resources: &mut Resources,
+        ticket: Ticket,
+        receipt: Option<(u32, i64)>,
+        reason: Option<String>,
+        version: i64,
+    ) -> Option<Value> {
+        Operations::<C>::release(resources, ticket);
+        receipt.map(|(member, seq)| {
+            json!({"member": member, "answer": clausters_editing::conversation::answer(
+                seq, version, reason, Vec::new())})
+        })
+    }
+
     /// Store an explicit recovery plan, retaining the operation's pending root.
     pub fn repair(&mut self, repair: Repair<O>, resources: &Resources, version: i64) -> Value {
         let response = repair.response(resources, version);
@@ -292,8 +387,8 @@ impl<C, O> Runtime<C, O> {
                     return Dispatch::Response(json!({"accepted":false}));
                 }
                 repair.reason = format!("{}; recovery is pending: {}", repair.reason, reason);
-                let echo = repair.receipt.take().map(|(member, seq)| json!({"member":member,
-                    "answer":clausters_editing::conversation::answer(seq, version, Some(repair.reason.clone()), Vec::new())}));
+                let echo = repair.echo(version);
+                repair.receipt = None;
                 Dispatch::Response(
                     json!({"complete":true,"committed":false,"reason":repair.reason,"echo":echo,"version":version,"ticket":ticket}),
                 )

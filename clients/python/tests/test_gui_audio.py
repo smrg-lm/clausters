@@ -1184,3 +1184,64 @@ def test_closing_a_file_keeps_the_meter_and_corrects_only_what_is_drawn(monkeypa
     editor.open_file("/takes/c.wav")
     assert meters(host.trees[-1])
     assert host.absent == [], "nothing addressed to a widget the window does not draw"
+
+
+#: The shared trace both clients replay: the same actions, in the same order,
+#: must come back as the same effects and awaits from the coordinator.
+TRACE_VECTORS = __import__("pathlib").Path(__file__).resolve().parents[2] / "web" / "tests" / "audio-trace-vectors.json"
+
+
+def audio_trace(monkeypatch) -> list:
+    """**One script of actions over an audio editor**, and what each one came
+    to: the effect and await kinds the client carried out, in order. The web
+    client's twin runs the same script (`gui-audio.test.ts`)."""
+    from clausters import SoundFile
+    monkeypatch.setattr(SoundFile, "to_buffer", lambda file, *, server=None, **options:
+                        types.SimpleNamespace(bufnum=server.buffers.alloc(), frames=file.frames,
+                                              channels=file.channels, sample_rate=file.sample_rate,
+                                              server=server, path=file.path))
+    monkeypatch.setattr(SoundFile, "open", staticmethod(lambda path: SoundFile(str(path), 200, 2, SR)))
+    take = FakeBuffer(100, 1)
+    trace: list = []
+    editor = AudioEditor(take, context=Editing())
+    effect, wait = editor._effect, editor._await
+
+    def record_effect(entry, held):
+        trace[-1][1].append(entry["kind"])
+        return effect(entry, held)
+
+    def record_wait(entry):
+        trace[-1][1].append(f"await:{entry['kind']}" + (f":{entry['via']}" if "via" in entry else ""))
+        return wait(entry)
+
+    editor._effect, editor._await = record_effect, record_wait
+    host = FakeHost()
+
+    def step(name, act):
+        trace.append([name, []])
+        act()
+
+    step("open", lambda: editor.open(host))
+    window = int(editor._window)
+    step("space bar, stopped", lambda: editor.apply("/gui_event", [window, 1, 0, "play", 0]))
+    take.server.playing = True
+    step("space bar, rolling", lambda: editor.apply("/gui_event", [window, 2, 0, "play", 0]))
+    take.server.playing = False
+    step("span", lambda: editor._driver.set_span((10 / SR, 40 / SR)))
+    step("loop", lambda: editor._driver.set_looping(True))
+    wid = picture(host.trees[-1])["id"]
+    step("cut", lambda: editor.apply("/gui_event", [wid, 3, editor._editing.version, "cut", 10.0, 20.0]))
+    step("undo from the window", lambda: editor.apply("/gui_event", [window, 4, 0, "undo"]))
+    step("save", lambda: editor.save("/takes/a.wav"))
+    step("open a file", lambda: editor.open_file(["/takes/b.wav"]))
+    step("focus the first", lambda: editor.focus_file(0))
+    step("close the focused", lambda: editor.close_file())
+    step("both views", lambda: editor.view_both())
+    step("close", lambda: editor.close())
+    return trace
+
+
+def test_the_shared_trace_is_what_the_coordinator_answers_this_client(monkeypatch):
+    expected = json.loads(TRACE_VECTORS.read_text())["trace"]
+    assert audio_trace(monkeypatch) == expected, \
+        "regenerate with clients/web/tests/gen-audio-trace-vectors.py if the coordinator moved"

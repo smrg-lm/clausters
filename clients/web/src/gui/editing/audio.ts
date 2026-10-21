@@ -232,7 +232,7 @@ export class AudioDomain extends Domain<Buffer | null> {
     }
 
     executeOperation(_structure: unknown, prepared: Record<string, unknown>, complete: (result: Record<string, any>) => void): void {
-        this.after(async () => {
+        this.#queue(async () => {
             if (this.editor === null) throw new Error("the operation owner is absent");
             complete(await this.editor.operation(null, prepared));
         });
@@ -285,7 +285,7 @@ export class AudioDomain extends Domain<Buffer | null> {
     store(_structure: unknown, buffer: number, steps: unknown[], operation?: Record<string, unknown>): void {
         const editor = this.editor;
         if (editor === null) return;
-        this.#work = this.#work.then(async () => {
+        this.#queue(async () => {
             editor.checkServer();
             try {
                 if (operation !== undefined) await editor.operation(null, operation);
@@ -310,11 +310,50 @@ export class AudioDomain extends Domain<Buffer | null> {
      * waits for, since it asks the window to read a join the steps replace.
      */
     after(then: () => void | Promise<void>): void {
-        this.#queue(async () => then());
+        this.#work = this.#work.catch(() => {}).then(async () => then());
+        void this.#work.catch(() => {});
     }
 
-    /** One piece of work after the last, and a failure reported rather than swallowed. */
+    /**
+     * The work a run's await sets off, carried out in order now rather than
+     * after the run: a history step that restores a take, a release that
+     * stores one. Set while {@link inline} runs.
+     */
+    #inline: Promise<void> | null = null;
+
+    /**
+     * **Run `body`, and the work it sets off, before going on**: a run waiting
+     * on a history step or a release resumes once the takes it restored or
+     * stored have landed, as it does where those calls return when done.
+     *
+     * @internal
+     */
+    async inline<T>(body: () => T): Promise<T> {
+        const previous = this.#inline;
+        this.#inline = Promise.resolve();
+        try {
+            const result = body();
+            let landed: Promise<void> | null;
+            do {
+                landed = this.#inline;
+                await landed;
+            } while (landed !== this.#inline);
+            return result;
+        } finally {
+            this.#inline = previous;
+        }
+    }
+
+    /**
+     * One piece of the domain's work after the last -- inside a run's await,
+     * after the last piece that await set off -- and a failure reported rather
+     * than swallowed.
+     */
     #queue(run: () => Promise<void>): void {
+        if (this.#inline !== null) {
+            this.#inline = this.#inline.then(run);
+            return;
+        }
         this.#work = this.#work.catch(() => {}).then(run);
         void this.#work.catch(() => {});
     }
@@ -761,7 +800,10 @@ export class AudioEditor extends Editor<Buffer | null> {
                 await this.editing.executeBatch(Number(request.member), request.server, request.steps ?? []);
                 return {};
             case "stepped":
-                return { changed: this.app.stepped(this.editing, request.stepped ?? {}, this) };
+                return {
+                    changed: await (this.domain as AudioDomain).inline(
+                        () => this.app.stepped(this.editing, request.stepped ?? {}, this)),
+                };
             case "clipboard":
                 this.clipboard(String(request.document), Number(request.buffer), request.ready === true);
                 return {};
@@ -839,7 +881,8 @@ export class AudioEditor extends Editor<Buffer | null> {
                 await (this.domain as AudioDomain).cleanup((effect.buffers ?? []) as number[]);
                 break;
             case "release":
-                this.editing.release(effect.freed as never, effect.stored as never);
+                await (this.domain as AudioDomain).inline(
+                    () => this.editing.release(effect.freed as never, effect.stored as never));
                 break;
             case "returned":
                 this.editing.operationReturned(effect.returned as never);

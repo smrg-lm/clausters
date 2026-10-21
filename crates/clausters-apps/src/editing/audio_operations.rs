@@ -1,6 +1,6 @@
 //! Boundary decoding for the typed audio lifecycle. No recursive dispatch.
 use super::*;
-use crate::application::runtime::{Control, Dispatch, PendingWalk, Repair};
+use crate::application::runtime::{Control, Dispatch, PendingWalk};
 use crate::application::{
     operations::{Result as OperationResult, Ticket},
     services::Application,
@@ -272,8 +272,7 @@ impl Editing {
             Dispatch::Response(response) => response,
             Dispatch::Repaired(repair) => {
                 let (freed, stored) = self.release_with_storage(false);
-                let echo = repair.receipt.map(|(member, seq)| json!({"member":member,
-                    "answer":clausters_editing::conversation::answer(seq, self.version, Some(repair.reason.clone()), Vec::new())}));
+                let echo = repair.echo(self.version);
                 json!({"complete":true,"committed":false,"repaired":true,"outcome":repair.outcome,"echo":echo,"returned":{"member":repair.ticket.target.member,"server":repair.ticket.target.server,"buffers":repair.returned},
                     "reason":repair.reason,"freed":freed,"stored":stored,"version":self.version})
             }
@@ -302,34 +301,16 @@ impl Editing {
             finished,
             &mut self.version,
         );
-        let mut outcome = completion.outcome;
         if !completion.committed {
-            let reason = match failure {
-                OperationResult::Failed(reason) => reason,
-                OperationResult::Cancelled => "the operation was cancelled".into(),
-                OperationResult::Success => "the object changed before confirmation".into(),
-            };
-            let repair = Repair {
+            return self.audio_runtime.refuse_turn(
                 ticket,
-                batches: vec![crate::application::operations::Batch {
-                    member: target.member,
-                    server: target.server,
-                    steps: completion.recovery,
-                }],
-                reason,
-                receipt: match outcome.answer {
-                    Some(Answer::Ack { seq, .. } | Answer::Push { seq, .. }) => {
-                        Some((target.member, seq))
-                    }
-                    _ => None,
-                },
-                outcome,
-                returned: completion.returned,
-            };
-            return self
-                .audio_runtime
-                .repair(repair, &self.services.resources, self.version);
+                failure,
+                completion,
+                &self.services.resources,
+                self.version,
+            );
         }
+        let mut outcome = completion.outcome;
         let recovery = if self.services.resources.valid(target.server) {
             steps_json(&completion.recovery)
         } else {
@@ -459,33 +440,18 @@ impl Editing {
         walk: PendingWalk<audio::operations::Commit>,
     ) -> Value {
         let decision = crate::application::walks::finish(self, finished, walk);
-        let ticket = decision.ticket;
-        let receipt = decision.receipt;
+        let (ticket, receipt) = (decision.ticket, decision.receipt);
         let mut stepped = match decision.result {
             Ok(stepped) => stepped,
-            Err(refusal) => {
-                let outcome = audio::Outcome {
-                    answer: refusal
-                        .corrections
-                        .into_iter()
-                        .find(|(member, _)| *member == ticket.target.member)
-                        .map(|(_, answer)| answer),
-                    ..Default::default()
-                };
-                self.audio_runtime
-                    .operations
-                    .begin_abort(ticket, decision.additional_targets);
-                let repair = Repair {
+            Err(refused) => {
+                return self.audio_runtime.refuse_walk(
                     ticket,
-                    batches: refusal.recoveries,
-                    reason: refusal.reason,
-                    outcome,
+                    decision.additional_targets,
                     receipt,
-                    returned: Vec::new(),
-                };
-                return self
-                    .audio_runtime
-                    .repair(repair, &self.services.resources, self.version);
+                    refused,
+                    &self.services.resources,
+                    self.version,
+                );
             }
         };
         for effect in &mut stepped.effects {
@@ -493,17 +459,18 @@ impl Editing {
                 *steps = json!([]);
             }
         }
-        crate::application::operations::Operations::<audio::operations::Commit>::release(
+        let echo = self.audio_runtime.finish_walk(
             &mut self.services.resources,
             ticket,
+            receipt,
+            stepped.reason.clone(),
+            self.version,
         );
         let mut freed = std::mem::take(&mut stepped.freed);
         let mut stored = std::mem::take(&mut stepped.stored);
         let (more_freed, more_stored) = self.release_with_storage(stepped.stepped);
         freed.extend(more_freed);
         stored.extend(more_stored);
-        let echo = receipt.map(|(member, seq)| json!({"member":member,
-            "answer":clausters_editing::conversation::answer(seq, self.version, stepped.reason.clone(), Vec::new())}));
         json!({"complete":true,"committed":stepped.stepped,"stepped":stepped,"echo":echo,"recoveries":[],"freed":freed,"stored":stored,"version":self.version})
     }
 

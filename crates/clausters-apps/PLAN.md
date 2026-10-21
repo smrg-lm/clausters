@@ -2648,13 +2648,18 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     transport corrections; playback updates and the preview; play, pass,
     follow and cue; new and opened files; clipboard publication and the cut
     continuation; the operation loop with repair; the transport verbs.
-  - ⬜ Both clients interpret the vocabulary and nothing else: sockets,
+  - ✅ Both clients interpret the vocabulary and nothing else: sockets,
     awaiting, reading a `SoundFile`, the language objects. Each records the
     effects it performs, and a trace the Rust tests write is replayed by
-    both client suites against the same order. Both clients interpret it
-    (2026-10-21); the shared traces are open.
-  - ⬜ Common repair construction and finish/walk finalization move into
-    `application::runtime`, beside `walks::finish`.
+    both client suites against the same order
+    (`clients/web/tests/audio-trace-vectors.json`, written by the Python
+    client's run of the script). The trace found the web client answering a
+    window undo before the restore it reads had landed.
+  - ✅ Common repair construction and finish/walk finalization move into
+    `application::runtime`, beside `walks::finish`: `refuse_turn`,
+    `refuse_walk`, `finish_walk` and `Repair::echo`.
+  - ⬜ Native and browser eye and ear pass over the `edit_audio` pair: play,
+    stop, loop, files opened and closed, cut, paste and undo, save.
 
 - ⬜ **X23 - Define activity, subscriptions and invalidation.** After
   `X22`, connect application activity to existing host demand/tick machinery.

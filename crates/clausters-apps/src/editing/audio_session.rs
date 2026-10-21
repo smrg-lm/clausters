@@ -1988,4 +1988,79 @@ mod tests {
         assert_eq!(state["span"], json!([0.0, 0.001]));
         assert_eq!(state["looping"], true);
     }
+
+    fn last(trace: &[String], kind: &str) -> usize {
+        trace
+            .iter()
+            .rposition(|k| k == kind)
+            .unwrap_or_else(|| panic!("no {kind} in {trace:?}"))
+    }
+
+    #[test]
+    fn the_answer_that_reloads_the_join_follows_the_steps_that_make_it() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        client.trace.clear();
+        let version = editing.version();
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "event", "addr": "/gui_event",
+                "args": [12, 1, version, "cut", 10.0, 20.0], "window": true}),
+        );
+        let trace = &client.trace;
+        assert!(
+            last(trace, "await:batch") < last(trace, "echo"),
+            "{trace:?}"
+        );
+    }
+
+    #[test]
+    fn the_preview_is_handed_back_after_the_window_is_drawn_again() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        client.effects.clear();
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "verb", "call": {"verb": "view_both"}, "window": true}),
+        );
+        let publish = client
+            .effects
+            .iter()
+            .position(|e| e["kind"] == "publish")
+            .expect("a redraw");
+        let preview = client
+            .effects
+            .iter()
+            .position(|e| e["kind"] == "set" && e["props"].get("preview_buffer").is_some())
+            .expect("the preview handed back");
+        assert!(publish < preview, "{:?}", client.effects);
+    }
+
+    #[test]
+    fn a_closed_file_s_takes_are_released_after_its_join_stops_reading_them() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "openFile", "paths": ["/takes/b.wav"], "window": true}),
+        );
+        client.trace.clear();
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "verb", "call": {"verb": "close_file"}, "window": true}),
+        );
+        let trace = &client.trace;
+        // the playback lets the file go before its buffers are freed
+        assert!(
+            position(trace, "await:steps") < position(trace, "free"),
+            "{trace:?}"
+        );
+    }
 }
