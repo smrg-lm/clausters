@@ -2965,6 +2965,56 @@ where it came from).
   whether the verbs are buttons the core's generator adds to the GuiDef or the
   window's own verbs, in its key table and menu like an application's.
 
+- ⬜ **A buffer position wider than a signal** *(named 2026-10-21, after
+  fixing "A long take distorts more the further it plays", Found by use)*.
+  A signal between UGens is an `f32` buffer, which counts single frames only
+  up to 2^24 (about 5.8 minutes at 48 kHz) and in steps of 2, 4 and 8 after
+  that. The transport itself is already 64-bit (`TransportCtx::position` is
+  a `u64`); what is narrow is the wire. A buffer index carried on that wire
+  repeats and drops frames past that point, which is how a half-hour take
+  came to distort. The fix that shipped is `TransportBufRd`, a reader that
+  works the phase out in `f64` from the transport's position inside one
+  UGen. It covers the transport case and nothing else: **`Phasor` into
+  `BufRd` and `Phasor` into `BufWr` keep the limit**, so a buffer read or
+  recorded through a phase signal past 2^24 frames still repeats or
+  overwrites frames, and `TransportBufRd` is a catalog entry that only
+  exists because the wire is narrow. Two ways to remove the limit itself:
+
+  1. **Every signal in `f64`.** The engine's buffers, buses and UGen I/O
+     double in width. It removes the limit everywhere at once, and it is a
+     rewrite of the engine rather than a change to it: every UGen's
+     `process`, the bus pool and the shared-memory segment's layout (an
+     `ABI_VERSION` bump), the taps and streams the clients read, the Faust
+     and plugin bridges that hand `f32` blocks in and out, and the
+     no-allocation and golden tests. It doubles the memory bandwidth of
+     every block for a precision almost no signal needs: audio is well
+     inside `f32`, and only positions are not.
+  2. **Position edges in `f64`, only where a position flows.** The graph
+     compiler gives a UGen output a second, double-precision kind of wire,
+     declared in the catalog per input and output: `TransportPos` and
+     `Phasor` produce it, and the `phase` input of `BufRd` and `BufWr` (and
+     any later reader that indexes a buffer) consume it. An ordinary input
+     reading a position edge, or a position input reading an ordinary
+     signal, converts at the edge, so existing defs and both clients'
+     builders are unchanged on the wire. What it touches: the descriptor
+     table (a kind per input and output), the def compiler's edge
+     allocation and wire buffers (a second pool, of `f64`), the few UGens on
+     either end, `/ugen_query` (so the clients see the kind), and Faust and
+     plugin nodes not at all, since a position never crosses into them.
+     Arithmetic between a position and an offset (`Add`, `Sub`, `Mul` by a
+     rate) has to stay on the wide wire for the chain to keep its
+     precision, so the binary operators accept a position on either side
+     and produce one; that is the part that needs the most care.
+
+  **Recommendation: option 2.** It removes the limit where it exists, for
+  every reader and writer and not only the transport's, at a cost confined
+  to the compiler and a handful of UGens, and it leaves the audio path's
+  width alone. Once it lands, `TransportPos` into `BufRd` is exact again,
+  and `TransportBufRd` can be removed in favour of that chain (the audio
+  editor's and the multitrack's readers go back to it, and the decision
+  note beside the `TransportPos` record in `docs/decisions.md` is updated).
+  Option 1 is recorded so it is not proposed again without its cost.
+
 ## Found by use: the running list of fixes
 
 - ✅ **The embedded engine runs without the SIGXCPU guard** *(found
@@ -4500,7 +4550,9 @@ should confirm before the fix.
   where to check.
   *(Fixed 2026-10-21: the suspicion was right. The phase crossed from
   `TransportPos` to `BufRd` as an `f32` signal; `TransportBufRd` keeps it in
-  `f64` and the audio editor's and multitrack's readers use it.)*
+  `f64` and the audio editor's and multitrack's readers use it. `Phasor`
+  into `BufRd` or `BufWr` keeps the limit; removing it for every reader is
+  "A buffer position wider than a signal", Future directions.)*
 - ✅ **An automatic profiler for the server** (2026-10-21, the user, after
   the audio editor's review). A run that measures, without someone watching,
   where the server's time goes: blocks and their cost per node and per

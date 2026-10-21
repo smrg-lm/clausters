@@ -354,7 +354,9 @@ Named, not enumerated: each is written where it belongs and is read there.
   pre- or post-fader sends, tracks wider than stereo and a silent track that
   costs nothing; MIDI 2.0 from outside the server; a GraphDef that carries
   its buffers; plugin formats and platforms after the Linux reference host;
-  a generic editor that carries the node's own verbs), the GUI's (a steady
+  a generic editor that carries the node's own verbs; a buffer position
+  wider than a signal, which `Phasor` into `BufRd` and `BufWr` still needs),
+  the GUI's (a steady
   goniometer; a Tauri wrapper, only a possibility; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
   that could make tracks), the web client's (type-safe GuiDef/def schemas, a
