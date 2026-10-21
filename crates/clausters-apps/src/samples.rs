@@ -93,7 +93,13 @@ pub struct Window<'a> {
     /// numbered with, drawn under the take's lane on the same axis. `None`
     /// is the one lane, showing whichever view `layers` is.
     pub lane: Option<i32>,
+    /// **No file is open**: the window keeps its chrome and its dialogs, and
+    /// where the take would be it says how to open one.
+    pub empty: bool,
 }
+
+/// What a window with no file open says where the take would be.
+pub const NO_FILE: &str = "No file is open. File > New file... or File > Open file...";
 
 /// **Where the level meter is read from**, and the id it is drawn under: the
 /// first of the control buses the playback's meter writes, one per channel of
@@ -114,6 +120,13 @@ pub struct MeterAt {
 /// script's own widgets are not composed here, for the multitrack's reason: they
 /// are the client's objects, and a client appends them.
 pub fn window(w: &Window<'_>) -> Value {
+    if w.empty {
+        return dressed(
+            w,
+            vec![json!({"type": "label", "id": w.widget, "text": NO_FILE,
+                "align": "center", "weight": 1.0})],
+        );
+    }
     let mut picture = catalogue::waveform(&Waveform {
         buffer: Some(w.buffer),
         channels: Some(w.channels.max(1)),
@@ -209,6 +222,11 @@ pub fn window(w: &Window<'_>) -> Value {
     } else {
         children
     };
+    dressed(w, body)
+}
+
+/// The window around `body`: its keys and verbs, its chrome and its dialogs.
+fn dressed(w: &Window<'_>, body: Vec<Value>) -> Value {
     let mut window = json!({
         "type": "window",
         "title": w.title,
@@ -295,6 +313,7 @@ mod tests {
             dialogs: None,
             folded: &[],
             lane: None,
+            empty: false,
         })
     }
 

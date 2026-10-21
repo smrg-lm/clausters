@@ -1026,7 +1026,8 @@ fn a_redrawn_window_keeps_the_form_up_and_a_closed_one_drops_it() {
 }
 
 /// **File > Close file names the file in focus by its identity**, which
-/// `close_file` reads -- not by the buffer its join is drawn in.
+/// `close_file` reads -- not by the buffer its join is drawn in. Closing the
+/// last file leaves the editor open with none.
 #[test]
 fn the_close_file_entry_names_the_focused_file_by_its_identity() {
     let mut editor = opened(1);
@@ -1038,10 +1039,115 @@ fn the_close_file_entry_names_the_focused_file_by_its_identity() {
         json!({"verb": "close_file", "file": action["file"]}),
     );
     assert!(closed.get("error").is_none(), "{closed}");
-    assert_eq!(
-        closed["close"], true,
-        "the only file closed closes the window"
+    assert_eq!(closed["empty"], true);
+    assert!(closed.get("close").is_none(), "the window is not closed");
+    assert!(closed["binding"].is_null());
+    assert_eq!(closed["restructure"], true, "drawn again, empty");
+}
+
+/// **An editor with no file open** is the application on its own: its window
+/// keeps the menu bar, the file list and the dialogs and says how to open a
+/// file where the take would be; the window's own verbs are answered and
+/// every verb that acts on a file is refused, saying why.
+#[test]
+fn an_editor_opens_with_no_file_and_answers_only_the_window_s_verbs() {
+    let mut editor = new_json(r#"{"empty":true,"display":9,"window":900}"#).unwrap();
+    let names = call(&mut editor, json!({"verb": "dialogs"}))["dialogs"].clone();
+    let ids: BTreeMap<String, i64> = names
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str().unwrap().to_string(), 400 + i as i64))
+        .collect();
+    let tree = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "filesWidget": 20, "dialogs": ids}),
     );
+    let placeholder = widget_in(&tree, 12).expect("the take's place");
+    assert_eq!(placeholder["type"], "label");
+    assert_eq!(placeholder["text"], crate::samples::NO_FILE);
+    assert!(tree["menu"].is_array(), "the menu bar stays");
+    assert!(widget_in(&tree, 20).is_some(), "the file list stays");
+    assert!(
+        widget_in(&tree, ids["open:path"]).is_some(),
+        "the dialogs stay"
+    );
+    assert!(!tree.to_string().contains("\"signal\""), "no take is drawn");
+
+    assert_eq!(
+        call(&mut editor, json!({"verb": "binding"})),
+        json!({"empty": true})
+    );
+    assert_eq!(
+        call(&mut editor, json!({"verb": "file"})),
+        json!({"empty": true})
+    );
+    assert_eq!(
+        call(&mut editor, json!({"verb": "playback"}))["active"],
+        false
+    );
+    assert_eq!(
+        call(&mut editor, json!({"verb": "open"}))["steps"],
+        json!([])
+    );
+    assert_eq!(
+        call(&mut editor, json!({"verb": "files"}))["files"],
+        json!([])
+    );
+    for verb in ["parts", "save", "span", "play", "view_wave", "envelope"] {
+        assert_eq!(
+            call(&mut editor, json!({"verb": verb}))["error"],
+            NO_FILE_OPEN,
+            "{verb}"
+        );
+    }
+
+    let saved = event(&mut editor, json!([900, 1, 0, "save"]));
+    assert_eq!(saved["answer"]["reason"], NO_FILE_OPEN);
+    let shown = event(&mut editor, json!([900, 2, 0, "open_file"]));
+    assert_eq!(corrections_of(&shown, ids["stack"]), json!({"index": 3}));
+    let picked = event(
+        &mut editor,
+        json!([ids["open:path"], 3, 0, "pick", "/a.wav"]),
+    );
+    assert_eq!(picked["openFile"], json!({"paths": ["/a.wav"]}));
+
+    let actions = editor.actions(1, ServerInstance::default(), false, false, false);
+    for verb in ["new_file", "open_file", "close", "keys", "toggle_files"] {
+        assert!(actions[verb].enabled, "{verb}");
+    }
+    for verb in ["save", "cut", "close_file", "play"] {
+        assert_eq!(
+            actions[verb].reason.as_deref(),
+            Some(NO_FILE_OPEN),
+            "{verb}"
+        );
+    }
+}
+
+/// **The first file added to an empty editor** is the one in focus, and the
+/// window draws it.
+#[test]
+fn a_file_added_to_an_empty_editor_comes_into_focus() {
+    let mut editor = new_json(r#"{"empty":true,"display":9,"window":900}"#).unwrap();
+    call(&mut editor, json!({"verb": "window", "widget": 12}));
+    let added = call(
+        &mut editor,
+        json!({"verb": "add_file", "take": 50, "frames": 200, "channels": 1,
+               "rate": 48000, "display": 51, "buffers": [52, 53], "path": "/a.wav"}),
+    );
+    assert!(added.get("error").is_none(), "{added}");
+    assert_eq!(added["binding"]["display"], 51);
+    let files = call(&mut editor, json!({"verb": "files"}))["files"].clone();
+    assert_eq!(files.as_array().unwrap().len(), 1);
+    let tree = call(&mut editor, json!({"verb": "window", "widget": 12}));
+    assert_ne!(
+        widget_in(&tree, 12).unwrap()["type"],
+        "label",
+        "the take is drawn"
+    );
+    assert_eq!(call(&mut editor, json!({"verb": "parts"}))["frames"], 200);
 }
 
 /// **A copy is made on the server**: the span is copied out of the join into

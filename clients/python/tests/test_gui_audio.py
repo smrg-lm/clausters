@@ -682,8 +682,9 @@ def test_files_share_one_handler_and_transport_but_keep_state_and_history(monkey
     editor.close_file()
     assert editor.file.path == "/takes/b.wav"
     editor.close_file()
-    assert editor.closed
+    assert not editor.closed, "closing the last file leaves the editor open"
     assert editor.files == ()
+    assert editor.file is None
 
 
 def test_playing_a_file_while_viewing_another_silences_the_viewed_meter(monkeypatch):
@@ -1095,3 +1096,32 @@ def test_envelope_visibility_changed_during_an_edit_survives_confirmation_and_hi
         assert pane(editor.draw())["hidden"] == ""
         assert editor.layer == "points"
     editor.close()
+
+
+def test_an_editor_opens_with_no_file_and_its_first_file_comes_into_focus(monkeypatch):
+    from clausters import SoundFile
+    server = FakeServer()
+    editor = AudioEditor(server=server, context=Editing())
+    host = FakeHost()
+    editor.open(host)
+    tree = host.trees[-1]
+    assert picture(tree)["type"] == "label", "where the take would be, how to open one"
+    assert "menu" in tree, "the window keeps its chrome"
+    assert editor.file is None and editor.files == ()
+    with pytest.raises(ValueError, match="no file is open"):
+        editor.parts
+    with pytest.raises(ValueError, match="no file is open"):
+        editor.save("/takes/x.wav")
+    monkeypatch.setattr(SoundFile, "to_buffer", lambda file, *, server=None, **options:
+                        types.SimpleNamespace(bufnum=server.buffers.alloc(), frames=file.frames,
+                                              channels=file.channels, sample_rate=file.sample_rate,
+                                              server=server, path=file.path))
+    monkeypatch.setattr(SoundFile, "open", staticmethod(lambda path: SoundFile(str(path), 200, 2, SR)))
+    editor.open_file("/takes/b.wav")
+    assert editor.file.path == "/takes/b.wav"
+    assert picture(host.trees[-1])["type"] == "signal", "the file is drawn"
+    assert len(editor.parts) == 1
+    editor.close_file()
+    assert not editor.closed
+    assert editor.file is None
+    assert picture(host.trees[-1])["type"] == "label", "drawn again, empty"

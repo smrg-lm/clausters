@@ -19,6 +19,12 @@ fn corrected(list: Vec<(i32, Value)>) -> Vec<Correction> {
 const FILE_MARK_W: f64 = 18.0;
 
 impl AudioEditor {
+    /// **Whether a file is open**: an editor may hold none, before its first
+    /// file is added and after its last one is closed.
+    pub fn has_file(&self) -> bool {
+        self.open_files.open
+    }
+
     /// The focused open object's stable identity, not its display buffer.
     pub fn focused_file(&self) -> i64 {
         self.file.id.0
@@ -46,11 +52,19 @@ impl AudioEditor {
     }
 
     pub(crate) fn playback_file(&self) -> Value {
+        // with no file open there is nothing to sound
+        if !self.open_files.open {
+            return json!({"active": false});
+        }
         json!({"id":self.file.id, "display":self.file.display, "channels":self.file.channels,
             "frames":self.length(), "rate":self.file.rate, "preview":self.preview_state(), "active":self.window_state.active})
     }
 
+    /// The file in focus as a client binds it, or `null` with no file open.
     pub(super) fn binding(&self) -> Value {
+        if !self.open_files.open {
+            return Value::Null;
+        }
         let (start, end) = self.file.presentation.selection.unwrap_or((0, 0));
         json!({"id": self.file.id, "generation": self.window_state.binding_generation,
             "display": self.file.display, "take": self.file.opened, "channels": self.file.channels,
@@ -465,6 +479,9 @@ impl AudioEditor {
     /// one not written yet, or a take saved into a buffer), its shape and its
     /// rate.
     pub fn file(&self) -> Value {
+        if !self.open_files.open {
+            return Value::Null;
+        }
         self.file.file()
     }
 }

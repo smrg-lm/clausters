@@ -731,6 +731,8 @@ impl Editing {
         };
         // Domain adapters supply object identity; order membership is generic.
         let object = match &seat.member {
+            // an editor with no file open has no order to focus
+            Member::Audio(editor) if !editor.has_file() => return,
             Member::Audio(editor) => editor.focused_file(),
             _ => 0,
         };
@@ -1555,7 +1557,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             if inner == "window" {
                 value["actions"] = editing.action_states(member);
             }
-            if value.get("binding").is_some() {
+            if value.get("binding").is_some_and(Value::is_object) {
                 value["binding"]["structure"] = json!(editing.structure(member));
                 value["binding"]["version"] = json!(editing.version);
             }
@@ -3289,9 +3291,96 @@ mod tests {
             &mut editing,
             json!({"verb": "member", "member": member, "call": {"verb": "close_file"}}),
         );
-        assert_eq!(closed["close"], true);
+        assert_eq!(closed["empty"], true, "the editor stays, with no file");
+        assert!(closed["binding"].is_null());
         assert_eq!(editing.services.histories.orders_len(), 1);
         assert_eq!(editing.services.histories.selected(), ScopeId(0));
+    }
+
+    /// **File > Close file closes the file in focus and no other**: with a
+    /// second file open, the window stays, showing the file left.
+    #[test]
+    fn the_close_file_entry_closes_only_the_focused_file() {
+        let mut editing = Editing::new();
+        let member = an_audio_take(&mut editing);
+        call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "sync", "window": 900}}),
+        );
+        call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "add_file",
+            "take": 50, "frames": 200, "channels": 1, "rate": 48000, "display": 51,
+            "buffers": [52, 53, 54], "untitled": true}}),
+        );
+        let version = editing.version();
+        let asked = call(
+            &mut editing,
+            json!({"verb": "event", "member": member, "addr": "/gui_event",
+                   "args": [900, 1, version, "close_file"]}),
+        );
+        let action = asked["outcome"]["fileAction"].clone();
+        let closed = call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": action["verb"], "file": action["file"]}}),
+        );
+        assert!(closed.get("error").is_none(), "{closed}");
+        assert_eq!(closed["empty"], false, "one file is left");
+        let files = call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "files"}}),
+        );
+        assert_eq!(files["files"].as_array().unwrap().len(), 1, "{files}");
+    }
+
+    /// **An audio editor opened with no file** has no order of its own and
+    /// nothing to undo; its first file comes into focus with an order of its
+    /// own, and closing it leaves the editor empty again with no order kept.
+    #[test]
+    fn an_audio_editor_opens_empty_and_returns_to_empty() {
+        let mut editing = Editing::new();
+        let opened = call(
+            &mut editing,
+            json!({"verb": "openAudio", "key": "audio:empty", "empty": true,
+                   "display": 9, "buffers": [20, 21]}),
+        );
+        let member = opened["member"].as_u64().unwrap() as MemberId;
+        let member_call = |editing: &mut Editing, inner: Value| {
+            call(
+                editing,
+                json!({"verb": "member", "member": member, "call": inner}),
+            )
+        };
+        member_call(&mut editing, json!({"verb": "window", "widget": 12}));
+        let orders = editing.services.histories.orders_len();
+        let bound = member_call(&mut editing, json!({"verb": "binding"}));
+        assert_eq!(bound["empty"], true, "{bound}");
+        assert_eq!(
+            call(&mut editing, json!({"verb": "state", "member": member}))["canUndo"],
+            false
+        );
+        let added = member_call(
+            &mut editing,
+            json!({"verb": "add_file", "take": 50, "frames": 200,
+            "channels": 1, "rate": 48000, "display": 51, "buffers": [52, 53], "untitled": true}),
+        );
+        assert_eq!(added["binding"]["display"], 51, "{added}");
+        let version = editing.version();
+        let drawn = call(
+            &mut editing,
+            json!({"verb": "event", "member": member, "addr": "/gui_event",
+                   "args": [12, 1, version, "draw", 0, 10, [0.5], [0.0]]}),
+        );
+        assert_eq!(drawn["outcome"]["changed"], true, "{drawn}");
+        assert!(editing.can_undo());
+        let closed = member_call(&mut editing, json!({"verb": "close_file"}));
+        assert_eq!(closed["empty"], true);
+        assert!(!editing.can_undo(), "nothing of the closed file is left");
+        assert_eq!(editing.services.histories.orders_len(), orders);
+        assert_eq!(
+            member_call(&mut editing, json!({"verb": "parts"}))["error"],
+            "no file is open"
+        );
     }
 
     #[test]

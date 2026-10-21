@@ -50,6 +50,10 @@ from .samples import MEASURES, SamplesView, _plain, measures
 _SPARE = 2
 
 
+#: Why a verb that acts on a file is refused by an editor with none open.
+_NO_FILE = "no file is open"
+
+
 class _AudioPlayback:
     """**What sounds one audio editor** -- the shared crate's playback, the
     steps it answers carried out on the editor's server.
@@ -306,8 +310,17 @@ class AudioEditor(Marking, Editor):
     ``None`` when nothing is marked. In an audio editor what is marked and
     the transport's `span` are one range, so setting either sets both.
 
+    **An editor with no file open** is the application on its own:
+    ``AudioEditor()`` opens one, and closing its last file leaves it so. Its
+    window keeps the menu bar and the file list and offers File -> New file
+    and File -> Open file; a verb that acts on a file raises `ValueError`
+    until one is added (`new_file`, `open_file`).
+
     Args:
         take: the `clausters.defs.Buffer` to edit. It is never written.
+            ``None`` opens the editor with no file.
+        server: the server an editor with no file opens on; the ambient one
+            when not given. An editor over a take uses the take's.
         sample_rate: the take's rate, when the handle does not know it.
         title: the window's title.
         layers: what the picture measures, innermost last.
@@ -327,21 +340,26 @@ class AudioEditor(Marking, Editor):
             loads a file and passes it here.
     """
 
-    def __init__(self, take, *, sample_rate: float = 0.0, title: str = "Audio",
+    def __init__(self, take=None, *, server=None, sample_rate: float = 0.0, title: str = "Audio",
                  layers=MEASURES, history_bytes: "int | None" = None,
                  resident_bytes: "int | None" = None,
                  scratch: "str | None" = None, file=None,
                  shared_history: bool = False, **options):
         #: The `clausters.SoundFile` the take was loaded from, when it was.
         self._file = file
+        empty = take is None
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
         view = SamplesView(layers)
         domain = AudioDomain()
+        if empty and options.get("context") is None:
+            # no data to reach a context through: the editor has its own
+            from ...history import Editing
+            options["context"] = Editing()
         super().__init__(take, sample_rate=rate, domain=domain, view=view,
                          title=title, **options)
         domain.editor = self
         #: The server the take is on, and every take this editor makes.
-        self._server = _resolve(getattr(take, "server", None))
+        self._server = _resolve(server if server is not None else getattr(take, "server", None))
         self._instance = _service_instance(self._server)
         #: The runner the steps are walked through.
         self._runner = _native.StepRunner()
@@ -350,17 +368,23 @@ class AudioEditor(Marking, Editor):
         # The context is the take's; switching files changes the structure,
         # so the window keeps the one it opened in.
         self._context = self._editing
+        if empty:
+            key = f"audio:{self._instance['connection']}:{self._instance['generation']}:empty:{self._display}"
+            request = {"empty": True}
+        else:
+            key = f"audio:{self._instance['connection']}:{self._instance['generation']}:{int(take.bufnum)}"
+            request = {"frames": int(getattr(take, "frames", 0) or 0),
+                       "take": int(take.bufnum),
+                       "path": getattr(take, "path", None),
+                       "untitled": self._file is not None and self._file.path is None,
+                       "codec": getattr(file, "codec", None),
+                       "sample_format": getattr(file, "sample_format", None)}
         self._member, self._structure_id = self._editing.open(
-            "openAudio", f"audio:{self._instance['connection']}:{self._instance['generation']}:{int(take.bufnum)}",
-            {**self._facts(), "frames": int(getattr(take, "frames", 0) or 0),
-             "take": int(take.bufnum), "display": self._display,
+            "openAudio", key,
+            {**self._facts(), **request, "display": self._display,
              "server": self._instance,
              "sharedHistory": bool(shared_history),
-             "path": getattr(take, "path", None),
-             "untitled": self._file is not None and self._file.path is None,
-             "codec": getattr(file, "codec", None),
-             "sample_format": getattr(file, "sample_format", None),
-             "layers": list(view.layers)}, take, domain)
+             "layers": list(view.layers)}, self if empty else take, domain)
         if history_bytes is not None:
             self._editing.limit_bytes(history_bytes)
         if resident_bytes is not None:
@@ -370,7 +394,8 @@ class AudioEditor(Marking, Editor):
             self._call("sync", scratch=str(scratch))
             self._editing.limit_resident(resident_bytes)
         self._top_up()
-        opened = self._operation({"kind": "open"})
+        if not empty:
+            self._operation({"kind": "open"})
         # **A private copy of the take**, and the join over it: the buffer the
         # editor was handed is written by a save and by nothing else.
 
@@ -621,10 +646,18 @@ class AudioEditor(Marking, Editor):
         """What a redo of the file in focus would be called."""
         return self._editing.state(self._member).get("redoLabel")
 
-    def _bind_file(self, binding: dict) -> None:
+    def _bind_file(self, binding) -> None:
         """**Bind the file in focus**: its buffers, its structure in the
-        history, and the cursor, selection, layers and loop switch it left."""
+        history, and the cursor, selection, layers and loop switch it left --
+        or, with ``None``, no file: the last one was closed."""
         from ...defs.buffer import Buffer
+        if binding is None:
+            self.structure = None
+            self.cursor = None
+            self.dirty = False
+            self._driver.span = None
+            self._driver._paused = False
+            return
         self._display = int(binding["display"])
         self.sample_rate = float(binding["rate"])
         self.structure = Buffer(int(binding["take"]), int(binding["frames"]),
@@ -674,6 +707,8 @@ class AudioEditor(Marking, Editor):
         self._check_server()
         answer = self._editing.member(self._member, verb, **args)
         self._publish_actions()
+        if answer.get("error") == _NO_FILE:
+            raise ValueError(_NO_FILE)
         return answer
 
     def _check_server(self):
@@ -888,7 +923,10 @@ class AudioEditor(Marking, Editor):
             if outcome.get("close"):
                 self.close()
                 return False
-            if outcome.get("focusChanged"):
+            if outcome.get("focusChanged") and outcome["binding"] is None:
+                # the last file closed: the editor stays, with none
+                self._bind_file(None)
+            elif outcome.get("focusChanged"):
                 self._bind_file(outcome["binding"])
                 self._sound(publish_preview=False)
                 # a pass in progress goes on: the window only looks elsewhere

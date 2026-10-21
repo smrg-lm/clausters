@@ -262,6 +262,17 @@ code that keeps it lives.
   the one left. A listing that comes back after the chooser moved on --
   climbed while a slow directory was read, opened again, drawn again --
   replaces nothing, even when it names the same directory.
+- **An application that opens files opens without one, and outlives its
+  last.** Where an application holds files or documents of its own -- opens,
+  adds and closes them -- it opens with none, its window keeping the menu bar,
+  the file list and the dialogs and saying where the contents would be that
+  nothing is open; closing the last file leaves it in that state, and only
+  closing the window closes it. With nothing open, the window's own verbs (New,
+  Open, Close, the keys, the file list) answer and every verb that acts on a
+  file is refused with `no file is open`. It does not apply to an editor over
+  a structure a client handed it, which has nothing to open: the notes and
+  points editors, a panel. The audio editor keeps it; the others that open
+  files are pending (`crates/clausters-apps/PLAN.md`, "Found by use").
 - **A window drawn again shows the dialog that was up**, its fields holding
   what was typed and its chooser where it was, with nothing selected; a
   window closed and opened again has none up (`forms::Dialogs`).

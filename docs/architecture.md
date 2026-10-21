@@ -2684,4 +2684,9 @@ shared forms mechanism (`forms::Spec::chooser`): the host's `files` element
 with `multiple` and the extensions a `SoundFile` reads, so its Ctrl/Shift
 selection is the table's own and a pick opens what is selected. All files of one editor share its
 playback and server transport; a switch stops it and locates it to the
-incoming file's cursor.
+incoming file's cursor. An editor may hold no file: opened with `empty`, or
+after its last file closes, it keeps no undo order and no sources, its window
+draws a label where the take would be, `binding` and `file` answer `empty`,
+and every verb that needs a file is refused before it reaches the file state
+(`call_json`, the window's verbs, view gestures and operation preparation).
+The clients unbind their structure and keep the window.

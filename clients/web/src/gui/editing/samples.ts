@@ -107,7 +107,7 @@ export class SamplesView extends View<Buffer> {
         this.layers = measures(layers);
     }
 
-    build(editor: Editor<Buffer>): GuiNode {
+    build(editor: Editor<Buffer | null>): GuiNode {
         const ed = editor as unknown as TakeWindow;
         const wid = this.register(ed.windowWidget("waveform"), editor.structure);
         // the window's own widgets keep their ids while the files change
@@ -133,7 +133,7 @@ export class SamplesView extends View<Buffer> {
         return tree;
     }
 
-    override props(editor: Editor<Buffer>, widgetId: number): Record<string, PropValue> {
+    override props(editor: Editor<Buffer | null>, widgetId: number): Record<string, PropValue> {
         return (editor as unknown as TakeWindow).coreCall("props", { widget: widgetId }) as Record<
             string,
             PropValue

@@ -82,7 +82,9 @@ takes the keyboard: Ctrl/Shift selects several files, and a double click or
 Enter on a file opens the selection as OK does. Cancel it and open it again:
 it is back in the last directory gone into, with nothing selected.
 The independent file list is on the left and View -&gt; Files hides or shows
-it. Each file keeps its cursor, selection and undo/redo history. A playing
+it. Each file keeps its cursor, selection and undo/redo history; closing the
+last one leaves the editor open with no file, and the <b>editor with no
+file</b> button opens a second editor that starts that way. A playing
 file continues while another is shown, with its playhead hidden there.
 Try File -&gt; New file with two and six channels, then switch back and forth
 while the original loops: the meter shows the viewed file's channels, with
@@ -119,6 +121,7 @@ behind the dialog; in its name field it undoes the typing.
         <button id="hide-files" disabled>hide files</button>
         <button id="show-files" disabled>show files</button>
         <button id="close-file" disabled>close file</button>
+        <button id="no-file" disabled>editor with no file</button>
       </div>
       <pre id="log"></pre>
     </main>
@@ -252,6 +255,16 @@ behind the dialog; in its name field it undoes the typing.
         $("show-files").onclick = () => editor.showFiles();
         $("close-file").disabled = false;
         $("close-file").onclick = () => editor.closeFile();
+
+        // The editor on its own: an audio editor needs no file to open. With
+        // no take it is the application alone, its window offering File ->
+        // New file and File -> Open file; closing its last file leaves it so,
+        // and File -> Close closes it.
+        $("no-file").disabled = false;
+        $("no-file").onclick = async () => {
+          const other = new gui.editing.AudioEditor(null, { server, title: "no file" });
+          await other.open(undefined, { stage: $("stage") });
+        };
 
         log("drag to select, Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V, Alt+drag to draw");
         editor.wait().then(() => log("the window is closed"));

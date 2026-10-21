@@ -38,6 +38,7 @@
 import { PARTS } from "../../document.ts";
 import type { Answer } from "./echo.ts";
 import { Buffer } from "../../defs/buffer.ts";
+import { Editing } from "../../history.ts";
 import { SoundFile } from "../../soundfile.ts";
 import { AudioEditorPlayback, StepRunner } from "../../core/clausters_core_web.js";
 import type { Server } from "../../defs/server/index.ts";
@@ -60,6 +61,9 @@ import type { Measure } from "./samples.ts";
  * paste takes one, a mix two.
  */
 const SPARE = 2;
+
+/** Why a verb that acts on a file is refused by an editor with none open. */
+const NO_FILE = "no file is open";
 
 /** What one turn of the core came to. */
 interface Outcome {
@@ -301,7 +305,7 @@ class AudioDriver implements TransportDriver {
  * steps it answers, on the take's server, and freeing the takes nothing reaches
  * any more.
  */
-export class AudioDomain extends Domain<Buffer> {
+export class AudioDomain extends Domain<Buffer | null> {
     override readonly name = PARTS;
     override readonly ingested = true;
 
@@ -316,17 +320,17 @@ export class AudioDomain extends Domain<Buffer> {
     #work: Promise<void> = Promise.resolve();
 
     /** Nothing: an edit's inverse is the list before, which the core holds. */
-    current(_structure: Buffer, _payload: unknown): unknown {
+    current(_structure: unknown, _payload: unknown): unknown {
         return null;
     }
 
     /** Nothing: the parts vocabulary is carried out as steps ({@link run}). */
-    project(_structure: Buffer, _payload: unknown): boolean {
+    project(_structure: unknown, _payload: unknown): boolean {
         return false;
     }
 
     /** Walk `steps` against the take's server. Answers whether there were any. */
-    run(_structure: Buffer, steps: unknown[]): boolean {
+    run(_structure: unknown, steps: unknown[]): boolean {
         const editor = this.editor;
         if (editor === null || steps.length === 0) return false;
         this.#queue(() => {
@@ -336,14 +340,14 @@ export class AudioDomain extends Domain<Buffer> {
         return true;
     }
 
-    executeOperation(_structure: Buffer, prepared: Record<string, unknown>, complete: (result: Record<string, any>) => void): void {
+    executeOperation(_structure: unknown, prepared: Record<string, unknown>, complete: (result: Record<string, any>) => void): void {
         this.after(async () => {
             if (this.editor === null) throw new Error("the operation owner is absent");
             complete(await this.editor.operation({}, prepared));
         });
     }
 
-    async executeBatch(_structure: Buffer, server: { connection: number; generation: number }, steps: unknown[]): Promise<void> {
+    async executeBatch(_structure: unknown, server: { connection: number; generation: number }, steps: unknown[]): Promise<void> {
         const editor = this.editor;
         if (editor === null) throw new Error("the operation owner is absent");
         editor.checkServer();
@@ -353,15 +357,15 @@ export class AudioDomain extends Domain<Buffer> {
     }
 
     /** Keep a stepped object's playback current even when another file is viewed. */
-    operationReturned(_structure: Buffer, server: { connection: number; generation: number }, buffers: number[]): void {
+    operationReturned(_structure: unknown, server: { connection: number; generation: number }, buffers: number[]): void {
         if (this.editor !== null) this.editor.returned(server, buffers);
     }
 
-    operationEcho(_structure: Buffer, answer: unknown): void {
+    operationEcho(_structure: unknown, answer: unknown): void {
         this.editor?.echo.send(answer as never);
     }
 
-    soundFile(_structure: Buffer, file: Record<string, unknown>): void {
+    soundFile(_structure: unknown, file: Record<string, unknown>): void {
         this.#queue(async () => { await this.editor?.syncSound(file); });
     }
 
@@ -369,7 +373,7 @@ export class AudioDomain extends Domain<Buffer> {
      * Free takes the context handed back: nothing reaches them any more. A take
      * on disk (`spilled`) has no buffer to free, only its number to give back.
      */
-    free(_structure: Buffer, buffers: number[], spilled: number[] = []): void {
+    free(_structure: unknown, buffers: number[], spilled: number[] = []): void {
         const editor = this.editor;
         if (editor === null || buffers.length === 0) return;
         this.#queue(() => this.cleanup(buffers));
@@ -387,7 +391,7 @@ export class AudioDomain extends Domain<Buffer> {
      * the page's storage full -- leaves the take in memory, and the crate is
      * told so.
      */
-    store(_structure: Buffer, buffer: number, steps: unknown[], operation?: Record<string, unknown>): void {
+    store(_structure: unknown, buffer: number, steps: unknown[], operation?: Record<string, unknown>): void {
         const editor = this.editor;
         if (editor === null) return;
         this.#work = this.#work.then(async () => {
@@ -440,8 +444,15 @@ export interface AudioEditor extends Marking<Segment<Buffer> | null, Segment<Buf
  * `start` a frame and its `duration` seconds -- or `null` when nothing is
  * marked. In an audio editor what is marked and the transport's `span` are one
  * range, so setting either sets both.
+ *
+ * **An editor with no file open** is the application on its own:
+ * `new AudioEditor(null, { server })` opens one, and closing its last file
+ * leaves it so. Its window keeps the menu bar and the file list and offers
+ * File -> New file and File -> Open file; a verb that acts on a file throws a
+ * `RangeError` until one is added ({@link AudioEditor.newFile},
+ * {@link AudioEditor.openFile}).
  */
-export class AudioEditor extends Editor<Buffer> {
+export class AudioEditor extends Editor<Buffer | null> {
     /** This editor's member in its editing context. */
     private readonly member: number;
     private instance!: { connection: number; generation: number };
@@ -472,40 +483,49 @@ export class AudioEditor extends Editor<Buffer> {
     /** The {@link SoundFile} the take was loaded from, when it was. */
     readonly #file: SoundFile | null;
 
-    constructor(take: Buffer, options: AudioEditorOptions) {
+    constructor(
+        take: Buffer | null,
+        options: Omit<AudioEditorOptions, "sampleRate"> & { sampleRate?: number } = {},
+    ) {
         const view = new SamplesView(options.layers ?? MEASURES);
         const domain = new AudioDomain();
+        const { server, ...others } = options;
         super(take, {
             title: "Audio",
-            ...options,
-            sampleRate: Number(options.sampleRate || take.sampleRate || 48_000),
+            ...others,
+            // no data to reach a context through: the editor has its own
+            context: others.context ?? (take === null ? new Editing() : undefined),
+            sampleRate: Number(options.sampleRate || take?.sampleRate || 48_000),
             domain,
             view,
         });
         domain.editor = this;
         this.#file = options.file ?? null;
-        this.server = resolveServer(take.server);
+        this.server = resolveServer(server ?? take?.server);
         this.instance = serviceInstance(this.server);
         this.display = this.server.buffers.alloc();
         // The context is the take's; switching files changes the structure,
         // so the window keeps the one it opened in.
         this.givenContext = this.editing;
+        const prefix = `audio:${this.instance.connection}:${this.instance.generation}`;
         const opened = this.editing.open(
             "openAudio",
-            `audio:${this.instance.connection}:${this.instance.generation}:${Math.trunc(take.bufnum)}`,
+            take === null ? `${prefix}:empty:${this.display}` : `${prefix}:${Math.trunc(take.bufnum)}`,
             {
                 ...this.facts(),
-                frames: Math.trunc(take.frames || 0),
-                take: Math.trunc(take.bufnum),
+                ...(take === null ? { empty: true } : {
+                    frames: Math.trunc(take.frames || 0),
+                    take: Math.trunc(take.bufnum),
+                    path: take.path ?? null,
+                    untitled: this.#file !== null && this.#file.path === null,
+                    codec: this.#file?.codec, sample_format: this.#file?.sampleFormat,
+                }),
                 display: this.display,
                 server: this.instance,
                 sharedHistory: options.sharedHistory ?? false,
-                path: take.path ?? null,
-                untitled: this.#file !== null && this.#file.path === null,
-                codec: this.#file?.codec, sample_format: this.#file?.sampleFormat,
                 layers: view.layers,
             },
-            take,
+            take ?? this,
             domain,
         );
         this.member = opened.member;
@@ -518,10 +538,12 @@ export class AudioEditor extends Editor<Buffer> {
             this.editing.limitResident(options.residentBytes);
         }
         this.topUp();
-        const opening = this.editing.serviceCall<Record<string, unknown>>("operation", {
-            action: "prepare", member: this.member, command: { kind: "open" },
-        });
-        domain.after(async () => { await this.operation({ kind: "open" }, opening); });
+        if (take !== null) {
+            const opening = this.editing.serviceCall<Record<string, unknown>>("operation", {
+                action: "prepare", member: this.member, command: { kind: "open" },
+            });
+            domain.after(async () => { await this.operation({ kind: "open" }, opening); });
+        }
         this.playback = new AudioPlayback(this.server);
         this.#driver = new AudioDriver(this, this.playback);
         domain.after(() => this.sound());
@@ -740,6 +762,16 @@ export class AudioEditor extends Editor<Buffer> {
             if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
             return;
         }
+        if (answer.binding === null) {
+            // the last file closed: the editor stays, with none
+            this.structure = null;
+            this.cursor = null;
+            this.dirty = false;
+            this.#driver.span = null;
+            this.#driver.paused = false;
+            if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
+            return;
+        }
         const b = answer.binding as Record<string, unknown>;
         this.display = Number(b.display);
         this.sampleRate = Number(b.rate);
@@ -914,9 +946,9 @@ export class AudioEditor extends Editor<Buffer> {
     /** What this page holds about the take and the window. */
     private facts(): Record<string, unknown> {
         const take = this.structure;
-        const name = (take as { name?: string }).name;
+        const name = (take as { name?: string } | null)?.name;
         return {
-            channels: Math.max(1, Math.trunc(take.channels || 1)),
+            channels: Math.max(1, Math.trunc(take?.channels || 1)),
             name: typeof name === "string" && name ? name : null,
             rate: this.sampleRate,
             title: this.title,
@@ -942,6 +974,7 @@ export class AudioEditor extends Editor<Buffer> {
         this.checkServer();
         const answer = this.editing.member(this.member, verb, args);
         this.publishActions();
+        if (answer.error === NO_FILE) throw new RangeError(NO_FILE);
         return answer;
     }
 
@@ -993,7 +1026,7 @@ export class AudioEditor extends Editor<Buffer> {
         return new Buffer(
             this.display,
             frames,
-            Math.max(1, Math.trunc(this.structure.channels || 1)),
+            Math.max(1, Math.trunc(this.structure?.channels || 1)),
             this.sampleRate,
             this.server,
         );
@@ -1466,7 +1499,12 @@ export class AudioEditor extends Editor<Buffer> {
 marking(AudioEditor);
 
 /** {@link AudioEditor}'s options: the generic ones, the measures and the limit. */
-export interface AudioEditorOptions extends GenericEditorOptions<Buffer> {
+export interface AudioEditorOptions extends GenericEditorOptions<Buffer | null> {
+    /**
+     * The server an editor with no file opens on; the ambient one when absent.
+     * An editor over a take uses the take's.
+     */
+    server?: Server;
     /**
      * Whether the take's undo order is the editing context's shared one, which
      * the other members of `context` walk too. By default each file the editor

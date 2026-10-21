@@ -749,8 +749,9 @@ test("files share one handler and transport but keep state and history", async (
         await editor.closeFile();
         assert.equal(editor.file!.path, "/takes/b.wav");
         await editor.closeFile();
-        assert.equal(editor.closed, true);
+        assert.equal(editor.closed, false, "closing the last file leaves the editor open");
         assert.deepEqual(editor.files, []);
+        assert.equal(editor.file, null);
     } finally {
         SoundFile.prototype.toBuffer = originalRead;
         SoundFile.open = originalOpen;
@@ -1207,4 +1208,42 @@ test("envelope visibility changed during an edit survives confirmation and histo
     }
     editor.close();
     await settle();
+});
+
+test("an editor opens with no file and its first file comes into focus", async () => {
+    const server = new FakeServer();
+    const editor = new AudioEditor(null, { server: server as never, context: new Editing() });
+    const host = new FakeHost();
+    await editor.open(host as unknown as GuiHost);
+    await settle();
+    const tree = host.trees.at(-1)!;
+    assert.equal(picture(tree).type, "label", "where the take would be, how to open one");
+    assert.ok("menu" in tree, "the window keeps its chrome");
+    assert.equal(editor.file, null);
+    assert.deepEqual(editor.files, []);
+    assert.throws(() => editor.parts, /no file is open/);
+    await assert.rejects(editor.save({ path: "/takes/x.wav" }), /no file is open/);
+    const originalRead = SoundFile.prototype.toBuffer;
+    const originalOpen = SoundFile.open;
+    SoundFile.prototype.toBuffer = async function({ server } = {}) {
+        const endpoint = server as unknown as FakeServer;
+        return { bufnum: endpoint.buffers.alloc(), frames: this.frames, channels: this.channels,
+            sampleRate: this.sampleRate, server: endpoint, path: this.path } as never;
+    };
+    SoundFile.open = async (path: string) => new SoundFile(path, 200, 2, SR);
+    try {
+        await editor.openFile("/takes/b.wav");
+        await settle();
+        assert.equal(editor.file!.path, "/takes/b.wav");
+        assert.equal(picture(host.trees.at(-1)).type, "signal", "the file is drawn");
+        assert.equal(editor.parts.length, 1);
+        await editor.closeFile();
+        await settle();
+        assert.equal(editor.closed, false);
+        assert.equal(editor.file, null);
+        assert.equal(picture(host.trees.at(-1)).type, "label", "drawn again, empty");
+    } finally {
+        SoundFile.prototype.toBuffer = originalRead;
+        SoundFile.open = originalOpen;
+    }
 });

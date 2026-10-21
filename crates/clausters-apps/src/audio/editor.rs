@@ -260,6 +260,9 @@ impl Converse for AudioEditor {
         if let Some(name) = self.dialog_name(widget) {
             return self.form_event(&name, tag, values, out);
         }
+        if !self.open_files.open {
+            return (Some(NO_FILE_OPEN.into()), Vec::new());
+        }
         self.gesture(widget, tag, values, out)
     }
 
@@ -290,6 +293,18 @@ impl Converse for AudioEditor {
         }
         if message.addr != "/gui_event" || !message.is_window {
             return false;
+        }
+        // **With no file open** the window's own verbs are all it answers:
+        // whatever would act on a file is refused, and says why.
+        if !self.open_files.open && !WINDOW_LEVEL.contains(&message.tag.as_str()) {
+            out.turn = Kind::Route;
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                Some(NO_FILE_OPEN.into()),
+                Vec::new(),
+            ));
+            return true;
         }
         if matches!(message.tag.as_str(), "toggle_files" | "close_file") {
             out.turn = Kind::Route;
@@ -421,6 +436,40 @@ pub struct Follow {
     /// not while it is drawn -- a locate per move is a retrigger per move.
     pub place: bool,
 }
+
+/// **The verbs that need no file**: the window's own, which an editor with
+/// no file open still answers -- adding a file, its keys, its file list and
+/// closing it.
+const WINDOW_LEVEL: &[&str] = &["new_file", "open_file", "keys", "toggle_files", "close"];
+
+/// The JSON verbs an editor with no file open answers.
+const EMPTY_VERBS: &[&str] = &[
+    "sync",
+    "window",
+    "attach_view",
+    "detach_view",
+    "dialogs",
+    "file",
+    "files",
+    "binding",
+    "playback",
+    "add_file",
+    "open_file",
+    "focus_file",
+    "close_file",
+    "show_files",
+    "hide_files",
+    "toggle_files",
+    "playing",
+    "props",
+    "open",
+    "event",
+    "acknowledge",
+    "kept",
+];
+
+/// Why a verb that acts on a file is refused when none is open.
+const NO_FILE_OPEN: &str = "no file is open";
 
 /// What an audio editor is put back to when a step it took part in is
 /// refused elsewhere ([`AudioEditor::before_step`]).
@@ -590,7 +639,7 @@ impl AudioEditor {
             .filter(|verb| !NOT_A_TAKE_S.contains(&verb.name))
             .map(|verb| {
                 let name = verb.name;
-                let window = matches!(name, "new_file" | "open_file" | "keys" | "toggle_files");
+                let window = WINDOW_LEVEL.contains(&name);
                 let target = if window {
                     ActionTarget::Window
                 } else {
@@ -1235,6 +1284,7 @@ impl AudioEditor {
                 .window_state
                 .lane
                 .filter(|_| self.file.presentation.views == Views::Stacked),
+            empty: !self.open_files.open,
         });
         self.compose_envelope(&mut tree);
         self.refresh_files();
@@ -2141,6 +2191,9 @@ struct Facts {
     #[serde(deserialize_with = "present")]
     meters: Option<Option<MeterFact>>,
     version: Option<i64>,
+    /// **An editor with no file open**: the application on its own, whose
+    /// File menu adds the first file.
+    empty: Option<bool>,
 }
 
 /// A playback's meter, as a caller hands it over.
@@ -2221,7 +2274,9 @@ impl AudioEditor {
 /// from, which a save writes over), `scratch` (the directory a take only
 /// the history holds is written to when it leaves memory), `name`, `layers`,
 /// `title`, `w`, `h`, `chrome` (`false` for a window with no menu bar and no
-/// tools) and `version` -- or the reason it cannot be.
+/// tools) and `version` -- or the reason it cannot be. `"empty": true` opens
+/// the editor with no file, whose window offers adding one; `take` and
+/// `frames` are then ignored.
 pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     let facts: Facts =
         serde_json::from_str(request).map_err(|e| format!("not an audio editor request: {e}"))?;
@@ -2242,12 +2297,16 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     editor.file.sample_format = facts.sample_format.clone();
     editor.file.owns_opened =
         facts.path.as_ref().is_some_and(|p| !p.is_empty()) || facts.untitled == Some(true);
+    let empty = facts.empty == Some(true);
     editor.adopt(Facts {
         layers: None,
         take: None,
         frames: None,
         ..facts
     });
+    if empty {
+        editor.open_files.open = false;
+    }
     Ok(editor)
 }
 
@@ -2287,11 +2346,15 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   buffer; or `{"error"}`.
 /// - `files` -- the ordered open files and list visibility; `binding` -- the
 ///   focused file's buffer facts, cursor, selection, layers and loop switch.
+///   With no file open, `binding` and `file` answer `{"empty": true}`, and
+///   every verb that acts on a file answers `{"error": "no file is open"}`.
 /// - `open_file` -- `paths`, a path or array: an outcome asking the client to
 ///   load the files through SoundFile. `add_file` -- the loaded buffer facts,
 ///   display and spare buffers: add it and return the server steps and binding.
 /// - `focus_file`, `close_file` -- `index` (zero-based) or `file` (open-object id):
 ///   restore its state or free it. Closing without either names the focused file.
+///   Closing the last one leaves the editor open with none (`"empty": true`,
+///   `binding` null); the window is drawn again and offers adding a file.
 /// - `show_files`, `hide_files`, `toggle_files` -- the independent left list.
 /// - `kept` -- `buffer`: a spill the caller could not carry out, so that take
 ///   is still in its buffer. Answers `{}`.
@@ -2311,11 +2374,16 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
     let get = |key: &str| request.get(key).cloned().unwrap_or(Value::Null);
     let widget = int(&get("widget")) as i32;
     let version = int(&get("version"));
-    match request
+    let verb = request
         .get("verb")
         .and_then(Value::as_str)
-        .unwrap_or_default()
-    {
+        .unwrap_or_default();
+    // **A verb that acts on a file needs one open**; the editor's own -- its
+    // window, its file list, adding a file, the conversation -- do not.
+    if !editor.open_files.open && !EMPTY_VERBS.contains(&verb) {
+        return json!({ "error": NO_FILE_OPEN }).to_string();
+    }
+    match verb {
         "sync" => {
             if let Some(visible) = request.get("filesVisible").and_then(Value::as_bool) {
                 editor.window_state.files_visible = visible;
@@ -2394,8 +2462,13 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "preview" => editor.preview_state().to_string(),
         "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
         "folded" => json!({"folded": editor.folded()}).to_string(),
+        "file" if !editor.open_files.open => json!({"empty": true}).to_string(),
         "file" => editor.file().to_string(),
         "files" => { editor.refresh_files(); json!({"files": editor.open_files.rows, "visible": editor.window_state.files_visible}).to_string() },
+        // with no file open, a binding says so rather than naming one
+        "binding" if !editor.open_files.open => json!({"empty": true}).to_string(),
+        // with no file open, a binding says so rather than naming one
+        "binding" if !editor.open_files.open => json!({"empty": true}).to_string(),
         "binding" => editor.binding().to_string(),
         "add_file" => match new_json(&request.to_string()).and_then(|mut file| {
             let steps = file.open()?;
@@ -2420,9 +2493,15 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 editor.focus_file(file).map(|()| (json!([]), Vec::<i64>::new()))
             } else { editor.close_file(file) };
             match result {
-                Ok((steps, freed)) => json!({"turn": "route", "steps": steps, "freedBuffers": freed, "binding": editor.binding(), "focusChanged": before != editor.file.id.0,
-                    "restructure": true, "fileAction": {"verb": verb, "file": file}, "close": editor.open_files.rows.is_empty(),
-                    "answer": (before != editor.file.id.0).then(|| conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections()))}).to_string(),
+                // The last file closed leaves the editor open with none:
+                // `binding` is null and the window is drawn again empty.
+                Ok((steps, freed)) => {
+                    let empty = !editor.open_files.open;
+                    let moved = before != editor.file.id.0;
+                    json!({"turn": "route", "steps": steps, "freedBuffers": freed, "binding": editor.binding(), "focusChanged": moved || empty,
+                    "restructure": true, "fileAction": {"verb": verb, "file": file}, "empty": empty,
+                    "answer": moved.then(|| conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections()))}).to_string()
+                }
                 Err(error) => json!({"error": error}).to_string(),
             }
         }
@@ -2469,6 +2548,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             .first()
             .map_or_else(|| "{}".into(), |c| c.props.to_string()),
         "props" => Value::Object(props(widget)).to_string(),
+        "open" if !editor.open_files.open => json!({ "steps": [] }).to_string(),
         "open" => match editor.open() {
             Ok(steps) => json!({ "steps": steps }).to_string(),
             Err(error) => json!({ "error": error }).to_string(),

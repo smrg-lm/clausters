@@ -2599,7 +2599,13 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     key sheet were already action-backed (`X20`). Directed tests cover
     reopen, pick, directory change, redraw and close inside the editor; the
     score editor's forms keep their behavior and move to `Dialogs` in `X25`.
-  - ⬜ Native and browser eye pass over the `edit_audio` pair's File > Open.
+  - ✅ Native eye pass over the `edit_audio` pair's File > Open (2026-10-21):
+    filter, keyboard, pick, reopen in the last directory and multiple
+    selection accepted. The pass also found File > Close file naming the
+    wrong file (fixed) and the rule that an application opens with no file
+    and outlives its last, which the audio editor now keeps; the other
+    applications are in "Found by use".
+  - ⬜ Browser eye pass over the same.
 
 - ⬜ **X22 - Centralize audio transitions and effect ordering in Rust.**
   After `X21`, make menu, key and scripted actions enter one coordinator.
@@ -3264,6 +3270,19 @@ Every entry carries a checkbox.
   that already name one.
 
 ## Found by use: the running list of fixes
+
+- ⬜ **The other applications that open files open without one and outlive
+  their last** (the user, 2026-10-21, in the X21 eye pass: an editor is an
+  application that opens with no file, and closing the last file does not
+  close it; this holds for other applications too, though not all). The rule
+  is in `docs/app-behavior.md`; the audio editor keeps it. Pending where an
+  application holds files or documents of its own: the score editor (it
+  opens, saves and closes MEI files, in the standalone host too) and the
+  multitrack where it holds a session file. It does not apply to an editor
+  over a structure a client handed it (the notes and points editors, a GuiDef
+  panel). Port with `X25`, reusing the audio editor's shape: an `empty` open,
+  the window's own verbs answered and the rest refused with `no file is
+  open`, and a `binding` the clients unbind.
 
 - ✅ **First native eye pass over X20's actions** (2026-10-21). A copy
   announced "loop off": a completion re-sends the view's loop switch, and

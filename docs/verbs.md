@@ -64,7 +64,7 @@ The verdict is one of three:
 | `window` | `keys` | — | — | **n/a** — the window's key sheet, a page of the window itself rather than an act on what it holds; `verb("keys")` shows it |
 | `audio` | `new_file` | `AudioEditor.new_file` | `AudioEditor.newFile` | **api** — the form's shape, added to this editor as a file in focus |
 | `audio` | `open_file` | `AudioEditor.open_file` | `AudioEditor.openFile` | **api** — a path or a list of them, chosen in the host's chooser from the window, each added to this editor |
-| `audio` | `close_file` | `AudioEditor.close_file` | `AudioEditor.closeFile` | **api** — the file in focus, or one by its index in the list; `focus_file` focuses one |
+| `audio` | `close_file` | `AudioEditor.close_file` | `AudioEditor.closeFile` | **api** — the file in focus, or one by its index in the list; `focus_file` focuses one. The last one closed leaves the editor open with no file |
 | `audio` | `toggle_files` | `AudioEditor.show_files` `AudioEditor.hide_files` | `AudioEditor.showFiles` `AudioEditor.hideFiles` | **api** — the file list beside the editing view |
 | `audio` | `save_as` | `AudioEditor.save` | `AudioEditor.save` | **api** — `save(path)` |
 | `audio` | `show_all_channels` | `AudioEditor.show_all_channels` | `AudioEditor.showAllChannels` | **api** — beside `fold_channel` and `solo_channel`, which the menu reaches per channel |

@@ -103,6 +103,15 @@ the focused file plays. View -> Files toggles the list;
 `editor.hide_files()` and `editor.show_files()` do the same from a script.
 These operations also work on a handler with no GUI open.
 
+**The editor opens without a file.** `AudioEditor(server=server)` (from
+`clausters.gui.editing`) is the application on its own: its window keeps the
+menu bar and the file list, says where the take would be that no file is
+open, and offers File -> New file and File -> Open file. Closing the last file
+leaves an editor in the same state rather than closing it; File -> Close
+closes the window. With no file open, `editor.file` is `None`, `editor.files`
+is empty, and a verb that acts on a file (`parts`, `save`, an edit) raises
+`ValueError`.
+
 The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`). The same actions are `editor.view_wave()`, `editor.view_spectrogram()` and `editor.view_both()`. `editor.layers` accepts names (`peak`, `rms`, `signal`, `momentary`, `short`, `spectrogram`) or objects with `draw`, `visible`, `solo`, `alpha` and `y`. `show_layer(name)` and `hide_layer(name)` preserve a layer's place and settings; `solo_layer(name)` toggles solo, and `layer_alpha(name, alpha)` sets its opacity in `[0, 1]`. Waveform and spectrogram are two **views** of the take: one replaces the other in the take's lane, and both (`B`) stacks them, the waveform in the take's lane and the spectrogram in a lane under it, on one time axis with one selection and play cursor and a vertical each. The layers of `editor.layers` are the **visualization layers** of the view in the take's lane; a frequency layer and an amplitude layer cannot both claim its vertical, and a stack can still superpose them with one of the two in boxes of its own. The menu's views are the defaults, not the only ones. The gain envelope is an **edit layer** over the take, superposed on whichever view is in its lane. Changing visualization leaves the take and its history intact. The vertical ruler is in the units of the layer that claims the axis, and each quantity keeps its own vertical zoom: a spectrogram opens no further than its whole frequency range, and returning to the waveform finds the amplitude zoom where it was left.
 
 The picture now stands in a `pane`: one time ruler, selection and playhead

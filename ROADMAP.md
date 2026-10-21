@@ -126,6 +126,11 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
+- ⬜ **The other applications that open files open without one and outlive
+  their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
+  editor keeps the rule; the score editor and the multitrack with a session
+  file follow it when `X25` ports the lifecycle.
+
 - ⬜ **A write in place behind an undrained replacement can miss a shared
   buffer** *(root `PLAN.md`, Found by use)*. The narrower race left after the
   gain preview's fix; no client writes before an allocation's `/done`.

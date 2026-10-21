@@ -259,6 +259,9 @@ impl Application for AudioEditor {
             plan.commit.change = Change::AddFile(Box::new(next.file));
             return Ok(plan);
         }
+        if !self.open_files.open {
+            return Err(super::NO_FILE_OPEN.into());
+        }
         if let Command::WindowSave(event) = &request.command {
             let mut draft = self.draft();
             let mut outcome = draft.event(event, request.version);
