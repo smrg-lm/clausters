@@ -778,6 +778,10 @@ mod ownership_tests {
         let mut editor = new_json(r#"{"take":3,"frames":100,"display":9}"#).unwrap();
         call(
             &mut editor,
+            json!({"verb":"sync", "meters":{"bus":-1,"channels":1}}),
+        );
+        call(
+            &mut editor,
             json!({"verb":"window", "widget":10, "pane":11, "lane":13, "meter":12, "filesWidget":40}),
         );
         editor.file.presentation.views = Views::Stacked;
@@ -815,5 +819,44 @@ mod ownership_tests {
             .find(|c| c["widget"] == 12)
             .unwrap();
         assert_eq!(meter["props"], json!({"bus":-1,"channels":1}));
+    }
+
+    #[test]
+    fn a_meter_the_window_does_not_draw_is_not_corrected() {
+        let mut editor = new_json(r#"{"take":3,"frames":100,"display":9}"#).unwrap();
+        // drawn before a playback said where its meter writes: no meter
+        call(
+            &mut editor,
+            json!({"verb":"window", "widget":10, "meter":12}),
+        );
+        let out = call(
+            &mut editor,
+            json!({"verb":"playing", "file":null, "meters":{"bus":-1,"channels":1}}),
+        );
+        assert!(
+            out["corrections"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|c| c["widget"] != 12),
+            "{out}"
+        );
+        // drawn again, it carries the meter and the meter is corrected
+        let tree = call(
+            &mut editor,
+            json!({"verb":"window", "widget":10, "meter":12}),
+        );
+        assert!(tree.to_string().contains(r#""type":"meter""#));
+        let out = call(
+            &mut editor,
+            json!({"verb":"playing", "file":null, "meters":{"bus":-1,"channels":1}}),
+        );
+        assert!(
+            out["corrections"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["widget"] == 12)
+        );
     }
 }

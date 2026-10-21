@@ -1125,3 +1125,45 @@ def test_an_editor_opens_with_no_file_and_its_first_file_comes_into_focus(monkey
     assert not editor.closed
     assert editor.file is None
     assert picture(host.trees[-1])["type"] == "label", "drawn again, empty"
+
+
+def test_closing_a_file_keeps_the_meter_and_corrects_only_what_is_drawn(monkeypatch):
+    from clausters import SoundFile
+
+    def nodes(node):
+        yield node
+        for child in node.get("children", ()):
+            yield from nodes(child)
+
+    class Watch(FakeHost):
+        def __init__(self):
+            super().__init__()
+            self.absent: list = []
+
+        def set(self, id, **props):
+            # the window itself is the host's, everything else is drawn
+            if id < 900 and id not in {n.get("id") for n in nodes(self.trees[-1])}:
+                self.absent.append((id, props))
+            super().set(id, **props)
+
+    def meters(tree):
+        return [n for n in nodes(tree) if n.get("type") == "meter"]
+
+    monkeypatch.setattr(SoundFile, "to_buffer", lambda file, *, server=None, **options:
+                        types.SimpleNamespace(bufnum=server.buffers.alloc(), frames=file.frames,
+                                              channels=file.channels, sample_rate=file.sample_rate,
+                                              server=server, path=file.path))
+    monkeypatch.setattr(SoundFile, "open", staticmethod(lambda path: SoundFile(str(path), 200, 2, SR)))
+    editor = AudioEditor(FakeBuffer(), context=Editing())
+    host = Watch()
+    editor.open(host)
+    editor.open_file(["/takes/a.wav", "/takes/b.wav"])
+    assert meters(host.trees[-1])
+    editor.close_file()
+    assert meters(host.trees[-1]), "the meter follows the file viewed now"
+    editor.close_file()
+    editor.close_file()
+    assert not meters(host.trees[-1]), "an empty window draws no meter"
+    editor.open_file("/takes/c.wav")
+    assert meters(host.trees[-1])
+    assert host.absent == [], "nothing addressed to a widget the window does not draw"

@@ -794,6 +794,8 @@ export class AudioEditor extends Editor<Buffer | null> {
         // a pass in progress goes on: the window only looks elsewhere
         await this.playback.rolling();
         await this.playback.call("view", { file: this.fileId, frame: Number(b.cursor) });
+        // the meter follows the file now viewed, before the window is drawn
+        await this.tellMeters();
         if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
         await this.sound();
         // the switch moved the version: the answer hands it to the host, with
@@ -815,6 +817,13 @@ export class AudioEditor extends Editor<Buffer | null> {
                 await this.host.set(wid, { preview_buffer: previews?.[String(this.fileId)] ?? -1 });
             }
         }
+        this.coreCall("sync", { meters: state.meters ?? null });
+    }
+
+    /** Tell the window where its level is read from: the viewed file's
+     * meter, so the playback is told which file is viewed first. */
+    private async tellMeters(): Promise<void> {
+        const state = await this.playback.call("state");
         this.coreCall("sync", { meters: state.meters ?? null });
     }
 

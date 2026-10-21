@@ -470,6 +470,11 @@ class AudioEditor(Marking, Editor):
             # every view of the take, each drawing the preview as itself
             for wid in preview.get("pictures") or ():
                 self._host.set(int(wid), preview_buffer=-1 if buffer is None else buffer)
+        self._tell_meters()
+
+    def _tell_meters(self) -> None:
+        """Tell the window where its level is read from: the viewed file's
+        meter, so the playback is told which file is viewed first."""
         self._call("sync", meters=self._playback.state().get("meters"))
 
     def _sync_sound(self, file):
@@ -933,6 +938,8 @@ class AudioEditor(Marking, Editor):
                 self._playback.rolling()
                 self._playback.call("view", file=self._file_id,
                                     frame=int(outcome["binding"]["cursor"]))
+                # the meter follows the file now viewed, before the window is drawn
+                self._tell_meters()
         if "layers" in outcome:
             self.view.layers = tuple(outcome["layers"])
         # **A view placed in a lane of its own** (the stacked views, or back

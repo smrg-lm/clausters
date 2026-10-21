@@ -1247,3 +1247,49 @@ test("an editor opens with no file and its first file comes into focus", async (
         SoundFile.open = originalOpen;
     }
 });
+
+test("closing a file keeps the meter and corrects only what is drawn", async () => {
+    const nodes = (node: GuiNode): GuiNode[] => [node, ...(node.children ?? []).flatMap(nodes)];
+    const meters = (tree: GuiNode) => nodes(tree).filter((n) => n.type === "meter");
+    class Watch extends FakeHost {
+        absent: [number, Record<string, unknown>][] = [];
+        override set(id: number, props: Record<string, unknown>): void {
+            // the window itself is the host's, everything else is drawn
+            if (id < 900 && !nodes(this.trees.at(-1)!).some((n) => n.id === id)) {
+                this.absent.push([id, props]);
+            }
+            super.set(id, props);
+        }
+    }
+    const editor = new AudioEditor(new FakeBuffer() as never, { sampleRate: SR, context: new Editing() });
+    const host = new Watch();
+    await editor.open(host as unknown as GuiHost);
+    await settle();
+    const originalRead = SoundFile.prototype.toBuffer;
+    const originalOpen = SoundFile.open;
+    SoundFile.prototype.toBuffer = async function({ server } = {}) {
+        const endpoint = server as unknown as FakeServer;
+        return { bufnum: endpoint.buffers.alloc(), frames: this.frames, channels: this.channels,
+            sampleRate: this.sampleRate, server: endpoint, path: this.path } as never;
+    };
+    SoundFile.open = async (path: string) => new SoundFile(path, 200, 2, SR);
+    try {
+        await editor.openFile(["/takes/a.wav", "/takes/b.wav"]);
+        await settle();
+        assert.ok(meters(host.trees.at(-1)!).length > 0);
+        await editor.closeFile();
+        await settle();
+        assert.ok(meters(host.trees.at(-1)!).length > 0, "the meter follows the file viewed now");
+        await editor.closeFile();
+        await editor.closeFile();
+        await settle();
+        assert.equal(meters(host.trees.at(-1)!).length, 0, "an empty window draws no meter");
+        await editor.openFile("/takes/c.wav");
+        await settle();
+        assert.ok(meters(host.trees.at(-1)!).length > 0);
+        assert.deepEqual(host.absent, [], "nothing addressed to a widget the window does not draw");
+    } finally {
+        SoundFile.prototype.toBuffer = originalRead;
+        SoundFile.open = originalOpen;
+    }
+});

@@ -276,6 +276,13 @@ code that keeps it lives.
 - **A window drawn again shows the dialog that was up**, its fields holding
   what was typed and its chooser where it was, with nothing selected; a
   window closed and opened again has none up (`forms::Dialogs`).
+- **A correction addresses only what the window drew.** A prop set after a
+  turn -- the play cursor, the level meter -- names a widget of the window as
+  it was last drawn; a widget the window was asked for and did not draw (the
+  meter before a playback says where it writes, anything of an empty window)
+  is not corrected until a redraw carries it. And a window drawn after the
+  focused file changed reads the meter of the file it now shows: the playback
+  is told which file is viewed before the window asks where its level is.
 
 
 - **A failed repair remains reachable.** After resolving an I/O failure, an audio editor's `retry_pending()` / `retryPending()` retries its pending repairs without repeating the edits. Until repair succeeds, the affected objects remain locked and their sources retained. Concurrent retries cannot dispatch the same repair twice; a successful retry does not repeat the original gesture receipt or change history.

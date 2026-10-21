@@ -1255,14 +1255,16 @@ impl AudioEditor {
     /// once a playback has said where it writes ([`Self::set_meters`]).
     pub fn window(&mut self, widget: i32, meter: Option<i32>) -> Value {
         self.window_state.widget = Some(widget);
-        self.window_state.meter_widget = meter;
         let meter = meter
             .zip(self.window_state.meters)
+            .filter(|_| self.open_files.open)
             .map(|(id, (bus, channels))| MeterAt {
                 widget: id,
                 bus,
                 channels,
             });
+        // only a meter the window draws is corrected afterwards
+        self.window_state.meter_widget = meter.map(|m| m.widget);
         let label = self.pane_label();
         let mut tree = window(&Window {
             buffer: self.file.display,
