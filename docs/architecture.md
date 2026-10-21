@@ -1341,8 +1341,8 @@ than the window. `docs/decisions.md` records why for each of the three.
 The following is the target contract for the application-state migration,
 audited against the audio editor on 2026-10-18. The ownership table records
 that audit's starting point. The file/window separation described immediately
-below and the editing/resource services are implemented; coordinator and
-completion contracts remain designs for the subsequent migration. The
+below, the editing/resource services and the audio coordinator are
+implemented; the completion contracts of the other editors follow it. The
 application milestones in the apps plan
 own its delivery. No new public API, wire message or ABI symbol is introduced
 by this contract.
@@ -1363,7 +1363,7 @@ is not thereby that owner.
 | Playback and effects | `crates/clausters-editing/src/audio_playback.rs`: `AudioEditorPlayback` already distinguishes `viewed` from playing `focus`; output `width` only grows | Keep that mechanism, composed as an explicitly supplied service. A playback instance owns transport/routing and leases its sources. Its playing file, viewed file and bus capacity are distinct facts |
 | Clipboard | `clausters_document::Clipboard` describes contents; host `Clip` stores document/blobs/system-text mirror; `application::clipboard::Exchange` owns immutable remote publications and pending-reader leases; adapters keep endpoint-scoped service handles | A host-scope clipboard service owns publication and replacement; a resource service owns storage leases. Applications acquire immutable clipboard snapshots. Sharing a host does not make server-local buffer numbers portable |
 | Samples and temporary storage | `AudioEditor` tracks `frames`, `rates`, `spilled`, `scratch` and spare ids; `Editing` emits `Freed`/`Stored`; adapters execute them | Explicit resource service associated with a supplied server instance and connection generation. Contents, history, clipboard, playback and pending operations are retention roots. Disk/OPFS storage survives view redraw, not application disposal unless explicitly persisted |
-| Pending work | Python audio `_take` runs steps synchronously; TypeScript `take` schedules through `AudioDomain.after`; policy is distributed across handlers | Application coordinator owns operation identity, dependencies, commit and cleanup; adapters only execute effects and return results |
+| Pending work | Before the coordinator: Python audio `_take` ran steps synchronously; TypeScript `take` scheduled through `AudioDomain.after`; policy was distributed across handlers | Application coordinator owns operation identity, dependencies, commit and cleanup; adapters only execute effects and return results |
 | Host interaction and demand | `clients/gui/src/host` owns navigation, focus, gesture feedback and GPU state; `live.rs` provides `LiveDemand` (currently consumed by the browser front) | Keep host-local interaction there. Application projections restore file-specific state explicitly; subscription demand follows visible consumers and playback needs, with equivalent native/browser behavior |
 | Client window set | Python/TypeScript `gui/editing/application` owns host resolution, widget-id allocation, editor registration and event draining | Keep these as language/platform adapters. Shared lifecycle and effect ordering move to the Rust coordinator, without another client policy copy |
 | Standalone document | `clients/gui/src/host/document.rs::Owner` holds document, editing context and execution paths | Keep the standalone owner as an adapter/holder of the shared application contracts where supported; the renderer owns no domain document. Existing sample-session/player routing remains explicit |
@@ -1461,11 +1461,45 @@ The byte limit applies independently to each undo order, with endpoint-aware acc
 
 Each adapter supplies a random connection identity and an allocator incarnation. Reattaching with reconciled allocators advances that incarnation; old editors and playback handles refuse work before addressing the replacement endpoint, and the resource service invalidates the old leases without sending frees to the replacement. This is conservative connection identity: two handles are not assumed to be the same endpoint merely because their addresses or local buffer ids match. A server restarted without reattaching has not established a new valid application connection. Operation admission, cancellation and cleanup validate that same incarnation.
 
-The services need no renderer. The real native NRT endpoint and the browser NRT/OPFS acceptance execute the same spill, restore and release decisions and compare restored samples. Playback remains `clausters_editing::audio_playback::AudioEditorPlayback`, with one transport per editor; injecting an editing context does not share a transport.
+The services need no renderer. The real native NRT endpoint and the browser NRT/OPFS acceptance execute the same spill, restore and release decisions and compare restored samples. Playback remains `clausters_editing::audio_playback::AudioEditorPlayback`, held by the member's coordinator, with one transport per editor; injecting an editing context does not share a transport.
 
 `application::clipboard::Exchange` is independent of open documents and receives endpoint identity through its port. Both adapters keep one service handle per server connection incarnation, using the existing editing JSON door. The table stores handles rather than copied-buffer state or compatibility policy. After copy steps complete, `publish` installs a fresh immutable publication; `event` resolves paste/mix references and acquires a pending-reader lease; `release` ends that lease on completion or failure. Replacement drops only the publication root, so a pending paste can finish using the old snapshot. Invalidating an incarnation forgets it without freeing ids on the replacement. A source window's close does not close the exchange. Python serializes service lookup and each complete EditingCore size/fill response (including disposal), since ctypes releases the GIL and the host callback can race a script query; this is adapter synchronization rather than application policy.
 
 The host `Clip` continues to own the typed document, blobs and system-text mirror. Typed publication updates the mirror; changed external text becomes `Content::Text`, rather than implicitly trusting JSON as a live reference. The application observes replacement on its next clipboard action and releases its previous publication, unless a paste still holds it. There is no background poll and retention is bounded to one unused publication per endpoint. Cross-connection buffer transfer is explicitly refused; matching addresses do not establish identity. Bulk `Samples` may travel with a complete payload. Channel conversions and resampling are never implicit: insertion preserves source rate through the existing parts ratio; mixing requires matching rate and channels. A cut first prepares and publishes a copy, then validates the original file and contents before recording removal. Destination-owned paste buffers use the existing history budgets and disk/OPFS spill path; the publication never becomes an undo entry.
+
+#### The audio coordinator
+
+Every action of an audio member enters one place,
+`clausters_apps::editing::audio_session`, reached through the context's
+`audio` verb (`call_json_ids`, which carries the server's id spaces): a
+gesture or a menu entry (`event`), a script's edit (`act`) or member verb
+(`verb`), the transport (`play`, `pause`, `stop`, `locate`, `span`,
+`looping`, `playing`), opening and saving, the window closing. The
+coordinator owns the member's `AudioEditorPlayback` and the transport facts a
+script and a hand share (the span, the loop switch, a script's pause), and
+decides the order of everything an action leads to through the doors the
+clients used to call themselves (`member`, `event`, `act`, `operation`,
+`retainMember`, `dropRoot`), so the editor's rules stay in the editor.
+
+An action is a **run**. It answers its **effects** in order (an answer to
+the window, props on a widget, the window drawn again, a binding projected,
+takes released) and stops on an **await** when what follows depends on the
+client: steps carried out on the server, whether the transport rolls, a file
+read into buffers, an operation's batch, a history step carried out, a
+clipboard document published. The client performs both and resumes the run
+with the await's result. A failed await unwinds the run through the cleanups
+and handlers it passed (a copy that never reached the clipboard frees its
+buffer and tells the window why) and ends it for the client to raise what
+failed. Runs stack, so an operation a release starts while a run waits is a
+run of its own.
+
+What stays in a client is what only it can do: sockets and waiting, reading a
+`SoundFile`, allocating buffer numbers, and projecting a binding, the dirty
+flag or the layers onto its language objects. Python performs a run
+synchronously; the web client performs the effects decided before a run's
+first await at once and the rest in its queued work, so an answer it owes at
+once (whether the take changed, why a verb refused) is read off the first
+answer.
 
 #### Composition and extension
 

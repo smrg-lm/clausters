@@ -18,8 +18,15 @@ walked against, the buffer numbers the crate is handed for new takes (from this
 client's allocator, topped up before every turn), and freeing the takes the
 context hands back.
 
+**What a gesture, a verb or the transport leads to is the shared crate's
+coordinator's** (the context's ``audio`` door): every action runs there and
+comes back as an ordered list of effects -- steps to carry out, props to set,
+the window to draw again, an answer to send -- with, where the next step
+depends on it, one thing to wait on. What is here carries those out.
+
 **It sounds through nodes of its own**, the audio editor's (the shared
-crate's ``AudioEditorPlayback``, the object the GUI host's monitor holds too):
+crate's ``AudioEditorPlayback``, which the coordinator holds; the GUI host's
+monitor holds another):
 one play graph per open take, all but the one played last paused, on a
 transport of the editor's own, and an output beside them that meters the take
 and declicks every play and stop on the way to the hardware. The window shows
@@ -53,133 +60,67 @@ _SPARE = 2
 #: Why a verb that acts on a file is refused by an editor with none open.
 _NO_FILE = "no file is open"
 
+#: What a run's own error raises, by the coordinator's name for it.
+_RAISED = {"value": ValueError, "command": CommandError, "runtime": RuntimeError}
+
 
 class _AudioPlayback:
-    """**What sounds one audio editor** -- the shared crate's playback, the
-    steps it answers carried out on the editor's server.
-
+    """**What a script reads of one audio editor's playback**, which the
+    shared crate's coordinator holds: the transport it plays on and its state.
     One per editor, shared by its open files: one file plays at a time and
     all others stay paused, and playing one window moves nothing in another.
-    A pass goes on while the window shows another file until it is stopped,
-    from any file, and a play is over the file shown.
     """
 
-    def __init__(self, server):
-        self.server = server
-        self._instance = _service_instance(server)
-        self._native = _native.AudioEditorPlayback(chunk=server._bulk_chunk())
-        # Node ids come back on their `/node_end`, which only a registered
-        # client hears.
-        server._ensure_recycler()
-        self._rate = None
-        try:
-            taken = self._native.call("open", server.ids)
-        except ValueError as refused:
-            raise RuntimeError(str(refused)) from None
-        #: The transport it plays on: one of the server's, allocated for it.
-        self.transport_id = int(taken["transport"])
+    def __init__(self, editor):
+        self._editor = editor
 
     @property
-    def rate(self) -> float:
-        """The engine's sample rate, asked once; 0 when it will not say."""
-        if self._rate is None:
-            try:
-                self._rate = float(self.server.query_info().nominal_sample_rate)
-            except (RuntimeError, OSError, TimeoutError):
-                self._rate = 0.0
-        return self._rate
-
-    def call(self, verb: str, **args) -> dict:
-        """One verb of the crate's playback, its steps carried out."""
-        if _service_instance(self.server) != self._instance:
-            raise RuntimeError("the audio service belongs to a previous server instance")
-        answer = self._native.call(verb, self.server.ids, **args)
-        steps = answer.get("steps")
-        if steps:
-            execute_steps(self.server, self._instance, steps)
-        return answer
+    def transport_id(self) -> int:
+        """The transport it plays on: one of the server's, allocated for it."""
+        return int(self._editor._transport_id)
 
     def state(self) -> dict:
-        """``{transport, rolling, focus, meters, nodes}``."""
-        return self._native.call("state", self.server.ids)
-
-    def rolling(self) -> bool:
-        """Whether the transport rolls, as the engine answers -- a pass that
-        ended on its mark stopped without anybody here saying so."""
-        playing = bool(self.server.transport_at(self.transport_id).state()["playing"])
-        self._native.call("setRolling", self.server.ids, rolling=playing)
-        return playing
+        """``{playing, meters, rolling, focus}``, as the playback was last told."""
+        return self._editor._transport_state()["state"]
 
 
 class _AudioDriver:
     """**What an audio editor's `clausters.defs.Transport` plays through**:
-    the server's audio editor playback, its positions the take's seconds, and
+    the coordinator's transport verbs, its positions the take's seconds, and
     the time range and the loop switch the window shows -- the band a sweep
-    leaves and `L` -- kept here, stopped or rolling, so a script and a hand
-    read and write one state. Where a pass starts and how it ends are the
-    crate's, as the space bar's are."""
+    leaves and `L` -- kept there, stopped or rolling, so a script and a hand
+    read and write one state."""
 
     def __init__(self, editor):
         self.editor = editor
-        #: The time range ``(start, end)`` in seconds, or ``None``.
-        self.span = None
-        #: Whether the loop switch is on: the span, or the whole take.
-        self.looping = False
-        self._paused = False
 
     @property
-    def _playback(self):
-        return self.editor._playback
+    def span(self):
+        """The time range ``(start, end)`` in seconds, or ``None``."""
+        span = self.editor._transport_state()["span"]
+        return None if span is None else (float(span[0]), float(span[1]))
 
-    def _focused(self) -> bool:
-        return self._playback.state().get("focus") == self.editor._file_id
+    @property
+    def looping(self) -> bool:
+        """Whether the loop switch is on: the span, or the whole take."""
+        return bool(self.editor._transport_state()["looping"])
 
     def playing(self) -> bool:
-        was = bool(self._playback.state().get("rolling"))
-        rolling = self._playback.rolling()
-        if was != rolling:
-            self.editor._show_transport()
-        return rolling and self._focused()
+        return bool(self.editor._audio("playing"))
 
     def play(self, at=None) -> None:
-        if at is None and self._paused and self._focused():
-            self._paused = False
-            self._playback.call("resume")
-            self.editor._show_transport()
-            return
-        self._paused = False
-        if at is not None:
-            self.locate(at)
-        ed = self.editor
-        play = ed._call("play", looping=self.looping)
-        self._playback.call("play", file=ed._file_id, start=int(play["start"]),
-                            **{"pass": play["pass"]})
-        ed._show_transport()
+        self.editor._audio("play", **({} if at is None else {"at": float(at)}))
 
     def pause(self) -> None:
-        if self._focused():
-            self._playback.call("pause")
-            self._paused = True
-            self.editor._show_transport()
+        self.editor._audio("pause")
 
     def stop(self) -> None:
         """Stop whichever file plays, from the window showing another file
         too, and bring the file shown into focus at its cursor."""
-        self._paused = False
-        if self._focused() or self._playback.rolling():
-            ed = self.editor
-            play = ed._call("play", looping=self.looping)
-            self._playback.call("stop", back=int(play["back"]), file=ed._file_id)
-            ed._show_transport()
+        self.editor._audio("stop")
 
     def locate(self, at: float) -> None:
-        ed = self.editor
-        frame = int(ed._call("locate", at=float(at))["cue"])
-        ed.cursor = float(at)
-        if self._playback.rolling() and self._focused():
-            self._playback.call("locate", frame=frame)
-        else:
-            self._playback.call("cue", frame=frame)
+        self.editor._audio("locate", at=float(at))
 
     @property
     def end(self):
@@ -195,25 +136,11 @@ class _AudioDriver:
         take is freed by closing its editor."""
 
     def set_span(self, span, *, show: bool = True) -> None:
-        ed = self.editor
-        band = ed._call("span", span=None if span is None
-                        else [float(span[0]), float(span[1])])
-        self.span = (None if span is None or not band["sel_len"]
-                     else (float(span[0]), float(span[1])))
-        if show:
-            ed._show_band(band)
-        self._follow()
+        self.editor._audio("span", show=bool(show), span=None if span is None
+                           else [float(span[0]), float(span[1])])
 
     def set_looping(self, on: bool) -> None:
-        self.looping = bool(on)
-        self._follow()
-        self.editor._show_looping(self.looping)
-
-    def _follow(self) -> None:
-        """A pass in progress ends as the span and the switch now say."""
-        if self._focused():
-            play = self.editor._call("play", looping=self.looping)
-            self._playback.call("pass", **{"pass": play["pass"]})
+        self.editor._audio("looping", on=bool(on))
 
 
 class AudioDomain(Domain):
@@ -243,7 +170,7 @@ class AudioDomain(Domain):
     def execute_operation(self, structure, prepared):
         if self.editor is None:
             raise RuntimeError("the operation owner is absent")
-        return self.editor._operation({}, prepared=prepared)
+        return self.editor._operation(None, prepared=prepared)
 
     def execute_batch(self, structure, server, steps):
         editor = self.editor
@@ -266,7 +193,7 @@ class AudioDomain(Domain):
 
     def sound_file(self, structure, file):
         if self.editor is not None:
-            self.editor._sync_sound(file)
+            self.editor._audio("syncSound", file=file)
 
     def free(self, structure, buffers, spilled=()) -> None:
         """Free takes the context handed back: nothing reaches them any more.
@@ -289,7 +216,7 @@ class AudioDomain(Domain):
         editor._check_server()
         try:
             if operation is not None:
-                editor._operation({}, prepared=operation)
+                editor._operation(None, prepared=operation)
             else:
                 run_steps(editor._server, _native.StepRunner(), steps)
         except CommandError:
@@ -394,17 +321,19 @@ class AudioEditor(Marking, Editor):
             self._call("sync", scratch=str(scratch))
             self._editing.limit_resident(resident_bytes)
         self._top_up()
-        if not empty:
-            self._operation({"kind": "open"})
-        # **A private copy of the take**, and the join over it: the buffer the
-        # editor was handed is written by a save and by nothing else.
-
-        #: What sounds the take: the server's audio editor playback, where
-        #: this editor's take is the file its join is.
-        self._playback = _AudioPlayback(self._server)
+        # Node ids come back on their `/node_end`, which only a registered
+        # client hears.
+        self._server._ensure_recycler()
+        #: What a script reads of the playback the coordinator holds.
+        self._playback = _AudioPlayback(self)
         #: What the `transport` plays through.
         self._driver = _AudioDriver(self)
-        self._sound()
+        # **A private copy of the take**, and the join over it: the buffer the
+        # editor was handed is written by a save and by nothing else. Then it
+        # sounds, on a transport of its own.
+        opened = self._audio("open", chunk=int(self._server._bulk_chunk()),
+                             rate=self._engine_rate(), empty=empty)
+        self._transport_id = int(opened["transport"])
 
     @property
     def transport(self):
@@ -415,7 +344,7 @@ class AudioEditor(Marking, Editor):
         is `L`, and each side reads what the other set. It is this editor's
         own -- one of the server's, allocated for it -- so another window's
         play never moves it."""
-        transport = self._server.transport_at(self._playback.transport_id)
+        transport = self._server.transport_at(self._transport_id)
         transport._driver = self._driver
         return transport
 
@@ -456,60 +385,6 @@ class AudioEditor(Marking, Editor):
     def _file_id(self) -> int:
         return int(self._call("binding")["id"])
 
-    def _sound(self, *, publish_preview: bool = True) -> None:
-        """Make what sounds be the take as it now is -- the join and its
-        length -- and tell the window where its level is read from."""
-        file = self._call("playback")
-        if file.get("active") is False:
-            return
-        self._sync_sound(file)
-        preview = file["preview"]
-        state = self._playback.state()
-        if publish_preview and self._host is not None and self._window is not None:
-            buffer = (state.get("previews") or {}).get(str(self._file_id))
-            # every view of the take, each drawing the preview as itself
-            for wid in preview.get("pictures") or ():
-                self._host.set(int(wid), preview_buffer=-1 if buffer is None else buffer)
-        self._tell_meters()
-
-    def _tell_meters(self) -> None:
-        """Tell the window where its level is read from: the viewed file's
-        meter, so the playback is told which file is viewed first."""
-        self._call("sync", meters=self._playback.state().get("meters"))
-
-    def _sync_sound(self, file):
-        self.dirty = bool(self._call("binding").get("dirty"))
-        if file.get("active") is False:
-            return
-        self._playback.call("sync", file=int(file["id"]), buffer=int(file["display"]),
-                            channels=int(file["channels"]), frames=int(file["frames"]),
-                            takeRate=float(file["rate"]), rate=self._playback.rate)
-        preview = file["preview"]
-        if preview["installed"]:
-            self._playback.call("gain", file=int(file["id"]), points=preview["points"],
-                                on=preview["on"], revision=preview["revision"])
-        else:
-            self._playback.call("removeEffect", file=int(file["id"]))
-        self._retain_playback()
-
-    def _cue(self, frame: int) -> None:
-        """**The position cursor moved**: the play cursor goes with it while
-        nothing plays, and a rolling pass is left alone."""
-        self._playback.rolling()
-        self._playback.call("cue", frame=frame)
-        self._show_transport()
-
-    def _play(self, play: dict) -> None:
-        """**The space bar**, as the editor read it: a rolling transport stops
-        and goes back to the position cursor; a stopped one plays the pass."""
-        if self._playback.rolling():
-            # whichever file plays stops, and the one shown comes into focus
-            self._playback.call("stop", back=int(play["back"]), file=self._file_id)
-        else:
-            self._playback.call("play", file=self._file_id, start=int(play["start"]),
-                                **{"pass": play["pass"]})
-        self._show_transport()
-
     def _clipboard(self, doc: str, buffer: int, *, ready: bool = False) -> None:
         """**A copy made on the server**: the buffer it is in is the
         clipboard's now, the one the previous copy was in goes, and the host's
@@ -522,17 +397,158 @@ class AudioEditor(Marking, Editor):
         if self._host is not None:
             self._host.clipboard(doc)
 
-    def _show_transport(self) -> None:
-        """**The window's play cursor and the list's play mark, as the
-        playback stands**: the line is drawn over the file shown unless another
-        file is playing, and the list marks the file that plays. Read off what
-        the playback was last told: an engine asked right after a play may not
-        be rolling yet."""
-        state = self._playback.state()
-        if self._host is None or self._window is None:
-            return
-        for correction in self._call("playing", file=state.get("playing"), meters=state.get("meters"))["corrections"]:
-            self._host.set(int(correction["widget"]), **correction["props"])
+    def _engine_rate(self) -> float:
+        """The engine's sample rate, asked once; 0 when it will not say."""
+        try:
+            return float(self._server.query_info().nominal_sample_rate)
+        except (RuntimeError, OSError, TimeoutError, AttributeError):
+            return 0.0
+
+    def _transport_state(self) -> dict:
+        """What the coordinator holds of the transport: ``{transport, span,
+        looping, paused, focused, state}``."""
+        self._check_server()
+        return self._editing.core.call_ids(self._server.ids, "audio", member=self._member,
+                                           query="transport")
+
+    # ---- the coordinator's runs ----
+
+    def _audio(self, verb: str, *, held=None, **args):
+        """**One action of the shared coordinator, carried out to its end**:
+        its effects performed in order, each await answered, and its result
+        handed back -- or what failed raised. ``held`` is the clipboard lease
+        an event's payload came with, which a run says when to release."""
+        self._check_server()
+        action = {"verb": verb, "window": self._host is not None and self._window is not None,
+                  **args}
+        answer = self._editing.core.call_ids(self._server.ids, "audio", member=self._member,
+                                             do=action)
+        failure = None
+        while True:
+            if "run" not in answer:
+                raise RuntimeError(answer.get("error", "the audio editor did not answer"))
+            for effect in answer.get("effects") or ():
+                self._effect(effect, held)
+            self._publish_actions()
+            if answer.get("done"):
+                if answer.get("rethrow") and failure is not None:
+                    raise failure
+                error = answer.get("error")
+                if error is not None:
+                    raise _RAISED.get(error.get("type"), RuntimeError)(error.get("message"))
+                return answer.get("result")
+            try:
+                result = self._await(answer["await"]) or {}
+            except Exception as error:  # noqa: BLE001 -- the run decides what it means
+                failure = error
+                result = {"failed": str(error) or type(error).__name__}
+            answer = self._editing.core.call_ids(self._server.ids, "audio", member=self._member,
+                                                 run=answer["run"], result=result)
+
+    def _await(self, wait: dict) -> dict:
+        """What a run waits on, done here: the client's own work."""
+        kind = wait["kind"]
+        if kind == "steps":
+            steps = wait.get("steps") or []
+            if wait.get("via") == "service":
+                execute_steps(self._server, self._instance, steps)
+            elif wait.get("via") == "plain":
+                self._check_server()
+                run_steps(self._server, _native.StepRunner(), steps)
+            else:
+                self.domain.run(self.structure, steps)
+            return {}
+        if kind == "rolling":
+            transport = self._server.transport_at(int(wait["transport"]))
+            return {"rolling": bool(transport.state()["playing"])}
+        if kind == "read":
+            return self._read(wait)
+        if kind == "batch":
+            self._editing._run_batch(wait["member"], wait["server"], wait.get("steps") or [])
+            return {}
+        if kind == "stepped":
+            return {"changed": bool(self.app.stepped(wait.get("stepped") or {}, self))}
+        if kind == "clipboard":
+            self._clipboard(wait["document"], int(wait["buffer"]), ready=bool(wait.get("ready")))
+            return {}
+        if kind == "topUp":
+            self._sync_core()
+            return {}
+        raise RuntimeError(f"the audio editor cannot wait on {kind!r}")
+
+    def _read(self, wait: dict) -> dict:
+        """**A file asked for in the window or by a script**, read into a
+        buffer, with a display and spare buffers of its own."""
+        from ...soundfile import SoundFile
+        if wait.get("shape") is not None:
+            shape = wait["shape"]
+            file = SoundFile.empty(int(shape["channels"]), int(shape["frames"]), float(shape["rate"]))
+        else:
+            file = SoundFile.open(wait["path"])
+        take = file.to_buffer(server=self._server)
+        return {"take": int(take.bufnum), "frames": int(take.frames),
+                "channels": int(take.channels), "rate": float(take.sample_rate),
+                "display": self._server.buffers.alloc(), "path": file.path,
+                "untitled": file.path is None, "codec": file.codec,
+                "sample_format": file.sample_format,
+                "buffers": [self._server.buffers.alloc() for _ in range(_SPARE)]}
+
+    def _effect(self, effect: dict, lease) -> None:
+        """One effect of a run, carried out here."""
+        kind = effect["kind"]
+        shown = self._host is not None and self._window is not None
+        if kind == "version":
+            if effect.get("version") is not None:
+                self._editing.version = int(effect["version"])
+        elif kind == "echo":
+            self.echo.send(effect.get("answer"))
+        elif kind == "set":
+            if shown:
+                self._host.set(int(effect["widget"]), **effect["props"])
+        elif kind == "publish":
+            if self._window is not None:
+                self.app.publish(int(self._window), self.draw())
+        elif kind == "band":
+            self._show_band(effect)
+        elif kind == "looping":
+            self._show_looping(bool(effect["on"]))
+        elif kind == "bind":
+            self._bind_file(effect.get("binding"))
+        elif kind == "dirty":
+            self.dirty = bool(effect["dirty"])
+        elif kind == "layers":
+            self.view.layers = tuple(effect["layers"])
+        elif kind == "cursor":
+            self.cursor = float(effect["at"])
+        elif kind == "locate":
+            self.cursor = float(effect["at"])
+            self.locate(self.cursor)
+            if self.composed_in is not None:
+                self.composed_in.locate(self.cursor)
+            if callable(self.on_locate):
+                self.on_locate(self.cursor)
+        elif kind == "changed":
+            self._editing.changed()
+        elif kind == "free":
+            self.domain.free(self.structure, effect.get("buffers") or [])
+        elif kind == "release":
+            self._editing.release(effect.get("freed"), effect.get("stored"))
+        elif kind == "returned":
+            self._editing._operation_returned(effect.get("returned"))
+        elif kind == "operationEcho":
+            self._editing._operation_echo(effect.get("echo"))
+        elif kind == "bufferFree":
+            if self._instance == _service_instance(self._server):
+                buffer = int(effect["buffer"])
+                self._server.send_msg("/buffer_free", buffer)
+                self._server.buffers.free(buffer)
+        elif kind == "lease":
+            if lease is not None:
+                exchange(self._server, "release", lease=lease)
+        elif kind == "closeWindow":
+            Editor.close(self)
+        elif kind == "closedWindow":
+            Editor._closed(self)
 
     def open(self, host=None, id: "int | None" = None):
         """Open the window, with its play cursor drawn from the transport.
@@ -546,50 +562,21 @@ class AudioEditor(Marking, Editor):
             self._call("attach_view")
         window = super().open(host, id)
         if self._host is not None and window is not None:
-            self._host.head_clock(window, "transport", self._playback.transport_id)
+            self._host.head_clock(window, "transport", self._transport_id)
         return window
 
     def _plays_on(self):
         return self._server
 
-    def _new_file(self, shape: dict) -> None:
-        """**A new file asked for in the window**: added to this editor."""
-        self.new_file(int(shape["channels"]), int(shape["frames"]), float(shape["rate"]))
-
     def new_file(self, channels: int, frames: int, rate: float) -> None:
         """Add and focus an empty SoundFile of the requested shape."""
-        from ...soundfile import SoundFile
-        self._add_file(SoundFile.empty(channels, frames, rate))
-
-    def _open_file(self, paths) -> None:
-        """**Files asked to be opened**: each read and added, the last in focus."""
-        from ...soundfile import SoundFile
-        for path in paths:
-            self._add_file(SoundFile.open(path))
-
-    def _add_file(self, file) -> None:
-        """Read ``file`` into a buffer and hand it to the crate as a new file
-        in focus, with a display and spare buffers of its own."""
-        take = file.to_buffer(server=self._server)
-        answer = self._call(
-            "add_file", take=int(take.bufnum), frames=int(take.frames),
-            channels=int(take.channels), rate=float(take.sample_rate),
-            display=self._server.buffers.alloc(), path=file.path,
-            untitled=file.path is None, codec=file.codec,
-            sample_format=file.sample_format,
-            buffers=[self._server.buffers.alloc() for _ in range(_SPARE)])
-        if "error" in answer:
-            self._editing._operation_returned(answer.get("returned"))
-            self._editing.release(answer.get("freed"), answer.get("stored"))
-        self._take(answer)
+        self._audio("newFile", shape={"channels": int(channels), "frames": int(frames),
+                                      "rate": float(rate)})
 
     def open_file(self, paths) -> None:
         """Open a path or a list of paths in this editor, focusing the last."""
         paths = list(paths) if isinstance(paths, (list, tuple)) else str(paths)
-        answer = self._call("open_file", paths=paths)
-        if "error" in answer:
-            raise ValueError(answer["error"])
-        self._open_file(answer["openFile"]["paths"])
+        self._audio("openFile", paths=paths)
 
     @property
     def files(self) -> tuple:
@@ -603,19 +590,19 @@ class AudioEditor(Marking, Editor):
 
     def focus_file(self, index: int) -> None:
         """Focus the file at zero-based index, restoring its cursor and selection."""
-        self._take(self._call("focus_file", index=index))
+        self._audio("verb", call={"verb": "focus_file", "index": index})
 
     def close_file(self, index=None) -> None:
         """Close the focused file, or the file at zero-based index."""
-        self._take(self._call("close_file", **({} if index is None else {"index": index})))
+        self._audio("verb", call={"verb": "close_file", **({} if index is None else {"index": index})})
 
     def show_files(self) -> None:
         """Show the independent file list to the left of the editing view."""
-        self._take(self._call("show_files"))
+        self._audio("verb", call={"verb": "show_files"})
 
     def hide_files(self) -> None:
         """Hide the file list."""
-        self._take(self._call("hide_files"))
+        self._audio("verb", call={"verb": "hide_files"})
 
     def _window_widget(self, role: str, key: str = "") -> int:
         """A component of this window, rebound to the focused file's data.
@@ -660,8 +647,6 @@ class AudioEditor(Marking, Editor):
             self.structure = None
             self.cursor = None
             self.dirty = False
-            self._driver.span = None
-            self._driver._paused = False
             return
         self._display = int(binding["display"])
         self.sample_rate = float(binding["rate"])
@@ -672,24 +657,17 @@ class AudioEditor(Marking, Editor):
         self.cursor = float(binding["cursor"]) / self.sample_rate
         self.dirty = bool(binding["dirty"])
         self.view.layers = tuple(binding["layers"])
-        self._driver.span = tuple(binding["span"]) if binding["span"] is not None else None
-        self._driver.looping = bool(binding["looping"])
-        self._driver._paused = False
 
     def _closed(self) -> bool:
         """The window closed: the take stops being one the editor plays, and
         the last one closed frees the editor's nodes."""
-        self._call("detach_view")
-        self._playback.call("close")
-        self._drop_playback()
-        return super()._closed()
+        self._audio("closed")
+        return False
 
     def close(self):
         """Close the window, and free what sounded the take."""
-        self._call("detach_view")
-        self._playback.call("close")
-        self._drop_playback()
-        return super().close()
+        self._audio("close")
+        return self
 
     def reflect_step(self) -> None:
         """Reflect the committed history position, including its clean checkpoint."""
@@ -720,14 +698,6 @@ class AudioEditor(Marking, Editor):
         if _service_instance(self._server) != self._instance:
             self._editing._service_call("invalidate", server=self._instance)
             raise RuntimeError("the audio service belongs to a previous server instance")
-
-    def _retain_playback(self):
-        result = self._editing._service_call("retainMember", member=self._member, kind="playback")
-        self._editing.release(result.get("freed"), result.get("stored"))
-
-    def _drop_playback(self):
-        result = self._editing._service_call("dropRoot", root={"kind": "playback", "owner": self._member})
-        self._editing.release(result.get("freed"), result.get("stored"))
 
     def _sync_core(self) -> None:
         """Hand the core the chrome, the window it is open in, and enough
@@ -763,50 +733,13 @@ class AudioEditor(Marking, Editor):
         unchanged; successful repair permits editing, saving and closing again.
         Raises `CommandError` if repair fails again. Does nothing if none remain.
         """
-        self._check_server()
-        pending = self._editing._service_call("operation", action="pendingRepairs", member=self._member)
-        for repair in pending.get("repairs") or ():
-            prepared = self._editing._service_call("operation", action="retryRepair", ticket=repair["ticket"])
-            self._operation({}, prepared=prepared, repairing=True)
+        self._audio("retry")
 
     def _operation(self, command, prepared=None, *, repairing=False):
         """Execute typed batches; commit, refusal and cleanup come from Rust."""
-        answer = prepared or self._editing._service_call(
-            "operation", action="prepare", member=self._member, command=command)
-        self._publish_actions()
-        while not answer.get("complete"):
-            if answer.get("accepted") is False:
-                raise RuntimeError("the operation is no longer available")
-            if "error" in answer:
-                raise ValueError(answer["error"])
-            try:
-                self._editing._run_batch(answer["member"], answer["server"], answer.get("steps") or [])
-                result = {"status": "success"}
-            except Exception as error:
-                result = {"status": "failed", "reason": str(error)}
-            answer = self._editing._service_call("operation", action="complete",
-                                                ticket=answer["ticket"], batch=answer["batch"], result=result)
-        if answer.get("repair") is not None:
-            ticket = answer["repair"]
-            try:
-                for recovery in answer.get("recoveries") or ():
-                    self._editing._run_batch(recovery["member"], recovery["server"], recovery.get("steps") or [])
-            except Exception as error:
-                answer = self._editing._service_call("operation", action="repairFailed", ticket=ticket, reason=str(error))
-            else:
-                answer = self._editing._service_call("operation", action="repaired", ticket=ticket)
-        self._editing.version = int(answer.get("version", self._editing.version))
-        self._editing._operation_returned(answer.get("returned"))
-        self._editing._operation_echo(answer.get("echo"))
-        self._editing.release(answer.get("freed"), answer.get("stored"))
-        self.dirty = bool(self._call("binding").get("dirty"))
-        self._publish_actions()
-        if not answer.get("committed") and not (repairing and answer.get("repaired")):
-            outcome = answer.get("outcome") or {}
-            if answer.get("echo") is None:
-                self.echo.send(outcome.get("answer"))
-            raise CommandError(answer.get("reason") or (outcome.get("answer") or {}).get("reason", "the operation was refused"))
-        return answer
+        result = self._audio("operation", command=command, prepared=prepared,
+                             repairing=bool(repairing))
+        return result["completed"]
 
     def save(self, path: "str | None" = None, *, buffer=None,
              sample_format: str = "float"):
@@ -836,9 +769,7 @@ class AudioEditor(Marking, Editor):
         elif buffer is not None:
             request["buffer"] = int(buffer.bufnum)
         self._sync_core()
-        completed = self._operation({"kind": "save", **request})
-        self._take(completed.get("outcome") or {})
-        answer = completed["destination"]
+        answer = self._audio("save", request=request)["destination"]
         if "path" in answer:
             return str(answer["path"])
         return Buffer(int(answer["buffer"]), int(answer["frames"]),
@@ -871,174 +802,14 @@ class AudioEditor(Marking, Editor):
     def _deliver(self, addr: str, args) -> bool:
         self._sync_core()
         prepared = exchange(self._server, "event", args=_plain(list(args))) if addr == "/gui_event" else {"args": _plain(list(args))}
-        turned = self._editing.event(self._member, str(addr), prepared["args"])
-        outcome = turned.get("outcome") or {}
-        outcome["clipboardLease"] = prepared.get("lease")
-        if outcome.get("turn") == "closed":
-            return self._closed()
-        if outcome.get("turn") == "step":
-            stepped = self.app.stepped(turned.get("stepped") or {}, self)
-            self.echo.send(outcome.get("answer"))
-            self._editing.release(turned.get("freed"), turned.get("stored"))
-            self._sound()
-            return stepped
-        changed = self._take(outcome)
-        self._editing.release(turned.get("freed"), turned.get("stored"))
-        return changed
+        lease = prepared.get("lease")
+        return bool(self._audio("event", held=lease, addr=str(addr), args=prepared["args"],
+                                **({} if lease is None else {"lease": True})))
 
     def _route(self, args) -> bool:
         """One ``/gui_event`` payload, with the stamp already taken off."""
         wid, tag, values = args[0], args[1], list(args[2:])
         return self._deliver("/gui_event", [wid, 0, 0, tag, *values])
-
-    def _take(self, outcome: dict) -> bool:
-        try:
-            return self._take_outcome(outcome)
-        finally:
-            self._publish_actions()
-
-    def _take_outcome(self, outcome: dict) -> bool:
-        """Carry out what a turn came to, and answer the host. Returns whether
-        the take changed."""
-        if outcome.get("operation") is not None:
-            try:
-                completed = self._operation({}, prepared=outcome["operation"])
-                return self._take(completed.get("outcome") or {})
-            finally:
-                if outcome.get("clipboardLease") is not None:
-                    exchange(self._server, "release", lease=outcome["clipboardLease"])
-        if "error" in outcome:
-            raise ValueError(outcome["error"])
-        if outcome.get("turn") in (None, "nothing"):
-            if outcome.get("clipboardLease") is not None:
-                exchange(self._server, "release", lease=outcome["clipboardLease"])
-            return False
-        action = outcome.get("fileAction")
-        if action is not None and "binding" not in outcome:
-            self.echo.send(outcome.get("answer"))
-            return self._take(self._call(action["verb"], file=action["file"]))
-        if action is not None and action["verb"] == "close_file":
-            self._playback.call("closeFile", file=int(action["file"]))
-        if "binding" in outcome:
-            self.domain.run(self.structure, outcome.get("steps") or [])
-            self.domain.free(self.structure, outcome.get("freedBuffers") or [])
-            if action is not None and action["verb"] == "close_file":
-                self._retain_playback()
-            outcome = dict(outcome, steps=[])
-            if outcome.get("close"):
-                self.close()
-                return False
-            if outcome.get("focusChanged") and outcome["binding"] is None:
-                # the last file closed: the editor stays, with none
-                self._bind_file(None)
-            elif outcome.get("focusChanged"):
-                self._bind_file(outcome["binding"])
-                self._sound(publish_preview=False)
-                # a pass in progress goes on: the window only looks elsewhere
-                self._playback.rolling()
-                self._playback.call("view", file=self._file_id,
-                                    frame=int(outcome["binding"]["cursor"]))
-                # the meter follows the file now viewed, before the window is drawn
-                self._tell_meters()
-        if "layers" in outcome:
-            self.view.layers = tuple(outcome["layers"])
-        # **A view placed in a lane of its own** (the stacked views, or back
-        # to one): the window is drawn again and the host keeps what is its own.
-        if outcome.get("restructure") and self._window is not None:
-            self.app.publish(int(self._window), self.draw())
-            # the def carries no preview: each view is handed it again
-            self._sound()
-        changed = bool(outcome.get("changed"))
-        # **The steps are this client's to carry out**: a new take made where
-        # the turn needed one and the join stitched over the list -- or, for a
-        # save from the window, the file written.
-        steps = outcome.get("steps") or []
-        published = False
-        try:
-            if outcome.get("clipboard") is not None or outcome.get("clipboardLease") is not None:
-                self._check_server()
-                run_steps(self._server, _native.StepRunner(), steps)
-            else:
-                self.domain.run(self.structure, steps)
-            if outcome.get("clipboard") is not None:
-                self._clipboard(outcome["clipboard"], int(outcome["clipboardBuffer"]), ready=bool(outcome.get("clipboardReady")))
-                published = True
-                if outcome.get("clipboardCut") is not None:
-                    self._sync_core()
-                    continued = self._editing.act(self._member, outcome["clipboardCut"])
-                    next_outcome = continued.get("outcome") or {}
-                    if next_outcome.get("answer") is not None:
-                        next_outcome["answer"]["seq"] = (outcome.get("answer") or {}).get("seq", 0)
-                    changed = self._take(next_outcome)
-                    self._editing.release(continued.get("freed"), continued.get("stored"))
-        except Exception as error:
-            if outcome.get("clipboard") is not None:
-                self.echo.send(dict(outcome.get("answer") or {}, reason=str(error), docVersion=self._editing.version))
-            if not published and outcome.get("clipboardBuffer") is not None and self._instance == _service_instance(self._server):
-                buffer = int(outcome["clipboardBuffer"])
-                self._server.send_msg("/buffer_free", buffer)
-                self._server.buffers.free(buffer)
-            raise
-        finally:
-            if outcome.get("clipboardLease") is not None:
-                exchange(self._server, "release", lease=outcome["clipboardLease"])
-        if outcome.get("newFile") is not None or outcome.get("openFile") is not None:
-            self.echo.send(outcome.get("answer"))
-            outcome = dict(outcome, answer=None)
-        if outcome.get("newFile") is not None:
-            self._new_file(outcome["newFile"])
-        if outcome.get("openFile") is not None:
-            self._open_file(outcome["openFile"]["paths"])
-        if outcome.get("playbackUpdate") is not None:
-            update = outcome["playbackUpdate"]
-            self._sync_sound(update["file"])
-            if update.get("publish"):
-                self._sound()
-        if changed:
-            self.dirty = bool(self._call("binding").get("dirty"))
-            self._editing.changed()
-            if not outcome.get("preparedComplete"):
-                self._sound()
-        if outcome.get("preview") is not None and not changed:
-            self._sound()
-        if outcome.get("play") is not None:
-            # The loop switch rides beside the space bar and `L`: a pass that
-            # loops is the switch on.
-            self._driver._paused = False
-            self._driver.looping = outcome["play"]["pass"].get("kind") == "loop"
-            self._play(outcome["play"])
-        if outcome.get("pass") is not None:
-            self._driver.looping = outcome["pass"].get("kind") == "loop"
-            # `L`: the pass in progress ends as the switch now says; a stopped
-            # playback reads it on its next play.
-            self._playback.call("pass", **{"pass": outcome["pass"]})
-        if outcome.get("follow") is not None:
-            # A selection redrawn while this take loops: the loop is over
-            # the new span, and the head goes into it once the sweep is let
-            # go. Whether it loops, and whether it is this take, is the
-            # playback's to say.
-            self._playback.call("follow", file=self._file_id, **outcome["follow"])
-        if outcome.get("cue") is not None:
-            self._cue(int(outcome["cue"]))
-        if outcome.get("locate") is not None:
-            self.cursor = float(outcome["locate"])
-            self.locate(self.cursor)
-            if self.composed_in is not None:
-                self.composed_in.locate(self.cursor)
-            if callable(self.on_locate):
-                self.on_locate(self.cursor)
-        if outcome.get("selection") is not None:
-            # A sweep's time range is the transport's span, and what the hand
-            # marked: the space bar plays it and the loop repeats it.
-            swept = outcome["selection"]
-            start, length = float(swept.get("start", 0.0)), float(swept.get("len", 0.0))
-            self._driver.span = (start, start + length) if length > 0 else None
-        if outcome.get("clipboardCut") is None:
-            self.echo.send(outcome.get("answer"))
-        if outcome.get("focusChanged"):
-            self._show_transport()
-        self._closing(outcome)
-        return changed
 
     @property
     def layers(self) -> tuple:
@@ -1055,10 +826,7 @@ class AudioEditor(Marking, Editor):
         self._view_layers("layers", stack=stack if isinstance(stack, str) else list(stack))
 
     def _view_layers(self, verb: str, **args) -> None:
-        outcome = self._call(verb, version=self._editing.version, **args)
-        if "error" in outcome:
-            raise ValueError(outcome["error"])
-        self._take(outcome)
+        self._audio("verb", call={"verb": verb, "version": self._editing.version, **args})
 
     @property
     def envelope(self) -> list[float]:
@@ -1100,9 +868,8 @@ class AudioEditor(Marking, Editor):
     def _channels(self, verb: str, **args) -> None:
         """A channel verb: the crate's answer carried out, and a refusal --
         a channel the take does not have -- raised."""
-        outcome = self._call(verb, version=self._editing.version, **args)
-        self._take(outcome)
-        reason = (outcome.get("answer") or {}).get("reason")
+        result = self._audio("verb", call={"verb": verb, "version": self._editing.version, **args})
+        reason = (result or {}).get("reason")
         if reason:
             raise ValueError(reason)
 
@@ -1126,14 +893,10 @@ class AudioEditor(Marking, Editor):
     def _envelope_act(self, verb: str, **args) -> bool:
         with self._editing.turn(self):
             self._sync_core()
-            turned = self._editing.act(self._member, _plain({"verb": verb, **args}))
-            outcome = turned.get("outcome") or {}
-            changed = self._take(outcome)
-            self._editing.release(turned.get("freed"), turned.get("stored"))
-            reason = (outcome.get("answer") or {}).get("reason")
-            if reason:
-                raise ValueError(reason)
-            return changed
+            result = self._audio("act", call=_plain({"verb": verb, **args})) or {}
+            if result.get("reason"):
+                raise ValueError(result["reason"])
+            return bool(result.get("changed"))
 
     @property
     def layer(self) -> str:

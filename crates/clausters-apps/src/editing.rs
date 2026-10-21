@@ -53,6 +53,7 @@ use crate::score::editor::{self as score, ScoreEditor};
 use crate::turn::{Event, Kind, Record, int};
 
 mod audio_operations;
+mod audio_session;
 mod exchange;
 
 /// The version an unedited context is at. One rather than zero, because zero is
@@ -372,6 +373,8 @@ pub struct Editing {
     /// The most of those bytes kept in memory, when there is a limit; the rest
     /// is on disk.
     resident: Option<u64>,
+    /// Each audio member's coordinator ([`audio_session`]).
+    sessions: std::collections::BTreeMap<MemberId, audio_session::Session>,
 }
 
 impl Default for Editing {
@@ -396,6 +399,7 @@ impl Editing {
             seats: Vec::new(),
             bytes: None,
             resident: None,
+            sessions: Default::default(),
         }
     }
 
@@ -1221,6 +1225,25 @@ struct RecordedLeg {
     holds_forward: Vec<u64>,
     #[serde(default, rename = "holdsBackward")]
     holds_backward: Vec<u64>,
+}
+
+/// **[`call_json`], with the server's id spaces**: what the `audio` verb
+/// needs, since an audio member's coordinator allocates its playback's nodes,
+/// buses and transport from them. `audio` -- `member`, and `do` (an action:
+/// starts a run), `run` with `result` (resumes one) or `query`; the answer
+/// is the run's effects and its await or its end (`audio_session`). Every
+/// other verb is [`call_json`]'s.
+pub fn call_json_ids(
+    editing: &mut Editing,
+    request: &str,
+    ids: &mut clausters_core::ids::IdSpaces,
+) -> String {
+    match serde_json::from_str::<Value>(request) {
+        Ok(value) if value["verb"] == "audio" => {
+            audio_session::call(editing, &value, ids).to_string()
+        }
+        _ => call_json(editing, request),
+    }
 }
 
 /// **One verb of a context, over JSON** -- the door both clients bind.

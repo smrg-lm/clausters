@@ -57,6 +57,55 @@ pub unsafe extern "C" fn clausters_apps_editing_free(e: *mut FfiEditing) {
     }
 }
 
+/// **One verb of the context, with the server's id spaces**
+/// (`clausters_apps::editing::call_json_ids`): the `audio` verb allocates an
+/// audio member's playback from `ids`; every other verb is
+/// [`clausters_apps_editing_call`]'s. A verb runs once, as there: the first
+/// call runs it, allocating from `ids`, and a call with the same request hands
+/// its answer over.
+///
+/// # Safety
+/// `e` and `ids` must be live handles, `request` readable for `request_len`
+/// bytes, and `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_apps_editing_call_ids(
+    e: *mut FfiEditing,
+    ids: *mut crate::registry::FfiIdSpaces,
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees both are live or null.
+    let (Some(handle), Some(spaces)) = (unsafe { e.as_ref() }, unsafe { ids.as_ref() }) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
+        return 0;
+    };
+    let Ok(mut held) = handle.0.lock() else {
+        return 0;
+    };
+    let (editing, pending) = &mut *held;
+    let answer = match pending.take() {
+        Some((asked, answer)) if asked == request => answer,
+        _ => {
+            let Ok(mut spaces) = spaces.0.lock() else {
+                return 0;
+            };
+            context::call_json_ids(editing, &request, &mut spaces)
+        }
+    };
+    let mut handed = false;
+    // SAFETY: forwarded from this function's own contract.
+    let n = unsafe { crate::out::fill_then(answer.as_bytes(), out, out_cap, || handed = true) };
+    if !handed {
+        *pending = Some((request.into_owned(), answer));
+    }
+    n
+}
+
 /// **One verb of the context**: `request` names the `verb` and carries its
 /// arguments, as `clausters_apps::editing::call_json` documents, and the answer
 /// is JSON.

@@ -425,6 +425,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_apps_editing_call.restype = ctypes.c_size_t
+    lib.clausters_apps_editing_call_ids.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_editing_call_ids.restype = ctypes.c_size_t
     lib.clausters_apps_editing_open_notes.argtypes = [
         ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
@@ -2262,6 +2266,18 @@ class EditingCore:
             body = json.dumps({"verb": verb, **args}).encode("utf-8")
             raw = size_then_fill(lib().clausters_apps_editing_call,
                                  ctypes.c_void_p(self._handle), as_u8(body), len(body))
+            return json.loads(raw) if raw else {}
+
+    def call_ids(self, ids: "IdSpaces", verb: str, **args):
+        """One verb with the server's id spaces, which the ``audio`` verb
+        allocates an audio member's playback from; the answer, parsed."""
+        with self._lock:
+            if not self._handle:
+                return {}
+            body = json.dumps({"verb": verb, **args}).encode("utf-8")
+            raw = size_then_fill(lib().clausters_apps_editing_call_ids,
+                                 ctypes.c_void_p(self._handle), ctypes.c_void_p(ids._handle),
+                                 as_u8(body), len(body))
             return json.loads(raw) if raw else {}
 
     def open_notes(self, sequence: "SequenceHandle", **request) -> dict:

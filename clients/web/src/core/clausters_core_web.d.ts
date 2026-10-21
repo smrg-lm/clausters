@@ -113,6 +113,12 @@ export class EditingCore {
      */
     call(request: string): string;
     /**
+     * One verb with the server's id spaces, as
+     * `clausters_apps::editing::call_json_ids` documents: the `audio` verb
+     * allocates an audio member's playback from `ids`.
+     */
+    callIds(request: string, ids: IdSpaces): string;
+    /**
      * An empty context.
      */
     constructor();
@@ -2099,6 +2105,7 @@ export interface InitOutput {
     readonly editingcore_bindEngraver: (a: number, b: number, c: number) => [number, number];
     readonly editingcore_bindSequence: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_call: (a: number, b: number, c: number) => [number, number];
+    readonly editingcore_callIds: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_new: () => number;
     readonly editingcore_openMultitrack: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_openNotes: (a: number, b: number, c: number, d: number) => [number, number];

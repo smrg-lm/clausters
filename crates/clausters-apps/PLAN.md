@@ -2626,6 +2626,36 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   release follows the last dependent effect. Adapters contain no duplicate
   focus/playback/clipboard/close policy; `edit` and supported verbs work.
 
+  - ✅ **The coordinator** (`editing::audio_session`): one per audio member of
+    `Editing`, owning that member's `AudioEditorPlayback` (a client no
+    longer holds one), the transport facts a script and a hand share (span,
+    loop switch, paused) and a stack of runs, so an operation started while
+    another run waits (a release that stores, a walk that restores) is a run
+    of its own. One door, `audio`: `do` starts a run, `run` and `result`
+    resume it; the call carries the server's id spaces, which the playback
+    allocates from.
+  - ✅ **The effect vocabulary**, answered in order: run steps on the
+    server, set props, publish the window drawn again, echo an answer, put a
+    document on the clipboard, release a lease, release freed and stored
+    takes, project a binding, the dirty flag or the layers onto the language
+    object, tell a locate, close the window. A run stops on an **await**
+    whose result re-enters it: whether the transport rolls, the files read
+    into buffers, an operation's batch, a history step carried out. A failed
+    await resumes the run that asked for it; with no handler for the
+    failure, the run ends with its error and the adapter raises it.
+  - ✅ Ported into it, in Python's order (the reference): event, action and
+    member-verb outcomes; focus, close and restructure; sound, meter and
+    transport corrections; playback updates and the preview; play, pass,
+    follow and cue; new and opened files; clipboard publication and the cut
+    continuation; the operation loop with repair; the transport verbs.
+  - ⬜ Both clients interpret the vocabulary and nothing else: sockets,
+    awaiting, reading a `SoundFile`, the language objects. Each records the
+    effects it performs, and a trace the Rust tests write is replayed by
+    both client suites against the same order. Both clients interpret it
+    (2026-10-21); the shared traces are open.
+  - ⬜ Common repair construction and finish/walk finalization move into
+    `application::runtime`, beside `walks::finish`.
+
 - ⬜ **X23 - Define activity, subscriptions and invalidation.** After
   `X22`, connect application activity to existing host demand/tick machinery.
   Define redraw, clock queries, meter/tap subscriptions and preview analysis

@@ -598,13 +598,30 @@ def test_an_empty_sound_file_opens_untitled_and_asks_for_a_path():
     assert "Save as" in str(host.trees[0])
 
 
+def _asked(editor) -> list:
+    """What the coordinator asks this client to read, instead of reading it."""
+    asked = []
+
+    def read(wait):
+        asked.append(wait.get("shape") or wait.get("path"))
+        raise RuntimeError("not read here")
+
+    editor._read = read
+    return asked
+
+
 def test_a_new_file_asked_for_in_the_window_is_delivered_to_the_handler():
     from clausters import SoundFile
     editor, _host, _wid, _context = opened(FakeBuffer(), file=SoundFile.empty(1, 100, SR))
-    asked = []
-    editor._new_file = lambda shape: asked.append(shape)
-    editor._take({"turn": "route", "newFile": {"channels": 3, "frames": 10, "rate": SR}})
-    assert asked == [{"channels": 3, "frames": 10, "rate": SR}]
+    asked = _asked(editor)
+    window = int(editor._window)
+    editor.apply("/gui_event", [window, 1, 0, "new_file"])
+    dialog = lambda name: editor._window_widget("dialog", name)
+    editor.apply("/gui_event", [dialog("new:channels"), 2, 0, "3"])
+    with pytest.raises(RuntimeError, match="not read here"):
+        editor.apply("/gui_event", [dialog("new:ok"), 3, 0, "click"])
+    assert len(asked) == 1 and asked[0]["channels"] == 3
+    assert set(asked[0]) == {"channels", "frames", "rate"}
 
 
 def test_a_take_opened_over_a_buffer_is_no_file():
@@ -626,12 +643,12 @@ def test_channels_fold_through_the_crate_and_correct_the_take():
         editor.fold_channel(7)
 
 
-def test_files_asked_for_in_the_window_are_delivered_to_the_handler():
+def test_files_asked_for_are_read_one_at_a_time():
     editor, _host, _wid, _context = opened(FakeBuffer())
-    asked = []
-    editor._open_file = lambda path: asked.append(path)
-    editor._take({"turn": "route", "openFile": {"paths": ["/takes/b.wav", "/takes/c.wav"]}})
-    assert asked == [["/takes/b.wav", "/takes/c.wav"]]
+    asked = _asked(editor)
+    with pytest.raises(RuntimeError, match="not read here"):
+        editor.open_file(["/takes/b.wav", "/takes/c.wav"])
+    assert asked == ["/takes/b.wav"], "the second is read once the first is added"
 
 
 def test_files_share_one_handler_and_transport_but_keep_state_and_history(monkeypatch):
@@ -754,7 +771,7 @@ def test_reconnecting_refuses_stale_editor_resources_before_sending():
     with pytest.raises(RuntimeError, match="previous server instance"):
         _ = editor.parts
     with pytest.raises(RuntimeError, match="previous server instance"):
-        editor._playback.call("close")
+        editor.close()
     assert len(take.server.sent) == sent
     # Keep the original allocator alive until the stale handle is discarded.
     assert previous_ids is not take.server.ids

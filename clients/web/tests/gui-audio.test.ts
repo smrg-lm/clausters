@@ -654,18 +654,29 @@ test("an empty sound file opens untitled and asks for a path", async () => {
     assert.ok(JSON.stringify(host.trees[0]).includes("Save as"));
 });
 
+/** What the coordinator asks this page to read, instead of reading it. */
+function asked(editor: AudioEditor): unknown[] {
+    const asked: unknown[] = [];
+    (editor as unknown as { read: (request: Record<string, unknown>) => Promise<unknown> }).read = (request) => {
+        asked.push(request.shape ?? request.path);
+        return Promise.reject(new Error("not read here"));
+    };
+    return asked;
+}
+
 test("a new file asked for in the window is delivered to the handler", async () => {
     const [editor] = await opened(new FakeBuffer(), { file: SoundFile.empty(1, 100, SR) });
-    const asked: unknown[] = [];
-    (editor as unknown as { newFileShape: (shape: unknown) => Promise<void> }).newFileShape = (shape) => {
-        asked.push(shape);
-        return Promise.resolve();
-    };
-    (editor as unknown as { take: (outcome: unknown) => boolean }).take({
-        turn: "route", newFile: { channels: 3, frames: 10, rate: SR },
-    });
+    const read = asked(editor);
+    const window = Number((editor as unknown as { windowId: number }).windowId);
+    editor.apply("/gui_event", [window, 1, 0, "new_file"]);
+    const dialog = (name: string) => editor.windowWidget("dialog", name);
+    editor.apply("/gui_event", [dialog("new:channels"), 2, 0, "3"]);
+    editor.apply("/gui_event", [dialog("new:ok"), 3, 0, "click"]);
     await settle();
-    assert.deepEqual(asked, [{ channels: 3, frames: 10, rate: SR }]);
+    assert.equal(read.length, 1);
+    const shape = read[0] as Record<string, number>;
+    assert.equal(shape.channels, 3);
+    assert.deepEqual(Object.keys(shape).sort(), ["channels", "frames", "rate"]);
 });
 
 test("a take opened over a buffer is no file", async () => {
@@ -687,20 +698,12 @@ test("channels fold through the crate and correct the take", async () => {
     assert.throws(() => editor.foldChannel(7), /channel 7/);
 });
 
-test("files asked for in the window are delivered to the handler", async () => {
+test("files asked for are read one at a time", async () => {
     const [editor] = await opened(new FakeBuffer());
-    const asked: string[][] = [];
-    (editor as unknown as { openPaths: (path: string[]) => Promise<void> }).openPaths = (path) => {
-        asked.push(path);
-        return Promise.resolve();
-    };
-    (editor as unknown as { take: (outcome: unknown) => boolean }).take({
-        turn: "route", openFile: { paths: ["/takes/b.wav", "/takes/c.wav"] },
-    });
-    await settle();
-    assert.deepEqual(asked, [["/takes/b.wav", "/takes/c.wav"]]);
+    const read = asked(editor);
+    await assert.rejects(editor.openFile(["/takes/b.wav", "/takes/c.wav"]), /not read here/);
+    assert.deepEqual(read, ["/takes/b.wav"], "the second is read once the first is added");
 });
-
 
 test("files share one handler and transport but keep state and history", async () => {
     const [editor, host, wid] = await opened(new FakeBuffer());
@@ -781,8 +784,8 @@ test("playing a file while viewing another silences the viewed meter", async () 
         await editor.openFile(["/takes/stereo.wav", "/takes/six.wav"]);
         for (const [index, channels] of [[2, 6], [1, 2], [0, 1], [1, 2], [2, 6]]) {
             await editor.focusFile(index!);
-            const playback = (editor as unknown as { playback: { call(v: string): Promise<Record<string, any>> } }).playback;
-            const state = await playback.call("state");
+            const playback = (editor as unknown as { playback: { state(): Promise<Record<string, any>> } }).playback;
+            const state = await playback.state();
             assert.equal(state.playing, first);
             assert.equal(state.meters.channels, channels);
             assert.equal(state.meters.bus >= 0, editor.coreCall("binding").id === first);
@@ -796,11 +799,11 @@ test("playing a file while viewing another silences the viewed meter", async () 
             assert.equal(findPane(host.trees.at(-1)).axes.x.playhead_at, expected);
             await driver.stop();
             take.server.playing = false;
-            assert.deepEqual((await playback.call("state")).meters, { bus: -channels!, channels });
+            assert.deepEqual((await playback.state()).meters, { bus: -channels!, channels });
             await driver.play();
             take.server.playing = true;
             first = editor.coreCall("binding").id;
-            assert.equal((await playback.call("state")).meters.channels, channels);
+            assert.equal((await playback.state()).meters.channels, channels);
         }
         editor.close();
     } finally {
@@ -835,8 +838,7 @@ test("reconnecting refuses stale editor resources before sending", async () => {
     const sent = take.server.sent.length;
     take.server.ids = new IdSpaces(8192, 1024, 2, 16384, 4096, 16, 64, 0, 1);
     assert.throws(() => editor.parts, /previous server instance/);
-    const playback = (editor as unknown as { playback: { call(v: string): Promise<unknown> } }).playback;
-    await assert.rejects(playback.call("close"), /previous server instance/);
+    assert.throws(() => editor.close(), /previous server instance/);
     assert.equal(take.server.sent.length, sent);
     assert.notEqual(previousIds, take.server.ids);
 });

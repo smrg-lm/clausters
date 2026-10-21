@@ -19,8 +19,15 @@
  * page's allocator, topped up before every turn), and freeing the takes the
  * context hands back.
  *
+ * **What a gesture, a verb or the transport leads to is the shared crate's
+ * coordinator's** (the context's `audio` door): every action runs there and
+ * comes back as an ordered list of effects -- steps to carry out, props to
+ * set, the window to draw again, an answer to send -- with, where the next
+ * step depends on it, one thing to wait on. What is here carries those out.
+ *
  * **It sounds through nodes of its own**, the audio editor's (the shared
- * crate's `AudioEditorPlayback`, the object the GUI host's monitor holds too):
+ * crate's `AudioEditorPlayback`, which the coordinator holds; the GUI host's
+ * monitor holds another):
  * one play graph per open take, all but the one played last paused, on a
  * transport of the editor's own, and an output beside them that meters the
  * take and declicks every play and stop on the way to the hardware. The window
@@ -40,7 +47,8 @@ import type { Answer } from "./echo.ts";
 import { Buffer } from "../../defs/buffer.ts";
 import { Editing } from "../../history.ts";
 import { SoundFile } from "../../soundfile.ts";
-import { AudioEditorPlayback, StepRunner } from "../../core/clausters_core_web.js";
+import { StepRunner } from "../../core/clausters_core_web.js";
+import { CommandError } from "../../errors.ts";
 import type { Server } from "../../defs/server/index.ts";
 import type { Transport, TransportDriver } from "../../defs/server/transport.ts";
 import { Segment } from "../../segments.ts";
@@ -65,180 +73,85 @@ const SPARE = 2;
 /** Why a verb that acts on a file is refused by an editor with none open. */
 const NO_FILE = "no file is open";
 
-/** What one turn of the core came to. */
-interface Outcome {
-    turn?: string;
-    layers?: Measure[];
-    preview?: unknown;
-    /** Whether to close the window, by the crate's rule for every editor. */
-    close?: boolean;
-    /** Whether the window holds other widgets now: it is drawn and published again. */
-    restructure?: boolean;
-    answer?: Answer;
-    changed?: boolean;
-    version?: number;
-    steps?: unknown[];
-    locate?: number;
-    selection?: unknown;
-    play?: Play;
-    /** What `L` asks of a pass in progress: how it ends now. */
-    pass?: unknown;
-    /** What a selection redrawn asks of a loop in progress: its span now. */
-    follow?: { from: number; to: number; place: boolean };
-    cue?: number;
-    /** A new file asked for in the window: its shape, for this page to open. */
-    newFile?: { channels: number; frames: number; rate: number };
-    /** A file asked to be opened in the window, for this page to open. */
-    openFile?: { paths: string[] };
-    /** A file the list or the menu asked to focus or close, by its id. */
-    fileAction?: { verb: string; file: number };
-    /** The file in focus after a file verb: its buffers, cursor and state. */
-    binding?: Record<string, unknown>;
-    /** A copy made on the server: the document naming the buffer it is in. */
-    clipboard?: string;
-    /** The buffer that copy is in. */
-    clipboardBuffer?: number;
-    clipboardCut?: Record<string, unknown>;
-    clipboardLease?: ExchangeLease;
-    clipboardReady?: boolean;
-    operation?: Record<string, unknown>;
-    preparedComplete?: boolean;
-    playbackUpdate?: { file: Record<string, unknown>; publish: boolean };
-}
+/** What a run's own error throws, by the coordinator's name for it. */
+const RAISED: Record<string, (message: string) => Error> = {
+    value: (message) => new RangeError(message),
+    command: (message) => new CommandError(message),
+    runtime: (message) => new Error(message),
+};
 
-/** A press of the space bar, as the editor read it: frames of the take. */
-interface Play {
-    start: number;
-    pass: unknown;
-    back: number;
+/** One answer of the coordinator: a run's effects, and its await or its end. */
+interface RunAnswer {
+    run?: number;
+    done?: boolean;
+    effects?: Record<string, any>[];
+    await?: Record<string, any>;
+    result?: any;
+    changed?: boolean;
+    reason?: string | null;
+    rethrow?: boolean;
+    error?: { type: string; message: string } | string;
 }
 
 /**
- * **What sounds one audio editor** -- the shared crate's playback, the steps
- * it answers carried out on the editor's server.
- *
- * One per editor, shared by its open files: one file plays at a time and
- * all others stay paused, and playing one window moves nothing in another. A
- * pass goes on while the window shows another file until it is stopped,
- * from any file, and a play is over the file shown.
+ * **What a page reads of one audio editor's playback**, which the shared
+ * crate's coordinator holds: the transport it plays on and its state. One per
+ * editor, shared by its open files: one file plays at a time and all others
+ * stay paused, and playing one window moves nothing in another.
  */
 class AudioPlayback {
-    #native: AudioEditorPlayback | null = null;
-    readonly #instance: { connection: number; generation: number };
-    readonly #ready: Promise<void>;
-    /** The engine's sample rate, asked once; 0 when it will not say. */
-    rate = 0;
+    readonly #editor: AudioEditor;
 
-    /** The server it plays on. */
-    readonly server: Server;
-    /** The transport it plays on -- one of the server's, allocated for it -- once it is made. */
-    transportId: number | null = null;
-
-    constructor(server: Server) {
-        this.server = server;
-        this.#instance = serviceInstance(server);
-        this.#ready = (async () => {
-            this.#native = new AudioEditorPlayback(await server.bulkChunk(), -1);
-            const taken = JSON.parse(
-                this.#native.call(JSON.stringify({ verb: "open" }), server.ids),
-            ) as { transport?: number; error?: string };
-            if (typeof taken.error === "string") throw new Error(`clausters: ${taken.error}`);
-            this.transportId = Number(taken.transport);
-            // Node ids come back on their `/node_end`, which only a registered
-            // client hears.
-            await server.notify(true);
-            try {
-                this.rate = (await server.queryInfo()).nominalSampleRate;
-            } catch {
-                this.rate = 0;
-            }
-        })();
+    constructor(editor: AudioEditor) {
+        this.#editor = editor;
     }
 
-    /** One verb of the crate's playback, its steps carried out. */
-    async call(verb: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-        await this.#ready;
-        const current = serviceInstance(this.server);
-        if (current.connection !== this.#instance.connection || current.generation !== this.#instance.generation) {
-            throw new Error("the audio service belongs to a previous server instance");
-        }
-        const native = this.#native as AudioEditorPlayback;
-        const answer = JSON.parse(
-            native.call(JSON.stringify({ verb, ...args }), this.server.ids),
-        ) as Record<string, unknown>;
-        if (typeof answer.error === "string") throw new RangeError(answer.error);
-        const steps = answer.steps as unknown[] | undefined;
-        if (steps !== undefined && steps.length > 0) {
-            await executeSteps(this.server as unknown as Server, this.#instance, steps);
-        }
-        return answer;
+    /** The transport it plays on, once the editor is open. */
+    get transportId(): number | null {
+        return this.#editor.transportId;
     }
 
-    /**
-     * Whether the transport rolls, as the engine answers -- a pass that ended
-     * on its mark stopped without anybody here saying so.
-     */
-    async rolling(): Promise<boolean> {
-        await this.#ready;
-        const playing = (await this.server.transportAt(this.transportId as number).state()).playing;
-        await this.call("setRolling", { rolling: playing });
-        return playing;
+    /** `{playing, meters, rolling, focus}`, as the playback was last told. */
+    async state(): Promise<Record<string, any>> {
+        await this.#editor.idle();
+        return this.#editor.transportState().state as Record<string, any>;
     }
 }
 
 /**
- * **What an audio editor's `Transport` plays through**: the server's audio
- * editor playback, its positions the take's seconds, and the time range and
+ * **What an audio editor's `Transport` plays through**: the coordinator's
+ * transport verbs, its positions the take's seconds, and the time range and
  * the loop switch the window shows -- the band a sweep leaves and `L` -- kept
- * here, stopped or rolling, so a page and a hand read and write one state.
- * Where a pass starts and how it ends are the crate's, as the space bar's are.
+ * there, stopped or rolling, so a page and a hand read and write one state.
  */
 class AudioDriver implements TransportDriver {
-    /** The time range `[start, end]` in seconds, or `null`. */
-    span: [number, number] | null = null;
-    /** Whether the loop switch is on: the span, or the whole take. */
-    looping = false;
-    /** @internal */
-    paused = false;
     private readonly editor: AudioEditor;
-    private readonly playback: AudioPlayback;
-    private get fileId(): number { return Number(this.editor.coreCall("binding").id); }
 
-    constructor(editor: AudioEditor, playback: AudioPlayback) {
+    constructor(editor: AudioEditor) {
         this.editor = editor;
-        this.playback = playback;
     }
 
-    async #focused(): Promise<boolean> {
-        return (await this.playback.call("state")).focus === this.fileId;
+    /** The time range `[start, end]` in seconds, or `null`. */
+    get span(): [number, number] | null {
+        const span = this.editor.transportState().span as [number, number] | null;
+        return span === null ? null : [Number(span[0]), Number(span[1])];
+    }
+
+    /** Whether the loop switch is on: the span, or the whole take. */
+    get looping(): boolean {
+        return this.editor.transportState().looping === true;
     }
 
     async playing(): Promise<boolean> {
-        const was = (await this.playback.call("state")).rolling === true;
-        const rolling = await this.playback.rolling();
-        if (was !== rolling) await this.editor.showTransport();
-        return rolling && (await this.#focused());
+        return (await this.editor.audio("playing")) === true;
     }
 
     async play(at?: number): Promise<void> {
-        if (at === undefined && this.paused && (await this.#focused())) {
-            this.paused = false;
-            await this.playback.call("resume");
-            await this.editor.showTransport();
-            return;
-        }
-        this.paused = false;
-        if (at !== undefined) await this.locate(at);
-        const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
-        await this.playback.call("play", { file: this.fileId, start: Math.trunc(play.start), pass: play.pass });
-        await this.editor.showTransport();
+        await this.editor.audio("play", at === undefined ? {} : { at });
     }
 
     async pause(): Promise<void> {
-        if (!(await this.#focused())) return;
-        await this.playback.call("pause");
-        this.paused = true;
-        await this.editor.showTransport();
+        await this.editor.audio("pause");
     }
 
     /**
@@ -246,21 +159,11 @@ class AudioDriver implements TransportDriver {
      * and bring the file shown into focus at its cursor.
      */
     async stop(): Promise<void> {
-        this.paused = false;
-        if (!(await this.#focused()) && !(await this.playback.rolling())) return;
-        const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
-        await this.playback.call("stop", { back: Math.trunc(play.back), file: this.fileId });
-        await this.editor.showTransport();
+        await this.editor.audio("stop");
     }
 
     async locate(at: number): Promise<void> {
-        const frame = Number(this.editor.coreCall("locate", { at }).cue);
-        this.editor.cursor = at;
-        if ((await this.playback.rolling()) && (await this.#focused())) {
-            await this.playback.call("locate", { frame });
-        } else {
-            await this.playback.call("cue", { frame });
-        }
+        await this.editor.audio("locate", { at });
     }
 
     get end(): "contents" {
@@ -278,23 +181,11 @@ class AudioDriver implements TransportDriver {
     async free(): Promise<void> {}
 
     async setSpan(span: readonly [number, number] | null, { show = true }: { show?: boolean } = {}): Promise<void> {
-        const band = this.editor.coreCall("span", { span: span === null ? null : [span[0], span[1]] });
-        this.span = span === null || !Number(band.sel_len) ? null : [span[0], span[1]];
-        if (show) this.editor.showBand(Number(band.sel_start), Number(band.sel_len));
-        await this.#follow();
+        await this.editor.audio("span", { show, span: span === null ? null : [span[0], span[1]] });
     }
 
     async setLooping(on: boolean): Promise<void> {
-        this.looping = on;
-        await this.#follow();
-        this.editor.showLooping(on);
-    }
-
-    /** A pass in progress ends as the span and the switch now say. */
-    async #follow(): Promise<void> {
-        if (!(await this.#focused())) return;
-        const play = this.editor.coreCall("play", { looping: this.looping }) as unknown as Play;
-        await this.playback.call("pass", { pass: play.pass });
+        await this.editor.audio("looping", { on });
     }
 }
 
@@ -343,7 +234,7 @@ export class AudioDomain extends Domain<Buffer | null> {
     executeOperation(_structure: unknown, prepared: Record<string, unknown>, complete: (result: Record<string, any>) => void): void {
         this.after(async () => {
             if (this.editor === null) throw new Error("the operation owner is absent");
-            complete(await this.editor.operation({}, prepared));
+            complete(await this.editor.operation(null, prepared));
         });
     }
 
@@ -366,7 +257,7 @@ export class AudioDomain extends Domain<Buffer | null> {
     }
 
     soundFile(_structure: unknown, file: Record<string, unknown>): void {
-        this.#queue(async () => { await this.editor?.syncSound(file); });
+        this.#queue(async () => { await this.editor?.carry("syncSound", { file }); });
     }
 
     /**
@@ -397,7 +288,7 @@ export class AudioDomain extends Domain<Buffer | null> {
         this.#work = this.#work.then(async () => {
             editor.checkServer();
             try {
-                if (operation !== undefined) await editor.operation({}, operation);
+                if (operation !== undefined) await editor.operation(null, operation);
                 else await executeSteps(editor.server as unknown as Server, serviceInstance(editor.server), steps);
             } catch {
                 if (operation === undefined) editor.coreCall("kept", { buffer });
@@ -474,11 +365,15 @@ export class AudioEditor extends Editor<Buffer | null> {
     /** The join the window draws. */
     private display: number;
 
-    /**
-     * What sounds the take: the server's audio editor playback, where this
-     * editor's take is the file its join is.
-     */
+    /** What a page reads of the playback the coordinator holds. */
     private readonly playback: AudioPlayback;
+
+    /**
+     * The transport the editor plays on, once its open run has allocated it.
+     *
+     * @internal
+     */
+    transportId: number | null = null;
 
     /** The {@link SoundFile} the take was loaded from, when it was. */
     readonly #file: SoundFile | null;
@@ -538,15 +433,26 @@ export class AudioEditor extends Editor<Buffer | null> {
             this.editing.limitResident(options.residentBytes);
         }
         this.topUp();
-        if (take !== null) {
-            const opening = this.editing.serviceCall<Record<string, unknown>>("operation", {
-                action: "prepare", member: this.member, command: { kind: "open" },
+        this.playback = new AudioPlayback(this);
+        this.#driver = new AudioDriver(this);
+        // **A private copy of the take**, and the join over it: the buffer the
+        // editor was handed is written by a save and by nothing else. Then it
+        // sounds, on a transport of its own.
+        domain.after(async () => {
+            // Node ids come back on their `/node_end`, which only a registered
+            // client hears.
+            await this.server.notify(true);
+            let rate = 0;
+            try {
+                rate = (await this.server.queryInfo()).nominalSampleRate;
+            } catch {
+                rate = 0;
+            }
+            const opened = await this.carry("open", {
+                chunk: await this.server.bulkChunk(), rate, empty: take === null,
             });
-            domain.after(async () => { await this.operation({ kind: "open" }, opening); });
-        }
-        this.playback = new AudioPlayback(this.server);
-        this.#driver = new AudioDriver(this, this.playback);
-        domain.after(() => this.sound());
+            this.transportId = Number(opened.transport);
+        });
     }
 
     /** What the `transport` plays through. */
@@ -561,7 +467,7 @@ export class AudioEditor extends Editor<Buffer | null> {
      * window's play never moves it. `null` until the editor is open.
      */
     get transport(): Transport | null {
-        const id = this.playback.transportId;
+        const id = this.transportId;
         if (id === null) return null;
         const transport = this.server.transportAt(id);
         transport.driver = this.#driver;
@@ -609,54 +515,14 @@ export class AudioEditor extends Editor<Buffer | null> {
         }
     }
 
-    /**
-     * Make what sounds be the take as it now is -- the join and its length --
-     * and tell the window where its level is read from.
-     */
-    /**
-     * **A new file asked for in the window**: an empty {@link SoundFile} of
-     * that shape, added to this editor.
-     */
-    private async newFileShape(shape: { channels: number; frames: number; rate: number }): Promise<void> {
-        await this.addFile(SoundFile.empty(shape.channels, shape.frames, shape.rate));
-    }
-
     /** Add and focus an empty SoundFile of the requested shape. */
     async newFile(channels: number, frames: number, rate: number): Promise<void> {
-        await (this.domain as AudioDomain).idle();
-        await this.newFileShape({ channels, frames, rate });
-    }
-
-    /** **Files asked to be opened**: each read and added, the last in focus. */
-    private async openPaths(paths: readonly string[]): Promise<void> {
-        for (const path of paths) await this.addFile(await SoundFile.open(path));
-    }
-
-    /**
-     * Read `file` into a buffer and hand it to the crate as a new file in
-     * focus, with a display and spare buffers of its own.
-     */
-    private async addFile(file: SoundFile): Promise<void> {
-        const take = await file.toBuffer({ server: this.server });
-        const answer = this.coreCall("add_file", {
-            take: take.bufnum, frames: take.frames, channels: take.channels, rate: take.sampleRate,
-            display: this.server.buffers.alloc(), path: file.path, untitled: file.path === null,
-            codec: file.codec, sample_format: file.sampleFormat,
-            buffers: Array.from({ length: SPARE }, () => this.server.buffers.alloc()),
-        });
-        if (typeof answer.error === "string") {
-            this.editing.operationReturned(answer.returned as never);
-            this.editing.release(answer.freed as never, answer.stored as never);
-        }
-        await this.applyFile(answer);
+        await this.audio("newFile", { shape: { channels, frames, rate } });
     }
 
     /** Open a path or an array of paths in this editor, focusing the last. */
     async openFile(paths: string | readonly string[]): Promise<void> {
-        await (this.domain as AudioDomain).idle();
-        const answer = this.coreCall("open_file", { paths });
-        if (typeof answer.error === "string") throw new RangeError(answer.error);
-        await this.openPaths((answer.openFile as { paths: string[] }).paths);
+        await this.audio("openFile", { paths: typeof paths === "string" ? paths : [...paths] });
     }
 
     /** Open SoundFiles in list order; a buffer-only entry is null. */
@@ -681,21 +547,19 @@ export class AudioEditor extends Editor<Buffer | null> {
 
     /** Focus the file at zero-based index, restoring its cursor and selection. */
     async focusFile(index: number): Promise<void> {
-        await (this.domain as AudioDomain).idle();
-        await this.applyFile(this.coreCall("focus_file", { index }));
+        await this.audio("verb", { call: { verb: "focus_file", index } });
     }
 
     /** Close the focused file, or the file at zero-based index. */
     async closeFile(index?: number): Promise<void> {
-        await (this.domain as AudioDomain).idle();
-        await this.applyFile(this.coreCall("close_file", index === undefined ? {} : { index }));
+        await this.audio("verb", { call: { verb: "close_file", ...(index === undefined ? {} : { index }) } });
     }
 
     /** Show the independent file list to the left of the editing view. */
-    showFiles(): void { this.take(this.coreCall("show_files") as Outcome); }
+    showFiles(): void { this.started("verb", { call: { verb: "show_files" } }); }
 
     /** Hide the file list. */
-    hideFiles(): void { this.take(this.coreCall("hide_files") as Outcome); }
+    hideFiles(): void { this.started("verb", { call: { verb: "hide_files" } }); }
 
     /** The identity the window's own widgets are named by. */
 
@@ -737,141 +601,6 @@ export class AudioEditor extends Editor<Buffer | null> {
     }
 
     /**
-     * **Carry out a file verb's answer**: the server steps, the buffers it
-     * freed and, when the focus moved, the file now in focus bound (its
-     * buffers, cursor, selection, layers and loop switch) and the playback
-     * shown the file.
-     */
-    private async applyFile(answer: Record<string, unknown>): Promise<void> {
-        this.checkServer();
-        if (typeof answer.error === "string") throw new RangeError(answer.error);
-        if (answer.operation !== undefined) {
-            const completed = await this.operation({}, answer.operation as Record<string, unknown>);
-            await this.applyFile(completed.outcome ?? {});
-            return;
-        }
-        const action = answer.fileAction as { verb: string; file: number } | undefined;
-        if (action?.verb === "close_file") {
-            await this.playback.call("closeFile", { file: action.file });
-        }
-        await runSteps(this.server, this.runner, (answer.steps ?? []) as never);
-        await (this.domain as AudioDomain).cleanup((answer.freedBuffers ?? []) as number[]);
-        if (action?.verb === "close_file") this.retainPlayback();
-        if (answer.close === true) { this.close(); return; }
-        if (answer.focusChanged !== true) {
-            if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
-            return;
-        }
-        if (answer.binding === null) {
-            // the last file closed: the editor stays, with none
-            this.structure = null;
-            this.cursor = null;
-            this.dirty = false;
-            this.#driver.span = null;
-            this.#driver.paused = false;
-            if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
-            return;
-        }
-        const b = answer.binding as Record<string, unknown>;
-        this.display = Number(b.display);
-        this.sampleRate = Number(b.rate);
-        this.structure = new Buffer(
-            Number(b.take),
-            Number(b.frames),
-            Number(b.channels),
-            this.sampleRate,
-            this.server,
-        );
-        this.structureId = Number(b.structure);
-        this.editing.version = Number(b.version);
-        this.cursor = Number(b.cursor) / this.sampleRate;
-        this.dirty = b.dirty === true;
-        (this.view as SamplesView).layers = b.layers as Measure[];
-        this.#driver.span = b.span as [number, number] | null;
-        this.#driver.looping = b.looping === true;
-        this.#driver.paused = false;
-        await this.sound(false);
-        // a pass in progress goes on: the window only looks elsewhere
-        await this.playback.rolling();
-        await this.playback.call("view", { file: this.fileId, frame: Number(b.cursor) });
-        // the meter follows the file now viewed, before the window is drawn
-        await this.tellMeters();
-        if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
-        await this.sound();
-        // the switch moved the version: the answer hands it to the host, with
-        // the incoming file's cursor and selection
-        this.echo.send(answer.answer as never);
-        await this.showTransport();
-    }
-
-    private async sound(publishPreview = true): Promise<void> {
-        const file = this.coreCall("playback");
-        if (file.active === false) return;
-        await this.syncSound(file);
-        const preview = file.preview as Record<string, unknown>;
-        const state = await this.playback.call("state");
-        if (publishPreview && this.host !== null && this.window !== null) {
-            const previews = state.previews as Record<string, number | null> | undefined;
-            // every view of the take, each drawing the preview as itself
-            for (const wid of (preview.pictures as number[] | undefined) ?? []) {
-                await this.host.set(wid, { preview_buffer: previews?.[String(this.fileId)] ?? -1 });
-            }
-        }
-        this.coreCall("sync", { meters: state.meters ?? null });
-    }
-
-    /** Tell the window where its level is read from: the viewed file's
-     * meter, so the playback is told which file is viewed first. */
-    private async tellMeters(): Promise<void> {
-        const state = await this.playback.call("state");
-        this.coreCall("sync", { meters: state.meters ?? null });
-    }
-
-    /** Sync one object's graph independently of the window's focus. @internal */
-    async syncSound(file: Record<string, unknown>): Promise<void> {
-        this.dirty = this.coreCall("binding").dirty === true;
-        if (file.active === false) return;
-        const id = Number(file.id);
-        await this.playback.call("sync", { file: id, buffer: Number(file.display), channels: Number(file.channels),
-            frames: Number(file.frames), takeRate: Number(file.rate), rate: this.playback.rate });
-        const preview = file.preview as Record<string, unknown>;
-        if (preview.installed === true) {
-            await this.playback.call("gain", { file: id, points: preview.points, on: preview.on, revision: preview.revision });
-        } else {
-            await this.playback.call("removeEffect", { file: id });
-        }
-        this.retainPlayback();
-    }
-
-    /**
-     * **The position cursor moved**: the play cursor goes with it while
-     * nothing plays, and a rolling pass is left alone.
-     */
-    private async cue(frame: number): Promise<void> {
-        await this.playback.rolling();
-        await this.playback.call("cue", { frame: Math.trunc(frame) });
-        await this.showTransport();
-    }
-
-    /**
-     * **The space bar**, as the editor read it: a rolling transport stops and
-     * goes back to the position cursor; a stopped one plays the pass.
-     */
-    private async play(play: Play): Promise<void> {
-        if (await this.playback.rolling()) {
-            // whichever file plays stops, and the one shown comes into focus
-            await this.playback.call("stop", { back: Math.trunc(play.back), file: this.fileId });
-        } else {
-            await this.playback.call("play", {
-                file: this.fileId,
-                start: Math.trunc(play.start),
-                pass: play.pass,
-            });
-        }
-        await this.showTransport();
-    }
-
-    /**
      * **A copy made on the server**: the buffer it is in is the clipboard's
      * now, the one the previous copy was in goes, and the host's clipboard
      * names it.
@@ -883,23 +612,259 @@ export class AudioEditor extends Editor<Buffer | null> {
         this.host?.clipboard(doc);
     }
 
-    private get fileId(): number { return Number(this.coreCall("binding").id); }
+    /**
+     * **The file in focus, bound**: its buffers, its structure in the history,
+     * and the cursor, selection and layers it left -- or, with `null`, no
+     * file: the last one was closed.
+     */
+    private bindFile(binding: Record<string, unknown> | null): void {
+        if (binding === null) {
+            this.structure = null;
+            this.cursor = null;
+            this.dirty = false;
+            return;
+        }
+        this.display = Number(binding.display);
+        this.sampleRate = Number(binding.rate);
+        this.structure = new Buffer(
+            Number(binding.take),
+            Number(binding.frames),
+            Number(binding.channels),
+            this.sampleRate,
+            this.server,
+        );
+        this.structureId = Number(binding.structure);
+        this.editing.version = Number(binding.version);
+        this.cursor = Number(binding.cursor) / this.sampleRate;
+        this.dirty = binding.dirty === true;
+        (this.view as SamplesView).layers = binding.layers as Measure[];
+    }
+
+    /** The work queued so far, landed. @internal */
+    idle(): Promise<void> {
+        return (this.domain as AudioDomain).idle();
+    }
+
+    /** What the coordinator holds of the transport. @internal */
+    transportState(): Record<string, unknown> {
+        this.checkServer();
+        return this.callAudio({ query: "transport" }) as Record<string, unknown>;
+    }
+
+    private callAudio(request: Record<string, unknown>): RunAnswer {
+        return JSON.parse(this.editing.serviceCore.callIds(
+            JSON.stringify({ verb: "audio", member: this.member, ...request }), this.server.ids,
+        )) as RunAnswer;
+    }
+
+    /** One action of the coordinator, started: its first answer. */
+    private begin(verb: string, args: Record<string, unknown>): RunAnswer {
+        this.checkServer();
+        return this.callAudio({
+            do: { verb, window: this.host !== null && this.window !== null, ...args },
+        });
+    }
 
     /**
-     * **The window's play cursor and the list's play mark, as the playback
-     * stands**: the line is drawn over the file shown unless another file is
-     * playing, and the list marks the file that plays. Read off what the
-     * playback was last told: an engine asked right after a play may not be
-     * rolling yet.
+     * **A started action, carried out to its end**: its effects performed in
+     * order, each await answered, and its result resolved -- or what failed
+     * thrown. `held` is the clipboard lease an event's payload came with,
+     * which the run says when to release.
      */
-    async showTransport(): Promise<void> {
-        const state = await this.playback.call("state");
-        const host = this.host;
-        if (host === null || this.window === null) return;
-        const playing = this.coreCall("playing", { file: state.playing ?? null, meters: state.meters ?? null });
-        type Correction = { widget: number; props: Parameters<typeof host.set>[1] };
-        for (const correction of (playing.corrections ?? []) as Correction[]) {
-            await host.set(Number(correction.widget), correction.props);
+    private async finish(first: RunAnswer, held?: ExchangeLease): Promise<any> {
+        let answer = first;
+        let failure: unknown = undefined;
+        for (;;) {
+            if (answer.run === undefined) {
+                throw new Error(String(answer.error ?? "the audio editor did not answer"));
+            }
+            for (const effect of answer.effects ?? []) await this.effect(effect, held);
+            this.publishActions();
+            if (answer.done === true) {
+                if (answer.rethrow === true && failure !== undefined) throw failure;
+                const error = answer.error;
+                if (error !== undefined && typeof error === "object") {
+                    throw (RAISED[error.type] ?? RAISED.runtime!)(error.message);
+                }
+                return answer.result;
+            }
+            let result: Record<string, unknown>;
+            try {
+                result = await this.answerAwait(answer.await!);
+            } catch (error) {
+                failure = error;
+                result = { failed: error instanceof Error ? error.message : String(error) };
+            }
+            answer = this.callAudio({ run: answer.run, result });
+        }
+    }
+
+    /** Run an action now, from inside the queued work. @internal */
+    async carry(verb: string, args: Record<string, unknown> = {}, held?: ExchangeLease): Promise<any> {
+        return this.finish(this.begin(verb, args), held);
+    }
+
+    /** Run an action once the work queued before it has landed. @internal */
+    audio(verb: string, args: Record<string, unknown> = {}): Promise<any> {
+        return new Promise((resolve, reject) => {
+            (this.domain as AudioDomain).after(async () => {
+                try {
+                    resolve(await this.carry(verb, args));
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        });
+    }
+
+    /**
+     * **An action started now**: the effects it decided before its first await
+     * are carried out at once, and the rest once the work queued before it has
+     * landed. What the page owes at once (whether the take changed, why a verb
+     * refused) is read off its first answer, and an error it ends in at once is
+     * thrown here.
+     */
+    private started(verb: string, args: Record<string, unknown> = {}, held?: ExchangeLease): RunAnswer {
+        const answer = this.begin(verb, args);
+        const landing = (answer.effects ?? []).map((effect) => this.effect(effect, held));
+        this.publishActions();
+        (this.domain as AudioDomain).after(async () => {
+            await Promise.all(landing);
+            await this.finish({ ...answer, effects: [] }, held);
+        });
+        const error = answer.error;
+        if (answer.done === true && error !== undefined && typeof error === "object") {
+            throw (RAISED[error.type] ?? RAISED.runtime!)(error.message);
+        }
+        return answer;
+    }
+
+    /** What a run waits on, done here: the page's own work. */
+    private async answerAwait(request: Record<string, any>): Promise<Record<string, unknown>> {
+        switch (request.kind) {
+            case "steps": {
+                const steps = (request.steps ?? []) as unknown[];
+                if (request.via === "service") {
+                    this.checkServer();
+                    await executeSteps(this.server as unknown as Server, this.instance, steps);
+                } else {
+                    this.checkServer();
+                    await runSteps(this.server, request.via === "plain" ? new StepRunner() : this.runner, steps as never);
+                }
+                return {};
+            }
+            case "rolling":
+                return { rolling: (await this.server.transportAt(Number(request.transport)).state()).playing };
+            case "read":
+                return this.read(request);
+            case "batch":
+                await this.editing.executeBatch(Number(request.member), request.server, request.steps ?? []);
+                return {};
+            case "stepped":
+                return { changed: this.app.stepped(this.editing, request.stepped ?? {}, this) };
+            case "clipboard":
+                this.clipboard(String(request.document), Number(request.buffer), request.ready === true);
+                return {};
+            case "topUp":
+                this.syncCore();
+                return {};
+            default:
+                throw new Error(`the audio editor cannot wait on ${String(request.kind)}`);
+        }
+    }
+
+    /**
+     * **A file asked for in the window or by a page**, read into a buffer, with
+     * a display and spare buffers of its own.
+     */
+    private async read(request: Record<string, any>): Promise<Record<string, unknown>> {
+        const shape = request.shape as { channels: number; frames: number; rate: number } | undefined;
+        const file = shape !== undefined
+            ? SoundFile.empty(shape.channels, shape.frames, shape.rate)
+            : await SoundFile.open(String(request.path));
+        const take = await file.toBuffer({ server: this.server });
+        return {
+            take: take.bufnum, frames: take.frames, channels: take.channels, rate: take.sampleRate,
+            display: this.server.buffers.alloc(), path: file.path, untitled: file.path === null,
+            codec: file.codec, sample_format: file.sampleFormat,
+            buffers: Array.from({ length: SPARE }, () => this.server.buffers.alloc()),
+        };
+    }
+
+    /** One effect of a run, carried out here. */
+    private async effect(effect: Record<string, any>, held?: ExchangeLease): Promise<void> {
+        const shown = this.host !== null && this.window !== null;
+        switch (effect.kind) {
+            case "version":
+                if (effect.version !== undefined && effect.version !== null) this.editing.version = Number(effect.version);
+                break;
+            case "echo":
+                this.echo.send(effect.answer as never);
+                break;
+            case "set":
+                if (shown) await this.host!.set(Number(effect.widget), effect.props);
+                break;
+            case "publish":
+                if (this.windowId !== null) this.app.publish(this.windowId, this.draw());
+                break;
+            case "band":
+                this.showBand(Number(effect.sel_start), Number(effect.sel_len));
+                break;
+            case "looping":
+                this.showLooping(effect.on === true);
+                break;
+            case "bind":
+                this.bindFile((effect.binding ?? null) as Record<string, unknown> | null);
+                break;
+            case "dirty":
+                this.dirty = effect.dirty === true;
+                break;
+            case "layers":
+                (this.view as SamplesView).layers = effect.layers as Measure[];
+                break;
+            case "cursor":
+                this.cursor = Number(effect.at);
+                break;
+            case "locate":
+                this.cursor = Number(effect.at);
+                this.locate(this.cursor);
+                this.composedIn?.locate(this.cursor);
+                this.onLocate?.(this.cursor);
+                break;
+            case "changed":
+                // the gesture's change has landed: the other windows are told now
+                this.editing.turn(this, () => this.editing.changed());
+                break;
+            case "free":
+                await (this.domain as AudioDomain).cleanup((effect.buffers ?? []) as number[]);
+                break;
+            case "release":
+                this.editing.release(effect.freed as never, effect.stored as never);
+                break;
+            case "returned":
+                this.editing.operationReturned(effect.returned as never);
+                break;
+            case "operationEcho":
+                this.editing.operationEcho(effect.echo as never);
+                break;
+            case "bufferFree": {
+                const current = serviceInstance(this.server);
+                if (current.connection === this.instance.connection && current.generation === this.instance.generation) {
+                    const buffer = Number(effect.buffer);
+                    void this.server.sendMsg("/buffer_free", ["i", buffer]);
+                    this.server.buffers.free(buffer);
+                }
+                break;
+            }
+            case "lease":
+                if (held !== undefined) exchange(this.server, "release", { lease: held });
+                break;
+            case "closeWindow":
+                super.close();
+                break;
+            case "closedWindow":
+                super.closedWindow();
+                break;
         }
     }
 
@@ -920,8 +885,7 @@ export class AudioEditor extends Editor<Buffer | null> {
         await (this.domain as AudioDomain).idle();
         if (this.windowId === null) this.coreCall("attach_view");
         const handle = await super.open(host, options);
-        const transport = Number((await this.playback.call("state")).transport);
-        this.host?.headClock(handle, "transport", transport);
+        if (this.transportId !== null) this.host?.headClock(handle, "transport", this.transportId);
         return handle;
     }
 
@@ -934,22 +898,14 @@ export class AudioEditor extends Editor<Buffer | null> {
      * last one closed frees the editor's nodes.
      */
     protected override closedWindow(): boolean {
-        this.coreCall("detach_view");
-        (this.domain as AudioDomain).after(async () => {
-            await this.playback.call("close");
-            this.dropPlayback();
-        });
-        return super.closedWindow();
+        this.started("closed");
+        return false;
     }
 
     /** Close the window, and free what sounded the take. */
     override close(): this {
-        this.coreCall("detach_view");
-        (this.domain as AudioDomain).after(async () => {
-            await this.playback.call("close");
-            this.dropPlayback();
-        });
-        return super.close();
+        this.started("close");
+        return this;
     }
 
     /** What this page holds about the take and the window. */
@@ -1006,16 +962,6 @@ export class AudioEditor extends Editor<Buffer | null> {
         }
     }
 
-    private retainPlayback(): void {
-        const result = this.editing.serviceCall("retainMember", { member: this.member, kind: "playback" });
-        this.editing.release(result.freed as never, result.stored as never);
-    }
-
-    private dropPlayback(): void {
-        const result = this.editing.serviceCall("dropRoot", { root: { kind: "playback", owner: this.member } });
-        this.editing.release(result.freed as never, result.stored as never);
-    }
-
     private topUp(): void {
         const spare = Number(this.coreCall("sync", this.facts()).spare ?? 0);
         if (spare < SPARE) {
@@ -1069,53 +1015,18 @@ export class AudioEditor extends Editor<Buffer | null> {
      */
     async retryPending(): Promise<void> {
         this.checkServer();
-        const pending = this.editing.serviceCall<{ repairs: { ticket: unknown }[] }>("operation", { action: "pendingRepairs", member: this.member });
-        for (const repair of pending.repairs ?? []) {
-            const prepared = this.editing.serviceCall("operation", { action: "retryRepair", ticket: repair.ticket });
-            await this.operation({}, prepared, true);
-        }
+        await this.audio("retry");
     }
 
-    /** Execute typed batches; commit, refusal and cleanup come from Rust. @internal */
-    async operation(command: Record<string, unknown>, prepared?: Record<string, unknown>, repairing = false): Promise<Record<string, any>> {
-        let answer: Record<string, any> = prepared ?? this.editing.serviceCall("operation", {
-            action: "prepare", member: this.member, command,
-        });
-        this.publishActions();
-        while (answer.complete !== true) {
-            if (answer.accepted === false) throw new Error("the operation is no longer available");
-            if (typeof answer.error === "string") throw new RangeError(answer.error);
-            let result: { status: string; reason?: string };
-            try {
-                await this.editing.executeBatch(Number(answer.member), answer.server, answer.steps ?? []);
-                result = { status: "success" };
-            } catch (error) {
-                result = { status: "failed", reason: String(error) };
-            }
-            answer = this.editing.serviceCall("operation", {
-                action: "complete", ticket: answer.ticket, batch: answer.batch, result,
-            });
-        }
-        if (answer.repair !== undefined) {
-            const ticket = answer.repair;
-            try {
-                for (const recovery of answer.recoveries ?? []) await this.editing.executeBatch(Number(recovery.member), recovery.server, recovery.steps ?? []);
-            } catch (error) {
-                answer = this.editing.serviceCall("operation", { action: "repairFailed", ticket, reason: String(error) });
-            }
-            if (answer.repair !== undefined) answer = this.editing.serviceCall("operation", { action: "repaired", ticket });
-        }
-        this.editing.version = Number(answer.version ?? this.editing.version);
-        this.editing.operationReturned(answer.returned);
-        this.editing.operationEcho(answer.echo);
-        this.editing.release(answer.freed, answer.stored);
-        this.dirty = Boolean(this.coreCall("binding").dirty);
-        this.publishActions();
-        if (answer.committed !== true && !(repairing && answer.repaired === true)) {
-            if (answer.echo == null) this.echo.send(answer.outcome?.answer);
-            throw new Error(answer.reason ?? answer.outcome?.answer?.reason ?? "the operation was refused");
-        }
-        return answer;
+    /**
+     * Execute typed batches; commit, refusal and cleanup come from Rust. Called
+     * from inside the queued work.
+     *
+     * @internal
+     */
+    async operation(command: Record<string, unknown> | null, prepared?: Record<string, unknown>, repairing = false): Promise<Record<string, any>> {
+        const result = await this.carry("operation", { command, prepared: prepared ?? null, repairing });
+        return result.completed as Record<string, any>;
     }
 
     /**
@@ -1145,11 +1056,9 @@ export class AudioEditor extends Editor<Buffer | null> {
         if (path !== undefined) request.path = path;
         else if (buffer === true) request.buffer = this.server.buffers.alloc();
         else if (buffer !== undefined) request.buffer = Math.trunc(buffer.bufnum);
-        await (this.domain as AudioDomain).idle();
+        await this.idle();
         this.syncCore();
-        const completed = await this.operation({ kind: "save", ...request });
-        this.take((completed.outcome ?? {}) as Outcome);
-        const answer = completed.destination;
+        const answer = (await this.audio("save", { request })).destination;
         if (typeof answer.path === "string") {
             return answer.path;
         }
@@ -1197,190 +1106,17 @@ export class AudioEditor extends Editor<Buffer | null> {
         const prepared = addr === "/gui_event"
             ? exchange(this.server, "event", { args: plain([...rawArgs]) })
             : { args: plain([...rawArgs]) };
-        const turned = this.editing.event(this.member, addr, prepared.args as unknown[]);
-        const outcome = (turned.outcome ?? {}) as Outcome;
-        outcome.clipboardLease = prepared.lease as ExchangeLease | undefined;
-        if (outcome.turn === "closed") return this.closedWindow();
-        if (outcome.turn === "step") {
-            const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
-            this.echo.send(outcome.answer);
-            this.editing.release(turned.freed, turned.stored);
-            (this.domain as AudioDomain).after(() => this.sound());
-            return stepped;
-        }
-        const changed = this.take(outcome);
-        this.editing.release(turned.freed, turned.stored);
-        return changed;
+        const lease = prepared.lease as ExchangeLease | undefined;
+        const answer = this.started("event", {
+            addr, args: prepared.args, ...(lease === undefined ? {} : { lease: true }),
+        }, lease);
+        return answer.changed === true;
     }
 
     /** One `/gui_event` payload, with the stamp already taken off. */
     protected override route(args: readonly unknown[]): boolean {
         const [wid, tag, ...values] = args;
         return this.deliver("/gui_event", [wid, 0, 0, tag, ...values]);
-    }
-
-    /**
-     * Carry out what a turn came to, and answer the host. Answers whether the
-     * take changed.
-     */
-    private take(outcome: Outcome): boolean {
-        try {
-            return this.takeOutcome(outcome);
-        } finally {
-            this.publishActions();
-        }
-    }
-
-    /** {@link take}'s body; the window's actions are handed over after it. */
-    private takeOutcome(outcome: Outcome): boolean {
-        if (outcome.operation !== undefined) {
-            const work = outcome.operation;
-            (this.domain as AudioDomain).after(async () => {
-                try {
-                    const completed = await this.operation({}, work);
-                    this.editing.turn(this, () => this.take((completed.outcome ?? {}) as Outcome));
-                } finally {
-                    if (outcome.clipboardLease !== undefined) exchange(this.server, "release", { lease: outcome.clipboardLease });
-                }
-            });
-            return outcome.changed === true;
-        }
-        if (outcome.turn === undefined || outcome.turn === "nothing") {
-            if (outcome.clipboardLease !== undefined) exchange(this.server, "release", { lease: outcome.clipboardLease });
-            return false;
-        }
-        if (outcome.fileAction !== undefined && outcome.binding === undefined) {
-            const action = outcome.fileAction;
-            this.echo.send(outcome.answer);
-            (this.domain as AudioDomain).after(() =>
-                this.applyFile(this.coreCall(action.verb, { file: action.file })),
-            );
-            return false;
-        }
-        if (outcome.layers !== undefined) (this.view as SamplesView).layers = outcome.layers;
-        // **A view placed in a lane of its own** (the stacked views, or back
-        // to one): the window is drawn again and the host keeps what is its own.
-        if (outcome.restructure === true && this.windowId !== null) {
-            this.app.publish(this.windowId, this.draw());
-            // the def carries no preview: each view is handed it again
-            void this.sound();
-        }
-        const changed = outcome.changed === true;
-        // **The steps are this page's to carry out**: a new take made where the
-        // turn needed one and the join stitched over the list -- or, for a save
-        // from the window, the file written.
-        const steps = outcome.steps ?? [];
-        const domain = this.domain as AudioDomain;
-        if (outcome.clipboard !== undefined || outcome.clipboardLease !== undefined) {
-            domain.after(async () => {
-                let published = false;
-                try {
-                    this.checkServer();
-                    await runSteps(this.server, new StepRunner(), steps as never);
-                    if (outcome.clipboard !== undefined && outcome.clipboardBuffer !== undefined) {
-                        this.clipboard(outcome.clipboard, outcome.clipboardBuffer, outcome.clipboardReady === true);
-                        published = true;
-                        if (outcome.clipboardCut !== undefined) {
-                            this.syncCore();
-                            this.editing.turn(this, () => {
-                                const continued = this.editing.act(this.member, outcome.clipboardCut!);
-                                const next = (continued.outcome ?? {}) as Outcome;
-                                if (next.answer != null) next.answer.seq = outcome.answer?.seq ?? 0;
-                                this.take(next);
-                                this.editing.release(continued.freed, continued.stored);
-                            });
-                        }
-                    }
-                } catch (error) {
-                    if (!published && outcome.clipboardBuffer !== undefined) {
-                        this.checkServer();
-                        void this.server.sendMsg("/buffer_free", ["i", outcome.clipboardBuffer]);
-                        this.server.buffers.free(outcome.clipboardBuffer);
-                    }
-                    if (outcome.clipboard !== undefined && outcome.answer !== undefined) {
-                        outcome.answer.reason = String(error);
-                        outcome.answer.docVersion = this.editing.version;
-                        if (outcome.clipboardCut !== undefined) this.echo.send(outcome.answer);
-                    } else {
-                        throw error;
-                    }
-                } finally {
-                    if (outcome.clipboardLease !== undefined) exchange(this.server, "release", { lease: outcome.clipboardLease });
-                }
-            });
-        } else {
-            domain.run(this.structure, steps);
-        }
-        if (outcome.newFile !== undefined || outcome.openFile !== undefined) {
-            this.echo.send(outcome.answer);
-            outcome = { ...outcome, answer: undefined };
-        }
-        if (outcome.newFile !== undefined) {
-            const shape = outcome.newFile;
-            domain.after(() => this.newFileShape(shape));
-        }
-        if (outcome.openFile !== undefined) {
-            const paths = outcome.openFile.paths;
-            domain.after(() => this.openPaths(paths));
-        }
-        if (outcome.playbackUpdate !== undefined) {
-            const update = outcome.playbackUpdate;
-            domain.after(async () => {
-                await this.syncSound(update.file);
-                if (update.publish) await this.sound();
-            });
-        }
-        if (changed) {
-            this.dirty = this.coreCall("binding").dirty === true;
-            this.editing.changed();
-            if (outcome.preparedComplete !== true) domain.after(() => this.sound());
-        }
-        if (outcome.preview !== undefined && !changed) domain.after(() => this.sound());
-        const play = outcome.play;
-        // The loop switch rides beside the space bar and `L`: a pass that
-        // loops is the switch on.
-        if (play !== undefined) {
-            this.#driver.paused = false;
-            this.#driver.looping = (play.pass as { kind?: string }).kind === "loop";
-            domain.after(() => this.play(play));
-        }
-        const pass = outcome.pass;
-        if (pass !== undefined) this.#driver.looping = (pass as { kind?: string }).kind === "loop";
-        // `L`: the pass in progress ends as the switch now says; a stopped
-        // playback reads it on its next play.
-        if (pass !== undefined) domain.after(() => this.playback.call("pass", { pass }).then(() => {}));
-        // A selection redrawn while this take loops: the loop is over the
-        // new span, and the head goes into it once the sweep is let go.
-        // Whether it loops, and whether it is this take, is the playback's
-        // to say.
-        const follow = outcome.follow;
-        if (follow !== undefined) {
-            domain.after(() => this.playback.call("follow", { file: this.fileId, ...follow }).then(() => {}));
-        }
-        const cue = outcome.cue;
-        if (cue !== undefined) domain.after(() => this.cue(cue));
-        if (outcome.locate !== undefined) {
-            this.cursor = outcome.locate;
-            this.locate(this.cursor);
-            this.composedIn?.locate(this.cursor);
-            this.onLocate?.(this.cursor);
-        }
-        if (outcome.selection !== undefined) {
-            // A sweep's time range is the transport's span, and what the hand
-            // marked: the space bar plays it and the loop repeats it.
-            const swept = outcome.selection as unknown as { start?: number; len?: number };
-            const start = Number(swept.start ?? 0);
-            const length = Number(swept.len ?? 0);
-            this.#driver.span = length > 0 ? [start, start + length] : null;
-        }
-        // The answer asks the window to read the join again, so it goes once
-        // the steps that replace the join have landed.
-        const answer = outcome.answer;
-        (this.domain as AudioDomain).after(() => {
-            if (outcome.clipboardCut === undefined) this.echo.send(answer);
-            this.closing(outcome);
-        });
-        return changed;
     }
 
     /**
@@ -1408,9 +1144,7 @@ export class AudioEditor extends Editor<Buffer | null> {
     }
 
     private viewLayers(verb: string, args: Record<string, unknown> = {}): void {
-        const outcome = this.coreCall(verb, { version: this.editing.version, ...args });
-        if (typeof outcome.error === "string") throw new RangeError(outcome.error);
-        this.take(outcome as Outcome);
+        this.started("verb", { call: { verb, version: this.editing.version, ...args } });
     }
 
     /** Gain envelope as time/value/shape/curve quads, in seconds; gain is 0 to 1, 1 is unity.
@@ -1458,22 +1192,16 @@ export class AudioEditor extends Editor<Buffer | null> {
      * channel the take does not have -- thrown.
      */
     private channels(verb: string, args: Record<string, unknown> = {}): void {
-        const outcome = this.coreCall(verb, { version: this.editing.version, ...args }) as Outcome;
-        this.take(outcome);
-        const reason = outcome.answer?.reason;
-        if (reason) throw new RangeError(reason);
+        const answer = this.started("verb", { call: { verb, version: this.editing.version, ...args } });
+        if (answer.reason) throw new RangeError(answer.reason);
     }
 
     private envelopeAct(verb: string, args: Record<string, unknown> = {}): boolean {
         return this.editing.turn(this, () => {
             this.syncCore();
-            const turned = this.editing.act(this.member, { verb, ...args });
-            const outcome = (turned.outcome ?? {}) as Outcome;
-            const changed = this.take(outcome);
-            this.editing.release(turned.freed, turned.stored);
-            const reason = outcome.answer?.reason;
-            if (reason) throw new RangeError(reason);
-            return changed;
+            const answer = this.started("act", { call: plain({ verb, ...args }) });
+            if (answer.reason) throw new RangeError(answer.reason);
+            return answer.changed === true;
         });
     }
 

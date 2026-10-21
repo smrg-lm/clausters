@@ -804,6 +804,12 @@ impl AudioEditorPlayback {
         self.files.keys().copied().collect()
     }
 
+    /// **The buffer `file`'s gain preview is heard through**, while its
+    /// preview is on: what each view of the file draws the preview as.
+    pub fn preview(&self, file: u64) -> Option<i32> {
+        self.effects.get(&file).filter(|e| e.on).map(|e| e.scratch)
+    }
+
     /// The file that plays.
     pub fn focus(&self) -> Option<u64> {
         self.focus
