@@ -357,6 +357,44 @@ def test_activity_of_a_settled_window_has_no_demand():
     assert host.activity(7)["demand"] == []
 
 
+class _Turns(_Answering):
+    """Answers each send of an address with the next of its scripted turns."""
+
+    def send_msg(self, target, *args):
+        _Recorder.send_msg(self, target, *args)
+        from clausters.base import _osclib
+
+        turns = self.answers.get(args[0], [])
+        for addr, reply in turns.pop(0) if turns else []:
+            self.inbox.append(_osclib.message(addr, *reply))
+
+
+def test_profile_is_what_moved_between_two_readings():
+    """`profile` reads the window twice and answers the difference, with the
+    window's state as it stands at the end; the report reads it out."""
+    from clausters.gui import format_window_profile
+
+    def reading(ticks, whole, build, demand):
+        return [("/gui_activity.reply",
+                 [7, "ticks", ticks, "whole", whole, "live", 0, "still", 0,
+                  "layout_us", 0, "build_us", build, "upload_us", 0,
+                  "encode_us", 0, "present_us", 0, "uploaded_bytes", 0,
+                  "placed", 10 * whole, "clock_queries", 0, "transport_queries", 0,
+                  "read_backs", 0, "tree_queries", 0, "fetched_bytes", 0,
+                  "visible", 1, "demand", demand])]
+
+    host = GuiHost(interface=_Turns({
+        "/gui_activity": [reading(30, 3, 900, ""), reading(90, 5, 2900, "playhead")],
+    }))
+    profile = host.profile(7, seconds=0)
+    assert host._osc.sent == [("/gui_activity", 7), ("/gui_activity", 7)]
+    assert (profile["ticks"], profile["whole"], profile["build_us"]) == (60, 2, 2000)
+    assert profile["placed"] == 20 and profile["demand"] == ["playhead"]
+    report = format_window_profile(profile)
+    assert "2 whole" in report and "build 1.00" in report
+    assert "10 widgets placed per whole frame" in report
+
+
 def test_capture_raises_the_reason_the_host_gives():
     """A host that wrote nothing says why, and the call raises it."""
     from clausters.errors import CaptureError

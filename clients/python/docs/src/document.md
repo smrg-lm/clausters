@@ -1069,17 +1069,22 @@ whole or only their live layers, the queries those ticks sent the server, the
 bytes downloads brought — and `demand`, the reasons it is ticking now. A
 window with nothing moving in it has an empty `demand`: an audio editor that
 is stopped draws nothing and asks the server for nothing until something
-changes, and a window that cannot be seen is not ticked at all. Two readings
-apart in time give what the window did in between:
+changes, and a window that cannot be seen is not ticked at all. With them
+come what its drawn frames cost by phase: placing the tree, drawing it into
+meshes, writing them to the card, recording the pass and presenting it.
+`editor.profile(seconds)` takes two readings that far apart and answers what
+moved between them, and `format_window_profile` reads it out:
 
 ```python
-before = editor.activity()
-time.sleep(2)
-after = editor.activity()
-print(after["demand"], after["live"] - before["live"])   # [] 0 while stopped
+from clausters.gui import format_window_profile
+
+profile = editor.profile(2.0)
+print(profile["demand"], profile["live"])   # [] 0 while stopped
+print(format_window_profile(profile))
 ```
 
-`host.activity(window)` asks it of any window.
+`host.activity(window)` and `host.profile(window, seconds)` ask it of any
+window.
 
 **What a quantize, a drag and a paste land on is a grid in beats**, a
 sixteenth until you choose another: `editor.grid = 1.0` for whole beats, `0`

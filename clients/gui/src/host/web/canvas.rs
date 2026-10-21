@@ -543,8 +543,19 @@ impl WebApp {
             frame::Drawn::Still => Some(Count::Still),
             frame::Drawn::Owed => None,
         };
+        let cost = matches!(drawn, frame::Drawn::Whole | frame::Drawn::Live)
+            .then(|| render.batches.cost());
         if let Some(what) = counted {
             self.host.count(def, what);
+        }
+        if let Some(cost) = cost {
+            self.host.count(def, Count::Cost(cost));
+        }
+        if drawn != frame::Drawn::Owed
+            && self.host.paced_by_display(def)
+            && let Some(slot) = self.canvases.get(&def)
+        {
+            slot.request_redraw_live();
         }
         // **What this frame could not draw.** A view zoomed finer than its
         // summary left the span it was asked for on its slot; a page cannot

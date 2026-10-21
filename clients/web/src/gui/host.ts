@@ -31,6 +31,7 @@ import { WsConnection } from "../base/connection.ts";
 import { AppClock } from "../base/appclock.ts";
 import { CaptureError, ReplyTimeout } from "../errors.ts";
 import { formatNumber } from "../defs/info.ts";
+import { formatFixed } from "../base/format.ts";
 import { toJson, view, View } from "./guidef.ts";
 import type { Source } from "./guidef.ts";
 import type { GuiNode } from "./guidef.ts";
@@ -125,6 +126,53 @@ export interface WidgetInfo {
  * counters as numbers, `visible` a boolean and `demand` the reasons it ticks.
  */
 export type WindowActivity = Record<string, number | boolean | string[]>;
+
+/**
+ * What moved between two {@link GuiHost.activity} readings `seconds` apart
+ * ({@link GuiHost.profile}): every counter differenced, `visible` and `demand`
+ * as the second has them, and `seconds` the window.
+ */
+export type WindowProfile = WindowActivity;
+
+function profileOf(first: WindowActivity, second: WindowActivity, seconds: number): WindowProfile {
+    const out: WindowProfile = { seconds };
+    for (const [key, value] of Object.entries(second)) {
+        out[key] = typeof value === "number" ? value - Number(first[key] ?? 0) : value;
+    }
+    return out;
+}
+
+/**
+ * The readable report {@link GuiHost.profile}'s result prints as -- the same
+ * lines as the Python client's `format_window_profile`: the frames and their
+ * rate, what a drawn frame cost on average by phase, and the recurring work
+ * the window asked of the server.
+ *
+ * @param profile - the profile to render.
+ */
+export function formatWindowProfile(profile: WindowProfile): string {
+    if (Object.keys(profile).length === 0) return "window profile: no such window";
+    const n = (key: string): number => Number(profile[key] ?? 0);
+    const seconds = n("seconds");
+    const drawn = n("whole") + n("live");
+    const rate = seconds > 0 ? drawn / seconds : 0;
+    const perFrame = (key: string): string => (drawn ? formatFixed(n(key) / drawn / 1000, 2) : "-");
+    const phases = ["layout", "build", "upload", "encode", "present"];
+    const wholes = n("whole");
+    const demand = (profile.demand as string[] | undefined) ?? [];
+    return [
+        `window profile over ${formatFixed(seconds, 2)} s`,
+        `  frames     ${n("whole")} whole, ${n("live")} live, ${n("still")} still ` +
+            `(${formatFixed(rate, 1)} drawn per s), ${n("ticks")} ticks`,
+        "  per frame  " + phases.map((p) => `${p} ${perFrame(`${p}_us`)}`).join(", ") + " ms",
+        `  uploaded   ${n("uploaded_bytes")} bytes, ` +
+            `${wholes ? Math.floor(n("placed") / wholes) : 0} widgets placed per whole frame`,
+        `  queries    clock ${n("clock_queries")}, transport ${n("transport_queries")}, ` +
+            `read-back ${n("read_backs")}, tree ${n("tree_queries")}; fetched ${n("fetched_bytes")} bytes`,
+        `  now        ${profile.visible ? "visible" : "hidden"}, ticking for ` +
+            `${demand.length ? demand.join(", ") : "nothing"}`,
+    ].join("\n");
+}
 
 /** A `/gui_activity.reply`'s key/value pairs as {@link GuiHost.activity} answers them. */
 function activityOf(pairs: readonly unknown[]): WindowActivity {
@@ -899,8 +947,12 @@ export class GuiHost {
      * `whole_us` and `live_us` (their time, in microseconds), `clock_queries`,
      * `transport_queries`, `read_backs` and `tree_queries` (the questions a
      * tick sent the server for it), `fetches` and `fetched_bytes` (what
-     * downloads brought it) and `streamed` (the buses and taps the page
-     * subscribes for it now). With them, `visible` (whether it can be seen)
+     * downloads brought it), `streamed` (the buses and taps the page
+     * subscribes for it now), and what the drawn frames cost by phase in
+     * microseconds -- `layout_us` (placing the tree), `build_us` (drawing it
+     * into meshes), `upload_us` (writing them to the card), `encode_us`
+     * (recording the pass) and `present_us` (taking a drawable and presenting
+     * it) -- with `uploaded_bytes` and `placed` (widgets laid out). With them, `visible` (whether it can be seen)
      * and `demand`: the reasons it is ticking now -- `"animated"`, `"fed"`,
      * `"playhead"`, `"recording"`, `"fetching"`, `"timer"`, `"edge_scroll"`,
      * `"read_back"`, `"node_tree"`, `"midi"` -- empty for a window with no
@@ -919,6 +971,35 @@ export class GuiHost {
         );
         this.send("/gui_activity", ["i", window]);
         return activityOf((await reply).args.slice(1));
+    }
+
+    /**
+     * **What window `id` costs over the next `seconds`**: two
+     * {@link GuiHost.activity} readings that far apart, and what moved between
+     * them.
+     *
+     * The host's counterpart of `Server.profile`: start what should be
+     * measured, call this, and read where the window's time went -- its
+     * ticks, its frames by kind and each frame phase in microseconds, the
+     * bytes it uploaded and the queries and downloads it asked for. Every
+     * counter is the difference over the window, and `seconds` the window as
+     * this client measured it; `visible` and `demand` are as they stand at its
+     * end. `formatWindowProfile` reads it out.
+     *
+     * An empty object means the host has no such window.
+     *
+     * @param id - the window.
+     * @param seconds - how long to measure.
+     * @param timeout - how long to wait for each reading, in seconds.
+     */
+    async profile(id: number | { id: number }, seconds = 5.0, timeout = 1.0): Promise<WindowProfile> {
+        const first = await this.activity(id, timeout);
+        if (Object.keys(first).length === 0) return {};
+        const started = performance.now();
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        const second = await this.activity(id, timeout);
+        if (Object.keys(second).length === 0) return {};
+        return profileOf(first, second, (performance.now() - started) / 1000);
     }
 
     /**

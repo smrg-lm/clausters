@@ -118,7 +118,7 @@ from .guidef import (
     window,
 )
 from .handle import WidgetHandle, WindowHandle
-from .host import DEFAULT_PORT, GuiHost, WidgetInfo
+from .host import DEFAULT_PORT, GuiHost, WidgetInfo, format_window_profile
 from .playhead_sync import PlayheadSync
 
 
@@ -175,6 +175,7 @@ def app_clock(host=None):
 __all__ = [
     "GuiHost",
     "WidgetInfo",
+    "format_window_profile",
     "DEFAULT_PORT",
     "set_ambient_host",
     "ambient_host",

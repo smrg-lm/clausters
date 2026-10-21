@@ -104,17 +104,22 @@ bytes downloads brought — and `demand`, the reasons it is ticking now. A
 window with nothing moving in it has an empty `demand`: an audio editor that
 is stopped draws nothing and asks the server for nothing until something
 changes, and a window that cannot be seen — scrolled away, or in a tab in the
-background — is not ticked at all. Two readings apart in time give what the
-window did in between:
+background — is not ticked at all. With them come what its drawn frames
+cost by phase: placing the tree, drawing it into meshes, writing them to the
+card, recording the pass and presenting it. `editor.profile(seconds)` takes
+two readings that far apart and answers what moved between them, and
+`formatWindowProfile` reads it out:
 
 ```javascript
-const before = await editor.activity();
-await new Promise((done) => setTimeout(done, 2000));
-const after = await editor.activity();
-console.log(after.demand, after.live - before.live); // [] 0 while stopped
+import { formatWindowProfile } from "clausters/gui";
+
+const profile = await editor.profile(2.0);
+console.log(profile.demand, profile.live); // [] 0 while stopped
+console.log(formatWindowProfile(profile));
 ```
 
-`host.activity(window)` asks it of any window.
+`host.activity(window)` and `host.profile(window, seconds)` ask it of any
+window.
 
 **What a quantize, a drag and a paste land on is a grid in beats**, a
 sixteenth until you choose another: `editor.grid = 1.0` for whole beats, `0`

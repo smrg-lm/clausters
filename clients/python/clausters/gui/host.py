@@ -735,7 +735,12 @@ class GuiHost:
         ``clock_queries``, ``transport_queries``, ``read_backs`` and
         ``tree_queries`` (the questions a tick sent the server for it),
         ``fetches`` and ``fetched_bytes`` (what downloads brought it) and
-        ``streamed`` (the buses and taps a page subscribes for it now). With
+        ``streamed`` (the buses and taps a page subscribes for it now), and
+        what the drawn frames cost by phase in microseconds -- ``layout_us``
+        (placing the tree), ``build_us`` (drawing it into meshes), ``upload_us``
+        (writing them to the card), ``encode_us`` (recording the pass) and
+        ``present_us`` (taking a drawable and presenting it) -- with
+        ``uploaded_bytes`` and ``placed`` (widgets laid out). With
         them, ``visible`` (whether it can be seen) and ``demand``: the reasons
         it is ticking now -- ``"animated"``, ``"fed"``, ``"playhead"``,
         ``"recording"``, ``"fetching"``, ``"timer"``, ``"edge_scroll"``,
@@ -753,6 +758,32 @@ class GuiHost:
             if args and int(args[0]) == window:
                 break
         return _activity(args[1:])
+
+    def profile(self, id, seconds: float = 5.0, timeout: float = 1.0) -> dict:
+        """**What window ``id`` costs over the next ``seconds``**: two
+        `activity` readings that far apart, and what moved between them.
+
+        The host's counterpart of `clausters.defs.Server.profile`: start what
+        should be measured, call this, and read where the window's time went
+        -- its ticks, its frames by kind and each frame phase in
+        microseconds, the bytes it uploaded and the queries and downloads it
+        asked for. Every counter is the difference over the window, and
+        ``seconds`` the window as this client measured it; ``visible`` and
+        ``demand`` are as they stand at its end.
+        ``print(format_window_profile(profile))`` reads it out.
+
+        Blocking for ``seconds``. An empty dict means the host has no such
+        window.
+        """
+        first = self.activity(id, timeout)
+        if not first:
+            return {}
+        started = time.monotonic()
+        time.sleep(seconds)
+        second = self.activity(id, timeout)
+        if not second:
+            return {}
+        return _difference(first, second, time.monotonic() - started)
 
     def _answer(self, want: str, timeout: float):
         """The next ``want`` reply as ``(addr, args)``, delivering every event
@@ -1395,6 +1426,50 @@ class _HostSource:
 
     def __repr__(self):
         return f"_HostSource({self.host.target})"
+
+
+def _difference(first: dict, second: dict, seconds: float) -> dict:
+    """What moved between two `GuiHost.activity` readings ``seconds`` apart:
+    every counter differenced, ``visible`` and ``demand`` as the second has
+    them."""
+    out = {"seconds": seconds}
+    for key, value in second.items():
+        if key in ("visible", "demand"):
+            out[key] = value
+        else:
+            out[key] = value - first.get(key, 0)
+    return out
+
+
+def format_window_profile(profile: dict) -> str:
+    """The readable report `GuiHost.profile`'s result prints as: the frames
+    and their rate, what a drawn frame cost on average by phase, and the
+    recurring work the window asked of the server."""
+    if not profile:
+        return "window profile: no such window"
+    seconds = profile["seconds"]
+    drawn = profile["whole"] + profile["live"]
+    rate = drawn / seconds if seconds > 0 else 0.0
+
+    def per_frame(key):
+        return f"{profile[key] / drawn / 1000:.2f}" if drawn else "-"
+
+    phases = ("layout", "build", "upload", "encode", "present")
+    wholes = profile["whole"]
+    lines = [
+        f"window profile over {seconds:.2f} s",
+        f"  frames     {profile['whole']} whole, {profile['live']} live, "
+        f"{profile['still']} still ({rate:.1f} drawn per s), {profile['ticks']} ticks",
+        "  per frame  " + ", ".join(f"{p} {per_frame(p + '_us')}" for p in phases) + " ms",
+        f"  uploaded   {profile['uploaded_bytes']} bytes, "
+        f"{profile['placed'] // wholes if wholes else 0} widgets placed per whole frame",
+        f"  queries    clock {profile['clock_queries']}, transport "
+        f"{profile['transport_queries']}, read-back {profile['read_backs']}, tree "
+        f"{profile['tree_queries']}; fetched {profile['fetched_bytes']} bytes",
+        f"  now        {'visible' if profile['visible'] else 'hidden'}, ticking for "
+        f"{', '.join(profile['demand']) or 'nothing'}",
+    ]
+    return "\n".join(lines)
 
 
 def _activity(pairs) -> dict:

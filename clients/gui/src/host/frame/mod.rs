@@ -803,6 +803,36 @@ pub(crate) struct Batches {
     pub(crate) top: Painter,
     kept: Kept,
     asked: Asked,
+    /// What the last frame cost, phase by phase ([`FrameCost`]).
+    cost: FrameCost,
+}
+
+/// **What one frame cost, by phase** -- read by the front after each frame
+/// and counted against the window (`/gui_activity`), so a profile says where
+/// a slow window's frames go rather than only how long they took.
+///
+/// Timed with the same clock on both fronts (`web_time`), around work that is
+/// the same code on both: the one thing that can differ is the platform under
+/// `present`, which is why it is a phase of its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FrameCost {
+    /// Placing the tree: the layout pass of a whole frame.
+    pub layout: std::time::Duration,
+    /// Drawing the picture into meshes, past the layout -- or, for a frame of
+    /// what moves, the live layers alone.
+    pub build: std::time::Duration,
+    /// Writing the meshes and the heavy views' textures and uniforms to the
+    /// card.
+    pub upload: std::time::Duration,
+    /// Recording the render pass and submitting it.
+    pub encode: std::time::Duration,
+    /// Taking a drawable from the surface and presenting it.
+    pub present: std::time::Duration,
+    /// Bytes of vertices written to the card.
+    pub uploaded: u64,
+    /// Widgets laid out (a whole frame's placements; `0` for one of what
+    /// moves).
+    pub placed: u64,
 }
 
 /// What the next frame of a window was asked for.
@@ -866,7 +896,13 @@ impl Batches {
             base,
             kept: Kept::default(),
             asked: Asked::default(),
+            cost: FrameCost::default(),
         }
+    }
+
+    /// What the last frame cost.
+    pub(crate) fn cost(&self) -> FrameCost {
+        self.cost
     }
 
     /// **The picture changed**: the next frame lays the window out and draws
@@ -1087,6 +1123,7 @@ pub(crate) fn render(
     whole: bool,
 ) -> Drawn {
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
+    batches.cost = FrameCost::default();
     // **The host's own chrome draws in the window's theme**: the status bar,
     // the menu bar, the lists and the tip that open over the tree, the scrim
     // behind a dialog. They belong to no widget, so they used to take the
@@ -1101,11 +1138,13 @@ pub(crate) fn render(
         && batches.kept.size == (fb_w, fb_h)
         && batches.kept.epoch == atlas_epoch())
     .then(|| {
+        let started = web_time::Instant::now();
         let mut live = Mesh::new();
         if let Some(collected) = &batches.kept.collected {
             draw_timeline_heads(&mut live, collected, waveforms, spectrograms, inputs, theme);
         }
         draw_live_places(&mut live, tree, &batches.kept.places, inputs, theme);
+        batches.cost.build = started.elapsed();
         live
     })
     .filter(|_| batches.kept.epoch == atlas_epoch());
@@ -1117,9 +1156,12 @@ pub(crate) fn render(
             batches.asked.drawn();
             return Drawn::Still;
         }
-        batches
+        let started = web_time::Instant::now();
+        let bytes = batches
             .live
             .upload(&gpu.device, &gpu.queue, &live, fb_w, fb_h);
+        batches.cost.upload = started.elapsed();
+        batches.cost.uploaded = bytes as u64;
         batches.kept.live = live;
         Drawn::Live
     } else {
@@ -1143,6 +1185,7 @@ pub(crate) fn render(
         batches.asked.drawn();
         return drawn;
     };
+    let acquiring = web_time::Instant::now();
     let frame = match surface.get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
         _ => {
@@ -1157,6 +1200,8 @@ pub(crate) fn render(
             return Drawn::Owed;
         }
     };
+    let acquired = acquiring.elapsed();
+    let encoding = web_time::Instant::now();
     let target = frame
         .texture
         .create_view(&wgpu::TextureViewDescriptor::default());
@@ -1170,6 +1215,8 @@ pub(crate) fn render(
         &target,
     );
     gpu.queue.submit(std::iter::once(encoder.finish()));
+    batches.cost.encode = encoding.elapsed();
+    let presenting = web_time::Instant::now();
     // The winit present contract: lets winit attach the compositor frame
     // callback to this commit, so later `request_redraw`s are delivered (and
     // throttled) correctly -- without it, Wayland redraw delivery can stall on
@@ -1178,6 +1225,7 @@ pub(crate) fn render(
         window.pre_present_notify();
     }
     frame.present();
+    batches.cost.present = acquired + presenting.elapsed();
     batches.asked.drawn();
     drawn
 }
@@ -1436,18 +1484,27 @@ fn draw_whole(
     // picture is kept, so it would stay wrong for as long as only lines
     // moved. The second pass finds what it needs already on the new sheet.
     let epoch = atlas_epoch();
+    let started = web_time::Instant::now();
     let mut picture = picture(tree, inputs, theme, waveforms, spectrograms, (fb_w, fb_h));
+    let mut layout = picture.layout;
     if atlas_epoch() != epoch {
         picture = self::picture(tree, inputs, theme, waveforms, spectrograms, (fb_w, fb_h));
+        layout += picture.layout;
     }
+    batches.cost.layout = layout;
+    batches.cost.build = started.elapsed().saturating_sub(layout);
+    batches.cost.placed = picture.placed;
+    let uploading = web_time::Instant::now();
+    let mut uploaded = 0;
     for (batch, mesh) in [
         (&mut batches.base, &picture.base),
         (&mut batches.over, &picture.over),
         (&mut batches.live, &picture.live),
         (&mut batches.top, &picture.top),
     ] {
-        batch.upload(&gpu.device, &gpu.queue, mesh, fb_w, fb_h);
+        uploaded += batch.upload(&gpu.device, &gpu.queue, mesh, fb_w, fb_h);
     }
+    batches.cost.uploaded = uploaded as u64;
     for heavy in std::iter::once(&picture.collected).chain(picture.inside.as_ref()) {
         upload_heavy(
             gpu,
@@ -1459,6 +1516,7 @@ fn draw_whole(
             (fb_w, fb_h),
         );
     }
+    batches.cost.upload = uploading.elapsed();
     batches.kept = Kept {
         valid: picture.kept,
         size: (fb_w, fb_h),
@@ -1485,6 +1543,9 @@ struct Picture {
     /// Whether the frames after this one may keep it: the live batch is where
     /// the live layers belong, and every one of them can be found again.
     kept: bool,
+    /// How long placing the tree took, and how many widgets it placed.
+    layout: std::time::Duration,
+    placed: u64,
 }
 
 /// **The picture of `tree` in a framebuffer of `fb`**: laid out, and drawn
@@ -1510,7 +1571,9 @@ fn picture(
     let area = super::menubar::content(tree, area, inputs.metrics);
     // The lanes' clips are placed on the axis their group currently stands at,
     // so the layout of a multitrack follows the zoom and the pan.
+    let laying = web_time::Instant::now();
     let placed = layout::layout_on(area, tree, inputs.metrics);
+    let layout_time = laying.elapsed();
     let mut mesh = Mesh::new();
     let mut over = Mesh::new();
     let mut live = Mesh::new();
@@ -1641,6 +1704,8 @@ fn picture(
         places: places.unwrap_or_default(),
         collected,
         inside,
+        layout: layout_time,
+        placed: placed.len() as u64,
     }
 }
 

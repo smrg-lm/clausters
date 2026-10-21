@@ -290,6 +290,11 @@ code that keeps it lives.
   the playing file; hiding a window stops its drawing and queries but not the
   playback; closing it releases what it ticked for (`docs/architecture.md`,
   "Activity: what an open application keeps doing").
+- **A playhead that moves is drawn every refresh of the display**, not on
+  the frame tick: a cursor moved by a timer the display does not follow
+  steps unevenly. Only the live layers are drawn, and only while the window
+  can be seen and its transport rolls (`docs/gui-protocol.md`, "What a
+  window ticks for").
 
 
 - **A failed repair remains reachable.** After resolving an I/O failure, an audio editor's `retry_pending()` / `retryPending()` retries its pending repairs without repeating the edits. Until repair succeeds, the affected objects remain locked and their sources retained. Concurrent retries cannot dispatch the same repair twice; a successful retry does not repeat the original gesture receipt or change history.

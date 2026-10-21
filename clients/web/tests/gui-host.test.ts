@@ -18,7 +18,7 @@ import { WsConnection } from "../src/base/connection.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { decodePacket, encodeMessage } from "../src/base/osc.ts";
-import { GuiHost } from "../src/gui/host.ts";
+import { formatWindowProfile, GuiHost } from "../src/gui/host.ts";
 import {
     button, choice, knob, label, panel, slider, stack, tabs, toJson, waveform, window,
 } from "../src/gui/guidef.ts";
@@ -135,6 +135,24 @@ test("GuiHost: activity answers what a window costs, and nothing for a closed on
         }
         win.close();
         assert.deepEqual(await gui.activity(win.id), {}, "no such window");
+    });
+});
+
+test("GuiHost: a profile is what moved in a window over a span", {
+    skip: !hasHost,
+}, async () => {
+    await withHost(async (gui) => {
+        const win = gui.open(controlPanel());
+        const profile = await gui.profile(win, 0.2);
+        assert.ok(Number(profile.seconds) >= 0.2, "the span as this client measured it");
+        assert.equal(profile.ticks, 0, "a still panel is not ticked");
+        for (const key of ["layout_us", "build_us", "upload_us", "encode_us", "present_us",
+            "uploaded_bytes", "placed"]) {
+            assert.equal(typeof profile[key], "number", key);
+        }
+        assert.equal(formatWindowProfile(profile).split("\n")[0].slice(0, 22), "window profile over 0.");
+        win.close();
+        assert.deepEqual(await gui.profile(win.id, 0), {}, "no such window");
     });
 });
 

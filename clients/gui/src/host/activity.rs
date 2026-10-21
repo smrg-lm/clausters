@@ -117,6 +117,8 @@ pub enum Count {
     /// A download step the window's views asked for, and the bytes it
     /// brought (`0` for the request).
     Fetch(usize),
+    /// What a drawn frame cost, phase by phase.
+    Cost(super::frame::FrameCost),
 }
 
 /// **One window's counters**, since it opened, with what it ticks for now.
@@ -134,6 +136,14 @@ pub struct Activity {
     pub tree_queries: u64,
     pub fetches: u64,
     pub fetched_bytes: u64,
+    /// The drawn frames' cost by phase, summed (`super::frame::FrameCost`).
+    pub layout_time: Duration,
+    pub build_time: Duration,
+    pub upload_time: Duration,
+    pub encode_time: Duration,
+    pub present_time: Duration,
+    pub uploaded_bytes: u64,
+    pub placed: u64,
     /// The buses and taps the front streams for the window now (a page's
     /// subscriptions; `0` natively, where a segment is read and nothing is
     /// streamed).
@@ -166,6 +176,15 @@ impl Activity {
                 self.fetches += 1;
                 self.fetched_bytes += bytes as u64;
             }
+            Count::Cost(cost) => {
+                self.layout_time += cost.layout;
+                self.build_time += cost.build;
+                self.upload_time += cost.upload;
+                self.encode_time += cost.encode;
+                self.present_time += cost.present;
+                self.uploaded_bytes += cost.uploaded;
+                self.placed += cost.placed;
+            }
         }
     }
 
@@ -180,7 +199,7 @@ impl Activity {
             .map(|r| r.name())
             .collect::<Vec<_>>()
             .join(",");
-        let pairs: [(&str, OscType); 15] = [
+        let pairs: [(&str, OscType); 22] = [
             ("ticks", long(self.ticks)),
             ("whole", long(self.whole)),
             ("live", long(self.live)),
@@ -193,6 +212,13 @@ impl Activity {
             ("tree_queries", long(self.tree_queries)),
             ("fetches", long(self.fetches)),
             ("fetched_bytes", long(self.fetched_bytes)),
+            ("layout_us", micros(self.layout_time)),
+            ("build_us", micros(self.build_time)),
+            ("upload_us", micros(self.upload_time)),
+            ("encode_us", micros(self.encode_time)),
+            ("present_us", micros(self.present_time)),
+            ("uploaded_bytes", long(self.uploaded_bytes)),
+            ("placed", long(self.placed)),
             ("streamed", long(self.streamed)),
             ("visible", OscType::Int(i32::from(self.visible))),
             ("demand", OscType::String(demand)),
@@ -243,6 +269,20 @@ impl Host {
         a.demand = demand;
         a.visible = visible;
         a.streamed = streamed as u64;
+    }
+
+    /// **Whether window `def_id` is drawn at the display's rate**: it can be
+    /// seen and a playhead over it moves. A front then asks for the next
+    /// frame of what moves as soon as one is drawn, so the presentation paces
+    /// the playhead -- the vertical sync natively, the animation frame in a
+    /// page -- instead of the frame tick. A line moved by a 30 Hz timer the
+    /// display does not follow stays on screen for two refreshes and then
+    /// three, which reads as a cursor stepping unevenly; a frame of the live
+    /// layers costs about a millisecond, so drawing every refresh while the
+    /// transport rolls is the smaller cost.
+    pub fn paced_by_display(&self, def_id: i32) -> bool {
+        self.activity(def_id)
+            .is_some_and(|a| a.visible && a.demand.contains(&Reason::Playhead))
     }
 
     /// Window `def_id`'s counters, if it has any.
@@ -355,6 +395,38 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A frame's cost adds up by phase**, and the reply carries each phase
+    /// beside the frame counts, so a profile can say where frames go.
+    #[test]
+    fn a_frame_cost_adds_up_by_phase_on_the_wire() {
+        let mut a = Activity::default();
+        let cost = super::super::frame::FrameCost {
+            layout: Duration::from_micros(100),
+            build: Duration::from_micros(300),
+            upload: Duration::from_micros(50),
+            encode: Duration::from_micros(20),
+            present: Duration::from_micros(500),
+            uploaded: 4096,
+            placed: 12,
+        };
+        a.count(Count::Cost(cost));
+        a.count(Count::Cost(cost));
+        assert_eq!(a.layout_time, Duration::from_micros(200));
+        assert_eq!((a.uploaded_bytes, a.placed), (8192, 24));
+        let args = a.args();
+        let value = |key: &str| {
+            let at = args
+                .iter()
+                .position(|v| *v == OscType::String(key.into()))
+                .unwrap();
+            args[at + 1].clone()
+        };
+        assert_eq!(value("build_us"), OscType::Long(600));
+        assert_eq!(value("present_us"), OscType::Long(1000));
+        assert_eq!(value("uploaded_bytes"), OscType::Long(8192));
+        assert_eq!(value("placed"), OscType::Long(24));
+    }
 
     #[test]
     fn a_transport_ticks_until_told_it_stands_and_settles() {

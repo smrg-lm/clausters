@@ -885,6 +885,18 @@ class Editor:
             raise RuntimeError("activity() needs the editor's window open")
         return self._host.activity(self._window, timeout)
 
+    def profile(self, seconds: float = 5.0, timeout: float = 1.0) -> dict:
+        """**What the window costs over the next ``seconds``** --
+        `clausters.gui.host.GuiHost.profile` on this editor's window: what
+        moved in its frames, their cost by phase, its ticks, queries and
+        downloads. ``print(format_window_profile(...))`` reads it out.
+
+        Raises `RuntimeError` with no window open.
+        """
+        if self._host is None or self._window is None:
+            raise RuntimeError("profile() needs the editor's window open")
+        return self._host.profile(self._window, seconds, timeout)
+
     def view_all(self) -> bool:
         """The whole of what the window's view holds, in view -- the window's ``view_all`` (`verb`)."""
         return self.verb("view_all")

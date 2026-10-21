@@ -37,7 +37,7 @@ import { TempoMap } from "../../base/time.ts";
 import type { Intent } from "../../document.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { WindowHandle } from "../handle.ts";
-import type { GuiHost, PropValue, WindowActivity } from "../host.ts";
+import type { GuiHost, PropValue, WindowActivity, WindowProfile } from "../host.ts";
 import { Editing, FIRST_VERSION } from "../../history.ts";
 import type { RecordingLeg } from "../../history.ts";
 import type { Server } from "../../defs/server/index.ts";
@@ -1195,6 +1195,24 @@ export class Editor<S = unknown> implements Adopting {
             throw new Error("activity() needs the editor's window open");
         }
         return this.host.activity(this.windowId, timeout);
+    }
+
+    /**
+     * **What the window costs over the next `seconds`** --
+     * {@link GuiHost.profile} on this editor's window: what moved in its
+     * frames, their cost by phase, its ticks, queries and downloads.
+     * `formatWindowProfile` reads it out.
+     *
+     * Rejects with no window open.
+     *
+     * @param seconds - how long to measure.
+     * @param timeout - how long to wait for each reading, in seconds.
+     */
+    async profile(seconds = 5.0, timeout = 1.0): Promise<WindowProfile> {
+        if (this.host === null || this.windowId === null) {
+            throw new Error("profile() needs the editor's window open");
+        }
+        return this.host.profile(this.windowId, seconds, timeout);
     }
 
     /** The whole of what the window's view holds, in view -- the window's `view_all` ({@link Editor.verb}). */

@@ -1522,7 +1522,14 @@ them (`clients/gui/src/host/activity.rs`, the same rule in both fronts):
 The preview of a gain envelope is a buffer the view draws, fetched when it
 changes, and adds no recurring work. Reactivation draws the window whole.
 What each window did and why is counted by the host and answered by
-`/gui_activity` (`docs/gui-protocol.md`, "What a window ticks for").
+`/gui_activity` (`docs/gui-protocol.md`, "What a window ticks for"), with
+each drawn frame's cost by phase: `frame::render` times its layout, its
+mesh building, its uploads, its pass and its presentation with one clock
+(`web_time`) in the code both fronts share, keeps them as the batches'
+`FrameCost`, and the front counts it against the window. The profile a client
+takes is two of those readings differenced. While a window can be seen and a
+playhead over it moves (`Host::paced_by_display`), each drawn frame asks for
+the next live frame, so the presentation and not the tick paces the cursor.
 
 #### Composition and extension
 

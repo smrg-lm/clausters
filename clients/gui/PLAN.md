@@ -8503,7 +8503,15 @@ module of its own.
   With eight tracks on screen the window redraws visibly slower and the play
   cursor moves in uneven steps instead of following the sound smoothly.
   Measured first, with the host's profiler ("An automatic profiler for
-  the host", below), before any cause is assumed.
+  the host", below), before any cause is assumed. *(Measured 2026-10-21:
+  eight channels draw as two do, thirty frames a second of the live layers
+  at about 0.9 ms each, so the cost of drawing is not it; the frames were
+  the tick's, a 30 Hz timer the 60 Hz display does not follow, which holds
+  each position for two refreshes and then three. A moving playhead is now
+  drawn at the display's rate (`Host::paced_by_display`): 60 live frames a
+  second while the transport rolls, none once it stands, and the host's CPU
+  while playing from 4.5% to 7.6%. Open until an eye pass sees the cursor
+  follow the sound evenly, natively and in a page.)*
 - ⬜ **The page draws much slower than the native host** (2026-10-21, the
   user, browser). Switching the audio editor between waveform, spectrogram
   and both, and switching files, is visibly slower in the page than natively.
@@ -8532,12 +8540,16 @@ module of its own.
   draws stop while the ticks do not. A window whose frame requests go
   unanswered is the signal Wayland does give. **Related:** "An automatic
   profiler for the host", below.
-- ⬜ **An automatic profiler for the host** (2026-10-21, the user, after the
+- ✅ **An automatic profiler for the host** (2026-10-21, the user, after the
   audio editor's review). A run that measures, without someone watching,
   where the host's time goes, natively and in a page: frames and what each
   redrew, layout and upload cost, data paths (taps, bulk, streams) and the
   queries the fronts schedule. The eight-track window, the page slower than
   native and the stale spectrogram above are measured with it before any
   cause is assumed; it runs beside the server's. **Related:** "An automatic
-  profiler for the server" (root `PLAN.md`, Found by use).
+  profiler for the server" (root `PLAN.md`, Found by use). *(Done
+  2026-10-21: every drawn frame's cost by phase -- layout, build, upload,
+  encode, present -- with its uploaded bytes and placements, counted in
+  `/gui_activity`, and `host.profile(id, seconds)` / `editor.profile` with
+  `format_window_profile` in both clients.)*
 

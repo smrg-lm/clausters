@@ -671,8 +671,19 @@ impl App {
             frame::Drawn::Still => Some(Count::Still),
             frame::Drawn::Owed => None,
         };
+        let cost =
+            matches!(drawn, frame::Drawn::Whole | frame::Drawn::Live).then(|| ws.batches.cost());
         if let Some(what) = counted {
             self.host.count(def_id, what);
+        }
+        if let Some(cost) = cost {
+            self.host.count(def_id, Count::Cost(cost));
+        }
+        if drawn != frame::Drawn::Owed
+            && self.host.paced_by_display(def_id)
+            && let Some(ws) = self.windows.get(&def_id)
+        {
+            ws.repaint_live();
         }
         None
     }

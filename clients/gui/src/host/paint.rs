@@ -1132,6 +1132,7 @@ impl Painter {
 
     /// Uploads `mesh`, converting its device-pixel positions to clip space
     /// against a framebuffer of `fb_w` x `fb_h` (top-left origin, y flipped).
+    /// Answers the bytes of vertices written, for what a frame cost.
     pub fn upload(
         &mut self,
         device: &wgpu::Device,
@@ -1139,7 +1140,7 @@ impl Painter {
         mesh: &Mesh,
         fb_w: u32,
         fb_h: u32,
-    ) {
+    ) -> usize {
         let (fw, fh) = (fb_w.max(1) as f32, fb_h.max(1) as f32);
         let mut clip = Vec::with_capacity(mesh.verts.len());
         for v in mesh.verts.as_chunks::<FLOATS_PER_VERTEX>().0 {
@@ -1163,6 +1164,17 @@ impl Painter {
         self.num_vertices = needed as u32;
         #[cfg(feature = "font-atlas")]
         self.upload_glyphs(device, queue, mesh, fw, fh);
+        let glyphs = {
+            #[cfg(feature = "font-atlas")]
+            {
+                mesh.glyphs.len()
+            }
+            #[cfg(not(feature = "font-atlas"))]
+            {
+                0
+            }
+        };
+        (clip.len() + glyphs) * std::mem::size_of::<f32>()
     }
 
     /// The glyph half of the same batch: the vertices into this painter's

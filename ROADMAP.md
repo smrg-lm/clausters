@@ -145,14 +145,14 @@ already carry it.
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
   by use)*. **Related:** `T10` writes the file this one points at.
 
-- ⬜ **An automatic profiler for the host** (**Related:** the server's,
-  `/server_profile`, done), then **Eight tracks bring the
-  GUI's frame rate down, and the play cursor jitters**, **The page draws much slower than the native host**, **Two of
-  the page's dialogs draw wrong** and **After Save as and undo back to the
-  original, the page's spectrogram keeps an edited picture**, and **A
-  hidden native window on Wayland is still ticked**
-  *(`clients/gui/PLAN.md`, Found by use)*. Found in the audio editor's
-  review of 2026-10-21; the four are measured with the host's profiler.
+- ⬜ **Eight tracks bring the GUI's frame rate down, and the play cursor
+  jitters** (fixed, awaiting its eye pass), **The page draws much slower
+  than the native host**, **Two of the page's dialogs draw wrong**, **After
+  Save as and undo back to the original, the page's spectrogram keeps an
+  edited picture** and **A hidden native window on Wayland is still
+  ticked** *(`clients/gui/PLAN.md`, Found by use)*. Found in the audio
+  editor's review of 2026-10-21; measured with the host's profiler
+  (`host.profile`, beside the server's `/server_profile`).
 
 ## 2. Tests and reviews pending
 
