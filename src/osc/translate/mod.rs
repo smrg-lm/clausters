@@ -326,6 +326,9 @@ pub struct CmdTranslator {
     audio_bus_count: usize,
     compensation_report: crate::dsp::compensation::Report,
     compensation_dirty: bool,
+    /// The mirror's revision the current plan was built from; `None` before
+    /// the first.
+    compensation_revision: Option<u64>,
     /// Faust instances bake the sample rate in at `/synth_new` time.
     #[cfg_attr(
         not(any(
@@ -514,6 +517,7 @@ impl CmdTranslator {
             audio_bus_count: audio_buses,
             compensation_report: Default::default(),
             compensation_dirty: false,
+            compensation_revision: None,
             sample_rate,
             next_seed: Cell::new(clausters_core::rng::entropy_seed()),
             meters: Meters::detached(),
@@ -1459,6 +1463,19 @@ impl CmdTranslator {
     /// thread. Every builder, including asynchronous processor replacements,
     /// calls this before publishing its batch.
     pub fn prepare_compensation(&mut self, cmds: &mut Vec<Cmd>, begin: usize) {
+        // Every serving turn asks, and almost every turn nothing has moved: a
+        // plan is a walk of the whole mirror, so it is rebuilt only when the
+        // mirror changed, the batch brings a processor, or a refused
+        // publication asked for it again.
+        let brings = cmds[begin..]
+            .iter()
+            .any(|cmd| matches!(cmd, Cmd::AddSynth { .. } | Cmd::RestartSynth { .. }));
+        if !brings
+            && !self.compensation_dirty
+            && self.compensation_revision == Some(self.mirror.revision())
+        {
+            return;
+        }
         for cmd in &cmds[begin..] {
             match cmd {
                 Cmd::AddSynth { id, synth, .. } | Cmd::RestartSynth { id, synth, .. } => {
@@ -1582,6 +1599,7 @@ impl CmdTranslator {
         }
         self.compensation_dirty = false;
         self.compensation_report = report;
+        self.compensation_revision = Some(self.mirror.revision());
     }
 
     fn translate_command(

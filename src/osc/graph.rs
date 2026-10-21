@@ -284,6 +284,10 @@ pub struct TreeMirror {
     /// before the engine hands back what it cost (`/server_profile`), and
     /// its def is the row that cost belongs to.
     synth_epitaphs: std::collections::VecDeque<(i32, String)>,
+    /// Bumped by every change to the tree, its controls, maps and usage, so a
+    /// reader that derives something from all of it can tell nothing moved
+    /// without walking it again ([`revision`](Self::revision)).
+    revision: u64,
 }
 
 /// How many unclaimed epitaphs the mirror keeps. Comfortably more than the
@@ -311,6 +315,7 @@ impl TreeMirror {
             nodes,
             epitaphs: std::collections::VecDeque::new(),
             synth_epitaphs: std::collections::VecDeque::new(),
+            revision: 0,
         }
     }
 
@@ -346,6 +351,12 @@ impl TreeMirror {
     pub fn take_epitaph(&mut self, id: i32) -> Option<Box<str>> {
         let at = self.epitaphs.iter().rposition(|(other, _)| *other == id)?;
         self.epitaphs.remove(at).map(|(_, name)| name)
+    }
+
+    /// How many times the mirror has changed. Equal to an earlier reading
+    /// means nothing a derivation of the whole tree reads has moved since.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     pub fn get(&self, id: i32) -> Option<&MirrorNode> {
@@ -400,6 +411,7 @@ impl TreeMirror {
     }
 
     pub fn set_auto(&mut self, group: i32, auto: bool) -> Result<(), String> {
+        self.revision += 1;
         match self.nodes.get_mut(&group).map(|n| &mut n.body) {
             Some(MirrorBody::Group { auto: flag, .. }) => {
                 *flag = auto;
@@ -411,6 +423,7 @@ impl TreeMirror {
     }
 
     pub fn set_parallel(&mut self, group: i32, parallel: bool) -> Result<(), String> {
+        self.revision += 1;
         match self.nodes.get_mut(&group).map(|n| &mut n.body) {
             Some(MirrorBody::Group { parallel: flag, .. }) => {
                 *flag = parallel;
@@ -480,6 +493,7 @@ impl TreeMirror {
     /// `/group_name`: labels a group, or clears the label when `name` is empty.
     /// Validated here, on the network thread, before anything is queued.
     pub fn set_name(&mut self, group: i32, name: &str) -> Result<(), String> {
+        self.revision += 1;
         match self.nodes.get(&group).map(|n| &n.body) {
             Some(MirrorBody::Group { .. }) => {}
             Some(MirrorBody::Synth { .. }) => return Err(format!("node {group} is not a group")),
@@ -563,6 +577,7 @@ impl TreeMirror {
         target: i32,
         action: AddAction,
     ) -> Result<i32, String> {
+        self.revision += 1;
         if id == ROOT_NODE_ID || self.nodes.contains_key(&id) {
             return Err(format!("node {id} already exists"));
         }
@@ -623,6 +638,7 @@ impl TreeMirror {
     /// Removes a node and its subtree. Idempotent: also called when engine
     /// garbage confirms (or rejects) something the mirror already dropped.
     pub fn remove(&mut self, id: i32) {
+        self.revision += 1;
         if id == ROOT_NODE_ID {
             return;
         }
@@ -666,6 +682,7 @@ impl TreeMirror {
 
     /// `/group_freeAll`: drop all children, keep the group.
     pub fn free_all(&mut self, group: i32) {
+        self.revision += 1;
         let Some(children) = self.children(group).map(<[i32]>::to_vec) else {
             return;
         };
@@ -677,6 +694,7 @@ impl TreeMirror {
     /// `/group_deepFree`: drop the synths of the group and its subgroups; the
     /// groups stay.
     pub fn deep_free(&mut self, group: i32) {
+        self.revision += 1;
         let Some(children) = self.children(group).map(<[i32]>::to_vec) else {
             return;
         };
@@ -691,6 +709,7 @@ impl TreeMirror {
 
     /// Mirrors `NodeTree::move_node`. Returns the (old, new) parent groups.
     pub fn move_node(&mut self, id: i32, target: i32, place: Place) -> Option<(i32, i32)> {
+        self.revision += 1;
         if id == ROOT_NODE_ID || id == target {
             return None;
         }
@@ -784,6 +803,7 @@ impl TreeMirror {
     /// Overwrites a group's child order (the mirror side of applying the
     /// `Cmd::MoveNode` chain the caller emits to the engine).
     pub fn set_children_order(&mut self, group: i32, order: Vec<i32>) {
+        self.revision += 1;
         if let Some(MirrorBody::Group { children, .. }) =
             self.nodes.get_mut(&group).map(|n| &mut n.body)
         {
@@ -805,6 +825,7 @@ impl TreeMirror {
     /// Updates one mirrored control value. Returns `true` when the control
     /// is used as a bus index (the caller must re-analyze and re-sort).
     pub fn set_control(&mut self, id: i32, index: u32, value: f32) -> bool {
+        self.revision += 1;
         if let Some(MirrorBody::Synth {
             controls,
             bus_controls,
@@ -821,6 +842,7 @@ impl TreeMirror {
     }
 
     pub fn set_usage(&mut self, id: i32, new: BusUsage) {
+        self.revision += 1;
         if let Some(MirrorBody::Synth { usage, .. }) = self.nodes.get_mut(&id).map(|n| &mut n.body)
         {
             *usage = new;
@@ -833,6 +855,7 @@ impl TreeMirror {
     /// control, and a control used as a bus index -- so the caller knows to
     /// re-analyze and re-sort.
     pub fn set_map(&mut self, id: i32, ctl: u32, bus: i32, audio: bool) -> bool {
+        self.revision += 1;
         if let Some(MirrorBody::Synth {
             maps, bus_controls, ..
         }) = self.nodes.get_mut(&id).map(|n| &mut n.body)
@@ -884,6 +907,40 @@ mod tests {
         mirror
             .insert(id, MirrorBody::group(false), target, AddAction::Tail)
             .unwrap();
+    }
+
+    /// **The revision says whether anything moved.** Every change bumps it,
+    /// a read leaves it alone, and a synth leaving bumps it too: it is what
+    /// lets the latency plan be skipped on the serving turns where nothing
+    /// changed instead of rebuilt from a walk of the whole tree.
+    #[test]
+    fn the_revision_moves_with_every_change_and_no_read() {
+        let mut m = TreeMirror::new();
+        let start = m.revision();
+        group(&mut m, 1000, ROOT_NODE_ID);
+        let grouped = m.revision();
+        assert!(grouped > start);
+        let _ = (m.children(1000), m.path_of(1000), m.synth_info(1000));
+        assert_eq!(m.revision(), grouped, "a read is not a change");
+        m.insert(
+            1001,
+            MirrorBody::Synth {
+                def_name: "default".into(),
+                controls: vec![0.0],
+                usage: BusUsage::default(),
+                bus_controls: Vec::new(),
+                maps: Vec::new(),
+            },
+            1000,
+            AddAction::Tail,
+        )
+        .unwrap();
+        let synth = m.revision();
+        m.set_control(1001, 0, 0.5);
+        let controlled = m.revision();
+        assert!(synth > grouped && controlled > synth);
+        m.remove(1001);
+        assert!(m.revision() > controlled, "a synth leaving is a change");
     }
 
     #[test]

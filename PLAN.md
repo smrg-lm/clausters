@@ -4513,7 +4513,7 @@ should confirm before the fix.
   clients; the phases of the block and of the serving turn, every synth and
   def, every command and reply with its bytes, every NRT job's run and wait.
   The per-synth timing runs only while a client asks.)*
-- ⬜ **A stopped audio editor costs the server CPU for every file it holds**
+- ✅ **A stopped audio editor costs the server CPU for every file it holds**
   (2026-10-21, measured in `X23` of `crates/clausters-apps/PLAN.md`). The
   bare server idles at about 4.2% of a core; with an audio editor open and
   stopped it idles at 6.5% holding one stereo file and 9.2% holding four,
@@ -4522,3 +4522,7 @@ should confirm before the fix.
   is unmeasured: the host's side of the same editor does nothing while
   stopped. Measured with the server's profiler before a cause is assumed.
   **Related:** "An automatic profiler for the server", above.
+  *(Fixed 2026-10-21: the profiler put it in the serving turn, which
+  rebuilt the latency plan from a walk of the whole tree on every turn; it
+  is rebuilt now only when the tree changed, and the server idles at 4.7%
+  under the editor whatever it holds.)*

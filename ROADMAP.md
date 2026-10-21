@@ -145,13 +145,8 @@ already carry it.
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
   by use)*. **Related:** `T10` writes the file this one points at.
 
-- ⬜ **A stopped audio editor costs the server CPU for every file it holds**
-  *(root `PLAN.md`, Found by use)*, measured with the server's profiler
-  (`/server_profile`) before a cause is assumed. **Related:** "An automatic
-  profiler for the host" (`clients/gui/PLAN.md`, Found by use), below.
-
 - ⬜ **An automatic profiler for the host** (**Related:** the server's,
-  above), then **Eight tracks bring the
+  `/server_profile`, done), then **Eight tracks bring the
   GUI's frame rate down, and the play cursor jitters**, **The page draws much slower than the native host**, **Two of
   the page's dialogs draw wrong** and **After Save as and undo back to the
   original, the page's spectrogram keeps an edited picture**, and **A
