@@ -4588,3 +4588,14 @@ wrong.
 - ✅ **A failed repair leaves the audio file locked without a client retry** (2026-10-20, branch review). When both an edit and its repair failed, adapters discarded the ticket while the runtime retained the lock. Member-scoped repair discovery and paired client retry methods now retain access to recovery without repeating the edit. Exclusive retry claims, repeated failures, original gesture acknowledgement, successful release and invalidation are covered by directed tests.
 
 - ✅ **Pending content confirmation restores old envelope visibility** (2026-10-20, branch review). Showing the gain envelope during a sample edit was overwritten by the prepared contents, leaving an active but hidden points body. Content confirmation and history restoration now preserve current visibility by curve identity; directed core and paired client regressions cover delayed confirmation and redraw.
+
+- ⬜ **An undo after a spilled audio stroke does not step**
+  (2026-10-21, found running the server's suite while adding its
+  profiler). `tests/audio_editor_graph.rs`,
+  `application_sources_spill_restore_and_release_without_a_renderer`: after
+  two draw strokes on a resident application source, the second spilling
+  the first, `{"verb":"step","direction":"undo"}` answers `stepped: false`.
+  Bisected to "Read application actions from one definition in every
+  window" (`e25ae291`); the test passes on its parent. Nothing else in the
+  workspace suites runs this path, which is why it went unnoticed. Undo and
+  spill/restore are part of `X24`'s acceptance, so it is fixed before that.

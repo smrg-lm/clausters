@@ -145,6 +145,10 @@ already carry it.
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
   by use)*. **Related:** `T10` writes the file this one points at.
 
+- ⬜ **An undo after a spilled audio stroke does not step**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*: a failing workspace
+  test, and undo over a spill is in `X24`'s acceptance.
+
 - ⬜ **A long take distorts more the further it plays** and **A stopped
   audio editor costs the server CPU for every file it holds** *(root
   `PLAN.md`, Found by use)*, the second measured with the server's profiler
