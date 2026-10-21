@@ -8560,7 +8560,11 @@ module of its own.
   ticks a second; the compositor already withholds the frames, so the
   draws stop while the ticks do not. A window whose frame requests go
   unanswered is the signal Wayland does give. **Related:** "An automatic
-  profiler for the host", below.
+  profiler for the host", below. *(2026-10-21: a window whose oldest
+  frame request has waited past 500 ms now counts as hidden -- no tick, read
+  back or query -- and is drawn whole when the compositor answers again. A
+  visible window on Wayland is unchanged; minimizing one is checked by
+  hand.)*
 - ✅ **An automatic profiler for the host** (2026-10-21, the user, after the
   audio editor's review). A run that measures, without someone watching,
   where the host's time goes, natively and in a page: frames and what each

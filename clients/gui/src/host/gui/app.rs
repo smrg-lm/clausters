@@ -90,7 +90,15 @@ pub(super) struct WindowState {
     /// ticked or drawn; what it plays goes on, and it draws again whole when
     /// it is seen.
     pub(super) occluded: bool,
+    /// When the oldest frame this window asked for and has not been given
+    /// was asked for ([`WindowState::unanswered`]).
+    pub(super) asked: std::cell::Cell<Option<Instant>>,
 }
+
+/// **How long a frame may go unanswered before its window counts as hidden.**
+/// A frame is answered within a refresh or two; a compositor that withholds
+/// it for this long is not showing the window.
+const UNANSWERED: Duration = Duration::from_millis(500);
 
 /// **What a window's frames came to over the last second**, for the `debug`
 /// line that says it: how many were drawn whole, how many drew the live
@@ -140,7 +148,7 @@ impl WindowState {
     /// redraw of this front is, but a tick's that found only a line moved.
     pub(super) fn repaint(&self) {
         self.batches.want_whole();
-        self.gpu.request_redraw();
+        self.ask();
     }
 
     /// **Only what moves moved** -- a playhead's counter, a fed value, a
@@ -148,7 +156,35 @@ impl WindowState {
     /// window's picture and draw its live layers again.
     pub(super) fn repaint_live(&self) {
         self.batches.want_live();
+        self.ask();
+    }
+
+    fn ask(&self) {
+        if self.asked.get().is_none() {
+            self.asked.set(Some(Instant::now()));
+        }
         self.gpu.request_redraw();
+    }
+
+    /// **Whether the window's frames have stopped being answered** -- the one
+    /// sign of a hidden window some platforms give. The windowing library
+    /// reports a covered or minimized window on X11 and never on Wayland,
+    /// where the compositor simply stops calling for frames; a window whose
+    /// frame has waited past [`UNANSWERED`] is treated as occluded until one
+    /// is answered.
+    pub(super) fn unanswered(&self, now: Instant) -> bool {
+        self.asked
+            .get()
+            .is_some_and(|at| now.saturating_duration_since(at) > UNANSWERED)
+    }
+
+    /// A frame was answered. Answers whether the window had counted as
+    /// hidden, which makes the frame a whole one: what it shows may have
+    /// moved on without it.
+    pub(super) fn answered(&self) -> bool {
+        let hidden = self.unanswered(Instant::now());
+        self.asked.set(None);
+        hidden
     }
 }
 
@@ -415,10 +451,11 @@ impl App {
     /// The windows that can be seen: open and not occluded. Only these are
     /// ticked, drawn on a period and asked about on the server's behalf.
     fn shown_windows(&self) -> Vec<i32> {
+        let now = Instant::now();
         let mut shown: Vec<i32> = self
             .windows
             .iter()
-            .filter(|(_, ws)| !ws.occluded)
+            .filter(|(_, ws)| !ws.occluded && !ws.unanswered(now))
             .map(|(id, _)| *id)
             .collect();
         shown.sort_unstable();
@@ -555,6 +592,11 @@ impl App {
     /// the same code the browser front drives -- here fed the live inputs (the
     /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
+        if let Some(ws) = self.windows.get(&def_id)
+            && ws.answered()
+        {
+            ws.batches.want_whole();
+        }
         self.draw(def_id, false);
     }
 

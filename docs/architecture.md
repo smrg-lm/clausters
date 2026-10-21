@@ -1516,7 +1516,7 @@ them (`clients/gui/src/host/activity.rs`, the same rule in both fronts):
 | Playing the viewed file | the playback's meter bus | transport, rolls | the tick: one segment read natively, the bus stream and a `/transport_query` a frame in a page |
 | Playing another file | negative | hidden over the viewed file (`playhead_at` -1) | nothing: the window shows nothing that moves |
 | Processing (a run awaits) | unchanged | unchanged | the awaited replies; a download keeps the tick while in flight |
-| Hidden | unchanged | unchanged | nothing: an occluded window or a canvas out of view is not ticked, read back or queried for, and playback goes on |
+| Hidden | unchanged | unchanged | nothing: an occluded window (reported by the platform, or on Wayland a window whose frame requests the compositor has left unanswered for 500 ms) or a canvas out of view is not ticked, read back or queried for, and playback goes on |
 | Closing | released with the window | released | nothing: the window's demand and counters go with it |
 
 The preview of a gain envelope is a buffer the view draws, fetched when it

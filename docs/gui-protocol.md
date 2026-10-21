@@ -384,7 +384,9 @@ the front, and `/gui_activity` names the ones in force:
 changed, and a playhead whose counter stands is the frame already on screen:
 a meter over a steady level, or a stopped transport during its moment of
 watching, draws nothing. **A window that cannot be seen is not ticked** — a
-native window the platform reports covered or minimized, a canvas scrolled out
+native window the platform reports covered or minimized, or whose frames the
+compositor has stopped answering for half a second (Wayland reports no
+occlusion, and withholding frames is the sign it gives), a canvas scrolled out
 of the viewport or in a tab in the background — and what it plays goes on;
 it is drawn whole when it is seen again. **Closing a window lets go of
 everything it ticked for.**

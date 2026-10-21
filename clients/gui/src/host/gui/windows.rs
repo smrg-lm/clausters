@@ -178,6 +178,7 @@ impl App {
                 histories,
                 frames: super::app::FrameTally::default(),
                 occluded: false,
+                asked: std::cell::Cell::new(None),
             },
         );
         if let Some(ws) = self.windows.get(&id) {
