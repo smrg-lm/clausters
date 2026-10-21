@@ -3,12 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::{Map, Value, json};
-
-use crate::forms::{self, Spec};
-
-/// The caller's widget id for each widget of the dialogs it numbered.
-pub type Ids = forms::Ids;
+use crate::forms::{self, Chooser, Spec};
 
 /// **One of the forms.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,23 +53,24 @@ impl Spec for Form {
         }
     }
 
-    /// The file to open is chosen in the host's own chooser, where Ctrl and
-    /// Shift select several, rather than typed.
-    fn field(self, _name: &str, widget: &mut Map<String, Value>) {
-        if self == Form::Open {
-            widget.remove("value");
-            widget.insert("type".into(), json!("files"));
-            widget.insert("path".into(), json!("."));
-            widget.insert("multiple".into(), json!(true));
-            widget.insert("w".into(), json!(CHOOSER_W));
-            widget.insert("h".into(), json!(CHOOSER_H));
-        }
+    /// The files to open are chosen in the host's own chooser, where Ctrl
+    /// and Shift select several, rather than typed.
+    fn chooser(self, name: &str) -> Option<Chooser> {
+        (self == Form::Open && name == "path").then_some(Chooser {
+            filter: AUDIO,
+            multiple: true,
+            w: 420.0,
+            h: 300.0,
+        })
     }
 }
 
-/// How big the open form's chooser is: room for a long name and a dozen rows.
-const CHOOSER_W: f64 = 420.0;
-const CHOOSER_H: f64 = 300.0;
+/// **The extensions of the files an audio editor opens**: what a
+/// `SoundFile` reads -- WAV, FLAC, Ogg Vorbis, MP3, MP4/AAC, ALAC, AIFF
+/// and CAF.
+pub const AUDIO: &[&str] = &[
+    "wav", "wave", "flac", "ogg", "oga", "mp3", "mp4", "m4a", "aac", "aif", "aiff", "aifc", "caf",
+];
 
 /// The forms the window holds, in the order of their pages.
 const FORMS: [Form; 3] = [Form::New, Form::SaveAs, Form::Open];
@@ -85,28 +81,17 @@ pub fn names() -> Vec<String> {
     forms::names(&FORMS)
 }
 
-/// Whether `ids` numbers every widget of the dialogs.
+/// The forms the window holds, in the order of their pages.
 #[must_use]
-pub fn numbered(ids: &Ids) -> bool {
-    forms::numbered(&FORMS, ids)
+pub fn forms() -> &'static [Form] {
+    &FORMS
 }
 
-/// **The dialogs, as the stack the window holds**, or `None` when the caller
-/// did not number them.
-#[must_use]
-pub fn stack(ids: &Ids) -> Option<Value> {
-    forms::stack(&FORMS, ids)
-}
+/// **The window's dialogs**, held whole ([`forms::Dialogs`]).
+pub type Dialogs = forms::Dialogs<Form>;
 
 /// **A form that is up**: which, and what its fields hold as they are typed.
 pub type Open = forms::Open<Form>;
-
-/// The form `name` belongs to, by its prefix.
-#[must_use]
-pub fn form_of(name: &str) -> Option<Form> {
-    let prefix = name.split(':').next()?;
-    FORMS.into_iter().find(|form| form.prefix() == prefix)
-}
 
 /// **The new-file form, opening on the shape of the file in the window**:
 /// its channels, ten seconds and its rate.
@@ -172,7 +157,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn ids() -> Ids {
+    fn ids() -> forms::Ids {
         names()
             .into_iter()
             .enumerate()
@@ -183,16 +168,22 @@ mod tests {
     #[test]
     fn the_two_forms_are_pages_of_a_stack() {
         let ids = ids();
-        let stack = stack(&ids).expect("numbered");
+        let stack = forms::stack(&FORMS, &ids).expect("numbered");
         let pages = stack["children"].as_array().unwrap();
         assert_eq!(pages.len(), 4, "no dialog, a new file, a save and an open");
         assert_eq!(pages[1]["children"][0]["title"], "New file");
         assert_eq!(pages[2]["children"][0]["title"], "Save as");
         assert_eq!(pages[3]["children"][0]["title"], "Open file");
-        assert_eq!(form_of("open:path"), Some(Form::Open));
-        assert_eq!(form_of("new:rate"), Some(Form::New));
-        assert_eq!(form_of("file:ok"), Some(Form::SaveAs));
-        assert_eq!(form_of("stack"), None);
+        let chooser = &pages[3]["children"][0]["children"][0]["children"][1];
+        assert_eq!(chooser["type"], "files", "the host's chooser");
+        assert_eq!(chooser["id"], ids["open:path"]);
+        assert_eq!(chooser["multiple"], true);
+        assert!(
+            chooser["filter"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("flac"))
+        );
         let open = Open {
             form: Form::SaveAs,
             values: BTreeMap::new(),

@@ -2575,6 +2575,32 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   Test the composition in isolation and inside the audio editor, without
   adding a second renderer or an editor-specific file browser.
 
+  - ✅ Three layers with one owner each: the front's listing service answers
+    a ticketed `Ask` (disk natively, OPFS in a page); `host::files::Chooser`
+    holds the directory, filter, the ask it waits on and the entries or the
+    error, and the `files` element only draws it with the table's selection,
+    focus and scrolling; the application reads the choice through
+    `forms::Dialogs`. Reading a chosen file stays the client's (`openFile`,
+    `SoundFile`).
+  - ✅ A stale listing replaces nothing: the chooser takes only the answer to
+    its current ask, so climbing while a listing is in flight, a re-pathed
+    chooser and a window drawn again refuse late answers even for the same
+    directory; a freed widget or window takes nothing. Tested on the chooser,
+    the element and the host's delivery.
+  - ✅ A form field can be the host's chooser (`forms::Spec::chooser`: filter,
+    multiple selection, size). `forms::read` reports `Chosen`, `Picked` and
+    `Entered`; `forms::Dialogs` holds the ids, the form up, the paths chosen
+    and the directory each chooser reopens in. Opening a form lists the
+    chooser afresh and focuses it; cancel and accept forget the selection
+    and keep the directory; a redraw shows the form up with its values; a
+    closed window drops it. Tested with a form of the module's own.
+  - ✅ The audio editor's Open form is that chooser field, filtered to what a
+    `SoundFile` reads; a pick opens the selection as `OK` does. Its menu and
+    key sheet were already action-backed (`X20`). Directed tests cover
+    reopen, pick, directory change, redraw and close inside the editor; the
+    score editor's forms keep their behavior and move to `Dialogs` in `X25`.
+  - ⬜ Native and browser eye pass over the `edit_audio` pair's File > Open.
+
 - ⬜ **X22 - Centralize audio transitions and effect ordering in Rust.**
   After `X21`, make menu, key and scripted actions enter one coordinator.
   It dispatches edits to `Editing`, updates instance state, orders service

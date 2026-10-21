@@ -282,7 +282,7 @@ impl Application for AudioEditor {
             outcome.steps = None;
             outcome.planned_steps.clear();
             plan.commit.outcome = outcome;
-            plan.commit.close_dialog = draft.window_state.dialog.is_none();
+            plan.commit.close_dialog = draft.window_state.dialogs.up().is_none();
             return Ok(plan);
         }
         let target = OperationTarget {
@@ -695,7 +695,7 @@ impl Application for AudioEditor {
                 .applied(delta.outcome.version);
         }
         if visible && applied && delta.close_dialog {
-            self.window_state.dialog = None;
+            self.window_state.dialogs.hide();
         }
         if !visible {
             delta.outcome.answer = None;
@@ -748,7 +748,7 @@ impl Application for AudioEditor {
             corrections.extend(self.envelope_corrections());
             if delta.close_dialog {
                 corrections.extend(
-                    crate::forms::hidden(&self.window_state.dialogs)
+                    crate::forms::hidden(&self.window_state.dialogs.ids)
                         .into_iter()
                         .map(|(widget, props)| Correction {
                             widget: i64::from(widget),

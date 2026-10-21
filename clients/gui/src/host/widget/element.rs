@@ -2099,17 +2099,18 @@ pub trait Element: fmt::Debug {
     /// **A directory this element wants listed**, asked once: the element
     /// clears its ask as it answers. `None` (the default) for one that shows
     /// no directory. The front lists it and hands the answer back through
-    /// [`listed`](Element::listed) ([`crate::host::files`]).
-    fn wants_listing(&mut self) -> Option<String> {
+    /// [`listed`](Element::listed) with the ask's ticket
+    /// ([`crate::host::files`]).
+    fn wants_listing(&mut self) -> Option<crate::host::files::Ask> {
         None
     }
 
-    /// The listing of `asked` -- or why it could not be read. Answers whether
-    /// the element took it; one that has moved on to another directory since it
-    /// asked does not.
+    /// The answer to the ask `ticket` -- the listing, or why it could not be
+    /// read. Answers whether the element took it; one that has asked again
+    /// since does not, whichever directory either ask named.
     fn listed(
         &mut self,
-        _asked: &str,
+        _ticket: u64,
         _listing: Result<crate::host::files::Listing, String>,
     ) -> bool {
         false

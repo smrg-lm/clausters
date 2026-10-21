@@ -251,6 +251,20 @@ code that keeps it lives.
 - **A dialog reads typed text, not notifications.** A field's report is its
   text; its focus (`"focus" 1|0`) is a notification and never a value
   (`forms::read`).
+- **A file is chosen in the host's chooser, never in an application's
+  own.** A form field that names files is the host's `files` element
+  (`forms::Spec::chooser`): it lists the disk in a window and the page's
+  storage in a tab, filtered to what the application opens, and takes the
+  keyboard when its form is shown. A double click or Enter on a file is `OK`.
+- **A chooser opens again where the hand left it, with nothing chosen.**
+  Cancelled or accepted, the form keeps the directory last gone into and
+  forgets the selection; going into a directory forgets the files chosen in
+  the one left. A listing that comes back after the chooser moved on --
+  climbed while a slow directory was read, opened again, drawn again --
+  replaces nothing, even when it names the same directory.
+- **A window drawn again shows the dialog that was up**, its fields holding
+  what was typed and its chooser where it was, with nothing selected; a
+  window closed and opened again has none up (`forms::Dialogs`).
 
 
 - **A failed repair remains reachable.** After resolving an I/O failure, an audio editor's `retry_pending()` / `retryPending()` retries its pending repairs without repeating the edits. Until repair succeeds, the affected objects remain locked and their sources retained. Concurrent retries cannot dispatch the same repair twice; a successful retry does not repeat the original gesture receipt or change history.

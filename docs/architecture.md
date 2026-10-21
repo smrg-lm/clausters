@@ -1507,6 +1507,30 @@ selection and request state; the filesystem port lists disk/OPFS; the
 application interprets chosen paths. No component gains its own clipboard,
 undo order or server connection implicitly.
 
+File selection is three layers, each with one owner:
+
+| Layer | Owner | Holds |
+|---|---|---|
+| Listing service | the front: `host::files::list_dir` (disk), `host::web::files` (OPFS) | nothing; answers an `Ask` (ticket, path) |
+| Chooser state | `host::files::Chooser`, drawn by the `files` element | directory, filter, the ask it waits on, entries or error |
+| Choice | the application, through `clausters_apps::forms::Dialogs` | the form up, the paths chosen, the directory each chooser reopens in |
+
+Every ask carries a process-unique ticket and the chooser takes only the
+answer to its current ask, so navigation while a listing is in flight, a
+chooser re-pathed when its form reopens, and a window redrawn with a new
+element all refuse late answers, including one naming the same directory.
+A freed widget or window takes nothing. A form field becomes a chooser by
+`forms::Spec::chooser` (filter, multiple selection, size); `forms::read`
+reports `Chosen`, `Picked` and `Entered`, and `Dialogs` keeps them. Opening
+a form sets the chooser's `path` (a fresh listing, nothing selected) and
+gives it keyboard focus. Cancel and accept forget the selection and keep
+the last directory; a redraw with a form up rebuilds the stack on that page
+with its typed values and directory, forgetting the selection the new
+chooser lacks; a closed window drops the form. Reading a chosen file is not
+the chooser's: the audio editor answers `openFile` and its client reads
+through `SoundFile`. The clients' `file_dialog` builders compose the same
+host element for scripts and stay a GuiDef composition.
+
 #### Action, effect and completion
 
 The coordinator has one update path for an action, a view event or a service
@@ -1915,7 +1939,7 @@ updates this table in the same change** (step 8 of the recipe below).
 | `button`, `toggle` | **elements**: `host/elements/{button,toggle}.rs` over the drawing in `host/graphics/controls.rs`; a button holds its own pressed state, where the frame used to be told it | idem |
 | `choice` | an **element**: `host/elements/choice.rs` over the parts and drawing of its six views in `host/graphics/choice.rs` (one function for the parts, read by the drawing and the press); a combo's list is not its own -- it asks for one (`Events::and_popup`) and is told the pick (`Element::picked`) | idem |
 | `separator`, `progress` | **elements**: `host/elements/{separator,progress}.rs`; a progress bar asks for the tick only while it has no value | the GuiDef, `/gui_set` |
-| `table`, `files` | **elements**: `host/elements/table.rs` (the rows and the hand's state over them, `Rows`, which the chooser is built over) and `host/elements/files.rs`, over the model in `host/graphics/table.rs` (one geometry for the drawing and the press, only the rows on screen laid down); a directory is listed by the front through `host/files.rs` -- the disk natively, OPFS in a page (`host/web/files.rs`) -- asked by `Element::wants_listing` and answered by `Element::listed` | the GuiDef, `/gui_set`; a listing |
+| `table`, `files` | **elements**: `host/elements/table.rs` (the rows and the hand's state over them, `Rows`, which the chooser is built over) and `host/elements/files.rs`, over the model in `host/graphics/table.rs` (one geometry for the drawing and the press, only the rows on screen laid down); what the chooser is doing (directory, filter, the ticketed ask it waits on, entries or error) is `host::files::Chooser`; a directory is listed by the front through `host/files.rs` -- the disk natively, OPFS in a page (`host/web/files.rs`) -- asked by `Element::wants_listing` and answered by `Element::listed` with the ask's ticket | the GuiDef, `/gui_set`; a listing |
 | a menu (`menu` on a `window` or a `button`, `context` on any widget) | not a widget: a prop value, parsed and picked in `host/menu.rs`, opened in the popup layer (`host/popup.rs`); a window's bar is `host/menubar.rs`, taken out of the content area beside the status bar; the gestures that open and walk them are `host/gestures/popups.rs` | the GuiDef, `/gui_set`; a pick is a `"menu"` event |
 | a tip (`tip`), the hover, a held press | `host/gestures/hover.rs` (the rest and hold timers, whose clock the fronts hand over in `GestureCtx::now_ms`), drawn by the popup layer | pointer motion |
 | container chrome (`title`/`collapsed`/`frame`, `split`, `pack`, `bars`, `modal`) | the geometry in `host/chrome.rs` (one function per part, read by the frame and the gesture machine), the layout in `host/layout.rs` (a title strip, a folded group, a packed strip, dialogs placed last), the gestures in `host/gestures/chrome.rs` | the GuiDef, `/gui_set`; `"collapsed"` and `"split"` events, `"view"` from a bar |
@@ -2655,8 +2679,9 @@ never lands on the next; the window's own widgets (the file list, the meter,
 the dialogs) are named by the structure the editor opened over and keep their
 ids across switches, and a choice in the list is navigation, never stale. The
 file list is an independent host `table` left of the editing view, shown or
-hidden by the application's verbs. The Open form is a field of the shared forms
-mechanism whose widget is the host's `files` chooser with `multiple`, so its
-Ctrl/Shift selection is the table's own. All files of one editor share its
+hidden by the application's verbs. The Open form is a chooser field of the
+shared forms mechanism (`forms::Spec::chooser`): the host's `files` element
+with `multiple` and the extensions a `SoundFile` reads, so its Ctrl/Shift
+selection is the table's own and a pick opens what is selected. All files of one editor share its
 playback and server transport; a switch stops it and locates it to the
 incoming file's cursor.

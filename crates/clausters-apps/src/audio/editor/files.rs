@@ -2,7 +2,7 @@
 //! written yet, which asks for its path the first time it is saved.
 
 use super::*;
-use crate::audio::dialogs::{self, Form, Open};
+use crate::audio::dialogs::{self, Form};
 use crate::forms::{self, Said};
 
 /// Props for widgets, as the corrections a turn answers with.
@@ -317,17 +317,19 @@ impl AudioEditor {
 
     /// The name of the dialog widget `widget` is, when it is one.
     pub(super) fn dialog_name(&self, widget: i64) -> Option<String> {
-        self.window_state
-            .dialogs
-            .iter()
-            .find(|(_, id)| i64::from(**id) == widget)
-            .map(|(name, _)| name.clone())
+        self.window_state.dialogs.name(widget).map(str::to_string)
+    }
+
+    /// Whether the window numbered the widgets of its dialogs.
+    fn has_dialogs(&self) -> bool {
+        self.window_state.dialogs.numbered(dialogs::forms())
     }
 
     /// **Opens `form` over the window**, its fields holding what the editor
-    /// has: the shape of the file in the window, or its path.
+    /// has: the shape of the file in the window, or its path. The open form's
+    /// chooser opens where the hand last left it.
     pub(super) fn open_form(&mut self, form: Form) -> (Option<String>, Vec<Correction>) {
-        if !dialogs::numbered(&self.window_state.dialogs) {
+        if !self.has_dialogs() {
             return (Some("this window has no dialogs".into()), Vec::new());
         }
         let values = match form {
@@ -339,31 +341,22 @@ impl AudioEditor {
                 };
                 [("path".to_string(), path)].into()
             }
-            Form::Open => [("path".to_string(), ".".to_string())].into(),
+            Form::Open => BTreeMap::new(),
         };
-        let open = Open { form, values };
-        let mut shown = open.shown(&self.window_state.dialogs);
-        if form == Form::Open
-            && let Some(id) = self.window_state.dialogs.get("open:path")
-        {
-            for (widget, props) in &mut shown {
-                if widget == id {
-                    *props = json!({"path": "."});
-                }
-            }
-        }
-        self.window_state.dialog = Some(open);
-        (None, corrected(shown))
+        (
+            None,
+            corrected(self.window_state.dialogs.open(form, values)),
+        )
     }
 
     pub(crate) fn saves_from(&self, widget: i64, tag: &str, values: &[Value]) -> bool {
         if tag == "save" {
-            return !(self.untitled() && dialogs::numbered(&self.window_state.dialogs));
+            return !(self.untitled() && self.has_dialogs());
         }
         let Some(open) = self
             .window_state
-            .dialog
-            .as_ref()
+            .dialogs
+            .up()
             .filter(|open| open.form == Form::SaveAs)
         else {
             return false;
@@ -383,7 +376,7 @@ impl AudioEditor {
         &mut self,
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        if self.untitled() && dialogs::numbered(&self.window_state.dialogs) {
+        if self.untitled() && self.has_dialogs() {
             return self.open_form(Form::SaveAs);
         }
         match self.save(None, "float") {
@@ -396,9 +389,12 @@ impl AudioEditor {
         }
     }
 
-    /// **What a widget of the dialogs said**: a field typed into, a form
-    /// cancelled, or `OK` -- a new file's shape, which the outcome names for
-    /// the client to open, or a path the take is saved under from now on.
+    /// **What a widget of the dialogs said**: a field typed into, a chooser's
+    /// selection or the directory it went into, a form cancelled, or `OK` --
+    /// a new file's shape or files to open, which the outcome names for the
+    /// client to open, or a path the take is saved under from now on. A pick
+    /// in the chooser (a double click or Enter on a file) opens what is
+    /// selected as `OK` does.
     pub(super) fn form_event(
         &mut self,
         name: &str,
@@ -406,97 +402,63 @@ impl AudioEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        if self
-            .window_state
-            .dialog
-            .as_ref()
-            .is_some_and(|d| d.form == Form::Open)
-            && name == "open:path"
-        {
-            if matches!(tag, "pick" | "select") {
-                let paths: Vec<Value> = values
-                    .iter()
-                    .flat_map(|v| v.as_array().cloned().unwrap_or_else(|| vec![v.clone()]))
-                    .filter(|v| v.is_string())
-                    .collect();
-                if tag == "pick" && !paths.is_empty() {
-                    out.open_file = Some(json!({"paths": paths}));
-                    self.window_state.dialog = None;
-                    return (None, corrected(forms::hidden(&self.window_state.dialogs)));
-                }
-                if let Some(open) = self.window_state.dialog.as_mut() {
-                    open.values.insert("paths".into(), json!(paths).to_string());
-                }
-            }
-            return (None, Vec::new());
-        }
-        let Some(open) = self.window_state.dialog.as_mut() else {
+        let Some(said) = self.window_state.dialogs.read(name, tag, values) else {
             return (None, Vec::new());
         };
-        match forms::read(open.form, name, tag, values) {
-            None => (None, Vec::new()),
-            Some(Said::Field(field, value)) => {
-                open.values.insert(field, value);
-                (None, Vec::new())
+        let Some(open) = self.window_state.dialogs.up().cloned() else {
+            return (None, Vec::new());
+        };
+        let reason = match said {
+            Said::Field(..) | Said::Chosen(..) | Said::Entered(..) => return (None, Vec::new()),
+            Said::Cancel | Said::Discard => {
+                return (None, corrected(self.window_state.dialogs.hide()));
             }
-            Some(Said::Cancel | Said::Discard) => {
-                self.window_state.dialog = None;
-                (None, corrected(forms::hidden(&self.window_state.dialogs)))
-            }
-            Some(Said::Accept) => {
-                let open = open.clone();
-                let reason = match open.form {
-                    Form::New => match dialogs::new_shape(&open) {
-                        Ok((channels, frames, rate)) => {
-                            out.new_file = Some(json!({
-                                "channels": channels, "frames": frames, "rate": rate,
-                            }));
-                            None
-                        }
-                        Err(why) => Some(why),
-                    },
-                    Form::Open => {
-                        let paths = serde_json::from_str::<Vec<Value>>(open.value("paths"))
-                            .unwrap_or_default();
-                        if paths.is_empty() {
-                            Some("select one or more files to open".into())
-                        } else {
-                            out.open_file = Some(json!({ "paths": paths }));
-                            None
-                        }
+            Said::Picked(_, paths) if open.form == Form::Open => open_paths(&paths, out),
+            Said::Picked(..) => return (None, Vec::new()),
+            Said::Accept => match open.form {
+                Form::New => match dialogs::new_shape(&open) {
+                    Ok((channels, frames, rate)) => {
+                        out.new_file = Some(json!({
+                            "channels": channels, "frames": frames, "rate": rate,
+                        }));
+                        None
                     }
-                    Form::SaveAs => {
-                        let path = open.value("path").trim().to_string();
-                        if path.is_empty() {
-                            Some("a file is saved under a path".into())
-                        } else {
-                            match self.save(Some(Target::File(path)), "float") {
-                                Ok(steps) => {
-                                    out.steps = Some(steps);
-                                    out.save_requested = true;
-                                    None
-                                }
-                                Err(why) => Some(why),
+                    Err(why) => Some(why),
+                },
+                Form::Open => {
+                    let paths = self.window_state.dialogs.chosen("path").to_vec();
+                    open_paths(&paths, out)
+                }
+                Form::SaveAs => {
+                    let path = open.value("path").trim().to_string();
+                    if path.is_empty() {
+                        Some("a file is saved under a path".into())
+                    } else {
+                        match self.save(Some(Target::File(path)), "float") {
+                            Ok(steps) => {
+                                out.steps = Some(steps);
+                                out.save_requested = true;
+                                None
                             }
+                            Err(why) => Some(why),
                         }
                     }
-                };
-                // a refused form stays up, holding what was typed
-                if reason.is_some() {
-                    return (reason, Vec::new());
                 }
-                self.window_state.dialog = None;
-                let mut corrections = corrected(forms::hidden(&self.window_state.dialogs));
-                // a file saved under a new path is called by it from now on
-                if let (Form::SaveAs, Some(pane)) = (open.form, self.window_state.pane) {
-                    corrections.push(Correction {
-                        widget: i64::from(pane),
-                        props: json!({"label": self.pane_label()}),
-                    });
-                }
-                (None, corrections)
-            }
+            },
+        };
+        // a refused form stays up, holding what was typed and chosen
+        if reason.is_some() {
+            return (reason, Vec::new());
         }
+        let mut corrections = corrected(self.window_state.dialogs.hide());
+        // a file saved under a new path is called by it from now on
+        if let (Form::SaveAs, Some(pane)) = (open.form, self.window_state.pane) {
+            corrections.push(Correction {
+                widget: i64::from(pane),
+                props: json!({"label": self.pane_label()}),
+            });
+        }
+        (None, corrections)
     }
 
     /// **The file the take is**, as a client reads it: its path (`null` for
@@ -505,6 +467,17 @@ impl AudioEditor {
     pub fn file(&self) -> Value {
         self.file.file()
     }
+}
+
+/// **The application's decision over chosen paths**: they are files for the
+/// client to open, as it opens a new one -- reading them is the client's,
+/// through `SoundFile` -- or, with none chosen, the reason the form stays up.
+fn open_paths(paths: &[String], out: &mut Outcome) -> Option<String> {
+    if paths.is_empty() {
+        return Some("select one or more files to open".into());
+    }
+    out.open_file = Some(json!({ "paths": paths }));
+    None
 }
 
 #[cfg(test)]

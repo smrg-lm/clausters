@@ -3,7 +3,8 @@
 //!
 //! OPFS answers with promises, so a listing is asked here, awaited off the
 //! event loop and handed back through the proxy as [`WebEvent::Listed`] -- the
-//! shape a bulk fetch already has. The path rule is the web client's
+//! shape a bulk fetch already has -- carrying the ask's ticket, which is what
+//! lets a chooser that moved on meanwhile refuse it. The path rule is the web client's
 //! (`clients/web/src/engine/opfs.ts`): `/`-separated from the storage's root,
 //! and a path that climbs out of it is refused.
 
@@ -12,7 +13,7 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
 use super::*;
-use crate::host::files::{DirEntry, Listing};
+use crate::host::files::{Ask, DirEntry, Listing};
 
 /// The segments of `path`, refusing one that would leave the root.
 fn parts(path: &str) -> Result<Vec<String>, String> {
@@ -139,16 +140,17 @@ pub(super) async fn write_opfs(path: &str, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Lists one directory and hands the answer back through the proxy.
-pub(super) async fn fetch_listing(host: HostId, def_id: i32, widget_id: i32, asked: String) {
-    let result = list_opfs(&asked).await;
+/// Lists one directory and hands the answer back through the proxy, under
+/// the ticket it was asked with.
+pub(super) async fn fetch_listing(host: HostId, def_id: i32, widget_id: i32, ask: Ask) {
+    let result = list_opfs(&ask.path).await;
     if let Some(proxy) = web_proxy() {
         let _ = proxy.send_event(HostEvent::To(
             host,
             WebEvent::Listed {
                 def_id,
                 widget_id,
-                asked,
+                ticket: ask.ticket,
                 result,
             },
         ));
@@ -158,20 +160,21 @@ pub(super) async fn fetch_listing(host: HostId, def_id: i32, widget_id: i32, ask
 impl WebApp {
     /// Starts a listing for every directory an element is waiting on.
     pub(super) fn start_listings(&mut self) {
-        for (def, widget, path) in self.host.pending_listings() {
-            wasm_bindgen_futures::spawn_local(fetch_listing(self.id, def, widget, path));
+        for (def, widget, ask) in self.host.pending_listings() {
+            wasm_bindgen_futures::spawn_local(fetch_listing(self.id, def, widget, ask));
         }
     }
 
-    /// A listing came back: the element takes it, and its window repaints.
+    /// A listing came back: the element takes it if it is still the answer it
+    /// waits on, and its window repaints.
     pub(super) fn on_listed(
         &mut self,
         def: i32,
         widget: i32,
-        asked: &str,
+        ticket: u64,
         result: Result<Listing, String>,
     ) {
-        if self.host.deliver_listing(def, widget, asked, result) {
+        if self.host.deliver_listing(def, widget, ticket, result) {
             self.request_redraw(def);
         }
     }

@@ -880,6 +880,151 @@ fn the_open_file_form_names_a_path_for_the_client() {
     assert!(opened.get("steps").is_none(), "nothing is written");
 }
 
+/// The props the answer `turned` corrects widget `id` with, merged.
+fn corrections_of(turned: &Value, id: i64) -> Value {
+    let mut props = serde_json::Map::new();
+    for c in turned["answer"]["corrections"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        if c["widget"] == id
+            && let Some(map) = c["props"].as_object()
+        {
+            props.extend(map.clone());
+        }
+    }
+    Value::Object(props)
+}
+
+/// The widget numbered `id` in a window's tree.
+fn widget_in(tree: &Value, id: i64) -> Option<&Value> {
+    if tree["id"] == id {
+        return Some(tree);
+    }
+    tree["children"]
+        .as_array()?
+        .iter()
+        .find_map(|child| widget_in(child, id))
+}
+
+/// **The open form is the shared forms mechanism over the host's chooser**:
+/// it shows audio files, takes the keyboard, and -- cancelled and opened
+/// again -- opens in the directory the hand went into, with nothing chosen,
+/// so `OK` opens nothing chosen before.
+#[test]
+fn the_open_form_reopens_where_it_was_left_with_nothing_chosen() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    let chooser = ids["open:path"];
+    let window = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "dialogs": ids}),
+    );
+    let drawn = widget_in(&window, chooser).expect("the chooser is in the window");
+    assert_eq!(drawn["type"], "files");
+    assert!(drawn["filter"].as_array().unwrap().contains(&json!("wav")));
+
+    let shown = event(&mut editor, json!([900, 1, 0, "open_file"]));
+    assert_eq!(
+        corrections_of(&shown, chooser),
+        json!({"path": ".", "focus": 1})
+    );
+    event(&mut editor, json!([chooser, 2, 0, "path", "/takes"]));
+    event(
+        &mut editor,
+        json!([chooser, 3, 0, "select", "/takes/a.wav"]),
+    );
+    let cancelled = event(&mut editor, json!([ids["open:cancel"], 4, 0, "click"]));
+    assert_eq!(
+        corrections_of(&cancelled, ids["stack"]),
+        json!({"index": 0})
+    );
+    assert!(cancelled.get("openFile").is_none());
+
+    let again = event(&mut editor, json!([900, 5, 0, "open_file"]));
+    assert_eq!(
+        corrections_of(&again, chooser),
+        json!({"path": "/takes", "focus": 1}),
+        "where the hand left it"
+    );
+    let refused = event(&mut editor, json!([ids["open:ok"], 6, 0, "click"]));
+    assert!(
+        refused.get("openFile").is_none(),
+        "nothing chosen this time"
+    );
+    assert!(
+        refused["answer"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("select")
+    );
+}
+
+/// **A pick opens what is chosen and takes the form down**; a directory gone
+/// into forgets the files chosen in the last one.
+#[test]
+fn a_pick_in_the_chooser_opens_the_files_it_names() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    let chooser = ids["open:path"];
+    event(&mut editor, json!([900, 1, 0, "open_file"]));
+    event(&mut editor, json!([chooser, 2, 0, "select", "/a/x.wav"]));
+    event(&mut editor, json!([chooser, 3, 0, "path", "/b"]));
+    let refused = event(&mut editor, json!([ids["open:ok"], 4, 0, "click"]));
+    assert!(
+        refused.get("openFile").is_none(),
+        "chosen in a directory left behind"
+    );
+    let picked = event(
+        &mut editor,
+        json!([chooser, 5, 0, "pick", "/b/y.wav", "/b/z.flac"]),
+    );
+    assert_eq!(
+        picked["openFile"],
+        json!({"paths": ["/b/y.wav", "/b/z.flac"]})
+    );
+    assert_eq!(corrections_of(&picked, ids["stack"]), json!({"index": 0}));
+    let after = event(&mut editor, json!([chooser, 6, 0, "pick", "/b/y.wav"]));
+    assert!(after.get("openFile").is_none(), "no form is up to pick in");
+}
+
+/// **A window drawn again while the open form is up shows it again**, its
+/// chooser where it was; a window closed has no form up when it opens again.
+#[test]
+fn a_redrawn_window_keeps_the_form_up_and_a_closed_one_drops_it() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    let chooser = ids["open:path"];
+    event(&mut editor, json!([900, 1, 0, "open_file"]));
+    event(&mut editor, json!([chooser, 2, 0, "path", "/takes"]));
+    event(
+        &mut editor,
+        json!([chooser, 3, 0, "select", "/takes/a.wav"]),
+    );
+    let redrawn = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "dialogs": ids}),
+    );
+    assert_eq!(widget_in(&redrawn, ids["stack"]).unwrap()["index"], 3);
+    assert_eq!(widget_in(&redrawn, chooser).unwrap()["path"], "/takes");
+    let refused = event(&mut editor, json!([ids["open:ok"], 4, 0, "click"]));
+    assert!(
+        refused.get("openFile").is_none(),
+        "the new chooser has nothing selected, so nothing is chosen"
+    );
+
+    call(
+        &mut editor,
+        json!({"verb": "event", "addr": "/gui_closed", "version": 0, "args": [900]}),
+    );
+    let reopened = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "dialogs": ids}),
+    );
+    assert_eq!(widget_in(&reopened, ids["stack"]).unwrap()["index"], 0);
+    call(&mut editor, json!({"verb": "sync", "window": 900}));
+    let ignored = event(&mut editor, json!([chooser, 5, 0, "pick", "/takes/a.wav"]));
+    assert!(ignored.get("openFile").is_none());
+}
+
 /// **A copy is made on the server**: the span is copied out of the join into
 /// a buffer handed over, the clipboard names that buffer, and a paste copies
 /// it again on the server into a take of the pasting editor's own, at the

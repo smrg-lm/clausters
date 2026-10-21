@@ -791,9 +791,12 @@ impl App {
 
         // **A directory a chooser waits on is listed**, off the disk and at
         // once: the element asked, and the answer goes back to it.
-        for (def_id, widget, path) in self.host.pending_listings() {
-            let listing = crate::host::files::list_dir(&path);
-            if self.host.deliver_listing(def_id, widget, &path, listing) {
+        for (def_id, widget, ask) in self.host.pending_listings() {
+            let listing = crate::host::files::list_dir(&ask.path);
+            if self
+                .host
+                .deliver_listing(def_id, widget, ask.ticket, listing)
+            {
                 self.redraw(def_id);
             }
         }

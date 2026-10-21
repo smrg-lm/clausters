@@ -188,7 +188,7 @@ enum WebEvent {
     Listed {
         def_id: i32,
         widget_id: i32,
-        asked: String,
+        ticket: u64,
         result: Result<crate::host::files::Listing, String>,
     },
     /// A window's capture was written into the page's storage, or was not
@@ -868,9 +868,9 @@ impl WebApp {
             WebEvent::Listed {
                 def_id,
                 widget_id,
-                asked,
+                ticket,
                 result,
-            } => self.on_listed(def_id, widget_id, &asked, result),
+            } => self.on_listed(def_id, widget_id, ticket, result),
             WebEvent::Captured {
                 def_id,
                 path,

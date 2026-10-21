@@ -1547,3 +1547,42 @@ fn a_pane_over_a_take_at_another_rate_reads_the_transport_as_its_frames() {
     host.handle_packet(def_msg(1, &tree(48_000.0)), from());
     assert_eq!(read(&host, 5), 48_000.0, "a take at the engine's rate");
 }
+
+/// **A listing goes only to the chooser that asked for it.** A window
+/// defined again holds a new chooser over the same directory, and the answer
+/// to the old one's ask is refused; a window freed takes nothing.
+#[test]
+fn a_listing_reaches_only_the_chooser_that_asked() {
+    let window = r#"{"type":"window","title":"w","children":[
+        {"id":10,"type":"files","path":"/takes"}]}"#;
+    let listing = || {
+        Ok(files::Listing::ordered(
+            "/takes".into(),
+            vec![files::DirEntry {
+                name: "a.wav".into(),
+                dir: false,
+                size: 4,
+            }],
+        ))
+    };
+    let mut host = Host::new();
+    host.handle_packet(def_msg(1, window), from());
+    let asks = host.pending_listings();
+    assert_eq!(asks.len(), 1);
+    let (def, widget, old) = asks[0].clone();
+    assert_eq!((def, widget, old.path.as_str()), (1, 10, "/takes"));
+    assert!(host.pending_listings().is_empty(), "asked once");
+
+    host.handle_packet(def_msg(1, window), from());
+    let (_, _, new) = host.pending_listings()[0].clone();
+    assert_eq!(new.path, old.path);
+    assert!(
+        !host.deliver_listing(1, 10, old.ticket, listing()),
+        "the window drawn again holds another chooser"
+    );
+    assert!(host.deliver_listing(1, 10, new.ticket, listing()));
+    assert!(
+        !host.deliver_listing(2, 10, new.ticket, listing()),
+        "no such window"
+    );
+}

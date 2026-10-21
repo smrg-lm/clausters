@@ -227,6 +227,7 @@ impl Converse for AudioEditor {
         self.window_state.window = None;
         self.window_state.active = false;
         self.window_state.binding_generation += 1;
+        self.window_state.dialogs.closed();
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
@@ -509,8 +510,7 @@ struct AudioWindowState {
     widget: Option<i32>,
     pane: Option<i32>,
     meters: Option<(i32, usize)>,
-    dialogs: dialogs::Ids,
-    dialog: Option<dialogs::Open>,
+    dialogs: dialogs::Dialogs,
     conversation: Conversation,
     files_widget: Option<i32>,
     files_visible: bool,
@@ -730,8 +730,7 @@ impl AudioEditor {
                 widget: None,
                 pane: None,
                 meters: None,
-                dialogs: dialogs::Ids::new(),
-                dialog: None,
+                dialogs: dialogs::Dialogs::default(),
                 conversation: Conversation::new(version),
                 files_widget: None,
                 files_visible: true,
@@ -1230,7 +1229,7 @@ impl AudioEditor {
             size: self.window_state.size,
             meter,
             bare: self.window_state.bare,
-            dialogs: dialogs::stack(&self.window_state.dialogs),
+            dialogs: self.window_state.dialogs.stack(dialogs::forms()),
             folded: &self.folded(),
             lane: self
                 .window_state
@@ -2362,7 +2361,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "window" => {
             editor.window_state.files_widget = request.get("filesWidget").and_then(Value::as_i64).map(|n| n as i32);
             if let Some(ids) = request.get("dialogs").and_then(Value::as_object) {
-                editor.window_state.dialogs = ids
+                editor.window_state.dialogs.ids = ids
                     .iter()
                     .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
                     .collect();

@@ -54,7 +54,10 @@ writes the edit back into the file it was opened from, and
 ``editor.save(path)`` writes it as another file instead. File -> New file...
 adds a file not written yet to this editor, as ``new_file()`` does;
 its first save asks where it goes. File -> Open file... uses the host's
-chooser; Ctrl/Shift selects several files. The independent file list is on
+chooser, which lists only audio files and takes the keyboard: Ctrl/Shift
+selects several files, and a double click or Enter on a file opens the
+selection as OK does. Cancel it and open it again: it is back in the last
+directory gone into, with nothing selected. The independent file list is on
 the left and View -> Files hides or shows it. Each file keeps its cursor,
 selection and undo/redo history. A playing file continues while another is
 shown, with its playhead hidden there. Try File -> New file with two and six

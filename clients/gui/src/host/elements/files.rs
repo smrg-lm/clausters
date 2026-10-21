@@ -7,6 +7,10 @@
 //! there is a directory above, the directories, then the files that pass the
 //! `filter`.
 //!
+//! What the chooser is doing -- the directory, the ask it waits on, an error
+//! -- is a [`Chooser`]; this element is that state drawn as rows, with the
+//! table's selection, focus and scrolling.
+//!
 //! What it reports: its **value** is the path of the file selected, so a
 //! `text` field bound to it follows the selection; a double click or Enter on a
 //! file reports `"pick" <path>`, and on a directory it goes into it, reported
@@ -17,7 +21,7 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::files::{self, DirEntry, Listing};
+use crate::host::files::{self, Ask, Chooser, DirEntry, Listing};
 use crate::host::graphics::table::{Column, Row};
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
@@ -30,22 +34,12 @@ use super::table::{Hit, Rows};
 /// either side of a cell and the hairline between columns.
 const SIZE_PAD: f32 = 16.0;
 
-/// A file chooser.
+/// A file chooser: what it is doing ([`Chooser`]) and the rows it is drawn as.
 #[derive(Debug, Clone)]
 pub struct Files {
-    /// The directory shown -- as asked until its listing arrives, then as the
-    /// listing resolved it.
-    path: String,
-    /// The extensions a file must have to be listed, without the dot; empty
-    /// lists every file.
-    filter: Vec<String>,
-    entries: Vec<DirEntry>,
+    chooser: Chooser,
     /// Whether the rows start with `..`.
     up: bool,
-    /// Why the directory could not be listed, shown in its place.
-    error: Option<String>,
-    /// Whether the directory still has to be asked for.
-    ask: bool,
     rows: Rows,
 }
 
@@ -71,16 +65,11 @@ fn from_props(props: &Map<String, Value>) -> Files {
         },
     ];
     let mut files = Files {
-        path: props
-            .get("path")
-            .and_then(Value::as_str)
-            .unwrap_or(".")
-            .to_string(),
-        filter: filter_of(props.get("filter")),
-        entries: Vec::new(),
+        chooser: Chooser::new(
+            props.get("path").and_then(Value::as_str).unwrap_or("."),
+            filter_of(props.get("filter")),
+        ),
         up: false,
-        error: None,
-        ask: true,
         rows,
     };
     files.refill();
@@ -92,11 +81,9 @@ fn filter_of(v: Option<&Value>) -> Vec<String> {
         Some(Value::Array(items)) => items
             .iter()
             .filter_map(Value::as_str)
-            .map(|e| e.trim_start_matches('.').to_lowercase())
+            .map(str::to_string)
             .collect(),
-        Some(Value::String(one)) if !one.is_empty() => {
-            vec![one.trim_start_matches('.').to_lowercase()]
-        }
+        Some(Value::String(one)) => vec![one.clone()],
         _ => Vec::new(),
     }
 }
@@ -112,25 +99,9 @@ fn size_text(bytes: u64) -> String {
 }
 
 impl Files {
-    /// The entries shown, after the filter.
-    fn shown(&self) -> Vec<&DirEntry> {
-        self.entries
-            .iter()
-            .filter(|e| {
-                e.dir
-                    || self.filter.is_empty()
-                    || e.name
-                        .rsplit_once('.')
-                        .is_some_and(|(_, ext)| self.filter.contains(&ext.to_lowercase()))
-            })
-            .collect()
-    }
-
-    /// Rebuilds the rows from the entries.
+    /// Rebuilds the rows from what the chooser shows; nothing stays selected.
     fn refill(&mut self) {
-        // A path the listing has resolved is absolute, so it has a parent
-        // unless it is a root; one still as asked (`.`) has none to show yet.
-        self.up = files::parent(&self.path).is_some();
+        self.up = self.chooser.up().is_some();
         let mut rows = Vec::new();
         if self.up {
             rows.push(Row {
@@ -138,7 +109,7 @@ impl Files {
                 ..Row::default()
             });
         }
-        rows.extend(self.shown().iter().map(|e| Row {
+        rows.extend(self.chooser.shown().iter().map(|e| Row {
             cells: if e.dir {
                 vec![format!("{}/", e.name), String::new()]
             } else {
@@ -153,7 +124,7 @@ impl Files {
     /// The entry row `i` stands for, or `None` for the `..` row.
     fn entry(&self, i: usize) -> Option<DirEntry> {
         let k = i.checked_sub(usize::from(self.up))?;
-        self.shown().get(k).map(|e| (*e).clone())
+        self.chooser.shown().get(k).map(|e| (*e).clone())
     }
 
     /// The path of the file selected, if a file is.
@@ -161,7 +132,7 @@ impl Files {
         let i = *self.rows.selected.last()?;
         self.entry(i)
             .filter(|e| !e.dir)
-            .map(|e| files::join(&self.path, &e.name))
+            .map(|e| files::join(self.chooser.path(), &e.name))
     }
 
     fn selected_files(&self) -> Vec<OscType> {
@@ -170,16 +141,13 @@ impl Files {
             .iter()
             .filter_map(|&i| self.entry(i))
             .filter(|e| !e.dir)
-            .map(|e| OscType::String(files::join(&self.path, &e.name)))
+            .map(|e| OscType::String(files::join(self.chooser.path(), &e.name)))
             .collect()
     }
 
     /// Goes into directory `to`, which is asked for and reported.
     fn go(&mut self, to: String) -> Events {
-        self.path = to.clone();
-        self.ask = true;
-        self.entries.clear();
-        self.error = None;
+        self.chooser.go(to.clone());
         self.refill();
         Events::none().and_interface(vec![OscType::String("path".into()), OscType::String(to)])
     }
@@ -187,16 +155,16 @@ impl Files {
     /// Acts on row `i`: into a directory, up, or the pick of a file.
     fn open(&mut self, i: usize) -> Events {
         match self.entry(i) {
-            None if self.up && i == 0 => match files::parent(&self.path) {
+            None if self.up && i == 0 => match self.chooser.up() {
                 Some(up) => self.go(up),
                 None => Events::none(),
             },
             Some(e) if e.dir => {
-                let to = files::join(&self.path, &e.name);
+                let to = files::join(self.chooser.path(), &e.name);
                 self.go(to)
             }
             Some(e) => {
-                let path = files::join(&self.path, &e.name);
+                let path = files::join(self.chooser.path(), &e.name);
                 let picked = if self.rows.multiple {
                     self.selected_files()
                 } else {
@@ -241,7 +209,7 @@ impl Element for Files {
                 None => false,
             },
             "filter" => {
-                self.filter = filter_of(Some(v));
+                self.chooser.set_filter(filter_of(Some(v)));
                 self.refill();
                 true
             }
@@ -251,13 +219,7 @@ impl Element for Files {
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        let empty = match (&self.error, self.ask, self.entries.is_empty()) {
-            (Some(e), _, _) => Some(e.as_str()),
-            (None, true, _) => Some("listing..."),
-            (None, false, true) => Some("(empty)"),
-            _ => None,
-        };
-        self.rows.draw(d, ctx, empty);
+        self.rows.draw(d, ctx, self.chooser.placeholder());
     }
 
     fn natural(&self, _m: &Metrics, _scale: f32) -> Natural {
@@ -269,7 +231,7 @@ impl Element for Files {
     }
 
     fn info(&self) -> Vec<(String, Value)> {
-        let mut out = vec![("path".into(), Value::from(self.path.clone()))];
+        let mut out = vec![("path".into(), Value::from(self.chooser.path()))];
         if let Some(file) = self.selected_file() {
             out.push(("selected".into(), Value::from(file)));
         }
@@ -321,27 +283,16 @@ impl Element for Files {
         Some(Events::none())
     }
 
-    fn wants_listing(&mut self) -> Option<String> {
-        std::mem::take(&mut self.ask).then(|| self.path.clone())
+    fn wants_listing(&mut self) -> Option<Ask> {
+        self.chooser.ask()
     }
 
-    fn listed(&mut self, asked: &str, listing: Result<Listing, String>) -> bool {
-        if asked != self.path {
-            return false;
+    fn listed(&mut self, ticket: u64, listing: Result<Listing, String>) -> bool {
+        let taken = self.chooser.listed(ticket, listing);
+        if taken {
+            self.refill();
         }
-        match listing {
-            Ok(Listing { path, entries }) => {
-                self.path = path;
-                self.entries = entries;
-                self.error = None;
-            }
-            Err(why) => {
-                self.entries.clear();
-                self.error = Some(why);
-            }
-        }
-        self.refill();
-        true
+        taken
     }
 
     fn clone_box(&self) -> Box<dyn Element> {
@@ -403,17 +354,24 @@ mod tests {
         ((r.x + r.w * 0.5) as f64, (r.y + r.h * 0.5) as f64)
     }
 
+    /// Answers the chooser's ask with `listing`, as a front does.
+    fn answer(f: &mut Files, listing: Result<Listing, String>) -> bool {
+        let ask = f.wants_listing().expect("an ask");
+        f.listed(ask.ticket, listing)
+    }
+
     #[test]
     fn it_asks_once_and_shows_what_the_listing_resolved() {
         let mut f = chooser(r#"{"path":"takes","filter":["wav"]}"#);
-        assert_eq!(f.wants_listing().as_deref(), Some("takes"));
+        let ask = f.wants_listing().expect("asked");
+        assert_eq!(ask.path, "takes");
         assert_eq!(f.wants_listing(), None, "asked once");
         assert!(
-            !f.listed("elsewhere", Ok(listing())),
+            !f.listed(ask.ticket + 1, Ok(listing())),
             "an answer to another ask"
         );
-        assert!(f.listed("takes", Ok(listing())));
-        assert_eq!(f.path, "/takes");
+        assert!(f.listed(ask.ticket, Ok(listing())));
+        assert_eq!(f.chooser.path(), "/takes");
         let names: Vec<&str> = f.rows.rows().iter().map(|r| r.cells[0].as_str()).collect();
         assert_eq!(
             names,
@@ -427,8 +385,7 @@ mod tests {
     fn a_click_selects_a_file_as_the_value_and_a_double_click_picks_it() {
         let m = Metrics::default();
         let mut f = chooser(r#"{"path":"takes"}"#);
-        f.wants_listing();
-        f.listed("takes", Ok(listing()));
+        answer(&mut f, Ok(listing()));
         let e = f.press(on_row(&f, &m, 2), &input(&m));
         assert_eq!(e, Claim::value(OscType::String("/takes/kick.wav".into())));
         assert_eq!(f.value(), Some(OscType::String("/takes/kick.wav".into())));
@@ -456,8 +413,7 @@ mod tests {
             ..input(&m)
         };
         let mut f = chooser(r#"{"path":"takes"}"#);
-        f.wants_listing();
-        f.listed("takes", Ok(listing()));
+        answer(&mut f, Ok(listing()));
         let Claim::Take(mut take) = f.press(on_row(&f, &m, 1), &double) else {
             panic!("taken");
         };
@@ -465,21 +421,67 @@ mod tests {
             take.events.take_interface()[0][1],
             OscType::String("/takes/old".into())
         );
-        assert_eq!(f.wants_listing().as_deref(), Some("/takes/old"));
+        let ask = f.wants_listing().expect("the directory gone into");
+        assert_eq!(ask.path, "/takes/old");
         f.listed(
-            "/takes/old",
+            ask.ticket,
             Ok(Listing::ordered("/takes/old".into(), Vec::new())),
         );
         f.press(on_row(&f, &m, 0), &double);
-        assert_eq!(f.wants_listing().as_deref(), Some("/takes"));
+        assert_eq!(f.wants_listing().map(|a| a.path).as_deref(), Some("/takes"));
+    }
+
+    /// **Navigation while loading**: the way up is there before the listing
+    /// is, and the listing of the directory left behind, coming back after,
+    /// neither replaces the rows nor selects anything.
+    #[test]
+    fn climbing_while_a_directory_is_listed_leaves_its_answer_stale() {
+        let m = Metrics::default();
+        let double = Input {
+            clicks: 2,
+            ..input(&m)
+        };
+        let mut f = chooser(r#"{"path":"/takes/old"}"#);
+        let slow = f.wants_listing().unwrap();
+        assert_eq!(
+            f.rows.rows()[0].cells[0],
+            "..",
+            "the way up, before the listing"
+        );
+        f.press(on_row(&f, &m, 0), &double);
+        let up = f.wants_listing().unwrap();
+        assert_eq!(up.path, "/takes");
+        assert!(!f.listed(slow.ticket, Ok(listing())), "stale");
+        assert_eq!(f.chooser.path(), "/takes");
+        assert_eq!(f.rows.rows().len(), 1, "only the way up while it waits");
+        assert!(f.listed(up.ticket, Ok(listing())));
+        assert_eq!(f.rows.rows().len(), 4);
+    }
+
+    /// **A chooser opened again**: its `path` set again reads the directory
+    /// afresh, with nothing selected, and an answer to the ask before it is
+    /// stale.
+    #[test]
+    fn setting_the_path_again_reads_it_afresh_with_nothing_selected() {
+        let m = Metrics::default();
+        let mut f = chooser(r#"{"path":"takes"}"#);
+        answer(&mut f, Ok(listing()));
+        f.press(on_row(&f, &m, 2), &input(&m));
+        assert!(f.value().is_some());
+        let before = f.wants_listing();
+        assert_eq!(before, None, "nothing asked while nothing moved");
+        assert!(f.set("path", &Value::from("/takes")));
+        assert_eq!(f.value(), None, "the selection went with the listing");
+        let fresh = f.wants_listing().expect("asked afresh");
+        assert!(f.listed(fresh.ticket, Ok(listing())));
+        assert_eq!(f.value(), None);
     }
 
     #[test]
     fn a_directory_that_cannot_be_read_says_why() {
         let mut f = chooser(r#"{"path":"/nowhere"}"#);
-        f.wants_listing();
-        assert!(f.listed("/nowhere", Err("/nowhere: not found".into())));
-        assert_eq!(f.error.as_deref(), Some("/nowhere: not found"));
+        assert!(answer(&mut f, Err("/nowhere: not found".into())));
+        assert_eq!(f.chooser.placeholder(), Some("/nowhere: not found"));
         assert_eq!(f.rows.rows()[0].cells[0], "..", "the way up is still there");
     }
 
@@ -493,8 +495,7 @@ mod tests {
     #[test]
     fn multiple_selection_reports_all_paths_and_excludes_directories() {
         let mut f = chooser(r#"{"path":"takes","multiple":true}"#);
-        f.wants_listing();
-        f.listed("takes", Ok(listing()));
+        answer(&mut f, Ok(listing()));
         f.rows.click(1, Mods::default(), 1);
         f.rows.click(
             2,

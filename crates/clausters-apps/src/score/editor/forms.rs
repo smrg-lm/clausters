@@ -87,7 +87,10 @@ impl ScoreEditor {
             return (None, Vec::new());
         };
         match dialogs::read(open.form, name, tag, values) {
-            None => (None, Vec::new()),
+            // the score editor's forms have no chooser
+            None | Some(Said::Chosen(..) | Said::Picked(..) | Said::Entered(..)) => {
+                (None, Vec::new())
+            }
             Some(Said::Field(field, text)) => {
                 open.values.insert(field, text);
                 (None, Vec::new())
