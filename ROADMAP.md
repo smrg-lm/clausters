@@ -145,6 +145,19 @@ already carry it.
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
   by use)*. **Related:** `T10` writes the file this one points at.
 
+- ⬜ **An automatic profiler for the server** and **A long take distorts
+  more the further it plays** *(root `PLAN.md`, Found by use)*. The profiler
+  comes first. **Related:** "An automatic profiler for the host"
+  (`clients/gui/PLAN.md`, Found by use), below.
+
+- ⬜ **An automatic profiler for the host** (**Related:** the server's,
+  above), then **Eight tracks bring the
+  GUI's frame rate down, and the play cursor jitters**, **The page draws much slower than the native host**, **Two of
+  the page's dialogs draw wrong** and **After Save as and undo back to the
+  original, the page's spectrogram keeps an edited picture**
+  *(`clients/gui/PLAN.md`, Found by use)*. Found in the audio editor's
+  review of 2026-10-21; the four are measured with the host's profiler.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

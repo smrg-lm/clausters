@@ -4490,3 +4490,19 @@ should confirm before the fix.
   their published levels. Directed IPC, parallel/compensation and no-allocation
   regressions preserve samples, bus clearing and meter decay; the native
   multichannel review also checks the live endpoint.
+
+- ⬜ **A long take distorts more the further it plays** (2026-10-21, the
+  user, in the audio editor: a long file copied and pasted at its own end
+  until it reached about 30 minutes). The sound distorts progressively as the
+  position advances. Suspected, not verified: a position held in 32-bit
+  float, which stops addressing single frames past 2^24 frames (about six
+  minutes at 48 kHz); the reader's phase and the transport's position are
+  where to check.
+- ⬜ **An automatic profiler for the server** (2026-10-21, the user, after
+  the audio editor's review). A run that measures, without someone watching,
+  where the server's time goes: blocks and their cost per node and per
+  command, the NRT queue, transfers and replies. It measures the server's
+  general efficiency and gives the host's profiler (`clients/gui/PLAN.md`,
+  Found by use, "An automatic profiler for the host") the server's side of
+  the same run, so a slow window is told from a slow engine. **Related:**
+  "An automatic profiler for the host" (`clients/gui/PLAN.md`, Found by use).

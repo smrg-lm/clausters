@@ -2560,7 +2560,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     entries below in "Found by use"; the second pass (2026-10-21) accepted
     them, with a delete that removes and is history but copies nothing.
 
-- ⬜ **X21 - Consolidate shared visual compositions and file selection.**
+- ✅ **X21 - Consolidate shared visual compositions and file selection.**
   After `X20`, compose existing `forms`, `files`, chrome and shortcut views
   through common contracts. Separate directory/read/write services, chooser
   interaction state and application decisions about opening selected paths.
@@ -2605,9 +2605,9 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     wrong file (fixed) and the rule that an application opens with no file
     and outlives its last, which the audio editor now keeps; the other
     applications are in "Found by use".
-  - ⬜ Browser eye pass over the same.
+  - ✅ Browser eye pass over the same (2026-10-21, with the `X22` pass).
 
-- ⬜ **X22 - Centralize audio transitions and effect ordering in Rust.**
+- ✅ **X22 - Centralize audio transitions and effect ordering in Rust.**
   After `X21`, make menu, key and scripted actions enter one coordinator.
   It dispatches edits to `Editing`, updates instance state, orders service
   requests and publishes host corrections. Move policy from Python's `_take`,
@@ -2660,7 +2660,10 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     `refuse_walk`, `finish_walk` and `Repair::echo`.
   - ✅ Native eye and ear pass over the `edit_audio` pair (2026-10-21): play,
     stop, loop, files opened and closed, cut, paste and undo, save.
-  - ⬜ Browser eye and ear pass over the same.
+  - ✅ Browser eye and ear pass over the same (2026-10-21). The pass found
+    the entries of 2026-10-21 in `clients/gui/PLAN.md` and the root
+    `PLAN.md` "Found by use": eight tracks, the page's speed and dialogs,
+    a stale spectrogram after undo, a long take that distorts, a profiler.
 
 - ⬜ **X23 - Define activity, subscriptions and invalidation.** After
   `X22`, connect application activity to existing host demand/tick machinery.

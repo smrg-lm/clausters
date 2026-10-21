@@ -8497,3 +8497,38 @@ module of its own.
   with or without the file list. It predates the file list: the window's
   width does not leave the meter its natural size. The meter should keep
   the width it asks for and the take's pane yield it.
+
+- ⬜ **Eight tracks bring the GUI's frame rate down, and the play cursor
+  jitters** (2026-10-21, the user, native, in the audio editor's review).
+  With eight tracks on screen the window redraws visibly slower and the play
+  cursor moves in uneven steps instead of following the sound smoothly.
+  Measured first, with the host's profiler ("An automatic profiler for
+  the host", below), before any cause is assumed.
+- ⬜ **The page draws much slower than the native host** (2026-10-21, the
+  user, browser). Switching the audio editor between waveform, spectrogram
+  and both, and switching files, is visibly slower in the page than natively.
+  The host is one program compiled twice, so the difference is a defect of
+  the browser front or of what it is fed, to be measured with the same
+  profiler on both fronts.
+- ⬜ **Two of the page's dialogs draw wrong** (2026-10-21, the user's
+  captures of `edit-audio.html`). A dialog that reaches the meter is drawn
+  under it: the meter's ladder and column cover the dialog's right edge. In
+  the Save as dialog the OK button's label is drawn over another label (it
+  reads as overlapping glyphs), and the path field shows a stray green bar
+  inside the text where the caret is. Both are host drawing, so the native
+  window is checked for the same before either is fixed in one front.
+- ⬜ **After Save as and undo back to the original, the page's spectrogram
+  keeps an edited picture** (2026-10-21, the user, browser). Playback was
+  right and switching the view away and back redrew it; until then the
+  spectrogram drew an earlier edited state of the take. A stale spectral
+  cache that a restored join does not invalidate is the place to look, once
+  the profiler can show what was redrawn and when.
+- ⬜ **An automatic profiler for the host** (2026-10-21, the user, after the
+  audio editor's review). A run that measures, without someone watching,
+  where the host's time goes, natively and in a page: frames and what each
+  redrew, layout and upload cost, data paths (taps, bulk, streams) and the
+  queries the fronts schedule. The eight-track window, the page slower than
+  native and the stale spectrogram above are measured with it before any
+  cause is assumed; it runs beside the server's. **Related:** "An automatic
+  profiler for the server" (root `PLAN.md`, Found by use).
+
