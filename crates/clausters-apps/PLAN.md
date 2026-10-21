@@ -3271,6 +3271,15 @@ Every entry carries a checkbox.
 
 ## Found by use: the running list of fixes
 
+- ⬜ **The audio meter is corrected while the window does not draw it**
+  (2026-10-21, the eye pass over the editor with no file). After a file is
+  closed or opened, the `playing` answer corrects the meter widget with
+  `{"bus", "channels"}` (a negative bus for a file not playing) when the
+  window was drawn without a meter, and the host warns `/gui_set <id>: no
+  such widget`. Reproduced on the Python client's fake host by closing files
+  and opening one again; the correction should follow whether the window
+  drew the meter.
+
 - ⬜ **The other applications that open files open without one and outlive
   their last** (the user, 2026-10-21, in the X21 eye pass: an editor is an
   application that opens with no file, and closing the last file does not
