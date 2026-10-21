@@ -2711,6 +2711,13 @@ Every entry carries a checkbox.
   the editor (a curve, an insert, a chain), the one verb that renders whichever
   is pending into the take, and whether the preview's insert is a resource a
   menu shows at all or the preview switch's own business.
+  *Settled 2026-10-21:* the preview is one switch, *Preview edits*, ticked
+  while on; freeing its insert left the menu and is the script call
+  `free_preview` (it was `remove_effect`, which named a general effect while
+  a file holds exactly one, the preview's, and took no argument saying which).
+  Several effects per file need identity -- an effect in the file's chain,
+  with its own insert, bypass and free verbs -- and are part of this design.
+  Still open: the one Apply.
 
 - ⬜ **A roll may need its tempo and its barlines as parameters** *(the
   user, 2026-10-06, hearing the page of a sequence against the rolls over

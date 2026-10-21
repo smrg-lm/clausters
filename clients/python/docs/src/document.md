@@ -127,10 +127,10 @@ a new take and resets the curve to unity. Undo restores both the original
 take and the unapplied curve; redo restores the rendered take without applying
 gain a second time. Curve edits alone leave the samples unchanged.
 
-`editor.preview_on()` (Edit → Preview on) hears the curve through a gain insert
+`editor.preview_on()` (Edit → Preview edits, a switch) hears the curve through a gain insert
 and draws the result in every view: the processed waveform over the original in the waveform, and the spectrogram of the result in the spectrogram. Editing the curve,
 cutting samples or walking undo updates both. `editor.preview_off()` ramps back
-to dry and pauses the insert; `editor.remove_effect()` frees its buffers and
+to dry and pauses the insert; `editor.free_preview()` frees its buffers and
 node while retaining the unapplied curve. These switches are preview state,
 outside the undo history. Enabling recreates a removed insert. Apply writes
 the gain once, including when preview is enabled. Save writes only the

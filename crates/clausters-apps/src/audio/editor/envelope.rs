@@ -38,7 +38,7 @@ impl AudioEditor {
                 self.file.effect_installed = true;
             }
             "preview_off" => self.file.presentation.preview_on = false,
-            "remove_effect" => {
+            "free_preview" => {
                 self.file.presentation.preview_on = false;
                 self.file.effect_installed = false;
             }
@@ -204,7 +204,7 @@ impl AudioEditor {
                     ),
                 }
             }
-            "toggle_preview" | "preview_on" | "preview_off" | "remove_effect" => {
+            "toggle_preview" | "preview_on" | "preview_off" | "free_preview" => {
                 self.preview_event(request["verb"].as_str().unwrap(), &mut out)
             }
             "apply_envelope" | "apply" => self.apply_envelope_event(&mut out),

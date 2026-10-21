@@ -1074,9 +1074,9 @@ class AudioEditor(Marking, Editor):
         """Ramp to dry and pause the insert, retaining its state."""
         self._envelope_act("preview_off")
 
-    def remove_effect(self) -> None:
+    def free_preview(self) -> None:
         """Free the preview insert and its table; keep the unapplied curve."""
-        self._envelope_act("remove_effect")
+        self._envelope_act("free_preview")
 
     def _envelope_act(self, verb: str, **args) -> bool:
         with self._editing.turn(self):

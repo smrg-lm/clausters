@@ -577,7 +577,7 @@ def test_preview_switches_keep_samples_and_history_and_release_the_insert():
     assert host.props[wid]["preview_buffer"] == -1
     editor.preview_on()
     assert "/buffer_alloc" not in take.server.addrs()
-    editor.remove_effect()
+    editor.free_preview()
     assert take.server.addrs().count("/buffer_free") == 2
     assert editor.parts == before and context.version == version
     assert editor.envelope[1] == 0.25

@@ -333,7 +333,7 @@ impl Converse for AudioEditor {
                 | "toggle_preview"
                 | "preview_on"
                 | "preview_off"
-                | "remove_effect"
+                | "free_preview"
                 | "apply"
                 | "show_all_channels"
         ) {
@@ -617,8 +617,8 @@ impl AudioEditor {
                     "show_envelope" if self.window_state.envelope_widget.is_none() => {
                         state.refuse("this window has no envelope body");
                     }
-                    "remove_effect" if !self.file.effect_installed => {
-                        state.refuse("no effect is installed");
+                    "free_preview" if !self.file.effect_installed => {
+                        state.refuse("no preview is installed");
                     }
                     _ => {}
                 }
@@ -1440,7 +1440,7 @@ impl AudioEditor {
         }
         if matches!(
             tag,
-            "toggle_preview" | "preview_on" | "preview_off" | "remove_effect"
+            "toggle_preview" | "preview_on" | "preview_off" | "free_preview"
         ) {
             return self.preview_event(tag, out);
         }
@@ -2462,7 +2462,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
         "show_envelope" | "setautomation" | "apply_envelope" | "toggle_preview" | "preview_on"
         | "preview_off"
-        | "remove_effect" | "fold_channel" | "solo_channel" | "show_all_channels" => {
+        | "free_preview" | "fold_channel" | "solo_channel" | "show_all_channels" => {
             serde_json::to_string(&editor.act(&request, version)).unwrap()
         }
         "props" if editor.window_state.envelope_widget == Some(widget) => editor

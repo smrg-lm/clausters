@@ -1284,11 +1284,11 @@ same undo order as host gestures. The window request accepts the caller-owned
 the existing door; no C or wasm symbol or ABI counter changes.
 
 The existing audio editor/playback JSON doors carry preview without new
-binding symbols: application `preview_on`, `preview_off`, `remove_effect`
+binding symbols: application `preview_on`, `preview_off`, `free_preview`
 and the `preview` query; playback `gain` (`file`, seconds-based point quads,
 `on`, contents `revision`) and `removeEffect` (`file`). Playback `state` adds
 `previews`, a file-id keyed map of visible processed buffers. Python
-`preview_on`/`preview_off`/`remove_effect` and TypeScript
-`previewOn`/`previewOff`/`removeEffect` carry those same turns. Signal builders
+`preview_on`/`preview_off`/`free_preview` and TypeScript
+`previewOn`/`previewOff`/`freePreview` carry those same turns. Signal builders
 spell the wire `preview_buffer` as Python `preview_buffer` and TypeScript
 `previewBuffer`.

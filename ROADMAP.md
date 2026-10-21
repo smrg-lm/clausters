@@ -193,7 +193,8 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **The audio editor's Edit menu names one entry per kind of edit**
   *(`crates/clausters-apps/PLAN.md`, Future directions)*. Apply gain envelope
-  and Remove effect do not scale to a second process; a design first.
+  does not scale to a second process, and several effects per file need
+  identity; a design first.
 
 - ⬜ **The `N` track's last two — a foreign score's layout, and a score as a
   box of the multitrack**, `N7` and `N9` *(`clients/gui/PLAN.md`, "N track —

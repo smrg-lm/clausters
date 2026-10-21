@@ -50,7 +50,7 @@ Edit -&gt; Edit gain envelope selects the curve body, and the vertical ruler rea
 or double-click to add a point. Curve edits keep samples intact. The gain envelope
 button shows a shaped fade; Apply envelope renders it into a new take and resets
 the curve to unity. Undo restores both. Preview on hears and draws gain without changing the take. Preview off ramps
-back to dry -- the Edit menu's Preview edits switch, ticked while it is on; Remove effect frees the insert and retains its curve.<br>
+back to dry -- the Edit menu's Preview edits switch, ticked while it is on; free preview frees the insert and retains its curve.<br>
 
 <b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
 <b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
@@ -105,7 +105,7 @@ behind the dialog; in its name field it undoes the typing.
         <button id="envelope" disabled>gain envelope</button>
         <button id="preview-on" disabled>preview on</button>
         <button id="preview-off" disabled>preview off</button>
-        <button id="remove-effect" disabled>remove effect</button>
+        <button id="free-preview" disabled>free preview</button>
         <button id="apply-envelope" disabled>apply envelope</button>
         <button id="play" disabled>play the take</button>
         <button id="parts" disabled>what it is made of</button>
@@ -191,8 +191,8 @@ behind the dialog; in its name field it undoes the typing.
         $("preview-on").onclick = () => editor.previewOn();
         $("preview-off").disabled = false;
         $("preview-off").onclick = () => editor.previewOff();
-        $("remove-effect").disabled = false;
-        $("remove-effect").onclick = () => editor.removeEffect();
+        $("free-preview").disabled = false;
+        $("free-preview").onclick = () => editor.freePreview();
         $("apply-envelope").disabled = false;
         $("apply-envelope").onclick = () => editor.applyEnvelope();
 

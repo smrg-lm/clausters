@@ -164,7 +164,7 @@ def both():
 # take and resets the curve to unity. Undo restores the take and the curve.
 # `preview_on()` hears and draws it; `preview_off()` ramps back to dry --
 # the Edit menu's Preview edits switch, ticked while it is on.
-# `remove_effect()` frees the insert and retains the unapplied curve.
+# `free_preview()` frees the insert and retains the unapplied curve.
 
 # %%
 def envelope():
@@ -183,9 +183,9 @@ def preview_off():
     editor.preview_off()
 
 
-def remove_effect():
+def free_preview():
     """Free the insert and retain the curve for later use."""
-    editor.remove_effect()
+    editor.free_preview()
 
 
 def apply_envelope():

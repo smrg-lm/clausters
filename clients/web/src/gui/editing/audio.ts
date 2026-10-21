@@ -1394,7 +1394,7 @@ export class AudioEditor extends Editor<Buffer> {
     previewOff(): void { this.envelopeAct("preview_off"); }
 
     /** Free the preview insert and table, retaining the unapplied curve. */
-    removeEffect(): void { this.envelopeAct("remove_effect"); }
+    freePreview(): void { this.envelopeAct("free_preview"); }
 
     /**
      * The channels drawn folded, in order: strips one control tall that a

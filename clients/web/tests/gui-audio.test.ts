@@ -633,7 +633,7 @@ test("preview switches keep samples and history and release the insert", async (
     editor.previewOn();
     await settle();
     assert.equal(take.server.addrs().includes("/buffer_alloc"),false);
-    editor.removeEffect();
+    editor.freePreview();
     await settle();
     assert.equal(take.server.addrs().filter(addr => addr === "/buffer_free").length,2);
     assert.deepEqual(editor.parts,before);

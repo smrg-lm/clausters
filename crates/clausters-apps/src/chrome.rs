@@ -154,7 +154,6 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "show_envelope"),
             sep(),
             entry(app, "toggle_preview"),
-            entry(app, "remove_effect"),
             entry(app, "apply_envelope"),
         ]);
     }
