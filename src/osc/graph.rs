@@ -279,6 +279,11 @@ pub struct TreeMirror {
     /// epitaph nothing ever claims (the node was already gone engine-side, so
     /// no event follows) is pushed out by the ones after it.
     epitaphs: std::collections::VecDeque<(i32, Box<str>)>,
+    /// The defs of synths that have left the tree, kept for the same gap and
+    /// bounded the same way: a synth freed by command is gone from here
+    /// before the engine hands back what it cost (`/server_profile`), and
+    /// its def is the row that cost belongs to.
+    synth_epitaphs: std::collections::VecDeque<(i32, String)>,
 }
 
 /// How many unclaimed epitaphs the mirror keeps. Comfortably more than the
@@ -305,6 +310,7 @@ impl TreeMirror {
         Self {
             nodes,
             epitaphs: std::collections::VecDeque::new(),
+            synth_epitaphs: std::collections::VecDeque::new(),
         }
     }
 
@@ -314,6 +320,24 @@ impl TreeMirror {
             self.epitaphs.pop_front();
         }
         self.epitaphs.push_back((id, name));
+    }
+
+    /// Remembers a departing synth's def for what it cost.
+    fn bury_synth(&mut self, id: i32, def: String) {
+        if self.synth_epitaphs.len() >= MAX_EPITAPHS {
+            self.synth_epitaphs.pop_front();
+        }
+        self.synth_epitaphs.push_back((id, def));
+    }
+
+    /// Claims the def of a synth that has left the tree, for its def's row of
+    /// `/server_profile`. `None` once claimed or pushed out.
+    pub fn take_synth_epitaph(&mut self, id: i32) -> Option<Box<str>> {
+        let at = self
+            .synth_epitaphs
+            .iter()
+            .rposition(|(other, _)| *other == id)?;
+        self.synth_epitaphs.remove(at).map(|(_, def)| def.into())
     }
 
     /// Claims the name of a group that has left the tree, for the death
@@ -605,13 +629,16 @@ impl TreeMirror {
         let Some(node) = self.nodes.remove(&id) else {
             return;
         };
-        if let MirrorBody::Group { children, name, .. } = node.body {
-            if let Some(name) = name {
-                self.bury(id, name);
+        match node.body {
+            MirrorBody::Group { children, name, .. } => {
+                if let Some(name) = name {
+                    self.bury(id, name);
+                }
+                for child in children {
+                    self.remove_subtree(child);
+                }
             }
-            for child in children {
-                self.remove_subtree(child);
-            }
+            MirrorBody::Synth { def_name, .. } => self.bury_synth(id, def_name),
         }
         if let Some(MirrorBody::Group { children, .. }) =
             self.nodes.get_mut(&node.parent).map(|n| &mut n.body)
@@ -621,15 +648,19 @@ impl TreeMirror {
     }
 
     fn remove_subtree(&mut self, id: i32) {
-        if let Some(node) = self.nodes.remove(&id)
-            && let MirrorBody::Group { children, name, .. } = node.body
-        {
-            if let Some(name) = name {
-                self.bury(id, name);
+        let Some(node) = self.nodes.remove(&id) else {
+            return;
+        };
+        match node.body {
+            MirrorBody::Group { children, name, .. } => {
+                if let Some(name) = name {
+                    self.bury(id, name);
+                }
+                for child in children {
+                    self.remove_subtree(child);
+                }
             }
-            for child in children {
-                self.remove_subtree(child);
-            }
+            MirrorBody::Synth { def_name, .. } => self.bury_synth(id, def_name),
         }
     }
 

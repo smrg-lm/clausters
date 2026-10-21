@@ -21,6 +21,7 @@ from clausters.defs import (
     Server,
     Synth,
     format_load,
+    format_profile,
 )
 from clausters.defs import signals as S
 
@@ -915,6 +916,77 @@ def test_a_server_with_no_clock_reports_no_time_and_still_counts():
     # And a timed reading after it starts over: no baseline was kept.
     iface.queue_reply("/server_load.reply", 4.0, 1, "audio", 0, 1.0, 10)
     assert srv.load()[0].share is None
+
+
+def _profile_reply(uptime, phases, synths, defs, commands, replies, jobs):
+    args = [uptime, 1]
+    for rows in (phases, synths, defs, commands, replies, jobs):
+        args.append(len(rows))
+        for row in rows:
+            args.extend(row)
+    return args
+
+
+def test_profile_reads_the_window_between_two_reports():
+    # The verb asks for the synth timing, reads, waits, reads again and gives
+    # the timing back: four messages, and the profile is the difference.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/done", "/server_profile")
+    iface.queue_reply("/server_profile.reply", *_profile_reply(
+        10.5,
+        [["audio", "nodes", 1.5, 100], ["net", "streams", 0.1, 50]],
+        [[1000, "tone", 0.5, 100]],
+        [["tone", 0.5, 100, 1], ["click", 0.2, 10, 4]],
+        [["/node_set", 0.01, 10, 240]],
+        [["/done", 3, 48]],
+        [["/buffer_read", 0.3, 1, 0.1]],
+    ))
+    iface.queue_reply("/server_profile.reply", *_profile_reply(
+        12.5,
+        [["audio", "nodes", 1.9, 200], ["net", "streams", 0.1, 50]],
+        [[1000, "tone", 0.9, 200], [1001, "tone", 0.1, 50]],
+        [["tone", 1.25, 250, 2], ["click", 0.2, 10, 4]],
+        [["/node_set", 0.02, 14, 336], ["/synth_new", 0.001, 1, 32]],
+        [["/done", 5, 80]],
+        [["/buffer_read", 0.3, 1, 0.1]],
+    ))
+    iface.queue_reply("/done", "/server_profile")
+    profile = srv.profile(seconds=0)
+    assert [m[0] for m in iface.sent] == ["/server_profile"] * 4
+    assert [m[1] for m in iface.sent] == [[1], [], [], [0]]
+
+    assert profile.seconds == pytest.approx(2.0)
+    assert profile.timed_synths
+    # What did not move in the window is not listed.
+    assert [(r.role, r.name) for r in profile.phases] == [("audio", "nodes")]
+    nodes = profile.phases[0]
+    assert nodes.busy == pytest.approx(0.4) and nodes.count == 100
+    assert nodes.share == pytest.approx(0.2)
+    # A synth new in the window starts from nothing; costliest first.
+    assert [(r.node, r.name) for r in profile.synths] == [(1000, "tone"), (1001, "tone")]
+    assert profile.synths[0].busy == pytest.approx(0.4)
+    assert [r.name for r in profile.defs] == ["tone"]
+    assert profile.defs[0].nodes == 1 and profile.defs[0].count == 150
+    assert [r.name for r in profile.commands] == ["/node_set", "/synth_new"]
+    assert profile.commands[0].bytes == 96 and profile.commands[0].count == 4
+    assert profile.replies[0].busy is None and profile.replies[0].bytes == 32
+    assert profile.jobs == []
+
+    report = format_profile(profile)
+    assert report.splitlines()[0] == "server profile over 2.00 s"
+    assert "audio nodes" in report and "node 1001" in report
+
+
+def test_profile_gives_the_timing_back_when_a_read_fails():
+    # A report that never comes still ends with the `0`, or the server would
+    # keep timing every synth for a client that has stopped asking.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/done", "/server_profile")
+    with pytest.raises(Exception):
+        srv.profile(seconds=0, timeout=0.01)
+    assert iface.sent[-1] == ("/server_profile", [0])
 
 
 def test_a_status_with_no_clock_has_no_cpu_figures():

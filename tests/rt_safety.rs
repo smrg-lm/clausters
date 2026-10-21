@@ -21,6 +21,9 @@ static ALLOC: AllocDisabler = AllocDisabler;
 fn audio_thread_does_not_allocate() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    // Profiled throughout: timing every synth and handing a freed one's
+    // totals home with its garbage are audio-thread work too.
+    handle.node_costs().set_profiling(true);
 
     // Network side (allowed to allocate): a group plus 32 SynthDef instances
     // inside it, all fully built here.
@@ -1060,6 +1063,8 @@ fn envgen_free_self_does_not_allocate_on_the_audio_thread() {
 
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    // A synth that frees itself while profiled carries its totals out.
+    handle.node_costs().set_profiling(true);
 
     // 16 one-shot envelopes with doneAction = 2: each finishes and frees
     // itself within a few blocks, exercising the queue-and-free path.
@@ -1187,6 +1192,8 @@ fn parallel_dispatch_does_not_allocate() {
 
     let (mut engine, mut handle) = engine_pair_with_workers(48_000.0, 2, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    // Each worker times the synths of its stage while profiled.
+    handle.node_costs().set_profiling(true);
 
     // Sources on disjoint buses so stages genuinely fan out to the workers.
     handle

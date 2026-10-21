@@ -384,6 +384,207 @@ def format_load(rows: "list[Load]") -> str:
 
 
 @dataclass
+class ProfileRow:
+    """One row of a `Profile`: a phase, a synth, a def, a command, a reply or
+    an NRT job, and what it cost over the profile's window.
+
+    One shape for the six sections, so a reader goes through them alike:
+    ``name`` says what the row is and ``count`` how many times it ran or went
+    by; the fields a section has no use for keep their defaults.
+    """
+
+    #: The phase (``nodes``), the def of a synth or the def itself, the OSC
+    #: address of a command or a reply, or the command of an NRT job.
+    name: str
+    #: Seconds of work over the window, or ``None`` where there is none to
+    #: measure -- a reply, or any row from a server that cannot time itself.
+    busy: "float | None"
+    #: Blocks, slices, turns, runs, messages or jobs over the window.
+    count: int
+    #: ``busy`` as a fraction of the window's wall time.
+    share: "float | None" = None
+    #: The role a phase belongs to (``audio`` or ``net``).
+    role: str = ""
+    #: The node id of a synth row.
+    node: "int | None" = None
+    #: How many synths of a def ran in the window.
+    nodes: int = 0
+    #: Bytes a command or a reply carried over the window.
+    bytes: int = 0
+    #: Seconds an NRT job waited in the queue before running.
+    waited: "float | None" = None
+
+
+@dataclass
+class Profile:
+    """What the server spent its time on over a window, in detail (the result
+    of `Server.profile`).
+
+    `Server.load` says which role spent the time; this says what inside it:
+    which phase of the block or of the serving turn, which synth and which
+    def, which command, how much each reply carried and how long each NRT job
+    ran and waited. Each section is sorted costliest first and lists only
+    what moved during the window.
+
+    **What the window cost** is the difference between two of the server's
+    cumulative reports, so several clients can profile one server at once.
+    The synth timing is the one switch: the server runs it only while some
+    client asks, because it costs the audio thread two clock reads per synth
+    per block. ``timed_synths`` says whether it was on for the whole window.
+    """
+
+    #: The window, in seconds of the server's clock, or ``None`` from a server
+    #: that cannot time itself.
+    seconds: "float | None"
+    #: Whether every synth was timed throughout the window.
+    timed_synths: bool
+    #: Where the block (``audio``) and the serving turn (``net``) went.
+    phases: "list[ProfileRow]"
+    #: The synths still in the tree at the end, with their node ids.
+    synths: "list[ProfileRow]"
+    #: Every def whose synths ran, those freed during the window included.
+    defs: "list[ProfileRow]"
+    #: Every OSC address the server received.
+    commands: "list[ProfileRow]"
+    #: Every OSC address the server sent, pushes and streams included.
+    replies: "list[ProfileRow]"
+    #: Every command that ran on the NRT queue.
+    jobs: "list[ProfileRow]"
+
+
+#: The fields of each `/server_profile.reply` section, in order.
+_PROFILE_WIDTHS = (4, 4, 4, 4, 3, 4)
+
+
+def _profile_sections(args) -> "tuple[float | None, bool, list[list[list]]]":
+    """`/server_profile.reply`'s arguments cut into its six sections."""
+    uptime = None if args[0] is None else float(args[0])
+    at = 2
+    sections = []
+    for width in _PROFILE_WIDTHS:
+        n = int(args[at])
+        at += 1
+        sections.append([list(args[at + width * i:at + width * (i + 1)]) for i in range(n)])
+        at += width * n
+    return uptime, bool(args[1]), sections
+
+
+def _profile_difference(first, second) -> Profile:
+    """The `Profile` of the window between two `/server_profile.reply`
+    argument lists."""
+    start, _, before = _profile_sections(first)
+    end, timed, after = _profile_sections(second)
+    seconds = None if start is None or end is None else end - start
+
+    def seconds_of(value):
+        return None if value is None else float(value)
+
+    def less(now, was):
+        if now is None:
+            return None
+        return now - (was or 0.0)
+
+    def share(busy):
+        if busy is None or not seconds:
+            return None
+        return busy / seconds
+
+    def section(index, key, build):
+        was = {key(row): row for row in before[index]}
+        rows = []
+        for row in after[index]:
+            made = build(row, was.get(key(row)))
+            if made.count > 0 or (made.busy or 0.0) > 0.0 or made.bytes > 0:
+                made.share = share(made.busy)
+                rows.append(made)
+        rows.sort(key=lambda r: (-(r.busy or 0.0), -r.bytes, -r.count, r.name))
+        return rows
+
+    def phase(row, was):
+        busy = less(seconds_of(row[2]), seconds_of(was[2]) if was else None)
+        return ProfileRow(name=str(row[1]), role=str(row[0]), busy=busy,
+                          count=int(row[3]) - (int(was[3]) if was else 0))
+
+    def synth(row, was):
+        busy = less(seconds_of(row[2]), seconds_of(was[2]) if was else None)
+        return ProfileRow(name=str(row[1]), node=int(row[0]), busy=busy,
+                          count=int(row[3]) - (int(was[3]) if was else 0))
+
+    def definition(row, was):
+        busy = less(seconds_of(row[1]), seconds_of(was[1]) if was else None)
+        return ProfileRow(name=str(row[0]), busy=busy,
+                          count=int(row[2]) - (int(was[2]) if was else 0),
+                          nodes=int(row[3]) - (int(was[3]) if was else 0))
+
+    def command(row, was):
+        busy = less(seconds_of(row[1]), seconds_of(was[1]) if was else None)
+        return ProfileRow(name=str(row[0]), busy=busy,
+                          count=int(row[2]) - (int(was[2]) if was else 0),
+                          bytes=int(row[3]) - (int(was[3]) if was else 0))
+
+    def reply(row, was):
+        return ProfileRow(name=str(row[0]), busy=None,
+                          count=int(row[1]) - (int(was[1]) if was else 0),
+                          bytes=int(row[2]) - (int(was[2]) if was else 0))
+
+    def job(row, was):
+        busy = less(seconds_of(row[1]), seconds_of(was[1]) if was else None)
+        waited = less(seconds_of(row[3]), seconds_of(was[3]) if was else None)
+        return ProfileRow(name=str(row[0]), busy=busy, waited=waited,
+                          count=int(row[2]) - (int(was[2]) if was else 0))
+
+    return Profile(
+        seconds=seconds,
+        timed_synths=timed,
+        phases=section(0, lambda r: (r[0], r[1]), phase),
+        synths=section(1, lambda r: (r[0], r[1]), synth),
+        defs=section(2, lambda r: r[0], definition),
+        commands=section(3, lambda r: r[0], command),
+        replies=section(4, lambda r: r[0], reply),
+        jobs=section(5, lambda r: r[0], job),
+    )
+
+
+def format_profile(profile: Profile, limit: int = 10) -> str:
+    """The readable report `Server.profile`'s result prints as: every phase,
+    then the ``limit`` costliest rows of each other section.
+
+    A free function, as `format_load` is, so the report is one call whatever
+    the reader wants to do with the rows themselves.
+    """
+    def seconds(value):
+        return "        -  " if value is None else f"{value * 1000:8.2f} ms"
+
+    def share(value):
+        return "     -" if value is None else f"{value * 100:5.1f}%"
+
+    window = _NOT_TIMED if profile.seconds is None else f"{profile.seconds:.2f} s"
+    lines = [f"server profile over {window}"]
+    if not profile.timed_synths:
+        lines.append("  (synths were not timed for the whole window)")
+    lines.append("  phases")
+    for row in profile.phases:
+        lines.append(f"    {row.role + ' ' + row.name:<22} {share(row.share)}  "
+                     f"{seconds(row.busy)}  {row.count} runs")
+    for title, rows, extra in (
+        ("synths", profile.synths, lambda r: f"node {r.node}"),
+        ("defs", profile.defs, lambda r: f"{r.nodes} synths"),
+        ("commands", profile.commands, lambda r: f"{r.bytes} bytes"),
+        ("replies", profile.replies, lambda r: f"{r.bytes} bytes"),
+        ("jobs", profile.jobs, lambda r: f"waited {seconds(r.waited).strip()}"),
+    ):
+        if not rows:
+            continue
+        lines.append(f"  {title}")
+        for row in rows[:limit]:
+            lines.append(f"    {row.name:<22} {share(row.share)}  {seconds(row.busy)}  "
+                         f"{row.count} x  {extra(row)}")
+        if len(rows) > limit:
+            lines.append(f"    ... {len(rows) - limit} more")
+    return "\n".join(lines)
+
+
+@dataclass
 class ServerStatus:
     """The live counters a running server reports over ``/server_status``
     (read-only; the result of `Server.status`).

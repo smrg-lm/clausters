@@ -272,6 +272,244 @@ export function formatLoad(rows: Load[]): string {
     return lines.join("\n");
 }
 
+/**
+ * One row of a {@link Profile}: a phase, a synth, a def, a command, a reply or
+ * an NRT job, and what it cost over the profile's window.
+ *
+ * One shape for the six sections, so a reader goes through them alike: `name`
+ * says what the row is and `count` how many times it ran or went by; the
+ * fields a section has no use for keep their defaults.
+ */
+export interface ProfileRow {
+    /**
+     * The phase (`nodes`), the def of a synth or the def itself, the OSC
+     * address of a command or a reply, or the command of an NRT job.
+     */
+    name: string;
+    /**
+     * Seconds of work over the window, or `null` where there is none to
+     * measure -- a reply, or any row from a server that cannot time itself.
+     */
+    busy: number | null;
+    /** Blocks, slices, turns, runs, messages or jobs over the window. */
+    count: number;
+    /** `busy` as a fraction of the window's wall time. */
+    share?: number;
+    /** The role a phase belongs to (`audio` or `net`). */
+    role: string;
+    /** The node id of a synth row. */
+    node: number | null;
+    /** How many synths of a def ran in the window. */
+    nodes: number;
+    /** Bytes a command or a reply carried over the window. */
+    bytes: number;
+    /** Seconds an NRT job waited in the queue before running. */
+    waited: number | null;
+}
+
+/**
+ * What the server spent its time on over a window, in detail (the result of
+ * {@link Server.profile}).
+ *
+ * {@link Server.load} says which role spent the time; this says what inside
+ * it: which phase of the block or of the serving turn, which synth and which
+ * def, which command, how much each reply carried and how long each NRT job
+ * ran and waited. Each section is sorted costliest first and lists only what
+ * moved during the window.
+ *
+ * **What the window cost** is the difference between two of the server's
+ * cumulative reports, so several clients can profile one server at once. The
+ * synth timing is the one switch: the server runs it only while some client
+ * asks, because it costs the audio thread two clock reads per synth per
+ * block. `timedSynths` says whether it was on for the whole window.
+ */
+export interface Profile {
+    /**
+     * The window, in seconds of the server's clock, or `null` from a server
+     * that cannot time itself.
+     */
+    seconds: number | null;
+    /** Whether every synth was timed throughout the window. */
+    timedSynths: boolean;
+    /** Where the block (`audio`) and the serving turn (`net`) went. */
+    phases: ProfileRow[];
+    /** The synths still in the tree at the end, with their node ids. */
+    synths: ProfileRow[];
+    /** Every def whose synths ran, those freed during the window included. */
+    defs: ProfileRow[];
+    /** Every OSC address the server received. */
+    commands: ProfileRow[];
+    /** Every OSC address the server sent, pushes and streams included. */
+    replies: ProfileRow[];
+    /** Every command that ran on the NRT queue. */
+    jobs: ProfileRow[];
+}
+
+/** The fields of each `/server_profile.reply` section, in order. */
+const PROFILE_WIDTHS = [4, 4, 4, 4, 3, 4];
+
+type Arg = unknown;
+
+/** `/server_profile.reply`'s arguments cut into its six sections. */
+function profileSections(args: readonly Arg[]): {
+    uptime: number | null;
+    timed: boolean;
+    sections: Arg[][][];
+} {
+    const uptime = args[0] === null ? null : Number(args[0]);
+    let at = 2;
+    const sections: Arg[][][] = [];
+    for (const width of PROFILE_WIDTHS) {
+        const n = Number(args[at]);
+        at += 1;
+        const rows: Arg[][] = [];
+        for (let i = 0; i < n; i++) {
+            rows.push(args.slice(at + width * i, at + width * (i + 1)));
+        }
+        at += width * n;
+        sections.push(rows);
+    }
+    return { uptime, timed: Number(args[1]) !== 0, sections };
+}
+
+/**
+ * The {@link Profile} of the window between two `/server_profile.reply`
+ * argument lists.
+ *
+ * @internal
+ * @param first - the report at the window's start.
+ * @param second - the report at its end.
+ */
+export function profileDifference(first: readonly Arg[], second: readonly Arg[]): Profile {
+    const before = profileSections(first);
+    const after = profileSections(second);
+    const seconds = before.uptime === null || after.uptime === null
+        ? null
+        : after.uptime - before.uptime;
+    const secondsOf = (value: Arg): number | null => (value === null || value === undefined ? null : Number(value));
+    const less = (now: number | null, was: number | null): number | null =>
+        now === null ? null : now - (was ?? 0);
+    const counted = (now: Arg, was: Arg[] | undefined, at: number): number =>
+        Number(now) - (was ? Number(was[at]) : 0);
+    const row = (fields: Partial<ProfileRow> & Pick<ProfileRow, "name" | "busy" | "count">): ProfileRow => ({
+        role: "",
+        node: null,
+        nodes: 0,
+        bytes: 0,
+        waited: null,
+        ...fields,
+    });
+    const section = (
+        index: number,
+        key: (r: Arg[]) => string,
+        build: (r: Arg[], was: Arg[] | undefined) => ProfileRow,
+    ): ProfileRow[] => {
+        const was = new Map(before.sections[index].map((r) => [key(r), r]));
+        const rows: ProfileRow[] = [];
+        for (const r of after.sections[index]) {
+            const made = build(r, was.get(key(r)));
+            if (made.count > 0 || (made.busy ?? 0) > 0 || made.bytes > 0) {
+                if (made.busy !== null && seconds) made.share = made.busy / seconds;
+                rows.push(made);
+            }
+        }
+        rows.sort((a, b) =>
+            (b.busy ?? 0) - (a.busy ?? 0) ||
+            b.bytes - a.bytes ||
+            b.count - a.count ||
+            (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+        return rows;
+    };
+    const busyAt = (r: Arg[], was: Arg[] | undefined, at: number): number | null =>
+        less(secondsOf(r[at]), was ? secondsOf(was[at]) : null);
+    return {
+        seconds,
+        timedSynths: after.timed,
+        phases: section(0, (r) => `${r[0]} ${r[1]}`, (r, was) => row({
+            name: String(r[1]),
+            role: String(r[0]),
+            busy: busyAt(r, was, 2),
+            count: counted(r[3], was, 3),
+        })),
+        synths: section(1, (r) => `${r[0]} ${r[1]}`, (r, was) => row({
+            name: String(r[1]),
+            node: Number(r[0]),
+            busy: busyAt(r, was, 2),
+            count: counted(r[3], was, 3),
+        })),
+        defs: section(2, (r) => String(r[0]), (r, was) => row({
+            name: String(r[0]),
+            busy: busyAt(r, was, 1),
+            count: counted(r[2], was, 2),
+            nodes: counted(r[3], was, 3),
+        })),
+        commands: section(3, (r) => String(r[0]), (r, was) => row({
+            name: String(r[0]),
+            busy: busyAt(r, was, 1),
+            count: counted(r[2], was, 2),
+            bytes: counted(r[3], was, 3),
+        })),
+        replies: section(4, (r) => String(r[0]), (r, was) => row({
+            name: String(r[0]),
+            busy: null,
+            count: counted(r[1], was, 1),
+            bytes: counted(r[2], was, 2),
+        })),
+        jobs: section(5, (r) => String(r[0]), (r, was) => row({
+            name: String(r[0]),
+            busy: busyAt(r, was, 1),
+            count: counted(r[2], was, 2),
+            waited: busyAt(r, was, 3),
+        })),
+    };
+}
+
+/**
+ * The readable report {@link Server.profile}'s result prints as: every phase,
+ * then the `limit` costliest rows of each other section -- the same lines as
+ * the Python client's `format_profile`.
+ *
+ * A free function, as {@link formatLoad} is.
+ *
+ * @param profile - the profile to render.
+ * @param limit - how many rows of each section past the phases.
+ */
+export function formatProfile(profile: Profile, limit = 10): string {
+    const seconds = (value: number | null): string =>
+        value === null ? "        -  " : `${formatFixed(value * 1000, 2).padStart(8)} ms`;
+    const share = (value: number | undefined): string =>
+        value === undefined ? "     -" : `${formatFixed(value * 100, 1).padStart(5)}%`;
+    const window = profile.seconds === null ? NOT_TIMED : `${formatFixed(profile.seconds, 2)} s`;
+    const lines = [`server profile over ${window}`];
+    if (!profile.timedSynths) {
+        lines.push("  (synths were not timed for the whole window)");
+    }
+    lines.push("  phases");
+    for (const row of profile.phases) {
+        lines.push(`    ${`${row.role} ${row.name}`.padEnd(22)} ${share(row.share)}  ` +
+            `${seconds(row.busy)}  ${row.count} runs`);
+    }
+    const sections: [string, ProfileRow[], (r: ProfileRow) => string][] = [
+        ["synths", profile.synths, (r) => `node ${r.node}`],
+        ["defs", profile.defs, (r) => `${r.nodes} synths`],
+        ["commands", profile.commands, (r) => `${r.bytes} bytes`],
+        ["replies", profile.replies, (r) => `${r.bytes} bytes`],
+        ["jobs", profile.jobs, (r) => `waited ${seconds(r.waited).trim()}`],
+    ];
+    for (const [title, rows, extra] of sections) {
+        if (rows.length === 0) continue;
+        lines.push(`  ${title}`);
+        for (const row of rows.slice(0, limit)) {
+            lines.push(`    ${row.name.padEnd(22)} ${share(row.share)}  ${seconds(row.busy)}  ` +
+                `${row.count} x  ${extra(row)}`);
+        }
+        if (rows.length > limit) {
+            lines.push(`    ... ${rows.length - limit} more`);
+        }
+    }
+    return lines.join("\n");
+}
+
 export interface ServerStatus {
     /** Live UGen instances across every playing node. */
     ugens: number;

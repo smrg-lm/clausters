@@ -11,11 +11,13 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicI32, AtomicU8, AtomicUsize, Ordering};
 
+mod costs;
 mod index;
 pub mod voices;
 
 use crate::dsp::{DoneAction, ProcessCtx, ReplyMsg, StageMask, TransportCtx};
 use crate::server::workers::WorkerPool;
+pub use costs::{NodeCost, NodeCosts};
 use index::IdIndex;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
@@ -295,6 +297,8 @@ pub enum FreedNode {
         id: i32,
         parent_id: i32,
         synth: Box<dyn SynthNode>,
+        /// What it cost while profiled (`NodeCosts`).
+        cost: NodeCost,
     },
     Group {
         id: i32,
@@ -391,6 +395,9 @@ pub struct NodeTree {
     /// The slots whose node reads notes ([`SynthNode::reads_notes`]): where a
     /// lane's or a transport's notes are released.
     note_nodes: Vec<usize>,
+    /// What each synth costs while profiled, one entry per slot; shared with
+    /// the network thread, which reads it and flips the switch.
+    costs: std::sync::Arc<NodeCosts>,
 }
 
 impl NodeTree {
@@ -489,7 +496,13 @@ impl NodeTree {
             plugin_tempos: vec![120.0; 1],
             plugin_nodes: Vec::with_capacity(max_nodes),
             note_nodes: Vec::with_capacity(max_nodes),
+            costs: std::sync::Arc::new(NodeCosts::new(max_nodes)),
         }
+    }
+
+    /// The per-synth cost table (`/server_profile`).
+    pub fn costs(&self) -> &std::sync::Arc<NodeCosts> {
+        &self.costs
     }
 
     /// Sizes the per-transport views to `count` transports. At boot, off the
@@ -798,6 +811,7 @@ impl NodeTree {
                         id: slot.id,
                         parent_id,
                         synth,
+                        cost: self.costs.end(idx),
                     });
                 }
                 NodeKind::Group(group) => {
@@ -901,6 +915,9 @@ impl NodeTree {
         }
         // After a Replace, `free` may have opened up earlier slots; the one
         // found above is still vacant either way.
+        if matches!(kind, NodeKind::Synth { .. }) {
+            self.costs.begin(free, id);
+        }
         *self.slots[free].get_mut() = Some(NodeSlot {
             automatic: false,
             id,
@@ -993,6 +1010,7 @@ impl NodeTree {
                                 id: slot.id,
                                 parent_id: gid,
                                 synth,
+                                cost: self.costs.end(child),
                             });
                         }
                     }
@@ -1502,6 +1520,7 @@ impl NodeTree {
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
+                let opened = self.costs.open();
                 if self.compensation_valid
                     && !self.compensation_pending
                     && let Some(plan) = &self.compensation
@@ -1510,6 +1529,7 @@ impl NodeTree {
                 } else {
                     node.process(&mut ctx);
                 }
+                self.costs.close(idx, opened);
                 match node.done_action() {
                     DoneAction::None => {}
                     DoneAction::PauseSelf => slot.paused = true,
@@ -1556,6 +1576,7 @@ impl NodeTree {
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
+                let opened = self.costs.open();
                 if self.compensation_valid
                     && !self.compensation_pending
                     && let Some(plan) = &self.compensation
@@ -1564,6 +1585,7 @@ impl NodeTree {
                 } else {
                     node.process(&mut ctx);
                 }
+                self.costs.close(idx, opened);
                 match node.done_action() {
                     DoneAction::None => {}
                     DoneAction::PauseSelf => slot.paused = true,

@@ -17,7 +17,7 @@ import {
 import { loadCore } from "../src/base/core.ts";
 import { decodePacket, encodeMessage } from "../src/base/osc.ts";
 import type { Connection } from "../src/base/connection.ts";
-import { formatLoad, formatServerStatus, Server } from "../src/defs/server/index.ts";
+import { formatLoad, formatProfile, formatServerStatus, Server } from "../src/defs/server/index.ts";
 
 test("a queried tree carries a full node record per entry", () => {
     // detail=2; root 0 -> group 1000 "voices" -> synth 1001 (beep, freq
@@ -207,6 +207,69 @@ test("a server with no clock reports no time and still counts", async () => {
     const timed = await server.load();
     assert.equal(timed[0]!.busy, 1.5);
     assert.equal(timed[0]!.share, undefined);
+});
+
+// ---- a profile ----
+
+type Row = (number | bigint | string | null)[];
+
+function profileReply(uptime: number, ...sections: Row[][]): Uint8Array {
+    const args: Row = [uptime, 1];
+    for (const rows of sections) {
+        args.push(rows.length);
+        for (const row of rows) args.push(...row);
+    }
+    return replyBytes("/server_profile.reply", args);
+}
+
+test("a profile reads the window between two reports", async () => {
+    // The verb asks for the synth timing, reads, waits, reads again and gives
+    // the timing back: four messages, and the profile is the difference. The
+    // same reports, and the same reading, as the Python client's test.
+    const { server, carrier } = await scripted();
+    const done = replyBytes("/done", ["/server_profile"]);
+    carrier.answer("/server_profile", done);
+    carrier.answer("/server_profile", profileReply(10.5,
+        [["audio", "nodes", 1.5, 100], ["net", "streams", 0.1, 50]],
+        [[1000, "tone", 0.5, 100]],
+        [["tone", 0.5, 100, 1], ["click", 0.2, 10, 4]],
+        [["/node_set", 0.01, 10, 240]],
+        [["/done", 3, 48]],
+        [["/buffer_read", 0.3, 1, 0.1]],
+    ));
+    carrier.answer("/server_profile", profileReply(12.5,
+        [["audio", "nodes", 1.9, 200], ["net", "streams", 0.1, 50]],
+        [[1000, "tone", 0.9, 200], [1001, "tone", 0.1, 50]],
+        [["tone", 1.25, 250, 2], ["click", 0.2, 10, 4]],
+        [["/node_set", 0.02, 14, 336], ["/synth_new", 0.001, 1, 32]],
+        [["/done", 5, 80]],
+        [["/buffer_read", 0.3, 1, 0.1]],
+    ));
+    carrier.answer("/server_profile", done);
+    const profile = await server.profile(0);
+
+    assert.ok(Math.abs(profile.seconds! - 2) < 1e-9);
+    assert.ok(profile.timedSynths);
+    // What did not move in the window is not listed.
+    assert.deepEqual(profile.phases.map((r) => [r.role, r.name]), [["audio", "nodes"]]);
+    const nodes = profile.phases[0]!;
+    assert.ok(Math.abs(nodes.busy! - 0.4) < 1e-9);
+    assert.equal(nodes.count, 100);
+    assert.ok(Math.abs(nodes.share! - 0.2) < 1e-9);
+    // A synth new in the window starts from nothing; costliest first.
+    assert.deepEqual(profile.synths.map((r) => [r.node, r.name]), [[1000, "tone"], [1001, "tone"]]);
+    assert.deepEqual(profile.defs.map((r) => r.name), ["tone"]);
+    assert.equal(profile.defs[0]!.nodes, 1);
+    assert.equal(profile.defs[0]!.count, 150);
+    assert.deepEqual(profile.commands.map((r) => r.name), ["/node_set", "/synth_new"]);
+    assert.equal(profile.commands[0]!.bytes, 96);
+    assert.equal(profile.replies[0]!.busy, null);
+    assert.equal(profile.replies[0]!.bytes, 32);
+    assert.deepEqual(profile.jobs, []);
+
+    const report = formatProfile(profile);
+    assert.equal(report.split("\n")[0], "server profile over 2.00 s");
+    assert.ok(report.includes("audio nodes") && report.includes("node 1001"));
 });
 
 test("a status with no clock has no CPU figures", async () => {

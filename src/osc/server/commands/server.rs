@@ -133,6 +133,53 @@ impl OscServer {
         self.reply(to, "/server_load.reply", args);
     }
 
+    /// `/server_profile [flag]`: with no argument, reports where the server's
+    /// time has gone in detail (`profile::NetProfile::report`); `1` asks for
+    /// the per-synth timing, `0` gives the request back, and each answers
+    /// `/done`.
+    ///
+    /// **The timing is on while any client asks for it**, since it costs the
+    /// audio thread two clock reads per synth per block. A client that
+    /// disconnects gives its request back on its own; a UDP client cannot be
+    /// seen to leave, so it sends the `0` itself.
+    pub(in crate::osc::server) fn handle_server_profile(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        match args.opt_int()? {
+            None => {
+                let costs = self.handle.node_costs();
+                let nodes = costs.snapshot();
+                let mirror = &self.translator.mirror;
+                let report =
+                    self.profile
+                        .report(self.handle.meters(), costs.profiling(), &nodes, |id| {
+                            mirror.synth_info(id).map(|(def, _)| def.to_owned())
+                        });
+                self.reply(from, "/server_profile.reply", report);
+            }
+            Some(1) => {
+                let on = self.profile.watch(from);
+                self.handle.node_costs().set_profiling(on);
+                self.done(from, "/server_profile");
+            }
+            Some(0) => {
+                self.unwatch_profile(|c| *c == from);
+                self.done(from, "/server_profile");
+            }
+            Some(other) => return Err(format!("expected 0 or 1, got {other}")),
+        }
+        Ok(())
+    }
+
+    /// Gives back the per-synth timing of every client `gone` names, and
+    /// turns it off with the last one.
+    pub(in crate::osc::server) fn unwatch_profile(&mut self, gone: impl Fn(&ClientId) -> bool) {
+        let on = self.profile.unwatch(gone);
+        self.handle.node_costs().set_profiling(on);
+    }
+
     /// Reports the server's static configuration so a client can size its own
     /// bus/allocator state from the server instead of hardcoding it:
     /// `/server_query.reply [audio_buses, control_buses, output_channels,

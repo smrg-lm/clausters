@@ -126,6 +126,7 @@ impl OscServer {
             nrt,
             budget: ServeBudget::default(),
             clients: Vec::new(),
+            profile: profile::NetProfile::default(),
             next_notify_id: 1,
             streams: Vec::new(),
             tap_streams: Vec::new(),
@@ -512,12 +513,22 @@ impl OscServer {
     /// overviews a write left stale. One turn of [`Self::run`] and of
     /// [`Self::step`] both end their serving with it.
     fn pump_subscriptions(&mut self) {
-        self.feed_lanes();
-        self.pump_streams();
-        self.pump_tap_streams();
-        self.pump_buffer_streams();
-        let now = self.mono_secs();
-        self.overviews.flush(now);
+        use crate::server::meters::Phase;
+        self.metered(Phase::Lanes, Self::feed_lanes);
+        self.metered(Phase::Streams, Self::pump_streams);
+        self.metered(Phase::TapStreams, Self::pump_tap_streams);
+        self.metered(Phase::BufferStreams, Self::pump_buffer_streams);
+        self.metered(Phase::Overviews, |server| {
+            let now = server.mono_secs();
+            server.overviews.flush(now);
+        });
+    }
+
+    /// Runs one part of the serving turn, accounted to its phase.
+    fn metered(&mut self, phase: crate::server::meters::Phase, part: impl FnOnce(&mut Self)) {
+        let busy = crate::server::meters::stamp();
+        part(self);
+        self.handle.meters().add_phase(phase, busy.elapsed_nanos());
     }
 
     /// Closes a `Role::Net` bracket. A turn is metered in pieces because the
@@ -597,6 +608,13 @@ impl OscServer {
     /// it -- a packet, an idle tick, and a wake datagram alike -- so a result is
     /// reported as soon as the loop learns of it.
     pub(in crate::osc::server) fn collect_async(&mut self) {
+        self.metered(
+            crate::server::meters::Phase::Collect,
+            Self::collect_finished,
+        );
+    }
+
+    fn collect_finished(&mut self) {
         self.collect_garbage();
         self.collect_nrt_results();
         #[cfg(feature = "faust")]
@@ -650,7 +668,12 @@ impl OscServer {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
                 Garbage::RetiredCompensation(_) => {}
-                Garbage::FreedSynth { id, synth } => {
+                Garbage::FreedSynth { id, synth, cost } => {
+                    let def = self.translator.mirror.synth_info(id).map(|(def, _)| def);
+                    let def = def
+                        .map(Box::from)
+                        .or_else(|| self.translator.mirror.take_synth_epitaph(id));
+                    self.profile.retire(def, cost);
                     self.translator.forget_freed_synth(id, synth.incarnation());
                 }
                 Garbage::FreedGroup { id, .. } => {
@@ -952,6 +975,7 @@ impl OscServer {
         self.drop_tap_streams(|s| gone.contains(&s.client));
         self.buffer_streams.retain(|s| !gone.contains(&s.client));
         self.clients.retain(|(c, _)| !gone.contains(c));
+        self.unwatch_profile(|c| gone.contains(c));
         self.retune_timeout();
     }
 }

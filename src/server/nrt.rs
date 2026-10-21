@@ -222,6 +222,9 @@ pub struct NrtRequest {
     /// the network-side mirror is behind (see [`NrtChain`]).
     pub chained: bool,
     pub job: NrtJob,
+    /// When it was queued: what the job waited is the queue's share of its
+    /// latency, and `/server_profile` reports it beside what it ran.
+    pub queued: crate::server::meters::Stamp,
 }
 
 /// What the network thread must do with the pool on success.
@@ -250,6 +253,48 @@ pub struct NrtResult {
     pub index: i32,
     pub client: ClientId,
     pub outcome: Result<NrtAction, String>,
+    /// Nanoseconds the job ran, and nanoseconds it waited in the queue
+    /// before that (`/server_profile`).
+    pub busy_nanos: u64,
+    pub waited_nanos: u64,
+}
+
+impl NrtResult {
+    /// Runs `request`'s job through `chain` and times it.
+    fn run(request: NrtRequest, chain: &mut NrtChain) -> Self {
+        let started = crate::server::meters::stamp();
+        let NrtRequest {
+            cmd,
+            index,
+            client,
+            chained,
+            job,
+            queued,
+        } = request;
+        let outcome = chain.run(index, chained, job);
+        Self::finished(cmd, index, client, queued, started, outcome)
+    }
+
+    /// The result of a job queued at `queued` that started running at
+    /// `started` and has just ended with `outcome`.
+    fn finished(
+        cmd: &'static str,
+        index: i32,
+        client: ClientId,
+        queued: crate::server::meters::Stamp,
+        started: crate::server::meters::Stamp,
+        outcome: Result<NrtAction, String>,
+    ) -> Self {
+        let busy_nanos = started.elapsed_nanos();
+        Self {
+            cmd,
+            index,
+            client,
+            outcome,
+            busy_nanos,
+            waited_nanos: queued.elapsed_nanos().saturating_sub(busy_nanos),
+        }
+    }
 }
 
 /// Whether `cmd` installs a **new** buffer at its index (or clears it) rather
@@ -346,15 +391,8 @@ impl NrtThread {
                 while let Ok(req) = req_rx.recv() {
                     // The bracket is the job: the wait for the next one is not
                     // work (`server::meters`).
-                    let busy = crate::server::meters::stamp();
-                    let outcome = chain.run(req.index, req.chained, req.job);
-                    meters.add(crate::server::meters::Role::Nrt, 0, busy.elapsed_nanos());
-                    let result = NrtResult {
-                        cmd: req.cmd,
-                        index: req.index,
-                        client: req.client,
-                        outcome,
-                    };
+                    let result = NrtResult::run(req, &mut chain);
+                    meters.add(crate::server::meters::Role::Nrt, 0, result.busy_nanos);
                     if res_tx.send(result).is_err() {
                         break; // receiver gone: we are shutting down
                     }
@@ -441,7 +479,7 @@ pub enum NrtRunner {
         results: std::collections::VecDeque<NrtResult>,
         chain: NrtChain,
         /// Handed out and not yet answered. The queue waits on it.
-        outstanding: Option<(u64, NrtRequest)>,
+        outstanding: Option<(u64, NrtRequest, crate::server::meters::Stamp)>,
         next_ticket: u64,
     },
 }
@@ -587,7 +625,7 @@ impl NrtRunner {
             index: request.index,
             kind,
         };
-        *outstanding = Some((ticket, request));
+        *outstanding = Some((ticket, request, crate::server::meters::stamp()));
         Some(job)
     }
 
@@ -607,7 +645,7 @@ impl NrtRunner {
         let NrtRunner::Delegating { outstanding, .. } = self else {
             return Vec::new();
         };
-        let Some((_, request)) = outstanding.as_ref() else {
+        let Some((_, request, _)) = outstanding.as_ref() else {
             return Vec::new();
         };
         let NrtJob::Write {
@@ -645,21 +683,23 @@ impl NrtRunner {
         else {
             return;
         };
-        let Some((held, _)) = outstanding.as_ref() else {
+        let Some((held, ..)) = outstanding.as_ref() else {
             return;
         };
         if *held != ticket {
             return;
         }
-        let (_, request) = outstanding.take().expect("checked just above");
-        results.push_back(NrtResult {
-            cmd: request.cmd,
-            index: request.index,
-            client: request.client,
-            // The host installed it, so there is nothing left to do to the
-            // pool: the reply is the whole outcome.
-            outcome: outcome.map(|()| NrtAction::None),
-        });
+        let (_, request, started) = outstanding.take().expect("checked just above");
+        // The host installed it, so there is nothing left to do to the pool:
+        // the reply is the whole outcome.
+        results.push_back(NrtResult::finished(
+            request.cmd,
+            request.index,
+            request.client,
+            request.queued,
+            started,
+            outcome.map(|()| NrtAction::None),
+        ));
     }
 
     /// Queues a job. In thread mode the thread picks it up; in inline mode it
@@ -733,12 +773,7 @@ impl NrtRunner {
             let Some(request) = pending.pop_front() else {
                 break;
             };
-            results.push_back(NrtResult {
-                cmd: request.cmd,
-                index: request.index,
-                client: request.client,
-                outcome: chain.run(request.index, request.chained, request.job),
-            });
+            results.push_back(NrtResult::run(request, chain));
             ran += 1;
         }
         ran

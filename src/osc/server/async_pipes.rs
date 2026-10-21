@@ -190,6 +190,8 @@ impl OscServer {
     pub(in crate::osc::server) fn collect_nrt_results(&mut self) {
         while let Some(result) = self.nrt.try_result() {
             self.nrt_drained += 1;
+            self.profile
+                .job(result.cmd, result.busy_nanos, result.waited_nanos);
             if crate::server::nrt::replaces(result.cmd)
                 && let std::collections::hash_map::Entry::Occupied(mut e) =
                     self.nrt_replacing.entry(result.index)
@@ -418,6 +420,7 @@ impl OscServer {
             client: from,
             chained,
             job,
+            queued: crate::server::meters::stamp(),
         };
         if self.nrt.submit(request).is_err() {
             self.fail(from, cmd, "NRT thread is down");

@@ -24,10 +24,12 @@ export type {
     PortSpec,
 } from "./patch.ts";
 export {
-    formatLoad, formatMidiBinding, formatServerInfo, formatServerStatus, loadName, Server, Transport,
+    formatLoad, formatMidiBinding, formatProfile, formatServerInfo, formatServerStatus, loadName,
+    Server, Transport,
 } from "./server/index.ts";
 export type {
     Load,
+    Profile, ProfileRow,
     MidiBinding, MidiBindOptions,
     MsgArg, ServerBootOptions, ServerInfo, ServerSizing, ServerStatus,
     TimedMessage,

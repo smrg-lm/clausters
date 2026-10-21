@@ -631,7 +631,7 @@ impl Renderer {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
                 Garbage::RetiredCompensation(_) => {}
-                Garbage::FreedSynth { id, synth } => {
+                Garbage::FreedSynth { id, synth, .. } => {
                     self.translator.forget_freed_synth(id, synth.incarnation())
                 }
                 Garbage::SpentBundle(_) => {}

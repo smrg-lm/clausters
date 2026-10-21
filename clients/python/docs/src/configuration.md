@@ -83,6 +83,19 @@ Two sections feed the client's defaults:
   time rather than zero: `busy` and `share` are `None`, and so are `status()`'s
   `avg_cpu`, `peak_cpu` and `late_blocks`; `calls` is what it still knows.
 
+  `Server.profile(seconds)` goes one step further, into what inside a role
+  the time went to, over a window it measures on its own: which phase of the
+  block (applying commands, running the tree, publishing levels and clocks)
+  and of the serving turn, which synth and which def, which command the
+  server was handling, how many bytes every reply and transfer carried, and
+  how long every NRT job ran and how long it waited in the queue. Start what
+  should be measured, call it, and `print(format_profile(profile))`. It asks
+  the server to time every synth for the window, which costs the audio
+  thread two clock reads per synth per block, and gives the request back when
+  it returns; the rest the server counts all along. Like `load()`, it is the
+  difference between two cumulative reports, so two clients can profile the
+  same server at once.
+
   `ServerOptions` also carries the server's **behavior options** — `workers`,
   `tcp`, `ws`, `midi`, `persist`, `max_frame`, `max_clients`, `pin` — which
   have no client-side counterpart: their default `None` emits no flag, so the

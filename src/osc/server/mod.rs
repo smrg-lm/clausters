@@ -54,6 +54,7 @@ mod dispatch;
 mod lanes;
 mod lifecycle;
 mod overviews;
+mod profile;
 mod streams;
 mod transports;
 
@@ -199,6 +200,9 @@ pub struct OscServer {
     /// `/done` answered. The id is the client's for as long as it stays
     /// registered: another client leaving does not renumber it.
     clients: Vec<(ClientId, i32)>,
+    /// What the serving turn handled, sent and finished, for
+    /// `/server_profile`, and who asked for the per-synth timing.
+    profile: profile::NetProfile,
     /// The id the next registration is answered with, from 1.
     next_notify_id: i32,
     /// Active `/bus_stream` subscriptions, at most one per client: the network
@@ -694,6 +698,7 @@ impl OscServer {
             Ok(bytes) => bytes,
             Err(e) => return warn!("failed to encode {addr}: {e}"),
         };
+        self.profile.reply(addr, bytes.len());
         match to {
             ClientId::Udp(addr_to) => {
                 // A headless server has no UDP clients; dropped if so.

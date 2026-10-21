@@ -88,7 +88,11 @@ impl OscServer {
     /// renderer). Nothing reaches the engine until the whole bundle is
     /// assembled.
     fn schedule_message(&mut self, msg: &OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
-        self.translator.translate(msg, cmds)
+        let busy = crate::server::meters::stamp();
+        let translated = self.translator.translate(msg, cmds);
+        self.profile
+            .command(&msg.addr, busy.elapsed_nanos(), profile::message_size(msg));
+        translated
     }
 
     fn handle_message(&mut self, msg: OscMessage, from: ClientId) -> Flow {
@@ -99,6 +103,7 @@ impl OscServer {
             self.done(from, "/server_quit");
             return Flow::Quit;
         }
+        let busy = crate::server::meters::stamp();
         match COMMANDS.binary_search_by_key(&msg.addr.as_str(), |(addr, _)| addr) {
             Ok(i) => {
                 let (addr, run) = COMMANDS[i];
@@ -108,6 +113,8 @@ impl OscServer {
             }
             Err(_) => self.fail(from, &msg.addr, "unknown command"),
         }
+        self.profile
+            .command(&msg.addr, busy.elapsed_nanos(), profile::message_size(&msg));
         Flow::Continue
     }
 
@@ -488,6 +495,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     }),
     ("/server_notify", |s, _, m, f| {
         s.handle_server_notify(Args::new(m), f)
+    }),
+    ("/server_profile", |s, _, m, f| {
+        s.handle_server_profile(Args::new(m), f)
     }),
     ("/server_query", |s, _, _, f| {
         s.send_server_query(f);

@@ -40,6 +40,7 @@ fn run_nrt(job: NrtJob) -> Result<NrtAction, String> {
         client: clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap()),
         chained: false,
         job,
+        queued: clausters::server::meters::stamp(),
     })
     .ok()
     .unwrap();

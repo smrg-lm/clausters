@@ -93,6 +93,83 @@ impl Role {
     }
 }
 
+/// A part of one role's work, metered beside the role so a profile can say
+/// where inside the block, or inside the serving turn, the time went.
+///
+/// Unlike a per-node reading these cost a few clock reads per block and per
+/// turn, so they are always on: a profile differences them like any other
+/// cumulative figure.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Phase {
+    /// Applying commands: the drained FIFO at the block start and the timed
+    /// bundles, lanes and transport edges that cut the block.
+    Commands,
+    /// Running the node tree, every slice of the block.
+    Nodes,
+    /// Publishing the block: the clocks, the taps and the per-bus levels.
+    Publish,
+    /// Feeding the event lanes.
+    Lanes,
+    /// The control and audio bus streams (`/bus_stream`).
+    Streams,
+    /// The audio tap streams (`/bus_tapStream`).
+    TapStreams,
+    /// The buffer streams (`/buffer_stream`).
+    BufferStreams,
+    /// Rebuilding the overviews a write left stale.
+    Overviews,
+    /// Collecting what finished: garbage, node events, replies and async
+    /// results.
+    Collect,
+}
+
+impl Phase {
+    /// Every phase, in wire order.
+    pub const ALL: [Phase; 9] = [
+        Phase::Commands,
+        Phase::Nodes,
+        Phase::Publish,
+        Phase::Lanes,
+        Phase::Streams,
+        Phase::TapStreams,
+        Phase::BufferStreams,
+        Phase::Overviews,
+        Phase::Collect,
+    ];
+
+    /// The role whose work this is part of.
+    pub fn role(self) -> Role {
+        match self {
+            Phase::Commands | Phase::Nodes | Phase::Publish => Role::Audio,
+            _ => Role::Net,
+        }
+    }
+
+    /// The name the wire and both clients use.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Phase::Commands => "commands",
+            Phase::Nodes => "nodes",
+            Phase::Publish => "publish",
+            Phase::Lanes => "lanes",
+            Phase::Streams => "streams",
+            Phase::TapStreams => "tap-streams",
+            Phase::BufferStreams => "buffer-streams",
+            Phase::Overviews => "overviews",
+            Phase::Collect => "collect",
+        }
+    }
+}
+
+/// One phase's reading, as [`Meters::phases`] renders it.
+#[derive(Clone, Copy, Debug)]
+pub struct PhaseLoad {
+    pub phase: Phase,
+    /// Seconds of work since boot.
+    pub busy: f64,
+    pub calls: u64,
+}
+
 /// Roles past the audio slot and the workers: net, nrt, (with the feature)
 /// faust, and the two disk roles. A build without `faust` has no compiler
 /// thread, so it reports no such role rather than a row that can only ever
@@ -134,6 +211,8 @@ pub struct Load {
 #[derive(Debug)]
 pub struct Meters {
     slots: Box<[Slot]>,
+    /// One slot per [`Phase`], in [`Phase::ALL`] order.
+    phases: Box<[Slot]>,
     workers: usize,
     /// Whether this build has a clock to bracket work with.
     timed: bool,
@@ -171,8 +250,18 @@ impl Meters {
         for role in TAIL_ROLES {
             push(role, 0);
         }
+        let phases = Phase::ALL
+            .iter()
+            .map(|phase| Slot {
+                role: phase.role(),
+                index: 0,
+                busy_nanos: AtomicU64::new(0),
+                calls: AtomicU64::new(0),
+            })
+            .collect();
         Arc::new(Self {
             slots: slots.into_boxed_slice(),
+            phases,
             workers,
             timed,
             #[cfg(not(target_arch = "wasm32"))]
@@ -220,6 +309,28 @@ impl Meters {
             }
             slot.calls.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    /// Accounts one run of a [`Phase`], as [`add`](Self::add) does a role's.
+    pub fn add_phase(&self, phase: Phase, nanos: u64) {
+        let slot = &self.phases[phase as usize];
+        if self.timed {
+            slot.busy_nanos.fetch_add(nanos, Ordering::Relaxed);
+        }
+        slot.calls.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Every phase, in [`Phase::ALL`] order. Allocates.
+    pub fn phases(&self) -> Vec<PhaseLoad> {
+        Phase::ALL
+            .iter()
+            .zip(self.phases.iter())
+            .map(|(&phase, s)| PhaseLoad {
+                phase,
+                busy: s.busy_nanos.load(Ordering::Relaxed) as f64 / 1e9,
+                calls: s.calls.load(Ordering::Relaxed),
+            })
+            .collect()
     }
 
     /// Seconds since the table was built -- the wall time the busy figures are
@@ -346,6 +457,24 @@ mod tests {
         assert_eq!(audio.calls, 2, "the runs are counted");
         assert_eq!(audio.busy, 0.0, "and no time is kept for them");
         assert_eq!(meters.uptime(), 0.0);
+    }
+
+    #[test]
+    fn a_phase_accumulates_on_its_own_row() {
+        let meters = Meters::new(0);
+        meters.add_phase(Phase::Publish, 3_000);
+        meters.add_phase(Phase::Publish, 1_000);
+        let phases = meters.phases();
+        assert_eq!(phases.len(), Phase::ALL.len());
+        let publish = phases.iter().find(|p| p.phase == Phase::Publish).unwrap();
+        assert_eq!(publish.calls, 2);
+        assert!((publish.busy - 4e-6).abs() < 1e-12);
+        assert_eq!(publish.phase.role(), Role::Audio);
+        assert!(phases.iter().filter(|p| p.calls > 0).count() == 1);
+        assert!(
+            meters.report().iter().all(|l| l.calls == 0),
+            "no role moved"
+        );
     }
 
     #[test]

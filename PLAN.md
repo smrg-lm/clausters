@@ -4498,7 +4498,7 @@ should confirm before the fix.
   float, which stops addressing single frames past 2^24 frames (about six
   minutes at 48 kHz); the reader's phase and the transport's position are
   where to check.
-- ⬜ **An automatic profiler for the server** (2026-10-21, the user, after
+- ✅ **An automatic profiler for the server** (2026-10-21, the user, after
   the audio editor's review). A run that measures, without someone watching,
   where the server's time goes: blocks and their cost per node and per
   command, the NRT queue, transfers and replies. It measures the server's
@@ -4506,6 +4506,10 @@ should confirm before the fix.
   Found by use, "An automatic profiler for the host") the server's side of
   the same run, so a slow window is told from a slow engine. **Related:**
   "An automatic profiler for the host" (`clients/gui/PLAN.md`, Found by use).
+  *(Done 2026-10-21: `/server_profile` and `Server.profile(seconds)` in both
+  clients; the phases of the block and of the serving turn, every synth and
+  def, every command and reply with its bytes, every NRT job's run and wait.
+  The per-synth timing runs only while a client asks.)*
 - ⬜ **A stopped audio editor costs the server CPU for every file it holds**
   (2026-10-21, measured in `X23` of `crates/clausters-apps/PLAN.md`). The
   bare server idles at about 4.2% of a core; with an audio editor open and

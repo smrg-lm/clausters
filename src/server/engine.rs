@@ -30,7 +30,7 @@ use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, Reject
 use crate::server::clock_axis::{DeviceSample, PositionAnchor, TransportPosition, TransportSample};
 use crate::server::device_epoch::DeviceEpoch;
 use crate::server::ipc::Segment;
-use crate::server::meters::{Meters, Role};
+use crate::server::meters::{Meters, Phase, Role, stamp};
 use crate::server::workers::WorkerPool;
 
 /// Floor for the command FIFO; scaled to `max_nodes` at boot so a burst that
@@ -317,6 +317,9 @@ pub enum Garbage {
     FreedSynth {
         id: i32,
         synth: Box<dyn SynthNode>,
+        /// What it cost while profiled, for its def's row of
+        /// `/server_profile` once it is no longer in the tree to be read.
+        cost: crate::node::NodeCost,
     },
     FreedGroup {
         id: i32,
@@ -831,9 +834,10 @@ impl GarbageSink<'_> {
                 id,
                 parent_id,
                 synth,
+                cost,
             } => {
                 self.event(id, parent_id, false);
-                self.push(Garbage::FreedSynth { id, synth });
+                self.push(Garbage::FreedSynth { id, synth, cost });
             }
             FreedNode::Group {
                 id,
@@ -1001,6 +1005,9 @@ pub struct EngineHandle {
     transport_clocks: Arc<[TransportClocks]>,
     counters: Arc<Counters>,
     meters: Arc<Meters>,
+    /// What each synth costs while profiled, read here without asking the
+    /// engine (`/server_profile`).
+    node_costs: Arc<crate::node::NodeCosts>,
     /// The IPC segment when one exists -- the network thread reads the audio
     /// taps from here (`/bus_tapStream`) without an engine round-trip.
     segment: Option<Arc<Segment>>,
@@ -1091,6 +1098,7 @@ pub fn engine_pair_full(
     }
     let mut tree = NodeTree::with_capacity(limits.max_nodes);
     tree.set_transports(limits.transports);
+    let node_costs = Arc::clone(tree.costs());
     let tap_buses = vec![-1i32; ipc.as_ref().map_or(0, |s| s.taps())];
     let segment = ipc.clone();
     let engine = Engine {
@@ -1140,6 +1148,7 @@ pub fn engine_pair_full(
         transport_clocks,
         counters,
         meters,
+        node_costs,
         segment,
         device_epoch: DeviceEpoch::default(),
     };
@@ -1314,7 +1323,10 @@ impl Engine {
         let meter_start = crate::server::meters::stamp();
         // The last block's events go before this one's commands write any.
         self.buses.events_mut().clear();
+        let phase = stamp();
         self.drain_commands();
+        self.meters
+            .add_phase(Phase::Commands, phase.elapsed_nanos());
         if let Some(plan) = self.tree.begin_compensation_block() {
             garbage_sink!(self).push(Garbage::RetiredCompensation(plan));
         }
@@ -1346,19 +1358,22 @@ impl Engine {
         while let Some((due_time, due)) = self.next_due(block_start, offset, block_end) {
             let at = due_time.saturating_sub(block_start) as usize;
             if at > offset {
-                self.process_slice(offset, at - offset);
+                self.process_slice_metered(offset, at - offset);
                 offset = at;
             }
             self.cursor = offset;
+            let phase = stamp();
             match due {
                 Due::Edge(k, edge) => self.cross_edge(k, edge, offset),
                 Due::Transport(k) => self.apply_due_bundle(Some(k), offset),
                 Due::EventLane(k) => self.apply_due_lane(k),
                 Due::Device => self.apply_due_bundle(None, offset),
             }
+            self.meters
+                .add_phase(Phase::Commands, phase.elapsed_nanos());
         }
         self.cursor = 0;
-        self.process_slice(offset, BLOCK_SIZE - offset);
+        self.process_slice_metered(offset, BLOCK_SIZE - offset);
         // The block ends with a transport still stopped: credit the tail.
         for t in &mut self.transports {
             if let Some(from) = t.frozen_from.take() {
@@ -1378,7 +1393,9 @@ impl Engine {
             }
         }
 
+        let phase = stamp();
         self.publish_block(block_end);
+        self.meters.add_phase(Phase::Publish, phase.elapsed_nanos());
         for k in 0..self.transports.len() {
             if std::mem::take(&mut self.transports[k].ended) {
                 self.push_garbage(Garbage::TransportEnded { transport: k });
@@ -1799,6 +1816,14 @@ impl Engine {
                 self.counters.late_blocks.fetch_add(1, Ordering::Relaxed);
             }
         }
+    }
+
+    /// [`process_slice`](Self::process_slice), accounted to
+    /// [`Phase::Nodes`].
+    fn process_slice_metered(&mut self, offset: usize, frames: usize) {
+        let phase = stamp();
+        self.process_slice(offset, frames);
+        self.meters.add_phase(Phase::Nodes, phase.elapsed_nanos());
     }
 
     /// Runs the node tree over `offset..offset+frames` of the current block.
@@ -2486,6 +2511,11 @@ impl EngineHandle {
     /// The per-role load table, for `/server_load`.
     pub fn meters(&self) -> &Arc<Meters> {
         &self.meters
+    }
+
+    /// The per-synth cost table, for `/server_profile`.
+    pub fn node_costs(&self) -> &Arc<crate::node::NodeCosts> {
+        &self.node_costs
     }
 
     pub fn counters(&self) -> &Counters {

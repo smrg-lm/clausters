@@ -61,10 +61,14 @@ from .options import (
     DEFAULT_TAP_FRAMES,
     DEFAULT_TRANSPORTS,
     Load,
+    Profile,
+    ProfileRow,
     ServerInfo,
     ServerStatus,
     ServerOptions,
+    _profile_difference,
     format_load,
+    format_profile,
 )
 from .midi import MidiBinding, ServerMidi
 from .queries import ServerQueries
@@ -78,6 +82,9 @@ __all__ = [
     "Server",
     "Load",
     "format_load",
+    "Profile",
+    "ProfileRow",
+    "format_profile",
     "ServerInfo",
     "ServerStatus",
     "ServerOptions",
@@ -966,6 +973,39 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         self._last_load = None if uptime is None else (
             uptime, {(r.role, r.index): r.busy for r in rows if r.busy is not None})
         return rows
+
+    def profile(self, seconds: float = 5.0, timeout: "float | None" = None) -> "Profile":
+        """What the server spent its time on over the next ``seconds``, in
+        detail (``/server_profile``): which phase of the block and of the
+        serving turn, which synth and which def, which command, what every
+        reply carried and how long every NRT job ran and waited.
+
+        `load` says which role is busy; this says what inside it, without
+        anybody watching the server while it happens -- start what should be
+        measured, call this, and read the `Profile`.
+        ``print(format_profile(profile))`` reads it out.
+
+        It asks the server to time every synth for the window and gives the
+        request back at the end; the timing costs the audio thread two clock
+        reads per synth per block, which is why the server does it only while
+        some client asks. Everything else is counted all along, and the window
+        is the difference between two cumulative reports, so several clients
+        can profile one server at once.
+
+        Blocking for ``seconds``, RT only. A server with no clock -- an engine
+        in a page -- reports no seconds: every ``busy`` is ``None`` and the
+        counts are what it still knows.
+        """
+        self.request("/server_profile", 1, timeout=timeout, expect=("/done", "/fail"))
+        try:
+            _, first = self.request("/server_profile", timeout=timeout,
+                                    expect=("/server_profile.reply",))
+            time.sleep(seconds)
+            _, second = self.request("/server_profile", timeout=timeout,
+                                     expect=("/server_profile.reply",))
+        finally:
+            self.request("/server_profile", 0, timeout=timeout, expect=("/done", "/fail"))
+        return _profile_difference(first, second)
 
     def _barrier(self, timeout: "float | None" = None) -> None:
         """`sync`, but a ``/fail`` from the work being waited on ends the wait

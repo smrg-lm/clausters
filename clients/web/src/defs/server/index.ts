@@ -108,12 +108,14 @@ export {
     DEFAULT_TAPS,
     DEFAULT_TRANSPORTS,
     formatLoad,
+    formatProfile,
     formatServerInfo,
     formatServerStatus,
     loadName,
 } from "./options.ts";
-export type { Load, ServerInfo, ServerSizing, ServerStatus } from "./options.ts";
-import type { Load, ServerStatus } from "./options.ts";
+export type { Load, Profile, ProfileRow, ServerInfo, ServerSizing, ServerStatus } from "./options.ts";
+import type { Load, Profile, ServerStatus } from "./options.ts";
+import { profileDifference } from "./options.ts";
 export { ServerMidi, formatMidiBinding } from "./midi.ts";
 export type { MidiBinding, MidiBindOptions } from "./midi.ts";
 export { ServerQueries } from "./queries.ts";
@@ -1473,6 +1475,48 @@ export class Server {
                 r.busy === null ? [] : [[`${r.role} ${r.index}`, r.busy] as [string, number]])),
         };
         return rows;
+    }
+
+    /**
+     * What the server spent its time on over the next `seconds`, in detail
+     * (`/server_profile`): which phase of the block and of the serving turn,
+     * which synth and which def, which command, what every reply carried and
+     * how long every NRT job ran and waited.
+     *
+     * {@link Server.load} says which role is busy; this says what inside it,
+     * without anybody watching the server while it happens -- start what
+     * should be measured, call this, and read the {@link Profile}.
+     * `formatProfile` reads it out.
+     *
+     * It asks the server to time every synth for the window and gives the
+     * request back at the end; the timing costs the audio thread two clock
+     * reads per synth per block, which is why the server does it only while
+     * some client asks. Everything else is counted all along, and the window
+     * is the difference between two cumulative reports, so several clients
+     * can profile one server at once.
+     *
+     * A server with no clock -- an engine in a page -- reports no seconds:
+     * every `busy` is `null` and the counts are what it still knows.
+     *
+     * @param seconds - how long to measure.
+     * @param timeout - how long to wait for each reply, in seconds.
+     */
+    async profile(seconds = 5, timeout?: number): Promise<Profile> {
+        await this.command("/server_profile", [1], timeout);
+        try {
+            const first = await this.request("/server_profile", [], {
+                expect: ["/server_profile.reply"],
+                timeout,
+            });
+            await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+            const second = await this.request("/server_profile", [], {
+                expect: ["/server_profile.reply"],
+                timeout,
+            });
+            return profileDifference(first.args, second.args);
+        } finally {
+            await this.command("/server_profile", [0], timeout);
+        }
     }
 
     /**

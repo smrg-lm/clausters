@@ -3613,6 +3613,157 @@ fn server_load_counts_the_disk_threads() {
 }
 
 /// The rows of a `/server_load.reply`: `(role, index, busy, calls)`.
+/// `/server_profile.reply` cut into its six sections -- phases, synths,
+/// defs, commands, replies, NRT jobs -- each a list of rows.
+fn profile_sections(reply: &OscMessage) -> (bool, Vec<Vec<Vec<OscType>>>) {
+    assert!(
+        matches!(reply.args[0], OscType::Double(_)),
+        "the uptime first"
+    );
+    let profiling = reply.args[1] == OscType::Int(1);
+    let mut at = 2;
+    let mut sections = Vec::new();
+    for width in [4, 4, 4, 4, 3, 4] {
+        let OscType::Int(n) = reply.args[at] else {
+            panic!("expected a row count at {at}, got {:?}", reply.args[at]);
+        };
+        at += 1;
+        let rows = reply.args[at..at + width * n as usize]
+            .chunks(width)
+            .map(<[OscType]>::to_vec)
+            .collect();
+        at += width * n as usize;
+        sections.push(rows);
+    }
+    assert_eq!(at, reply.args.len(), "nothing after the last section");
+    (profiling, sections)
+}
+
+/// The row of `section` whose first field is `key`.
+fn profile_row(rows: &[Vec<OscType>], key: OscType) -> Option<&Vec<OscType>> {
+    rows.iter().find(|row| row[0] == key)
+}
+
+/// **A profile names what cost.** While a client asks for it, every synth is
+/// timed and listed under its def; a synth that leaves keeps its def's row;
+/// the commands, the replies and the block's phases are counted all along;
+/// and once the last client gives the timing back the synth rows stop moving.
+#[test]
+fn server_profile_names_the_synth_and_the_def_that_cost() {
+    let mut server = TestServer::spawn();
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let profile = |server: &mut TestServer| {
+        server.send("/server_profile", vec![]);
+        profile_sections(&server.recv_until("/server_profile.reply"))
+    };
+    server.send(
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(
+                r#"{"name": "tone", "ugens": [
+                    {"kind": "Sine", "inputs": [{"const": 660.0}]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+                ]}"#
+                .as_bytes()
+                .to_vec(),
+            ),
+        ],
+    );
+    server.recv_until("/done");
+
+    let (profiling, _) = profile(&mut server);
+    assert!(!profiling, "nobody asked yet");
+    server.send("/server_profile", vec![OscType::Int(1)]);
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/server_profile".into())
+    );
+    server.send(
+        "/synth_new",
+        vec![
+            OscType::String("tone".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+    for _ in 0..32 {
+        server.engine.process_block(&mut out);
+    }
+    let (profiling, sections) = profile(&mut server);
+    assert!(profiling);
+    let [phases, nodes, defs, commands, replies, _jobs] = &sections[..] else {
+        unreachable!()
+    };
+    let synth = profile_row(nodes, OscType::Int(1000)).expect("the synth is listed");
+    assert_eq!(synth[1], OscType::String("tone".into()));
+    assert!(
+        matches!(synth[2], OscType::Double(busy) if busy > 0.0),
+        "{synth:?}"
+    );
+    assert!(
+        matches!(synth[3], OscType::Long(runs) if runs >= 32),
+        "{synth:?}"
+    );
+    let def = profile_row(defs, OscType::String("tone".into())).expect("its def");
+    assert_eq!(def[3], OscType::Int(1), "one synth of it");
+    let nodes_phase = phases
+        .iter()
+        .find(|row| row[1] == OscType::String("nodes".into()))
+        .unwrap();
+    assert_eq!(nodes_phase[0], OscType::String("audio".into()));
+    assert!(
+        matches!(nodes_phase[3], OscType::Long(n) if n >= 32),
+        "{nodes_phase:?}"
+    );
+    let synth_new = profile_row(commands, OscType::String("/synth_new".into())).unwrap();
+    assert_eq!(synth_new[2], OscType::Long(1), "one /synth_new");
+    assert!(matches!(synth_new[3], OscType::Long(bytes) if bytes > 0));
+    let done = profile_row(replies, OscType::String("/done".into())).unwrap();
+    assert!(matches!(done[1], OscType::Long(n) if n >= 2), "{done:?}");
+
+    // Freed, it leaves the synth rows and stays in its def's.
+    server.send("/node_free", vec![OscType::Int(1000)]);
+    server.wait_for_synth_count(0);
+    let (_, sections) = profile(&mut server);
+    assert!(profile_row(&sections[1], OscType::Int(1000)).is_none());
+    let def = profile_row(&sections[2], OscType::String("tone".into())).unwrap();
+    assert!(
+        matches!(def[2], OscType::Long(runs) if runs >= 32),
+        "{def:?}"
+    );
+    assert_eq!(def[3], OscType::Int(1));
+
+    // Given back, a new synth is not timed.
+    server.send("/server_profile", vec![OscType::Int(0)]);
+    server.recv_until("/done");
+    server.send(
+        "/synth_new",
+        vec![
+            OscType::String("tone".into()),
+            OscType::Int(1001),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+    for _ in 0..8 {
+        server.engine.process_block(&mut out);
+    }
+    let (profiling, sections) = profile(&mut server);
+    assert!(!profiling);
+    assert!(sections[1].is_empty(), "no synth ran while profiled");
+    assert_eq!(
+        profile_row(&sections[2], OscType::String("tone".into())).unwrap()[3],
+        OscType::Int(1),
+        "and the def counts only the one that did"
+    );
+
+    server.quit();
+}
+
 fn load_rows(reply: &OscMessage) -> Vec<(String, i32, f64, i64)> {
     let OscType::Double(uptime) = reply.args[0] else {
         panic!("expected the uptime first, got {:?}", reply.args[0]);
