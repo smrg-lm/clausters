@@ -297,7 +297,7 @@ impl Converse for AudioEditor {
                 self.window_state.files_visible = !self.window_state.files_visible;
                 out.restructure = true;
             } else {
-                out.file_action = Some(json!({"verb": "close_file", "file": self.file.display}));
+                out.file_action = Some(json!({"verb": "close_file", "file": self.file.id.0}));
             }
             out.answer = Some(conversation::answer(
                 message.seq,

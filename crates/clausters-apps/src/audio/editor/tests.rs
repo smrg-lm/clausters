@@ -1025,6 +1025,25 @@ fn a_redrawn_window_keeps_the_form_up_and_a_closed_one_drops_it() {
     assert!(ignored.get("openFile").is_none());
 }
 
+/// **File > Close file names the file in focus by its identity**, which
+/// `close_file` reads -- not by the buffer its join is drawn in.
+#[test]
+fn the_close_file_entry_names_the_focused_file_by_its_identity() {
+    let mut editor = opened(1);
+    let asked = event(&mut editor, json!([900, 1, 0, "close_file"]));
+    let action = &asked["fileAction"];
+    assert_eq!(action["verb"], "close_file");
+    let closed = call(
+        &mut editor,
+        json!({"verb": "close_file", "file": action["file"]}),
+    );
+    assert!(closed.get("error").is_none(), "{closed}");
+    assert_eq!(
+        closed["close"], true,
+        "the only file closed closes the window"
+    );
+}
+
 /// **A copy is made on the server**: the span is copied out of the join into
 /// a buffer handed over, the clipboard names that buffer, and a paste copies
 /// it again on the server into a take of the pasting editor's own, at the
