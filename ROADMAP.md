@@ -155,7 +155,8 @@ already carry it.
   above), then **Eight tracks bring the
   GUI's frame rate down, and the play cursor jitters**, **The page draws much slower than the native host**, **Two of
   the page's dialogs draw wrong** and **After Save as and undo back to the
-  original, the page's spectrogram keeps an edited picture**
+  original, the page's spectrogram keeps an edited picture**, and **A
+  hidden native window on Wayland is still ticked**
   *(`clients/gui/PLAN.md`, Found by use)*. Found in the audio editor's
   review of 2026-10-21; the four are measured with the host's profiler.
 

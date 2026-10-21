@@ -8523,6 +8523,15 @@ module of its own.
   spectrogram drew an earlier edited state of the take. A stale spectral
   cache that a restored join does not invalidate is the place to look, once
   the profiler can show what was redrawn and when.
+- ⬜ **A hidden native window on Wayland is still ticked** (2026-10-21, the
+  `X23` native pass in `crates/clausters-apps/PLAN.md`). The host stops
+  ticking, reading back and querying for a window the platform reports
+  occluded, but the windowing library (winit 0.30) reports occlusion on X11
+  and never on Wayland. A minimized playing editor there keeps its thirty
+  ticks a second; the compositor already withholds the frames, so the
+  draws stop while the ticks do not. A window whose frame requests go
+  unanswered is the signal Wayland does give. **Related:** "An automatic
+  profiler for the host", below.
 - ⬜ **An automatic profiler for the host** (2026-10-21, the user, after the
   audio editor's review). A run that measures, without someone watching,
   where the host's time goes, natively and in a page: frames and what each

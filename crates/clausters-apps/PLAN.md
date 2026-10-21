@@ -2716,8 +2716,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     `clients/gui/PLAN.md`; scrolled away 0.3%. The server's idle cost per
     open file did not move and is filed in the root `PLAN.md`, "Found by
     use".
-  - ⬜ Native eye pass over the `edit_audio` pair: play, stop, locate, a
-    window covered or minimized and shown again, `editor.activity()`.
+  - ✅ Native eye pass over the `edit_audio` pair (2026-10-21): play, stop,
+    loop and locate draw as before, and the activity log read stopped
+    windows settle to nothing within two seconds. A covered or minimized
+    window was not reported hidden: the windowing library the host uses
+    reports occlusion on X11 but never on Wayland, where the pass ran. Filed
+    in `clients/gui/PLAN.md`, "Found by use".
   - ⬜ Browser eye pass over the same, with the tab put in the background.
 
 - ⬜ **X24 - Accept the audio editor as the reference application.** After
