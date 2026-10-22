@@ -285,6 +285,20 @@ impl Host {
             .is_some_and(|a| a.visible && a.demand.contains(&Reason::Playhead))
     }
 
+    /// **Whether a front asks for window `def_id`'s next live frame** after a
+    /// frame that came to `drawn`: only after one that was presented, since
+    /// presenting is what waits for the display. A frame that found nothing
+    /// to draw presents nothing and waits for nothing, so asking again after
+    /// it spins -- natively, a window looping over a short span asked for
+    /// tens of thousands of empty frames a second, a whole core, until its
+    /// playhead crossed a pixel. After one, the frame tick carries the
+    /// playhead on, and the next frame that draws paces it again. The same
+    /// rule in both fronts.
+    pub(crate) fn asks_next_frame(&self, def_id: i32, drawn: crate::host::frame::Drawn) -> bool {
+        use crate::host::frame::Drawn;
+        matches!(drawn, Drawn::Whole | Drawn::Live) && self.paced_by_display(def_id)
+    }
+
     /// Window `def_id`'s counters, if it has any.
     pub fn activity(&self, def_id: i32) -> Option<&Activity> {
         self.activity.windows.get(&def_id)
@@ -453,6 +467,27 @@ mod tests {
             host.settle_transports();
         }
         assert!(host.transport_ticks(3), "a rolling one is watched");
+    }
+
+    /// **Only a presented frame asks for the next one**: a frame that drew
+    /// nothing waits for no refresh, so asking again after it spins.
+    #[test]
+    fn a_frame_that_drew_nothing_does_not_ask_for_the_next() {
+        use crate::host::frame::Drawn;
+        let mut host = Host::new();
+        host.set_demand(7, vec![Reason::Playhead], true, 0);
+        assert!(host.asks_next_frame(7, Drawn::Live));
+        assert!(host.asks_next_frame(7, Drawn::Whole));
+        assert!(
+            !host.asks_next_frame(7, Drawn::Still),
+            "the tick carries it on"
+        );
+        assert!(!host.asks_next_frame(7, Drawn::Owed));
+        host.set_demand(7, vec![Reason::Playhead], false, 0);
+        assert!(
+            !host.asks_next_frame(7, Drawn::Live),
+            "a window out of view"
+        );
     }
 
     #[test]

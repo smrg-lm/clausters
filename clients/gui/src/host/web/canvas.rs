@@ -551,8 +551,7 @@ impl WebApp {
         if let Some(cost) = cost {
             self.host.count(def, Count::Cost(cost));
         }
-        if drawn != frame::Drawn::Owed
-            && self.host.paced_by_display(def)
+        if self.host.asks_next_frame(def, drawn)
             && let Some(slot) = self.canvases.get(&def)
         {
             slot.request_redraw_live();

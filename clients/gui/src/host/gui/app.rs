@@ -721,8 +721,7 @@ impl App {
         if let Some(cost) = cost {
             self.host.count(def_id, Count::Cost(cost));
         }
-        if drawn != frame::Drawn::Owed
-            && self.host.paced_by_display(def_id)
+        if self.host.asks_next_frame(def_id, drawn)
             && let Some(ws) = self.windows.get(&def_id)
         {
             ws.repaint_live();

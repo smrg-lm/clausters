@@ -8604,3 +8604,15 @@ module of its own.
   it needs; it should narrow and give the width to the browser. The room it
   frees is where a preview of the selected file could go later, which is a
   design of its own and not part of this fix.
+
+- ⬜ **A playhead looping over a selection moves at the tick, not the
+  display** *(found 2026-10-22, the eye pass over the audio editor's
+  lifecycle example)*. Looping the whole take, the editor's window draws its
+  playhead about 48 times a second, paced by the display; looping a
+  selection, 30, one frame per tick, and the frames the display asks for in
+  between find the playhead where it was (`/gui_activity`: `live` 60 and
+  `still` 61 over two seconds). The position a frame draws from seems to
+  advance only when the tick reads the transport while a loop span is set.
+  Measured with the fix for the core it spun (`Host::asks_next_frame`); the
+  cause is not established.
+

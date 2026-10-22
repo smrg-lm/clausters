@@ -161,6 +161,10 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audit counts the
   script's `session.gui()` before its `wait`.
 
+- ⬜ **A playhead looping over a selection moves at the tick, not the
+  display** *(`clients/gui/PLAN.md`, Found by use)*. Found in the eye pass
+  over the audio editor's lifecycle example; the cause is not established.
+
 - ⬜ **The Open file chooser gives its label too much of the width**
   *(`clients/gui/PLAN.md`, Found by use)*. Small; the room it frees is where a
   file preview could go later.

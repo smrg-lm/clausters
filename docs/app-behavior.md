@@ -306,7 +306,10 @@ code that keeps it lives.
   the frame tick: a cursor moved by a timer the display does not follow
   steps unevenly. Only the live layers are drawn, and only while the window
   can be seen and its transport rolls (`docs/gui-protocol.md`, "What a
-  window ticks for").
+  window ticks for"). Only a frame that drew asks for the next: one that
+  found nothing to draw waits for no refresh, and asking again after it spins
+  a core (`Host::asks_next_frame`). Check it with `editors/audio_lifecycle`:
+  loop `a.wav`, then `copy_first()`, and `activity()` stays near the tick.
 
 
 - **A failed repair remains reachable.** After resolving an I/O failure, an audio editor's `retry_pending()` / `retryPending()` retries its pending repairs without repeating the edits. Until repair succeeds, the affected objects remain locked and their sources retained. Concurrent retries cannot dispatch the same repair twice; a successful retry does not repeat the original gesture receipt or change history.
