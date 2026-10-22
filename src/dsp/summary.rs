@@ -24,6 +24,7 @@
 
 use std::sync::{Mutex, PoisonError};
 
+use clausters_core::peaks::compose::{Ends, PartSamples, list_span};
 use clausters_core::peaks::{Kept, MultiPyramid, SpanStats};
 
 use super::buffer::Buffer;
@@ -135,75 +136,32 @@ impl Buffer {
     }
 }
 
-/// [`Buffer::summary_span`] over a join: each part's share of `a..b`, composed.
+/// [`Buffer::summary_span`] over a join: each part's share of `a..b`,
+/// composed by the core's walk over the parts' sources.
 fn stitch_span(stitch: &Stitch, channel: usize, a: usize, b: usize, read: &mut usize) -> SpanStats {
-    let parts = stitch.parts();
-    let mut stats = SpanStats::EMPTY;
-    let from = parts.partition_point(|p| p.end() <= a);
-    for part in parts[from..].iter().take_while(|p| p.start() < b) {
-        let (ia, ib) = (
-            a.max(part.start()) - part.start(),
-            b.min(part.end()) - part.start(),
-        );
-        stats.merge(part_span(part, channel, ia, ib, read));
-    }
-    stats
+    list_span(stitch.parts(), &mut Pool, channel, a, b, read)
 }
 
-/// One part's frames `ia..ib` (counted from the part's start) on the join's
-/// `channel`.
-fn part_span(part: &Part, channel: usize, ia: usize, ib: usize, read: &mut usize) -> SpanStats {
-    let src_ch = match part.map.get(channel) {
-        Some(&ch) if ch >= 0 => ch as usize,
-        _ => return SpanStats::silence(ib - ia),
-    };
-    // The fades are the join's own samples -- the source's times a gain -- so
-    // they are read; between them the part is its source, summarized.
-    let body = (part.fade_in, part.frames - part.fade_out);
-    let mut stats = SpanStats::EMPTY;
-    for (lo, hi, faded) in [
-        (0, body.0, true),
-        (body.0, body.1, false),
-        (body.1, part.frames, true),
-    ] {
-        let (lo, hi) = (lo.max(ia), hi.min(ib));
-        if lo >= hi {
-            continue;
-        }
-        if faded {
-            let samples: Vec<f32> = (lo..hi).map(|i| part.sample(i, channel)).collect();
-            *read += hi - lo;
-            stats.merge(SpanStats::of(&samples));
-        } else {
-            stats.merge(source_span(part, src_ch, lo, hi, read));
-        }
-    }
-    stats
-}
+/// A join's sources are pool buffers, each with its own summary (or, for a
+/// source that is itself a join, composed in turn).
+struct Pool;
 
-/// The source's summary under a part's unfaded frames `lo..hi`.
-///
-/// A part at its join's own rate reads its source frame for frame, so this is
-/// the source's span, exact. One at another rate reads between two source
-/// frames, and a line between two samples never leaves them: the extremes are
-/// the source's over the frames it reads between, which bound the join's, and
-/// the energy is the source's over that span, taken as the join's mean.
-fn source_span(part: &Part, src_ch: usize, lo: usize, hi: usize, read: &mut usize) -> SpanStats {
-    let src = &part.src;
-    if !part.resampled() {
-        return src.summary_span(src_ch, part.src_start + lo, part.src_start + hi, read);
+impl PartSamples<Part> for Pool {
+    fn summary(
+        &mut self,
+        part: &Part,
+        src_ch: usize,
+        a: usize,
+        b: usize,
+        _ends: Ends,
+        read: &mut usize,
+    ) -> SpanStats {
+        // A pool buffer's summary is exact over any span.
+        part.src.summary_span(src_ch, a, b, read)
     }
-    let first = (part.src_start as f64 + lo as f64 * part.rate).floor() as usize;
-    let last = (part.src_start as f64 + (hi - 1) as f64 * part.rate).ceil() as usize;
-    let span = src.summary_span(src_ch, first, (last + 1).min(src.frames()), read);
-    if span.count == 0 {
-        return SpanStats::silence(hi - lo);
-    }
-    let ms = span.sum_sq / span.count as f64;
-    SpanStats {
-        sum_sq: ms * (hi - lo) as f64,
-        count: hi - lo,
-        ..span
+
+    fn frame(&mut self, part: &Part, frame: usize, src_ch: usize) -> f32 {
+        part.src.sample(frame, src_ch)
     }
 }
 

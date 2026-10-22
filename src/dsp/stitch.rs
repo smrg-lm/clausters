@@ -88,6 +88,12 @@ pub struct Part {
     pub span: PartSpan,
 }
 
+impl AsRef<PartSpan> for Part {
+    fn as_ref(&self) -> &PartSpan {
+        &self.span
+    }
+}
+
 impl std::ops::Deref for Part {
     type Target = PartSpan;
 

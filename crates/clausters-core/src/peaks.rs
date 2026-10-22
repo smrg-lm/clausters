@@ -37,6 +37,7 @@ use std::path::Path;
 
 use crate::bytes;
 
+pub mod compose;
 mod kept;
 pub use kept::{Kept, SpanStats};
 

@@ -134,7 +134,7 @@ impl PartSpan {
         &self,
         inner: usize,
         channel: usize,
-        frame: impl Fn(usize, usize) -> f32,
+        mut frame: impl FnMut(usize, usize) -> f32,
     ) -> f32 {
         let Some(&src_ch) = self.map.get(channel) else {
             return 0.0;
