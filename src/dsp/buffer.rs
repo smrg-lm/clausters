@@ -81,6 +81,15 @@ pub struct Buffer {
     /// Where else to publish it: the directory row a mapping peer reads
     /// directly. `None` is a buffer no other process can see.
     frontier: Option<std::sync::Arc<dyn Frontier>>,
+    /// **How many times the audio thread has said it wrote**: one more per
+    /// [`Self::raise_frontier`]. The frontier only rises, so a looping
+    /// recorder going over what it already wrote leaves it where it was; this
+    /// moves every time, which is what tells the summary below that the
+    /// samples under it changed where nobody said.
+    writes: AtomicU64,
+    /// The summary `/buffer_peaks` answers from, measured as it is asked
+    /// ([`crate::dsp::summary`]). Only the network side takes this lock.
+    summary: crate::dsp::summary::SummarySlot,
 }
 
 /// Where a buffer says **how far it has been written**.
@@ -213,6 +222,8 @@ impl Buffer {
             sample_rate,
             written: AtomicU64::new(0),
             frontier: None,
+            writes: AtomicU64::new(0),
+            summary: Default::default(),
         }
     }
 
@@ -233,6 +244,8 @@ impl Buffer {
             sample_rate,
             written: AtomicU64::new(0),
             frontier: None,
+            writes: AtomicU64::new(0),
+            summary: Default::default(),
         }
     }
 
@@ -258,6 +271,7 @@ impl Buffer {
     /// being written as it reads is what it does with every other one.
     pub fn raise_frontier(&self, frame: usize) {
         self.written.fetch_max(frame as u64, Ordering::Relaxed);
+        self.writes.fetch_add(1, Ordering::Relaxed);
         if let Some(sink) = &self.frontier {
             sink.raise(frame as u64);
         }
@@ -273,6 +287,15 @@ impl Buffer {
     /// a mapping peer reads the same number out of the segment.
     pub fn frontier(&self) -> u64 {
         self.written.load(Ordering::Relaxed)
+    }
+
+    /// How many writes the audio thread has reported (see the field).
+    pub fn writes(&self) -> u64 {
+        self.writes.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn summary_slot(&self) -> &crate::dsp::summary::SummarySlot {
+        &self.summary
     }
 
     /// Where this buffer's samples live -- what a pool consults to hand a peer
@@ -484,6 +507,8 @@ impl Buffer {
             sample_rate,
             written: AtomicU64::new(0),
             frontier: None,
+            writes: AtomicU64::new(0),
+            summary: Default::default(),
         }
     }
 }
@@ -507,6 +532,25 @@ impl clausters_core::peaks::Source for BufferChannel<'_> {
     }
 
     fn read_into(&self, start: usize, out: &mut [f32]) {
+        // The cells, strided, when the buffer owns some: a summary's first
+        // pass is this loop over the whole take, and the general read matches
+        // the storage and checks the bounds per sample.
+        let channels = self.buffer.channels();
+        if let Some(cells) = self.buffer.cells()
+            && self.channel < channels
+        {
+            let held = self.buffer.frames().saturating_sub(start).min(out.len());
+            let (inside, past) = out.split_at_mut(held);
+            let first = (start * channels + self.channel).min(cells.len());
+            for (slot, cell) in inside
+                .iter_mut()
+                .zip(cells[first..].iter().step_by(channels))
+            {
+                *slot = Buffer::load(cell);
+            }
+            past.fill(0.0);
+            return;
+        }
         for (i, slot) in out.iter_mut().enumerate() {
             *slot = self.buffer.sample(start + i, self.channel);
         }

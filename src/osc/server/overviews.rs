@@ -22,10 +22,9 @@
 //!   else. A peer maps it read-only; a peer that edits announces the span
 //!   (`/buffer_touch`) and the owner refreshes it.
 //! - **Refreshed by the span, never rebuilt.** A write of a millisecond costs
-//!   the buckets it touched and their parents, not the take --
-//!   [`clausters_core::peaks::overview`] over exactly those buckets, the same
-//!   function `/buffer_stream` and `/buffer_peaks` answer with, so there is one
-//!   arithmetic and not three.
+//!   the buckets it touched and their parents, not the take: the pyramid is
+//!   the buffer's own summary ([`crate::dsp::summary`]), the one `/buffer_peaks`
+//!   answers from, so the file and the answers cannot disagree.
 //! - **Written at a bounded rate.** The pyramid is patched in memory as each
 //!   write lands and the file is rewritten from the run loop at most every
 //!   [`WRITE_PERIOD`], so a hand drawing a stroke does not rewrite a
@@ -50,10 +49,12 @@
 //! wrong take's summary.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use clausters_core::peaks::MultiPyramid;
+use clausters_core::peaks::{MultiPyramid, Pyramid};
 
 use crate::dsp::buffer::Buffer;
+use crate::dsp::summary::SUMMARY_BUCKET;
 
 /// How often a dirty overview is written out, in seconds. A stroke announces
 /// its spans far faster than this; what a reader needs is a file that
@@ -64,16 +65,10 @@ use crate::dsp::buffer::Buffer;
 /// way every other periodic thing here does, and a render stays deterministic.
 const WRITE_PERIOD: f64 = 0.25;
 
-/// The bucket every overview is built at -- the default a picture's pyramid uses
-/// (`DEFAULT_BASE_BUCKET` in the GUI host, 256 in both clients), so a client
-/// that maps this file has the grid it already draws on.
-pub(in crate::osc::server) const BASE_BUCKET: usize = 256;
-
-/// One buffer's overview: the file, the pyramid it holds, and whether the two
-/// have drifted apart since the last write.
+/// One buffer's overview file, and whether it is behind the buffer's summary
+/// (in which case it has been unlinked until [`Overviews::flush`] writes it).
 struct Overview {
     path: PathBuf,
-    pyramid: MultiPyramid,
     dirty: bool,
 }
 
@@ -97,14 +92,28 @@ impl Overviews {
     /// Only a Unix build has regions to put one beside, which is why this and
     /// [`Self::retire`] read as dead code anywhere else -- the same reason the
     /// server's region list does.
+    ///
+    /// `samples` is what the pyramid is built from -- the region's own cells,
+    /// whatever `buffer` is -- and `buffer` is what the server keeps under the
+    /// number. A plain one keeps the pyramid as its summary, so `/buffer_peaks`
+    /// answers it without measuring again; a join composes its own from its
+    /// sources and is never written, so its file is only ever this one.
     #[cfg_attr(not(unix), allow(dead_code))]
-    pub(in crate::osc::server) fn publish(&mut self, index: usize, region: &Path, buffer: &Buffer) {
+    pub(in crate::osc::server) fn publish(
+        &mut self,
+        index: usize,
+        region: &Path,
+        samples: &Buffer,
+        buffer: &Buffer,
+    ) {
         if self.slots.len() <= index {
             self.slots.resize_with(index + 1, || None);
         }
-        let samples = buffer.to_vec();
-        let pyramid =
-            MultiPyramid::build_interleaved(&samples, buffer.channels().max(1), BASE_BUCKET);
+        let pyramid = MultiPyramid::from_channels(
+            (0..samples.channels().max(1))
+                .map(|ch| Pyramid::build_from(&samples.channel(ch), SUMMARY_BUCKET))
+                .collect(),
+        );
         let path = peaks_path(region);
         if let Err(e) = pyramid.write_cache(&path) {
             // A summary is an optimization: without the file a peer summarizes
@@ -114,11 +123,10 @@ impl Overviews {
             self.slots[index] = None;
             return;
         }
-        self.slots[index] = Some(Overview {
-            path,
-            pyramid,
-            dirty: false,
-        });
+        if !buffer.is_stitched() {
+            buffer.keep_summary(pyramid);
+        }
+        self.slots[index] = Some(Overview { path, dirty: false });
     }
 
     /// Drops a freed buffer's overview and unlinks its file. Every mapping of
@@ -131,12 +139,9 @@ impl Overviews {
     }
 
     /// **Refreshes the buckets a write touched**, from the samples as they now
-    /// stand. `start` and `frames` are frames; the span is widened to whole
-    /// buckets, since a bucket summarized from part of itself would report a
-    /// peak the samples do not have.
-    ///
-    /// The file is not written here -- the pyramid is patched and marked, and
-    /// [`Self::flush`] writes it at a bounded rate.
+    /// stand: the buffer's summary over the span, and the file beside the
+    /// region, if there is one, unlinked until [`Self::flush`] writes it back.
+    /// `start` and `frames` are frames.
     pub(in crate::osc::server) fn wrote(
         &mut self,
         index: usize,
@@ -144,21 +149,11 @@ impl Overviews {
         start: usize,
         frames: usize,
     ) {
+        buffer.rewrite_summary(start, frames);
         let Some(overview) = self.slots.get_mut(index).and_then(Option::as_mut) else {
             return;
         };
-        let first = (start / BASE_BUCKET) * BASE_BUCKET;
-        let end = (start + frames).min(overview.pyramid.frames());
-        let buckets = end.saturating_sub(first) / BASE_BUCKET;
-        if buckets == 0 {
-            return;
-        }
-        let channels: Vec<_> = (0..buffer.channels().max(1))
-            .map(|ch| buffer.channel(ch))
-            .collect();
-        let sources: Vec<_> = channels.iter().collect();
-        let stats = clausters_core::peaks::overview(&sources, first, BASE_BUCKET, buckets);
-        if overview.pyramid.write_buckets(first, BASE_BUCKET, &stats) && !overview.dirty {
+        if frames > 0 && !overview.dirty {
             // The file now describes samples that are not there: it goes
             // until the flush writes the pyramid that does.
             overview.dirty = true;
@@ -166,44 +161,29 @@ impl Overviews {
         }
     }
 
-    /// **The overview of a span, out of the summary rather than the samples** --
-    /// what lets `/buffer_peaks` answer a long take without reading it.
+    /// Writes out whatever has drifted, at most every [`WRITE_PERIOD`]. Called
+    /// from the run loop beside the other periodic work, with the pool the
+    /// overviews describe.
     ///
-    /// `None` when this buffer has no overview or the caller asked at another
-    /// bucket than the file is built at: a coarser answer would have to be
-    /// spread over buckets nothing measured separately and a finer one folded
-    /// from groups that straddle it, so the samples are read instead.
-    pub(in crate::osc::server) fn span(
-        &self,
-        index: usize,
-        first_frame: usize,
-        bucket: usize,
-        buckets: usize,
-    ) -> Option<Vec<f32>> {
-        let overview = self.slots.get(index)?.as_ref()?;
-        if bucket != BASE_BUCKET || !first_frame.is_multiple_of(BASE_BUCKET) {
-            return None;
-        }
-        let channels = overview.pyramid.num_channels();
-        let mut out = Vec::with_capacity(buckets * channels * 3);
-        for b in 0..buckets {
-            let (a, z) = (
-                (first_frame + b * bucket) as f64,
-                (first_frame + (b + 1) * bucket) as f64,
-            );
-            for ch in 0..channels {
-                let pyramid = overview.pyramid.channel(ch)?;
-                let (lo, hi) = pyramid.column(0, a, z)?;
-                let ms = pyramid.column_ms(0, a, z).unwrap_or(0.0);
-                out.extend_from_slice(&[lo, hi, ms]);
+    /// A file is also behind when the audio thread recorded under it, which
+    /// nobody announces: the buffer's summary forgets then, and so the file is
+    /// unlinked. It comes back once the summary is whole again -- a view asked
+    /// for all of it -- since a file is read by peers that cannot tell a
+    /// measured bucket from an unmeasured one.
+    pub(in crate::osc::server) fn flush(&mut self, now: f64, buffers: &[Option<Arc<Buffer>>]) {
+        for (index, slot) in self.slots.iter_mut().enumerate() {
+            let Some(overview) = slot.as_mut() else {
+                continue;
+            };
+            if !overview.dirty
+                && let Some(buffer) = buffers.get(index).and_then(Option::as_ref)
+                && !buffer.is_stitched()
+                && !buffer.summary_is_whole()
+            {
+                overview.dirty = true;
+                let _ = std::fs::remove_file(&overview.path);
             }
         }
-        Some(out)
-    }
-
-    /// Writes out whatever has drifted, at most every [`WRITE_PERIOD`]. Called
-    /// from the run loop beside the other periodic work.
-    pub(in crate::osc::server) fn flush(&mut self, now: f64) {
         // Nothing dirty costs one walk of a short list and, above all, does not
         // start the clock: the period is between *writes*, so an edit is never
         // held back by an idle pass that happened just before it.
@@ -217,12 +197,19 @@ impl Overviews {
             return;
         }
         self.last_write = Some(now);
-        for overview in self.slots.iter_mut().flatten() {
-            if !overview.dirty {
+        for (index, slot) in self.slots.iter_mut().enumerate() {
+            let Some(overview) = slot.as_mut().filter(|o| o.dirty) else {
                 continue;
-            }
+            };
+            let Some(pyramid) = buffers
+                .get(index)
+                .and_then(Option::as_ref)
+                .and_then(|b| b.whole_summary())
+            else {
+                continue;
+            };
             overview.dirty = false;
-            if let Err(e) = write_whole(&overview.path, &overview.pyramid) {
+            if let Err(e) = write_whole(&overview.path, &pyramid) {
                 tracing::warn!("cannot refresh {}: {e}", overview.path.display());
             }
         }

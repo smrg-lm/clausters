@@ -4,8 +4,8 @@
 //! thread ([`super::super::async_pipes`]) and answers `/done` later; the
 //! queries here answer from the mirror in the same turn.
 
-use super::super::overviews::BASE_BUCKET;
 use super::super::*;
+use crate::dsp::summary::SUMMARY_BUCKET;
 use crate::osc::translate::{allocated, mirror_buffer};
 use clausters_core::osc::{push_sample, sample_blob};
 
@@ -400,15 +400,16 @@ impl OscServer {
     /// requests.
     ///
     /// Synchronous on the network thread, like `/buffer_get`, `/buffer_getRange`
-    /// and `/buffer_export`: it reads the span once, a bucket at a time, and
-    /// allocates only the summary.
+    /// and `/buffer_export`, and answered from the buffer's kept summary
+    /// ([`crate::dsp::summary`]), so what it reads from samples is only what
+    /// nobody asked for before, bounded per reply.
     pub(in crate::osc::server) fn handle_buffer_peaks(
         &mut self,
         mut args: Args,
         from: ClientId,
     ) -> Answer {
         let bufnum = args.int()?;
-        let bucket = args.opt_int()?.unwrap_or(BASE_BUCKET as i32).max(1) as usize;
+        let bucket = args.opt_int()?.unwrap_or(SUMMARY_BUCKET as i32).max(1) as usize;
         let start = args.opt_int()?.unwrap_or(0).max(0) as usize;
         let asked = args.opt_int()?.unwrap_or(-1);
         let buffer = allocated(&self.translator.buffers, bufnum)?;
@@ -438,17 +439,16 @@ impl OscServer {
             return Ok(());
         }
         let buckets = buckets.min(max_stream_buckets(buffer.channels()));
-        // **Out of the summary when there is one**, which is what the overview
-        // beside the region is for: answering this without reading the samples
-        // at all. Its grid is the file's, so a request at another bucket falls
-        // back to the samples rather than being answered off a grid it does
-        // not describe.
-        let bytes = match self
-            .overviews
-            .span(bufnum.max(0) as usize, first, bucket, buckets)
-        {
-            Some(stats) => sample_blob(&stats),
-            None => super::super::streams::overview_blob(&buffer, first, bucket, buckets),
+        // **Out of the buffer's summary**, which is kept for every buffer this
+        // server owns and composed for a join from its sources' -- so a span
+        // asked twice is measured once, an edit's new join is answered from
+        // what its sources already had, and a coarse bucket reads levels
+        // rather than samples. A server that maps somebody else's samples
+        // hears of none of the writes into them, so it reads the samples.
+        let bytes = if self.keeps_summaries() {
+            sample_blob(&summary_overview(&buffer, first, bucket, buckets))
+        } else {
+            super::super::streams::overview_blob(&buffer, first, bucket, buckets)
         };
         self.reply(
             from,
@@ -461,6 +461,12 @@ impl OscServer {
             ],
         );
         Ok(())
+    }
+
+    /// Whether this server's buffers keep their summaries: every server but one
+    /// mapping another's segment, whose samples change under it unannounced.
+    pub(in crate::osc::server) fn keeps_summaries(&self) -> bool {
+        self.owns_samples || self.shm_path.is_none()
     }
 
     /// `/buffer_export bufnum path` -> `/done /buffer_export bufnum`: write the buffer's raw
@@ -487,4 +493,37 @@ impl OscServer {
         self.done_with(from, "/buffer_export", vec![OscType::Int(bufnum)]);
         Ok(())
     }
+}
+
+/// **The overview of `buckets` buckets from `first`, out of the buffer's
+/// summary**: bucket-major, channel-minor, min, max and mean square, the
+/// layout `/buffer_stream` reports in.
+///
+/// The work is bounded by what it reads from samples, not by the span: a
+/// question over what the summary has already measured reads levels, and one
+/// over a take nobody has looked at yet measures it here,
+/// [`SUMMARY_READ_SAMPLES`] at most per reply. The reply's own length says how far it got, so the asker
+/// goes on from there as it does when the bytes run out -- and the opening pass
+/// over a long take is spread over replies rather than paid in one turn of an
+/// engine that has a block to deliver. At least one bucket always comes back.
+fn summary_overview(
+    buffer: &crate::dsp::buffer::Buffer,
+    first: usize,
+    bucket: usize,
+    buckets: usize,
+) -> Vec<f32> {
+    let channels = buffer.channels().max(1);
+    let mut out = Vec::with_capacity(buckets * channels * 3);
+    let mut read = 0;
+    for b in 0..buckets {
+        let at = first + b * bucket;
+        for ch in 0..channels {
+            let stats = buffer.summary_span(ch, at, at + bucket, &mut read);
+            out.extend_from_slice(&stats.bucket());
+        }
+        if read >= SUMMARY_READ_SAMPLES {
+            break;
+        }
+    }
+    out
 }

@@ -10653,3 +10653,77 @@ interaction (a summary when a take is opened or edited, samples when a zoom
 asks for them) is spread over what the hand does, so no operation arrives
 as a spike. A route that front-loads work to save a later round trip is
 measured against that, not against the round trip alone.
+
+## A take's overview is answered from a summary kept on the buffer (2026-10-22)
+
+*Decided 2026-10-22, opening the audio editor's picture milestone (the GUI
+plan's G44), which the user asked to be designed and measured with care
+because every application draws through it.* `/buffer_peaks` read the samples
+to answer, except for a buffer shared as a region file, whose overview it kept;
+a page's engine and every join had none, so each overview was a pass over the
+take and each edit's join was summarized again from its samples.
+
+**Every buffer the server owns keeps a summary, on the buffer itself**
+(`dsp::summary`, a `Mutex` only the network side takes). On the buffer rather
+than in a table by buffer number, because a buffer is not always reached by its
+number: a join holds its sources by `Arc`, and a source freed under a join goes
+on being read through it. A server that maps another's segment keeps none,
+since the samples change under it unannounced.
+
+**It is measured as it is asked, not when the samples arrive.** The milestone
+was written with the summary built at allocation; in a page the engine
+answers between two audio blocks, and building the summary of four minutes of
+stereo at once measured 75 ms in the wasm engine, against a 128-frame
+quantum of 2.67 ms. So a summary starts unmeasured
+(`clausters_core::peaks::Kept`), a question measures the base buckets it needs
+and does not have, and what was measured is kept. What a reply may read is
+bounded, 2^17 samples (about 0.4 ms there), so a first overview of a long take
+is spread over replies and none of them is late. A question measures at least
+the aligned group of 32 base buckets around what it lacks: the levels above
+are recombined once per measurement, and a view asking the base grid a bucket
+at a time would otherwise pay for every level per bucket (measured 127 ms for
+ten minutes asked that way, 74 ms with the groups; reading the samples was
+64 ms). The two statistics of a bucket are taken in two passes, as the
+builder takes them: fused into one loop they ran at the pace of the energy's
+`f64` sum, three times slower.
+
+**A join keeps nothing of its own; its summary is composed from its sources'.**
+Copying whole buckets of a source into a join's pyramid works only where the
+part keeps the source's grid, and a paste shifts everything after it by the
+pasted length, off the grid, so a stored pyramid of a join would be measured
+from samples for all but its first part. The composition is done per question
+instead: each part's share of the span is the source's summary over the frames
+it reads, folded through the levels with the two partial edges read from
+samples, so it is exact; a fade is read from the join's samples, a channel
+mapped to nothing is silence, a source that is a join composes in turn, and a
+part at another rate is bounded by its source over the frames it reads between
+(exact extremes of the samples it interpolates, its energy taken as the join's
+mean). An edit then costs the summary nothing, and the join's first overview
+reads levels.
+
+**A write is followed where it is said.** A `/buffer_*` write and a
+`/buffer_touch` re-measure what was kept of their span; the audio thread's
+writes (`RecordBuf`, `BufWr`) say no span, so each one counts
+(`Buffer::writes`, one more per `raise_frontier`) and a summary that finds the
+count moved forgets everything and is measured again as it is asked. The
+region file beside a shared buffer is that summary written out; a recording
+under it unlinks it until the summary is whole again.
+
+Measured on ten minutes of stereo natively (`tests/summary_cost.rs`, release)
+and on four minutes in the wasm engine (driven from node, the reply-by-reply
+conversation a host has):
+
+| | before | after |
+|---|---|---|
+| native, overview at a 760-column bucket, again | 62 ms | 0.1 ms |
+| native, the base grid, again | 64 ms | 6 ms |
+| native, a paste's join at the column bucket | 199 ms | 0.8 ms |
+| native, the join at the base grid over one window | 1.4 ms | 0.5 ms |
+| wasm, first overview at the column bucket, worst reply | 41 ms | 0.5 ms (warm) |
+| wasm, the paste's join at the column bucket | 215 ms, worst 53 | 3 ms, worst 0.7 |
+
+What still grows with the length is outside the summary: a native server with a
+segment copies an edit's join into a region a peer maps. Filled part by part
+and summarized from the region's cells, that is 183 ms for ten minutes of
+stereo, from 545 ms sample by sample; it stays a pass over the take for as long
+as a peer maps a join flattened (the GUI plan's "Found by use").

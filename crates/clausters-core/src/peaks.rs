@@ -37,6 +37,9 @@ use std::path::Path;
 
 use crate::bytes;
 
+mod kept;
+pub use kept::{Kept, SpanStats};
+
 const MAGIC: &[u8; 4] = b"CLPK";
 /// Version 1 is the original mono layout; version 2 prefixed a channel count
 /// and carried one level sequence per channel; **version 3 is the current

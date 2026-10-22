@@ -126,6 +126,14 @@ const MAX_STREAM_BUFFERS: usize = 32;
 /// frontier is where the report ended and not where the samples end).
 const MAX_STREAM_BYTES: usize = 8 * 1024;
 
+/// **Samples one `/buffer_peaks` reply may read** to measure what the
+/// buffer's summary has not measured yet, across its channels: 1.4 s of
+/// stereo, which a page's engine reads in some 0.4 ms (measured in node,
+/// 2026-10-22) -- a sixth of the 2.67 ms a 128-frame quantum leaves for the
+/// whole turn, so a long take's first pass is spread over many turns and none
+/// of them is late.
+const SUMMARY_READ_SAMPLES: usize = 1 << 17;
+
 /// The above as a bucket count, for a buffer of `channels` channels: each
 /// bucket carries `min`, `max` and mean square per channel.
 fn max_stream_buckets(channels: usize) -> usize {

@@ -520,7 +520,7 @@ impl OscServer {
         self.metered(Phase::BufferStreams, Self::pump_buffer_streams);
         self.metered(Phase::Overviews, |server| {
             let now = server.mono_secs();
-            server.overviews.flush(now);
+            server.overviews.flush(now, &server.translator.buffers);
         });
     }
 

@@ -312,12 +312,12 @@ impl OscServer {
             }
         };
         // The one copy: what was just built, into the memory it will live in.
-        // A join is read sample by sample instead -- it owns no cells to copy
+        // A join is read part by part instead -- it owns no cells to copy
         // from, and a peer that maps this region gets the samples the join
         // reads, which is what it is looking at.
         let cells = region.cells();
-        match buffer.cells() {
-            Some(source) => {
+        match (buffer.cells(), buffer.stitch()) {
+            (Some(source), _) => {
                 for (cell, value) in cells.iter().zip(source) {
                     cell.store(
                         value.load(std::sync::atomic::Ordering::Relaxed),
@@ -325,18 +325,17 @@ impl OscServer {
                     );
                 }
             }
-            None => {
-                for (i, cell) in cells.iter().enumerate() {
-                    cell.store(buffer.at(i).to_bits(), std::sync::atomic::Ordering::Relaxed);
-                }
-            }
+            (None, Some(stitch)) => stitch.copy_into(cells, buffer.channels()),
+            (None, None) => {}
         }
-        // **The overview beside it**, built from the samples that were just
-        // copied in: the one full pass, paid where the copy already is, so a
-        // peer opening this take maps a summary instead of computing one.
-        self.overviews.publish(index, &region_path, &buffer);
-        self.shared_buffers[index] = Some(region_path);
-        if buffer.is_stitched() {
+        let view = crate::dsp::buffer::Buffer::shared(
+            Arc::clone(&region),
+            buffer.channels(),
+            buffer.frames(),
+            buffer.sample_rate(),
+        );
+        self.shared_buffers[index] = Some(region_path.clone());
+        let shared = if buffer.is_stitched() {
             // **A join stays a join.** What went into the region is a picture
             // of it -- the samples a peer draws, which is what a peer wants --
             // but what the engine and the mirror keep is the join itself.
@@ -347,20 +346,30 @@ impl OscServer {
             // lose the run it reads a cut by. A join is replaced rather than
             // written, so the picture cannot go stale under the peer without
             // the replacement it is drawn from arriving too.
-            return buffer;
-        }
-        // Shared samples are samples somebody may be drawing, so the buffer publishes
-        // how far it has been written: a recording fills a picture in another
-        // process with one relaxed store per block and no message at all.
-        Arc::new(
-            crate::dsp::buffer::Buffer::shared(
-                region,
-                buffer.channels(),
-                buffer.frames(),
-                buffer.sample_rate(),
+            buffer
+        } else {
+            // Shared samples are samples somebody may be drawing, so the buffer
+            // publishes how far it has been written: a recording fills a
+            // picture in another process with one relaxed store per block and
+            // no message at all.
+            Arc::new(
+                crate::dsp::buffer::Buffer::shared(
+                    Arc::clone(&region),
+                    buffer.channels(),
+                    buffer.frames(),
+                    buffer.sample_rate(),
+                )
+                .with_frontier(segment.frontier_sink(index)),
             )
-            .with_frontier(segment.frontier_sink(index)),
-        )
+        };
+        // **The overview beside it**, built from the samples that were just
+        // copied in: the one full pass, paid where the copy already is, so a
+        // peer opening this take maps a summary instead of computing one --
+        // and kept as the buffer's own summary, so `/buffer_peaks` reads it.
+        // Built from the region's cells rather than through a join, whose own
+        // read resolves a part per sample.
+        self.overviews.publish(index, &region_path, &view, &shared);
+        shared
     }
 
     /// Sharing samples needs a mapped region, and a region is a file

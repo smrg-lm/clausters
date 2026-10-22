@@ -16,6 +16,7 @@ pub mod events;
 #[cfg(unix)]
 pub mod region;
 pub mod stitch;
+pub mod summary;
 pub mod wavetable;
 
 // The UGen library -- the SynthDef family (`synth` feature). A Faust-only or

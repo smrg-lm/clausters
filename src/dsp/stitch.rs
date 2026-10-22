@@ -247,6 +247,12 @@ impl Part {
     pub fn end(&self) -> usize {
         self.start + self.frames
     }
+
+    /// Whether it reads its source at another rate than the join's.
+    #[inline]
+    pub fn resampled(&self) -> bool {
+        self.resampled
+    }
 }
 
 impl std::fmt::Debug for Part {
@@ -387,6 +393,23 @@ impl Stitch {
             frames: start,
             cursor: AtomicUsize::new(0),
         })
+    }
+
+    /// **Writes the join's samples into `cells`**, interleaved over
+    /// `channels`: what a server sharing the join copies into the region a
+    /// peer maps. Part by part through a [`PartRun`], so each sample is the
+    /// indexed load a plain buffer costs rather than a lookup of its part.
+    pub fn copy_into(&self, cells: &[std::sync::atomic::AtomicU32], channels: usize) {
+        for part in self.parts.iter() {
+            let run = PartRun::new(part);
+            let first = part.start * channels;
+            let span = &cells[first..(first + part.frames * channels).min(cells.len())];
+            for (inner, frame) in span.chunks(channels).enumerate() {
+                for (ch, cell) in frame.iter().enumerate() {
+                    cell.store(run.sample(inner, ch).to_bits(), Ordering::Relaxed);
+                }
+            }
+        }
     }
 
     /// How many frames the whole join is.
