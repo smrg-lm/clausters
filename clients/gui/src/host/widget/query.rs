@@ -515,7 +515,7 @@ impl WidgetKind {
     /// ([`Element::tick`]) -- the single door, so the
     /// front drives one walk instead of one per kind of live view.
     /// Answers whether what the widget shows changed
-    /// ([`Element::tick`](super::element::Element::tick)).
+    /// ([`Element::tick`]).
     pub fn tick(&mut self, live: &super::element::Live) -> bool {
         self.as_element_mut().is_some_and(|el| el.tick(live))
     }
