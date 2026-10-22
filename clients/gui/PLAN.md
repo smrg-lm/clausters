@@ -8637,3 +8637,19 @@ module of its own.
   is a decision about the page's carrier -- more requests in flight within
   that bound, a wider reply for a page's own in-tab engine, or reading the
   span under the edit rather than the whole take -- not a constant to raise.
+  *Narrowed 2026-10-22:* a wider reply is not open to a page either -- its
+  in-tab engine is the same embedded server with the same 64 KiB reply ring.
+  Three chunk replies are now kept in the air over every download and span
+  (`CHUNKS_IN_FLIGHT`, the fewest-out conversation asking first), which in
+  headless Chrome took the same paste from 3.1 s to 1.9 s. What is left is
+  the page engine's pace: it answers once per audio callback, about 40 ms in
+  headless, and its ring holds three chunks per answer, so the next step is
+  that ring's capacity in a page, or reading the span under the edit.
+
+- ⬜ **The GUI host's library suite stopped once on a SIGSEGV** *(found
+  2026-10-22, closing the entries of the audio editor's acceptance)*. One
+  `cargo test --lib` in `clients/gui` ended with signal 11 and no failing
+  test named; the next two runs and fifteen runs of the same test binary
+  passed. The output named no test, so neither the case nor the cause is
+  known. What is open is the next failure's output, run with
+  `--test-threads=1` to name the test.

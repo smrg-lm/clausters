@@ -46,6 +46,17 @@ pub(crate) const BUFFER_CHUNK: usize = 4096;
 /// resolve one after another instead of racing and losing.
 const MAX_IN_FLIGHT: usize = 3;
 
+/// **How many chunk replies may be in the air at once**, over every download
+/// and span: the same ring bound as [`MAX_IN_FLIGHT`], counted in what
+/// actually fills the ring. A download alone keeps this many requests out;
+/// several share them, the one with the fewest out asking first.
+///
+/// One at a time, a short take took a round trip per chunk, and a round trip
+/// is a frame or so: two seconds of stereo pasted onto two in a page was 94
+/// requests and a second and a half before the picture settled. The bytes
+/// were never the cost; the waiting between them was.
+const CHUNKS_IN_FLIGHT: usize = 3;
+
 /// The most samples a view will pull **whole** rather than draw from a summary
 /// -- about five seconds of stereo at 48 kHz, two megabytes on the wire. See
 /// [`BufferFetches::whole`] for why the line is drawn by size at all.
@@ -101,6 +112,10 @@ struct BufferFetch {
     total: usize,
     samples: Vec<f32>,
     received: usize,
+    /// Each chunk's state, by index from `origin` in [`BUFFER_CHUNK`]s.
+    chunks: Vec<ChunkState>,
+    /// How many of them are asked and not answered.
+    in_flight: usize,
     /// How many frames this download has gone with **no progress** -- the clock
     /// is [`BufferFetches::tick`], and every reply that lands anything resets
     /// it.
@@ -112,6 +127,64 @@ struct BufferFetch {
     /// and who it is for. `None` is the whole buffer, which is for everybody
     /// waiting on it.
     window: Option<(usize, SpanUse)>,
+}
+
+/// Where one chunk of a download is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChunkState {
+    Unasked,
+    Asked,
+    Landed,
+}
+
+impl FetchStep {
+    /// The step that sends `asked`: nothing, one request or several.
+    fn of(mut asked: Vec<OscMessage>) -> Self {
+        match asked.len() {
+            0 => Self::None,
+            1 => Self::Request(asked.remove(0)),
+            _ => Self::Requests(asked),
+        }
+    }
+}
+
+impl BufferFetch {
+    /// A download of `total` samples from flat index `origin`, nothing asked.
+    fn new(channels: usize, sample_rate: f64, origin: usize, total: usize) -> Self {
+        Self {
+            channels,
+            sample_rate,
+            origin,
+            total,
+            samples: vec![0.0; total],
+            received: 0,
+            chunks: vec![ChunkState::Unasked; total.div_ceil(BUFFER_CHUNK)],
+            in_flight: 0,
+            stalled: 0,
+            stalled_at: 0,
+            window: None,
+        }
+    }
+
+    /// **Asks for the next chunk** not asked yet, if there is one.
+    fn ask_one(&mut self, bufnum: i32) -> Option<OscMessage> {
+        let i = self
+            .chunks
+            .iter()
+            .position(|state| *state == ChunkState::Unasked)?;
+        self.chunks[i] = ChunkState::Asked;
+        self.in_flight += 1;
+        Some(request_chunk(
+            bufnum,
+            self.origin + i * BUFFER_CHUNK,
+            self.origin + self.total,
+        ))
+    }
+
+    /// Whether a chunk is left to ask for.
+    fn wants_more(&self) -> bool {
+        self.chunks.contains(&ChunkState::Unasked)
+    }
 }
 
 /// **Why a span of a buffer is being read back.** The same request serves two
@@ -135,6 +208,8 @@ pub(crate) enum SpanUse {
 pub(crate) enum FetchStep {
     /// Send this message to the audio server (the next `/buffer_getRange`).
     Request(OscMessage),
+    /// Send these, in order: the chunks a download asks for at once.
+    Requests(Vec<OscMessage>),
     /// A buffer finished downloading: its interleaved samples and shape, ready
     /// for the waiting widgets. `wants` may be empty if every waiting window
     /// closed meanwhile.
@@ -390,7 +465,7 @@ impl BufferFetches {
             );
             return FetchStep::None;
         }
-        FetchStep::Request(self.start_whole(bufnum, channels, sample_rate, total))
+        FetchStep::of(self.start_whole(bufnum, channels, sample_rate, total))
     }
 
     /// `/buffer_query.reply` for a buffer the server **does not have**
@@ -412,7 +487,7 @@ impl BufferFetches {
     }
 
     /// **Starts a whole download**: the fetch it is read into, and the first
-    /// `/buffer_getRange` that reads it. One place, because a download starts
+    /// `/buffer_getRange`s that read it. One place, because a download starts
     /// either when its shape arrives or later, when the carrier has room.
     fn start_whole(
         &mut self,
@@ -420,22 +495,35 @@ impl BufferFetches {
         channels: usize,
         sample_rate: f64,
         total: usize,
-    ) -> OscMessage {
-        self.fetches.insert(
-            bufnum,
-            BufferFetch {
-                channels,
-                sample_rate,
-                origin: 0,
-                total,
-                samples: vec![0.0; total],
-                received: 0,
-                stalled: 0,
-                stalled_at: 0,
-                window: None,
-            },
-        );
-        request_chunk(bufnum, 0, total)
+    ) -> Vec<OscMessage> {
+        self.fetches
+            .insert(bufnum, BufferFetch::new(channels, sample_rate, 0, total));
+        self.ask()
+    }
+
+    /// The chunk replies in the air, over every download and span.
+    fn in_flight(&self) -> usize {
+        self.fetches.values().map(|fetch| fetch.in_flight).sum()
+    }
+
+    /// **The chunks to ask for now**, until [`CHUNKS_IN_FLIGHT`] are out: one
+    /// at a time to whichever conversation has the fewest out (the lowest
+    /// buffer first among equals), so a take alone keeps the carrier full
+    /// and several take turns rather than one starving the rest.
+    fn ask(&mut self) -> Vec<OscMessage> {
+        let mut out = Vec::new();
+        while self.in_flight() < CHUNKS_IN_FLIGHT {
+            let Some((&bufnum, fetch)) = self
+                .fetches
+                .iter_mut()
+                .filter(|(_, fetch)| fetch.wants_more())
+                .min_by_key(|(bufnum, fetch)| (fetch.in_flight, **bufnum))
+            else {
+                break;
+            };
+            out.extend(fetch.ask_one(bufnum));
+        }
+        out
     }
 
     /// **Whether a buffer of `total` samples is worth downloading whole.**
@@ -475,13 +563,12 @@ impl BufferFetches {
             return FetchStep::None;
         };
         let bufnum = *bufnum;
-        let (done, total, next) = {
+        let done = {
             let Some(fetch) = self.fetches.get_mut(&bufnum) else {
                 return FetchStep::None;
             };
-            let mut next = 0usize;
-            let mut landed = 0usize;
             let mut matched = 0usize;
+            let mut short = false;
             for range in ranges.chunks(2) {
                 let [OscType::Int(start), OscType::Blob(bytes)] = range else {
                     continue;
@@ -499,13 +586,22 @@ impl BufferFetches {
                     continue;
                 }
                 matched += 1;
+                // A chunk asked twice -- once, and again after a stall -- is
+                // answered twice, and counted once.
+                let state = &mut fetch.chunks[at / BUFFER_CHUNK];
+                if *state == ChunkState::Landed {
+                    continue;
+                }
+                if *state == ChunkState::Asked {
+                    fetch.in_flight = fetch.in_flight.saturating_sub(1);
+                }
+                *state = ChunkState::Landed;
                 let n = (bytes.len() / 4).min(fetch.total.saturating_sub(at));
                 for (i, value) in clausters_core::osc::blob_samples(bytes).take(n).enumerate() {
                     fetch.samples[at + i] = value;
                 }
                 fetch.received += n;
-                landed += n;
-                next = next.max(start + n);
+                short |= n < BUFFER_CHUNK.min(fetch.total - at);
             }
             // **A reply that was not ours changes nothing.** It used to end the
             // download -- "a range that carries nothing ends it with what has
@@ -516,11 +612,10 @@ impl BufferFetches {
             if matched == 0 {
                 return FetchStep::None;
             }
-            (
-                landed == 0 || fetch.received >= fetch.total,
-                fetch.origin + fetch.total,
-                next,
-            )
+            // A chunk that came back shorter than it was asked for is the
+            // end of what the buffer holds -- the server clamps a read to it
+            // -- and so is one that carries nothing.
+            (short && fetch.in_flight == 0) || fetch.received >= fetch.total
         };
         if done {
             let mut fetch = self.fetches.remove(&bufnum).unwrap();
@@ -564,7 +659,7 @@ impl BufferFetches {
             }
             self.finish(bufnum, fetch.samples, fetch.channels, fetch.sample_rate)
         } else {
-            FetchStep::Request(request_chunk(bufnum, next, total))
+            FetchStep::of(self.ask())
         }
     }
 
@@ -594,7 +689,9 @@ impl BufferFetches {
         // Our own traffic is what fills the reply ring, so it is bounded here
         // rather than apologised for afterwards. A patch still queues (it is
         // announced once); a zoom asks again next frame.
-        if !self.fetches.contains_key(&bufnum) && self.fetches.len() >= MAX_IN_FLIGHT {
+        if !self.fetches.contains_key(&bufnum)
+            && (self.fetches.len() >= MAX_IN_FLIGHT || self.in_flight() >= CHUNKS_IN_FLIGHT)
+        {
             if span == SpanUse::Patch {
                 self.queue(bufnum, start, frames, channels);
             }
@@ -613,21 +710,11 @@ impl BufferFetches {
             return None;
         }
         let (origin, total) = (start * channels, frames * channels);
-        self.fetches.insert(
-            bufnum,
-            BufferFetch {
-                channels,
-                sample_rate: 0.0,
-                origin,
-                total,
-                samples: vec![0.0; total],
-                received: 0,
-                stalled: 0,
-                stalled_at: 0,
-                window: Some((start, span)),
-            },
-        );
-        Some(request_chunk(bufnum, origin, origin + total))
+        let mut fetch = BufferFetch::new(channels, 0.0, origin, total);
+        fetch.window = Some((start, span));
+        self.fetches.insert(bufnum, fetch);
+        // the first chunk now; the rest as replies make room
+        self.fetches.get_mut(&bufnum)?.ask_one(bufnum)
     }
 
     /// Remembers an announced edit that could not be asked for yet, merged
@@ -796,14 +883,16 @@ impl BufferFetches {
             match fetch.window {
                 // A span: dropped, and the view asks again on the next frame.
                 Some(_) => abandoned.push(*bufnum),
-                // A whole take: nobody else will ask for it, so it re-asks for
-                // the chunk it is stuck on. The chunks arrive in order, so what
-                // has been received is where to carry on from.
-                None => again.push(request_chunk(
-                    *bufnum,
-                    fetch.origin + fetch.received,
-                    fetch.origin + fetch.total,
-                )),
+                // A whole take: nobody else will ask for it, so the chunks
+                // that never came are asked for again.
+                None => {
+                    for state in &mut fetch.chunks {
+                        if *state == ChunkState::Asked {
+                            *state = ChunkState::Unasked;
+                        }
+                    }
+                    fetch.in_flight = 0;
+                }
             }
         }
         for bufnum in abandoned {
@@ -873,8 +962,10 @@ impl BufferFetches {
             let Some(owed) = self.waiting.remove(&bufnum) else {
                 continue;
             };
-            again.push(self.start_whole(bufnum, owed.channels, owed.sample_rate, owed.total));
+            again.extend(self.start_whole(bufnum, owed.channels, owed.sample_rate, owed.total));
         }
+        // what a stall gave back, and room a finished download left
+        again.extend(self.ask());
         again
     }
 
@@ -1012,6 +1103,42 @@ mod tests {
         ]
     }
 
+    /// What a step sends: nothing, one request or several.
+    fn sent(step: FetchStep) -> Vec<OscMessage> {
+        match step {
+            FetchStep::Request(msg) => vec![msg],
+            FetchStep::Requests(msgs) => msgs,
+            _ => Vec::new(),
+        }
+    }
+
+    /// **Answers every request in order**, each with `value`s, as a server
+    /// would, until a step that is not a request: that step, and every
+    /// request answered.
+    fn serve(
+        f: &mut BufferFetches,
+        first: Vec<OscMessage>,
+        value: f32,
+    ) -> (FetchStep, Vec<OscMessage>) {
+        let mut queue: std::collections::VecDeque<OscMessage> = first.into();
+        let mut seen = Vec::new();
+        while let Some(msg) = queue.pop_front() {
+            let a = ints(&msg);
+            seen.push(msg);
+            match f.on_data(&range_reply(
+                a[0],
+                a[1] as usize,
+                &vec![value; a[2] as usize],
+            )) {
+                FetchStep::Request(next) => queue.push_back(next),
+                FetchStep::Requests(next) => queue.extend(next),
+                FetchStep::None => {}
+                step => return (step, seen),
+            }
+        }
+        (FetchStep::None, seen)
+    }
+
     #[test]
     fn query_sent_once_per_buffer_then_chunks_keeping_all_channels() {
         let mut fetches = BufferFetches::default();
@@ -1075,17 +1202,20 @@ mod tests {
         assert!(f.want_span(3, 0, 100, channels, window(1, 8)).is_none());
 
         let total = frames * channels;
-        let mut at = start * channels;
-        let mut step = f.on_data(&range_reply(3, at, &vec![0.5; BUFFER_CHUNK]));
-        at += BUFFER_CHUNK;
-        while let FetchStep::Request(msg) = step {
-            let args = ints(&msg);
-            assert_eq!(args[1], at as i32, "the next chunk continues the run");
-            let n = args[2] as usize;
-            assert!(at + n <= start * channels + total, "and never past its end");
-            step = f.on_data(&range_reply(3, at, &vec![0.5; n]));
-            at += n;
+        let (step, seen) = serve(&mut f, vec![msg], 0.5);
+        let (from, to) = ((start * channels) as i32, (start * channels + total) as i32);
+        for asked in &seen {
+            let a = ints(asked);
+            assert!(
+                a[1] >= from && a[1] + a[2] <= to,
+                "every chunk inside the run, never past it"
+            );
         }
+        assert_eq!(
+            seen.len(),
+            total.div_ceil(BUFFER_CHUNK),
+            "each chunk asked once"
+        );
         let FetchStep::Window {
             bufnum,
             want,
@@ -1120,37 +1250,67 @@ mod tests {
         assert_eq!(samples.len(), 100, "what was declared, zero-filled");
     }
 
+    /// **A take keeps three chunks in flight**, asked in order, and each
+    /// answer asks for the next: what one round trip per chunk cost was the
+    /// waiting between them.
     #[test]
-    fn large_buffer_walks_sequential_chunks() {
-        let total = BUFFER_CHUNK * 2 + 100; // mono: three chunks
+    fn a_take_keeps_three_chunks_in_flight() {
+        let total = BUFFER_CHUNK * 4 + 100; // mono: five chunks
         let mut fetches = BufferFetches::default();
         fetches.want(1, 10, 3);
-        let FetchStep::Request(msg) = fetches.on_info(3, total, 1, 44_100.0) else {
-            panic!("expected the first /buffer_getRange");
-        };
-        assert_eq!(ints(&msg), vec![3, 0, BUFFER_CHUNK as i32]);
-        let FetchStep::Request(msg) = fetches.on_data(&range_reply(3, 0, &vec![1.0; BUFFER_CHUNK]))
-        else {
-            panic!("expected the second chunk request");
-        };
+        let asked = sent(fetches.on_info(3, total, 1, 44_100.0));
+        let chunk = BUFFER_CHUNK as i32;
         assert_eq!(
-            ints(&msg),
-            vec![3, BUFFER_CHUNK as i32, BUFFER_CHUNK as i32]
+            asked.iter().map(ints).collect::<Vec<_>>(),
+            vec![
+                vec![3, 0, chunk],
+                vec![3, chunk, chunk],
+                vec![3, 2 * chunk, chunk]
+            ],
+            "three at once, in order"
         );
-        let FetchStep::Request(msg) =
-            fetches.on_data(&range_reply(3, BUFFER_CHUNK, &vec![2.0; BUFFER_CHUNK]))
-        else {
-            panic!("expected the third chunk request");
-        };
-        assert_eq!(ints(&msg), vec![3, (BUFFER_CHUNK * 2) as i32, 100]);
-        let FetchStep::Done { samples, .. } =
-            fetches.on_data(&range_reply(3, BUFFER_CHUNK * 2, &vec![3.0; 100]))
-        else {
+        let more = sent(fetches.on_data(&range_reply(3, 0, &vec![1.0; BUFFER_CHUNK])));
+        assert_eq!(
+            more.iter().map(ints).collect::<Vec<_>>(),
+            vec![vec![3, 3 * chunk, chunk]]
+        );
+        let (step, _) = serve(&mut fetches, [&asked[1..], &more[..]].concat(), 2.0);
+        let FetchStep::Done { samples, .. } = step else {
             panic!("expected completion");
         };
         assert_eq!(samples.len(), total);
         assert_eq!(samples[0], 1.0);
-        assert_eq!(samples[total - 1], 3.0);
+        assert_eq!(samples[total - 1], 2.0);
+    }
+
+    /// **Two seconds of stereo pasted onto two**, the take a page read back a
+    /// chunk per frame: answered a round at a time, as frames answer it, it
+    /// takes a third of the rounds it took one chunk at a time.
+    #[test]
+    fn a_take_alone_takes_a_third_of_the_round_trips() {
+        let total = 4 * 48_000 * 2;
+        let mut fetches = BufferFetches::default();
+        fetches.want(1, 10, 3);
+        let mut round = sent(fetches.on_info(3, total / 2, 2, 48_000.0));
+        let mut rounds = 0;
+        let mut done = false;
+        while !round.is_empty() {
+            rounds += 1;
+            let mut next = Vec::new();
+            for msg in round {
+                let a = ints(&msg);
+                match fetches.on_data(&range_reply(3, a[1] as usize, &vec![0.5; a[2] as usize])) {
+                    FetchStep::Done { .. } => done = true,
+                    step => next.extend(sent(step)),
+                }
+            }
+            round = next;
+        }
+        assert!(done);
+        assert_eq!(
+            rounds,
+            total.div_ceil(BUFFER_CHUNK).div_ceil(CHUNKS_IN_FLIGHT)
+        );
     }
 
     #[test]
@@ -1345,9 +1505,11 @@ mod tests {
     fn a_conversation_that_stops_answering_is_asked_again() {
         let mut fetches = BufferFetches::default();
         fetches.want(1, 10, 5);
-        let FetchStep::Request(_) = fetches.on_info(5, 100_000, 1, 48_000.0) else {
-            panic!("a short buffer downloads");
-        };
+        assert_eq!(
+            sent(fetches.on_info(5, 100_000, 1, 48_000.0)).len(),
+            CHUNKS_IN_FLIGHT,
+            "a short buffer downloads, three chunks at a time"
+        );
         // Half the take lands, and then nothing does.
         let FetchStep::Request(_) = fetches.on_data(&range_reply(5, 0, &vec![1.0; BUFFER_CHUNK]))
         else {
@@ -1361,8 +1523,9 @@ mod tests {
         assert_eq!(
             ints(&again[0]),
             vec![5, BUFFER_CHUNK as i32, BUFFER_CHUNK as i32],
-            "and then the chunk it is stuck on is asked for again, from what arrived"
+            "and then the chunks it is stuck on are asked for again, from the first missing"
         );
+        assert_eq!(again.len(), CHUNKS_IN_FLIGHT);
 
         // A span that goes quiet is dropped instead, which is what lets the
         // next frame ask for the span the view is showing *now*.
@@ -1389,9 +1552,7 @@ mod tests {
         let mut fetches = BufferFetches::default();
         fetches.want(1, 11, 6);
         let chunks = STALLED_ASKS + 8; // more chunks than the stall would allow
-        let FetchStep::Request(_) = fetches.on_info(6, BUFFER_CHUNK * chunks, 1, 48_000.0) else {
-            panic!("expected the first chunk");
-        };
+        assert!(!sent(fetches.on_info(6, BUFFER_CHUNK * chunks, 1, 48_000.0)).is_empty());
         for i in 0..STALLED_ASKS + 4 {
             assert!(fetches.tick().is_empty());
             let FetchStep::Request(_) =
@@ -1414,47 +1575,63 @@ mod tests {
         for bufnum in 0..6 {
             fetches.want(1, 100 + bufnum, bufnum);
         }
-        let started: Vec<i32> = (0..6)
-            .filter(|bufnum| {
-                matches!(
-                    fetches.on_info(*bufnum, frames, 1, 48_000.0),
-                    FetchStep::Request(_)
-                )
-            })
+        let mut queue: std::collections::VecDeque<OscMessage> = (0..6)
+            .flat_map(|bufnum| sent(fetches.on_info(bufnum, frames, 1, 48_000.0)))
             .collect();
+        let mut started: Vec<i32> = fetches.fetches.keys().copied().collect();
+        started.sort_unstable();
         assert_eq!(
             started,
             vec![0, 1, 2],
-            "only what the carrier holds is asked"
+            "only what the carrier holds is started"
         );
+        assert_eq!(fetches.in_flight(), CHUNKS_IN_FLIGHT, "and asked for");
         assert!(fetches.pending(), "and the rest are owed, not refused");
 
         // Nothing has finished, so a frame starts nothing new.
         assert!(fetches.tick().is_empty());
 
-        // The first take finishes: the next in line takes its slot.
-        fn finish(fetches: &mut BufferFetches, bufnum: i32) {
-            let mut at = 0;
-            loop {
-                match fetches.on_data(&range_reply(bufnum, at, &vec![0.25; BUFFER_CHUNK])) {
-                    FetchStep::Request(_) => at += BUFFER_CHUNK,
-                    FetchStep::Done { .. } => return,
-                    _ => panic!("the download walks its chunks"),
+        // Every answer and every frame keeps within the carrier, and the takes
+        // that waited start in buffer order as slots free.
+        let mut order = started.clone();
+        let mut finished = Vec::new();
+        let mut frames_left = 10_000;
+        while finished.len() < 6 && frames_left > 0 {
+            if let Some(msg) = queue.pop_front() {
+                let a = ints(&msg);
+                match fetches.on_data(&range_reply(
+                    a[0],
+                    a[1] as usize,
+                    &vec![0.25; a[2] as usize],
+                )) {
+                    FetchStep::Done { bufnum, .. } => finished.push(bufnum),
+                    step => queue.extend(sent(step)),
                 }
+            } else {
+                frames_left -= 1;
+                queue.extend(fetches.tick());
+                let mut new: Vec<i32> = fetches
+                    .fetches
+                    .keys()
+                    .copied()
+                    .filter(|bufnum| !order.contains(bufnum))
+                    .collect();
+                new.sort_unstable();
+                order.extend(new);
             }
-        }
-        for bufnum in 0..3 {
-            finish(&mut fetches, bufnum);
-            let again = fetches.tick();
-            assert_eq!(
-                ints(&again[0])[0],
-                bufnum + 3,
-                "the freed slot goes to the next take, in buffer order"
+            assert!(
+                fetches.in_flight() <= CHUNKS_IN_FLIGHT,
+                "never past the carrier"
             );
+            assert!(fetches.fetches.len() <= MAX_IN_FLIGHT);
         }
-        for bufnum in 3..6 {
-            finish(&mut fetches, bufnum);
-        }
+        assert_eq!(
+            order,
+            vec![0, 1, 2, 3, 4, 5],
+            "the freed slots go in buffer order"
+        );
+        finished.sort_unstable();
+        assert_eq!(finished, vec![0, 1, 2, 3, 4, 5]);
         assert!(!fetches.pending(), "and every take is drawn");
     }
 
@@ -1478,18 +1655,15 @@ mod tests {
             FetchStep::None
         ));
 
-        // The real answer arrives short: half the run, and then a range that
-        // carries nothing, which is a server declining rather than a straggler.
-        let FetchStep::Request(_) = fetches.on_data(&range_reply(7, 1000, &[0.5; 256])) else {
-            panic!("a partial answer asks for the rest");
-        };
+        // The real answer arrives short: half the run, which is the server
+        // clamping the read to what the buffer holds rather than a straggler.
         let FetchStep::Window {
             start_frame,
             samples,
             ..
-        } = fetches.on_data(&range_reply(7, 1256, &[]))
+        } = fetches.on_data(&range_reply(7, 1000, &[0.5; 256]))
         else {
-            panic!("a range that carries nothing ends the read");
+            panic!("a short answer ends the read");
         };
         assert_eq!(start_frame, 1000);
         assert_eq!(

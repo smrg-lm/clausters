@@ -154,9 +154,13 @@ already carry it.
   output.
 
 - ⬜ **A page shows an edit of a short take a second and a half late**
-  *(`clients/gui/PLAN.md`, Found by use)*. The edit lands at once; the
-  window re-downloads the take a chunk per frame. A decision about the page's
-  carrier comes first.
+  *(`clients/gui/PLAN.md`, Found by use)*. Three chunks now travel at once;
+  what is left is the page engine's reply ring, or reading the span under
+  the edit.
+
+- ⬜ **The GUI host's library suite stopped once on a SIGSEGV**
+  *(`clients/gui/PLAN.md`, Found by use)*. Not reproduced; waits for the next
+  failure's output.
 
 - ⬜ **The Open file chooser gives its label too much of the width**
   *(`clients/gui/PLAN.md`, Found by use)*. Small; the room it frees is where a

@@ -191,6 +191,11 @@ pub(crate) trait Front {
     fn apply_fetch_step(&mut self, step: FetchStep) {
         match step {
             FetchStep::Request(msg) => self.to_server(msg),
+            FetchStep::Requests(msgs) => {
+                for msg in msgs {
+                    self.to_server(msg);
+                }
+            }
             FetchStep::Done {
                 bufnum,
                 samples,
