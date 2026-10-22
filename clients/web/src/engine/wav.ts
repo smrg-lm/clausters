@@ -1,5 +1,6 @@
-// Just enough WAV to *frame* a file: where the samples start, how they are
-// laid out, how long they are.
+// Just enough WAV to *frame* a span of a file: the shape the server crate
+// read from its head (`soundShape`, which reads a WAV, an RF64 or a W64), and a
+// canonical header to put in front of a span so the decoder can read it.
 //
 // Deliberately no sample conversion. Reading one goes through the server's own
 // decoder (`read_audio_bytes`) and writing one through its own encoder
@@ -32,56 +33,6 @@ export interface WavShape {
  *  ordinary file. A WAV with a very large metadata chunk before `data` needs
  *  more, and `parseShape` says so rather than guessing. */
 export const HEAD_BYTES = 4096;
-
-/**
- * Reads the shape out of the first bytes of a file. Throws if those bytes do
- * not contain both chunks -- read more and call again.
- */
-export function parseShape(head: Uint8Array): WavShape {
-    const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
-    const tag = (at: number) => String.fromCharCode(...head.subarray(at, at + 4));
-    if (head.byteLength < 12 || tag(0) !== "RIFF" || tag(8) !== "WAVE") {
-        throw new Error("not a RIFF/WAVE file");
-    }
-    let at = 12;
-    let fmt: { channels: number; sampleRate: number; bits: number; float: boolean } | null = null;
-    while (at + 8 <= head.byteLength) {
-        const id = tag(at);
-        const size = view.getUint32(at + 4, true);
-        const body = at + 8;
-        if (id === "fmt " && body + 16 <= head.byteLength) {
-            const code = view.getUint16(body, true);
-            fmt = {
-                channels: view.getUint16(body + 2, true),
-                sampleRate: view.getUint32(body + 4, true),
-                bits: view.getUint16(body + 14, true),
-                // 3 is IEEE float; 0xfffe is extensible, whose real code sits
-                // in the sub-format GUID's first two bytes.
-                float:
-                    code === 3 ||
-                    (code === 0xfffe &&
-                        body + 26 <= head.byteLength &&
-                        view.getUint16(body + 24, true) === 3),
-            };
-        } else if (id === "data") {
-            if (fmt === null) throw new Error("the data chunk came before fmt");
-            const blockAlign = fmt.channels * Math.ceil(fmt.bits / 8);
-            return {
-                channels: fmt.channels,
-                sampleRate: fmt.sampleRate,
-                bitsPerSample: fmt.bits,
-                float: fmt.float,
-                dataOffset: body,
-                dataBytes: size,
-                blockAlign,
-                frames: blockAlign > 0 ? Math.floor(size / blockAlign) : 0,
-            };
-        }
-        // Chunks are word-aligned; an odd size carries a pad byte.
-        at = body + size + (size % 2);
-    }
-    throw new Error(`no data chunk in the first ${head.byteLength} bytes`);
-}
 
 /**
  * A whole small WAV: a canonical header the given shape describes, followed by

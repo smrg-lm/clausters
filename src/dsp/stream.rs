@@ -141,12 +141,16 @@ pub struct TransportDiskIn {
     /// The channels and frames of the list the current epoch reads.
     channels: usize,
     frames: u64,
+    /// In an offline render: wait for a refill and for each frame, as
+    /// scsynth's NRT reads a file, rather than play silence.
+    offline: bool,
 }
 
 impl TransportDiskIn {
-    /// Starts the reader's I/O thread, which accounts its work to `meters`
-    /// as a `disk-in` thread.
-    pub fn open(meters: &Arc<Meters>) -> Self {
+    /// Starts the reader's I/O thread, which accounts its work to the build's
+    /// load table as a `disk-in` thread.
+    pub fn open(ctx: &crate::dsp::registry::BuildCtx) -> Self {
+        let meters = &ctx.meters;
         let (producer, consumer) = RingBuffer::new(RING_SAMPLES);
         let (requests, inbox) = RingBuffer::new(REQUESTS);
         let shared = Arc::new(Shared {
@@ -176,6 +180,7 @@ impl TransportDiskIn {
             popped: 0,
             channels: 1,
             frames: 0,
+            offline: ctx.offline,
         }
     }
 
@@ -197,6 +202,9 @@ impl TransportDiskIn {
         self.pending = Some(frame);
         self.head = None;
         self.thread.unpark();
+        if self.offline {
+            self.collect();
+        }
         true
     }
 
@@ -207,6 +215,12 @@ impl TransportDiskIn {
         let Some(frame) = self.pending else {
             return;
         };
+        if self.offline {
+            let (shared, epoch) = (&self.shared, self.epoch);
+            crate::dsp::disk::wait_for(|| {
+                (shared.ack.load(Ordering::Acquire) >> 48) as u16 == epoch
+            });
+        }
         let ack = self.shared.ack.load(Ordering::Acquire);
         if (ack >> 48) as u16 != self.epoch {
             return;
@@ -257,8 +271,11 @@ impl TransportDiskIn {
             return 0.0;
         }
         let Some(head) = self.head else {
-            self.refill(None, frame);
-            return 0.0;
+            // Offline the refill is waited for and lands at once.
+            if !self.refill(None, frame) || !self.offline {
+                return 0.0;
+            }
+            return self.take(frame, channel, starved);
         };
         if head != frame {
             let ring = (RING_SAMPLES / self.channels) as u64;
@@ -267,9 +284,15 @@ impl TransportDiskIn {
                 // skipped so the list stays where the transport is.
                 self.skip(frame - head);
             } else {
-                self.refill(None, frame);
-                return 0.0;
+                if !self.refill(None, frame) || !self.offline || self.pending.is_some() {
+                    return 0.0;
+                }
+                return self.take(frame, channel, starved);
             }
+        }
+        if self.offline && self.head == Some(frame) && self.consumer.slots() < self.channels {
+            let (consumer, channels) = (&self.consumer, self.channels);
+            crate::dsp::disk::wait_for(|| consumer.slots() >= channels);
         }
         if self.head != Some(frame) || self.consumer.slots() < self.channels {
             *starved += 1;
@@ -331,13 +354,19 @@ impl UGen for TransportDiskIn {
             // holds is not what will play. Silence until the refill lands.
             self.looping = looping;
             let frame = place(0).1.unwrap_or(0);
+            // The shape first: offline the refill lands inside the call.
+            let (channels, previous) = (buf.channels().max(1), (self.channels, self.frames));
+            self.channels = channels;
+            self.frames = frames;
             if self.refill(Some(Arc::clone(buf)), frame) {
                 self.sent = address;
-                self.channels = buf.channels().max(1);
-                self.frames = frames;
+            } else {
+                (self.channels, self.frames) = previous;
             }
-            output.fill(0.0);
-            return;
+            if !self.offline || self.pending.is_some() {
+                output.fill(0.0);
+                return;
+            }
         }
         let channel = (inputs[1][0].max(0.0) as usize).min(self.channels - 1);
         if !rolling {

@@ -28,7 +28,7 @@ use crate::server::engine::{
     BLOCK_SIZE, Cmd, DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES, Engine, EngineHandle, Garbage,
     NodeEventKind, engine_pair_full,
 };
-use crate::server::nrt::{NrtAction, run_job, wav_format, write_wav_sample};
+use crate::server::nrt::{NrtAction, run_job};
 use crate::server::render_log::{self, LogLine};
 
 /// One score entry: the messages of a bundle, executed atomically at `time`
@@ -313,6 +313,7 @@ fn render_logged(
                 cfg.limits,
             );
             t.set_seed(seed);
+            t.offline = true;
             #[cfg(all(
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
@@ -402,31 +403,21 @@ pub fn render_to_vec(
     Ok((out, stats))
 }
 
-/// Renders a score straight to a WAV file. `sample_format` is `int16`,
-/// `int24` or `float`, like `/buffer_write`.
+/// Renders a score straight to a sound file: a WAV, or a W64 or an RF64 by
+/// the path's extension (`dsp::pcm`), which a render longer than WAV's 4 GB
+/// needs. `sample_format` is `int16`, `int24` or `float`, like
+/// `/buffer_write`.
 pub fn render_to_wav(
     score: &OscScore,
     cfg: &RenderConfig,
     path: impl AsRef<Path>,
     sample_format: &str,
 ) -> Result<RenderStats, String> {
-    let path = path.as_ref();
-    let err = |e: hound::Error| format!("{}: {e}", path.display());
-    let (bits, format) = wav_format(sample_format)?;
-    let spec = hound::WavSpec {
-        channels: cfg.channels as u16,
-        sample_rate: cfg.sample_rate as u32,
-        bits_per_sample: bits,
-        sample_format: format,
-    };
-    let mut writer = hound::WavWriter::create(path, spec).map_err(err)?;
-    let stats = render(score, cfg, |chunk| {
-        for &s in chunk {
-            write_wav_sample(&mut writer, format, bits, s).map_err(err)?;
-        }
-        Ok(())
-    })?;
-    writer.finalize().map_err(err)?;
+    let path = path.as_ref().to_string_lossy().into_owned();
+    let mut writer =
+        crate::dsp::pcm::Writer::create(&path, cfg.channels, cfg.sample_rate, sample_format)?;
+    let stats = render(score, cfg, |chunk| writer.write(chunk))?;
+    writer.finalize()?;
     Ok(stats)
 }
 

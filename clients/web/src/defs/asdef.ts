@@ -39,7 +39,7 @@ export type Expr = Ugen | ChannelList | Signal | Box;
  * records without sounding.
  */
 const SINK_KINDS = new Set([
-    "Out", "ReplaceOut", "OutCtl", "LocalOut", "DiskOut",
+    "Out", "ReplaceOut", "OutCtl", "LocalOut", "DiskOut", "PeaksOut",
     "SendTrig", "SendReply", "Poll",
 ]);
 

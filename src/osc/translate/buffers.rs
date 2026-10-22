@@ -134,7 +134,7 @@ pub fn parse_buffer_msg(
                 },
             )
         }
-        // WAV only in v1.
+        // A WAV, or a W64 or an RF64 by the header argument or the path.
         "/buffer_write" => {
             let (index, path) = match args {
                 [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
@@ -147,13 +147,12 @@ pub fn parse_buffer_msg(
             };
             let mut tail = Args::after(args, 2);
             let header = tail.opt_str()?.unwrap_or("wav");
-            if !header.eq_ignore_ascii_case("wav") && !header.eq_ignore_ascii_case("wave") {
-                return Err(format!("unsupported header format {header:?}"));
-            }
+            let container = crate::dsp::pcm::Container::for_header(header, &path)?;
             let buffer = allocated(mirror, index)?;
             (
                 index,
                 NrtJob::Write {
+                    container,
                     path,
                     sample_format: tail.opt_str()?.unwrap_or("int16").to_string(),
                     num_frames: tail.opt_int()?.unwrap_or(-1) as i64,

@@ -48,6 +48,14 @@ pub mod disk;
 #[cfg(all(feature = "synth", target_arch = "wasm32"))]
 #[path = "disk_web.rs"]
 pub mod disk;
+// The peaks file of a signal, written beside a `DiskOut`'s samples.
+#[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
+pub mod peaks_out;
+/// In a page the peaks writer is the host-drained one beside `DiskOut`'s.
+#[cfg(all(feature = "synth", target_arch = "wasm32"))]
+pub mod peaks_out {
+    pub use super::disk::PeaksOut;
+}
 // A segment list with file parts, streamed by a reader that follows the
 // transport -- `DiskIn`'s thread and ring, positioned.
 #[cfg(feature = "synth")]

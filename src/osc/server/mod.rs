@@ -599,6 +599,9 @@ impl OscServer {
     /// See `server::nrtsession`, the one caller.
     pub fn enable_offline_renders(&mut self) {
         self.offline.get_or_insert_with(Vec::new);
+        // The driver owns the clock, so nothing here plays against one: the
+        // streams wait for their threads (`BuildCtx::offline`).
+        self.translator.offline = true;
     }
 
     /// The oldest queued render, for the driver to perform. The driver must

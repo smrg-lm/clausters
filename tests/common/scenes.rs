@@ -150,6 +150,7 @@ pub fn write_playbuf_source(path: &Path) {
     let buffer = Arc::new(Buffer::new(data, 1, frames, SOURCE_RATE));
     run_job(NrtJob::Write {
         path: path.to_str().expect("utf-8 path").into(),
+        container: clausters::dsp::pcm::Container::Wav,
         sample_format: "float".into(),
         buf_start: 0,
         num_frames: -1,

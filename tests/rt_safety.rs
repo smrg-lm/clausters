@@ -2385,3 +2385,58 @@ fn a_list_streamed_from_disk_does_not_allocate_on_the_audio_thread() {
     handle.collect_garbage();
     std::fs::remove_file(&path).ok();
 }
+
+/// **A peaks file is summarized without allocating on the audio thread**:
+/// the buckets are folded in place and pushed into a fixed ring, and the file
+/// is written by the writer once the synth is freed -- off the audio thread.
+#[test]
+fn a_peaks_file_is_summarized_without_allocating() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let path =
+        std::env::temp_dir().join(format!("clausters_rt_peaks_{}.peaks", std::process::id()));
+    let spec: SynthDefSpec = serde_json::from_str(&format!(
+        r#"{{"name": "peaks", "ugens": [
+            {{"kind": "Sine", "inputs": [{{"const": 220.0}}]}},
+            {{"kind": "Sine", "inputs": [{{"const": 330.0}}]}},
+            {{"kind": "PeaksOut", "inputs": [{{"ugen": 0}}, {{"ugen": 1}}], "path": {:?}}}
+        ]}}"#,
+        path.to_str().unwrap()
+    ))
+    .unwrap();
+    let synth = Box::new(UGenSynth::metered(
+        Arc::new(compile(spec).unwrap()),
+        48_000.0,
+        SEED_STRIDE,
+        Arc::clone(handle.meters()),
+    ));
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth,
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..500 {
+            engine.process_block(&mut out);
+        }
+    });
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..10 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+    let kept = clausters::clausters_core::peaks::MultiPyramid::read_cache(&path)
+        .unwrap()
+        .expect("the file was written when the synth was freed");
+    assert_eq!((kept.num_channels(), kept.frames()), (2, 500 * BLOCK_SIZE));
+    std::fs::remove_file(&path).ok();
+}

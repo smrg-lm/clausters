@@ -185,9 +185,12 @@ def disk_in(chan=0.0, *, path, loop=False, start=0) -> Ugen:
 
 
 def disk_out(signal, *, path, format="int16") -> Ugen:
-    """Streams ``signal`` to a mono WAV at ``path`` (``format`` is ``"int16"``,
-    ``"int24"`` or ``"float"``) and passes ``signal`` through as its output.
-    Record stereo with two `disk_out`\\ s.
+    """Streams ``signal`` to a mono sound file at ``path`` (``format`` is
+    ``"int16"``, ``"int24"`` or ``"float"``) and passes ``signal`` through as
+    its output: a WAV, or a W64 or an RF64 when the path ends in ``.w64`` or
+    ``.rf64`` -- the two containers that hold a take past WAV's 4 GB. Record
+    stereo with two `disk_out`\\ s; `peaks_out` beside it writes the take's
+    peaks file.
 
     ``path`` and ``format`` are **static** fields and are keyword-only, so the
     one positional parameter is the one input the wire has.
@@ -197,6 +200,27 @@ def disk_out(signal, *, path, format="int16") -> Ugen:
     and hear the same take, route it yourself -- ``out(0, disk_out(sig,
     path=path))``, which is what the pass-through output is for."""
     return Ugen("DiskOut", [signal], static={"path": str(path), "format": str(format)})
+
+
+def peaks_out(signal, *signals, path) -> Ugen:
+    """Writes the **peaks file** of ``signals`` at ``path``: the overview a
+    waveform of the take is drawn from -- the minimum, the maximum and the mean
+    square of every 256 frames, per channel, and each coarser level -- in the
+    CLPK format the GUI host maps. One channel per signal, so a stereo take is
+    ``peaks_out([left, right], path=p)``. Passes its first signal through.
+
+    It goes beside a `disk_out` on the same signals, as two separate UGens
+    that write two separate files; a file recorded without one is measured by
+    rendering ``disk_in`` into this alone. The file is written when the synth
+    is freed. A writer that fell behind writes no file rather than one that
+    draws what is not there.
+
+    ``path`` is a **static** field and keyword-only. Like `disk_out` it
+    delivers out of the graph, so it is a valid def root on its own."""
+    # One list of channels, as the page's client takes them, or the channels
+    # one by one.
+    channels = list(signal) if isinstance(signal, (list, tuple)) else [signal]
+    return Ugen("PeaksOut", channels + list(signals), static={"path": str(path)})
 
 
 def local_in(channel=0.0) -> Ugen:

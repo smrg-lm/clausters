@@ -148,6 +148,12 @@ pub struct BuildCtx {
     /// of the server does. A table nobody reads unless
     /// [`BuildCtx::metered`] is handed the server's.
     pub meters: Arc<Meters>,
+    /// **Whether this synth plays in an offline render**, where nothing waits
+    /// on the clock: the UGens that own an I/O thread then wait for it rather
+    /// than playing silence or dropping samples -- a `DiskIn` for its frames,
+    /// a `DiskOut` for room -- which is scsynth's NRT reading. A render runs
+    /// as fast as it can, so without this a stream would lose every race.
+    pub offline: bool,
 }
 
 impl BuildCtx {
@@ -172,6 +178,7 @@ impl BuildCtx {
             block_size,
             seed: Cell::new(seed),
             meters,
+            offline: false,
         }
     }
 

@@ -16,7 +16,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         true,
-        |c, ctx| Box::new(DiskIn::open(c, &ctx.meters)),
+        |c, ctx| Box::new(DiskIn::open(c, ctx)),
     ),
     desc(
         "DiskOut",
@@ -27,7 +27,20 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         true,
-        |c, ctx| Box::new(DiskOut::open(c, &ctx.meters)),
+        |c, ctx| Box::new(DiskOut::open(c, ctx)),
+    ),
+    // --- the peaks file of its inputs, beside a DiskOut's samples ---
+    desc(
+        "PeaksOut",
+        Variadic,
+        // The first channel is the head: it is also what passes through.
+        &[inp("signal", 0.0)],
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        true,
+        |c, ctx| Box::new(crate::dsp::peaks_out::PeaksOut::open(c, ctx)),
     ),
     // --- a segment list streamed from disk, following the transport ---
     desc(
@@ -45,7 +58,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(crate::dsp::stream::TransportDiskIn::open(&ctx.meters)),
+        |_, ctx| Box::new(crate::dsp::stream::TransportDiskIn::open(ctx)),
     ),
     // --- synth-private feedback (synth-coordinated execution) ---
     desc(

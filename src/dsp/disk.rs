@@ -38,10 +38,9 @@ use std::time::Duration;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
-use crate::dsp::registry::UGenConfig;
+use crate::dsp::registry::{BuildCtx, UGenConfig};
 use crate::dsp::{ProcessCtx, UGen, at};
 use crate::server::meters::{Meters, Role, Stamp, stamp};
-use crate::server::nrt::{wav_format, write_wav_sample};
 
 /// Ring capacity in samples (~1.4 s of mono audio at 48 kHz; less per channel
 /// for multichannel reads). Absorbs disk/scheduler jitter.
@@ -101,6 +100,37 @@ impl Turn {
 impl Drop for Turn {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+/// **Waits for `ready`**, for a stream an offline render plays: nothing waits
+/// on the clock there, so a `DiskIn` waits for its frames and a `DiskOut` for
+/// room rather than losing the race. Gives up after ten seconds of nothing --
+/// a thread that died -- and says so by answering `false`.
+pub(crate) fn wait_for(mut ready: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut spins = 0u32;
+    while !ready() {
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        spins += 1;
+        if spins < 64 {
+            std::thread::yield_now();
+        } else {
+            std::thread::sleep(Duration::from_micros(50));
+        }
+    }
+    true
+}
+
+/// Sets its flag when dropped: how a reader thread says it has returned,
+/// whichever way it left.
+struct Ended(Arc<AtomicBool>);
+
+impl Drop for Ended {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
     }
 }
 
@@ -179,36 +209,64 @@ struct DiskInActive {
     channels: usize,
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
+    /// The reader thread has returned: nothing more will arrive.
+    ended: Arc<AtomicBool>,
+    /// In an offline render: wait for each frame rather than play silence.
+    offline: bool,
 }
 
 impl DiskIn {
-    /// Opens the file and starts its reader, which accounts its work to
-    /// `meters`.
-    pub fn open(config: &UGenConfig, meters: &Arc<Meters>) -> Self {
+    /// Opens the file and starts its reader, which accounts its work to the
+    /// build's load table.
+    pub fn open(config: &UGenConfig, ctx: &BuildCtx) -> Self {
+        let meters = &ctx.meters;
         let Some(path) = config.path.clone() else {
             tracing::warn!("DiskIn has no path; it will be silent");
             return Self { active: None };
         };
-        let opened = match open_file(&path) {
-            Ok(o) => o,
-            Err(e) => {
-                tracing::warn!("DiskIn: {e}; it will be silent");
-                return Self { active: None };
-            }
+        // **A W64 or an RF64 is read by arithmetic** (`dsp::pcm`): symphonia
+        // reads neither, and a take past WAV's 4 GB is one of the two.
+        let long = crate::dsp::pcm::Layout::open(&path)
+            .ok()
+            .filter(|l| l.container != crate::dsp::pcm::Container::Wav);
+        let opened = match long {
+            Some(layout) => Opened::Pcm(layout),
+            None => match open_file(&path) {
+                Ok(o) => Opened::Decoded(o),
+                Err(e) => {
+                    tracing::warn!("DiskIn: {e}; it will be silent");
+                    return Self { active: None };
+                }
+            },
         };
-        let channels = opened.channels;
+        let channels = match &opened {
+            Opened::Pcm(layout) => layout.channels,
+            Opened::Decoded(o) => o.channels,
+        };
         // The ring holds whole interleaved frames; round capacity down.
         let cap = (RING_SAMPLES / channels).max(1) * channels;
         let (producer, consumer) = RingBuffer::new(cap);
         let stop = Arc::new(AtomicBool::new(false));
+        let ended = Arc::new(AtomicBool::new(false));
         let looping = config.looping;
         let start = config.start;
         let handle = {
             let stop = Arc::clone(&stop);
+            let done = Ended(Arc::clone(&ended));
             let turn = Turn::new(Arc::clone(meters), Role::DiskIn);
             std::thread::Builder::new()
                 .name("diskin".into())
-                .spawn(move || reader_thread(path, opened, looping, start, producer, stop, turn))
+                .spawn(move || {
+                    let _done = done;
+                    match opened {
+                        Opened::Pcm(layout) => {
+                            pcm_reader_thread(layout, looping, start, producer, stop, turn)
+                        }
+                        Opened::Decoded(o) => {
+                            reader_thread(path, o, looping, start, producer, stop, turn)
+                        }
+                    }
+                })
                 .expect("failed to spawn the DiskIn thread")
         };
         Self {
@@ -217,6 +275,8 @@ impl DiskIn {
                 channels,
                 stop,
                 handle: Some(handle),
+                ended,
+                offline: ctx.offline,
             }),
         }
     }
@@ -236,6 +296,12 @@ impl UGen for DiskIn {
         let channel = (inputs[0][0].max(0.0) as usize).min(a.channels - 1);
         let chans = a.channels;
         for s in output.iter_mut() {
+            if a.offline && a.consumer.slots() < chans {
+                // Offline the frame is waited for, as scsynth's NRT reads it:
+                // until it is there or the reader has nothing more.
+                let (consumer, ended) = (&a.consumer, &a.ended);
+                wait_for(|| consumer.slots() >= chans || ended.load(Ordering::Acquire));
+            }
             // Only consume a full frame; otherwise the ring stays frame-aligned
             // and we emit silence for this sample (underrun).
             if a.consumer.slots() >= chans {
@@ -260,6 +326,56 @@ impl Drop for DiskIn {
             a.stop.store(true, Ordering::Release);
             if let Some(h) = a.handle.take() {
                 let _ = h.join();
+            }
+        }
+    }
+}
+
+/// What a `DiskIn` reads: a PCM file by arithmetic, or anything through the
+/// decoder.
+enum Opened {
+    Pcm(crate::dsp::pcm::Layout),
+    Decoded(OpenFile),
+}
+
+/// [`reader_thread`] for a PCM file read by arithmetic: the start is a seek
+/// rather than a decode up to it, and a loop goes back to frame 0.
+fn pcm_reader_thread(
+    layout: crate::dsp::pcm::Layout,
+    looping: bool,
+    start: u64,
+    mut producer: Producer<f32>,
+    stop: Arc<AtomicBool>,
+    mut turn: Turn,
+) {
+    let mut reader = match crate::dsp::pcm::Reader::open(&layout) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("DiskIn: {e}; it will be silent");
+            return;
+        }
+    };
+    let channels = layout.channels;
+    let mut frame = start;
+    let mut span = Vec::new();
+    loop {
+        if stop.load(Ordering::Acquire) {
+            return;
+        }
+        let room = producer.slots() / channels;
+        if room < 1024 {
+            turn.park();
+            continue;
+        }
+        turn.worked();
+        match reader.read(frame, room.min(4096), &mut span) {
+            Ok(0) if looping && layout.frames > 0 => frame = 0,
+            Ok(0) | Err(_) => return,
+            Ok(n) => {
+                if let Ok(chunk) = producer.write_chunk_uninit(span.len()) {
+                    chunk.fill_from_iter(span.iter().copied());
+                }
+                frame += n as u64;
             }
         }
     }
@@ -363,17 +479,20 @@ struct DiskOutActive {
     handle: Option<JoinHandle<()>>,
     /// Set once we have published the server sample rate to the writer thread.
     rate_published: bool,
+    /// In an offline render: wait for room rather than drop a sample.
+    offline: bool,
 }
 
 impl DiskOut {
-    /// Starts the writer, which accounts its work to `meters`.
-    pub fn open(config: &UGenConfig, meters: &Arc<Meters>) -> Self {
+    /// Starts the writer, which accounts its work to the build's load table.
+    pub fn open(config: &UGenConfig, ctx: &BuildCtx) -> Self {
+        let meters = &ctx.meters;
         let Some(path) = config.path.clone() else {
             tracing::warn!("DiskOut has no path; it will discard its input");
             return Self { active: None };
         };
         let format = config.format.clone().unwrap_or_else(|| "int16".into());
-        if let Err(e) = wav_format(&format) {
+        if let Err(e) = crate::dsp::pcm::Encoding::named(&format) {
             tracing::warn!("DiskOut: {e}; it will discard its input");
             return Self { active: None };
         }
@@ -396,6 +515,7 @@ impl DiskOut {
                 stop,
                 handle: Some(handle),
                 rate_published: false,
+                offline: ctx.offline,
             }),
         }
     }
@@ -424,6 +544,11 @@ impl UGen for DiskOut {
             a.rate_published = true;
         }
         for s in output.iter() {
+            if a.offline && a.producer.is_full() {
+                // Offline the writer is waited for; nothing is dropped.
+                let producer = &a.producer;
+                wait_for(|| !producer.is_full());
+            }
             // Drop on overrun (writer behind): a fixed ring never blocks here.
             let _ = a.producer.push(*s);
         }
@@ -464,27 +589,27 @@ fn writer_thread(
         turn.park();
     };
 
-    let (bits, sample_format) = match wav_format(&format) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: rate,
-        bits_per_sample: bits,
-        sample_format,
-    };
-    // Creating the file, writing into it and finalizing it are the work.
+    // Creating the file, writing into it and finalizing it are the work. The
+    // container is the path's: a WAV, or a W64 or an RF64 for a take past
+    // WAV's 4 GB (`dsp::pcm`).
     turn.worked();
-    let mut writer = match hound::WavWriter::create(&path, spec) {
+    let mut writer = match crate::dsp::pcm::Writer::create(&path, 1, f64::from(rate), &format) {
         Ok(w) => w,
         Err(e) => {
-            tracing::warn!("DiskOut: {path}: {e}");
+            tracing::warn!("DiskOut: {e}");
             return;
         }
     };
-    let write_one = |writer: &mut hound::WavWriter<std::io::BufWriter<std::fs::File>>, s: f32| {
-        write_wav_sample(writer, sample_format, bits, s).is_ok()
+    let mut run: Vec<f32> = Vec::with_capacity(4096);
+    let mut write_one = |writer: &mut crate::dsp::pcm::Writer, s: f32| {
+        run.push(s);
+        if run.len() == run.capacity() {
+            let ok = writer.write(&run).is_ok();
+            run.clear();
+            ok
+        } else {
+            true
+        }
     };
 
     loop {
@@ -511,7 +636,8 @@ fn writer_thread(
         }
     }
     turn.worked();
-    if let Err(e) = writer.finalize() {
-        tracing::warn!("DiskOut: {path}: {e}");
+    let tail = std::mem::take(&mut run);
+    if let Err(e) = writer.write(&tail).and_then(|()| writer.finalize()) {
+        tracing::warn!("DiskOut: {e}");
     }
 }

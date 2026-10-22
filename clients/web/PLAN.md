@@ -5058,3 +5058,15 @@ sound.
   *Fixed 2026-10-22:* no write in a tab makes a directory, as under node;
   the pages that write make `out/` with `opfs.makeDirectory` where their
   scripts make it.
+
+- ⬜ **A recording or a write in a tab is held whole and rewritten at every
+  flush, so a take of hours does not fit** *(found 2026-10-22, closing the
+  root plan's `S22`)*. The worker keeps a `DiskOut`'s whole body in memory
+  and writes the file again from its first byte at each flush, so that it is
+  valid at every moment, and a `/buffer_write` gathers its runs the same way
+  before it writes. The W64 and RF64 headers are the server crate's and are
+  right at any length, but the memory and the rewrite grow with the take: an
+  hour of stereo floats is 1.4 GB held and rewritten, and the 4 GB the
+  containers exist for is out of reach. What it takes: an OPFS sync handle
+  that writes at an offset -- the body appended where it ends and the header
+  written again at the start -- so the worker holds a run and not the take.

@@ -56,10 +56,12 @@ pub enum NrtJob {
         /// `/buffer_readChannel`'s selection; empty is every channel.
         channels: Vec<usize>,
     },
-    /// `/buffer_write`: WAV out; `sample_format` is `int16`, `int24` or `float`.
+    /// `/buffer_write`: a sound file out, in `container` (a WAV, or a W64 or an
+    /// RF64 past WAV's 4 GB); `sample_format` is `int16`, `int24` or `float`.
     /// `num_frames <= 0` writes from `buf_start` to the end.
     Write {
         path: String,
+        container: crate::dsp::pcm::Container,
         sample_format: String,
         buf_start: usize,
         num_frames: i64,
@@ -526,6 +528,8 @@ pub enum DelegatedKind {
     /// reason a staged load exists: the thread handing it over owes a block.
     Write {
         path: String,
+        /// The header around the samples: a WAV, a W64 or an RF64.
+        container: crate::dsp::pcm::Container,
         /// `int16`, `int24` or `float`, as the command spelled it.
         sample_format: String,
         channels: usize,
@@ -562,6 +566,7 @@ fn delegated_kind(job: &NrtJob) -> Option<DelegatedKind> {
         }),
         NrtJob::Write {
             path,
+            container,
             sample_format,
             buf_start,
             num_frames,
@@ -573,6 +578,7 @@ fn delegated_kind(job: &NrtJob) -> Option<DelegatedKind> {
             let (_, frames) = write_span(buffer, *buf_start, *num_frames);
             Some(DelegatedKind::Write {
                 path: path.clone(),
+                container: *container,
                 sample_format: sample_format.clone(),
                 channels: buffer.channels(),
                 sample_rate: buffer.sample_rate(),
@@ -936,12 +942,20 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
         }
         NrtJob::Write {
             path,
+            container,
             sample_format,
             buf_start,
             num_frames,
             buffer,
         } => {
-            write_wav(&path, &sample_format, buf_start, num_frames, &buffer)?;
+            write_wav(
+                &path,
+                container,
+                &sample_format,
+                buf_start,
+                num_frames,
+                &buffer,
+            )?;
             Ok(NrtAction::None)
         }
         NrtJob::Gen { current, cmd } => Ok(NrtAction::Install(Arc::new(cmd.apply(&current)))),
@@ -1130,11 +1144,85 @@ pub fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buff
         .extension()
         .and_then(|e| e.to_str())
         .is_some_and(is_wav_ext);
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    if is_long_ext(ext) {
+        let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+        return read_pcm(&mut file, path, file_start, num_frames);
+    }
     if is_wav {
-        read_wav(path, file_start, num_frames)
+        // An RF64 is a WAV past 4 GB and is often named like one.
+        read_wav(path, file_start, num_frames).or_else(|e| {
+            let mut file = std::fs::File::open(path).map_err(|_| e.clone())?;
+            read_pcm(&mut file, path, file_start, num_frames).map_err(|_| e)
+        })
     } else {
         read_symphonia(path, file_start, num_frames)
     }
+}
+
+/// Whether `ext` names one of the two containers past WAV's 4 GB, which only
+/// `dsp::pcm` reads.
+fn is_long_ext(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("w64") || ext.eq_ignore_ascii_case("rf64")
+}
+
+/// A span of a PCM file in any container (`dsp::pcm`), decoded whole.
+fn read_pcm<R: std::io::Read + std::io::Seek>(
+    source: &mut R,
+    label: &str,
+    file_start: usize,
+    num_frames: i64,
+) -> Result<Buffer, String> {
+    let layout = crate::dsp::pcm::Layout::parse(source, label)?;
+    let total = layout.frames as usize;
+    let start = file_start.min(total);
+    let frames = if num_frames <= 0 {
+        total - start
+    } else {
+        (num_frames as usize).min(total - start)
+    };
+    let (mut bytes, mut data) = (Vec::new(), Vec::new());
+    crate::dsp::pcm::read_frames(source, &layout, start as u64, frames, &mut bytes, &mut data)
+        .map_err(|e| format!("{label}: {e}"))?;
+    Ok(Buffer::new(
+        data,
+        layout.channels,
+        frames,
+        layout.sample_rate,
+    ))
+}
+
+/// [`SoundInfo`] for a PCM file in any container.
+fn pcm_info<R: std::io::Read + std::io::Seek>(
+    source: &mut R,
+    label: &str,
+) -> Result<SoundInfo, String> {
+    use crate::dsp::pcm::{Container, Encoding};
+    let layout = crate::dsp::pcm::Layout::parse(source, label)?;
+    Ok(SoundInfo {
+        frames: layout.frames,
+        channels: layout.channels,
+        sample_rate: layout.sample_rate,
+        codec: match layout.container {
+            Container::Wav => "wav",
+            Container::W64 => "w64",
+            Container::Rf64 => "rf64",
+        }
+        .into(),
+        sample_format: Some(
+            match layout.encoding {
+                Encoding::U8 => "int8",
+                Encoding::I16 => "int16",
+                Encoding::I24 => "int24",
+                Encoding::I32 => "int32",
+                Encoding::F32 | Encoding::F64 => "float",
+            }
+            .into(),
+        ),
+    })
 }
 
 /// [`read_audio`]'s answer over **bytes already in memory** rather than a path.
@@ -1156,10 +1244,26 @@ pub fn read_audio_bytes(
     file_start: usize,
     num_frames: i64,
 ) -> Result<Buffer, String> {
+    if is_long_ext(ext) {
+        return read_pcm(
+            &mut std::io::Cursor::new(bytes),
+            label,
+            file_start,
+            num_frames,
+        );
+    }
     if ext.eq_ignore_ascii_case("wav") || ext.eq_ignore_ascii_case("wave") {
-        let reader = hound::WavReader::new(std::io::Cursor::new(bytes))
-            .map_err(|e| format!("{label}: {e}"))?;
-        return read_wav_reader(reader, label, file_start, num_frames);
+        return match hound::WavReader::new(std::io::Cursor::new(&bytes)) {
+            Ok(reader) => read_wav_reader(reader, label, file_start, num_frames),
+            // An RF64 is a WAV past 4 GB and is often named like one.
+            Err(e) => read_pcm(
+                &mut std::io::Cursor::new(&bytes),
+                label,
+                file_start,
+                num_frames,
+            )
+            .map_err(|_| format!("{label}: {e}")),
+        };
     }
     let stream = symphonia::core::io::MediaSourceStream::new(
         Box::new(std::io::Cursor::new(bytes)),
@@ -1194,9 +1298,18 @@ pub fn probe_audio(path: &str) -> Result<SoundInfo, String> {
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
+    if is_long_ext(ext) {
+        let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+        return pcm_info(&mut file, path);
+    }
     if is_wav_ext(ext) {
-        let reader = hound::WavReader::open(path).map_err(|e| format!("{path}: {e}"))?;
-        return Ok(wav_info(&reader));
+        return match hound::WavReader::open(path) {
+            Ok(reader) => Ok(wav_info(&reader)),
+            Err(e) => std::fs::File::open(path)
+                .map_err(|e| e.to_string())
+                .and_then(|mut f| pcm_info(&mut f, path))
+                .map_err(|_| format!("{path}: {e}")),
+        };
     }
     let file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
     let stream = symphonia::core::io::MediaSourceStream::new(Box::new(file), Default::default());
@@ -1207,10 +1320,15 @@ pub fn probe_audio(path: &str) -> Result<SoundInfo, String> {
 /// [`read_audio`]: a page reads the file through its own storage and hands the
 /// bytes here.
 pub fn probe_audio_bytes(bytes: Vec<u8>, ext: &str, label: &str) -> Result<SoundInfo, String> {
+    if is_long_ext(ext) {
+        return pcm_info(&mut std::io::Cursor::new(bytes), label);
+    }
     if is_wav_ext(ext) {
-        let reader = hound::WavReader::new(std::io::Cursor::new(bytes))
-            .map_err(|e| format!("{label}: {e}"))?;
-        return Ok(wav_info(&reader));
+        return match hound::WavReader::new(std::io::Cursor::new(&bytes)) {
+            Ok(reader) => Ok(wav_info(&reader)),
+            Err(e) => pcm_info(&mut std::io::Cursor::new(&bytes), label)
+                .map_err(|_| format!("{label}: {e}")),
+        };
     }
     let stream = symphonia::core::io::MediaSourceStream::new(
         Box::new(std::io::Cursor::new(bytes.clone())),
@@ -1465,87 +1583,79 @@ fn read_wav_reader<R: std::io::Read + std::io::Seek>(
 /// what a *streaming* writer needs: the header cannot be written correctly
 /// until the length is known, so it is written twice -- once as a placeholder,
 /// once at the end. `sample_format` is the scsynth name (`int16` | `int24` |
-/// `float`).
+/// `float`). [`sound_header`] is the same for a file in any container.
 pub fn wav_header(
     channels: u16,
     sample_rate: u32,
     sample_format: &str,
     data_bytes: u32,
 ) -> Result<Vec<u8>, String> {
-    let (bits, format) = wav_format(sample_format)?;
-    let block_align = channels * bits.div_ceil(8);
-    let byte_rate = sample_rate * u32::from(block_align);
-    let tag: u16 = match format {
-        hound::SampleFormat::Float => 3,
-        hound::SampleFormat::Int => 1,
-    };
-    let mut out = Vec::with_capacity(44);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_bytes).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&tag.to_le_bytes());
-    out.extend_from_slice(&channels.to_le_bytes());
-    out.extend_from_slice(&sample_rate.to_le_bytes());
-    out.extend_from_slice(&byte_rate.to_le_bytes());
-    out.extend_from_slice(&block_align.to_le_bytes());
-    out.extend_from_slice(&bits.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data_bytes.to_le_bytes());
-    Ok(out)
+    crate::dsp::pcm::header(
+        crate::dsp::pcm::Container::Wav,
+        usize::from(channels),
+        f64::from(sample_rate),
+        crate::dsp::pcm::Encoding::named(sample_format)?,
+        u64::from(data_bytes),
+    )
 }
 
-/// Encodes interleaved `f32` samples into WAV sample bytes -- the body a
-/// [`wav_header`] describes, and nothing else.
+/// **The header of the file at `path`**, in the container its extension
+/// names (`.w64`, `.rf64`, a WAV otherwise; `dsp::pcm`), for `data_bytes`
+/// of samples: what a writer in pieces lays down first and rewrites at the
+/// close, a WAV of up to 4 GB or a W64 or RF64 of any length.
+pub fn sound_header(
+    path: &str,
+    channels: usize,
+    sample_rate: f64,
+    sample_format: &str,
+    data_bytes: u64,
+) -> Result<Vec<u8>, String> {
+    sound_header_in(
+        crate::dsp::pcm::Container::for_path(path),
+        channels,
+        sample_rate,
+        sample_format,
+        data_bytes,
+    )
+}
+
+/// [`sound_header`] in a container a caller names -- a `/buffer_write`'s
+/// header argument -- rather than the path's.
+pub fn sound_header_in(
+    container: crate::dsp::pcm::Container,
+    channels: usize,
+    sample_rate: f64,
+    sample_format: &str,
+    data_bytes: u64,
+) -> Result<Vec<u8>, String> {
+    crate::dsp::pcm::header(
+        container,
+        channels,
+        sample_rate,
+        crate::dsp::pcm::Encoding::named(sample_format)?,
+        data_bytes,
+    )
+}
+
+/// Encodes interleaved `f32` samples into sample bytes -- the body a
+/// [`wav_header`] or a [`sound_header`] describes, and nothing else.
 ///
 /// A caller streaming a recording out in pieces (a page writing to its own
 /// storage) gets the same integers a native `DiskOut` writes: both quantize
 /// through [`quantize`].
 pub fn encode_wav_frames(samples: &[f32], sample_format: &str) -> Result<Vec<u8>, String> {
-    let (bits, format) = wav_format(sample_format)?;
-    let mut out = Vec::with_capacity(samples.len() * usize::from(bits.div_ceil(8)));
-    match (format, bits) {
-        (hound::SampleFormat::Float, 32) => {
-            for s in samples {
-                out.extend_from_slice(&s.to_le_bytes());
-            }
-        }
-        (hound::SampleFormat::Int, 16 | 24) => {
-            let width = usize::from(bits / 8);
-            for &s in samples {
-                out.extend_from_slice(&quantize(s, bits).to_le_bytes()[..width]);
-            }
-        }
-        (f, b) => return Err(format!("unsupported format {f:?}/{b}-bit")),
-    }
+    let mut out = Vec::new();
+    crate::dsp::pcm::encode(
+        samples,
+        crate::dsp::pcm::Encoding::named(sample_format)?,
+        &mut out,
+    );
     Ok(out)
 }
 
-/// The integer a `bits`-bit WAV stores for the sample `s`: clamped to
-/// `[-1, 1]`, scaled to the positive full scale and rounded. Every WAV writer
-/// quantizes through it, so a file and a page's piece of one hold the same
-/// bytes for the same samples.
-pub fn quantize(s: f32, bits: u16) -> i32 {
-    let scale = ((1u64 << (bits - 1)) - 1) as f32;
-    (s.clamp(-1.0, 1.0) * scale).round() as i32
-}
-
-/// Writes one sample to a WAV `writer` whose spec is `format`/`bits` -- the
-/// float as is, an integer through [`quantize`].
-pub fn write_wav_sample<W: std::io::Write + std::io::Seek>(
-    writer: &mut hound::WavWriter<W>,
-    format: hound::SampleFormat,
-    bits: u16,
-    s: f32,
-) -> Result<(), hound::Error> {
-    match format {
-        hound::SampleFormat::Float => writer.write_sample(s),
-        hound::SampleFormat::Int => writer.write_sample(quantize(s, bits)),
-    }
-}
+pub use crate::dsp::pcm::quantize;
 
 /// Maps a scsynth-style sample-format name to a hound WAV spec fragment.
-/// Shared with the offline renderer (`server::render`).
 pub fn wav_format(sample_format: &str) -> Result<(u16, hound::SampleFormat), String> {
     match sample_format {
         "int16" => Ok((16, hound::SampleFormat::Int)),
@@ -1595,37 +1705,45 @@ pub fn write_audio(
         ));
     }
     let body = encode_wav_frames(&samples, sample_format)?;
-    let data_bytes = u32::try_from(body.len())
-        .map_err(|_| format!("{path}: {} bytes do not fit a WAV file", body.len()))?;
-    let channels = u16::try_from(channels)
-        .map_err(|_| format!("{path}: {channels} channels do not fit a WAV file"))?;
-    let mut bytes = wav_header(channels, sample_rate as u32, sample_format, data_bytes)?;
+    let mut bytes = sound_header(
+        path,
+        channels,
+        sample_rate,
+        sample_format,
+        body.len() as u64,
+    )
+    .map_err(|e| format!("{path}: {e}"))?;
     bytes.extend_from_slice(&body);
     std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))
 }
 
 fn write_wav(
     path: &str,
+    container: crate::dsp::pcm::Container,
     sample_format: &str,
     buf_start: usize,
     num_frames: i64,
     buffer: &Buffer,
 ) -> Result<(), String> {
-    let err = |e: hound::Error| format!("{path}: {e}");
-    let (bits, format) = wav_format(sample_format)?;
-    let spec = hound::WavSpec {
-        channels: buffer.channels() as u16,
-        sample_rate: buffer.sample_rate() as u32,
-        bits_per_sample: bits,
-        sample_format: format,
-    };
     let (start, frames) = write_span(buffer, buf_start, num_frames);
-    let held = buffer.to_vec();
-    let samples = &held[start * buffer.channels()..(start + frames) * buffer.channels()];
-
-    let mut writer = hound::WavWriter::create(path, spec).map_err(err)?;
-    for &s in samples {
-        write_wav_sample(&mut writer, format, bits, s).map_err(err)?;
+    let channels = buffer.channels();
+    let mut writer = crate::dsp::pcm::Writer::create_in(
+        path,
+        container,
+        channels,
+        buffer.sample_rate(),
+        sample_format,
+    )?;
+    // In runs, so a long take is never copied out whole.
+    const RUN: usize = 1 << 16;
+    let mut run = Vec::with_capacity(RUN * channels);
+    let mut at = start;
+    while at < start + frames {
+        let n = RUN.min(start + frames - at);
+        run.clear();
+        run.extend((at * channels..(at + n) * channels).map(|i| buffer.at(i)));
+        writer.write(&run)?;
+        at += n;
     }
-    writer.finalize().map_err(err)
+    writer.finalize()
 }

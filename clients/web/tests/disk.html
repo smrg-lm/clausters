@@ -34,12 +34,15 @@
       Last, a join whose parts name two files plays at the transport's position
       through transportDiskIn: every sample the bus carries is a frame of one
       of the two files (or the silence of a refill), both files are heard, and
-      a locate under the moving playhead keeps it so.
+      a locate under the moving playhead keeps it so. Then the long-file
+      containers: diskOut records into a W64 with peaksOut writing its peaks
+      file beside it, both read back, and buffer.write writes an RF64 that
+      Buffer.read reads back.
     -->
     <script type="module">
       import { Session, opfs, loadCore, SynthDef, Synth, Group, Bus, Buffer, data }
         from "../dist/index.js";
-      import { diskIn, diskOut, out, sine, transportDiskIn } from "../dist/defs/index.js";
+      import { diskIn, diskOut, out, peaksOut, sine, transportDiskIn } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -177,15 +180,40 @@
         const joined = heard.size === 2 && foreign.length === 0 &&
           named === "takes/a.wav,takes/b.wav,takes/a.wav";
 
+        // 5) The long-file containers. A W64 recorded with its peaks file
+        //    beside it, then read back as a buffer; an RF64 written from a
+        //    buffer and read back.
+        const tone = sine(330).mul(0.5);
+        await new SynthDef("long",
+          out(recBus.index, diskOut(tone, { path: "takes/long.w64", format: "float" })),
+          peaksOut(tone, { path: "takes/long.peaks" })).send(server);
+        const long = new Synth("long", {}, { server });
+        await wait(700);
+        long.free();
+        await wait(600);
+        const w64 = await Buffer.read("takes/long.w64", { server });
+        const w64Head = String.fromCharCode(...(await opfs.readRange("takes/long.w64", 0, 4)));
+        const peaksHead = String.fromCharCode(...(await opfs.readRange("takes/long.peaks", 0, 4)));
+        const w64Peak = Math.max(...(await w64.getSamples({ start: 0, count: Math.min(w64.frames, 4800) })).map(Math.abs));
+        await w64.write("takes/back.rf64", { sampleFormat: "float" });
+        const rf64 = await Buffer.read("takes/back.rf64", { server });
+        const rf64Head = String.fromCharCode(...(await opfs.readRange("takes/back.rf64", 0, 4)));
+        log(`W64 "${w64Head}" of ${w64.frames} frames at peak ${w64Peak.toFixed(3)}, peaks "${peaksHead}"; ` +
+            `RF64 "${rf64Head}" of ${rf64.frames} frames`);
+        const longOk = w64Head === "riff" && w64.frames > 24000 && w64Peak > 0.45 &&
+          peaksHead === "CLPK" && rf64Head === "RF64" && rf64.frames === w64.frames;
+
         const ok = riff === "RIFF" && frames > 24000 && peak > 0.1 && half > 0.1 && past < 0.01 &&
-          joined;
+          joined && longOk;
         verdict(ok
           ? `PASS: diskOut recorded ${(frames / 48000).toFixed(2)} s into the page's ` +
             `filesystem (${size} bytes of RIFF) and diskIn streamed it back at ` +
             `peak ${peak.toFixed(3)}, and from a start frame where it was asked to; ` +
-            `a join of two files played at the transport's position, through a locate`
+            `a join of two files played at the transport's position, through a locate; ` +
+            `a W64 with its peaks file and an RF64 written and read back`
           : `FAIL: riff "${riff}", ${frames} frames, peak ${peak}, from half ${half}, from past ${past}, ` +
-            `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}`);
+            `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}, ` +
+            `long files ${longOk}`);
         await session.close();
       }
 

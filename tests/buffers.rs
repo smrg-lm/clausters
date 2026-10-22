@@ -907,6 +907,7 @@ fn wav_write_then_alloc_read_round_trips_float_exactly() {
     let original = Arc::new(Buffer::new(data, 2, frames, 22_050.0));
 
     let outcome = run_nrt(NrtJob::Write {
+        container: clausters::dsp::pcm::Container::Wav,
         path: path.clone(),
         sample_format: "float".into(),
         buf_start: 0,
@@ -946,6 +947,7 @@ fn a_page_encodes_the_int_bytes_a_native_write_writes() {
     ] {
         let path = tmp_wav(&format!("quantize-{format}"));
         run_nrt(NrtJob::Write {
+            container: clausters::dsp::pcm::Container::Wav,
             path: path.clone(),
             sample_format: format.into(),
             buf_start: 0,
@@ -976,6 +978,7 @@ fn alloc_read_slices_the_file() {
     let path = tmp_wav("slice");
     let data: Vec<f32> = (0..100).map(|i| i as f32 / 1000.0).collect();
     run_nrt(NrtJob::Write {
+        container: clausters::dsp::pcm::Container::Wav,
         path: path.clone(),
         sample_format: "float".into(),
         buf_start: 0,
@@ -1001,6 +1004,7 @@ fn read_overlays_a_file_keeping_the_buffer_shape() {
     let path = tmp_wav("overlay");
     let data: Vec<f32> = vec![0.5; 10];
     run_nrt(NrtJob::Write {
+        container: clausters::dsp::pcm::Container::Wav,
         path: path.clone(),
         sample_format: "float".into(),
         buf_start: 0,
@@ -1029,6 +1033,7 @@ fn read_overlays_a_file_keeping_the_buffer_shape() {
 fn read_rejects_channel_mismatch_and_missing_files() {
     let path = tmp_wav("mismatch");
     run_nrt(NrtJob::Write {
+        container: clausters::dsp::pcm::Container::Wav,
         path: path.clone(),
         sample_format: "float".into(),
         buf_start: 0,
@@ -1063,6 +1068,7 @@ fn int16_write_quantizes_to_the_expected_grid() {
     let path = tmp_wav("int16");
     let original = Arc::new(Buffer::new(vec![0.5, -1.0, 1.0, 0.0], 1, 4, 48_000.0));
     run_nrt(NrtJob::Write {
+        container: clausters::dsp::pcm::Container::Wav,
         path: path.clone(),
         sample_format: "int16".into(),
         buf_start: 0,
@@ -1240,6 +1246,7 @@ fn non_wav_extensions_decode_through_symphonia() {
         .collect();
     let original = Arc::new(Buffer::new(data, 2, frames, 44_100.0));
     run_nrt(NrtJob::Write {
+        container: clausters::dsp::pcm::Container::Wav,
         path: path.clone(),
         sample_format: "float".into(),
         buf_start: 0,
@@ -1322,6 +1329,7 @@ mod osc {
         let path = tmp_wav("osc");
         let data: Vec<f32> = (0..50).map(|i| i as f32 / 1000.0).collect();
         run_nrt(NrtJob::Write {
+            container: clausters::dsp::pcm::Container::Wav,
             path: path.clone(),
             sample_format: "float".into(),
             buf_start: 0,
@@ -2233,6 +2241,7 @@ fn reading_from_bytes_matches_reading_from_the_path() {
             .map(|i| (i as f32 * 0.017).sin() * 0.5)
             .collect();
         run_nrt(NrtJob::Write {
+            container: clausters::dsp::pcm::Container::Wav,
             path: path.clone(),
             sample_format: fmt.into(),
             buf_start: 0,
@@ -2267,6 +2276,7 @@ fn reading_a_span_from_bytes_matches_the_path_door() {
     let frames = 500;
     let data: Vec<f32> = (0..frames).map(|i| i as f32 / 1000.0).collect();
     run_nrt(NrtJob::Write {
+        container: clausters::dsp::pcm::Container::Wav,
         path: path.clone(),
         sample_format: "float".into(),
         buf_start: 0,

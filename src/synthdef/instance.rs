@@ -176,7 +176,21 @@ impl UGenSynth {
     /// thread (`DiskIn`, `DiskOut`) account its work in `meters`, the server's
     /// load table.
     pub fn metered(def: Arc<SynthDef>, sample_rate: f32, seed: u64, meters: Arc<Meters>) -> Self {
-        let build_ctx = BuildCtx::metered(sample_rate, BLOCK_SIZE, seed, meters);
+        Self::built(def, sample_rate, seed, meters, false)
+    }
+
+    /// [`UGenSynth::metered`] for a synth an offline render plays, when
+    /// `offline` (`BuildCtx::offline`): its streams wait for their threads
+    /// instead of racing them.
+    pub fn built(
+        def: Arc<SynthDef>,
+        sample_rate: f32,
+        seed: u64,
+        meters: Arc<Meters>,
+        offline: bool,
+    ) -> Self {
+        let mut build_ctx = BuildCtx::metered(sample_rate, BLOCK_SIZE, seed, meters);
+        build_ctx.offline = offline;
         let controls = def.control_defaults.clone();
         let maps = vec![ControlMap::UNMAPPED; controls.len()];
         let ugens: Vec<_> = def

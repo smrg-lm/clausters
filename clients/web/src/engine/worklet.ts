@@ -134,7 +134,13 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     /** The `/buffer_write` being handed over, a run per turn. */
     writing: { ticket: number; frames: number; at: number } | null;
     /** Where that write goes and in what format -- constant for its whole run. */
-    write: { path: string; channels: number; sampleRate: number; format: string } | null;
+    write: {
+        path: string;
+        container: string;
+        channels: number;
+        sampleRate: number;
+        format: string;
+    } | null;
     /** `DiskIn` streams: where each one has read to, and what it could not
      *  hand over yet. */
     spans: Map<
@@ -318,6 +324,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             this.writing = { ticket: job.ticket, frames: job.frames, at: 0 };
             this.write = {
                 path: job.path,
+                container: (job as unknown as { container: string }).container,
                 channels: job.channels as number,
                 sampleRate: job.sampleRate,
                 format: job.sampleFormat,
@@ -357,6 +364,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 type: "write",
                 ticket: this.writing.ticket,
                 path: this.write.path,
+                container: this.write.container,
                 samples,
                 channels: this.write.channels,
                 sampleRate: this.write.sampleRate,
@@ -492,7 +500,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         if (this.nrt === null) return;
         const streams = JSON.parse(this.server.diskPoll()) as {
             id: number;
-            direction: "in" | "out" | "list";
+            direction: "in" | "out" | "list" | "peaks";
             path: string;
             channels: number;
             looping: boolean;
@@ -509,6 +517,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             live.add(s.id);
             if (s.direction === "in") this.feed(s);
             else if (s.direction === "list") this.feedList(s);
+            else if (s.direction === "peaks") this.drainPeaks(s);
             else this.drain(s);
         }
         // A synth that was freed took its stream with it; close its recording.
@@ -641,6 +650,38 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             frame: state.frame,
             frames: Math.min(frames, DISK_SPAN_FRAMES * 4),
         });
+    }
+
+    /**
+     * One `PeaksOut`: hand the Worker its buckets, and once its synth is gone
+     * and everything is drained, the word to write the file -- then forget it.
+     */
+    private drainPeaks(s: {
+        id: number;
+        path: string;
+        channels: number;
+        looping: boolean;
+        start: number;
+        format: string;
+        samples: number;
+    }): void {
+        const stats = s.samples > 0 ? this.server.diskPull(s.id, s.samples) : new Float32Array(0);
+        const final = s.looping && stats.length >= s.samples;
+        if (stats.length === 0 && !final) return;
+        this.nrt!.postMessage(
+            {
+                type: "peaks",
+                ticket: s.id,
+                path: s.path,
+                stats,
+                channels: s.channels,
+                frames: s.start,
+                lost: s.format === "lost",
+                final,
+            },
+            [stats.buffer],
+        );
+        if (final) this.server.diskRelease(s.id);
     }
 
     /** One `DiskOut`: take what it has recorded and hand it to the Worker. */

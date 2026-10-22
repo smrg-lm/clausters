@@ -178,6 +178,113 @@ pub fn wav_header_bytes(
     wav_header(channels as u16, sample_rate, sample_format, data_bytes)
 }
 
+/// **The header of a sound file**: a WAV, or a W64 or an RF64 past WAV's
+/// 4 GB, for `dataBytes` of samples. `container` is `"wav"`, `"w64"` or
+/// `"rf64"` as a `/buffer_write` names it, and empty to take it from `path`'s
+/// extension, as `DiskOut` does. A writer in pieces lays it down first and
+/// rewrites it at the close.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = soundHeader))]
+pub fn sound_header_bytes(
+    path: &str,
+    container: &str,
+    channels: u32,
+    sample_rate: f64,
+    sample_format: &str,
+    data_bytes: f64,
+) -> Result<Vec<u8>, String> {
+    use clausters::dsp::pcm::Container;
+    let container = if container.is_empty() {
+        Container::for_path(path)
+    } else {
+        Container::for_header(container, path)?
+    };
+    clausters::server::nrt::sound_header_in(
+        container,
+        channels as usize,
+        sample_rate,
+        sample_format,
+        data_bytes as u64,
+    )
+}
+
+/// Where a sound file's samples are, read from its **head** -- the first
+/// bytes of a file `fileBytes` long: a WAV, an RF64 or a W64 (`dsp::pcm`).
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+pub struct SoundShape {
+    layout: clausters::dsp::pcm::Layout,
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl SoundShape {
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    pub fn channels(&self) -> usize {
+        self.layout.channels
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter, js_name = sampleRate))]
+    pub fn sample_rate(&self) -> f64 {
+        self.layout.sample_rate
+    }
+
+    /// Bits per sample.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter, js_name = bitsPerSample))]
+    pub fn bits_per_sample(&self) -> usize {
+        self.layout.encoding.bytes() * 8
+    }
+
+    /// Whether the samples are floats rather than integers.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    pub fn float(&self) -> bool {
+        matches!(
+            self.layout.encoding,
+            clausters::dsp::pcm::Encoding::F32 | clausters::dsp::pcm::Encoding::F64
+        )
+    }
+
+    /// The byte offset of frame 0.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter, js_name = dataOffset))]
+    pub fn data_offset(&self) -> f64 {
+        self.layout.data_offset as f64
+    }
+
+    /// Bytes per frame.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter, js_name = blockAlign))]
+    pub fn block_align(&self) -> usize {
+        self.layout.frame_bytes()
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    pub fn frames(&self) -> f64 {
+        self.layout.frames as f64
+    }
+}
+
+/// Reads a [`SoundShape`] from `head`, the first bytes of the file at `path`,
+/// which is `file_bytes` long in all.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = soundShape))]
+pub fn sound_shape(head: &[u8], path: &str, file_bytes: f64) -> Result<SoundShape, String> {
+    let layout = clausters::dsp::pcm::Layout::parse_within(
+        &mut std::io::Cursor::new(head),
+        path,
+        Some(file_bytes as u64),
+    )?;
+    Ok(SoundShape { layout })
+}
+
+/// **A peaks file's bytes** from the base buckets a `PeaksOut` reported, in
+/// the order it reports them -- bucket-major, channel-minor, `min`, `max`
+/// and mean square -- for `frames` frames of `channels` channels: the CLPK
+/// pyramid a native `PeaksOut` writes, built by the same core.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = peaksFile))]
+pub fn peaks_file(frames: f64, channels: u32, stats: &[f32]) -> Result<Vec<u8>, String> {
+    use clausters::clausters_core::peaks::MultiPyramid;
+    let mut pyramid = MultiPyramid::empty(frames as usize, channels.max(1) as usize, 256);
+    if !pyramid.write_buckets(0, 256, stats) {
+        return Err("the buckets do not cover the frames summarized".into());
+    }
+    Ok(pyramid.to_bytes())
+}
+
 /// Encodes interleaved samples into WAV sample bytes, at the same scale and
 /// with the same clamp a native `DiskOut` writes -- which is the whole reason it
 /// is here rather than in the page: a second conversion is a second answer.

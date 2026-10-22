@@ -382,6 +382,9 @@ pub struct CmdTranslator {
         target_os = "linux"
     ))]
     pub(crate) offline_plugins: bool,
+    /// The synths are an offline render's: their streams wait for their
+    /// threads (`BuildCtx::offline`).
+    pub(crate) offline: bool,
     #[cfg(all(
         any(feature = "plugin-clap", feature = "plugin-vst3"),
         target_os = "linux"
@@ -537,6 +540,7 @@ impl CmdTranslator {
                 target_os = "linux"
             ))]
             offline_plugins: false,
+            offline: false,
             #[cfg(all(
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
@@ -624,11 +628,12 @@ impl CmdTranslator {
             let seed = self.next_seed.get();
             self.next_seed
                 .set(seed.wrapping_add(SEED_STRIDE.wrapping_mul(UGenSynth::seeds_needed(def))));
-            let synth = Box::new(UGenSynth::metered(
+            let synth = Box::new(UGenSynth::built(
                 Arc::clone(def),
                 self.sample_rate,
                 seed,
                 Arc::clone(&self.meters),
+                self.offline,
             ));
             return Ok((synth, NodeDef::UGen(Arc::clone(def))));
         }

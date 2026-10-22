@@ -85,11 +85,12 @@ impl CmdTranslator {
         match &inner {
             #[cfg(feature = "synth")]
             NodeDef::UGen(def) => {
-                if let Some(u) = def
-                    .ugens
-                    .iter()
-                    .find(|u| matches!(u.desc.name, "DiskIn" | "DiskOut" | "TransportDiskIn"))
-                {
+                if let Some(u) = def.ugens.iter().find(|u| {
+                    matches!(
+                        u.desc.name,
+                        "DiskIn" | "DiskOut" | "TransportDiskIn" | "PeaksOut"
+                    )
+                }) {
                     return Err(format!(
                         "{name}: a voice cannot restart a {} stream, so it cannot be a voice",
                         u.desc.name

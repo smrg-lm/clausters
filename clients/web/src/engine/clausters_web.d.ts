@@ -75,13 +75,17 @@ export class WebServer {
     diskListPush(id: number, generation: number, at: number, list_frames: number, samples: Float32Array): boolean;
     /**
      * Every open disk stream and what it wants right now, as JSON: an array of
-     * `{id, direction: "in"|"out"|"list", path, channels, looping, start,
+     * `{id, direction: "in"|"out"|"list"|"peaks", path, channels, looping, start,
      * format, samples, generation, at, listFrames, span}`. `start` is the
      * frame an `in` reads from first; `samples` is room to fill for an `in`,
      * and samples waiting for an `out`. A `list` (`TransportDiskIn`) asks for
      * `span` frames of `path` (a file of `channels` channels) from `start`,
      * to render `listFrames` frames of its list from `at`; the answer goes to
-     * [`disk_list_push`](Self::disk_list_push) with its `generation`.
+     * [`disk_list_push`](Self::disk_list_push) with its `generation`. A
+     * `peaks` (`PeaksOut`) is drained with [`disk_pull`](Self::disk_pull)
+     * like an `out`: `start` is the frames summarized, `looping` says its
+     * synth is gone, `format` is `"lost"` if a bucket was, and once drained
+     * and written it is forgotten with [`disk_release`](Self::disk_release).
      *
      * This is the whole interface between the graph and whatever is reading
      * files: the host walks it each turn, fills what is hungry with
@@ -99,6 +103,11 @@ export class WebServer {
      * rest is the caller's to offer again.
      */
     diskPush(id: number, samples: Float32Array): number;
+    /**
+     * Forgets a `peaks` stream once the host has drained it and written its
+     * file: the synth that owned it is gone, and nothing else releases it.
+     */
+    diskRelease(id: number): void;
     /**
      * Tells a `DiskIn` stream how many channels its file turned out to have.
      *
@@ -326,6 +335,7 @@ export interface InitOutput {
     readonly webserver_diskPoll: (a: number) => [number, number];
     readonly webserver_diskPull: (a: number, b: number, c: number) => [number, number];
     readonly webserver_diskPush: (a: number, b: number, c: number, d: number) => number;
+    readonly webserver_diskRelease: (a: number, b: number) => void;
     readonly webserver_diskShape: (a: number, b: number, c: number) => void;
     readonly webserver_finishDelegated: (a: number, b: number, c: number, d: number) => void;
     readonly webserver_finishFaust: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;

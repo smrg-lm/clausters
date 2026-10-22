@@ -433,15 +433,17 @@ impl WebServer {
             ),
             DelegatedKind::Write {
                 path,
+                container,
                 sample_format,
                 channels,
                 sample_rate,
                 frames,
             } => format!(
-                r#"{{"ticket":{},"index":{},"kind":"write","path":{},"sampleFormat":{},"channels":{},"sampleRate":{},"frames":{}}}"#,
+                r#"{{"ticket":{},"index":{},"kind":"write","path":{},"container":"{}","sampleFormat":{},"channels":{},"sampleRate":{},"frames":{}}}"#,
                 job.ticket,
                 job.index,
                 json_string(&path),
+                container.name(),
                 json_string(&sample_format),
                 channels,
                 sample_rate,
@@ -480,13 +482,17 @@ impl WebServer {
     }
 
     /// Every open disk stream and what it wants right now, as JSON: an array of
-    /// `{id, direction: "in"|"out"|"list", path, channels, looping, start,
+    /// `{id, direction: "in"|"out"|"list"|"peaks", path, channels, looping, start,
     /// format, samples, generation, at, listFrames, span}`. `start` is the
     /// frame an `in` reads from first; `samples` is room to fill for an `in`,
     /// and samples waiting for an `out`. A `list` (`TransportDiskIn`) asks for
     /// `span` frames of `path` (a file of `channels` channels) from `start`,
     /// to render `listFrames` frames of its list from `at`; the answer goes to
-    /// [`disk_list_push`](Self::disk_list_push) with its `generation`.
+    /// [`disk_list_push`](Self::disk_list_push) with its `generation`. A
+    /// `peaks` (`PeaksOut`) is drained with [`disk_pull`](Self::disk_pull)
+    /// like an `out`: `start` is the frames summarized, `looping` says its
+    /// synth is gone, `format` is `"lost"` if a bucket was, and once drained
+    /// and written it is forgotten with [`disk_release`](Self::disk_release).
     ///
     /// This is the whole interface between the graph and whatever is reading
     /// files: the host walks it each turn, fills what is hungry with
@@ -507,6 +513,7 @@ impl WebServer {
                             Direction::In => "in",
                             Direction::Out => "out",
                             Direction::List => "list",
+                            Direction::Peaks => "peaks",
                         },
                         json_string(&r.path),
                         r.channels,
@@ -571,6 +578,16 @@ impl WebServer {
             let _ = (id, generation, at, list_frames, samples);
             false
         }
+    }
+
+    /// Forgets a `peaks` stream once the host has drained it and written its
+    /// file: the synth that owned it is gone, and nothing else releases it.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskRelease))]
+    pub fn disk_release(&mut self, id: u32) {
+        #[cfg(target_arch = "wasm32")]
+        clausters::dsp::disk::release(id);
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = id;
     }
 
     /// Pulls what a `DiskOut` stream has recorded, up to `max` samples.

@@ -43,6 +43,35 @@ export class Probed {
 }
 
 /**
+ * Where a sound file's samples are, read from its **head** -- the first
+ * bytes of a file `fileBytes` long: a WAV, an RF64 or a W64 (`dsp::pcm`).
+ */
+export class SoundShape {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Bits per sample.
+     */
+    readonly bitsPerSample: number;
+    /**
+     * Bytes per frame.
+     */
+    readonly blockAlign: number;
+    readonly channels: number;
+    /**
+     * The byte offset of frame 0.
+     */
+    readonly dataOffset: number;
+    /**
+     * Whether the samples are floats rather than integers.
+     */
+    readonly float: boolean;
+    readonly frames: number;
+    readonly sampleRate: number;
+}
+
+/**
  * Decodes a soundfile already in memory -- the Worker's whole job.
  *
  * `ext` is the format hint (`"wav"`, `"flac"`, ..., no dot; an empty hint still
@@ -93,10 +122,33 @@ export function faustBoxFromJson(json: string): number;
 export function faustSignalsFromJson(json: string): Uint32Array;
 
 /**
+ * **A peaks file's bytes** from the base buckets a `PeaksOut` reported, in
+ * the order it reports them -- bucket-major, channel-minor, `min`, `max`
+ * and mean square -- for `frames` frames of `channels` channels: the CLPK
+ * pyramid a native `PeaksOut` writes, built by the same core.
+ */
+export function peaksFile(frames: number, channels: number, stats: Float32Array): Uint8Array;
+
+/**
  * Reads a soundfile's header out of its bytes, with the decoder `decodeAudio`
  * uses. `ext` and `label` are as there.
  */
 export function probeAudio(bytes: Uint8Array, ext: string, label: string): Probed;
+
+/**
+ * **The header of a sound file**: a WAV, or a W64 or an RF64 past WAV's
+ * 4 GB, for `dataBytes` of samples. `container` is `"wav"`, `"w64"` or
+ * `"rf64"` as a `/buffer_write` names it, and empty to take it from `path`'s
+ * extension, as `DiskOut` does. A writer in pieces lays it down first and
+ * rewrites it at the close.
+ */
+export function soundHeader(path: string, container: string, channels: number, sample_rate: number, sample_format: string, data_bytes: number): Uint8Array;
+
+/**
+ * Reads a [`SoundShape`] from `head`, the first bytes of the file at `path`,
+ * which is `file_bytes` long in all.
+ */
+export function soundShape(head: Uint8Array, path: string, file_bytes: number): SoundShape;
 
 /**
  * Removes the data segment a Faust wasm module carries, so the module can be
@@ -132,6 +184,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_decoded_free: (a: number, b: number) => void;
     readonly __wbg_probed_free: (a: number, b: number) => void;
+    readonly __wbg_soundshape_free: (a: number, b: number) => void;
     readonly decodeAudio: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly decoded_channels: (a: number) => number;
     readonly decoded_frames: (a: number) => number;
@@ -140,14 +193,24 @@ export interface InitOutput {
     readonly encodeWavFrames: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly faustBoxFromJson: (a: number, b: number) => [number, number, number];
     readonly faustSignalsFromJson: (a: number, b: number) => [number, number, number, number];
+    readonly peaksFile: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly probeAudio: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly probed_channels: (a: number) => number;
     readonly probed_codec: (a: number) => [number, number];
     readonly probed_sampleFormat: (a: number) => [number, number];
     readonly probed_sampleRate: (a: number) => number;
+    readonly soundHeader: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
+    readonly soundShape: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly soundshape_bitsPerSample: (a: number) => number;
+    readonly soundshape_blockAlign: (a: number) => number;
+    readonly soundshape_dataOffset: (a: number) => number;
+    readonly soundshape_float: (a: number) => number;
+    readonly soundshape_frames: (a: number) => number;
     readonly stripFaustData: (a: number, b: number) => [number, number, number, number];
     readonly wavHeader: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly probed_frames: (a: number) => number;
+    readonly soundshape_channels: (a: number) => number;
+    readonly soundshape_sampleRate: (a: number) => number;
     readonly clausters_abi_version: () => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;
     readonly clausters_read_soundfile: (a: number, b: bigint, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;

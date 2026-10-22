@@ -25,8 +25,16 @@
 // worklet's business and is paced there, a run at a time.
 
 /// <reference lib="webworker" />
-import { extensionOf, makeDirectory, readFile, readRange, trimDirectory, writeFile } from "./opfs.ts";
-import { HEAD_BYTES, parseShape, wrapSpan, type WavShape } from "./wav.ts";
+import {
+    extensionOf,
+    makeDirectory,
+    readFile,
+    readRange,
+    sizeOf,
+    trimDirectory,
+    writeFile,
+} from "./opfs.ts";
+import { HEAD_BYTES, wrapSpan, type WavShape } from "./wav.ts";
 
 /** What the worklet asks for. `ticket` comes back untouched. */
 interface ReadRequest {
@@ -94,10 +102,25 @@ interface WriteRequest {
     type: "write";
     ticket: number;
     path: string;
+    /** `wav`, `w64` or `rf64`, as the command's header argument settled it. */
+    container: string;
     samples: Float32Array;
     channels: number;
     sampleRate: number;
     format: string;
+    final: boolean;
+}
+
+/** `PeaksOut`: keep a run of base buckets, and write the peaks file when
+ *  `final` -- unless a bucket was `lost`, when no file is written. */
+interface PeaksRequest {
+    type: "peaks";
+    ticket: number;
+    path: string;
+    stats: Float32Array;
+    channels: number;
+    frames: number;
+    lost: boolean;
     final: boolean;
 }
 
@@ -136,6 +159,7 @@ type Request =
     | SpanRequest
     | WriteRequest
     | RecordRequest
+    | PeaksRequest
     | FaustRequest
     | FaustHeapRequest
     | { type: "ping" };
@@ -206,6 +230,29 @@ type Decoder = {
         dataBytes: number,
     ) => Uint8Array;
     encodeWavFrames: (samples: Float32Array, format: string) => Uint8Array;
+    soundHeader: (
+        path: string,
+        container: string,
+        channels: number,
+        sampleRate: number,
+        format: string,
+        dataBytes: number,
+    ) => Uint8Array;
+    soundShape: (
+        head: Uint8Array,
+        path: string,
+        fileBytes: number,
+    ) => {
+        channels: number;
+        sampleRate: number;
+        bitsPerSample: number;
+        float: boolean;
+        dataOffset: number;
+        blockAlign: number;
+        frames: number;
+        free(): void;
+    };
+    peaksFile: (frames: number, channels: number, stats: Float32Array) => Uint8Array<ArrayBuffer>;
     stripFaustData: (module: Uint8Array) => Uint8Array;
     faustBoxFromJson: (json: string) => number;
     faustSignalsFromJson: (json: string) => Uint32Array;
@@ -358,10 +405,27 @@ const writes = new Map<string, Uint8Array<ArrayBuffer>>();
  *  storage as they arrive, which is the whole point of streaming them. */
 const recordings = new Map<string, { bytes: Uint8Array<ArrayBuffer>; frames: number }>();
 
+/** A peaks file being summarized: the runs of base buckets so far. */
+const peaks = new Map<string, Float32Array[]>();
+
 async function shapeOf(path: string): Promise<WavShape> {
     const known = shapes.get(path);
     if (known !== undefined) return known;
-    const shape = parseShape(await readRange(path, 0, HEAD_BYTES));
+    // The framing is the server crate's (`dsp::pcm`): a WAV, an RF64 or a
+    // W64, read from the head of a file whose whole length is known.
+    const { soundShape } = await load();
+    const read = soundShape(await readRange(path, 0, HEAD_BYTES), path, await sizeOf(path));
+    const shape: WavShape = {
+        channels: read.channels,
+        sampleRate: read.sampleRate,
+        bitsPerSample: read.bitsPerSample,
+        float: read.float,
+        dataOffset: read.dataOffset,
+        dataBytes: read.frames * read.blockAlign,
+        blockAlign: read.blockAlign,
+        frames: read.frames,
+    };
+    read.free();
     shapes.set(path, shape);
     return shape;
 }
@@ -457,7 +521,7 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
     }
     if (request.type === "write") {
         try {
-            const { encodeWavFrames, wavHeader } = await load();
+            const { encodeWavFrames, soundHeader } = await load();
             const held = writes.get(request.path) ?? new Uint8Array(0);
             const body = request.samples.length > 0
                 ? encodeWavFrames(request.samples, request.format)
@@ -478,7 +542,9 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
             // in TypeScript: a second int16 rounding is a second answer, and a
             // file that differs by a bit between a tab and a window is exactly
             // the divergence nothing names.
-            const header = wavHeader(
+            const header = soundHeader(
+                request.path,
+                request.container,
                 request.channels,
                 request.sampleRate,
                 request.format,
@@ -496,9 +562,35 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         }
         return;
     }
+    if (request.type === "peaks") {
+        let held = peaks.get(request.path) ?? [];
+        if (request.stats.length > 0) held.push(request.stats);
+        if (!request.final) {
+            peaks.set(request.path, held);
+            return;
+        }
+        peaks.delete(request.path);
+        if (request.lost || request.frames === 0) return;
+        try {
+            const total = held.reduce((n, run) => n + run.length, 0);
+            const stats = new Float32Array(total);
+            let at = 0;
+            for (const run of held) {
+                stats.set(run, at);
+                at += run.length;
+            }
+            held = [];
+            // The pyramid is the shared core's, as a native `PeaksOut`'s is.
+            const { peaksFile } = await load();
+            await writeFile(request.path, peaksFile(request.frames, request.channels, stats));
+        } catch (e) {
+            console.warn(`PeaksOut: ${request.path}: ${message(e)}`);
+        }
+        return;
+    }
     if (request.type === "record") {
         try {
-            const { encodeWavFrames, wavHeader } = await load();
+            const { encodeWavFrames, soundHeader } = await load();
             let take = recordings.get(request.path);
             if (take === undefined) {
                 take = { bytes: new Uint8Array(0), frames: 0 };
@@ -516,7 +608,10 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
             // sync handle, not an append, and a take that is only correct once
             // it ends is a take that is lost when a tab closes. This costs a
             // rewrite per flush and buys a file that is valid at every moment.
-            const header = wavHeader(
+            // The container is the path's, as a native `DiskOut`'s is.
+            const header = soundHeader(
+                request.path,
+                "",
                 request.channels,
                 request.sampleRate,
                 request.format,
