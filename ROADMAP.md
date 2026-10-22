@@ -157,10 +157,6 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **The `edit_audio` pair reads differently at its end**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audit counts the
-  script's `session.gui()` before its `wait`.
-
 - ⬜ **A playhead looping over a selection moves at the tick, not the
   display** *(`clients/gui/PLAN.md`, Found by use)*. Found in the eye pass
   over the audio editor's lifecycle example; the cause is not established.

@@ -296,11 +296,12 @@ def no_file():
 
 # %%
 def run():
-    """Wait for every example window, then close the session and its processes."""
+    """Wait for the editor's window to close, then close the session and its
+    processes, and every other window with them."""
     print("drag to select, Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V, Alt+drag to draw.")
     print("Ctrl+Z walks back. Call hear() to play it, parts() to read it.")
     try:
-        session.gui().wait()
+        editor.wait()
     finally:
         session.close()
 

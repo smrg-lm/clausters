@@ -4648,7 +4648,7 @@ wrong.
   a member addresses the context's order, which no longer holds it; the
   test now steps its member, as the file's other undo test does.
 
-- ⬜ **The `edit_audio` pair reads differently at its end** *(found
+- ✅ **The `edit_audio` pair reads differently at its end** *(found
   2026-10-22, accepting the audio editor)*.
   `scripts/audit-example-pairs.py editors/edit_audio` reports one call: the
   script waits on `session.gui().wait()`, every window the session opened,
@@ -4657,6 +4657,8 @@ wrong.
   the script on the editor, as the page does, or teaching the audit that the
   host a `wait` is reached through is part of the ending, makes the pair read
   as one.
+  *Fixed 2026-10-22:* the script ends on `editor.wait()`, as the page does,
+  and the audit reads the pair as one.
 
 - ⬜ **A paste refused for what the clipboard holds says nothing**
   *(found 2026-10-22, the eye pass over `editors/audio_lifecycle`)*. Text
