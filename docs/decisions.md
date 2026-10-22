@@ -10762,3 +10762,53 @@ The model, its decisions and its milestones are in
 `crates/clausters-apps/PLAN.md`, "The turn: an application's takes live on
 disk"; the server's half is the root plan's `S21`-`S23`, the document's
 `O34`, the host's `G45`.
+
+## A host draws a list of segments from its files, through the fetch machine it already has (2026-10-22)
+
+*Decided 2026-10-22, building the GUI plan's `G45` for the turn to takes on
+disk.* A take of the audio editor is to be a list of segments over files that
+never change, drawn by the host with no server. Two shapes were open: a second
+data path beside the buffer fetch, keyed by the list, or the buffer fetch
+itself, answered by the host.
+
+**The fetch machine, answered by the host.** A list gets a *take key*, a buffer
+number below every one a server allocates and below the `-1` the protocol
+spends on absence, and its views ask about it exactly as about a buffer —
+`/buffer_query`, `/buffer_peaks` at the level they draw, `/buffer_getRange`
+under a zoom — answered in the server's own reply formats. Only where a message
+goes differs: a front sends a list key's to the host's own answerer. Every
+behaviour the buffer path took a milestone to get right holds for a list
+without being written again: asking at the drawn level and placing a picture
+whole (`G44c`), keeping the picture across an edit until the new one is whole,
+asking again after a reply the carrier lost. A second path would have been the
+second implementation of each of them, and the first place they would drift.
+The key is the host's, not the wire's: a def names the list, the host gives it
+a key and keeps it across a redefine, and a new list for the same widget is
+the take told to read again.
+
+**The answerer does no I/O.** It says what it needs read and is handed the
+bytes, so the native front's thread and a page, whose storage answers with
+promises, drive the same one, and it is tested over real files with no front
+at all. What it holds is blocks of levels and of samples, bounded and dropped
+oldest first, never a file.
+
+**A coarse column is folded from the peaks alone, and that is an
+approximation, stated.** The server answers any span of a join exactly: where a
+cut leaves a bucket's edge off the source's grid, it reads that partial bucket
+from the samples. After a paste every column's edges are off the grid, so the
+exact rule makes the overview of an edited take of hours read two partial
+buckets of samples per column per channel, scattered across the file. Here a
+column of 32 base buckets or more has its edges rounded to a level a
+thirty-second of its width, so it draws at most a thirty-second of itself past
+its own span, of the same part's material — invisible at the width it is drawn
+at — and an edited take is drawn from peaks. What stays exact is what a reader
+could see: a part's own edges (a cut, the end of a fade), since past a cut is
+material the list does not hold; the fades, which are the list's own samples;
+and every edge of a finer column, where a bucket is wide enough to be seen.
+
+**A peaks file is trusted by its shape and its age.** It must describe the
+file's frames and channels, have the size its header says, and be no more than
+two seconds older than the samples, since a render closes its samples and its
+peaks in either order. A file whose peaks are absent or stale is summarized
+from its samples as it is asked, which is right and slow over a long file; the
+application measures an imported file by a render instead.

@@ -201,6 +201,12 @@ a person saw it work.
   `N9`)*. Built 2026-10-06 and not closed: it closes with the eye pass over
   `editors/edit_multitrack`.
 
+- ⬜ **Nobody has looked at `views/segments`** *(`clients/gui/PLAN.md`,
+  `G45`)*. The host draws a list of segments over files; the pair renders a
+  swelling tone with its peaks and draws it whole and with its halves swapped.
+  To look at, natively and in a page: the drop at the seam, the fades meeting
+  when zoomed into it, and single samples read under a deep zoom.
+
 - ⬜ **Nobody has looked at `custom_element`** *(`clients/gui/PLAN.md`,
   `K16c`)*. It compiles against the public surface and opens; what it draws
   and what a press does are still to be looked at by eye.
@@ -288,25 +294,26 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The turn: an application's takes live on disk**, milestones `G45`,
-  `X28`, `X29`, `S23` *(`crates/clausters-apps/PLAN.md`, "The
+- ⬜ **The turn: an application's takes live on disk**, milestones `X28`,
+  `X29`, `S23` *(`crates/clausters-apps/PLAN.md`, "The
   turn: an application's takes live on disk", with each milestone in its own
   plan)*. **Taken next**, on the user's word: the audio editor's model does
   not reach a file of hours, and successive pastes of a long selection fail
-  natively. In that order: the host first, then the audio editor, the
-  multitrack, and the removal of the editing commands last. Its
+  natively. In that order: the audio editor, the multitrack, and the
+  removal of the editing commands last. Its
   decisions are taken. Before `X25`, which should port this lifecycle and not
   the one it replaces. **Related:** it takes the GUI plan's "An edit of a long
   take costs a native server with a segment a pass over it", and the page half
   of `X28` needs the web plan's "A recording or a write in a tab is held whole
-  and rewritten at every flush" (Found by use) first.
+  and rewritten at every flush" (Found by use) first, and `X28` decides the
+  GUI plan's "A list of segments over files draws no spectrogram" (Found by
+  use).
 
   | Order | Milestone | Plan |
   |---|---|---|
-  | 1 | `G45` — The host draws a list of segments from its files | `clients/gui/PLAN.md` |
-  | 2 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
-  | 3 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
-  | 4 | `S23` — The server keeps no editing commands | root `PLAN.md` |
+  | 1 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
+  | 2 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
+  | 3 | `S23` — The server keeps no editing commands | root `PLAN.md` |
 
 - ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
   summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A

@@ -37,8 +37,9 @@ use clausters_core::peaks::compose::{Ends, PartSamples, list_span};
 
 use super::{List, ListPart};
 
-/// Frames per block of samples held: 16384, a third of a second.
-pub const SAMPLE_BLOCK: usize = 1 << 14;
+/// Frames per block of samples held: 4096, under a tenth of a second -- a
+/// zoom's chunk, and small beside the fade a seam reads it for.
+pub const SAMPLE_BLOCK: usize = 1 << 12;
 
 /// Buckets per block of one level of a peaks file held: 2048, 8 KiB a
 /// statistic.
