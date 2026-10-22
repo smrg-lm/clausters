@@ -68,7 +68,7 @@ and nothing to unlock until you ask to hear it.</div>
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, SynthDef, play,
+        Buffer, Routine, Server, Session, Synth, SynthDef, opfs, play,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, control, envGen, fft, ifft, out, pvBrickWall,
@@ -138,6 +138,9 @@ and nothing to unlock until you ask to hear it.</div>
           session.server.sendBundle([["/node_free", ["i", 0]]]);
         }).play();
 
+
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/chain.wav" });
 
         log(`wrote ${stats.path}`);

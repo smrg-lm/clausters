@@ -149,10 +149,6 @@ already carry it.
   keeps an edited picture** *(`clients/gui/PLAN.md`, Found by use)*. Not
   reproduced in five sequences on a GPU; waits for the exact steps.
 
-- ⬜ **A client's own file write makes its directories in a tab, and not
-  under node** *(`clients/web/PLAN.md`, Found by use)*. The server's writes
-  refuse a missing directory in both now; the client's do not agree yet.
-
 - ⬜ **`faust_compiler` failed once in a parallel workspace run** *(root
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.

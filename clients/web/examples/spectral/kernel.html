@@ -62,7 +62,7 @@ between bins, reading another chain -- stays with the dedicated
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, play,
+        Buffer, Routine, Server, Session, Synth, opfs, play,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, SynthDef, control, envGen, fft, ifft, out, pvKernel,
@@ -143,6 +143,9 @@ between bins, reading another chain -- stays with the dedicated
         }
         new Routine(stop).play();
 
+
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         take = await session.render({ sampleRate: SR, channels: 2, path: "out/kernel.wav" });
 
         log(`wrote ${take.path}`);

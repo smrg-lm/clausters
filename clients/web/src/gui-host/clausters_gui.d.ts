@@ -187,13 +187,13 @@ export interface InitOutput {
     readonly guibridge_detach: (a: number, b: number) => void;
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
     readonly guibridge_id_share: (a: number, b: number, c: number) => void;
+    readonly guibridge_midi: (a: number, b: number, c: number) => void;
     readonly guibridge_msaa: (a: number, b: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];
     readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
     readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
     readonly start: () => number;
-    readonly guibridge_midi: (a: number, b: number, c: number) => void;
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;
     readonly clausters_midi_read_clip: (a: number, b: number, c: number) => number;

@@ -66,7 +66,7 @@ on every run and in both clients.</div>
     <script type="module">
       import {
         Buffer, Routine, Server, Session, Synth, SynthDef, builtins, exprand,
-        play, scramble, wchoose,
+        opfs, play, scramble, wchoose,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, lfSaw, out, sine }
         from "../../dist/defs/index.js";
@@ -137,6 +137,9 @@ on every run and in both clients.</div>
           session.server.sendBundle([["/node_free", ["i", 0]]]);
         }).play();
 
+
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/sc_vocabulary.wav" });
 
         log(`wrote ${stats.path}`);

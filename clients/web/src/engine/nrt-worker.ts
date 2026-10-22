@@ -25,7 +25,7 @@
 // worklet's business and is paced there, a run at a time.
 
 /// <reference lib="webworker" />
-import { extensionOf, readFile, readRange, trimDirectory, writeFile } from "./opfs.ts";
+import { extensionOf, makeDirectory, readFile, readRange, trimDirectory, writeFile } from "./opfs.ts";
 import { HEAD_BYTES, parseShape, wrapSpan, type WavShape } from "./wav.ts";
 
 /** What the worklet asks for. `ticket` comes back untouched. */
@@ -453,8 +453,8 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
             const file = new Uint8Array(header.byteLength + grown.byteLength);
             file.set(header);
             file.set(grown, header.byteLength);
-            // a server's write: a directory that is not there refuses it
-            await writeFile(request.path, file, false);
+            // a directory that is not there refuses the write
+            await writeFile(request.path, file);
             post({ type: "write", ticket: request.ticket });
         } catch (e) {
             writes.delete(request.path);
@@ -491,8 +491,8 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
             const file = new Uint8Array(header.byteLength + take.bytes.byteLength);
             file.set(header);
             file.set(take.bytes, header.byteLength);
-            // a server's write: a directory that is not there refuses it
-            await writeFile(request.path, file, false);
+            // a directory that is not there refuses the write
+            await writeFile(request.path, file);
             if (request.final) recordings.delete(request.path);
             post({ type: "record", ticket: request.ticket });
         } catch (e) {
@@ -674,6 +674,7 @@ async function fromCache(key: string): Promise<{ bytes: ArrayBuffer; json: strin
  */
 async function toCache(key: string, bytes: ArrayBuffer, json: string): Promise<void> {
     try {
+        await makeDirectory(EPHEMERAL_DIR);
         await writeFile(`${EPHEMERAL_DIR}/${key}.wasm`, new Uint8Array(bytes));
         await writeFile(`${EPHEMERAL_DIR}/${key}.json`, new TextEncoder().encode(json));
         await trimDirectory(EPHEMERAL_DIR, EPHEMERAL_KEEP);

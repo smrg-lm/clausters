@@ -76,7 +76,7 @@ the last event so the last note's release is not cut.</div>
       /examples/basics/patterns.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Buffer, Server, Session, SynthDef, builtins, play, render, seq }
+      import { Buffer, Server, Session, SynthDef, builtins, opfs, play, render, seq }
         from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, sine }
         from "../../dist/defs/index.js";
@@ -142,6 +142,8 @@ the last event so the last note's release is not cut.</div>
 
         const stats = await render(phrase, {
           clock: session.clock, defs: [glider()], tail: 0.5,
+          // a write goes into a directory that is there, as on a disk
+          await opfs.makeDirectory("out");
           sampleRate: SR, channels: 2, path: "out/patterns.wav",
         });
 

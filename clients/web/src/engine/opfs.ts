@@ -59,11 +59,11 @@ export async function makeDirectory(path: string): Promise<void> {
 }
 
 /**
- * Writes `bytes` as `path`, replacing whatever was there -- and, with
- * `directories`, creating the directories above it. Without, a directory that
- * is not there fails the write, as a disk's does: the server's own writes
- * (`/buffer_write`, a recording) take that form, so a save into a directory
- * that does not exist is refused in a tab as it is by a native server.
+ * Writes `bytes` as `path`, replacing whatever was there. A directory that is
+ * not there fails the write, as a disk's does, for every writer: the server's
+ * own (`/buffer_write`, a recording) and the client's (`SoundFile.write`,
+ * `render({ path })`), so a page makes its directories with
+ * {@link makeDirectory} where a script makes them with its standard library.
  *
  * Two ways in, because the platform has two. In a dedicated Worker the
  * synchronous access handle is the one that is everywhere; on the main thread
@@ -72,15 +72,11 @@ export async function makeDirectory(path: string): Promise<void> {
  * WebKit having been late to it. Whichever is present is used, and if neither
  * is, that is said rather than guessed at.
  */
-export async function writeFile(
-    path: string,
-    bytes: Uint8Array<ArrayBuffer>,
-    directories = true,
-): Promise<void> {
+export async function writeFile(path: string, bytes: Uint8Array<ArrayBuffer>): Promise<void> {
     let dir: FileSystemDirectoryHandle;
     let name: string;
     try {
-        [dir, name] = await parentOf(path, directories);
+        [dir, name] = await parentOf(path, false);
     } catch (error) {
         if ((error as { name?: string }).name !== "NotFoundError") throw error;
         throw new Error(`${path}: no such directory`);

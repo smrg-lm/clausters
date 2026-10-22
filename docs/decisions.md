@@ -9226,9 +9226,10 @@ show. `/buffer_write` and a recording now leave a missing directory missing and
 fail the command; a page that writes there makes the directory first
 (`opfs.makeDirectory`, a script's `os.makedirs`), and the audio editor makes its
 own default scratch directory as the Python one makes its temporary one. The
-client's own writes -- `SoundFile.write`, `render({ path })` -- still make
-their directories in a tab, which node does not: that difference is open, in
-`clients/web/PLAN.md`.
+client's own writes -- `SoundFile.write`, `render({ path })`, a MIDI file's or
+a symbolic score's -- went the same way the same day: no write makes a
+directory, in a tab or under node, so a page makes `out/` where its script
+makes `examples/out/`.
 
 
 ## The built-in `default` is a subtractive voice with the MPE controls

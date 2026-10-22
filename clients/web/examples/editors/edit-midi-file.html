@@ -89,6 +89,8 @@ the engine, the bends heard.</div>
       // channel. Read back, the streams are curves again.
       async function run() {
         $("run").disabled = true;
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         await opfs.writeFile("out/mpe_chord.mid", chord.toSmf());
         const notes = EventSequence.fromSmf(await opfs.readFile("out/mpe_chord.mid"));
         log(`mpe_chord.mid: ${notes.midi}, ${notes.length} notes`);

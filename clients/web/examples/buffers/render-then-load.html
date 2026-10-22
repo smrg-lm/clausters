@@ -64,7 +64,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
     -->
     <script type="module">
       import {
-        Buffer, Routine, Session, SoundFile, Synth, channels,
+        Buffer, Routine, Session, SoundFile, Synth, channels, opfs,
       } from "../../dist/index.js";
       import { SynthDef, control, out, playBuf } from "../../dist/defs/index.js";
       import { pbind, pseq, pwhite } from "../../dist/seq/index.js";
@@ -101,6 +101,8 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
         // ---- 1. bounce it ----
         // The render writes the file; the stats come back here.
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const wav = "out/phrase.wav";
         const offline = await Session.nrt();
         offline.clock.setTempo(2.0);

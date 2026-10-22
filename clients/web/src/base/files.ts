@@ -23,7 +23,11 @@ export async function readFileAt(path: string): Promise<Uint8Array> {
     return opfs.readFile(path);
 }
 
-/** Writes a file's bytes where {@link readFileAt} reads them. */
+/**
+ * Writes a file's bytes where {@link readFileAt} reads them. A directory that
+ * is not there refuses the write, on the disk and in the page's storage alike:
+ * {@link makeDirectoryAt} makes one.
+ */
 export async function writeFileAt(path: string, bytes: Uint8Array<ArrayBuffer>): Promise<void> {
     if (underNode()) {
         const { writeFile } = await import("node:fs/promises");

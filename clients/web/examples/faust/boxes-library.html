@@ -69,7 +69,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
     <script type="module">
       import {
-        Buffer, FaustDef, Routine, Server, Session, Synth, play,
+        Buffer, FaustDef, Routine, Server, Session, Synth, opfs, play,
       } from "../../dist/index.js";
       import * as box from "../../dist/defs/boxes.js";
 
@@ -157,6 +157,8 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         // ---- the render ----
         log("rendering...");
         const stats = await session.render({
+          // a write goes into a directory that is there, as on a disk
+          await opfs.makeDirectory("out");
           sampleRate: SR, channels: 2, path: "out/boxes_library.wav",
         });
         session.deactivate();   // the score is rendered; nothing is ambient now

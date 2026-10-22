@@ -63,7 +63,7 @@ a chosen attack, decay, sustain and release.</div>
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, play, seq,
+        Buffer, Routine, Server, Session, opfs, play, seq,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, SynthDef, control, envGen, out, sine,
@@ -129,6 +129,10 @@ a chosen attack, decay, sustain and release.</div>
           session.server.sendBundle([["/node_free", 0]]);
         }).play();
 
+
+
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/envelope.wav" });
 
         log(`wrote ${stats.path}`);

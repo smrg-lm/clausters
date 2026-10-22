@@ -111,7 +111,7 @@ for nothing.</div>
       /examples/editors/audio-lifecycle.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, SoundFile, errors, gui, segments } from "../../dist/index.js";
+      import { Session, SoundFile, errors, gui, opfs, segments } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -136,6 +136,8 @@ for nothing.</div>
                 Math.sin(2 * Math.PI * freq * (1 + c / 8) * i / rate);
             }
           }
+          // a write goes into a directory that is there, as on a disk
+          await opfs.makeDirectory("out");
           return SoundFile.write(`out/${file}`, samples, channels, rate, { sampleFormat: "float" });
         };
         const a = await tone("a.wav", 440.0, 1);

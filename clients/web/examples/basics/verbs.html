@@ -51,7 +51,7 @@ change. The tour ends on all three.
     -->
     <script type="module">
       import {
-        Automation, Buffer, Event, Session, SynthDef, play, render, seq,
+        Automation, Buffer, Event, Session, SynthDef, opfs, play, render, seq,
       } from "../../dist/index.js";
       import { Env, boxes as box, control, envGen, out, sine } from "../../dist/defs/index.js";
 
@@ -165,6 +165,8 @@ change. The tour ends on all three.
         // A pattern bounces offline to samples -- and with `path`, to a WAV
         // in the page's own storage -- with no engine involved.
         log("rendering a phrase to a WAV (offline, no audio device)");
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const wav = "out/verbs.wav";
         await render(seq.pbind({
           instrument: "default",

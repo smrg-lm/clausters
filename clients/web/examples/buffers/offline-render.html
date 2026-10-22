@@ -57,7 +57,7 @@ over HTTP (<code>python3 -m http.server</code>) and open
 
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, play, seq,
+        Buffer, Routine, Server, Session, opfs, play, seq,
       } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -99,6 +99,8 @@ over HTTP (<code>python3 -m http.server</code>) and open
         }).play();
 
         const started = performance.now();
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/offline_render.wav" });
         log(`wrote ${stats.path}`);
         const elapsed = (performance.now() - started) / 1000;

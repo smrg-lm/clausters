@@ -61,7 +61,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
     -->
     <script type="module">
       import {
-        Buffer, Event, Routine, Server, Session, SynthDef, play, render,
+        Buffer, Event, Routine, Server, Session, SynthDef, opfs, play, render,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, chans, control, dup, envGen, mix, out, rand, sine,
@@ -133,6 +133,10 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         log(`bare channel list: ${pair.channels} channels, `
           + `peak ${Math.max(...pair.peak, 0.0).toFixed(3)}`);
 
+
+
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/multichannel.wav" });
 
         log(`wrote ${stats.path}`);

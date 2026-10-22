@@ -5045,7 +5045,7 @@ sound.
   both examples. The extractor needs to distinguish those platform and
   language operations so a correct pair passes without hiding API divergence.
 
-- ⬜ **A client's own file write makes its directories in a tab, and not
+- ✅ **A client's own file write makes its directories in a tab, and not
   under node** *(found 2026-10-22, accepting the audio editor)*.
   `SoundFile.write`, `render({ path })` and a MIDI score's `write` go through
   `base/files.ts`, whose page half makes every directory above the file and
@@ -5055,3 +5055,6 @@ sound.
   rely on the tab's behavior to make `out/`, where their scripts call
   `os.makedirs`; settling it means one rule for both halves and the pages
   making the directory as their scripts do.
+  *Fixed 2026-10-22:* no write in a tab makes a directory, as under node;
+  the pages that write make `out/` with `opfs.makeDirectory` where their
+  scripts make it.

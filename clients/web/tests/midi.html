@@ -207,6 +207,8 @@
         log(`file: ${smf.length} bytes of Standard MIDI File, written by the `
           + `shared core in the page`);
         // And at a path: the page's own storage, read back byte for byte.
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("midi-page");
         const path = await score.write("midi-page/figure.mid", { ppq: 480 });
         const kept = await opfs.readFile(path);
         if (kept.length !== smf.length || kept.some((byte, i) => byte !== smf[i])) {

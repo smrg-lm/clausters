@@ -139,7 +139,7 @@ behind the dialog; in its name field it undoes the typing.
       /examples/editors/edit-audio.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, SoundFile, gui, play } from "../../dist/index.js";
+      import { Session, SoundFile, gui, opfs, play } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -161,6 +161,8 @@ behind the dialog; in its name field it undoes the typing.
           samples[i] = Math.exp(-3.0 * i / frames) * 0.7 *
             Math.sin(2 * Math.PI * 440.0 * i / rate);
         }
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const take = await SoundFile.write("out/edit_audio.wav", samples, 1, rate, {
           sampleFormat: "float",
         });

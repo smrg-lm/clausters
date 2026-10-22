@@ -63,7 +63,7 @@ band-limited recipe instead of a clipped edge.</div>
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, SynthDef, play,
+        Buffer, Routine, Server, Session, Synth, SynthDef, opfs, play,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, shaper, sine, vosc } from "../../dist/defs/index.js";
 
@@ -155,6 +155,9 @@ band-limited recipe instead of a clipped edge.</div>
           server.sendBundle([["/node_free", ["i", 0]]]);
         }).play();
 
+
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/wavetables.wav" });
 
         log(`wrote ${stats.path}`);

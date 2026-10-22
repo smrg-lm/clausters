@@ -58,7 +58,7 @@ paused: it is still there.</div>
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, SoundFile, Synth, SynthDef, channels, play,
+        Buffer, Routine, Server, Session, SoundFile, Synth, SynthDef, channels, opfs, play,
       } from "../../dist/index.js";
       import { control, out, sine } from "../../dist/defs/index.js";
 
@@ -101,6 +101,9 @@ paused: it is still there.</div>
           session.server.sendBundle([["/node_free", ["i", node.id]]]);
         }).play();
 
+
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const stats = await session.render({ sampleRate: SR, channels: 2, path: "out/pause_resume.wav" });
         session.deactivate();
         session.close();
