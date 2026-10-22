@@ -26,6 +26,7 @@ use clausters_editing::audio_playback::space;
 
 use super::super::clipboard::Clip;
 use super::super::keymap::Verb;
+use super::super::status::Line;
 use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock, refusal};
 use super::effects::{emit, emit_view, redraw_all, tell};
 use super::nav::{cursor_of, freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
@@ -262,18 +263,25 @@ impl Gestures {
         // paste is read against the platform's clipboard as it is now. An
         // action refused only for an empty selection goes on: the selection
         // is the host's first, so the owner's reading may predate the sweep,
-        // and the owner refuses it again if nothing is selected.
+        // and the owner refuses it again if nothing is selected. The refusal
+        // is said on the status line with its reason, since a key or a verb
+        // that silently does nothing teaches that it sometimes does not work
+        // -- a paste of text another program copied over a take, above all.
         if !host.offers(ctx.def_id, name) {
             return Vec::new();
         }
         if matches!(name, "paste" | "mix") {
             clipboard.refresh();
         }
-        if host
-            .action_state(ctx.def_id, name, clipboard)
-            .is_some_and(|state| !state.enabled && !state.unselected)
+        if let Some(state) = host.action_state(ctx.def_id, name, clipboard)
+            && !state.enabled
+            && !state.unselected
         {
-            return Vec::new();
+            let why = state
+                .reason
+                .unwrap_or_else(|| format!("{name} is not available now"));
+            host.say(ctx.def_id, Line::of_reason(None, &format!("{name}: {why}")));
+            return vec![GestureEffect::Redraw(ctx.def_id)];
         }
         // **Nothing behind a dialog is reached**, by a verb as by the pointer:
         // while one is up only the element focused inside it performs one --

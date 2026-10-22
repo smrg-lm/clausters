@@ -157,10 +157,6 @@ already carry it.
   display** *(`clients/gui/PLAN.md`, Found by use)*. Found in the eye pass
   over the audio editor's lifecycle example; the cause is not established.
 
-- ⬜ **A paste refused for what the clipboard holds says nothing**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found in the eye pass
-  over the audio editor's lifecycle example.
-
 - ⬜ **A page shows an edit of a short take a second and a half late**
   *(`clients/gui/PLAN.md`, Found by use)*. The edit lands at once; the
   window re-downloads the take a chunk per frame. A decision about the page's

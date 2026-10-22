@@ -32,8 +32,8 @@ mono). ``close_origin()`` closes ``a.wav`` in ``first``, and
 ``paste_second()`` again still pastes: the copy outlives the file it came
 from. ``paste_stereo()`` pastes the mono copy into ``b.wav`` and is refused --
 a paste never converts channels -- and ``b.wav`` is unchanged. Copy text in
-any other program and press Ctrl+V over a take: text stays text, and the paste
-is refused.
+any other program and press Ctrl+V over a take: text stays text, the paste is
+refused, and the window's status line says why.
 
 **Saves.** ``failed_save()`` saves ``d.wav`` into a directory that does not
 exist: the server refuses the write, the error is printed, and ``status()``

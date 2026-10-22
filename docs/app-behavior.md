@@ -223,7 +223,11 @@ code that keeps it lives.
   (`host::actions`): its copy and paste are the field's, and an undo while
   typing addresses the field, which keeps no history, never the document.
   A paste is offered only where the clipboard fits the destination: as many
-  channels, the same rate for a mix, a server copy on the same connection.
+  channels, the same rate for a mix, a server copy on the same connection --
+  read against the platform's clipboard as it is at the paste, so text
+  another program copied since is what does not fit. An action refused from
+  its key or a script's verb is said on the window's status line with its
+  reason; it never does nothing in silence.
   An empty selection is the one objection the host reads for itself: a sweep
   or a pick is drawn there before the owner hears of it, so a Ctrl+C right
   after one is never refused on a reading that predates it -- the host reads

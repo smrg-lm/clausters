@@ -4660,7 +4660,7 @@ wrong.
   *Fixed 2026-10-22:* the script ends on `editor.wait()`, as the page does,
   and the audit reads the pair as one.
 
-- ⬜ **A paste refused for what the clipboard holds says nothing**
+- ✅ **A paste refused for what the clipboard holds says nothing**
   *(found 2026-10-22, the eye pass over `editors/audio_lifecycle`)*. Text
   copied in another program after a copy of samples is what a paste pastes,
   and over a take it is refused -- correctly -- but in silence: Ctrl+V does
@@ -4671,3 +4671,9 @@ wrong.
   text on the clipboard between `copy_first()` and `paste_second()`. The
   refusal should be said where a refusal is said, and the readings follow
   the clipboard.
+  *Fixed 2026-10-22:* an action the host refuses at its key or a script's
+  verb is said on the window's status line with its reason (`paste: the
+  clipboard holds no samples`). The fit is the host's reading, made against
+  the platform's clipboard as it is at the paste and when a menu opens; the
+  owner's readings carry only where a paste lands, so they had nothing to
+  follow.

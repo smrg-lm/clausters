@@ -386,6 +386,11 @@ fn an_unavailable_action_is_refused_by_a_tool_a_command_and_a_key() {
     ctx.ctrl = true;
     gestures.press_key(&mut host, &ctx, Key::Char('a'), None);
     assert!(selected_notes(&host, 90).is_empty(), "nothing was selected");
+    assert_eq!(
+        said(&host).last().map(String::as_str),
+        Some("refused: select_all: the file has pending work"),
+        "and the refusal is said, with its reason"
+    );
     let mut entries = host.window_def(1).unwrap().menu.clone().unwrap();
     host.action_entries(1, &mut entries);
     assert_eq!(
@@ -496,6 +501,25 @@ fn a_paste_is_read_against_the_clipboard_and_its_destination() {
     assert!(!enabled(&host, "paste").enabled, "another connection");
     host.clipboard.set_text("words");
     assert!(!enabled(&host, "paste").enabled, "text is not samples");
+}
+
+/// **A paste refused for what the clipboard holds says so**: text another
+/// program copied over a take is not pasted, and the status line says why
+/// rather than leaving a key that did nothing.
+#[test]
+fn a_paste_refused_for_the_clipboard_says_why() {
+    let mut host = host_from(r#"{"type":"window","children":[]}"#);
+    let mut paste = reading("command");
+    paste["paste"] = serde_json::json!({"kind": "samples", "channels": 1, "rate": 48000.0,
+            "connection": 7, "generation": 1});
+    publish_actions(&mut host, serde_json::json!({ "paste": paste }));
+    host.clipboard.set_text("status()");
+    let effects = Gestures::default().command(&mut host, &ctx(), "paste");
+    assert!(emitted(&effects).is_empty(), "nothing is pasted");
+    assert_eq!(
+        said(&host).last().map(String::as_str),
+        Some("refused: paste: the clipboard holds no samples")
+    );
 }
 
 /// **A focused field answers its own editing first**: an undo while typing
@@ -627,6 +651,14 @@ fn a_copy_the_host_cannot_place_is_left_to_the_owner() {
     );
 }
 
+/// The lines window 1's status bar holds, oldest first.
+fn said(host: &Host) -> Vec<String> {
+    host.statuses()
+        .get(&1)
+        .map(|s| s.lines().map(|l| l.text.clone()).collect())
+        .unwrap_or_default()
+}
+
 /// **The loop switch is said when it moves**: an owner re-sends `looping` with
 /// every correction of a view, and a line for a switch nobody turned reads as
 /// if one had been.
@@ -651,12 +683,6 @@ fn a_loop_switch_sent_again_says_nothing() {
                 9000,
             ))),
         );
-    };
-    let said = |host: &Host| {
-        host.statuses()
-            .get(&1)
-            .map(|s| s.lines().map(|l| l.text.clone()).collect::<Vec<_>>())
-            .unwrap_or_default()
     };
     set(&mut host, 0);
     assert!(said(&host).is_empty(), "off was already off");
