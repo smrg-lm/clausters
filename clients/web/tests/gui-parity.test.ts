@@ -206,6 +206,30 @@ const trees: Record<string, () => GuiNode> = {
             signal({ id: 5, view: "spectrogram", data: KEEP, channels: 1 }),
         ),
 
+    segments_over_files: () => {
+        const segments = {
+            channels: 2, sample_rate: 48000,
+            parts: [
+                {
+                    path: "/takes/a.w64", peaks: "/takes/a.peaks", start: 0,
+                    frames: 48000, source_channels: 2, source_frames: 96000,
+                    source_rate: 48000,
+                },
+                {
+                    path: "/takes/b.w64", start: 100, frames: 24000,
+                    fade_in: 64, fade_out: 64, channels: [0, -1],
+                    source_channels: 1, source_frames: 48000, source_rate: 44100,
+                },
+            ],
+        };
+        return window(
+            { title: "segments", layout: "col" },
+            waveform({ id: 1, segments }),
+            spectrogram({ id: 2, segments }),
+            signal({ id: 3, view: "trace", segments }),
+        );
+    },
+
     ruler_score_legacy: () =>
         window(
             { title: "ruler and score", layout: "col" },

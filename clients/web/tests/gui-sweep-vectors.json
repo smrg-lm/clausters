@@ -2761,6 +2761,19 @@
  },
  {
   "builder": "signal",
+  "option": "segments",
+  "value": {
+   "a": "b"
+  },
+  "tree": {
+   "type": "signal",
+   "segments": {
+    "a": "b"
+   }
+  }
+ },
+ {
+  "builder": "signal",
   "option": "path",
   "value": "q",
   "tree": {
@@ -3141,6 +3154,20 @@
    "type": "signal",
    "view": "spectrogram",
    "preview_buffer": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "segments",
+  "value": {
+   "a": "b"
+  },
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "segments": {
+    "a": "b"
+   }
   }
  },
  {
@@ -4503,6 +4530,20 @@
    "type": "signal",
    "view": "trace",
    "preview_buffer": 7
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "segments",
+  "value": {
+   "a": "b"
+  },
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "segments": {
+    "a": "b"
+   }
   }
  },
  {

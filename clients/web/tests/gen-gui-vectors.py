@@ -171,6 +171,29 @@ def cases():
         ),
     ))
 
+    # A take that is a list of segments over files, on the three views that
+    # draw a take: the list is the wire's own structure, the same from both.
+    segments = {
+        "channels": 2, "sample_rate": 48000,
+        "parts": [
+            {"path": "/takes/a.w64", "peaks": "/takes/a.peaks", "start": 0,
+             "frames": 48000, "source_channels": 2, "source_frames": 96000,
+             "source_rate": 48000},
+            {"path": "/takes/b.w64", "start": 100, "frames": 24000,
+             "fade_in": 64, "fade_out": 64, "channels": [0, -1],
+             "source_channels": 1, "source_frames": 48000, "source_rate": 44100},
+        ],
+    }
+    out.append((
+        "segments_over_files",
+        g.window(
+            g.waveform(id=1, segments=segments),
+            g.spectrogram(id=2, segments=segments),
+            g.signal(id=3, view="trace", segments=segments),
+            title="segments", layout="col",
+        ),
+    ))
+
     # The free-standing ruler over a navigation group, the engraved page with
     # its whole cursor track, and the legacy boolean frequency-axis alias.
     out.append((

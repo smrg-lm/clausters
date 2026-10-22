@@ -458,6 +458,118 @@
     }
   },
   {
+    "name": "segments_over_files",
+    "tree": {
+      "type": "window",
+      "title": "segments",
+      "flow": "col",
+      "children": [
+        {
+          "type": "signal",
+          "id": 1,
+          "view": "trace",
+          "segments": {
+            "channels": 2,
+            "sample_rate": 48000,
+            "parts": [
+              {
+                "path": "/takes/a.w64",
+                "peaks": "/takes/a.peaks",
+                "start": 0,
+                "frames": 48000,
+                "source_channels": 2,
+                "source_frames": 96000,
+                "source_rate": 48000
+              },
+              {
+                "path": "/takes/b.w64",
+                "start": 100,
+                "frames": 24000,
+                "fade_in": 64,
+                "fade_out": 64,
+                "channels": [
+                  0,
+                  -1
+                ],
+                "source_channels": 1,
+                "source_frames": 48000,
+                "source_rate": 44100
+              }
+            ]
+          }
+        },
+        {
+          "type": "signal",
+          "id": 2,
+          "view": "spectrogram",
+          "segments": {
+            "channels": 2,
+            "sample_rate": 48000,
+            "parts": [
+              {
+                "path": "/takes/a.w64",
+                "peaks": "/takes/a.peaks",
+                "start": 0,
+                "frames": 48000,
+                "source_channels": 2,
+                "source_frames": 96000,
+                "source_rate": 48000
+              },
+              {
+                "path": "/takes/b.w64",
+                "start": 100,
+                "frames": 24000,
+                "fade_in": 64,
+                "fade_out": 64,
+                "channels": [
+                  0,
+                  -1
+                ],
+                "source_channels": 1,
+                "source_frames": 48000,
+                "source_rate": 44100
+              }
+            ]
+          }
+        },
+        {
+          "type": "signal",
+          "id": 3,
+          "view": "trace",
+          "segments": {
+            "channels": 2,
+            "sample_rate": 48000,
+            "parts": [
+              {
+                "path": "/takes/a.w64",
+                "peaks": "/takes/a.peaks",
+                "start": 0,
+                "frames": 48000,
+                "source_channels": 2,
+                "source_frames": 96000,
+                "source_rate": 48000
+              },
+              {
+                "path": "/takes/b.w64",
+                "start": 100,
+                "frames": 24000,
+                "fade_in": 64,
+                "fade_out": 64,
+                "channels": [
+                  0,
+                  -1
+                ],
+                "source_channels": 1,
+                "source_frames": 48000,
+                "source_rate": 44100
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
     "name": "ruler_score_legacy",
     "tree": {
       "type": "window",

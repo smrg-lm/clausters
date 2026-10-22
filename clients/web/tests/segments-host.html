@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a take that is a list of segments over files, drawn by the host</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+      #stage { width: 400px; height: 160px; }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>a take that is a <b>list of segments over files</b>, drawn by the
+        <b>GUI host</b> from the files in the page's own storage: the peaks its
+        window resolves, and the samples only under a zoom, with no question
+        about it sent to the engine.</div>
+      <button id="boot">boot + render + draw</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page half of the host drawing a list from its files
+      (clients/web/test.sh, headless Chrome; ?smoke=1 auto-runs). The engine
+      records a tone into a W64 with diskOut and its peaks with peaksOut, both
+      into the page's storage; a waveform then names a list over that file and
+      the host draws it. What is asserted is what the host did, read off its
+      own console:
+
+      - the list is drawn from its summary, placed whole ("summary of ...
+        placed") under its take key, a negative buffer number;
+      - none of the host's questions about it went to the engine (the bridge
+        logs every message it sends, "-> /buffer_...", and none names a
+        negative buffer);
+      - a new list for the same view, a cut, is placed again under the same
+        key, longer by what it repeats;
+      - a zoom to the samples reads the span back ("read back for widget"),
+        from the file, and still asks the engine nothing.
+    -->
+    <script type="module">
+      const seen = [];
+      const passthrough = console.log.bind(console);
+      console.log = (...args) => {
+        seen.push(args.join(" "));
+        passthrough(...args);
+      };
+
+      const { Server, Buffer, Synth, SynthDef, Bus, GuiHost, gui, opfs } =
+        await import("../dist/index.js");
+      const { diskOut, out, peaksOut, sine } = await import("../dist/defs/index.js");
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      // Waits for a console line that `test` accepts, from `from` on.
+      const until = async (from, test, ms, what) => {
+        for (let waited = 0; waited < ms; waited += 50) {
+          const line = seen.slice(from).find(test);
+          if (line) return line;
+          await sleep(50);
+        }
+        throw new Error(`${what} | ${seen.slice(from).join(" ; ").slice(-400)}`);
+      };
+      // A message the bridge sent to the engine about a negative buffer: a
+      // list's question that went the wrong way.
+      const leaked = (from) => seen.slice(from).find(
+        (line) => line.startsWith("-> /buffer_") && /\[Int\(-\d+\)/.test(line));
+
+      async function run() {
+        await opfs.makeDirectory("takes");
+        const server = await new Server().boot();
+        await new GuiHost({ engine: server.engine }).boot();
+
+        // The take and its peaks, written as a render or a recording writes
+        // them: the samples by diskOut, the summary by peaksOut beside it.
+        const PATH = "takes/segments.w64";
+        const PEAKS = "takes/segments.peaks";
+        const bus = Bus.audio(1, { server });
+        const tone = sine(330).mul(0.5);
+        await new SynthDef("segments_take",
+          out(bus.index, diskOut(tone, { path: PATH, format: "float" })),
+          peaksOut(tone, { path: PEAKS })).send(server);
+        const take = new Synth("segments_take", {}, { server });
+        await sleep(900);
+        take.free();
+        await sleep(700);
+        const read = await Buffer.read(PATH, { server });
+        const frames = read.frames;
+        read.free();
+        if (!(frames > 24000)) throw new Error(`the take is ${frames} frames`);
+
+        const part = (start, length) => ({
+          path: PATH, peaks: PEAKS, start, frames: length,
+          source_channels: 1, source_frames: frames, source_rate: 48000,
+        });
+        const whole = { channels: 1, sample_rate: 48000, parts: [part(0, frames)] };
+
+        const opened = seen.length;
+        const win = await gui.view(
+          { title: "segments", layout: "col", margin: 8.0 },
+          gui.waveform({ name: "take", segments: whole, sampleRate: 48000, ruler: "time" }),
+        ).open(document.getElementById("stage"));
+
+        const placed = await until(opened,
+          (line) => /buffer -\d+: summary of \d+ bucket\(s\) of \d+ placed/.test(line),
+          5000, "the list was never drawn from its summary");
+        const key = placed.match(/buffer (-\d+)/)[1];
+        log(placed);
+        if (leaked(opened)) throw new Error(`a list's question went to the engine: ${leaked(opened)}`);
+
+        // **An edit**: the first half again, then the whole take. The same
+        // view, the same key, a longer take.
+        const edited = seen.length;
+        const half = Math.floor(frames / 2);
+        win.widget("take").set({
+          segments: { channels: 1, sample_rate: 48000, parts: [part(0, half), part(0, frames)] },
+        });
+        const again = await until(edited,
+          (line) => line.includes(`buffer ${key}: summary of`) && line.includes("placed"),
+          5000, "the edited list was never drawn");
+        log(again);
+        const shaped = seen.slice(edited).find((line) =>
+          line.includes(`buffer ${key}: drawn from its summary (${frames + half} frames`));
+        if (!shaped) {
+          throw new Error(`the edit did not lengthen the take to ${frames + half} frames | `
+            + seen.slice(edited).filter((l) => l.includes(`buffer ${key}`)).join(" ; "));
+        }
+
+        // **A zoom to the samples** reads the span back from the file.
+        const zoomed = seen.length;
+        win.widget("take").set({ view_start: half + 1000, view_len: 800 });
+        const back = await until(zoomed, (line) => line.includes("read back for widget"),
+          5000, "a zoom to the samples read nothing back");
+        log(back);
+        if (leaked(opened)) throw new Error(`a list's question went to the engine: ${leaked(opened)}`);
+
+        verdict(`PASS: a list of segments over a W64 and its peaks in the page's `
+          + `storage was drawn by the host under key ${key}, an edit's list was `
+          + `drawn ${frames + half} frames long under the same key, and a zoom `
+          + `read its samples back from the file, with nothing asked of the engine`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

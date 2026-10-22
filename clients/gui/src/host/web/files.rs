@@ -16,7 +16,7 @@ use super::*;
 use crate::host::files::{Ask, DirEntry, Listing};
 
 /// The segments of `path`, refusing one that would leave the root.
-fn parts(path: &str) -> Result<Vec<String>, String> {
+pub(super) fn parts(path: &str) -> Result<Vec<String>, String> {
     let out: Vec<String> = path
         .split('/')
         .filter(|p| !p.is_empty() && *p != ".")
@@ -30,7 +30,7 @@ fn parts(path: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-fn js_err(what: &str, e: JsValue) -> String {
+pub(super) fn js_err(what: &str, e: JsValue) -> String {
     format!(
         "{what}: {}",
         e.as_string().unwrap_or_else(|| format!("{e:?}"))
@@ -38,7 +38,11 @@ fn js_err(what: &str, e: JsValue) -> String {
 }
 
 /// Calls `name` on `target` with `args` and awaits the promise it returns.
-async fn call(target: &JsValue, name: &str, args: &[JsValue]) -> Result<JsValue, String> {
+pub(super) async fn call(
+    target: &JsValue,
+    name: &str,
+    args: &[JsValue],
+) -> Result<JsValue, String> {
     let f: Function = Reflect::get(target, &JsValue::from_str(name))
         .map_err(|e| js_err(name, e))?
         .dyn_into()
@@ -51,7 +55,7 @@ async fn call(target: &JsValue, name: &str, args: &[JsValue]) -> Result<JsValue,
     }
 }
 
-fn field(target: &JsValue, name: &str) -> JsValue {
+pub(super) fn field(target: &JsValue, name: &str) -> JsValue {
     Reflect::get(target, &JsValue::from_str(name)).unwrap_or(JsValue::UNDEFINED)
 }
 

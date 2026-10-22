@@ -938,6 +938,56 @@ export interface TimelineOptions extends WidgetOptions {
 }
 
 /** Where a heavy view's samples come from, in the host's precedence order. */
+/**
+ * One part of a {@link SegmentList}: a span of a sound file, under the wire's
+ * own names -- the clipboard's segment part plus where the file's peaks are.
+ */
+export interface SegmentListPart {
+    /** The file, by an absolute path (in a page, a path in its storage). */
+    path: string;
+    /** The first frame of the file it reads. */
+    start: number;
+    /** How many frames it contributes to the list, at the list's rate. */
+    frames: number;
+    /** Frames of fade at its head and at its tail. */
+    fade_in?: number;
+    fade_out?: number;
+    /** Each fade's shape, an envelope segment's by name (`"lin"` by default). */
+    fade_in_shape?: { shape: string; curve?: number };
+    fade_out_shape?: { shape: string; curve?: number };
+    /** List channel to file channel, `-1` silent; the identity when absent. */
+    channels?: readonly number[];
+    /** The file's own channels, frames and rate. */
+    source_channels: number;
+    source_frames: number;
+    source_rate: number;
+    /** The file's peaks (what `peaksOut` writes); absent, its samples are read. */
+    peaks?: string;
+}
+
+/**
+ * **A take that is a list of segments over files**: its channels, its rate and
+ * its parts in order. The host draws it from the files themselves, with no
+ * server -- the peaks its window resolves, and the samples only under a zoom.
+ */
+export interface SegmentList {
+    channels: number;
+    sample_rate: number;
+    parts: readonly SegmentListPart[];
+}
+
+/** The `segments` option of the views that draw a take. */
+export interface SegmentsOptions {
+    /**
+     * **A take that is a list of segments over files**, in place of `buffer`:
+     * drawn by the host from the files' peaks and, under a zoom, their
+     * samples, natively from the disk and in a page from its storage. Setting
+     * a new list is the same take edited: the view keeps its picture until
+     * the new one has come whole.
+     */
+    segments?: SegmentList;
+}
+
 export interface SourceOptions extends WidgetOptions {
     // Every carrier prop also takes a {@link Source}: the logical `data` is
     // where one usually goes, and the carriers themselves accept it so a tree
@@ -1281,7 +1331,7 @@ export type SignalLayers = string | (string | SignalLayer)[];
  * name and document the six common points of the product.
  */
 export function signal(
-    options: SourceOptions & PreviewOptions & {
+    options: SourceOptions & PreviewOptions & SegmentsOptions & {
         view?: string;
         bus?: number;
         rate?: "audio" | "control";
@@ -1390,7 +1440,7 @@ export function signal(
     } = {},
 ): GuiNode {
     const {
-        view, cache, path, buffer, previewBuffer, data, blob, channels, bus, rate, retention,
+        view, cache, path, buffer, previewBuffer, segments, data, blob, channels, bus, rate, retention,
         baseBucket, navigable, selectable, editable, overlay, folded, layers, measure, fills, at, dur,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats,
         start, loop, axes: pair, label: text, ...rest
@@ -1398,7 +1448,7 @@ export function signal(
     return node("signal", {
         ...rest,
         ...(pair === undefined ? {} : { axes: pair }),
-        ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, previewBuffer, segments, data, blob, channels }),
         ...drop([
             ["view", view],
             ["bus", bus],
@@ -2641,7 +2691,7 @@ export function dialog(
  * there.
  */
 export function waveform(
-    options: SourceOptions & PreviewOptions & TimelineOptions & {
+    options: SourceOptions & PreviewOptions & SegmentsOptions & TimelineOptions & {
         /** The peak-pyramid bucket size (default 256). */
         baseBucket?: number;
         /** Draw the channels as overlaid traces instead of stacked lanes. */
@@ -2707,8 +2757,8 @@ export function waveform(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, previewBuffer, data, blob, channels, baseBucket, overlay, folded,
-        rulerY, bitDepth, min, max, layers, measure, fills,
+        cache, path, buffer, previewBuffer, segments, data, blob, channels, baseBucket, overlay,
+        folded, rulerY, bitDepth, min, max, layers, measure, fills,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats, ...timeline
     } = options;
     return node("signal", {
@@ -2717,7 +2767,7 @@ export function waveform(
             timeline,
             drop([["unit", rulerY], ["bit_depth", bitDepth], ["min", min], ["max", max]]),
         ),
-        ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, previewBuffer, segments, data, blob, channels }),
         ...drop([
             ["base_bucket", baseBucket],
             ["overlay", flag(overlay)],
@@ -2749,7 +2799,7 @@ export function waveform(
  * and `colormap` picks 0 viridis / 1 magma / 2 grayscale.
  */
 export function spectrogram(
-    options: SourceOptions & PreviewOptions & TimelineOptions & {
+    options: SourceOptions & PreviewOptions & SegmentsOptions & TimelineOptions & {
         windowSize?: number;
         hop?: number;
         dbFloor?: number;
@@ -2774,13 +2824,13 @@ export function spectrogram(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, previewBuffer, data, blob, channels, folded, windowSize, hop,
-        dbFloor, dbCeil, freqScale, logFreq, colormap, layers, rulerY, ...timeline
+        cache, path, buffer, previewBuffer, segments, data, blob, channels, folded, windowSize,
+        hop, dbFloor, dbCeil, freqScale, logFreq, colormap, layers, rulerY, ...timeline
     } = options;
     return node("signal", {
         view: "spectrogram",
         ...timelineProps(timeline, drop([["unit", rulerY]])),
-        ...sourceProps({ cache, path, buffer, previewBuffer, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, previewBuffer, segments, data, blob, channels }),
         ...drop([
             ["folded", folded === undefined ? undefined : [...folded]],
             ["window_size", windowSize],
@@ -3599,12 +3649,13 @@ export interface PreviewOptions {
 
 /** A heavy view's data source as wire props. */
 function sourceProps(options: Pick<SourceOptions,
-    "cache" | "path" | "buffer" | "data" | "blob" | "channels"> & PreviewOptions): Props {
-    const { cache, path, buffer, previewBuffer, data, blob, channels } = options;
+    "cache" | "path" | "buffer" | "data" | "blob" | "channels"> & PreviewOptions & SegmentsOptions): Props {
+    const { cache, path, buffer, previewBuffer, data, blob, channels, segments } = options;
     return drop([
         ["cache", cache],
         ["path", path],
         ["buffer", buffer],
+        ["segments", segments],
         ["preview_buffer", previewBuffer],
         // A `Source` and `KEEP` pass through untouched -- `node` expands a
         // source into the carrier it picked, and a keep is a word about the

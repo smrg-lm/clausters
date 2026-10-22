@@ -59,6 +59,7 @@ mod bulk;
 mod canvas;
 mod capture;
 mod compose;
+mod disk;
 mod files;
 mod input;
 #[cfg(feature = "midi")]
@@ -188,6 +189,9 @@ enum WebEvent {
         widget_id: i32,
         data: Loaded,
     },
+    /// The page's answerer answered a list's question (`disk`), in the
+    /// server's reply format: read as a server's reply is.
+    DiskReply(Vec<u8>),
     /// A directory an element asked for has been listed (`files`).
     Listed {
         def_id: i32,
@@ -325,6 +329,8 @@ impl WebApp {
         // is, until a page hands another over (`/gui_font`).
         #[cfg(feature = "font-atlas")]
         host.load_default_face();
+        // A list of segments over files is read from the page's storage.
+        host.set_disk_link(Box::new(disk::WebDisk::new(id)));
         Self {
             id,
             host,
@@ -1012,6 +1018,7 @@ impl WebApp {
                 widget_id,
                 data,
             } => self.on_bulk_ready(def_id, widget_id, data),
+            WebEvent::DiskReply(bytes) => self.on_server_inbound(&bytes),
             WebEvent::Listed {
                 def_id,
                 widget_id,

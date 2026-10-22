@@ -290,6 +290,7 @@ run_pages() {
     run_page editor.html   # the editor views host-drawn from a buffer, and a transport
     run_page recording.html # a take followed from the page over /buffer_stream
     run_page recording-host.html # the host: shape only while it fills, spans on zoom
+    run_page segments-host.html # the host: a list of segments over files in the page's storage
     run_page transport.html # the governing transport: a frozen subtree and a held beat
     run_page hosts.html    # two host instances in one page, sharing only the event loop
     run_page session.html  # two sessions on two engines: the ambient verbs resolve right
