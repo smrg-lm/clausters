@@ -50,6 +50,47 @@ pub struct BufferLocation {
     pub publication: u64,
 }
 
+/// **One span of a file** a clipboard of segments names: where the file is,
+/// which frames of it, the fades at its two ends and its channel map -- a
+/// [`crate::session::Part`] with its source named by **location** rather than
+/// by a session's id, so it means the same thing in any session it is pasted
+/// into.
+///
+/// It carries the file's shape too, so a paste adds the source to a session's
+/// table without reading the file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SegmentPart {
+    /// The file, by an absolute path: what a part over it names in another
+    /// session, whose folder is somewhere else.
+    pub path: String,
+    /// The first frame of the file it reads.
+    pub start: u64,
+    /// How many frames it contributes.
+    pub frames: u64,
+    /// Frames of fade at its head and at its tail.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub fade_in: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub fade_out: u64,
+    /// The shape of each fade.
+    #[serde(default, skip_serializing_if = "crate::session::SeamShape::is_linear")]
+    pub fade_in_shape: crate::session::SeamShape,
+    #[serde(default, skip_serializing_if = "crate::session::SeamShape::is_linear")]
+    pub fade_out_shape: crate::session::SeamShape,
+    /// Which channel of the file each channel of the copy reads; the identity
+    /// when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<Vec<i32>>,
+    /// The file's own shape: its channels, its frames and its rate.
+    pub source_channels: u32,
+    pub source_frames: u64,
+    pub source_rate: f64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
 /// What was copied.
 ///
 /// **Not [`crate::multitrack::Content`]**, which is what fills a region. This
@@ -103,6 +144,21 @@ pub enum Content {
         /// Which blob holds it: frame-major little-endian `f32`.
         blob: usize,
     },
+    /// **Spans of files, named rather than carried**: what an editor whose
+    /// takes live on disk copies. A copy of an hour is a few parts, and a
+    /// paste is an edit of a list -- in the same window, another window or
+    /// another session, since each part names its file by location. No sample
+    /// travels and no blob goes beside it, so it crosses as text.
+    Segments {
+        /// How many channels the copy has.
+        channels: u32,
+        /// Its frames, the parts' together.
+        frames: u64,
+        /// The rate it was taken at. Carried, never acted on.
+        sample_rate: f64,
+        /// The spans, in reading order.
+        parts: Vec<SegmentPart>,
+    },
     /// **A block a server holds**, named rather than carried: what an editor
     /// copies when its samples are the server's (a take of minutes, drawn
     /// from a summary). The copy is made on the server into a buffer of its
@@ -133,6 +189,7 @@ impl Content {
             Content::Elements { .. } => "elements",
             Content::Samples { .. } => "samples",
             Content::Spectral { .. } => "spectral",
+            Content::Segments { .. } => "segments",
             Content::Buffer { .. } => "buffer",
         }
     }
@@ -198,6 +255,32 @@ impl Clipboard {
         })
     }
 
+    /// Spans of files, in reading order, `channels` wide at `sample_rate`.
+    /// The frames are the parts' together.
+    pub fn segments(channels: u32, sample_rate: f64, parts: Vec<SegmentPart>) -> Self {
+        let frames = parts.iter().map(|p| p.frames).sum();
+        Self::of(Content::Segments {
+            channels,
+            frames,
+            sample_rate,
+            parts,
+        })
+    }
+
+    /// The files a clipboard of segments names, each once: a root that keeps
+    /// a render alive ([`crate::session::Session::release_renders`]).
+    pub fn files(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        if let Content::Segments { parts, .. } = &self.content {
+            for part in parts {
+                if !out.contains(&part.path.as_str()) {
+                    out.push(&part.path);
+                }
+            }
+        }
+        out
+    }
+
     fn of(content: Content) -> Self {
         Self {
             content,
@@ -225,7 +308,10 @@ impl Clipboard {
             Content::Samples { blob, .. } | Content::Spectral { blob, .. } => {
                 blob.saturating_add(1)
             }
-            Content::Text { .. } | Content::Elements { .. } | Content::Buffer { .. } => 0,
+            Content::Text { .. }
+            | Content::Elements { .. }
+            | Content::Segments { .. }
+            | Content::Buffer { .. } => 0,
         }
     }
 
@@ -238,6 +324,7 @@ impl Clipboard {
         match &self.content {
             Content::Samples { sample_rate, .. }
             | Content::Spectral { sample_rate, .. }
+            | Content::Segments { sample_rate, .. }
             | Content::Buffer { sample_rate, .. } => Some(*sample_rate),
             Content::Text { .. } | Content::Elements { .. } => None,
         }
@@ -260,7 +347,10 @@ impl Clipboard {
             } => (*frames as usize)
                 .checked_mul(*bins as usize)?
                 .checked_mul(*values_per_bin as usize),
-            Content::Text { .. } | Content::Elements { .. } | Content::Buffer { .. } => None,
+            Content::Text { .. }
+            | Content::Elements { .. }
+            | Content::Segments { .. }
+            | Content::Buffer { .. } => None,
         }
     }
 
@@ -273,6 +363,9 @@ impl Clipboard {
                 channels, frames, ..
             } => *channels == 0 || *frames == 0,
             Content::Spectral { frames, bins, .. } => *frames == 0 || *bins == 0,
+            Content::Segments {
+                channels, frames, ..
+            } => *channels == 0 || *frames == 0,
             Content::Buffer {
                 channels, frames, ..
             } => *channels == 0 || *frames == 0,

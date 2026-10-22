@@ -296,6 +296,36 @@ mod tests {
 
     /// A copied block is whole, and a truncated one says so rather than
     /// pasting silence.
+    /// **A clipboard of segments is whole with no blob** and crosses as the
+    /// text that is its document: a copy of an hour is a few parts, so a
+    /// paste in another window or another program reads it back unchanged.
+    #[test]
+    fn a_clipboard_of_segments_crosses_as_its_document() {
+        use clausters_document::clipboard::SegmentPart;
+        use clausters_document::session::SeamShape;
+        let part = SegmentPart {
+            path: "/takes/a.w64".into(),
+            start: 48_000,
+            frames: 172_800_000,
+            fade_in: 64,
+            fade_out: 0,
+            fade_in_shape: SeamShape::default(),
+            fade_out_shape: SeamShape::default(),
+            channels: None,
+            source_channels: 2,
+            source_frames: 200_000_000,
+            source_rate: 48_000.0,
+        };
+        let doc = Clipboard::segments(2, 48_000.0, vec![part]);
+        let mut clip = Clip::default();
+        clip.put(doc.clone(), Vec::new());
+        assert!(clip.is_whole(), "nothing travels beside it");
+        let mut there = Clip::default();
+        there.set_text(&clip.text());
+        assert_eq!(there.doc(), Some(&doc), "read back as the same document");
+        assert!(there.is_whole());
+    }
+
     #[test]
     fn a_block_knows_whether_its_payload_arrived() {
         let mut clip = Clip::default();

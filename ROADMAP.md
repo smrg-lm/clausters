@@ -288,13 +288,13 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The turn: an application's takes live on disk**, milestones `O34`,
-  `G45`, `X28`, `X29`, `S23` *(`crates/clausters-apps/PLAN.md`, "The
+- ⬜ **The turn: an application's takes live on disk**, milestones `G45`,
+  `X28`, `X29`, `S23` *(`crates/clausters-apps/PLAN.md`, "The
   turn: an application's takes live on disk", with each milestone in its own
   plan)*. **Taken next**, on the user's word: the audio editor's model does
   not reach a file of hours, and successive pastes of a long selection fail
-  natively. In that order: the document first, then the host, the audio
-  editor, the multitrack, and the removal of the editing commands last. Its
+  natively. In that order: the host first, then the audio editor, the
+  multitrack, and the removal of the editing commands last. Its
   decisions are taken. Before `X25`, which should port this lifecycle and not
   the one it replaces. **Related:** it takes the GUI plan's "An edit of a long
   take costs a native server with a segment a pass over it", and the page half
@@ -303,11 +303,10 @@ its plan; the plan is where its acceptance is read.
 
   | Order | Milestone | Plan |
   |---|---|---|
-  | 1 | `O34` — A source is a file, a clipboard holds segments, and a render is temporary | `crates/clausters-document/PLAN.md` |
-  | 2 | `G45` — The host draws a list of segments from its files | `clients/gui/PLAN.md` |
-  | 3 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
-  | 4 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
-  | 5 | `S23` — The server keeps no editing commands | root `PLAN.md` |
+  | 1 | `G45` — The host draws a list of segments from its files | `clients/gui/PLAN.md` |
+  | 2 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
+  | 3 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
+  | 4 | `S23` — The server keeps no editing commands | root `PLAN.md` |
 
 - ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
   summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A

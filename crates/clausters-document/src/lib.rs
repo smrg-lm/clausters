@@ -73,6 +73,7 @@ pub mod selection;
 pub mod session;
 pub mod timebase;
 pub mod view;
+pub mod workspace;
 
 pub use clipboard::{Clipboard, Content};
 pub use domain::DOMAINS;
