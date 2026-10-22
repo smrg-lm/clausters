@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a take as a list of segments</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 60rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      #stage { width: 900px; height: 420px; }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A take that is a <b>list of segments</b> over a file, drawn
+by the host. An application's takes live on disk: a take is a list of
+segments, each a span of a file with its own fades and channel map, and an
+edit is a new list over files that never change. This page renders one file
+and draws two lists over it, one above the other, both with
+<code>waveform({ segments })</code>:
+<ul>
+<li><b>the take as it is</b>: one part, the whole file -- a four-second tone
+that swells from quiet to loud;</li>
+<li><b>the take edited</b>: the same file with its halves swapped, the loud
+half first, with a 10 ms fade either side of the seam. Nothing was rendered
+for it. It is two parts over the one file, and its picture is composed by the
+host from the file's peaks.</li>
+</ul>
+The file is rendered offline with its <b>peaks</b> beside it: the render
+writes the samples to <code>take.w64</code>, and a <code>peaksOut</code> on the
+same signal writes <code>take.peaks</code>, the summary a waveform is drawn
+from. The host reads both itself, with no server involved in the drawing: it
+reads the levels of the peaks its window resolves, and <b>samples only under a
+zoom</b>. So zoom in with the wheel until single samples show, and what you see
+is read from the file then, a span at a time. <b>Check by eye</b> that the
+edited take falls from loud to quiet at its seam and then swells again, and
+that zooming into the seam shows the 10 ms fades meeting.
+<p>The files land in <code>out/segments/</code> of the page's own storage (the
+origin private file system), where the script writes them under
+<code>clients/python/examples/out/segments/</code>; a part names its file by
+that path in each. Needs <code>./build.sh</code> in <code>clients/web</code>
+first (<code>dist/</code> is git-ignored); serve it over HTTP and open
+<code>/examples/views/segments.html</code>.</p></div>
+      <button id="start">render and draw</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+    <!--
+      The web sibling of clients/python/examples/views/segments.py, call for
+      call: the same tone rendered offline with its peaks, the same two lists
+      over the one file, the same window. The files are in the page's storage,
+      where the script writes them to the example tree's out/.
+
+      Serve clients/web (the package root) and open
+      /examples/views/segments.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, Synth, SynthDef, gui, opfs } from "../../dist/index.js";
+      import { DoneAction, line, out, peaksOut, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (text) => { $("log").textContent += text + "\n"; };
+
+      const SR = 48_000;
+      const SECONDS = 4.0;
+      const FADE = SR / 100;      // 10 ms
+
+      const TAKE = "out/segments/take.w64";
+      const PEAKS = "out/segments/take.peaks";
+
+      // ---- render the take, and its peaks beside it ----
+      // A tone that swells over four seconds and frees itself at the end. The
+      // render writes its output to the W64; `peaksOut` writes the peaks of
+      // the same signal when the synth is freed. The render lasts exactly as
+      // long as the synth, so the peaks cover the whole file: the host does not
+      // trust peaks of another length.
+      function swell() {
+        const level = line(0.05, 0.8, SECONDS, DoneAction.FREE_SELF);
+        const tone = sine(440.0).mul(level);
+        return new SynthDef("swell", out(0.0, peaksOut(tone, { path: PEAKS })));
+      }
+
+      async function run() {
+        $("start").disabled = true;
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
+        await opfs.makeDirectory("out/segments");
+
+        const offline = (await Session.nrt()).activate();
+        await swell().send();
+        new Synth("swell");
+        const stats = await offline.render({ sampleRate: SR, channels: 1, path: TAKE, tail: SECONDS });
+        offline.deactivate();
+        log(`rendered ${stats.frames} frames to ${TAKE}, peaks to ${PEAKS}`);
+
+        // ---- two lists over the one file ----
+        // A part names the file by its path, the span it reads, its fades and
+        // the file's own shape, and where the file's peaks are.
+        const part = (start, frames, fadeIn = 0, fadeOut = 0) => ({
+          path: TAKE, peaks: PEAKS, start, frames,
+          fade_in: fadeIn, fade_out: fadeOut,
+          source_channels: 1, source_frames: stats.frames, source_rate: SR,
+        });
+        const half = Math.floor(stats.frames / 2);
+        const whole = { channels: 1, sample_rate: SR, parts: [part(0, stats.frames)] };
+        const swapped = { channels: 1, sample_rate: SR, parts: [
+          part(half, stats.frames - half, 0, FADE),
+          part(0, half, FADE, 0),
+        ] };
+
+        // ---- draw them ----
+        // The host draws both from the file; the session's server is not asked
+        // about either.
+        const session = await Session.embed();
+        await session.gui();
+        const win = await gui.view(
+          { title: "a take as a list of segments", layout: "col" },
+          gui.waveform({ name: "whole", segments: whole, sampleRate: SR, ruler: "time" }),
+          gui.waveform({ name: "edited", segments: swapped, sampleRate: SR, ruler: "time" }),
+        ).open($("stage"));
+        window.win = win;
+        log('up - win.widget("edited").set({ segments }) to draw another list');
+      }
+
+      $("start").onclick = () => run().catch((e) => log(`error: ${e?.stack ?? e}`));
+    </script>
+  </body>
+</html>
