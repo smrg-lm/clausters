@@ -318,19 +318,18 @@ pub struct Freed {
 }
 
 /// **A take leaving memory**: only the history holds it, and the resident
-/// budget is past. The member's steps write it to disk and free its buffer; a
-/// caller that cannot carry them out tells the member it was `kept`.
+/// budget is past. Its spill is an operation: the caller carries its batches
+/// out and completes them, and a write the server refuses leaves the take in
+/// its buffer.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Stored {
     /// The member whose take it is.
     pub member: MemberId,
     /// Its buffer, which stays its number while it is on disk.
     pub buffer: i64,
-    /// The steps that write it and free the buffer.
-    pub steps: Value,
-    /// A prepared storage operation whose waits and confirmation must be executed.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub operation: Option<crate::application::operations::Prepared>,
+    /// The prepared storage operation whose waits and confirmation must be
+    /// executed.
+    pub operation: crate::application::operations::Prepared,
 }
 
 /// **What a step of the history came to.**
@@ -569,14 +568,13 @@ impl Editing {
                 out.push(Stored {
                     member: owner as MemberId,
                     buffer,
-                    steps: clausters_editing::apply::steps_json(&work.steps),
-                    operation: Some(crate::application::operations::Prepared {
+                    operation: crate::application::operations::Prepared {
                         member: work.member,
                         ticket,
                         batch,
                         server: work.server,
                         steps: work.steps,
-                    }),
+                    },
                 });
             }
         }
@@ -2837,10 +2835,8 @@ mod tests {
         }
         if let Some(stored) = answer["stored"].as_array_mut() {
             for entry in stored {
-                if entry["operation"].is_object() {
-                    let (_, steps) = settle_operation(editing, entry["operation"].clone());
-                    entry["steps"] = json!(steps);
-                }
+                let (_, steps) = settle_operation(editing, entry["operation"].clone());
+                entry["steps"] = json!(steps);
             }
         }
         // Keep the original sparse encoding used by the assertions below.
@@ -3604,7 +3600,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [20]
         );
-        let prepared = stored[0].operation.as_ref().unwrap();
+        let prepared = &stored[0].operation;
         let refused = raw_call(
             &mut editing,
             json!({"verb":"operation","action":"complete",

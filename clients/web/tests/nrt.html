@@ -198,6 +198,8 @@
         // Application services also work with no renderer. Two strokes over
         // one frame spill the first immutable take, undo restores it from OPFS,
         // and a new edit releases the spilled redo source through its owner.
+        // a scratch directory handed over is the caller's to make
+        await opfs.makeDirectory("application-scratch");
         const editor = new AudioEditor(buf, { residentBytes: 0, scratch: "application-scratch" });
         const idle = async () => {
           let waiting;

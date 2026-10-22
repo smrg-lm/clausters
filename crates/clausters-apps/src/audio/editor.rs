@@ -462,10 +462,7 @@ const EMPTY_VERBS: &[&str] = &[
     "toggle_files",
     "playing",
     "props",
-    "open",
     "event",
-    "acknowledge",
-    "kept",
 ];
 
 /// Why a verb that acts on a file is refused when none is open.
@@ -1051,22 +1048,15 @@ impl AudioEditor {
     /// glitch it is, and it is the user's to avoid rather than the editor's to
     /// refuse. A new buffer is the caller's to hand over, as every buffer
     /// number here is.
-    pub fn save(&mut self, to: Option<Target>, format: &str) -> Result<Value, String> {
-        self.save_steps(to, format).map(|steps| steps_json(&steps))
-    }
-
+    ///
+    /// These are a save operation's steps, built over the operation's draft,
+    /// which they leave naming the destination. Nothing here is clean yet:
+    /// the saved revision, the target and the format are the editor's only
+    /// once the write has succeeded and the operation commits.
     fn save_steps(&mut self, to: Option<Target>, format: &str) -> Result<Vec<Step>, String> {
-        let to = to.unwrap_or_else(|| self.file.target.clone());
-        if !matches!(format, "float" | "int24" | "int16") {
-            return Err(format!(
-                "'{format}' is not a sample format (float, int24, int16)"
-            ));
-        }
+        let to = self.save_target(to, format)?;
         let display = self.file.display as i32;
         let steps = match &to {
-            Target::File(path) if path.is_empty() => {
-                return Err("a file is saved under a path".into());
-            }
             Target::File(path) => vec![
                 send(
                     "/buffer_write",
@@ -1083,11 +1073,6 @@ impl AudioEditor {
                 },
             ],
             Target::Buffer(buffer) => {
-                if *buffer == self.file.display || self.file.frames.contains_key(buffer) {
-                    return Err(format!(
-                        "buffer {buffer} is one this editor reads: save into another"
-                    ));
-                }
                 let frames = self.length();
                 let width = u64::from(self.file.channels);
                 let mut steps = self.allocate(*buffer, frames);
@@ -1109,26 +1094,36 @@ impl AudioEditor {
                 steps
             }
         };
-        if matches!(to, Target::File(_)) {
-            self.file.written_format = Some(format.to_string());
-        }
-        self.file.saved_revision = self.file.revision;
-        self.file.dirty = false;
         self.file.target = to;
         Ok(steps)
+    }
+
+    /// **Where a save writes**, `to` or what the take was opened from,
+    /// checked: a known format, a file with a path, a buffer the editor does
+    /// not read.
+    pub(super) fn save_target(&self, to: Option<Target>, format: &str) -> Result<Target, String> {
+        let to = to.unwrap_or_else(|| self.file.target.clone());
+        if !matches!(format, "float" | "int24" | "int16") {
+            return Err(format!(
+                "'{format}' is not a sample format (float, int24, int16)"
+            ));
+        }
+        match &to {
+            Target::File(path) if path.is_empty() => Err("a file is saved under a path".into()),
+            Target::Buffer(buffer)
+                if *buffer == self.file.display || self.file.frames.contains_key(buffer) =>
+            {
+                Err(format!(
+                    "buffer {buffer} is one this editor reads: save into another"
+                ))
+            }
+            _ => Ok(to),
+        }
     }
 
     /// What a save writes over.
     pub fn target(&self) -> &Target {
         &self.file.target
-    }
-
-    /// A spill the caller could not carry out -- the write was refused, a
-    /// quota full -- so the take is still in its buffer.
-    pub fn kept(&mut self, buffer: i64) {
-        for file in std::iter::once(&mut self.file).chain(self.open_files.parked.values_mut()) {
-            file.spilled.remove(&buffer);
-        }
     }
 
     /// The steps that read back every take on disk the list now reads, before
@@ -2336,16 +2331,7 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   the level meter: the window, as a GuiDef.
 /// - `props` -- `widget`: the correction.
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
-/// - `apply` -- `payload`: `{"steps"}` for a list the history handed back, or
-///   `{}` for a payload that is not one.
 /// - `parts` -- `{"parts", "frames"}`: the list, and how long it is.
-/// - `open` -- `{"steps"}`: the private copy of what the editor was opened
-///   over, and the join stitched over it; or `{"error"}` with no buffer
-///   handed over for the copy.
-/// - `save` -- `path` or `buffer`, and `format` (`"float"` when absent), all
-///   optional: `{"steps", "path"}` or `{"steps", "buffer"}`, what writes the
-///   take over what it was opened from or, given one, into that file or that
-///   buffer; or `{"error"}`.
 /// - `files` -- the ordered open files and list visibility; `binding` -- the
 ///   focused file's buffer facts, cursor, selection, layers and loop switch.
 ///   With no file open, `binding` and `file` answer `{"empty": true}`, and
@@ -2358,15 +2344,17 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   Closing the last one leaves the editor open with none (`"empty": true`,
 ///   `binding` null); the window is drawn again and offers adding a file.
 /// - `show_files`, `hide_files`, `toggle_files` -- the independent left list.
-/// - `kept` -- `buffer`: a spill the caller could not carry out, so that take
-///   is still in its buffer. Answers `{}`.
 /// - `span` -- `span`: `[start, end]` in seconds, or `null`: the time range
 ///   the space bar plays, as a sweep leaves it. Answers `{"sel_start",
 ///   "sel_len"}`, the band the window draws, in frames.
 /// - `locate` -- `at`, in seconds: the position cursor. Answers `{"cue"}`,
 ///   its frame.
-/// - `play` -- `looping`: the [`Play`] the space bar would ask for.
-/// - `acknowledge` -- `seq`, `version`, `reason`: an [`Answer`].
+/// - `play` -- the [`Play`] the space bar would ask for, under the file's
+///   loop switch. `looping` -- `on`: that switch, as a script sets it.
+///
+/// Opening, saving, a history step and a spill are not verbs here: each is
+/// an operation of the context (`operation`), whose steps commit only once
+/// the server has carried them out.
 ///
 /// An unknown verb answers `{}`.
 pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
@@ -2461,14 +2449,11 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         }
         "attach_view"=>{editor.window_state.active=true;editor.window_state.binding_generation+=1;"{}".into()},
         "detach_view"=>{editor.window_state.active=false;editor.window_state.window=None;editor.window_state.binding_generation+=1;"{}".into()},
-        "preview" => editor.preview_state().to_string(),
         "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
         "folded" => json!({"folded": editor.folded()}).to_string(),
         "file" if !editor.open_files.open => json!({"empty": true}).to_string(),
         "file" => editor.file().to_string(),
         "files" => { editor.refresh_files(); json!({"files": editor.open_files.rows, "visible": editor.window_state.files_visible}).to_string() },
-        // with no file open, a binding says so rather than naming one
-        "binding" if !editor.open_files.open => json!({"empty": true}).to_string(),
         // with no file open, a binding says so rather than naming one
         "binding" if !editor.open_files.open => json!({"empty": true}).to_string(),
         "binding" => editor.binding().to_string(),
@@ -2554,19 +2539,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             .first()
             .map_or_else(|| "{}".into(), |c| c.props.to_string()),
         "props" => Value::Object(props(widget)).to_string(),
-        "open" if !editor.open_files.open => json!({ "steps": [] }).to_string(),
-        "open" => match editor.open() {
-            Ok(steps) => json!({ "steps": steps }).to_string(),
-            Err(error) => json!({ "error": error }).to_string(),
-        },
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
             serde_json::to_string(&editor.event(&event, version)).unwrap_or_else(|_| "{}".into())
         }
-        "apply" => match editor.apply(&get("payload")) {
-            Some(steps) => json!({ "steps": steps }).to_string(),
-            None => "{}".into(),
-        },
         "playback" => editor.playback_file().to_string(),
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
         "span" => {
@@ -2579,39 +2555,11 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "locate" => {
             json!({ "cue": editor.set_cursor(get("at").as_f64().unwrap_or(0.0)) }).to_string()
         }
-        "play" => {
-            editor.file.presentation.looping = get("looping").as_bool().unwrap_or(false);
-            json!(editor.play(editor.file.presentation.looping)).to_string()
-        },
-        "save" => {
-            let format = get("format").as_str().unwrap_or("float").to_string();
-            let to = match (get("path").as_str(), get("buffer").as_i64()) {
-                (Some(path), _) => Some(Target::File(path.to_string())),
-                (None, Some(buffer)) => Some(Target::Buffer(buffer)),
-                (None, None) => None,
-            };
-            match editor.save(to, &format) {
-                Ok(steps) => {
-                    let mut answer = json!({ "steps": steps });
-                    match editor.target() {
-                        Target::File(path) => answer["path"] = json!(path),
-                        Target::Buffer(buffer) => answer["buffer"] = json!(buffer),
-                    }
-                    answer.to_string()
-                }
-                Err(error) => json!({ "error": error }).to_string(),
-            }
-        }
-        "kept" => {
-            editor.kept(int(&get("buffer")));
+        "play" => json!(editor.play(editor.file.presentation.looping)).to_string(),
+        "looping" => {
+            editor.file.presentation.looping = get("on").as_bool().unwrap_or(false);
             "{}".into()
         }
-        "acknowledge" => serde_json::to_string(&editor.acknowledge(
-            int(&get("seq")),
-            version,
-            get("reason").as_str().map(str::to_string),
-        ))
-        .unwrap_or_else(|_| "{}".into()),
         _ => "{}".into(),
     }
 }

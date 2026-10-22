@@ -20,6 +20,7 @@ import type { GuiNode } from "../src/gui/guidef.ts";
 import { Transport } from "../src/defs/server/transport.ts";
 import { GuiIdAllocator } from "../src/gui/ids.ts";
 import { SoundFile } from "../src/soundfile.ts";
+import { CommandError } from "../src/errors.ts";
 
 /**
  * The view a window edits: the node its `main` names, which stands under the
@@ -883,6 +884,50 @@ test("a second editor never walks the first one's edits", async () => {
     second.close();
 });
 
+test("a shared undo from one window tells it the version the step's commit left", async () => {
+    // The step restores the other window's file, on that editor's queue; told
+    // where the step left the context before it committed, this window would
+    // name an old version and its next gesture would be refused as stale.
+    class Told extends FakeHost {
+        versions: number[] = [];
+        override ack(seq: number, version = 0): void {
+            this.versions.push(version);
+            super.ack(seq);
+        }
+        override push(
+            seq: number,
+            sets: readonly (readonly [number, Record<string, PropValue>])[],
+            version = 0,
+            generations: readonly (readonly [number, number])[] = [],
+            reason?: string,
+        ): void {
+            this.versions.push(version);
+            super.push(seq, sets, version, generations, reason);
+        }
+    }
+    const context = new Editing();
+    const take = new FakeBuffer();
+    const other = new FakeBuffer();
+    other.bufnum = 8;
+    other.server = take.server;
+    const first = new AudioEditor(take as never, { sampleRate: SR, context, sharedHistory: true });
+    const second = new AudioEditor(other as never, { sampleRate: SR, context, sharedHistory: true });
+    const one = new Told();
+    const two = new Told();
+    await first.open(one as unknown as GuiHost);
+    await second.open(two as unknown as GuiHost);
+    await settle();
+    const wid = Number(picture(two.trees.at(-1)).id);
+    second.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]]);
+    await settle();
+    assert.equal(first.undo(), true);
+    await settle();
+    assert.equal(one.versions.at(-1), context.version);
+    first.close();
+    second.close();
+    await settle();
+});
+
 test("shared undo updates an unfocused file without moving focus", async () => {
     const [editor, , , context] = await opened(new FakeBuffer(), { sharedHistory: true });
     const original = editor.envelope;
@@ -1352,6 +1397,145 @@ test("the shared trace is what the coordinator answers this page", async () => {
         await step("close the focused", () => editor.closeFile());
         await step("both views", () => editor.viewBoth());
         await step("close", () => editor.close());
+        assert.deepEqual(trace, expected,
+            "the two clients drive the coordinator differently (or regenerate gen-audio-trace-vectors.py)");
+    } finally {
+        SoundFile.prototype.toBuffer = originalRead;
+        SoundFile.open = originalOpen;
+    }
+});
+
+/** The first node of a tree `wanted` says yes to. */
+function findNode(node: any, wanted: (node: any) => boolean): any {
+    if (wanted(node)) return node;
+    for (const child of node.children ?? []) {
+        const found = findNode(child, wanted);
+        if (found !== undefined) return found;
+    }
+    return undefined;
+}
+
+/**
+ * **A server that refuses, and one that is slow**: each command named in
+ * `fail` is answered once with a `/fail`, and while the first command named
+ * in `slow` is out, its action runs before the reply comes -- what a hand
+ * does in the window while a write is in flight.
+ */
+class FaultyServer extends FakeServer {
+    fail = new Map<string, string>();
+    slow = new Map<string, () => unknown>();
+
+    override request(addr: string, args: unknown[]): Promise<{ addr: string; args: unknown[] }> {
+        const refused = this.fail.get(addr);
+        if (refused !== undefined) {
+            this.fail.delete(addr);
+            this.sendMsg(addr, ...args);
+            return Promise.resolve({ addr: "/fail", args: [addr, refused] });
+        }
+        const meanwhile = this.slow.get(addr);
+        if (meanwhile !== undefined) {
+            this.slow.delete(addr);
+            this.sendMsg(addr, ...args);
+            meanwhile();
+            const first = Array.isArray(args[0]) ? Number(args[0][1]) : Number(args[0]);
+            return Promise.resolve({ addr: "/done", args: [addr, first] });
+        }
+        return super.request(addr, args);
+    }
+}
+
+test("the shared fault trace is what the coordinator answers this page", async () => {
+    const { readFileSync } = await import("node:fs");
+    const expected = (JSON.parse(readFileSync(new URL("./audio-trace-vectors.json", import.meta.url), "utf8")) as {
+        faults: [string, string[] | null, Record<string, unknown>][];
+    }).faults;
+    const originalRead = SoundFile.prototype.toBuffer;
+    const originalOpen = SoundFile.open;
+    SoundFile.prototype.toBuffer = async function({ server } = {}) {
+        const endpoint = server as unknown as FakeServer;
+        return { bufnum: endpoint.buffers.alloc(), frames: this.frames, channels: this.channels,
+            sampleRate: this.sampleRate, server: endpoint, path: this.path } as never;
+    };
+    SoundFile.open = async (path: string) => new SoundFile(path, 200, 2, SR);
+    try {
+        const take = new FakeBuffer(100, 1);
+        take.path = "/takes/a.wav";
+        const server = new FaultyServer();
+        take.server = server;
+        const editor = new AudioEditor(take as never, {
+            sampleRate: SR, context: new Editing(), file: new SoundFile("/takes/a.wav", 100, 1, SR),
+        });
+        await settle();
+        const trace: [string, string[] | null, Record<string, unknown>][] = [];
+        const inner = editor as unknown as {
+            effect(entry: Record<string, unknown>, held?: unknown): Promise<void>;
+            answerAwait(entry: Record<string, unknown>): Promise<Record<string, unknown>>;
+            windowId: number;
+            editing: Editing;
+        };
+        const effect = inner.effect.bind(editor);
+        const wait = inner.answerAwait.bind(editor);
+        inner.effect = (entry, held) => {
+            trace.at(-1)![1]?.push(String(entry.kind));
+            return effect(entry, held);
+        };
+        inner.answerAwait = (entry) => {
+            trace.at(-1)![1]?.push(`await:${String(entry.kind)}` + (entry.via !== undefined ? `:${String(entry.via)}` : ""));
+            return wait(entry);
+        };
+        const host = new FakeHost();
+        const state = (): Record<string, unknown> => {
+            const file = editor.file;
+            return {
+                path: file === null ? null : file.path, frames: file === null ? null : file.frames,
+                dirty: editor.dirty, files: editor.files.length, undo: editor.canUndo, closed: editor.closed,
+            };
+        };
+        const category = (error: unknown): string =>
+            error instanceof CommandError ? "command" : error instanceof RangeError ? "value" : "runtime";
+        const step = async (name: string, act: () => unknown, concurrent = false) => {
+            trace.push([name, concurrent ? null : [], {}]);
+            let raised: string | null = null;
+            try {
+                await act();
+                // a hand's gesture fails in the work it queued, which a page awaits
+                await editor.idle();
+            } catch (error) {
+                raised = category(error);
+            }
+            await settle();
+            trace.at(-1)![2] = { ...state(), raised };
+        };
+        const cut = (at = 10.0) => {
+            const wid = Number(picture(host.trees.at(-1)).id);
+            editor.apply("/gui_event", [wid, trace.length, inner.editing.version, "cut", at, 20.0]);
+        };
+        const window = (verb: string) => editor.apply("/gui_event", [inner.windowId, trace.length, 0, verb]);
+        /** A file chosen in the window's list, by the hand. */
+        const pick = (index: number) => {
+            const listed = findNode(host.trees.at(-1), (node) => node.rows !== undefined);
+            editor.apply("/gui_event", [Number(listed.id), trace.length, 0, "select", index]);
+        };
+        const slow = (addr: string, meanwhile: () => unknown, act: () => unknown) => {
+            server.slow.set(addr, meanwhile);
+            return act();
+        };
+        await step("open", () => editor.open(host as unknown as GuiHost));
+        await step("cut", () => cut());
+        server.fail.set("/buffer_write", "no space left on device");
+        await step("a refused save", () => editor.save());
+        await step("the save retried", () => editor.save());
+        await step("a cut while the write is out", () => slow("/buffer_write", () => cut(), () => editor.save()), true);
+        await step("undo to what was written", () => window("undo"));
+        server.fail.set("/buffer_gen", "copy refused");
+        await step("a cut whose copy is refused", () => cut());
+        await step("open another file", () => editor.openFile(["/takes/b.wav"]));
+        await step("back to the first", () => editor.focusFile(0));
+        await step("the second cut while the first is written",
+            () => slow("/buffer_write", () => { pick(1); cut(); }, () => editor.save()), true);
+        await step("back to the first again", () => editor.focusFile(0));
+        await step("the window closed while a write is out",
+            () => slow("/buffer_write", () => editor.close(), () => editor.save({ path: "/takes/c.wav" })), true);
         assert.deepEqual(trace, expected,
             "the two clients drive the coordinator differently (or regenerate gen-audio-trace-vectors.py)");
     } finally {

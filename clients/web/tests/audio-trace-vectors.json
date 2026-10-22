@@ -48,18 +48,13 @@
     "version",
     "await:batch",
     "version",
-    "dirty",
     "await:clipboard",
     "await:topUp",
     "version",
     "await:batch",
     "version",
-    "dirty",
-    "dirty",
     "await:steps:service",
-    "dirty",
     "set",
-    "dirty",
     "changed",
     "await:rolling",
     "await:steps:service",
@@ -69,7 +64,6 @@
     "set",
     "locate",
     "echo",
-    "dirty",
     "changed"
    ]
   ],
@@ -81,11 +75,8 @@
     "await:batch",
     "version",
     "operationEcho",
-    "dirty",
-    "dirty",
     "await:steps:service",
     "echo",
-    "dirty",
     "set"
    ]
   ],
@@ -96,7 +87,6 @@
     "await:batch",
     "version",
     "release",
-    "dirty",
     "echo"
    ]
   ],
@@ -106,19 +96,13 @@
     "await:read",
     "await:batch",
     "version",
-    "dirty",
     "bind",
-    "dirty",
     "await:steps:service",
     "await:rolling",
     "await:steps:service",
     "publish",
-    "dirty",
     "set",
-    "dirty",
-    "dirty",
     "set",
-    "dirty",
     "changed",
     "echo",
     "set",
@@ -131,11 +115,9 @@
    "focus the first",
    [
     "bind",
-    "dirty",
     "await:rolling",
     "await:steps:service",
     "publish",
-    "dirty",
     "set",
     "echo",
     "set",
@@ -151,11 +133,9 @@
     "free",
     "release",
     "bind",
-    "dirty",
     "await:rolling",
     "await:steps:service",
     "publish",
-    "dirty",
     "set",
     "echo",
     "set",
@@ -169,7 +149,6 @@
    [
     "layers",
     "publish",
-    "dirty",
     "set",
     "set",
     "echo"
@@ -181,6 +160,255 @@
     "await:steps:service",
     "closeWindow"
    ]
+  ]
+ ],
+ "faults": [
+  [
+   "open",
+   [],
+   {
+    "path": "/takes/a.wav",
+    "frames": 100,
+    "dirty": false,
+    "files": 1,
+    "undo": false,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "cut",
+   [
+    "version",
+    "await:batch",
+    "version",
+    "await:clipboard",
+    "await:topUp",
+    "version",
+    "await:batch",
+    "version",
+    "await:steps:service",
+    "set",
+    "changed",
+    "await:rolling",
+    "await:steps:service",
+    "set",
+    "set",
+    "set",
+    "set",
+    "locate",
+    "echo",
+    "changed"
+   ],
+   {
+    "path": "/takes/a.wav",
+    "frames": 80,
+    "dirty": true,
+    "files": 1,
+    "undo": true,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "a refused save",
+   [
+    "await:batch",
+    "await:batch",
+    "await:batch",
+    "version",
+    "returned",
+    "operationEcho",
+    "release"
+   ],
+   {
+    "path": "/takes/a.wav",
+    "frames": 80,
+    "dirty": true,
+    "files": 1,
+    "undo": true,
+    "closed": false,
+    "raised": "command"
+   }
+  ],
+  [
+   "the save retried",
+   [
+    "await:batch",
+    "await:batch",
+    "version",
+    "release",
+    "echo"
+   ],
+   {
+    "path": "/takes/a.wav",
+    "frames": 80,
+    "dirty": false,
+    "files": 1,
+    "undo": true,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "a cut while the write is out",
+   null,
+   {
+    "path": "/takes/a.wav",
+    "frames": 60,
+    "dirty": true,
+    "files": 1,
+    "undo": true,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "undo to what was written",
+   [
+    "version",
+    "await:stepped",
+    "await:batch",
+    "version",
+    "operationEcho",
+    "await:steps:service",
+    "echo",
+    "set"
+   ],
+   {
+    "path": "/takes/a.wav",
+    "frames": 80,
+    "dirty": false,
+    "files": 1,
+    "undo": true,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "a cut whose copy is refused",
+   [
+    "version",
+    "await:batch",
+    "await:batch",
+    "version",
+    "returned",
+    "operationEcho",
+    "release"
+   ],
+   {
+    "path": "/takes/a.wav",
+    "frames": 80,
+    "dirty": false,
+    "files": 1,
+    "undo": true,
+    "closed": false,
+    "raised": "command"
+   }
+  ],
+  [
+   "open another file",
+   [
+    "await:read",
+    "await:batch",
+    "version",
+    "bind",
+    "await:steps:service",
+    "await:rolling",
+    "await:steps:service",
+    "publish",
+    "set",
+    "set",
+    "changed",
+    "echo",
+    "set",
+    "set",
+    "set",
+    "set"
+   ],
+   {
+    "path": "/takes/b.wav",
+    "frames": 200,
+    "dirty": false,
+    "files": 2,
+    "undo": false,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "back to the first",
+   [
+    "bind",
+    "await:rolling",
+    "await:steps:service",
+    "publish",
+    "set",
+    "echo",
+    "set",
+    "set",
+    "set",
+    "set"
+   ],
+   {
+    "path": "/takes/a.wav",
+    "frames": 80,
+    "dirty": false,
+    "files": 2,
+    "undo": true,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "the second cut while the first is written",
+   null,
+   {
+    "path": "/takes/b.wav",
+    "frames": 180,
+    "dirty": true,
+    "files": 2,
+    "undo": true,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "back to the first again",
+   [
+    "bind",
+    "await:rolling",
+    "await:steps:service",
+    "publish",
+    "set",
+    "echo",
+    "set",
+    "set",
+    "set",
+    "set"
+   ],
+   {
+    "path": "/takes/a.wav",
+    "frames": 80,
+    "dirty": false,
+    "files": 2,
+    "undo": true,
+    "closed": false,
+    "raised": null
+   }
+  ],
+  [
+   "the window closed while a write is out",
+   null,
+   {
+    "path": "/takes/c.wav",
+    "frames": 80,
+    "dirty": false,
+    "files": 2,
+    "undo": true,
+    "closed": true,
+    "raised": null
+   }
   ]
  ]
 }

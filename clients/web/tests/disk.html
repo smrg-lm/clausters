@@ -51,6 +51,8 @@
 
       async function run() {
         const PATH = "takes/streamed.wav";
+        // a server records into a directory that is there, as on a disk
+        await opfs.makeDirectory("takes");
         const session = await Session.embed();
         const server = session.server;
 

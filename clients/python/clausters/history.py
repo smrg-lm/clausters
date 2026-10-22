@@ -530,8 +530,7 @@ class Editing:
             member = int(entry.get("member", -1))
             structure, handler = self._handlers.get(member, (None, None))
             if handler is not None and hasattr(handler, "store"):
-                handler.store(structure, int(entry["buffer"]), entry.get("steps") or [],
-                              operation=entry.get("operation"))
+                handler.store(structure, int(entry["buffer"]), entry["operation"])
 
     def state(self, member: "int | None" = None) -> dict:
         """What an undo menu reads of the order `step` walks for ``member``:

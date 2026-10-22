@@ -55,6 +55,7 @@ import { Segment } from "../../segments.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import { runSteps } from "../../steps.ts";
 import { executeSteps, releaseBuffer } from "./cleanup.ts";
+import { makeDirectoryAt } from "../../base/files.ts";
 import { serviceInstance } from "./application.ts";
 import { exchange, bindExchange, type ExchangeLease } from "./clipboard.ts";
 import { Domain } from "./domain.ts";
@@ -278,20 +279,19 @@ export class AudioDomain extends Domain<Buffer | null> {
     }
 
     /**
-     * Write a take to disk and free its buffer. A write the server refuses --
-     * the page's storage full -- leaves the take in memory, and the crate is
-     * told so.
+     * Write a take to disk and free its buffer: the spill `operation` the
+     * crate prepared, carried out. A write the server refuses -- the page's
+     * storage full -- fails the operation, and the take stays in memory.
      */
-    store(_structure: unknown, buffer: number, steps: unknown[], operation?: Record<string, unknown>): void {
+    store(_structure: unknown, _buffer: number, operation: Record<string, unknown>): void {
         const editor = this.editor;
         if (editor === null) return;
         this.#queue(async () => {
             editor.checkServer();
             try {
-                if (operation !== undefined) await editor.operation(null, operation);
-                else await executeSteps(editor.server as unknown as Server, serviceInstance(editor.server), steps);
+                await editor.operation(null, operation);
             } catch {
-                if (operation === undefined) editor.coreCall("kept", { buffer });
+                // the operation's own failure: the crate kept the take resident
             }
         });
     }
@@ -468,7 +468,11 @@ export class AudioEditor extends Editor<Buffer | null> {
             this.editing.limitBytes(options.historyBytes);
         }
         if (options.residentBytes !== undefined && options.residentBytes !== null) {
-            this.coreCall("sync", { scratch: options.scratch ?? `clausters-audio/${this.display}` });
+            const scratch = options.scratch ?? `clausters-audio/${this.display}`;
+            // the default directory is the editor's to make, as a script's
+            // temporary one is; a scratch handed over is the caller's
+            if (options.scratch === undefined) domain.after(() => makeDirectoryAt(scratch));
+            this.coreCall("sync", { scratch });
             this.editing.limitResident(options.residentBytes);
         }
         this.topUp();
@@ -660,7 +664,6 @@ export class AudioEditor extends Editor<Buffer | null> {
         if (binding === null) {
             this.structure = null;
             this.cursor = null;
-            this.dirty = false;
             return;
         }
         this.display = Number(binding.display);
@@ -675,7 +678,6 @@ export class AudioEditor extends Editor<Buffer | null> {
         this.structureId = Number(binding.structure);
         this.editing.version = Number(binding.version);
         this.cursor = Number(binding.cursor) / this.sampleRate;
-        this.dirty = binding.dirty === true;
         (this.view as SamplesView).layers = binding.layers as Measure[];
     }
 
@@ -857,9 +859,6 @@ export class AudioEditor extends Editor<Buffer | null> {
                 break;
             case "bind":
                 this.bindFile((effect.binding ?? null) as Record<string, unknown> | null);
-                break;
-            case "dirty":
-                this.dirty = effect.dirty === true;
                 break;
             case "layers":
                 (this.view as SamplesView).layers = effect.layers as Measure[];
@@ -1164,14 +1163,32 @@ export class AudioEditor extends Editor<Buffer | null> {
 
     /**
      * Draw what a history walk left behind -- once the join the walk stitched
-     * again has landed, since what the window is told is to read it again.
+     * again has landed, since what the window is told is to read it again. A
+     * step of a shared order may restore another editor's file, carried out
+     * on that editor's queue, so the window waits for every member's work
+     * queued so far: told sooner, it would name a version the step's commit
+     * then moves past, and its next gesture would be refused as stale.
      */
     override reflectStep(): void {
-        (this.domain as AudioDomain).after(() => {
+        const elsewhere = this.editing.landed();
+        (this.domain as AudioDomain).after(async () => {
+            await elsewhere;
             super.reflectStep();
-            this.dirty = this.coreCall("binding").dirty === true;
         });
     }
+
+    /**
+     * **Whether the file in focus has edits its file does not hold**: the
+     * editor's own reading, asked each time. A save that has not completed
+     * leaves it dirty; an undo back to what was written leaves it clean.
+     */
+    override get dirty(): boolean {
+        if (this.member === undefined) return false;
+        return this.editing.member(this.member, "binding").dirty === true;
+    }
+
+    /** Nothing: the base editor's mark of a change since the last render, which an audio editor answers from the file instead. */
+    override set dirty(_value: boolean) {}
 
     /**
      * Visual layers, back to front: names or objects with draw, visible,

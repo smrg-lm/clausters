@@ -207,21 +207,18 @@ class AudioDomain(Domain):
             release_buffer(editor._server, editor._editing.core,
                            {"server": editor._instance, "buffer": int(bufnum)})
 
-    def store(self, structure, buffer: int, steps, *, operation=None) -> None:
-        """Write a take to disk and free its buffer. A write the server refuses
-        -- no room -- leaves the take in memory, and the crate is told so."""
+    def store(self, structure, buffer: int, operation) -> None:
+        """Write a take to disk and free its buffer: the spill ``operation``
+        the crate prepared, carried out. A write the server refuses -- no room
+        -- fails the operation, and the take stays in memory."""
         editor = self.editor
         if editor is None:
             return
         editor._check_server()
         try:
-            if operation is not None:
-                editor._operation(None, prepared=operation)
-            else:
-                run_steps(editor._server, _native.StepRunner(), steps)
+            editor._operation(None, prepared=operation)
         except CommandError:
-            if operation is None:
-                editor._call("kept", buffer=int(buffer))
+            pass  # the operation's own failure: the crate kept the take resident
 
 
 class AudioEditor(Marking, Editor):
@@ -514,8 +511,6 @@ class AudioEditor(Marking, Editor):
             self._show_looping(bool(effect["on"]))
         elif kind == "bind":
             self._bind_file(effect.get("binding"))
-        elif kind == "dirty":
-            self.dirty = bool(effect["dirty"])
         elif kind == "layers":
             self.view.layers = tuple(effect["layers"])
         elif kind == "cursor":
@@ -646,7 +641,6 @@ class AudioEditor(Marking, Editor):
         if binding is None:
             self.structure = None
             self.cursor = None
-            self.dirty = False
             return
         self._display = int(binding["display"])
         self.sample_rate = float(binding["rate"])
@@ -655,7 +649,6 @@ class AudioEditor(Marking, Editor):
         self._structure_id = binding.get("structure", self._structure_id)
         self._editing.version = int(binding.get("version", self._editing.version))
         self.cursor = float(binding["cursor"]) / self.sample_rate
-        self.dirty = bool(binding["dirty"])
         self.view.layers = tuple(binding["layers"])
 
     def _closed(self) -> bool:
@@ -669,10 +662,20 @@ class AudioEditor(Marking, Editor):
         self._audio("close")
         return self
 
-    def reflect_step(self) -> None:
-        """Reflect the committed history position, including its clean checkpoint."""
-        super().reflect_step()
-        self.dirty = bool(self._call("binding").get("dirty"))
+    @property
+    def dirty(self) -> bool:
+        """**Whether the file in focus has edits its file does not hold**: the
+        editor's own reading, asked each time. A save that has not completed
+        leaves it dirty; an undo back to what was written leaves it clean."""
+        member = getattr(self, "_member", None)
+        if member is None:
+            return False
+        return bool(self._editing.member(member, "binding").get("dirty"))
+
+    @dirty.setter
+    def dirty(self, value) -> None:
+        """Nothing: the base editor's mark of a change since the last render,
+        which an audio editor answers from the file instead."""
 
     def _facts(self) -> dict:
         take = self.structure

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the audio editor's lifecycle</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 50rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .stage { width: 760px; max-width: 100%; height: 340px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The audio editor's lifecycle, walked: two windows, several
+files, one shared undo order, the clipboard between them, and saves that fail,
+that are edited after and that close the window.
+
+Each button below is a step, and each says what to look at and what to listen
+for; <b>status</b> prints what every window holds and <b>activity</b> what
+every window is costing. The order is the one to take them in, and every step
+leaves the windows ready for the next.<br>
+
+<b>Two windows.</b> <code>first</code> opens <code>a.wav</code> (mono, a
+decaying 440 Hz tone) and then <code>b.wav</code> (stereo, 660 Hz) and
+<code>c.wav</code> (six channels, 880 Hz); <code>second</code> opens
+<code>d.wav</code> (mono, 550 Hz). Each window keeps its own selection, cursor,
+transport and meter.<br>
+
+<b>Playback across a change of focus.</b> In <code>first</code>, put the cursor
+on <code>a.wav</code>, press <b>L</b> and <b>Space</b>: it loops. Click
+<code>b.wav</code> in the list on the left: the loop goes on, no play cursor is
+drawn over <code>b.wav</code>, and the meter shows two channels at zero. Click
+<code>c.wav</code>: six channels at zero. Click <code>a.wav</code> again: one
+channel, moving, and its play cursor is back. Space stops.
+<code>second</code> played meanwhile moves nothing in <code>first</code>.<br>
+
+<b>Independent and shared history.</b> <code>a.wav</code> and
+<code>d.wav</code> share one undo order (<code>sharedHistory</code>):
+<b>cut second</b> cuts <code>d.wav</code>, and <b>undo first</b> -- Ctrl+Z in
+<code>first</code> over <code>a.wav</code> -- puts it back without moving
+<code>first</code>'s focus. <code>b.wav</code> and <code>c.wav</code> each have
+an order of their own: an edit there is undone only there.<br>
+
+<b>The clipboard's lifetime, and a change of type.</b> <b>copy first</b> copies
+a span of <code>a.wav</code>; <b>paste second</b> pastes it into
+<code>d.wav</code> (mono into mono). <b>close origin</b> closes
+<code>a.wav</code> in <code>first</code>, and <b>paste second</b> again still
+pastes: the copy outlives the file it came from. <b>paste stereo</b> pastes the
+mono copy into <code>b.wav</code> and is refused -- a paste never converts
+channels -- and <code>b.wav</code> is unchanged. Copy text in any other program
+and press Ctrl+V over a take: text stays text, and the paste is refused.<br>
+
+<b>Saves.</b> <b>failed save</b> saves <code>d.wav</code> into a directory that
+does not exist: the write is refused, the error is printed, and <b>status</b>
+shows the file still dirty and still called <code>d.wav</code>. <b>save then
+edit</b> saves it, then cuts it: dirty again, since the cut is newer than what
+was written; <b>undo second</b> brings back the written take, and it is clean.
+<b>save and close</b> saves <code>d.wav</code> once more and closes
+<code>second</code>: the window goes once the write is done, and the file holds
+the take.<br>
+
+A write in flight is too short for a hand to edit through, so an edit, a focus
+change or a close landing while the reply is still out is checked by the client
+suites (their shared fault trace), not here.<br>
+
+<b>What it costs.</b> Leave both windows alone for two seconds and press
+<b>activity</b>: a stopped window ticks for nothing. Play in one and press it
+again: that window ticks for its meter and its play cursor, and the other still
+for nothing.</div>
+
+      <button id="run">open the windows</button>
+      <div id="first" class="stage"></div>
+      <div id="second" class="stage"></div>
+      <div>
+        <button id="status" disabled>status</button>
+        <button id="activity" disabled>activity</button>
+        <button id="cut-second" disabled>cut second</button>
+        <button id="undo-first" disabled>undo first</button>
+        <button id="undo-second" disabled>undo second</button>
+        <button id="copy-first" disabled>copy first</button>
+        <button id="paste-second" disabled>paste second</button>
+        <button id="close-origin" disabled>close origin</button>
+        <button id="paste-stereo" disabled>paste stereo</button>
+        <button id="failed-save" disabled>failed save</button>
+        <button id="save-then-edit" disabled>save then edit</button>
+        <button id="save-and-close" disabled>save and close</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/audio_lifecycle.py,
+      call for call: the same four takes written as the same files, the same
+      two editors over one editing context, and the same steps. The files are
+      in the page's own storage (`opfs`), and the save into a directory that
+      does not exist is refused by it as the disk refuses the script's.
+
+      The platform's differences are the usual ones: the host is the wasm one
+      in this tab and draws each window into an element, a step is a button
+      rather than a call at a prompt, and what a script calls a page awaits.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/audio-lifecycle.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, SoundFile, errors, gui, segments } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+      const name = (path) => path.split("/").at(-1);
+
+      const SECONDS = 2.0;
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        const server = session.server;
+        const rate = (await server.queryInfo()).nominalSampleRate;
+        const frames = Math.trunc(SECONDS * rate);
+
+        // Four takes: a decaying tone each, at a pitch of its own, so a span
+        // pasted from one into another is heard as the other's.
+        const tone = (file, freq, channels) => {
+          const samples = new Float32Array(frames * channels);
+          for (let i = 0; i < frames; i += 1) {
+            for (let c = 0; c < channels; c += 1) {
+              samples[i * channels + c] = Math.exp(-3.0 * i / frames) * 0.5 *
+                Math.sin(2 * Math.PI * freq * (1 + c / 8) * i / rate);
+            }
+          }
+          return SoundFile.write(`out/${file}`, samples, channels, rate, { sampleFormat: "float" });
+        };
+        const a = await tone("a.wav", 440.0, 1);
+        const b = await tone("b.wav", 660.0, 2);
+        const c = await tone("c.wav", 880.0, 6);
+        const d = await tone("d.wav", 550.0, 1);
+
+        // Two windows, one shared undo order: both editors take one editing
+        // context, and each joins its first file to the context's shared
+        // order. Files opened later keep orders of their own.
+        await session.gui();
+        const shared = new gui.editing.Editing();
+        const first = await gui.edit(a, {
+          title: "first", context: shared, sharedHistory: true, server, stage: $("first"),
+        });
+        await first.openFile([b.path, c.path]);
+        await first.focusFile(0);
+        const second = await gui.edit(d, {
+          title: "second", context: shared, sharedHistory: true, server, stage: $("second"),
+        });
+
+        // What each window holds: its files, and the one in focus.
+        const status = () => {
+          for (const editor of [first, second]) {
+            if (editor.closed) {
+              log(`${editor.title}: closed; ${editor.file.path} holds ${editor.file.frames} frames, ` +
+                `dirty ${editor.dirty}`);
+              continue;
+            }
+            const names = editor.files.filter((f) => f !== null).map((f) => name(f.path));
+            const file = editor.file;
+            if (file === null) {
+              log(`${editor.title}: no file; open ${names}`);
+              continue;
+            }
+            log(`${editor.title}: ${name(file.path)}, ${file.frames} frames, ${file.channels} ch, ` +
+              `dirty ${editor.dirty}, undo ${editor.undoLabel ?? "none"}; open ${names}`);
+          }
+        };
+
+        // What each window is doing now, and why.
+        const activity = async () => {
+          for (const editor of [first, second]) {
+            if (editor.closed) continue;
+            const reading = await editor.activity();
+            log(`${editor.title}: ${reading.ticks} ticks, ${reading.whole} whole and ` +
+              `${reading.live} live frames since it opened; ticking for ` +
+              `${reading.demand.join(", ") || "nothing"}`);
+          }
+        };
+
+        // Independent and shared history: a tenth of a second marked from
+        // 0.5 s and cut, in `second`; undone from `first`, whose file in focus
+        // shares the order.
+        const cutSecond = async () => {
+          await second.select(new segments.Segment(second.buffer, Math.round(0.5 * second.sampleRate), 0.1));
+          second.cut();
+        };
+        const undoFirst = () => first.undo();
+        const undoSecond = () => second.undo();
+
+        // The clipboard: a copy is the clipboard's, not the file's -- it
+        // outlives the file it came from, and a paste never converts it.
+        const copyFirst = async () => {
+          await first.focusFile(0);
+          await first.select(new segments.Segment(first.buffer, Math.round(0.2 * first.sampleRate), 0.3));
+          first.copy();
+        };
+        const pasteSecond = () => second.paste();
+        const closeOrigin = () => first.closeFile(0);
+        const pasteStereo = async () => {
+          await first.focusFile(0);
+          first.paste();
+        };
+
+        // Saves: a refused write keeps the file dirty and where it was; a
+        // save cleans only the take it wrote; a close after a save waits for it.
+        const failedSave = async () => {
+          try {
+            await second.save({ path: "out/no such directory/d.wav" });
+          } catch (error) {
+            if (!(error instanceof errors.CommandError)) throw error;
+            log(`refused: ${error.message}`);
+          }
+        };
+        const saveThenEdit = async () => {
+          await second.save({ path: "out/d_saved.wav" });
+          await second.select(new segments.Segment(second.buffer, Math.round(0.5 * second.sampleRate), 0.1));
+          second.cut();
+        };
+        const saveAndClose = async () => {
+          await second.save({ path: "out/d_closed.wav" });
+          second.close();
+        };
+
+        const steps = {
+          "status": status, "activity": activity, "cut-second": cutSecond,
+          "undo-first": undoFirst, "undo-second": undoSecond, "copy-first": copyFirst,
+          "paste-second": pasteSecond, "close-origin": closeOrigin, "paste-stereo": pasteStereo,
+          "failed-save": failedSave, "save-then-edit": saveThenEdit, "save-and-close": saveAndClose,
+        };
+        for (const [id, fn] of Object.entries(steps)) {
+          $(id).disabled = false;
+          $(id).onclick = async () => {
+            try { await fn(); } catch (e) { log(`error: ${e}`); }
+          };
+        }
+        log("status and activity read the windows; the steps are in the note above");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

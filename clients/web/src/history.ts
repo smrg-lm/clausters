@@ -86,6 +86,8 @@ export interface Applier {
 export interface StepHandler extends Applier {
     /** Execute a prepared history operation on its declared endpoint. */
     executeOperation?(structure: never | object, prepared: Record<string, unknown>, complete: (result: Record<string, any>) => void): void;
+    /** The work this member has queued so far, landed: an operation it is carrying out included. */
+    idle?(): Promise<void>;
     /** Execute one routed I/O batch; policy remains in the application core. */
     executeBatch?(structure: never | object, server: { connection: number; generation: number }, steps: unknown[]): Promise<void>;
     stepped?(structure: never | object, applied: Record<string, unknown>): void;
@@ -103,7 +105,7 @@ export interface StepHandler extends Applier {
      */
     free?(structure: never | object, buffers: number[], spilled: number[]): void;
     /** An audio editor's: write a take to disk and free its buffer. */
-    store?(structure: never | object, buffer: number, steps: unknown[], operation?: Record<string, unknown>): void;
+    store?(structure: never | object, buffer: number, operation: Record<string, unknown>): void;
     /**
      * A multitrack's: free joins no box reads and no undo or redo can put
      * back, by source id -- the buffer built for each, and its place in the
@@ -189,10 +191,8 @@ export interface Stored {
     member: number;
     /** Its buffer, which stays its number while it is on disk. */
     buffer: number;
-    /** The steps that write it and free the buffer. */
-    steps: unknown[];
-    /** Prepared storage work confirmed by the shared service. */
-    operation?: Record<string, unknown>;
+    /** The spill: prepared storage work confirmed by the shared service. */
+    operation: Record<string, unknown>;
 }
 
 /** **What a step of the order came to.** */
@@ -275,6 +275,20 @@ export class Editing {
         { structure: object; handler: StepHandler | null }
     >();
     protected readonly attached = new Set<WeakRef<Adopting>>();
+
+    /**
+     * **The work every member has queued so far, landed**: what a window
+     * waits for before it is told where a step left the context, since the
+     * member that owns a stepped object carries the step out on its own queue
+     * -- not necessarily the queue of the window that asked for it.
+     *
+     * @internal
+     */
+    landed(): Promise<void> {
+        const queued = [...this.handlers.values()].map(({ handler }) =>
+            handler?.idle?.().catch(() => {}) ?? Promise.resolve());
+        return Promise.all(queued).then(() => {});
+    }
     /**
      * How deep the current turn is, and whether anything moved in it. One
      * gesture can reach here twice, and the other windows want *one* redraw.
@@ -851,7 +865,7 @@ export class Editing {
         for (const entry of stored ?? []) {
             const held = this.handlers.get(Number(entry.member));
             if (held === undefined || held.handler === null) continue;
-            held.handler.store?.(held.structure as never, Number(entry.buffer), entry.steps ?? [], entry.operation);
+            held.handler.store?.(held.structure as never, Number(entry.buffer), entry.operation);
         }
     }
 

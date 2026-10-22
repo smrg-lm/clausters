@@ -9218,6 +9218,18 @@ renderer is the wasm engine on the calling thread, so the samples exist in full
 before the file is written -- and the page's GUI host maps no file, so a view
 is still handed samples (`gui.source`) where a script names a `.f32` path.
 
+*Revised 2026-10-22:* **a server's write makes no directory, in a tab as on a
+disk.** The page's storage made every directory above a written file, so a save
+into a directory that does not exist succeeded in a tab and was refused by a
+native server -- the one failure the audio editor's acceptance needed both to
+show. `/buffer_write` and a recording now leave a missing directory missing and
+fail the command; a page that writes there makes the directory first
+(`opfs.makeDirectory`, a script's `os.makedirs`), and the audio editor makes its
+own default scratch directory as the Python one makes its temporary one. The
+client's own writes -- `SoundFile.write`, `render({ path })` -- still make
+their directories in a tab, which node does not: that difference is open, in
+`clients/web/PLAN.md`.
+
 
 ## The built-in `default` is a subtractive voice with the MPE controls
 

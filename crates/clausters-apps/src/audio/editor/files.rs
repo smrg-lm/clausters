@@ -393,9 +393,8 @@ impl AudioEditor {
         if self.untitled() && self.has_dialogs() {
             return self.open_form(Form::SaveAs);
         }
-        match self.save(None, "float") {
-            Ok(steps) => {
-                out.steps = Some(steps);
+        match self.save_target(None, "float") {
+            Ok(_) => {
                 out.save_requested = true;
                 (None, Vec::new())
             }
@@ -448,9 +447,10 @@ impl AudioEditor {
                     if path.is_empty() {
                         Some("a file is saved under a path".into())
                     } else {
-                        match self.save(Some(Target::File(path)), "float") {
-                            Ok(steps) => {
-                                out.steps = Some(steps);
+                        match self.save_target(Some(Target::File(path)), "float") {
+                            Ok(target) => {
+                                // the operation the request becomes writes here
+                                self.file.target = target;
                                 out.save_requested = true;
                                 None
                             }

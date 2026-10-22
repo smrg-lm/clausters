@@ -134,7 +134,7 @@ there.</div>
       /examples/editors/edit-multitrack.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session } from "../../dist/index.js";
+      import { Session, opfs } from "../../dist/index.js";
       import { gui } from "../../dist/index.js";
       import { Buffer, Synth, SynthDef } from "../../dist/defs/index.js";
       import { line, out, pinkNoise, saw, sine, whiteNoise } from "../../dist/defs/ugens/index.js";
@@ -272,6 +272,8 @@ there.</div>
         // clip it into a different take. The page's files are in its origin
         // private file system, `out/` there as `examples/out/` is for a script.
         const FRAMES = Math.trunc(TAKE_DUR * SR);
+        // a server writes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const ID = Object.fromEntries(Object.entries(SOURCES).map(([id, take]) => [take, Number(id)]));
         const saved = new SavedSession();
         saved.multitrack = multitrack;

@@ -453,7 +453,8 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
             const file = new Uint8Array(header.byteLength + grown.byteLength);
             file.set(header);
             file.set(grown, header.byteLength);
-            await writeFile(request.path, file);
+            // a server's write: a directory that is not there refuses it
+            await writeFile(request.path, file, false);
             post({ type: "write", ticket: request.ticket });
         } catch (e) {
             writes.delete(request.path);
@@ -490,7 +491,8 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
             const file = new Uint8Array(header.byteLength + take.bytes.byteLength);
             file.set(header);
             file.set(take.bytes, header.byteLength);
-            await writeFile(request.path, file);
+            // a server's write: a directory that is not there refuses it
+            await writeFile(request.path, file, false);
             if (request.final) recordings.delete(request.path);
             post({ type: "record", ticket: request.ticket });
         } catch (e) {

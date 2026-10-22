@@ -585,11 +585,7 @@ fn application_execute(
         checked_steps(server, &effect["steps"]);
     }
     for stored in answer["stored"].as_array().into_iter().flatten() {
-        if stored["operation"].is_object() {
-            application_execute(server, editing, stored["operation"].clone());
-        } else {
-            checked_steps(server, &stored["steps"]);
-        }
+        application_execute(server, editing, stored["operation"].clone());
     }
     for freed in answer["freed"].as_array().into_iter().flatten() {
         for buffer in freed["buffers"].as_array().into_iter().flatten() {
@@ -692,7 +688,7 @@ fn application_sources_spill_restore_and_release_without_a_renderer() {
     };
     stroke(&mut server, &mut editing, 1, 0.5);
     let second = stroke(&mut server, &mut editing, 2, 0.25);
-    let path = second["stored"][0]["steps"][0]["send"]["args"][1]["s"]
+    let path = second["stored"][0]["operation"]["steps"][0]["send"]["args"][1]["s"]
         .as_str()
         .unwrap();
     let mut wav = hound::WavReader::open(path).unwrap();

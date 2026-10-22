@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Generate audio-trace-vectors.json: one script of actions over an audio
-editor, and what the coordinator answered for each.
+"""Generate audio-trace-vectors.json: two scripts of actions over an audio
+editor, and what the coordinator answered for each -- one where every
+service answers, one where a server refuses and is slow.
 
 Every action of an audio editor runs in the shared crate's coordinator and
 comes back as ordered effects and awaits, which a client carries out. Two
@@ -25,14 +26,16 @@ sys.path.insert(0, str(ROOT / "python" / "tests"))
 
 import pytest  # noqa: E402
 
-from test_gui_audio import TRACE_VECTORS, audio_trace  # noqa: E402
+from test_gui_audio import TRACE_VECTORS, audio_fault_trace, audio_trace  # noqa: E402
 
 
 def main() -> None:
     with pytest.MonkeyPatch.context() as monkeypatch:
         trace = audio_trace(monkeypatch)
-    TRACE_VECTORS.write_text(json.dumps({"trace": trace}, indent=1) + "\n")
-    print(f"wrote {TRACE_VECTORS.name}: {len(trace)} actions")
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        faults = audio_fault_trace(monkeypatch)
+    TRACE_VECTORS.write_text(json.dumps({"trace": trace, "faults": faults}, indent=1) + "\n")
+    print(f"wrote {TRACE_VECTORS.name}: {len(trace)} actions, {len(faults)} with faults")
 
 
 if __name__ == "__main__":

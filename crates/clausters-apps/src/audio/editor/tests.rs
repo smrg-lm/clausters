@@ -4,6 +4,36 @@ fn call(editor: &mut AudioEditor, request: Value) -> Value {
     serde_json::from_str(&call_json(editor, &request.to_string())).unwrap()
 }
 
+/// The steps an open operation carries out: the private copy and the join.
+fn open(editor: &mut AudioEditor) -> Value {
+    match editor.open_steps() {
+        Ok(steps) => json!({ "steps": steps_json(&steps) }),
+        Err(error) => json!({ "error": error }),
+    }
+}
+
+/// The steps a save operation carries out, `request` as a save reads it
+/// (`path` or `buffer`, and `format`), and where it writes.
+fn save(editor: &mut AudioEditor, request: Value) -> Value {
+    let format = request["format"].as_str().unwrap_or("float").to_string();
+    let to = match (request["path"].as_str(), request["buffer"].as_i64()) {
+        (Some(path), _) => Some(Target::File(path.to_string())),
+        (None, Some(buffer)) => Some(Target::Buffer(buffer)),
+        (None, None) => None,
+    };
+    match editor.save_steps(to, &format) {
+        Ok(steps) => {
+            let mut answer = json!({ "steps": steps_json(&steps) });
+            match editor.target() {
+                Target::File(path) => answer["path"] = json!(path),
+                Target::Buffer(buffer) => answer["buffer"] = json!(buffer),
+            }
+            answer
+        }
+        Err(error) => json!({ "error": error }),
+    }
+}
+
 /// A mono take of 100 frames in buffer 3 at 44.1 kHz, drawn through the join
 /// in buffer 9, open in window 900 with its picture in widget 12, and buffers
 /// 20 and 21 handed over for new takes.
@@ -65,6 +95,21 @@ fn args(steps: &Value, addr: &str) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// A message the window sends that asks for a save: whether it did, and the
+/// steps the save operation it becomes would write, to where it now names.
+fn window_save(editor: &mut AudioEditor, args: Value) -> (bool, Value) {
+    let outcome = editor.event(
+        &serde_json::from_value(json!({"addr": "/gui_event", "args": args})).unwrap(),
+        0,
+    );
+    assert!(
+        outcome.steps.is_none(),
+        "a request writes nothing by itself"
+    );
+    let requested = outcome.save_requested;
+    (requested, save(editor, json!({})))
+}
+
 fn event(editor: &mut AudioEditor, args: Value) -> Value {
     call(
         editor,
@@ -75,7 +120,7 @@ fn event(editor: &mut AudioEditor, args: Value) -> Value {
 #[test]
 fn opening_copies_the_take_and_stitches_the_window_s_join_over_the_copy() {
     let mut editor = opened(1);
-    let steps = call(&mut editor, json!({"verb": "open"}))["steps"].clone();
+    let steps = open(&mut editor)["steps"].clone();
     assert_eq!(
         walk(&steps),
         [
@@ -107,7 +152,7 @@ fn opening_copies_the_take_and_stitches_the_window_s_join_over_the_copy() {
         "reads the copy, never the take"
     );
     assert_eq!(spans(&mut editor), [(20, 0, 100)]);
-    let again = call(&mut editor, json!({"verb": "open"}))["steps"].clone();
+    let again = open(&mut editor)["steps"].clone();
     assert_eq!(
         walk(&again),
         ["/buffer_stitch", "await /buffer_stitch"],
@@ -117,19 +162,16 @@ fn opening_copies_the_take_and_stitches_the_window_s_join_over_the_copy() {
     assert_eq!(def["children"][1]["buffer"], 9, "the window draws the join");
 
     let bare = &mut new_json(r#"{"take": 3, "frames": 100, "display": 9}"#).unwrap();
-    assert!(
-        call(bare, json!({"verb": "open"}))["error"].is_string(),
-        "no buffer for the copy"
-    );
+    assert!(open(bare)["error"].is_string(), "no buffer for the copy");
 }
 
 #[test]
 fn a_save_over_a_buffer_rewrites_it_at_the_take_s_length() {
     let mut editor = opened(1);
-    call(&mut editor, json!({"verb": "open"}));
+    open(&mut editor);
     call(&mut editor, json!({"verb": "sync", "buffers": [30, 31]}));
     event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
-    let saved = call(&mut editor, json!({"verb": "save"}));
+    let saved = save(&mut editor, json!({}));
     assert_eq!(saved["buffer"], 3, "over the buffer it was opened from");
     let steps = &saved["steps"];
     assert_eq!(
@@ -147,10 +189,10 @@ fn a_save_over_a_buffer_rewrites_it_at_the_take_s_length() {
         "read out of the join"
     );
 
-    let moved = call(&mut editor, json!({"verb": "save", "buffer": 40}));
+    let moved = save(&mut editor, json!({"buffer": 40}));
     assert_eq!(moved["buffer"], 40, "a save-as into a new buffer");
-    assert_eq!(call(&mut editor, json!({"verb": "save"}))["buffer"], 40);
-    let refused = call(&mut editor, json!({"verb": "save", "buffer": 20}));
+    assert_eq!(save(&mut editor, json!({}))["buffer"], 40);
+    let refused = save(&mut editor, json!({"buffer": 20}));
     assert!(
         refused["error"].as_str().unwrap().contains("reads"),
         "never into a buffer the list reads"
@@ -378,16 +420,10 @@ fn a_list_the_history_hands_back_is_the_take_again() {
     let mut editor = opened(1);
     let out = event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
     let before = out["record"]["legs"][0]["backward"].clone();
-    let steps = call(&mut editor, json!({"verb": "apply", "payload": before}))["steps"].clone();
+    let steps = editor.apply(&before).unwrap();
     assert_eq!(walk(&steps), ["/buffer_stitch", "await /buffer_stitch"]);
     assert_eq!(spans(&mut editor), [(3, 0, 100)]);
-    assert_eq!(
-        call(
-            &mut editor,
-            json!({"verb": "apply", "payload": {"intent": "write"}})
-        ),
-        json!({})
-    );
+    assert!(editor.apply(&json!({"intent": "write"})).is_none());
 }
 
 #[test]
@@ -451,7 +487,7 @@ fn a_mix_is_a_new_take_over_the_frames_the_block_lands_on() {
 fn a_save_writes_the_join_over_the_file_and_a_save_as_moves_it() {
     let mut editor = opened(1);
     call(&mut editor, json!({"verb": "sync", "path": "/takes/a.wav"}));
-    let saved = call(&mut editor, json!({"verb": "save"}));
+    let saved = save(&mut editor, json!({}));
     assert_eq!(saved["path"], "/takes/a.wav");
     assert_eq!(
         args(&saved["steps"], "/buffer_write"),
@@ -463,16 +499,13 @@ fn a_save_writes_the_join_over_the_file_and_a_save_as_moves_it() {
         ],
         "the join, over the file it was read from"
     );
-    let moved = call(
+    let moved = save(
         &mut editor,
-        json!({"verb": "save", "path": "/takes/b.wav", "format": "int24"}),
+        json!({"path": "/takes/b.wav", "format": "int24"}),
     );
     assert_eq!(moved["path"], "/takes/b.wav");
-    assert_eq!(
-        call(&mut editor, json!({"verb": "save"}))["path"],
-        "/takes/b.wav"
-    );
-    assert!(call(&mut editor, json!({"verb": "save", "format": "mp3"}))["error"].is_string());
+    assert_eq!(save(&mut editor, json!({}))["path"], "/takes/b.wav");
+    assert!(save(&mut editor, json!({"format": "mp3"}))["error"].is_string());
 }
 
 #[test]
@@ -480,12 +513,15 @@ fn ctrl_s_over_the_window_is_a_save() {
     let mut editor = opened(1);
     call(&mut editor, json!({"verb": "sync", "path": "/takes/a.wav"}));
     let out = event(&mut editor, json!([900, 5, 0, "save"]));
-    assert_eq!(
-        walk(&out["steps"]),
-        ["/buffer_write", "await /buffer_write"]
-    );
     assert_eq!(out["answer"]["seq"], 5);
     assert!(out.get("record").is_none(), "a save is no edit");
+    let (requested, saved) = window_save(&mut editor, json!([900, 6, 0, "save"]));
+    assert!(requested);
+    assert_eq!(
+        walk(&saved["steps"]),
+        ["/buffer_write", "await /buffer_write"]
+    );
+    assert_eq!(saved["path"], "/takes/a.wav");
 }
 
 /// **The space bar over the window is the application's play**: with nothing
@@ -526,7 +562,8 @@ fn a_span_and_a_cursor_set_by_the_caller_are_what_the_space_bar_plays() {
     assert_eq!(band, json!({"sel_start": 10, "sel_len": 20}));
     let cue = call(&mut editor, json!({"verb": "locate", "at": 40.0 / 44100.0}));
     assert_eq!(cue["cue"], 40);
-    let play = call(&mut editor, json!({"verb": "play", "looping": true}));
+    call(&mut editor, json!({"verb": "looping", "on": true}));
+    let play = call(&mut editor, json!({"verb": "play"}));
     assert_eq!(
         play,
         json!({"start": 10, "pass": {"kind": "loop", "from": 10, "to": 30}, "back": 40})
@@ -537,7 +574,8 @@ fn a_span_and_a_cursor_set_by_the_caller_are_what_the_space_bar_plays() {
         json!({"sel_start": 0, "sel_len": 0}),
         "no span, no band"
     );
-    let whole = call(&mut editor, json!({"verb": "play", "looping": false}));
+    call(&mut editor, json!({"verb": "looping", "on": false}));
+    let whole = call(&mut editor, json!({"verb": "play"}));
     assert_eq!(whole["start"], 40, "from the cursor");
 }
 
@@ -685,21 +723,24 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
         &mut editor,
         json!([ids["file:path"], 2, 0, "/takes/new.wav"]),
     );
-    let saved = event(&mut editor, json!([ids["file:ok"], 3, 0, "click"]));
+    let ok = event(&mut editor.clone(), json!([ids["file:ok"], 3, 0, "click"]));
+    assert!(
+        ok["answer"]["corrections"]
+            .to_string()
+            .contains("\"index\":0")
+    );
+    let (requested, saved) = window_save(&mut editor, json!([ids["file:ok"], 3, 0, "click"]));
+    assert!(requested);
     assert_eq!(
         args(&saved["steps"], "/buffer_write")[1],
         json!({"s": "/takes/new.wav"})
-    );
-    assert!(
-        saved["answer"]["corrections"]
-            .to_string()
-            .contains("\"index\":0")
     );
     let file = call(&mut editor, json!({"verb": "file"}));
     assert_eq!(file["path"], "/takes/new.wav");
     assert_eq!(file["untitled"], false);
     // and the next Ctrl+S writes there with no form
-    let again = event(&mut editor, json!([900, 4, 0, "save"]));
+    let (requested, again) = window_save(&mut editor, json!([900, 4, 0, "save"]));
+    assert!(requested);
     assert_eq!(
         walk(&again["steps"]),
         ["/buffer_write", "await /buffer_write"]
@@ -835,7 +876,7 @@ fn a_fields_focus_report_is_not_what_it_holds() {
     assert_eq!(made["newFile"]["channels"], 3);
     event(&mut editor, json!([900, 6, 0, "save_as"]));
     event(&mut editor, json!([ids["file:path"], 7, 0, "focus"]));
-    let saved = event(&mut editor, json!([ids["file:ok"], 8, 0, "click"]));
+    let (_, saved) = window_save(&mut editor, json!([ids["file:ok"], 8, 0, "click"]));
     assert_eq!(
         args(&saved["steps"], "/buffer_write")[1],
         json!({"s": "focus"}),
@@ -1086,10 +1127,6 @@ fn an_editor_opens_with_no_file_and_answers_only_the_window_s_verbs() {
     assert_eq!(
         call(&mut editor, json!({"verb": "playback"}))["active"],
         false
-    );
-    assert_eq!(
-        call(&mut editor, json!({"verb": "open"}))["steps"],
-        json!([])
     );
     assert_eq!(
         call(&mut editor, json!({"verb": "files"}))["files"],

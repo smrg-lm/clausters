@@ -149,6 +149,18 @@ already carry it.
   keeps an edited picture** *(`clients/gui/PLAN.md`, Found by use)*. Not
   reproduced in five sequences on a GPU; waits for the exact steps.
 
+- ⬜ **A client's own file write makes its directories in a tab, and not
+  under node** *(`clients/web/PLAN.md`, Found by use)*. The server's writes
+  refuse a missing directory in both now; the client's do not agree yet.
+
+- ⬜ **`faust_compiler` failed once in a parallel workspace run** *(root
+  `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
+  output.
+
+- ⬜ **The `edit_audio` pair reads differently at its end**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audit counts the
+  script's `session.gui()` before its `wait`.
+
 - ⬜ **The Open file chooser gives its label too much of the width**
   *(`clients/gui/PLAN.md`, Found by use)*. Small; the room it frees is where a
   file preview could go later.
@@ -172,6 +184,11 @@ a person saw it work.
   count as proof. **Related:** it is filed here rather than in section 3 because
   the milestone's *code* is done; what is left is somebody watching it fail.
 
+
+- ⬜ **Nobody has looked at or listened to `editors/audio_lifecycle`**
+  *(`crates/clausters-apps/PLAN.md`, `X24`)*. Everything else in the audio
+  editor's acceptance is done and run; the eye and ear pass over the pair,
+  native and in a browser, is what accepts it, and `X25` waits on it.
 
 - ⬜ **Nobody has listened to `basics/patterns`** *(`clients/python/PLAN.md`,
   `C74`)*. The patterns arc closed with one example in two languages as its

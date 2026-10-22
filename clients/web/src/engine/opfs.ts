@@ -48,8 +48,22 @@ export async function readFile(path: string): Promise<Uint8Array> {
 }
 
 /**
- * Writes `bytes` as `path`, replacing whatever was there and creating the
- * directories above it.
+ * **Makes directory `path`** and every one above it, as a script's
+ * `mkdir -p` does on a disk: a directory already there is no error.
+ */
+export async function makeDirectory(path: string): Promise<void> {
+    let dir = await navigator.storage.getDirectory();
+    for (const segment of parts(path)) {
+        dir = await dir.getDirectoryHandle(segment, { create: true });
+    }
+}
+
+/**
+ * Writes `bytes` as `path`, replacing whatever was there -- and, with
+ * `directories`, creating the directories above it. Without, a directory that
+ * is not there fails the write, as a disk's does: the server's own writes
+ * (`/buffer_write`, a recording) take that form, so a save into a directory
+ * that does not exist is refused in a tab as it is by a native server.
  *
  * Two ways in, because the platform has two. In a dedicated Worker the
  * synchronous access handle is the one that is everywhere; on the main thread
@@ -61,8 +75,16 @@ export async function readFile(path: string): Promise<Uint8Array> {
 export async function writeFile(
     path: string,
     bytes: Uint8Array<ArrayBuffer>,
+    directories = true,
 ): Promise<void> {
-    const [dir, name] = await parentOf(path, true);
+    let dir: FileSystemDirectoryHandle;
+    let name: string;
+    try {
+        [dir, name] = await parentOf(path, directories);
+    } catch (error) {
+        if ((error as { name?: string }).name !== "NotFoundError") throw error;
+        throw new Error(`${path}: no such directory`);
+    }
     const handle = await dir.getFileHandle(name, { create: true });
     if (typeof handle.createSyncAccessHandle === "function") {
         const access = await handle.createSyncAccessHandle();

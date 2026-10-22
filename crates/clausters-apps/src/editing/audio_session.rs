@@ -27,7 +27,8 @@
 //!
 //! Sockets and waiting, reading a `SoundFile`, the buffer numbers it
 //! allocates, and the language objects a projection effect names (the take's
-//! `Buffer`, the cursor, the dirty flag, the layers). Everything this module
+//! `Buffer`, the cursor, the layers). Whether a file is dirty is never one
+//! of them: a client reads it from the editor when asked. Everything this module
 //! decides it decides through the doors the clients called before, so the
 //! editor's own rules stay where they were.
 //!
@@ -36,7 +37,7 @@
 //! Effects, each `{"kind", ...}`: `version` (the context's version), `echo`
 //! (an answer to the window), `set` (props on a widget), `publish` (the
 //! window drawn again), `band` and `looping` (the selection band and the loop switch a script set),
-//! `bind` (the file in focus, or none), `dirty`, `layers`, `cursor` (the
+//! `bind` (the file in focus, or none), `layers`, `cursor` (the
 //! position a script placed), `locate` (the position a hand placed),
 //! `changed` (the data changed in this gesture), `free` (takes to free),
 //! `release` (freed and stored takes, as a turn hands them back), `returned`
@@ -63,17 +64,15 @@ use super::{Editing, Member, MemberId, call_json};
 /// Why a verb that acts on a file is refused by an editor with none open.
 const NO_FILE: &str = "no file is open";
 
-/// **One audio member's coordinator**: its playback, the transport facts a
-/// script and a hand share, and the runs in progress.
+/// **One audio member's coordinator**: its playback, what a script's pause
+/// left, and the runs in progress. The span the space bar plays and the loop
+/// switch are the file in focus's (its selection and its switch), read from
+/// the editor and never kept here.
 #[derive(Debug)]
 pub(super) struct Session {
     playback: AudioEditorPlayback,
     /// The engine's rate, handed over at open; 0 when it would not say.
     rate: f64,
-    /// The time range `(start, end)` the space bar plays, in seconds.
-    span: Option<(f64, f64)>,
-    /// Whether the loop switch is on.
-    looping: bool,
     /// Whether a script paused the pass, which a play without a position
     /// resumes.
     paused: bool,
@@ -228,8 +227,6 @@ enum Task {
     TellMeters,
     /// The window's play cursor and the list's play mark corrected.
     ShowTransport,
-    /// The dirty flag, as the binding now says.
-    Dirty,
     /// The playback asked whether the transport rolls.
     Rolling(Rolled),
     /// A playback verb, its steps carried out.
@@ -301,8 +298,6 @@ impl Session {
                 chunk: chunk.max(1),
             }),
             rate,
-            span: None,
-            looping: false,
             paused: false,
             runs: BTreeMap::new(),
             next: 1,
@@ -345,11 +340,12 @@ pub(super) fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -
         editing.sessions.insert(member, session);
         return answer;
     }
+    let binding = member_call(editing, member, json!({"verb": "binding"}));
     match (editing.sessions.get(&member), request["query"].as_str()) {
         (Some(session), Some("transport")) => json!({
             "transport": session.playback.transport(),
-            "span": session.span.map(|(a, b)| json!([a, b])),
-            "looping": session.looping,
+            "span": binding["span"],
+            "looping": binding["looping"] == true,
             "paused": session.paused,
             "focused": session.focused(editing, member),
             "state": session.state(),
@@ -414,11 +410,6 @@ fn release(freed: &Value, stored: &Value) -> Option<Task> {
             json!({"freed": freed.clone(), "stored": stored.clone()}),
         )
     })
-}
-
-/// The focused file's dirty flag, as the binding says.
-fn dirty(editing: &mut Editing, member: MemberId) -> bool {
-    member_call(editing, member, json!({"verb": "binding"}))["dirty"] == true
 }
 
 fn finished(id: u64, raise: Raise, message: &str) -> Value {
@@ -609,7 +600,6 @@ impl Session {
                     member,
                     json!({"verb": "span", "span": span.map(|(a, b)| json!([a, b]))}),
                 );
-                self.span = span.filter(|_| band["sel_len"].as_f64().unwrap_or(0.0) != 0.0);
                 let mut tasks = Vec::new();
                 if action["show"] != false {
                     tasks.push(effect(
@@ -621,9 +611,10 @@ impl Session {
                 tasks
             }
             "looping" => {
-                self.looping = action["on"] == true;
+                let on = action["on"] == true;
+                member_call(editing, member, json!({"verb": "looping", "on": on}));
                 let mut tasks = self.follow(editing, member);
-                tasks.push(effect("looping", json!({"on": self.looping})));
+                tasks.push(effect("looping", json!({"on": on})));
                 tasks
             }
             other => return finished(id, Raise::Value, &format!("no audio verb {other:?}")),
@@ -691,11 +682,7 @@ impl Session {
         if let Some(at) = at {
             tasks.extend(self.script_locate(editing, member, at));
         }
-        let play = member_call(
-            editing,
-            member,
-            json!({"verb": "play", "looping": self.looping}),
-        );
+        let play = member_call(editing, member, json!({"verb": "play"}));
         tasks.push(Task::Playback {
             verb: "play",
             args: json!({"file": file_id(editing, member), "start": play["start"], "pass": play["pass"]}),
@@ -705,11 +692,7 @@ impl Session {
     }
 
     fn script_stop(&mut self, editing: &mut Editing, member: MemberId) -> Vec<Task> {
-        let play = member_call(
-            editing,
-            member,
-            json!({"verb": "play", "looping": self.looping}),
-        );
+        let play = member_call(editing, member, json!({"verb": "play"}));
         vec![
             Task::Playback {
                 verb: "stop",
@@ -734,11 +717,7 @@ impl Session {
         if !self.focused(editing, member) {
             return Vec::new();
         }
-        let play = member_call(
-            editing,
-            member,
-            json!({"verb": "play", "looping": self.looping}),
-        );
+        let play = member_call(editing, member, json!({"verb": "play"}));
         vec![Task::Playback {
             verb: "pass",
             args: json!({"pass": play["pass"]}),
@@ -1097,17 +1076,11 @@ impl Session {
                 }
                 if outcome["focusChanged"] == true && outcome["binding"].is_null() {
                     // the last file closed: the editor stays, with none
-                    self.span = None;
                     self.paused = false;
                     tasks.push(effect("bind", json!({"binding": null})));
                 } else if outcome["focusChanged"] == true {
                     // the file in focus brings back the span and the loop
-                    // switch it left
-                    let binding = &outcome["binding"];
-                    self.span = binding["span"]
-                        .as_array()
-                        .and_then(|s| Some((s.first()?.as_f64()?, s.get(1)?.as_f64()?)));
-                    self.looping = binding["looping"] == true;
+                    // switch it left, which are its own
                     self.paused = false;
                     tasks.push(effect("bind", json!({"binding": outcome["binding"]})));
                     tasks.push(Task::Sound { preview: false });
@@ -1304,7 +1277,6 @@ impl Session {
                         json!({"freed": answer["freed"], "stored": answer["stored"]}),
                     ));
                 }
-                effects.push(tagged("dirty", json!({"dirty": dirty(editing, member)})));
                 if let Some(run) = self.runs.get_mut(&id) {
                     run.completed = answer.clone();
                     run.result = json!({"completed": answer.clone()});
@@ -1353,7 +1325,6 @@ impl Session {
                 Flow::Next
             }
             Task::SyncSound(file) => {
-                effects.push(tagged("dirty", json!({"dirty": dirty(editing, member)})));
                 if file["active"] == false {
                     return Flow::Next;
                 }
@@ -1408,10 +1379,6 @@ impl Session {
                         json!({"widget": correction["widget"], "props": correction["props"]}),
                     ));
                 }
-                Flow::Next
-            }
-            Task::Dirty => {
-                effects.push(tagged("dirty", json!({"dirty": dirty(editing, member)})));
                 Flow::Next
             }
             Task::Rolling(rolled) => Flow::Await(
@@ -1641,7 +1608,6 @@ impl Session {
             }
         }
         if changed {
-            tasks.push(Task::Dirty);
             tasks.push(effect("changed", json!({})));
             if outcome["preparedComplete"] != true {
                 tasks.push(Task::Sound { preview: true });
@@ -1654,11 +1620,9 @@ impl Session {
             // The loop switch rides beside the space bar and `L`: a pass that
             // loops is the switch on.
             self.paused = false;
-            self.looping = outcome["play"]["pass"]["kind"] == "loop";
             tasks.push(Task::Rolling(Rolled::Space(outcome["play"].clone())));
         }
         if has(&outcome, "pass") {
-            self.looping = outcome["pass"]["kind"] == "loop";
             // `L`: the pass in progress ends as the switch now says; a stopped
             // playback reads it on its next play.
             tasks.push(Task::Playback {
@@ -1683,14 +1647,6 @@ impl Session {
         }
         if has(&outcome, "locate") {
             tasks.push(effect("locate", json!({"at": outcome["locate"]})));
-        }
-        if has(&outcome, "selection") {
-            // A sweep's time range is the transport's span, and what the hand
-            // marked: the space bar plays it and the loop repeats it.
-            let swept = &outcome["selection"];
-            let start = swept["start"].as_f64().unwrap_or(0.0);
-            let length = swept["len"].as_f64().unwrap_or(0.0);
-            self.span = (length > 0.0).then_some((start, start + length));
         }
         if !has(&outcome, "clipboardCut") {
             tasks.push(effect("echo", json!({"answer": outcome["answer"]})));
@@ -1758,44 +1714,134 @@ mod tests {
 
         /// Run one action to its end, answering its awaits.
         fn run(&mut self, editing: &mut Editing, member: MemberId, action: Value) -> Value {
-            let mut answer = self.call(
+            let first = self.begin(editing, member, action);
+            self.finish(editing, member, first)
+        }
+
+        /// **Start an action and stop at its first await**, which is handed
+        /// back unanswered: a service that has not answered yet. The effects
+        /// decided before it are carried out.
+        fn begin(&mut self, editing: &mut Editing, member: MemberId, action: Value) -> Value {
+            let answer = self.call(
                 editing,
                 json!({"verb": "audio", "member": member, "do": action}),
             );
-            loop {
-                for effect in answer["effects"].as_array().cloned().unwrap_or_default() {
-                    self.trace
-                        .push(effect["kind"].as_str().unwrap().to_string());
-                    self.effects.push(effect);
-                }
-                if answer["done"] == true {
-                    return answer;
-                }
-                let wait = answer["await"].clone();
-                let kind = wait["kind"].as_str().unwrap().to_string();
-                self.trace.push(format!("await:{kind}"));
-                let result = if self.fail == Some(kind.as_str()) {
-                    self.fail = None;
-                    json!({"failed": "refused"})
-                } else {
-                    match kind.as_str() {
-                        "rolling" => json!({"rolling": self.rolling}),
-                        "read" => {
-                            let (take, display) = (self.buffer(), self.buffer());
-                            let buffers = [self.buffer(), self.buffer()];
-                            json!({"take": take, "frames": 200, "channels": 2, "rate": 48000.0,
-                                "display": display, "path": wait["path"], "untitled": false,
-                                "buffers": buffers})
-                        }
-                        "stepped" => json!({"changed": true}),
-                        _ => json!({}),
-                    }
-                };
-                answer = self.call(
-                    editing,
-                    json!({"verb": "audio", "member": member, "run": answer["run"], "result": result}),
-                );
+            self.log(&answer);
+            answer
+        }
+
+        /// Answer the await `pending` stopped at with `result`, and stop at
+        /// the next one or at the end.
+        fn answer(
+            &mut self,
+            editing: &mut Editing,
+            member: MemberId,
+            pending: &Value,
+            result: Value,
+        ) -> Value {
+            let answer = self.call(
+                editing,
+                json!({"verb": "audio", "member": member, "run": pending["run"], "result": result}),
+            );
+            self.log(&answer);
+            answer
+        }
+
+        /// Carry a run on from `answer` to its end, answering every await
+        /// as the service would.
+        fn finish(&mut self, editing: &mut Editing, member: MemberId, mut answer: Value) -> Value {
+            while answer["done"] != true {
+                let result = self.reply(editing, member, &answer["await"]);
+                answer = self.answer(editing, member, &answer, result);
             }
+            answer
+        }
+
+        fn log(&mut self, answer: &Value) {
+            for effect in answer["effects"].as_array().cloned().unwrap_or_default() {
+                self.trace
+                    .push(effect["kind"].as_str().unwrap().to_string());
+                self.effects.push(effect);
+            }
+            if answer["done"] != true {
+                let kind = answer["await"]["kind"].as_str().unwrap_or_default();
+                self.trace.push(format!("await:{kind}"));
+            }
+        }
+
+        /// What the service answers an await with: a failure when `fail`
+        /// names its kind, else what it asked for. A history step is carried
+        /// out as a client carries it: its operation run to its end.
+        fn reply(&mut self, editing: &mut Editing, member: MemberId, wait: &Value) -> Value {
+            let kind = wait["kind"].as_str().unwrap_or_default();
+            if self.fail == Some(kind) {
+                self.fail = None;
+                return json!({"failed": "refused"});
+            }
+            match kind {
+                "rolling" => json!({"rolling": self.rolling}),
+                "read" => {
+                    let (take, display) = (self.buffer(), self.buffer());
+                    let buffers = [self.buffer(), self.buffer()];
+                    json!({"take": take, "frames": 200, "channels": 2, "rate": 48000.0,
+                        "display": display, "path": wait["path"], "untitled": false,
+                        "buffers": buffers})
+                }
+                "stepped" => {
+                    let prepared = wait["stepped"]["operation"].clone();
+                    if prepared.is_object() {
+                        self.run(
+                            editing,
+                            member,
+                            json!({"verb": "operation", "prepared": prepared}),
+                        );
+                    }
+                    json!({"changed": true})
+                }
+                _ => json!({}),
+            }
+        }
+    }
+
+    /// The file in focus as the editor binds it.
+    fn binding(editing: &mut Editing, member: MemberId) -> Value {
+        member_call(editing, member, json!({"verb": "binding"}))
+    }
+
+    /// A cut of 20 frames from frame 10 of the file in focus, from its picture.
+    fn cut(seq: i64, editing: &Editing) -> Value {
+        json!({"verb": "event", "addr": "/gui_event", "window": true,
+            "args": [12, seq, editing.version(), "cut", 10.0, 20.0]})
+    }
+
+    fn save(path: &str) -> Value {
+        json!({"verb": "save", "request": {"path": path, "format": "float"}})
+    }
+
+    /// Carry `pending` on to the first await of `kind`, answering the
+    /// others; that one is handed back unanswered.
+    fn until(
+        client: &mut Client,
+        editing: &mut Editing,
+        member: MemberId,
+        mut pending: Value,
+        kind: &str,
+        nth: usize,
+    ) -> Value {
+        let mut seen = 0;
+        loop {
+            assert_ne!(
+                pending["done"], true,
+                "the run ended before its {kind}: {pending}"
+            );
+            if pending["await"]["kind"] == kind {
+                seen += 1;
+                if seen == nth {
+                    return pending;
+                }
+            }
+            let result = client.reply(editing, member, &pending["await"]);
+            pending = client.answer(editing, member, &pending, result);
         }
     }
 
@@ -1844,7 +1890,10 @@ mod tests {
             position(trace, "await:batch") < position(trace, "await:steps"),
             "{trace:?}"
         );
-        assert!(trace.contains(&"dirty".to_string()));
+        assert!(
+            !trace.contains(&"dirty".to_string()),
+            "dirty is read from the editor, never projected: {trace:?}"
+        );
     }
 
     #[test]
@@ -1987,6 +2036,277 @@ mod tests {
         );
         assert_eq!(state["span"], json!([0.0, 0.001]));
         assert_eq!(state["looping"], true);
+    }
+
+    /// **The loop switch and the span are the file's**, one state a script,
+    /// a hand and the window's menu all read: a script's switch is the menu's
+    /// check, and a file brought back into focus brings back its own.
+    #[test]
+    fn a_script_s_loop_switch_is_the_menu_s_check_and_each_file_keeps_its_own() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let checked = |client: &mut Client, editing: &mut Editing| {
+            client.call(editing, json!({"verb": "actions", "member": member}))["loop"]["checked"]
+                .clone()
+        };
+        let transport = |client: &mut Client, editing: &mut Editing| {
+            client.call(
+                editing,
+                json!({"verb": "audio", "member": member, "query": "transport"}),
+            )
+        };
+        client.run(&mut editing, member, json!({"verb": "looping", "on": true}));
+        assert_eq!(
+            checked(&mut client, &mut editing),
+            true,
+            "the menu reads the switch"
+        );
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "span", "span": [0.0, 0.001]}),
+        );
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "openFile", "paths": ["/takes/b.wav"], "window": true}),
+        );
+        let other = transport(&mut client, &mut editing);
+        assert_eq!(other["looping"], false, "the new file's own switch");
+        assert!(other["span"].is_null(), "and its own span");
+        assert_eq!(checked(&mut client, &mut editing), false);
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "verb", "call": {"verb": "focus_file", "index": 0}, "window": true}),
+        );
+        let first = transport(&mut client, &mut editing);
+        assert_eq!(first["looping"], true);
+        assert_eq!(first["span"], json!([0.0, 0.001]));
+        assert_eq!(checked(&mut client, &mut editing), true);
+    }
+
+    /// **An edit while the write is out**: the save releases the take once
+    /// its snapshot is copied, so a cut lands while the file is written; the
+    /// write completing afterwards cleans only the revision it wrote, and an
+    /// undo back to that revision is clean.
+    #[test]
+    fn an_edit_during_a_save_stays_dirty_and_its_undo_is_clean() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let first = client.begin(&mut editing, member, save("/takes/a.wav"));
+        let write = until(&mut client, &mut editing, member, first, "batch", 2);
+        let action = cut(1, &editing);
+
+        let edit = client.run(&mut editing, member, action);
+        assert!(
+            edit["error"].is_null(),
+            "an edit is taken while the write is out: {edit}"
+        );
+        assert_eq!(edit["result"], true, "the cut changed the take");
+        let saved = client.finish(&mut editing, member, write);
+        assert!(saved["error"].is_null(), "{saved}");
+        assert_eq!(saved["result"]["destination"]["path"], "/takes/a.wav");
+        let now = binding(&mut editing, member);
+        assert_eq!(now["dirty"], true, "the cut is newer than what was written");
+        assert_eq!(
+            now["file"]["path"], "/takes/a.wav",
+            "the target moved on success"
+        );
+        assert_eq!(now["frames"], 80);
+        let version = editing.version();
+        let undo = client.run(
+            &mut editing,
+            member,
+            json!({"verb": "event", "addr": "/gui_event", "window": true,
+                "args": [900, 2, version, "undo"]}),
+        );
+        assert!(undo["error"].is_null(), "{undo}");
+        let back = binding(&mut editing, member);
+        assert_eq!(back["frames"], 100);
+        assert_eq!(back["dirty"], false, "the saved revision again");
+    }
+
+    /// **A write the server refuses** keeps the file dirty and its target
+    /// where it was; the same save, retried, succeeds.
+    #[test]
+    fn a_failed_save_keeps_the_target_and_a_retry_writes_it() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let action = cut(1, &editing);
+
+        client.run(&mut editing, member, action);
+        let before = binding(&mut editing, member);
+        let first = client.begin(&mut editing, member, save("/takes/refused.wav"));
+        let write = until(&mut client, &mut editing, member, first, "batch", 2);
+        let failed = client.answer(
+            &mut editing,
+            member,
+            &write,
+            json!({"failed": "quota exceeded"}),
+        );
+        let failed = client.finish(&mut editing, member, failed);
+        assert_eq!(failed["done"], true);
+        assert!(
+            failed["error"].is_object() || failed["rethrow"] == true,
+            "the client raises the refusal: {failed}"
+        );
+        let after = binding(&mut editing, member);
+        assert_eq!(after["dirty"], true);
+        assert_eq!(after["file"]["path"], before["file"]["path"]);
+        let saved = client.run(&mut editing, member, save("/takes/refused.wav"));
+        assert!(saved["error"].is_null(), "{saved}");
+        let clean = binding(&mut editing, member);
+        assert_eq!(clean["dirty"], false);
+        assert_eq!(clean["file"]["path"], "/takes/refused.wav");
+    }
+
+    /// **Completions out of order, each to its own file**: a save of A is
+    /// out while B comes into focus and is cut; B's batch answers first and
+    /// A's last. Each lands on the file it was started on, and the late one
+    /// moves nothing in the window, which is showing B.
+    #[test]
+    fn completions_in_another_order_land_on_the_file_each_was_started_on() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let action = cut(1, &editing);
+
+        client.run(&mut editing, member, action);
+        let a = binding(&mut editing, member)["id"].clone();
+        let first = client.begin(&mut editing, member, save("/takes/a.wav"));
+        let write_a = until(&mut client, &mut editing, member, first, "batch", 2);
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "openFile", "paths": ["/takes/b.wav"], "window": true}),
+        );
+        let b = binding(&mut editing, member)["id"].clone();
+        assert_ne!(a, b);
+        let action = cut(2, &editing);
+
+        let started = client.begin(&mut editing, member, action);
+        let cut_b = until(&mut client, &mut editing, member, started, "batch", 1);
+        let cut_b = client.finish(&mut editing, member, cut_b);
+        assert!(cut_b["error"].is_null(), "{cut_b}");
+        client.effects.clear();
+        let saved = client.finish(&mut editing, member, write_a);
+        assert!(saved["error"].is_null(), "{saved}");
+        let shown = binding(&mut editing, member);
+        assert_eq!(shown["id"], b, "the window still shows B");
+        assert_eq!(shown["dirty"], true, "B's cut is B's");
+        assert_eq!(shown["frames"], 180);
+        assert!(
+            !client
+                .effects
+                .iter()
+                .any(|e| e["kind"] == "bind" || e["kind"] == "publish"),
+            "A's late save moves nothing in the window: {:?}",
+            client.effects
+        );
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "verb", "call": {"verb": "focus_file", "index": 0}, "window": true}),
+        );
+        let a_now = binding(&mut editing, member);
+        assert_eq!(a_now["id"], a);
+        assert_eq!(a_now["dirty"], false, "A's save cleaned A");
+        assert_eq!(a_now["file"]["path"], "/takes/a.wav");
+        assert_eq!(a_now["frames"], 80);
+    }
+
+    /// **A result answered twice** is taken once: the second answer finds
+    /// no run waiting and changes nothing.
+    #[test]
+    fn a_duplicate_completion_is_refused_and_changes_nothing() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let action = cut(1, &editing);
+
+        let started = client.begin(&mut editing, member, action);
+        let batch = until(&mut client, &mut editing, member, started, "batch", 1);
+        let done = client.answer(&mut editing, member, &batch, json!({}));
+        let done = client.finish(&mut editing, member, done);
+        assert!(done["error"].is_null(), "{done}");
+        let version = editing.version();
+        let again = client.answer(&mut editing, member, &batch, json!({}));
+        assert!(again["error"].is_string(), "{again}");
+        assert_eq!(editing.version(), version);
+        assert_eq!(binding(&mut editing, member)["frames"], 80);
+    }
+
+    /// **The window closed while a save is out**: the view goes and the
+    /// playback with it; the write completing afterwards still saves the
+    /// file the client holds, and does not draw or sound the closed window
+    /// again.
+    #[test]
+    fn a_save_completing_after_its_window_closed_saves_and_sounds_nothing() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let action = cut(1, &editing);
+
+        client.run(&mut editing, member, action);
+        let first = client.begin(&mut editing, member, save("/takes/a.wav"));
+        let write = until(&mut client, &mut editing, member, first, "batch", 2);
+        let closed = client.run(
+            &mut editing,
+            member,
+            json!({"verb": "close", "window": true}),
+        );
+        assert!(closed["error"].is_null(), "{closed}");
+        client.trace.clear();
+        client.effects.clear();
+        let saved = client.finish(&mut editing, member, write);
+        assert!(saved["error"].is_null(), "{saved}");
+        assert_eq!(binding(&mut editing, member)["dirty"], false);
+        assert!(
+            !client
+                .effects
+                .iter()
+                .any(|e| matches!(e["kind"].as_str(), Some("publish" | "set" | "bind"))),
+            "nothing is drawn: {:?}",
+            client.effects
+        );
+        assert!(
+            !client.trace.iter().any(|k| k == "await:steps"),
+            "nothing sounds: {:?}",
+            client.trace
+        );
+    }
+
+    /// **A copy that fails before it reaches the clipboard** removes nothing:
+    /// the cut's samples stay, and the window is told why.
+    #[test]
+    fn a_cut_whose_copy_fails_leaves_the_take_whole() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let action = cut(1, &editing);
+
+        let started = client.begin(&mut editing, member, action);
+        let copy = until(&mut client, &mut editing, member, started, "batch", 1);
+        let failed = client.answer(
+            &mut editing,
+            member,
+            &copy,
+            json!({"failed": "copy refused"}),
+        );
+        let failed = client.finish(&mut editing, member, failed);
+        assert_eq!(failed["done"], true, "{failed}");
+        assert_eq!(
+            binding(&mut editing, member)["frames"],
+            100,
+            "nothing was removed"
+        );
+        assert_eq!(binding(&mut editing, member)["dirty"], false);
+        let undo = client.call(&mut editing, json!({"verb": "state", "member": member}));
+        assert_eq!(undo["canUndo"], false, "and nothing was recorded");
     }
 
     fn last(trace: &[String], kind: &str) -> usize {

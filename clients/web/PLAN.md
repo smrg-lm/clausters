@@ -5044,3 +5044,14 @@ sound.
   routine and cleanup calls, with native boot versus page attachment named in
   both examples. The extractor needs to distinguish those platform and
   language operations so a correct pair passes without hiding API divergence.
+
+- ⬜ **A client's own file write makes its directories in a tab, and not
+  under node** *(found 2026-10-22, accepting the audio editor)*.
+  `SoundFile.write`, `render({ path })` and a MIDI score's `write` go through
+  `base/files.ts`, whose page half makes every directory above the file and
+  whose node half -- like the Python client's -- refuses a directory that is
+  not there. The server's own writes now refuse one in a tab too
+  (`docs/decisions.md`, "A path in a page is its own storage"). Several pages
+  rely on the tab's behavior to make `out/`, where their scripts call
+  `os.makedirs`; settling it means one rule for both halves and the pages
+  making the directory as their scripts do.

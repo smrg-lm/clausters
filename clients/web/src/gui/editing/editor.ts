@@ -244,8 +244,14 @@ export class Editor<S = unknown> implements Adopting {
      * the mark, and leaving a rolling one alone.
      */
     onLocate: ((beat: number) => void) | null = null;
+    #dirty = false;
     /** Whether the data changed since the last render. */
-    dirty = false;
+    get dirty(): boolean {
+        return this.#dirty;
+    }
+    set dirty(value: boolean) {
+        this.#dirty = value;
+    }
 
     /**
      * The **application** this editor draws in: the host, the widget-id space

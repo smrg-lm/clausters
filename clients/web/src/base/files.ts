@@ -32,3 +32,16 @@ export async function writeFileAt(path: string, bytes: Uint8Array<ArrayBuffer>):
     }
     await opfs.writeFile(path, bytes);
 }
+
+/**
+ * **Makes directory `path`** and every one above it where {@link readFileAt}
+ * reads: on the disk under node, in the page's storage in a tab.
+ */
+export async function makeDirectoryAt(path: string): Promise<void> {
+    if (underNode()) {
+        const { mkdir } = await import("node:fs/promises");
+        await mkdir(path, { recursive: true });
+        return;
+    }
+    await opfs.makeDirectory(path);
+}

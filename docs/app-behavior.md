@@ -251,6 +251,12 @@ code that keeps it lives.
   whose window is out of view and fetches nothing, so a script's `cut()`,
   `copy()`, `delete()` and `paste()` and the Edit menu act on it the same
   (`WidgetKind::holds_samples`).
+- **A step tells the window where it left the context once it has landed.**
+  Undo or redo from one window of a shared order may restore a file another
+  window holds; the asking window learns the new version only after that walk
+  has committed, so its next gesture is never refused as stale. Check it with
+  `editors/audio_lifecycle`: an undo from `first` of `second`'s cut, then a copy
+  in `first`.
 - **What the owner holds, the owner answers.** A press on a folded strip asks
   the owner to unfold it; a dialog's `OK` answers an outcome (`newFile`,
   `openFile`) the client acts on, since the client is what opens windows.

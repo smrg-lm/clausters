@@ -1495,12 +1495,44 @@ failed. Runs stack, so an operation a release starts while a run waits is a
 run of its own.
 
 What stays in a client is what only it can do: sockets and waiting, reading a
-`SoundFile`, allocating buffer numbers, and projecting a binding, the dirty
-flag or the layers onto its language objects. Python performs a run
-synchronously; the web client performs the effects decided before a run's
-first await at once and the rest in its queued work, so an answer it owes at
-once (whether the take changed, why a verb refused) is read off the first
-answer.
+`SoundFile`, allocating buffer numbers, and projecting a binding or the layers
+onto its language objects. Python performs a run synchronously; the web client
+performs the effects decided before a run's first await at once and the rest in
+its queued work, so an answer it owes at once (whether the take changed, why a
+verb refused) is read off the first answer.
+
+**One copy of each state.** Whether a file is dirty is the editor's reading
+(its content revision against the saved one), asked through the binding when a
+client reads `dirty`, and never projected onto the language object. The span
+the space bar plays and the loop switch are the focused file's selection and
+switch: the coordinator reads them from the editor and writes them through its
+`span` and `looping` verbs, so a script, a hand and the menu's check read one
+state, and a file brought back into focus brings back its own. Opening, saving,
+a history step and a spill are operations of the context and nothing else: the
+editor's JSON door has no verb that writes or marks a file clean, a stored take
+always carries its spill operation, and a save from the window only names its
+destination for the operation it becomes, which commits the saved revision once
+the write has succeeded.
+
+**A step reaches the window after it lands.** A step of a shared order can
+restore a file another editor holds, and that editor carries the walk out on
+its own queue. A page tells the window that asked for the step where the step
+left the context only once every member's queued work has landed
+(`Editing.landed`); told sooner, the window names a version the walk's commit
+moves past, and its next gesture is refused as stale. A script performs the
+walk inside the call, so the order is the same there by construction.
+
+**How the contract is checked.** The coordinator's tests drive it with a
+client that holds, fails and reorders awaits (an edit while a save's write is
+out, a refused write and its retry, two files' completions in the other order,
+a duplicate completion, a close while a write is out, a copy refused before the
+cut it serves); `tests/audio_coordinator.rs` plays a client of the coordinator
+against an offline server and reads the samples back after cut, paste, mix,
+undo, redo, a save read back from its WAV, a refused write and a history held
+on disk; and both clients replay one shared fault trace
+(`clients/web/tests/audio-trace-vectors.json`, `faults`) in which a server
+refuses and is slow, comparing what each step leaves. The paired example
+`editors/audio_lifecycle` is the manual walk over the same contract.
 
 #### Activity: what an open application keeps doing
 

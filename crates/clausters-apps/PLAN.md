@@ -2739,6 +2739,43 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   inspect the paired examples by eye and playback by ear with refreshed
   native artifacts. An outstanding manual gate prevents reference acceptance.
 
+  - ✅ **Superseded orchestration and mirrors removed.** The editor's JSON
+    door lost the verbs the operations replaced -- `save` (which marked a
+    file clean before its write), `open`, `apply`, `kept`, `acknowledge`,
+    `preview` and a duplicated `binding` arm; a window's save only names the
+    destination of the operation it becomes. A stored take always carries its
+    spill operation, and both clients lost the spill path without one. The
+    coordinator keeps no span or loop switch of its own (they are the focused
+    file's), and `dirty` is read from the editor in both clients instead of
+    projected by a `dirty` effect.
+  - ✅ **Fake services that delay, fail and reorder.** The coordinator's tests
+    hold, fail and reorder awaits: an edit while a save's write is out, a
+    refused write and its retry, two files' completions in the other order, a
+    duplicate completion, a close while a write is out, a cut whose copy is
+    refused. Both clients replay one shared fault trace (`faults` in
+    `audio-trace-vectors.json`) with a server that refuses and is slow,
+    comparing each step's effects and what it leaves.
+  - ✅ **The real server.** `tests/audio_coordinator.rs` plays a client of the
+    coordinator against an offline server: cut, paste, mix, undo and redo
+    read back as samples, a save read back from its WAV, a refused write and
+    its retry, a history on disk read back for undo and redo.
+  - ✅ **The paired examples** `editors/audio_lifecycle` (`.py`, `.html`):
+    two windows, several files, playback across a change of focus, the
+    meter's channels, independent and shared history, the clipboard's
+    lifetime and a change of type, a refused save, a save then an edit, a
+    save then a close, and what each window costs. The scripted steps were
+    run against the refreshed native artifacts and in headless Chrome, with
+    the same states step by step. The walk found and fixed: a script's or a
+    menu's cut, copy and delete refused over a selection set on the take's
+    pane, and a paste with no pointer lost in a page whose window fetches
+    nothing; a page's window left on an old version after a shared undo
+    restored another window's file, refusing its next gesture; and a page's
+    `/buffer_write` making the directory a native server refuses.
+  - ⬜ **The eye and ear pass** over the `editors/audio_lifecycle` pair, native
+    and in a browser, by the user: what each step says to look at and to
+    listen for. A write too short for a hand to edit through is checked by
+    the fault traces, not by this pass.
+
 - ⬜ **X25 - Port the proven lifecycle to the other existing editors.** After
   `X24`, compose multitrack, notes, points and score editors with the same
   contracts, retaining domain-specific state and verbs. Preserve external
@@ -4603,3 +4640,13 @@ wrong.
   an audio editor's first file an undo order of its own, so a step without
   a member addresses the context's order, which no longer holds it; the
   test now steps its member, as the file's other undo test does.
+
+- ⬜ **The `edit_audio` pair reads differently at its end** *(found
+  2026-10-22, accepting the audio editor)*.
+  `scripts/audit-example-pairs.py editors/edit_audio` reports one call: the
+  script waits on `session.gui().wait()`, every window the session opened,
+  and the page on `editor.wait()`. Both are the examples' endings (`wait` is
+  dropped on both sides), but the script's `gui()` is counted. Either ending
+  the script on the editor, as the page does, or teaching the audit that the
+  host a `wait` is reached through is part of the ending, makes the pair read
+  as one.

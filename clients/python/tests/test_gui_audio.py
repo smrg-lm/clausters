@@ -808,6 +808,36 @@ def test_a_second_editor_never_walks_the_first_one_s_edits():
     second.close()
 
 
+def test_a_shared_undo_from_one_window_tells_it_the_version_the_step_s_commit_left():
+    class Told(FakeHost):
+        def __init__(self):
+            super().__init__()
+            self.versions: list = []
+
+        def ack(self, seq, doc_version=0, reason=None):
+            self.versions.append(doc_version)
+            super().ack(seq, doc_version, reason)
+
+        def push(self, seq, *corrections, doc_version=0, reason=None):
+            self.versions.append(doc_version)
+            super().push(seq, *corrections, doc_version=doc_version, reason=reason)
+
+    context = Editing()
+    take, other = FakeBuffer(), FakeBuffer()
+    other.bufnum, other.server = 8, take.server
+    first = AudioEditor(take, context=context, shared_history=True)
+    second = AudioEditor(other, context=context, shared_history=True)
+    one, two = Told(), Told()
+    first.open(one)
+    second.open(two)
+    wid = picture(two.trees[-1])["id"]
+    second.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]])
+    assert first.undo()
+    assert one.versions[-1] == context.version
+    first.close()
+    second.close()
+
+
 def test_shared_undo_updates_an_unfocused_file_without_moving_focus(monkeypatch):
     from clausters import SoundFile
     editor, _host, _wid, context = opened(FakeBuffer(), shared_history=True)
@@ -1244,4 +1274,150 @@ def audio_trace(monkeypatch) -> list:
 def test_the_shared_trace_is_what_the_coordinator_answers_this_client(monkeypatch):
     expected = json.loads(TRACE_VECTORS.read_text())["trace"]
     assert audio_trace(monkeypatch) == expected, \
+        "regenerate with clients/web/tests/gen-audio-trace-vectors.py if the coordinator moved"
+
+
+def _node(node: dict, wanted):
+    """The first node of a tree ``wanted`` says yes to."""
+    if wanted(node):
+        return node
+    for child in node.get("children", ()):
+        found = _node(child, wanted)
+        if found is not None:
+            return found
+    return None
+
+
+class FaultyServer(FakeServer):
+    """**A server that refuses, and one that is slow**: each command named in
+    ``fail`` is answered once with a ``/fail``, and while the first command
+    named in ``slow`` is out, its action runs before the reply comes -- what
+    a hand does in the window while a write is in flight."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail: dict = {}
+        self.slow: dict = {}
+
+    def request(self, addr, *args, expect=None, timeout=None):
+        if addr in self.fail:
+            self.send_msg(addr, *args)
+            return "/fail", [addr, self.fail.pop(addr)]
+        if addr in self.slow:
+            meanwhile = self.slow.pop(addr)
+            self.send_msg(addr, *args)
+            meanwhile()
+            return "/done", [addr, int(args[0])]
+        return super().request(addr, *args, expect=expect, timeout=timeout)
+
+
+def audio_fault_trace(monkeypatch) -> list:
+    """**One script of failures and delays over an audio editor**, and what
+    each step left: ``[name, kinds, state]``. ``kinds`` are the effect and
+    await kinds in order, or ``None`` for a step where something happens
+    while a reply is out -- there the order is the platform's scheduling
+    (this client runs the other action inside the wait, a page queues it
+    behind it) and only what is left is the contract. The web client's twin
+    runs the same script (`gui-audio.test.ts`)."""
+    from clausters import SoundFile
+    monkeypatch.setattr(SoundFile, "to_buffer", lambda file, *, server=None, **options:
+                        types.SimpleNamespace(bufnum=server.buffers.alloc(), frames=file.frames,
+                                              channels=file.channels, sample_rate=file.sample_rate,
+                                              server=server, path=file.path))
+    monkeypatch.setattr(SoundFile, "open", staticmethod(lambda path: SoundFile(str(path), 200, 2, SR)))
+    take = FakeBuffer(100, 1)
+    take.path = "/takes/a.wav"
+    server = take.server = FaultyServer()
+    trace: list = []
+    editor = AudioEditor(take, context=Editing(), file=SoundFile("/takes/a.wav", 100, 1, SR))
+    effect, wait = editor._effect, editor._await
+
+    def record_effect(entry, held):
+        if trace[-1][1] is not None:
+            trace[-1][1].append(entry["kind"])
+        return effect(entry, held)
+
+    def record_wait(entry):
+        if trace[-1][1] is not None:
+            trace[-1][1].append(f"await:{entry['kind']}" + (f":{entry['via']}" if "via" in entry else ""))
+        return wait(entry)
+
+    editor._effect, editor._await = record_effect, record_wait
+    host = FakeHost()
+
+    def state():
+        file = editor.file
+        return {"path": None if file is None else file.path,
+                "frames": None if file is None else file.frames,
+                "dirty": editor.dirty, "files": len(editor.files),
+                "undo": editor.can_undo, "closed": editor.closed}
+
+    def step(name, act, *, concurrent=False):
+        trace.append([name, None if concurrent else [], None])
+        try:
+            act()
+            raised = None
+        except CommandError:
+            raised = "command"
+        except ValueError:
+            raised = "value"
+        except RuntimeError:
+            raised = "runtime"
+        trace[-1][2] = {**state(), "raised": raised}
+
+    def cut(at=10.0):
+        wid = picture(host.trees[-1])["id"]
+        editor.apply("/gui_event", [wid, len(trace), editor._editing.version, "cut", at, 20.0])
+
+    def window(verb):
+        editor.apply("/gui_event", [int(editor._window), len(trace), 0, verb])
+
+    def pick(index):
+        """A file chosen in the window's list, by the hand."""
+        listed = _node(host.trees[-1], lambda node: "rows" in node)
+        editor.apply("/gui_event", [listed["id"], len(trace), 0, "select", index])
+
+    def slow(addr, meanwhile, act):
+        server.slow[addr] = meanwhile
+        act()
+
+    step("open", lambda: editor.open(host))
+    step("cut", cut)
+    server.fail["/buffer_write"] = "no space left on device"
+    step("a refused save", lambda: editor.save())
+    step("the save retried", lambda: editor.save())
+    step("a cut while the write is out", lambda: slow("/buffer_write", cut, editor.save),
+         concurrent=True)
+    step("undo to what was written", lambda: window("undo"))
+    server.fail["/buffer_gen"] = "copy refused"
+    step("a cut whose copy is refused", cut)
+    step("open another file", lambda: editor.open_file(["/takes/b.wav"]))
+    step("back to the first", lambda: editor.focus_file(0))
+    step("the second cut while the first is written",
+         lambda: slow("/buffer_write", lambda: (pick(1), cut()), editor.save),
+         concurrent=True)
+    step("back to the first again", lambda: editor.focus_file(0))
+    step("the window closed while a write is out",
+         lambda: slow("/buffer_write", editor.close, lambda: editor.save("/takes/c.wav")),
+         concurrent=True)
+    return trace
+
+
+def test_the_shared_fault_trace_is_what_the_coordinator_answers_this_client(monkeypatch):
+    trace = audio_fault_trace(monkeypatch)
+    states = {name: state for name, _, state in trace}
+    # the contract each step keeps, read here as well as frozen
+    assert states["a refused save"]["raised"] == "command"
+    assert states["a refused save"]["dirty"] is True
+    assert states["the save retried"]["dirty"] is False
+    assert states["a cut while the write is out"]["dirty"] is True
+    assert states["undo to what was written"]["dirty"] is False
+    assert states["a cut whose copy is refused"]["frames"] == states["undo to what was written"]["frames"]
+    second = states["the second cut while the first is written"]
+    assert second["path"] == "/takes/b.wav" and second["dirty"] is True
+    assert states["back to the first again"]["dirty"] is False
+    closed = states["the window closed while a write is out"]
+    assert closed["closed"] is True and closed["dirty"] is False and closed["path"] == "/takes/c.wav"
+    expected = json.loads(TRACE_VECTORS.read_text())["faults"]
+    assert trace == expected, \
         "regenerate with clients/web/tests/gen-audio-trace-vectors.py if the coordinator moved"
