@@ -44,7 +44,7 @@ channel, moving, and its play cursor is back. Space stops.
 
 <b>Independent and shared history.</b> <code>a.wav</code> and
 <code>d.wav</code> share one undo order (<code>sharedHistory</code>):
-<b>cut second</b> cuts <code>d.wav</code>, and <b>undo first</b> -- Ctrl+Z in
+<b>cut second</b> cuts <code>d.wav</code>, and <b>undo in first</b> -- Ctrl+Z in
 <code>first</code> over <code>a.wav</code> -- puts it back without moving
 <code>first</code>'s focus. <code>b.wav</code> and <code>c.wav</code> each have
 an order of their own: an edit there is undone only there.<br>
@@ -62,7 +62,7 @@ and press Ctrl+V over a take: text stays text, and the paste is refused.<br>
 does not exist: the write is refused, the error is printed, and <b>status</b>
 shows the file still dirty and still called <code>d.wav</code>. <b>save then
 edit</b> saves it, then cuts it: dirty again, since the cut is newer than what
-was written; <b>undo second</b> brings back the written take, and it is clean.
+was written; <b>undo in second</b> brings back the written take, and it is clean.
 <b>save and close</b> saves <code>d.wav</code> once more and closes
 <code>second</code>: the window goes once the write is done, and the file holds
 the take.<br>
@@ -83,8 +83,8 @@ for nothing.</div>
         <button id="status" disabled>status</button>
         <button id="activity" disabled>activity</button>
         <button id="cut-second" disabled>cut second</button>
-        <button id="undo-first" disabled>undo first</button>
-        <button id="undo-second" disabled>undo second</button>
+        <button id="undo-in-first" disabled>undo in first</button>
+        <button id="undo-in-second" disabled>undo in second</button>
         <button id="copy-first" disabled>copy first</button>
         <button id="paste-second" disabled>paste second</button>
         <button id="close-origin" disabled>close origin</button>
@@ -194,8 +194,8 @@ for nothing.</div>
           await second.select(new segments.Segment(second.buffer, Math.round(0.5 * second.sampleRate), 0.1));
           second.cut();
         };
-        const undoFirst = () => first.undo();
-        const undoSecond = () => second.undo();
+        const undoInFirst = () => first.undo();
+        const undoInSecond = () => second.undo();
 
         // The clipboard: a copy is the clipboard's, not the file's -- it
         // outlives the file it came from, and a paste never converts it.
@@ -233,7 +233,7 @@ for nothing.</div>
 
         const steps = {
           "status": status, "activity": activity, "cut-second": cutSecond,
-          "undo-first": undoFirst, "undo-second": undoSecond, "copy-first": copyFirst,
+          "undo-in-first": undoInFirst, "undo-in-second": undoInSecond, "copy-first": copyFirst,
           "paste-second": pasteSecond, "close-origin": closeOrigin, "paste-stereo": pasteStereo,
           "failed-save": failedSave, "save-then-edit": saveThenEdit, "save-and-close": saveAndClose,
         };

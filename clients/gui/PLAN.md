@@ -8616,3 +8616,18 @@ module of its own.
   Measured with the fix for the core it spun (`Host::asks_next_frame`); the
   cause is not established.
 
+
+- ⬜ **A page shows an edit of a short take a second and a half late**
+  *(found 2026-10-22, the browser pass over `editors/audio-lifecycle.html`;
+  the user: a stereo paste takes two seconds to appear)*. The edit itself
+  lands in the page's engine in about 70 ms, as natively. What a window then
+  does is read the new join: a take under `WHOLE_DOWNLOAD_SAMPLES` is
+  downloaded whole, one `BUFFER_CHUNK` (4096 samples) per request, one
+  request in flight per buffer and each gated by a frame (`host/fetch.rs`).
+  Measured after pasting two seconds of stereo onto two: 94 requests, 1.5 MB,
+  landing at about 75 a second, so the picture settles about 1.6 s after the
+  paste; a native window maps the samples and shows it at once. The chunk and
+  the bound are the shared ring's (64 KiB, lossy under pressure), so the fix
+  is a decision about the page's carrier -- more requests in flight within
+  that bound, a wider reply for a page's own in-tab engine, or reading the
+  span under the edit rather than the whole take -- not a constant to raise.

@@ -22,7 +22,7 @@ meter shows two channels at zero. Click ``c.wav``: six channels at zero. Click
 
 **Independent and shared history.** ``a.wav`` and ``d.wav`` share one undo
 order (``shared_history``): ``cut_second()`` cuts ``d.wav``, and
-``undo_first()`` -- Ctrl+Z in ``first`` over ``a.wav`` -- puts it back without
+``undo_in_first()`` -- Ctrl+Z in ``first`` over ``a.wav`` -- puts it back without
 moving ``first``'s focus. ``b.wav`` and ``c.wav`` each have an order of their
 own: an edit there is undone only there.
 
@@ -39,7 +39,7 @@ is refused.
 exist: the server refuses the write, the error is printed, and ``status()``
 shows the file still dirty and still called ``d.wav``. ``save_then_edit()``
 saves it, then cuts it: dirty again, since the cut is newer than what was
-written; ``undo_second()`` brings back the written take, and it is clean.
+written; ``undo_in_second()`` brings back the written take, and it is clean.
 ``save_and_close()`` saves ``d.wav`` once more and closes ``second``: the
 window goes once the write is done, and the file holds the take.
 
@@ -162,13 +162,13 @@ def cut_second():
     second.cut()
 
 
-def undo_first():
-    """Undo from ``first``: the shared order puts ``d.wav``'s cut back."""
+def undo_in_first():
+    """Ctrl+Z in ``first``: the shared order puts ``d.wav``'s cut back."""
     first.undo()
 
 
-def undo_second():
-    """Undo from ``second``."""
+def undo_in_second():
+    """Ctrl+Z in ``second``."""
     second.undo()
 
 

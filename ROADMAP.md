@@ -169,6 +169,11 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found in the eye pass
   over the audio editor's lifecycle example.
 
+- ⬜ **A page shows an edit of a short take a second and a half late**
+  *(`clients/gui/PLAN.md`, Found by use)*. The edit lands at once; the
+  window re-downloads the take a chunk per frame. A decision about the page's
+  carrier comes first.
+
 - ⬜ **The Open file chooser gives its label too much of the width**
   *(`clients/gui/PLAN.md`, Found by use)*. Small; the room it frees is where a
   file preview could go later.
