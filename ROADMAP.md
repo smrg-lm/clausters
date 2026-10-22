@@ -153,11 +153,6 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **A page shows an edit of a short take a second and a half late**
-  *(`clients/gui/PLAN.md`, Found by use)*. Three chunks now travel at once;
-  what is left is the page engine's reply ring, or reading the span under
-  the edit.
-
 - ⬜ **The GUI host's library suite stopped once on a SIGSEGV**
   *(`clients/gui/PLAN.md`, Found by use)*. Not reproduced; waits for the next
   failure's output.

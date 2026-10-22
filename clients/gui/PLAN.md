@@ -8623,7 +8623,7 @@ module of its own.
   two seconds of either loop, and a stopped window draws none.
 
 
-- ⬜ **A page shows an edit of a short take a second and a half late**
+- ✅ **A page shows an edit of a short take a second and a half late**
   *(found 2026-10-22, the browser pass over `editors/audio-lifecycle.html`;
   the user: a stereo paste takes two seconds to appear)*. The edit itself
   lands in the page's engine in about 70 ms, as natively. What a window then
@@ -8647,6 +8647,10 @@ module of its own.
   that ring's capacity in a page, or reading the span under the edit. The
   browser pass the same day saw the stereo paste land somewhat sooner, and
   still not at once.
+  *Fixed 2026-10-22:* every take is drawn from its summary, whatever its
+  size, and samples are read only under a zoom (`docs/decisions.md`, "A host
+  that cannot map draws every take from its summary"). The same paste is
+  eight requests, 59 kB and about 120 ms in headless Chrome.
 
 - ⬜ **The GUI host's library suite stopped once on a SIGSEGV** *(found
   2026-10-22, closing the entries of the audio editor's acceptance)*. One

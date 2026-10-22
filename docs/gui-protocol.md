@@ -984,19 +984,15 @@ answers `layers` with the form it was given.
   the segment has always shown: there the samples *are* the mapped cells, so any
   zoom is current with nothing told to it.
 - **What `fills` does *not* decide is how the samples arrive.** A host that
-  cannot map them has two routes and keeps both, because they are cheap in
-  opposite cases: a **short** buffer is downloaded whole (`/buffer_getRange`
-  from end to end) and then every zoom is answered out of what is in hand, with
-  no further round trip ever; a **long** one is drawn from its summary
-  (`/buffer_peaks`, or the stream while it records) with the run under the eye
-  read back as the eye moves, because 230 MB is not downloadable at any zoom.
-  The line between them is the buffer's **size**, decided by the host when
-  `/buffer_query.reply` first says what the shape is — roughly five seconds of
-  stereo, which is as much a count of round trips as of bytes. It used to be `fills`, which meant two views of one finished take,
-  one opened while it recorded and one after, took different routes and behaved
-  differently under the same hand; the fork is real and worth keeping, the
-  criterion was not. Nothing about this is on the wire: a script says what the
-  view is *of*, never how to fetch it.
+  cannot map them has one route, whatever the size: the view is drawn from the
+  buffer's summary (`/buffer_peaks` for a take standing still, the stream while
+  it records), and the run under the eye is read back with `/buffer_getRange`
+  as a zoom reaches it. A take is never downloaded whole, so its picture, and
+  its picture after an edit, arrive in a few replies (`docs/decisions.md`, "A
+  host that cannot map draws every take from its summary"). `fills` says only
+  that the samples are being written, so the summary is pushed rather than
+  asked for. Nothing about this is on the wire: a script says what the view is
+  *of*, never how to fetch it.
 
 An `axes` pair works on `/gui_def` and on `/gui_set` alike (there it rides as
 its JSON string, the `theme` convention). Everything the container does **not**

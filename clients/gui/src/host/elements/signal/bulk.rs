@@ -148,10 +148,9 @@ impl SignalElement {
         // full length, to draw over them.
         //
         // That is all `fills` says here, and all it decides: *these samples
-        // are being written*. Which route a take that stands still arrives by
-        // is a question about cost and is answered where the size is known
-        // (`fetch::BufferFetches::whole`), not by whether something happens to
-        // be recording into it.
+        // are being written*. Every take reaches a host that cannot map it as
+        // its summary (`fetch`), so what `fills` changes is only whether that
+        // summary is pushed or asked for.
         if self.fills
             && data.cache.is_none()
             && data.path.is_none()

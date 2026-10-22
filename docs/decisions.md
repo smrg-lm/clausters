@@ -10621,3 +10621,35 @@ asks for) is carried out inside that await, before the run resumes, where
 queueing it behind the run would answer the window before the take it reads
 was stitched. A trace both client suites replay against
 `audio-trace-vectors.json` is what keeps the two from drifting again.
+
+
+## A host that cannot map draws every take from its summary (2026-10-22)
+
+*Decided 2026-10-22, by the user, revising the two routes kept on
+2026-08-20.* A host that cannot map a server buffer -- a page, a host attached
+to a remote server -- drew a short take by downloading every sample, so that
+every later zoom was answered from samples in hand, and a long one from its
+summary with the span under the eye read back. The line was the size, about
+five seconds of stereo.
+
+The edit is what the short route paid for. After every change the window
+downloaded the whole take again: in a page, two seconds of stereo pasted onto
+two was 94 `/buffer_getRange` requests and 1.5 MB, and the picture settled
+about two seconds later, while a six-channel take of the same length -- over
+the line, so summarized -- showed the same paste at once. The cheaper case was
+the one taking the expensive route.
+
+**Every take is now drawn from its summary**, whatever its size: `/buffer_peaks`
+for a take standing still, the `/buffer_stream` reports for one being written,
+and samples only for the span a zoom shows, read in chunks of which three may
+be in the air (the reply ring's bound). The same paste is eight requests,
+59 kB and about 120 ms in headless Chrome. What it costs is one round trip the
+first time a short take is zoomed to its samples, which is what a long take
+always paid.
+
+**The criterion, stated by the user:** the interface answers fast and spends
+the least CPU an operation needs, and work done at the pace of the
+interaction -- a summary when a take is opened or edited, samples when a zoom
+asks for them -- is spread over what the hand does, so no operation arrives
+as a spike. A route that front-loads work to save a later round trip is
+measured against that, not against the round trip alone.
