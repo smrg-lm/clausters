@@ -30,7 +30,18 @@ pub(in crate::osc::server) fn overview_blob(
         .map(|ch| buffer.channel(ch))
         .collect();
     let sources: Vec<_> = channels.iter().collect();
-    let stats = clausters_core::peaks::overview(&sources, first_frame, bucket, buckets);
+    // The whole buckets, then a last one the take's end cuts short, over the
+    // frames it holds -- `overview` would read the rest of it as silence.
+    let whole = buckets.min(buffer.frames().saturating_sub(first_frame) / bucket);
+    let mut stats = clausters_core::peaks::overview(&sources, first_frame, bucket, whole);
+    if whole < buckets {
+        let at = first_frame + whole * bucket;
+        let mut held = vec![0.0f32; buffer.frames().saturating_sub(at).min(bucket)];
+        for source in &sources {
+            clausters_core::peaks::Source::read_into(*source, at, &mut held);
+            stats.extend_from_slice(&clausters_core::peaks::SpanStats::of(&held).bucket());
+        }
+    }
     clausters_core::osc::sample_blob(&stats)
 }
 
@@ -522,5 +533,27 @@ mod tests {
         assert_eq!(tap_window_cap(ClientId::Udp(peer), 0, 4), MAX_TAP_WINDOW);
         let ws = ClientId::Ws(0);
         assert_eq!(tap_window_cap(ws, 65_536, 4), (65_536 - 256) / 4);
+    }
+
+    /// The overview read from samples -- what a server answers when it keeps
+    /// no summary -- gives the last bucket over the frames it holds, as the
+    /// summary does, rather than over silence past the end.
+    #[test]
+    fn the_last_bucket_is_summarized_over_what_it_holds() {
+        let buffer = crate::dsp::buffer::Buffer::new(vec![0.5; 300], 1, 300, 48_000.0);
+        let blob = overview_blob(&buffer, 0, 256, 2);
+        let values: Vec<f32> = blob
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_le_bytes(*c))
+            .collect();
+        assert_eq!(values.len(), 6);
+        assert_eq!(
+            &values[3..5],
+            &[0.5, 0.5],
+            "no silence folded into the tail"
+        );
+        assert!((values[5] - 0.25).abs() < 1e-6);
     }
 }

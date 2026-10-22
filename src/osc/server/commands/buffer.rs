@@ -387,10 +387,13 @@ impl OscServer {
     /// to draw the whole take at once, and the spans under a zoom read back
     /// with `/buffer_getRange` as they are needed.
     ///
-    /// `bucket` is the summary's finest resolution and should be the one the
-    /// asking pyramid was built at (256 unless it says otherwise), so the two
-    /// grids agree by construction; `start` is rounded **down** to a whole
-    /// bucket for the same reason. `frames < 0` runs to the end.
+    /// `bucket` is any size, and a view asks for the coarsest that still
+    /// resolves its pixel columns: one of 256 * 2^k on its own grid is folded
+    /// out of the summary's levels with no sample read, and any other is
+    /// answered exactly too. `start` is rounded **down** to a whole bucket, so
+    /// the grids agree; `frames < 0` runs to the end. A span that runs to the
+    /// end answers its last bucket over the frames it holds -- the pyramid's
+    /// own short entry -- and one that stops short answers whole buckets only.
     ///
     /// **One request, one reply, and the reply's own length says how much
     /// came** -- the chunk conversation `/buffer_getRange` already has, for the
@@ -421,7 +424,15 @@ impl OscServer {
             n if n < 0 => frames,
             n => (start + n as usize).min(frames),
         };
-        let buckets = end.saturating_sub(first) / bucket;
+        // A span that runs to the take's end answers its last bucket too, over
+        // the frames it holds: that is the pyramid's own ragged entry, and at
+        // a coarse bucket it is most of a second nobody could otherwise ask.
+        let held = end.saturating_sub(first);
+        let buckets = if end == frames {
+            held.div_ceil(bucket)
+        } else {
+            held / bucket
+        };
         if buckets == 0 {
             // Nothing whole to answer with, and the honest reply is an empty
             // one rather than silence: the asker learns the span held no

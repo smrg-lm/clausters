@@ -289,12 +289,13 @@ its plan; the plan is where its acceptance is read.
 ### The near work
 
 - ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
-  summaries kept once** (`G44b`-`G44c`) *(`clients/gui/PLAN.md`, "G44 — A
+  summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A
   take's picture is read at the level it is drawn, out of summaries kept
   once")*. **Taken next**, on the user's word: a page redraws a take from its
   start after every edit, slower the longer the take, because the host walks
   the finest summary of the whole take. The server's half shipped (every
-  buffer keeps its summary, a join composes it); what is left is the host's.
+  buffer keeps its summary, a join composes it, any bucket is answered from
+  it); what is left is the host's.
   Before `X25`, since the other editors' lifecycle draws through the same
   path.
 

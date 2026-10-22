@@ -643,7 +643,7 @@ impl BufferFetches {
         channels: usize,
         frames: usize,
     ) -> Option<OscMessage> {
-        if bucket == 0 || frames < bucket {
+        if bucket == 0 || frames == 0 {
             return None;
         }
         let walk = PeaksWalk {
@@ -674,7 +674,9 @@ impl BufferFetches {
         }
         walk.stalled = 0;
         walk.next = (start as usize + buckets * walk.bucket).max(walk.next);
-        if walk.next + walk.bucket > walk.end {
+        // To the end, the last bucket too: the server answers one the take's
+        // end cuts short when the span runs to it.
+        if walk.next >= walk.end {
             self.peaks.remove(&bufnum);
             return None;
         }
@@ -1458,6 +1460,34 @@ mod tests {
         assert!(
             fetches.on_peaks(3, 0, 6).is_none(),
             "and a late answer to a walk that ended is nobody's"
+        );
+    }
+
+    /// **A walk runs to the take's end, its last short bucket too**: the server
+    /// answers a bucket the end cuts short when the span runs to it, so a walk
+    /// whose answer stopped on a whole bucket asks once more, and a take
+    /// shorter than one bucket is asked for at all.
+    #[test]
+    fn a_summary_walk_asks_for_the_tail_shorter_than_a_bucket() {
+        let mut fetches = BufferFetches::default();
+        // Ten buckets and a hundred frames, the first answer covering ten.
+        fetches.want_peaks(3, 256, 1, 10 * 256 + 100).unwrap();
+        let tail = fetches
+            .on_peaks(3, 0, 10 * 3)
+            .expect("a hundred frames are left");
+        assert_eq!(ints(&tail), vec![3, 256, 10 * 256, -1]);
+        assert!(
+            fetches.on_peaks(3, 10 * 256, 3).is_none(),
+            "and then it ends"
+        );
+
+        let short = fetches
+            .want_peaks(4, 256, 1, 100)
+            .expect("a take shorter than a bucket has a summary too");
+        assert_eq!(ints(&short), vec![4, 256, 0, -1]);
+        assert!(
+            fetches.want_peaks(5, 256, 1, 0).is_none(),
+            "an empty one has none"
         );
     }
 

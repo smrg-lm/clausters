@@ -788,6 +788,124 @@ fn buffer_peaks_answers_the_overview_of_a_buffer_at_rest() {
     server.quit();
 }
 
+/// **Any bucket, answered from the summary and exact**: a power of two on the
+/// base grid, a bucket off it, and the last bucket the take's end cuts short,
+/// each matching a summary of the samples read directly. And an overview the
+/// width of a window comes in a few replies, its bytes proportional to the
+/// width and not to the take.
+#[test]
+fn buffer_peaks_answers_any_bucket_exactly() {
+    let mut server = TestServer::spawn();
+    let (frames, channels) = (100_003usize, 2usize);
+    server.send(
+        "/buffer_alloc",
+        vec![
+            OscType::Int(5),
+            OscType::Int(frames as i32),
+            OscType::Int(channels as i32),
+        ],
+    );
+    server.sync();
+    let mut seed = 99u32;
+    let samples: Vec<f32> = (0..frames * channels)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            (seed as f32 / u32::MAX as f32) * 2.0 - 1.0
+        })
+        .collect();
+    for (i, chunk) in samples.chunks(4_096).enumerate() {
+        let mut blob = Vec::with_capacity(chunk.len() * 4);
+        for v in chunk {
+            blob.extend_from_slice(&v.to_le_bytes());
+        }
+        server.send(
+            "/buffer_setRange",
+            vec![
+                OscType::Int(5),
+                OscType::Int((i * 4_096) as i32),
+                OscType::Blob(blob),
+            ],
+        );
+    }
+    server.sync();
+
+    // Walks the whole take at `bucket`, as a host does, and answers the
+    // overview and how many replies it took.
+    let walk = |server: &mut TestServer, bucket: usize| {
+        let (mut at, mut values, mut replies) = (0usize, Vec::new(), 0);
+        while at < frames {
+            server.send(
+                "/buffer_peaks",
+                vec![
+                    OscType::Int(5),
+                    OscType::Int(bucket as i32),
+                    OscType::Int(at as i32),
+                    OscType::Int(-1),
+                ],
+            );
+            let reply = server.recv_until("/buffer_peaks.reply");
+            let (OscType::Long(start), OscType::Blob(bytes)) = (&reply.args[1], &reply.args[3])
+            else {
+                panic!("expected a start and a blob, got {:?}", reply.args);
+            };
+            assert_eq!(
+                *start as usize, at,
+                "the walk goes on where the last reply ended"
+            );
+            let got: Vec<f32> = bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_le_bytes(*c))
+                .collect();
+            assert!(!got.is_empty(), "a span to the end always answers a bucket");
+            at += got.len() / (channels * 3) * bucket;
+            values.extend(got);
+            replies += 1;
+        }
+        (values, replies)
+    };
+    for bucket in [256, 4_096, 1_000] {
+        let (values, _) = walk(&mut server, bucket);
+        assert_eq!(
+            values.len(),
+            frames.div_ceil(bucket) * channels * 3,
+            "bucket {bucket}"
+        );
+        for (b, row) in values.chunks(channels * 3).enumerate() {
+            for ch in 0..channels {
+                let held: Vec<f32> = (b * bucket..((b + 1) * bucket).min(frames))
+                    .map(|f| samples[f * channels + ch])
+                    .collect();
+                let (lo, hi) = held
+                    .iter()
+                    .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &v| {
+                        (lo.min(v), hi.max(v))
+                    });
+                let ms =
+                    held.iter().map(|&v| (v as f64) * (v as f64)).sum::<f64>() / held.len() as f64;
+                let got = &row[ch * 3..ch * 3 + 3];
+                assert_eq!((got[0], got[1]), (lo, hi), "bucket {bucket} #{b} ch {ch}");
+                assert!(
+                    ((got[2] as f64) - ms).abs() <= 1e-5 * ms,
+                    "bucket {bucket} #{b} ch {ch}"
+                );
+            }
+        }
+    }
+
+    // A window 760 columns wide over the whole take, at the bucket that
+    // resolves its columns: some 780 buckets, three replies of stereo.
+    let (values, replies) = walk(&mut server, 128);
+    let buckets = frames.div_ceil(128);
+    assert_eq!(values.len(), buckets * channels * 3);
+    assert_eq!(replies, buckets.div_ceil(8 * 1024 / (channels * 3 * 4)));
+
+    server.quit();
+}
+
 /// **A server with no segment reports a recording too**, which is the case the
 /// command exists for: whoever cannot map the samples is who asks for its
 /// overview, and most of them talk to a server that shares nothing -- an engine
