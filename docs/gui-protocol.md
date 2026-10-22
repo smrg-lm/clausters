@@ -1441,6 +1441,19 @@ peaks of another shape or older than its samples, is summarized from its
 samples as it is asked, which is right and slow over a long file. A list is
 read-only to the host: an edit is its owner's, which sends the new list.
 
+**A list's spectrogram is analyzed where it is looked at.** A spectrogram of a
+list — the `spectrogram` view, or a `spectrogram` layer — is never analyzed
+whole: the host analyzes the span the view shows, one window (`window_size`
+frames) per column of the view, read from the files through the list's parts,
+so its fades and its channel map are in what is analyzed, and analyzes it again
+when the view moves past what it holds or zooms to another scale. Zoomed out, a
+column is one window over seconds of the take, a preview; zoomed in, the
+windows overlap. What it costs is the view's width times the window, whatever
+the take's length — over an hour of stereo, 760 columns read 37 MB and take
+under a tenth of a second natively. The view keeps the columns it has until the
+new ones have come, and an edit's new list is analyzed the same way. `hop` is
+the view's to choose here and is not read.
+
 ### A processed signal over its source
 
 `signal` accepts optional `preview_buffer` (a server buffer id; a negative id or `null`

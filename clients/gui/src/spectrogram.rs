@@ -608,6 +608,12 @@ impl SpectrogramView {
             return;
         }
         let hop = self.stft.hop().max(1) as f64;
+        // A transform of a span counts its frames from where the span starts.
+        let start = view.start - self.stft.origin() as f64;
+        let view = &View {
+            start,
+            len: view.len,
+        };
         let want = hold_for(
             view.start / hop,
             view.len / hop,
@@ -659,8 +665,9 @@ impl SpectrogramView {
             Some(held) if !self.stft.is_rolling() => {
                 let scale = self.stft.hop().max(1) as f64 * (1u64 << held.level) as f64;
                 let width = held.count.max(1) as f64;
+                let start = view.start - self.stft.origin() as f64;
                 (
-                    ((view.start / scale - held.first as f64) / width) as f32,
+                    ((start / scale - held.first as f64) / width) as f32,
                     (view.len / scale / width) as f32,
                 )
             }

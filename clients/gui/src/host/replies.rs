@@ -59,6 +59,10 @@ pub(crate) trait Front {
     /// The spans the last frame of window `def_id` could not draw, by widget,
     /// taken so each is asked for once.
     fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)>;
+    /// **Marks the columns widget `widget_id` of window `def_id` holds as of
+    /// a list since redefined**, answering whether it holds any: a view that
+    /// does keeps drawing them and owes the new list's.
+    fn stale_columns(&self, def_id: i32, widget_id: i32) -> bool;
     /// The widgets a hand is holding in this front's windows, which a value
     /// read back must not move ([`Host::read_back`]).
     fn held(&self) -> Vec<i32>;
@@ -199,9 +203,88 @@ pub(crate) trait Front {
                     }
                 }
             }
+            // **A spectrogram's columns over the span one view of a list
+            // shows**, collected until the span is covered and placed whole.
+            "/buffer_spectrum.reply" => {
+                let (next, done) = self.fetches().columns.on_reply(&msg.args);
+                if let Some(next) = next {
+                    self.to_server(next);
+                }
+                if let Some(done) = done {
+                    self.place_columns(done);
+                }
+            }
             _ => return false,
         }
         true
+    }
+
+    /// **A view's columns, whole**: the texture of the span it asked for, in
+    /// place of the one it drew.
+    fn place_columns(&mut self, done: crate::host::columns::ColumnsDone) {
+        if !self.window_open(done.def_id) || done.stfts.is_empty() {
+            return;
+        }
+        let first = &done.stfts[0];
+        diag::info!(
+            "buffer {}: {} spectrogram column(s) from frame {} every {} placed",
+            done.key,
+            first.n_frames(),
+            first.origin(),
+            first.hop()
+        );
+        self.place_slot(done.def_id, done.widget_id, Loaded::Stfts(done.stfts));
+        self.redraw_window(done.def_id);
+    }
+
+    /// **A spectrogram of a list, before its columns are asked**: a view
+    /// that holds a texture of the list keeps it and owes the new list's,
+    /// and one that holds none is given one dark column over the whole take,
+    /// which its first draw finds too coarse and asks past. The axis knows
+    /// the take's length from here on.
+    fn place_column_texture(
+        &mut self,
+        want: WaveWant,
+        frames: usize,
+        channels: usize,
+        sample_rate: f64,
+    ) {
+        let Some(Some(SlotKind::Texture {
+            window_size,
+            sample_rate: declared,
+            ..
+        })) = self
+            .host()
+            .window_def(want.def_id)
+            .and_then(|t| t.find(want.widget_id))
+            .map(|w| w.bulk_target().kind.needs().slot)
+        else {
+            return;
+        };
+        if !self.stale_columns(want.def_id, want.widget_id) {
+            let rate = if declared > 0.0 {
+                declared as f32
+            } else {
+                sample_rate as f32
+            };
+            let bins = window_size / 2;
+            let stfts = (0..channels.max(1))
+                .filter_map(|_| {
+                    crate::spectrogram::Stft::of_span(
+                        vec![0.0; bins],
+                        bins,
+                        0,
+                        frames.max(1),
+                        window_size,
+                        rate,
+                        frames,
+                    )
+                })
+                .collect();
+            self.place_slot(want.def_id, want.widget_id, Loaded::Stfts(stfts));
+        }
+        self.redraw_window(want.def_id);
+        self.finish_placement(want, frames, sample_rate);
     }
 
     /// Carries out one fetch-machine step: send the next request, or place
@@ -459,6 +542,22 @@ pub(crate) trait Front {
             asked: None,
         };
         for want in wants {
+            // A list's spectrogram is analyzed where it is looked at, never
+            // from a summary of it.
+            let texture = self
+                .host()
+                .window_def(want.def_id)
+                .and_then(|t| t.find(want.widget_id))
+                .is_some_and(|w| {
+                    matches!(
+                        w.bulk_target().kind.needs().slot,
+                        Some(SlotKind::Texture { .. })
+                    )
+                });
+            if texture && crate::host::disk::is_list_key(bufnum) {
+                self.place_column_texture(want, frames, channels, sample_rate);
+                continue;
+            }
             let Some(w) = self
                 .host_mut()
                 .window_def_mut(want.def_id)
@@ -883,9 +982,14 @@ pub(crate) trait Front {
                 else {
                     continue;
                 };
-                let (Some((channels, _)), Some(bufnum)) = (el.sample_shape(), el.source_buffer())
-                else {
+                let Some(bufnum) = el.source_buffer() else {
                     continue;
+                };
+                // Columns are asked of the list, which knows its own shape.
+                let channels = match (owed, el.sample_shape()) {
+                    (_, Some((channels, _))) => channels,
+                    (Owed::Columns(_), None) => 1,
+                    _ => continue,
                 };
                 // A view waiting for its take's new summary is drawing the
                 // take it had: a span asked for now would be read out of the
@@ -914,6 +1018,7 @@ pub(crate) trait Front {
                     channels,
                     SpanUse::Window { def_id, widget_id },
                 ),
+                Owed::Columns(span) => self.fetches().columns.want(bufnum, def_id, widget_id, span),
             };
             if let Some(msg) = msg {
                 self.to_server(msg);

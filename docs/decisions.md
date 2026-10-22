@@ -10812,3 +10812,30 @@ two seconds older than the samples, since a render closes its samples and its
 peaks in either order. A file whose peaks are absent or stale is summarized
 from its samples as it is asked, which is right and slow over a long file; the
 application measures an imported file by a render instead.
+
+## A list's spectrogram is analyzed where it is looked at (2026-10-22)
+
+A take that is a list of segments over files is never read whole, so its
+spectrogram cannot be analyzed whole as a buffer's is. Two shapes were open:
+an analysis file kept beside each file's peaks, composed across the list, or
+the span under the eye analyzed from the samples each time the view moves.
+
+**The span under the eye.** A stored transform does not compose the way peaks
+do: a bucket's minimum and maximum fold across a seam, a spectrum does not,
+since a window across a seam, a fade or a resampled part is the spectrum of
+samples no file holds. So a stored analysis would still read the samples there,
+and it would be a second derived file per take for every writer to keep. The
+field's own answer for long files is the other one: an analysis of what is
+shown, switching to a fast preview above a visible length and accurate zoomed
+in. Here the view asks the host's answerer for one window per column of the
+span it shows (`/buffer_spectrum`, answered locally, never on the wire), read
+through the list's parts so its fades and channel maps are in what is
+analyzed; zoomed out a column is one window over seconds of the take, and
+zoomed in the windows overlap. It asks again when it moves past what it holds
+or zooms to another hop, and keeps the columns it has until the new ones have
+come.
+
+What it costs is the view's width times the window, whatever the take's
+length: over an hour of stereo, 760 columns of 2048 frames read 37 MB in 87 ms
+natively. A stored analysis stays a Future direction of the GUI plan, to take
+only if a measurement asks for it.

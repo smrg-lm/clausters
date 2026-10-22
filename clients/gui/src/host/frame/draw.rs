@@ -651,6 +651,11 @@ pub(super) fn draw_timeline_meshes(
             slot.owed
                 .set(owed(&slot.view, &local, body.w as f64, item.written));
         }
+        // The same note for a texture of a span, which holds the columns of
+        // what was last looked at.
+        if let Some(slot) = spectro {
+            slot.owed.set(columns_owed(slot, &local, body.w as f64));
+        }
         // **The stack, back to front.** Everything up to the texture goes into
         // the base mesh, everything after it into the overlay: the GPU pass
         // that samples the texture runs between the two, so a layer drawn over

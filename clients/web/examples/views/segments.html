@@ -12,7 +12,7 @@
              align-items: flex-start; max-width: 60rem; }
       #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
       button { font: inherit; padding: 4px 10px; }
-      #stage { width: 900px; height: 420px; }
+      #stage { width: 900px; height: 600px; }
       #stage canvas { display: block; width: 100%; height: 100%; }
       pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
             white-space: pre-wrap; align-self: stretch; }
@@ -25,14 +25,17 @@ by the host. An application's takes live on disk: a take is a list of
 segments, each a span of a file with its own fades and channel map, and an
 edit is a new list over files that never change. This page renders one file
 and draws two lists over it, one above the other, both with
-<code>waveform({ segments })</code>:
+<code>waveform({ segments })</code>, and the spectrogram of the second with
+<code>spectrogram({ segments })</code>:
 <ul>
 <li><b>the take as it is</b>: one part, the whole file -- a four-second tone
 that swells from quiet to loud;</li>
 <li><b>the take edited</b>: the same file with its halves swapped, the loud
 half first, with a 10 ms fade either side of the seam. Nothing was rendered
 for it. It is two parts over the one file, and its picture is composed by the
-host from the file's peaks.</li>
+host from the file's peaks;</li>
+<li><b>its spectrogram</b>, under it: analyzed from the file by the host, only
+for the span on screen, and analyzed again as you zoom and scroll.</li>
 </ul>
 The file is rendered offline with its <b>peaks</b> beside it: the render
 writes the samples to <code>take.w64</code>, and a <code>peaksOut</code> on the
@@ -41,8 +44,9 @@ from. The host reads both itself, with no server involved in the drawing: it
 reads the levels of the peaks its window resolves, and <b>samples only under a
 zoom</b>. So zoom in with the wheel until single samples show, and what you see
 is read from the file then, a span at a time. <b>Check by eye</b> that the
-edited take falls from loud to quiet at its seam and then swells again, and
-that zooming into the seam shows the 10 ms fades meeting.
+edited take falls from loud to quiet at its seam and then swells again, that
+zooming into the seam shows the 10 ms fades meeting, and that the spectrogram
+keeps one line at 440 Hz through the seam, sharpening as you zoom in.
 <p>The files land in <code>out/segments/</code> of the page's own storage (the
 origin private file system), where the script writes them under
 <code>clients/python/examples/out/segments/</code>; a part names its file by
@@ -125,6 +129,7 @@ first (<code>dist/</code> is git-ignored); serve it over HTTP and open
           { title: "a take as a list of segments", layout: "col" },
           gui.waveform({ name: "whole", segments: whole, sampleRate: SR, ruler: "time" }),
           gui.waveform({ name: "edited", segments: swapped, sampleRate: SR, ruler: "time" }),
+          gui.spectrogram({ name: "spectrum", segments: swapped, sampleRate: SR, ruler: "time" }),
         ).open($("stage"));
         window.win = win;
         log('up - win.widget("edited").set({ segments }) to draw another list');

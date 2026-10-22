@@ -1,5 +1,5 @@
 //! **A take of an hour, drawn from its files**: what opening it, editing it
-//! ten times and zooming into it read, measured over a real W64 of an hour of
+//! ten times, drawing its spectrogram and zooming into it read, measured over a real W64 of an hour of
 //! stereo and its peaks.
 //!
 //! Ignored by default: it writes 1.4 GB, under `CARGO_TARGET_TMPDIR` on the
@@ -140,6 +140,14 @@ fn level(frames: usize) -> usize {
     bucket
 }
 
+/// How long a list of `parts` is.
+fn answerer_frames(parts: &[serde_json::Value]) -> usize {
+    parts
+        .iter()
+        .map(|p| p["frames"].as_u64().unwrap() as usize)
+        .sum()
+}
+
 #[test]
 #[ignore = "writes 1.4 GB; run in release with --ignored"]
 fn an_hour_is_opened_edited_and_zoomed_by_what_its_window_resolves() {
@@ -239,6 +247,51 @@ fn an_hour_is_opened_edited_and_zoomed_by_what_its_window_resolves() {
     // with two ends each, and an end's fade may straddle two sample blocks.
     let seams = 10 * 6 * 2 * SAMPLE_BLOCK * CHANNELS * 4;
     assert!(edits.bytes < seams + 2_000_000, "{} bytes", edits.bytes);
+
+    // **Its spectrogram**: 760 columns of 2048-frame windows over the whole
+    // of the last list, as the view zoomed out asks them -- what is read is
+    // the windows, whatever the take's length.
+    let mut spectrum = Cost::default();
+    let read_before = answerer.samples_read;
+    let t = Instant::now();
+    let total = answerer_frames(&parts);
+    let hop = total / COLUMNS;
+    let mut columns = 0;
+    while columns < COLUMNS {
+        let msg = OscMessage {
+            addr: "/buffer_spectrum".into(),
+            args: vec![
+                OscType::Int(-2),
+                OscType::Long((columns * hop) as i64),
+                OscType::Int(hop as i32),
+                OscType::Int((COLUMNS - columns) as i32),
+                OscType::Int(2048),
+            ],
+        };
+        let reply = ask(&mut answerer, &mut disk, &msg, &mut spectrum);
+        let OscType::Blob(blob) = &reply.args[5] else {
+            panic!("{reply:?}");
+        };
+        let came = blob.len() / (CHANNELS * 1024);
+        assert!(came > 0, "an answer of no columns");
+        columns += came;
+    }
+    println!(
+        "spectrogram: {COLUMNS} columns in {:.1} ms, {} replies, {} kB read",
+        t.elapsed().as_secs_f64() * 1e3,
+        spectrum.replies,
+        spectrum.bytes / 1000
+    );
+    assert_eq!(
+        answerer.samples_read - read_before,
+        COLUMNS * 2048 * CHANNELS
+    );
+    // A window straddles two sample blocks at most.
+    assert!(
+        spectrum.bytes <= COLUMNS * 2 * SAMPLE_BLOCK * CHANNELS * 4,
+        "{} bytes",
+        spectrum.bytes
+    );
 
     // **Zoom to the samples**: 4096 frames in the middle of the last list.
     let mut zoom = Cost::default();

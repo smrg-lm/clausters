@@ -152,6 +152,14 @@ pub struct Stft {
     /// has to show is what happened in them -- a click included -- rather than
     /// whichever two of them a sampler landed between.
     levels: Vec<Vec<u8>>,
+    /// **The sample its first frame starts at**: `0` for a transform of a
+    /// whole signal, and where the span begins for one of a span
+    /// ([`Stft::of_span`]) -- a long signal analyzed only where it is looked
+    /// at. Frame `f` starts at `origin + f * hop`.
+    origin: usize,
+    /// Whether this is a transform of a span ([`Stft::of_span`]), which a view
+    /// asks again when it moves past it, rather than of a whole signal.
+    span: bool,
 }
 
 /// A magnitude as a texture stores it: one byte of the normalized range.
@@ -207,6 +215,8 @@ impl Stft {
             capacity: 0,
             head: 0,
             levels: Vec::new(),
+            origin: 0,
+            span: false,
         }
     }
 
@@ -264,7 +274,57 @@ impl Stft {
             capacity,
             head: 0,
             levels: Vec::new(),
+            origin: 0,
+            span: false,
         }
+    }
+
+    /// **A stored transform of a span of a longer signal**, from columns
+    /// analyzed elsewhere: `columns` frames of `n_bins` normalized
+    /// magnitudes, frame-major, the first starting at sample `origin` and
+    /// each `hop` after the last, of a signal `total_samples` long.
+    ///
+    /// What it is for is a signal too long to analyze whole -- a take of
+    /// hours drawn from files -- of which only the span under the eye is
+    /// analyzed, at a hop of about a column of the view, and analyzed again
+    /// when the view moves. `None` when the magnitudes are not `columns *
+    /// n_bins` long or there are no bins.
+    pub fn of_span(
+        mags: Vec<f32>,
+        n_bins: usize,
+        origin: usize,
+        hop: usize,
+        window_size: usize,
+        sample_rate: f32,
+        total_samples: usize,
+    ) -> Option<Self> {
+        if n_bins == 0 || !mags.len().is_multiple_of(n_bins) {
+            return None;
+        }
+        Some(Self {
+            total_samples,
+            n_frames: mags.len() / n_bins,
+            n_bins,
+            hop: hop.max(1),
+            window_size,
+            sample_rate,
+            mags,
+            capacity: 0,
+            head: 0,
+            levels: Vec::new(),
+            origin,
+            span: true,
+        })
+    }
+
+    /// The sample the first frame starts at (see the field).
+    pub fn origin(&self) -> usize {
+        self.origin
+    }
+
+    /// Whether this transform is of a span of its signal ([`Stft::of_span`]).
+    pub fn is_span(&self) -> bool {
+        self.span
     }
 
     /// Builds the time pyramid of a stored transform (see the field): levels
@@ -457,6 +517,7 @@ impl Stft {
     /// the plain fraction it always was.
     pub fn time_fraction(&self, start: f64, len: f64) -> (f32, f32) {
         let width = self.tex_width() as f64;
+        let start = start - self.origin as f64;
         let at = (self.head as f64 + start / self.hop as f64) / width;
         let len = (len / self.hop as f64) / width;
         (at as f32, len as f32)
@@ -500,6 +561,8 @@ impl Stft {
             capacity: 0,
             head: 0,
             levels: Vec::new(),
+            origin: 0,
+            span: false,
         })
     }
 

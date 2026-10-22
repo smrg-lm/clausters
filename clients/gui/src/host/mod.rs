@@ -134,6 +134,7 @@ pub mod png;
 // Where values and samples come from, on the agnostic side of the seam: the
 // per-frame bus reads and the buffer-fetch conversation. Their I/O ends are in
 // the shells below.
+pub(crate) mod columns;
 pub mod fetch;
 pub mod live;
 // The server's replies about buffers, read once for both fronts.

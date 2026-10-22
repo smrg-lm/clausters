@@ -303,10 +303,10 @@ its plan; the plan is where its acceptance is read.
   removal of the editing commands last. Its
   decisions are taken. Before `X25`, which should port this lifecycle and not
   the one it replaces. **Related:** it takes the GUI plan's "An edit of a long
-  take costs a native server with a segment a pass over it", and `X28`
-  first takes the GUI plan's "A list of segments over files draws no
-  spectrogram" (Found by use), decided as an analysis of the span under the
-  eye.
+  take costs a native server with a segment a pass over it". Found while
+  opening it, and to look at in a page before `X28`'s eye pass: the GUI
+  plan's "A spectrogram of a server buffer may draw nothing in a host that
+  cannot map it" (Found by use).
 
   | Order | Milestone | Plan |
   |---|---|---|

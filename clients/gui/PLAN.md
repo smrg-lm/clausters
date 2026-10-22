@@ -4368,6 +4368,17 @@ Following the project rule: code + tests, a clear commit message (the record of 
 
 ## Future directions (to fold into milestones as they firm up)
 
+- ⬜ **A list's spectrogram kept beside its peaks** *(named 2026-10-22,
+  deciding how a list's spectrogram is drawn)*. A list's spectrogram is
+  analyzed from its samples over the span shown, which costs the view's width
+  times the window on every move past what it holds. A stored analysis beside
+  each file's peaks (columns at a fixed hop, with levels that keep each bin's
+  largest, as the time pyramid does) would draw a zoomed-out view with no
+  sample read, composed where a part keeps its file's hop and analyzed from
+  the samples only across a seam, a fade or a resampled part. Take it only if
+  the measured cost of the analysis asks for it: over an hour today it is
+  87 ms natively.
+
 - ✅ **The multitrack application is written twice: once in the crate and once in the host** *(named 2026-09-12 by the user; closed 2026-09-13)*. The standalone host is now an endpoint of the one application rather than a second copy of it: it plays the piece through `nodes::plan` + `Instance::reconcile` (`host/instance.rs`, which replaced `document/sound.rs`), pushes the projection's whole picture back, asks the projection which tags are the piece's, and realizes a minted join through `clausters_editing::sources::stitch` -- the one reading of a segmented source, bound by both clients as `editing_stitch`.
 
 - ⬜ **A paste that needs tracks could make them** *(named 2026-09-12, with the fix above; **the refusal is the decided behaviour**, confirmed by the user the same day -- "if there are no more tracks it is a refuse" -- so this entry is an alternative somebody may want and not a defect waiting)*. A block taller than what is under the selected track is refused today, which is Pro Tools' and Cubase's answer and the honest one for a widget that owns no piece. **REAPER's** is the other: it creates the tracks the block needs and pastes whole. This widget already has the verb — a double click on a header adds a track — so what stands between it and this is not the capability but the **report**: adding tracks is a `lanes` payload and pasting is a `clips` one, and a paste that did both would be the first gesture here to leave two. That is a decision about the conversation and not about the multitrack: whether an owner may be handed a run of payloads from one gesture, in order, as one entry in the history. Worth taking with the audio editor's own paste, which will ask the same question about panes.
@@ -8708,7 +8719,7 @@ module of its own.
   pool buffer, so there is no join to copy; it closes with `S23`, which
   removes the copy.*
 
-- ⬜ **A list of segments over files draws no spectrogram** *(found
+- ✅ **A list of segments over files draws no spectrogram** *(found
   2026-10-22, building `G45`)*. A `signal` naming `segments` is drawn from
   its files' peaks and, under a zoom, their samples; its `spectrogram` layer
   and the `spectrogram` view over it draw nothing, since an analysis is made
@@ -8717,3 +8728,26 @@ module of its own.
   editor draws a spectrogram of its take, so `X28` decides it: an analysis
   file kept beside each file's peaks and composed where the parts keep their
   file's hop, the span under the eye analyzed from the samples, or both.
+  *Decided and done 2026-10-22, opening `X28`:* the span under the eye,
+  analyzed from the samples, as the field does for long files (a fast preview
+  above a visible length, accurate zoomed in). A view of a list asks
+  `/buffer_spectrum` of the host's own answerer for one window per column of
+  the span it shows, read through the parts, and asks again when it moves
+  past it or zooms to another hop (`host::columns`, `frame::columns_owed`);
+  the transform of a span carries its origin (`Stft::of_span`). Over an hour
+  of stereo, 760 columns of 2048 frames read 37 MB in 87 ms natively
+  (`tests/long_list.rs`); a page draws one (`segments-host.html`). A stored
+  analysis is this plan's Future directions, "A list's spectrogram kept beside
+  its peaks".
+
+- ⬜ **A spectrogram of a server buffer may draw nothing in a host that
+  cannot map it** *(found 2026-10-22 reading the path, closing the entry
+  above; not yet seen on screen)*. Since every take is drawn from its summary
+  in such a host (a page, a remote server), a `spectrogram` over a `buffer`
+  is owed the take's summary like a waveform, and a summary is peaks: the
+  texture slot is never filled, where it used to analyze the samples it
+  downloaded whole. `tests/editor.html` draws one and asserts only that its
+  capture is not blank, which the waveform beside it satisfies. What is open:
+  see it in a page, and if it is blank, give a buffer's spectrogram the
+  columns a list's has, which needs the server to answer `/buffer_spectrum`,
+  or read the span it shows back as samples and analyze it in the host.

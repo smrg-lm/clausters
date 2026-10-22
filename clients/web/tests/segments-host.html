@@ -41,7 +41,9 @@
       - a new list for the same view, a cut, is placed again under the same
         key, longer by what it repeats;
       - a zoom to the samples reads the span back ("read back for widget"),
-        from the file, and still asks the engine nothing.
+        from the file, and still asks the engine nothing;
+      - a spectrogram of the same list is given the columns of the span it
+        shows ("spectrogram column(s) ... placed"), analyzed from the file.
     -->
     <script type="module">
       const seen = [];
@@ -113,6 +115,7 @@
         const win = await gui.view(
           { title: "segments", layout: "col", margin: 8.0 },
           gui.waveform({ name: "take", segments: whole, sampleRate: 48000, ruler: "time" }),
+          gui.spectrogram({ name: "spectrum", segments: whole, sampleRate: 48000, windowSize: 512 }),
         ).open(document.getElementById("stage"));
 
         const placed = await until(opened,
@@ -120,6 +123,12 @@
           5000, "the list was never drawn from its summary");
         const key = placed.match(/buffer (-\d+)/)[1];
         log(placed);
+        // **The spectrogram of the list** is analyzed where it is looked at:
+        // columns over the span the view shows, read from the file.
+        const columns = await until(opened,
+          (line) => /buffer -\d+: \d+ spectrogram column\(s\) from frame \d+ every \d+ placed/.test(line),
+          5000, "the list's spectrogram was never analyzed");
+        log(columns);
         if (leaked(opened)) throw new Error(`a list's question went to the engine: ${leaked(opened)}`);
 
         // **An edit**: the first half again, then the whole take. The same
@@ -149,7 +158,8 @@
         if (leaked(opened)) throw new Error(`a list's question went to the engine: ${leaked(opened)}`);
 
         verdict(`PASS: a list of segments over a W64 and its peaks in the page's `
-          + `storage was drawn by the host under key ${key}, an edit's list was `
+          + `storage was drawn by the host under key ${key}, its spectrogram analyzed `
+          + `over the span shown, an edit's list was `
           + `drawn ${frames + half} frames long under the same key, and a zoom `
           + `read its samples back from the file, with nothing asked of the engine`);
       }

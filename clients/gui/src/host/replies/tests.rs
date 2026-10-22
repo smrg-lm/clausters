@@ -18,6 +18,8 @@ struct Probe {
     host: Host,
     fetches: BufferFetches,
     sent: RefCell<Vec<OscMessage>>,
+    /// The analyses placed in a texture slot, by widget, in order.
+    textures: Vec<(i32, Vec<crate::spectrogram::Stft>)>,
 }
 
 impl Front for Probe {
@@ -41,12 +43,18 @@ impl Front for Probe {
     fn window_open(&self, _def_id: i32) -> bool {
         true
     }
-    fn place_slot(&mut self, _def_id: i32, _widget_id: i32, _data: Loaded) -> Option<usize> {
+    fn place_slot(&mut self, _def_id: i32, widget_id: i32, data: Loaded) -> Option<usize> {
+        if let Loaded::Stfts(stfts) = data {
+            self.textures.push((widget_id, stfts));
+        }
         None
     }
     fn release_slot(&mut self, _def_id: i32, _widget_id: i32) {}
     fn take_owed(&self, _def_id: i32) -> Vec<(i32, Owed)> {
         Vec::new()
+    }
+    fn stale_columns(&self, _def_id: i32, _widget_id: i32) -> bool {
+        false
     }
     fn held(&self) -> Vec<i32> {
         Vec::new()
@@ -465,5 +473,165 @@ fn a_list_of_segments_is_drawn_from_its_files_with_no_server() {
         "the new one, whole"
     );
     assert_eq!(probe.sent(), Vec::new());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A float W64 of `frames` mono samples of a sine at `hz`, with its peaks;
+/// answers the paths and the samples.
+fn sine_file(
+    dir: &std::path::Path,
+    name: &str,
+    frames: usize,
+    hz: f32,
+) -> (String, String, Vec<f32>) {
+    let samples: Vec<f32> = (0..frames)
+        .map(|i| 0.5 * (std::f32::consts::TAU * hz * i as f32 / 48_000.0).sin())
+        .collect();
+    let path = dir
+        .join(format!("{name}.w64"))
+        .to_string_lossy()
+        .into_owned();
+    let mut w = clausters_core::pcm::Writer::create(&path, 1, 48_000.0, "float").unwrap();
+    w.write(&samples).unwrap();
+    w.finalize().unwrap();
+    let peaks = dir
+        .join(format!("{name}.peaks"))
+        .to_string_lossy()
+        .into_owned();
+    clausters_core::peaks::MultiPyramid::build_interleaved(&samples, 1, 256)
+        .write_cache(&peaks)
+        .unwrap();
+    (path, peaks, samples)
+}
+
+/// **A list's spectrogram is analyzed where it is looked at**: the view is
+/// given a dark column over the whole take, its first draw owes the columns
+/// of what it shows, and those come from the files through the list's parts
+/// -- what is analyzed is what plays, a fade included -- with nothing asked
+/// of a server. A redefine keeps the columns and owes the new list's.
+#[test]
+fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
+    let dir = std::env::temp_dir().join(format!("clausters-gui-columns-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let frames = 1 << 16;
+    let (a, a_peaks, a_samples) = sine_file(&dir, "low", frames, 1_000.0);
+    let (b, b_peaks, b_samples) = sine_file(&dir, "high", frames, 6_000.0);
+    let fade = 4_000;
+    let list = format!(
+        r#"{{"channels":1,"sample_rate":48000,"parts":[
+             {{"path":"{a}","peaks":"{a_peaks}","start":0,"frames":{frames},"fade_out":{fade},
+               "source_channels":1,"source_frames":{frames},"source_rate":48000}},
+             {{"path":"{b}","peaks":"{b_peaks}","start":0,"frames":{frames},"fade_in":{fade},
+               "source_channels":1,"source_frames":{frames},"source_rate":48000}}]}}"#
+    );
+
+    let parsed =
+        crate::host::disk::List::parse(&serde_json::from_str(&list).unwrap()).expect("a list");
+    let mut probe = Probe::default();
+    let local = Local::default();
+    probe.host.set_disk_link(Box::new(local.clone()));
+    let def = format!(
+        r#"{{"type":"window","title":"w","children":[
+             {{"id":40,"type":"signal","view":"spectrogram","window_size":512,
+               "segments":{list}}}]}}"#
+    );
+    probe.host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![OscType::Int(1), OscType::String(def)],
+        }),
+        from(),
+    );
+    let key = probe.list_key();
+    let query = probe.fetches.want(1, 40, key).expect("a query");
+    probe.to_server(query);
+    probe.pump(&local);
+    let (widget, dark) = probe.textures.pop().expect("a texture placed");
+    assert_eq!(widget, 40);
+    assert!(
+        dark[0].is_span() && dark[0].n_frames() == 1,
+        "one dark column"
+    );
+    assert_eq!(dark[0].total_samples(), 2 * frames);
+
+    // **The first draw owes the columns of what it shows**: the whole
+    // take, 200 pixels wide.
+    let nav = crate::viewport::View {
+        start: 0.0,
+        len: (2 * frames) as f64,
+    };
+    let owed = crate::host::frame::columns_owed_of(&dark[0], false, &nav, 200.0)
+        .expect("the columns are owed");
+    let crate::host::frame::Owed::Columns(span) = owed else {
+        panic!("{owed:?}")
+    };
+    assert_eq!(span.hop, (2 * frames) / 200);
+    assert_eq!(span.window, 512);
+    let ask = probe.fetches.columns.want(key, 1, 40, span).expect("asked");
+    probe.to_server(ask);
+    let replies = probe.pump(&local);
+    assert!(replies >= 1, "{replies}");
+    assert_eq!(probe.sent(), Vec::new(), "nothing went to a server");
+    let (_, columns) = probe.textures.pop().expect("the columns placed");
+    let stft = &columns[0];
+    assert_eq!(
+        (stft.n_frames(), stft.hop(), stft.origin()),
+        (span.columns, span.hop, 0)
+    );
+    // And held, they owe nothing more.
+    assert!(crate::host::frame::columns_owed_of(stft, false, &nav, 200.0).is_none());
+
+    // **Each column is the analysis of what plays there**: the list's
+    // samples through its parts and fades, analyzed as a whole signal is.
+    let played = |f: usize| {
+        let part = parsed
+            .parts
+            .iter()
+            .find(|p| p.span.start() <= f && f < p.span.end());
+        part.map_or(0.0, |p| {
+            let src = if p.path.as_ref() == a {
+                &a_samples
+            } else {
+                &b_samples
+            };
+            p.span.read_with(f - p.span.start(), 0, |f, _| {
+                src.get(f).copied().unwrap_or(0.0)
+            })
+        })
+    };
+    let (hann, gain) = clausters_core::stft::analysis_window(512);
+    let (mut w, mut sp, mut col) = (vec![0.0; 512], vec![0.0; 256], vec![0.0; 256]);
+    for c in 0..stft.n_frames() {
+        let first = c * span.hop;
+        let frame: Vec<f32> = (first..first + 512)
+            .map(|f| if f < 2 * frames { played(f) } else { 0.0 })
+            .collect();
+        clausters_core::stft::column_into(&frame, &hann, gain, &mut w, &mut sp, &mut col);
+        let want: Vec<u8> = col
+            .iter()
+            .map(|m| clausters_core::stft::quantize(*m))
+            .collect();
+        let got: Vec<u8> = stft
+            .column(c)
+            .iter()
+            .map(|m| clausters_core::stft::quantize(*m))
+            .collect();
+        assert_eq!(got, want, "column {c}");
+    }
+    // The low part is loudest near 1 kHz, the high one near 6 kHz.
+    let loudest = |c: usize| {
+        let col = stft.column(c);
+        (0..col.len())
+            .max_by(|&i, &j| col[i].total_cmp(&col[j]))
+            .unwrap() as f32
+            * 48_000.0
+            / 512.0
+    };
+    assert!((loudest(10) - 1_000.0).abs() < 200.0, "{}", loudest(10));
+    assert!((loudest(stft.n_frames() - 20) - 6_000.0).abs() < 200.0);
+
+    // **A redefine owes the new list's columns**, keeping these.
+    assert!(crate::host::frame::columns_owed_of(stft, true, &nav, 200.0).is_some());
     let _ = std::fs::remove_dir_all(&dir);
 }

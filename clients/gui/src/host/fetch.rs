@@ -272,6 +272,9 @@ pub(crate) struct BufferFetches {
     /// clips, a view's preview -- waiting for the asker to be drawn, since its
     /// width is what says the level: `(def_id, widget_id, bufnum, shape)`.
     owed: Vec<(i32, i32, i32, crate::host::widget::element::OwedSummary)>,
+    /// **The spectrogram columns a view of a list is owed** over the span it
+    /// shows (`super::columns`).
+    pub(crate) columns: super::columns::ColumnAsks,
 }
 
 /// **How many summary conversations may be answering at once.** A reply is at
@@ -419,6 +422,7 @@ impl BufferFetches {
             || !self.fetches.is_empty()
             || !self.absent.is_empty()
             || !self.peaks.is_empty()
+            || self.columns.pending()
     }
 
     /// `/buffer_query.reply` for a buffer we are waiting on: the shape its
@@ -894,6 +898,7 @@ impl BufferFetches {
     ///   that happened to fit the ring.
     pub(crate) fn tick(&mut self) -> Vec<OscMessage> {
         let mut again = Vec::new();
+        self.columns.tick(STALLED_ASKS);
         // **A conversation that has stopped answering.** A reply can be lost
         // with nothing said -- the shared ring drops what does not fit in it,
         // and a page's is 64 KiB -- and the fetch it belonged to would otherwise
@@ -982,6 +987,7 @@ impl BufferFetches {
         self.peaks
             .retain(|a| !matches!(a.purpose, PeaksFor::Detail { def_id: d, .. } if d == def_id));
         self.owed.retain(|o| o.0 != def_id);
+        self.columns.drop_def(def_id);
         self.absent
             .retain(|bufnum, _| self.wants.contains_key(bufnum));
     }

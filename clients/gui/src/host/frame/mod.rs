@@ -107,7 +107,7 @@ pub(crate) struct WaveformSlot {
 ///   worth asking for: past `trace::LINE_THRESHOLD` a column is the line
 ///   between samples and, from where the dots appear, the trace is the samples
 ///   themselves -- and a bucket is not a sample.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum Owed {
     /// The run of samples to read back, `[a, b)` in frames.
     Samples { a: usize, b: usize },
@@ -115,6 +115,10 @@ pub(crate) enum Owed {
     /// at -- finer than the view's own, and coarse enough that one reply holds
     /// the whole span.
     Summary { a: usize, b: usize, bucket: usize },
+    /// **A spectrogram's columns** over a span: `columns` analysis windows
+    /// from frame `start`, one every `hop` -- what a texture of a span owes
+    /// when the view moved past it or zoomed to another hop.
+    Columns(crate::host::columns::ColumnSpan),
 }
 
 /// A `WaveformSlot` for ready data.
@@ -129,6 +133,15 @@ pub(crate) fn waveform_slot(data: impl Into<Arc<WaveformData>>) -> WaveformSlot 
 /// texture) per channel. Navigation lives in the timeline group.
 pub(crate) struct SpectrogramSlot {
     pub(crate) views: Vec<SpectrogramView>,
+    /// **The columns this view was drawn over and does not hold**, when it
+    /// draws a transform of a span (a list's, analyzed only where it is
+    /// looked at): set by the draw pass, which knows the view and its width,
+    /// and taken by the leg, which asks for them. The waveform's
+    /// [`WaveformSlot::owed`], for the texture.
+    pub(crate) owed: std::cell::Cell<Option<Owed>>,
+    /// **Its columns are of a list that was since redefined**: the view
+    /// keeps drawing them, and owes the columns of the new one.
+    pub(crate) stale: std::cell::Cell<bool>,
 }
 
 impl SpectrogramSlot {
@@ -151,7 +164,11 @@ pub(crate) fn spectrogram_slot(
         .into_iter()
         .map(|stft| SpectrogramView::new(&gpu.device, &gpu.queue, &renderers.spectrogram, stft))
         .collect();
-    Some(SpectrogramSlot { views })
+    Some(SpectrogramSlot {
+        views,
+        owed: std::cell::Cell::new(None),
+        stale: std::cell::Cell::new(false),
+    })
 }
 
 /// **What a slot-backed element keeps of the resource that filled its slot.**
@@ -259,7 +276,14 @@ fn roll_into_slot(
             hop,
             sample_rate,
         );
-        slots.insert(id, SpectrogramSlot { views: vec![view] });
+        slots.insert(
+            id,
+            SpectrogramSlot {
+                views: vec![view],
+                owed: std::cell::Cell::new(None),
+                stale: std::cell::Cell::new(false),
+            },
+        );
     }
     let view = slots.get_mut(&id)?.views.first_mut()?;
     view.set_retention(&gpu.device, &gpu.queue, &renderers.spectrogram, capacity);
@@ -654,6 +678,60 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
         Some(_) => None,
         None => Some(Owed::Samples { a, b }),
     }
+}
+
+/// **The columns a texture of a span owes the view `nav`**, `width` pixels
+/// wide, or `None` when what it holds draws it: a transform of the whole
+/// signal never owes any, and one of a span owes the view's when the view
+/// moved past it or is drawn at a hop more than twice or under half the one
+/// it holds.
+///
+/// The span asked runs a quarter of the view past either side, so a pan
+/// that small is drawn from what is held, and its hop is about a column of
+/// the view. Zoomed out the columns are a preview, a window apiece over
+/// seconds of the take; zoomed in they overlap, at a sample a column at the
+/// finest.
+pub(crate) fn columns_owed(slot: &SpectrogramSlot, nav: &View, width: f64) -> Option<Owed> {
+    columns_owed_of(slot.views.first()?.stft(), slot.stale.get(), nav, width)
+}
+
+/// [`columns_owed`] of the transform a slot draws, and whether it is stale.
+pub(crate) fn columns_owed_of(stft: &Stft, stale: bool, nav: &View, width: f64) -> Option<Owed> {
+    if !stft.is_span() || width <= 0.0 || nav.len <= 0.0 {
+        return None;
+    }
+    let total = stft.total_samples();
+    if total == 0 {
+        return None;
+    }
+    let want = ((nav.len / width).floor() as usize).max(1);
+    let a = nav.start.floor().max(0.0) as usize;
+    let b = ((nav.start + nav.len).ceil().max(0.0) as usize).min(total);
+    let held = (
+        stft.origin(),
+        stft.origin() + stft.n_frames().saturating_sub(1) * stft.hop(),
+    );
+    let hop = stft.hop();
+    if !stale
+        && hop <= want * 2
+        && hop * 2 >= want
+        && held.0 <= a
+        && b.min(total.saturating_sub(1)) <= held.1
+    {
+        return None;
+    }
+    let margin = (nav.len / 4.0).ceil() as usize;
+    let start = a.saturating_sub(margin);
+    let end = (b + margin).min(total);
+    let columns = (end.saturating_sub(start)).div_ceil(want).max(1) + 1;
+    Some(Owed::Columns(crate::host::columns::ColumnSpan {
+        start,
+        hop: want,
+        columns,
+        window: stft.window_size(),
+        sample_rate: stft.sample_rate(),
+        total,
+    }))
 }
 
 /// **How many buckets one detail grid may hold**: what bounds the span one

@@ -4,14 +4,17 @@
 An application's takes live on disk: a take is a **list of segments**, each a
 span of a file with its own fades and channel map, and an edit is a new list
 over files that never change. This example renders one file and draws two
-lists over it, one above the other, both with ``waveform(segments=...)``:
+lists over it, one above the other, both with ``waveform(segments=...)``,
+and the spectrogram of the second with ``spectrogram(segments=...)``:
 
 - **the take as it is**: one part, the whole file -- a four-second tone that
   swells from quiet to loud;
 - **the take edited**: the same file with its halves swapped, the loud half
   first, with a 10 ms fade either side of the seam. Nothing was rendered for
   it. It is two parts over the one file, and its picture is composed by the
-  host from the file's peaks.
+  host from the file's peaks;
+- **its spectrogram**, under it: analyzed from the file by the host, only
+  for the span on screen, and analyzed again as you zoom and scroll.
 
 The file is rendered offline with its **peaks** beside it: the render writes
 the samples to ``take.w64``, and a ``peaks_out`` on the same signal writes
@@ -20,8 +23,9 @@ itself, with no server involved in the drawing: it reads the levels of the
 peaks its window resolves, and **samples only under a zoom**. So zoom in with
 the wheel until single samples show, and what you see is read from the file
 then, a span at a time. **Check by eye** that the edited take falls from loud
-to quiet at its seam and then swells again, and that zooming into the seam
-shows the 10 ms fades meeting.
+to quiet at its seam and then swells again, that zooming into the seam
+shows the 10 ms fades meeting, and that the spectrogram keeps one line at
+440 Hz through the seam, sharpening as you zoom in.
 
 The files land in ``clients/python/examples/out/segments/``.
 
@@ -43,7 +47,7 @@ from pathlib import Path
 from clausters import Session
 from clausters.defs import DoneAction, Synth, SynthDef, out, peaks_out, sine
 from clausters.defs.ugens import line
-from clausters.gui import view, waveform
+from clausters.gui import spectrogram, view, waveform
 
 SR = 48_000
 SECONDS = 4.0
@@ -107,6 +111,7 @@ gui = session.gui()
 win = view(
     waveform(name="whole", segments=whole, sample_rate=SR, ruler="time"),
     waveform(name="edited", segments=swapped, sample_rate=SR, ruler="time"),
+    spectrogram(name="spectrum", segments=swapped, sample_rate=SR, ruler="time"),
     title="a take as a list of segments", layout="col",
 ).open()
 

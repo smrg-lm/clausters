@@ -592,6 +592,20 @@ impl Front for App {
         }
     }
 
+    fn stale_columns(&self, def_id: i32, widget_id: i32) -> bool {
+        let Some(ws) = self.windows.get(&def_id) else {
+            return false;
+        };
+        let slots = &ws.spectrograms;
+        match slots.get(&(widget_id, SlotKey::SELF)) {
+            Some(slot) if slot.views.first().is_some_and(|v| v.stft().is_span()) => {
+                slot.stale.set(true);
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)> {
         let Some(ws) = self.windows.get(&def_id) else {
             return Vec::new();
@@ -599,6 +613,13 @@ impl Front for App {
         ws.waveforms
             .iter()
             .filter_map(|((widget_id, _key), slot)| slot.owed.take().map(|o| (*widget_id, o)))
+            .chain(
+                ws.spectrograms
+                    .iter()
+                    .filter_map(|((widget_id, _key), slot)| {
+                        slot.owed.take().map(|o| (*widget_id, o))
+                    }),
+            )
             .collect()
     }
 

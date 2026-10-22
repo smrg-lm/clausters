@@ -220,7 +220,7 @@ struct File {
     head_asked: usize,
     /// The peaks file the first part over it named.
     peaks: Option<Arc<str>>,
-    samples: HashMap<usize, Held<Vec<f32>>>,
+    samples: HashMap<usize, Held<Arc<[f32]>>>,
 }
 
 /// **The host's answers about lists.**
@@ -288,6 +288,7 @@ impl Answerer {
             )),
             "/buffer_peaks" => self.peaks_reply(key, &list, &msg.args[1..]),
             "/buffer_getRange" => self.range_reply(key, &list, &msg.args[1..]),
+            "/buffer_spectrum" => self.spectrum_reply(key, &list, &msg.args[1..]),
             _ => Answer::None,
         }
     }
@@ -400,7 +401,7 @@ impl Answerer {
                 file.samples.insert(
                     block,
                     Held {
-                        value: values,
+                        value: values.into(),
                         used: clock,
                     },
                 );
@@ -520,6 +521,8 @@ impl Answerer {
                 answerer: self,
                 bucket,
                 needs: &mut needs,
+                hot: None,
+                cold: None,
             };
             for b in 0..buckets {
                 let at = first + b * bucket;
@@ -562,6 +565,8 @@ impl Answerer {
                 answerer: self,
                 bucket: 1,
                 needs: &mut needs,
+                hot: None,
+                cold: None,
             };
             let mut at = 0;
             for flat in start..end {
@@ -595,12 +600,146 @@ impl Answerer {
     }
 }
 
+impl Answerer {
+    /// `/buffer_spectrum key start hop columns window`: **the columns of a
+    /// spectrogram of the list over a span**, one analysis window of
+    /// `window` frames starting at `start` and every `hop` frames after it,
+    /// answered as `/buffer_spectrum.reply key start hop window channels
+    /// blob` -- each column's channels in turn, `window / 2` magnitudes
+    /// each, a byte apiece as a texture stores them.
+    ///
+    /// A list is never read whole, so its spectrogram is never analyzed
+    /// whole: a view asks for the span it shows, at a hop of about a column
+    /// of its own, and asks again when it moves. Each window is read through
+    /// the parts, fades and channel maps included, so what is analyzed is
+    /// what plays. An answer reads at most [`SPECTRUM_BLOCKS`] blocks it does
+    /// not hold; past them it answers the columns it could, at least one,
+    /// and the view asks for the rest from where it ended.
+    fn spectrum_reply(&mut self, key: i32, list: &List, args: &[OscType]) -> Answer {
+        let int = |i: usize| args.get(i).and_then(as_i64).unwrap_or(0).max(0) as usize;
+        let (start, hop, columns, window) = (int(0), int(1).max(1), int(2), int(3));
+        if !clausters_core::fft::supports(window) || columns == 0 {
+            return Answer::None;
+        }
+        let channels = list.channels.max(1);
+        let bins = window / 2;
+        let (hann, gain) = clausters_core::stft::analysis_window(window);
+        let mut windowed = vec![0.0f32; window];
+        let mut spectrum = vec![0.0f32; bins];
+        let mut column = vec![0.0f32; bins];
+        let mut frame = vec![0.0f32; window];
+        let mut out: Vec<u8> = Vec::with_capacity(columns * channels * bins);
+        let mut needs = Vec::new();
+        let mut answered = 0;
+        let mut read = 0;
+        for c in 0..columns {
+            let first = start + c * hop;
+            let before = needs.len();
+            let mut values = vec![0.0f32; window * channels];
+            {
+                let mut samples = FileSamples {
+                    answerer: self,
+                    bucket: 1,
+                    needs: &mut needs,
+                    hot: None,
+                    cold: None,
+                };
+                let mut at = 0;
+                for i in 0..window {
+                    let f = first + i;
+                    if f >= list.frames {
+                        break;
+                    }
+                    while at + 1 < list.parts.len() && list.parts[at].span.end() <= f {
+                        at += 1;
+                    }
+                    let part = &list.parts[at];
+                    let inner = f - part.span.start();
+                    for ch in 0..channels {
+                        values[i * channels + ch] = part
+                            .span
+                            .read_with(inner, ch, |f, c| samples.frame(part, f, c));
+                    }
+                }
+            }
+            // Every frame of a block not held asks for it again: what counts
+            // is the blocks.
+            needs = dedup(std::mem::take(&mut needs));
+            if needs.len() > before {
+                // Answer what is here, or gather the reads of a few more
+                // columns before asking for any of them.
+                if answered > 0 {
+                    needs.truncate(before);
+                    break;
+                }
+                if needs.len() >= SPECTRUM_BLOCKS {
+                    break;
+                }
+                continue;
+            }
+            if !needs.is_empty() {
+                continue;
+            }
+            read += window * channels;
+            for ch in 0..channels {
+                for (i, x) in frame.iter_mut().enumerate() {
+                    *x = values[i * channels + ch];
+                }
+                clausters_core::stft::column_into(
+                    &frame,
+                    &hann,
+                    gain,
+                    &mut windowed,
+                    &mut spectrum,
+                    &mut column,
+                );
+                out.extend(column.iter().map(|m| clausters_core::stft::quantize(*m)));
+            }
+            answered += 1;
+        }
+        if answered == 0 && !needs.is_empty() {
+            return Answer::Need(dedup(needs));
+        }
+        self.samples_read += read;
+        Answer::Reply(OscMessage {
+            addr: "/buffer_spectrum.reply".into(),
+            args: vec![
+                OscType::Int(key),
+                OscType::Long(start as i64),
+                OscType::Int(hop as i32),
+                OscType::Int(window as i32),
+                OscType::Int(channels as i32),
+                OscType::Blob(out),
+            ],
+        })
+    }
+}
+
+/// Blocks of samples one spectrum answer reads at most before it answers:
+/// a window straddles two at most, so this is about a hundred columns of a
+/// zoomed-out view, and a few megabytes of a stereo float file.
+pub const SPECTRUM_BLOCKS: usize = 192;
+
 /// A list's parts read through the answerer, at one bucket, noting what is
 /// not held yet.
 struct FileSamples<'a> {
     answerer: &'a mut Answerer,
     bucket: usize,
     needs: &'a mut Vec<Need>,
+    /// The block the last frame was read from: a read runs along a block,
+    /// and finding the file and the block again for every frame of it was
+    /// what a spectrum's windows cost.
+    hot: Option<Hot>,
+    /// The block the last frame found missing, already asked for.
+    cold: Option<(Arc<str>, usize)>,
+}
+
+/// A held block of one file's samples, at hand.
+struct Hot {
+    path: Arc<str>,
+    block: usize,
+    channels: usize,
+    values: Arc<[f32]>,
 }
 
 impl FileSamples<'_> {
@@ -637,6 +776,23 @@ impl FileSamples<'_> {
     /// **One frame of `path` on channel `ch`**, out of a held block of its
     /// samples, or a need and a zero.
     fn sample(&mut self, path: &Arc<str>, frame: usize, ch: usize) -> f32 {
+        let block = frame / SAMPLE_BLOCK;
+        if let Some(hot) = &self.hot
+            && hot.block == block
+            && Arc::ptr_eq(&hot.path, path)
+        {
+            if ch >= hot.channels {
+                return 0.0;
+            }
+            let i = (frame - block * SAMPLE_BLOCK) * hot.channels + ch;
+            return hot.values.get(i).copied().unwrap_or(0.0);
+        }
+        if let Some((cold, at)) = &self.cold
+            && *at == block
+            && Arc::ptr_eq(cold, path)
+        {
+            return 0.0;
+        }
         let Some(layout) = self.layout(path) else {
             return 0.0;
         };
@@ -644,13 +800,19 @@ impl FileSamples<'_> {
         if frame as u64 >= layout.frames || ch >= channels {
             return 0.0;
         }
-        let block = frame / SAMPLE_BLOCK;
         let clock = self.answerer.clock;
         let file = self.answerer.files.get_mut(path).expect("a laid-out file");
         if let Some(held) = file.samples.get_mut(&block) {
             held.used = clock;
             let i = (frame - block * SAMPLE_BLOCK) * channels + ch;
-            return held.value.get(i).copied().unwrap_or(0.0);
+            let value = held.value.get(i).copied().unwrap_or(0.0);
+            self.hot = Some(Hot {
+                path: Arc::clone(path),
+                block,
+                channels,
+                values: Arc::clone(&held.value),
+            });
+            return value;
         }
         let layout = file.layout.as_ref().unwrap().as_ref().unwrap();
         let first = (block * SAMPLE_BLOCK) as u64;
@@ -662,6 +824,7 @@ impl FileSamples<'_> {
             len: (frames * width) as usize,
             what: What::Samples { block },
         });
+        self.cold = Some((Arc::clone(path), block));
         0.0
     }
 
