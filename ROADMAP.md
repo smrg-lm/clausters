@@ -198,11 +198,6 @@ a person saw it work.
   the milestone's *code* is done; what is left is somebody watching it fail.
 
 
-- ⬜ **Nobody has looked at or listened to `editors/audio_lifecycle`**
-  *(`crates/clausters-apps/PLAN.md`, `X24`)*. Everything else in the audio
-  editor's acceptance is done and run, and the native pass is accepted; the
-  browser's pass over the page is what accepts it, and `X25` waits on it.
-
 - ⬜ **Nobody has listened to `basics/patterns`** *(`clients/python/PLAN.md`,
   `C74`)*. The patterns arc closed with one example in two languages as its
   manual check; the Python render was run and the page's patterns, ties and

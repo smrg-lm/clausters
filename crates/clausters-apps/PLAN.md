@@ -2726,7 +2726,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     native window, and a tab put in the background or an editor scrolled
     away comes back drawn and still playing.
 
-- ⬜ **X24 - Accept the audio editor as the reference application.** After
+- ✅ **X24 - Accept the audio editor as the reference application.** After
   `X23`, close the audio lifecycle before migrating another editor. Remove
   superseded audio orchestration and state mirrors. Replay shared traces with
   fake services that delay, fail and reorder completions; use the real server
@@ -2776,9 +2776,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     looping a selection spinning a core on empty frames (fixed) and a paste
     refused in silence when another program's text replaced the copy
     (filed below, in "Found by use").
-  - ⬜ **Browser eye and ear pass** over `editors/audio-lifecycle.html`. A
-    write too short for a hand to edit through is checked by the fault
-    traces, not by either pass.
+  - ✅ **Browser eye and ear pass** over `editors/audio-lifecycle.html`, by
+    the user (2026-10-22): every step as the example says, once a closed
+    window's canvas left the page (fixed). It also found an edit of a short
+    take shown about 1.6 s late in a page (`clients/gui/PLAN.md`, Found by
+    use). A write too short for a hand to edit through is checked by the
+    fault traces, not by either pass.
 
 - ⬜ **X25 - Port the proven lifecycle to the other existing editors.** After
   `X24`, compose multitrack, notes, points and score editors with the same
