@@ -105,23 +105,25 @@ pub(crate) trait Front {
             "/buffer_query.reply" => {
                 // (bufnum, frames, channels, sampleRate) per buffer.
                 for group in msg.args.chunks(4) {
-                    if let [
-                        OscType::Int(bufnum),
-                        OscType::Int(frames),
-                        OscType::Int(channels),
-                        rate,
-                    ] = group
+                    if let [OscType::Int(bufnum), frames, OscType::Int(channels), rate] = group
+                        && let Some(frames) = match frames {
+                            OscType::Int(n) => Some(i64::from(*n)),
+                            // A length past what an `int32` counts rides as a
+                            // long: a list of hours of stereo reaches it.
+                            OscType::Long(n) => Some(*n),
+                            _ => None,
+                        }
                     {
                         // **-1 is absence, not emptiness**: the buffer is not
                         // there yet, and is asked for again rather than drawn
                         // as a take of no frames (`BufferFetches::on_absent`).
-                        if *frames < 0 {
+                        if frames < 0 {
                             self.fetches().on_absent(*bufnum);
                             continue;
                         }
                         let step = self.fetches().on_info(
                             *bufnum,
-                            *frames as usize,
+                            frames as usize,
                             (*channels).max(0) as usize,
                             number(rate),
                         );

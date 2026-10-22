@@ -351,6 +351,11 @@ impl WebApp {
     /// Sends one fetch-machine message over the WS leg (`/buffer_query`, `/buffer_getRange`),
     /// logging instead of failing when no server is attached.
     pub(super) fn send_to_server(&self, msg: OscMessage) {
+        // **A list's questions are the host's to answer**, with or without a
+        // server connected.
+        if crate::host::disk::list_key_of(&msg).is_some() {
+            return self.host.ask_disk(msg);
+        }
         let Some(server) = self.host.server() else {
             return log("waveform references a server buffer but no --ws server is connected");
         };

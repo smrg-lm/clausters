@@ -285,6 +285,24 @@ impl SignalElement {
                     }
                 })
                 .is_some(),
+            // **A new list for the same take** -- an edit's. The take key
+            // stays, so the view keeps the picture it has and is owed the new
+            // one, as a server buffer told to read again is.
+            "segments" => match (self.source.data_mut(), crate::host::disk::List::parse(v)) {
+                (Some(data), Ok(list)) => {
+                    if data.segments.as_deref() != Some(&list) {
+                        data.channels = list.channels;
+                        data.segments = Some(std::sync::Arc::new(list));
+                        self.reread();
+                    }
+                    true
+                }
+                (_, Err(_e)) => {
+                    crate::host::diag::warn!("{_e}");
+                    false
+                }
+                (None, Ok(_)) => false,
+            },
             "label" => set_label(&mut self.display.label, v),
             _ => self.editor.apply(key, v),
         };

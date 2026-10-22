@@ -533,6 +533,21 @@ impl Samples for SignalElement {
         SignalElement::source_buffer(self)
     }
 
+    fn segments(&self) -> Option<Arc<crate::host::disk::List>> {
+        self.source.data()?.segments.clone()
+    }
+
+    fn name_list(&mut self, key: i32) -> bool {
+        let Some(data) = self.source.data_mut() else {
+            return false;
+        };
+        if data.segments.is_none() {
+            return false;
+        }
+        data.buffer = Some(key);
+        true
+    }
+
     fn samples_rate(&self) -> Option<f64> {
         (self.editor.sample_rate > 0.0).then_some(self.editor.sample_rate)
     }
@@ -616,6 +631,18 @@ impl Samples for SignalElement {
         let Source::Data(now) = &mut self.source else {
             return false;
         };
+        // **A list keeps its take key across a def**: the key is the host's,
+        // given to the element the def built before, and the def names the
+        // list rather than the key. A list that changed is the same take
+        // edited, so the picture is carried and the read is owed.
+        let mut reload = reload;
+        if let (Some(was_list), Some(now_list)) = (&was.segments, &now.segments)
+            && now.buffer.is_none()
+            && was.buffer.is_some()
+        {
+            now.buffer = was.buffer;
+            reload |= was_list != now_list;
+        }
         let same = now.buffer.is_some()
             && now.buffer == was.buffer
             && now.path.is_none()

@@ -2730,6 +2730,20 @@ pub trait Samples {
         None
     }
 
+    /// **The list of segments over files this element draws**, when it names
+    /// one (`segments`): the take the host answers for itself, with no
+    /// server (`host::disk`).
+    fn segments(&self) -> Option<std::sync::Arc<crate::host::disk::List>> {
+        None
+    }
+
+    /// **Gives the list this element draws its take key**, the buffer number
+    /// every question about it is asked under. `false` for an element that
+    /// names no list.
+    fn name_list(&mut self, _key: i32) -> bool {
+        false
+    }
+
     /// **The rate the samples were recorded at**, when the element was told
     /// (its `sample_rate`): what a player converts a frame of them to the
     /// engine's samples with.

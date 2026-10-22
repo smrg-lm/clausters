@@ -31,6 +31,10 @@ impl Front for Probe {
         &mut self.fetches
     }
     fn to_server(&self, msg: OscMessage) {
+        // As both fronts do: a list's questions are the host's own.
+        if crate::host::disk::list_key_of(&msg).is_some() {
+            return self.host.ask_disk(msg);
+        }
         self.sent.borrow_mut().push(msg);
     }
     fn redraw_window(&self, _def_id: i32) {}
@@ -258,4 +262,208 @@ fn an_edit_keeps_the_picture_until_the_new_one_is_whole() {
         Some((longer, 0.75)),
         "the new take, at once"
     );
+}
+
+/// **An answerer in the same process**, answering at once: what a front's
+/// disk thread does, without the thread.
+#[derive(Clone, Default)]
+struct Local(std::rc::Rc<RefCell<LocalDisk>>);
+
+#[derive(Default)]
+struct LocalDisk {
+    answerer: crate::host::disk::answer::Answerer,
+    io: crate::host::disk::native::Disk,
+    replies: Vec<OscMessage>,
+    defined: Vec<i32>,
+}
+
+impl crate::host::disk::DiskLink for Local {
+    fn define(&self, key: i32, list: std::sync::Arc<crate::host::disk::List>) {
+        let mut d = self.0.borrow_mut();
+        d.defined.push(key);
+        d.answerer.define(key, list);
+    }
+    fn forget(&self, key: i32) {
+        self.0.borrow_mut().answerer.forget(key);
+    }
+    fn ask(&self, msg: OscMessage) {
+        let mut d = self.0.borrow_mut();
+        let LocalDisk { answerer, io, .. } = &mut *d;
+        if let Some(reply) = crate::host::disk::native::answer(answerer, io, &msg) {
+            d.replies.push(reply);
+        }
+    }
+}
+
+impl Probe {
+    /// Hands every answer the local disk has back to the front, until it
+    /// has none.
+    fn pump(&mut self, local: &Local) -> usize {
+        let mut n = 0;
+        loop {
+            let replies = std::mem::take(&mut local.0.borrow_mut().replies);
+            if replies.is_empty() {
+                return n;
+            }
+            for reply in replies {
+                n += 1;
+                self.on_server_reply(Leg::Server, &reply);
+            }
+        }
+    }
+
+    /// The list key the view at widget 40 was given.
+    fn list_key(&self) -> i32 {
+        self.host
+            .window_def(1)
+            .and_then(|t| t.find(40))
+            .and_then(|w| w.kind.as_element())
+            .and_then(|el| el.samples())
+            .and_then(|s| s.source_buffer())
+            .expect("a key")
+    }
+}
+
+/// A float W64 of `frames` mono samples rising from -0.5 to 0.5, with its
+/// peaks; answers the paths.
+fn ramp_file(dir: &std::path::Path, name: &str, frames: usize) -> (String, String) {
+    let samples: Vec<f32> = (0..frames)
+        .map(|i| i as f32 / frames as f32 - 0.5)
+        .collect();
+    let path = dir
+        .join(format!("{name}.w64"))
+        .to_string_lossy()
+        .into_owned();
+    let mut w = clausters_core::pcm::Writer::create(&path, 1, 48_000.0, "float").unwrap();
+    w.write(&samples).unwrap();
+    w.finalize().unwrap();
+    let peaks = dir
+        .join(format!("{name}.peaks"))
+        .to_string_lossy()
+        .into_owned();
+    clausters_core::peaks::MultiPyramid::build_interleaved(&samples, 1, 256)
+        .write_cache(&peaks)
+        .unwrap();
+    (path, peaks)
+}
+
+fn segments(parts: &[(&str, &str, usize, usize, usize)]) -> String {
+    let parts: Vec<String> = parts
+        .iter()
+        .map(|(path, peaks, start, frames, of)| {
+            format!(
+                r#"{{"path":"{path}","peaks":"{peaks}","start":{start},"frames":{frames},
+                    "source_channels":1,"source_frames":{of},"source_rate":48000}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"channels":1,"sample_rate":48000,"parts":[{}]}}"#,
+        parts.join(",")
+    )
+}
+
+/// **A list of segments over files is drawn the way a buffer is, with no
+/// server**: its key's questions go to the host's own answerer, the view asks
+/// its summary at the level it is drawn at and gets it whole, and an edit's
+/// new list keeps the picture until the new one has come.
+#[test]
+fn a_list_of_segments_is_drawn_from_its_files_with_no_server() {
+    let dir = std::env::temp_dir().join(format!("clausters-gui-list-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let frames = 1 << 20;
+    let (path, peaks) = ramp_file(&dir, "a", frames);
+
+    let mut probe = Probe::default();
+    let local = Local::default();
+    probe.host.set_disk_link(Box::new(local.clone()));
+    let def = format!(
+        r#"{{"type":"window","title":"w","children":[
+             {{"id":40,"type":"signal","view":"trace","segments":{}}}]}}"#,
+        segments(&[(&path, &peaks, 0, frames, frames)])
+    );
+    probe.host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![OscType::Int(1), OscType::String(def.clone())],
+        }),
+        from(),
+    );
+    let key = probe.list_key();
+    assert!(crate::host::disk::is_list_key(key));
+    assert_eq!(local.0.borrow().defined, vec![key], "told the answerer");
+
+    // The bulk walk a front makes: the query is the host's to answer.
+    let query = probe.fetches.want(1, 40, key).expect("a query");
+    probe.to_server(query);
+    probe.pump(&local);
+    probe.drawn(760.0);
+    let replies = probe.pump(&local);
+    assert!(replies > 0 && replies < 8, "{replies} replies");
+    assert_eq!(probe.sent(), Vec::new(), "nothing went to a server");
+    let (len, peak) = probe.picture().expect("drawn");
+    assert_eq!(len, frames);
+    assert!((peak - 0.5).abs() < 1e-3, "{peak}");
+
+    // **A redefine names the same list**: the key and the picture carry,
+    // and the answerer is told nothing new.
+    probe.host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![OscType::Int(1), OscType::String(def)],
+        }),
+        from(),
+    );
+    assert_eq!(probe.list_key(), key);
+    assert_eq!(local.0.borrow().defined, vec![key]);
+    assert!(probe.picture().is_some(), "carried");
+
+    // **An edit: a cut** -- the first half again, then the whole. The view
+    // keeps its picture until the new one has come whole.
+    let edited = segments(&[
+        (&path, &peaks, 0, frames / 2, frames),
+        (&path, &peaks, 0, frames, frames),
+    ]);
+    probe.host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(40),
+                OscType::String("segments".into()),
+                OscType::String(edited),
+            ],
+        }),
+        from(),
+    );
+    assert_eq!(probe.list_key(), key, "the same take");
+    assert_eq!(
+        local.0.borrow().defined,
+        vec![key, key],
+        "told the new list"
+    );
+    let reload = probe
+        .host
+        .window_def_mut(1)
+        .and_then(|t| t.find_mut(40))
+        .and_then(|w| w.kind.as_samples_mut())
+        .and_then(|s| s.wants_reload());
+    assert!(reload.is_some(), "the view is owed the new list");
+    let query = probe.fetches.want(1, 40, key).expect("asked again");
+    probe.to_server(query);
+    probe.pump(&local);
+    assert_eq!(
+        probe.picture().map(|p| p.0),
+        Some(frames),
+        "the old picture stays"
+    );
+    probe.drawn(760.0);
+    probe.pump(&local);
+    assert_eq!(
+        probe.picture().map(|p| p.0),
+        Some(frames + frames / 2),
+        "the new one, whole"
+    );
+    assert_eq!(probe.sent(), Vec::new());
+    let _ = std::fs::remove_dir_all(&dir);
 }

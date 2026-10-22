@@ -61,6 +61,7 @@ pub mod readback;
 // bar beside it is what the host says to the person at the window; this is the
 // other half, and it compiles out of a release below the warning level.
 pub mod diag;
+pub mod disk;
 // The host-wide clipboard: one typed document plus the bulk it names. Here
 // rather than with the elements because it is nobody's -- one clipboard serves
 // every field, roll and view of every window.
@@ -856,6 +857,14 @@ pub struct Host {
     /// and every page keeps doing.
     #[cfg(unix)]
     shared_buffers: Option<mapped::SharedBuffers>,
+    /// **The lists of segments over files the windows draw**, by take key:
+    /// what the disk link was last told each key names (`disk`).
+    lists: HashMap<i32, Arc<disk::List>>,
+    /// The next take key to give a list, counting down.
+    next_list_key: i32,
+    /// Where a list's questions go: the host's own answerer, behind the
+    /// front's carrier. `None` until a front gives one.
+    disk: Option<Box<dyn disk::DiskLink>>,
     /// Widget id -> the audio-server destination its value forwards to
     /// (`/gui_bind`). A bound widget bypasses the script: its value goes
     /// straight to the audio server instead of emitting a `/gui_event`.
@@ -1072,6 +1081,9 @@ impl Host {
             player: None,
             #[cfg(unix)]
             shared_buffers: None,
+            lists: HashMap::new(),
+            next_list_key: disk::FIRST_LIST_KEY,
+            disk: None,
             bindings: HashMap::new(),
             read_live: Default::default(),
             def_json: HashMap::new(),

@@ -172,11 +172,22 @@ pub(crate) fn signal_element(
     let p = signal::point(view, live, navigable);
     let mut el = signal::SignalElement::from_preset(&p);
 
-    let channels = props
-        .get("channels")
-        .and_then(Value::as_u64)
-        .map(|n| (n as usize).max(1))
-        .unwrap_or(1);
+    // **A take that is a list of segments over files** names its channels
+    // itself; a list that cannot be drawn is said and left out, as a prop
+    // with a value a build does not read.
+    let segments = props.get("segments").and_then(|v| {
+        crate::host::disk::List::parse(v)
+            .map_err(|_e| crate::host::diag::warn!("signal {id:?}: {_e}"))
+            .ok()
+            .map(std::sync::Arc::new)
+    });
+    let channels = segments.as_ref().map(|l| l.channels).unwrap_or_else(|| {
+        props
+            .get("channels")
+            .and_then(Value::as_u64)
+            .map(|n| (n as usize).max(1))
+            .unwrap_or(1)
+    });
     if let Some(preview) = props.get("preview_buffer") {
         el.apply("preview_buffer", preview);
     }
@@ -210,6 +221,7 @@ pub(crate) fn signal_element(
                 .unwrap_or(DEFAULT_BASE_BUCKET),
             bulk: p.bulk,
             body: None,
+            segments,
         })
     };
 

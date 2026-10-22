@@ -160,6 +160,8 @@ pub fn run(
     event_loop.set_control_flow(ControlFlow::Wait);
 
     let proxy = Proxy::Winit(event_loop.create_proxy());
+    let mut host = host;
+    spawn_disk(&mut host, &proxy)?;
     let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
     let mut app = App::new(host, socket, bus, inflight, false);
     event_loop.run_app(&mut app).map_err(|e| e.to_string())
@@ -182,6 +184,8 @@ pub fn run_headless(
 ) -> Result<(), String> {
     let (sender, events) = std::sync::mpsc::channel();
     let proxy = Proxy::Channel(sender);
+    let mut host = host;
+    spawn_disk(&mut host, &proxy)?;
     let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
     // The threads hold the senders; this one would keep the channel open
     // after they are gone.
@@ -218,6 +222,29 @@ pub fn run_headless(
 /// draw, and the reason when it cannot.
 pub fn can_draw_offscreen() -> Result<(), String> {
     pollster::block_on(crate::gpu::Gpu::offscreen(1, 1, 1)).map(|_| ())
+}
+
+/// **Starts the host's own answerer for lists of segments over files** on a
+/// thread of its own, which reads the disk and answers through `proxy` as a
+/// server's reply comes in, so a list is drawn by the same code a buffer is.
+fn spawn_disk(host: &mut Host, proxy: &Proxy) -> Result<(), String> {
+    let proxy = proxy.clone();
+    let disk =
+        crate::host::disk::native::NativeDisk::spawn(
+            move |reply| match clausters_core::osc::encode(
+                &clausters_core::osc::OscPacket::Message(reply),
+            ) {
+                Ok(bytes) => {
+                    let _ = proxy.send_event(UserEvent::ServerOsc {
+                        leg: crate::host::instance::Leg::Server,
+                        bytes,
+                    });
+                }
+                Err(e) => tracing::warn!("cannot encode a list's answer: {e}"),
+            },
+        )?;
+    host.set_disk_link(Box::new(disk));
+    Ok(())
 }
 
 /// **Starts the fronts' threads**: the script front's UDP reader, its TCP and

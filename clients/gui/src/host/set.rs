@@ -251,6 +251,11 @@ impl Host {
         if touches_stream || touches_source {
             self.sync_buffer_streams();
         }
+        // A new list for a take is told to the answerer before the view asks
+        // about it again.
+        if keys.iter().any(|k| k.as_str() == "segments") {
+            self.sync_lists();
+        }
         true
     }
 }

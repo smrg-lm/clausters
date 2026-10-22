@@ -575,7 +575,7 @@ it.
 
 | Type | Replaces | How the old name is said |
 |---|---|---|
-| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`path`/`cache` = addressable, and `"data": "keep"` on a redraw = the run the host already holds) × the **capabilities** `navigable`, `selectable`, `editable` × the **layer stack** it draws (`layers`, also spelled `measure`: `peak` / `rms` / `signal` / `momentary` / `short` / `spectrogram`, back to front in one space-separated string or as an array whose entries carry `alpha`, `visible`, `solo` and `y`; the presentation's own by default, see above). `navigable: 0` over addressable samples is the static plot — the whole of it, since a view that does not navigate also resolves its source as the sequence itself rather than as a take, and auto-fits a value axis nobody named. Over a **bus** the missing piece is a past: `retention` (seconds, 0 = none) is the policy that supplies one, so `view: "spectrogram"` + `bus` + `retention` + `navigable` is a **waterfall** — the host keeps that many seconds, analyzes them into columns as they arrive, and the time axis navigates like a file's. It is a policy of the axis, not of the drawing: the same seconds mean the same seconds at any frame rate, `window_size` or `hop`, and a `/gui_set` of it resizes the history live. A live axis **follows the newest until you navigate it**, and then stays where you put it. `navigable` over a **spectrum** means something else, because that view's x is not time but **frequency**: an axis addressable with no retention at all (every bin is there every frame), navigated on a window the element carries alone — `view_start`/`view_len` (`axes.x.start`/`len`) in normalized display units over `[0, Nyquist]`, panned by dragging the axis, zoomed with the wheel under the cursor, reset with `R`, reported as `"view_x"`. It joins no navigation group: nothing else in a window measures in hertz along x. It is opt-in — a bare `spectrum` is the watching spectroscope — which is the one place `navigable` does not default to on. The zoom stops at the **resolution of the analysis**: below a few FFT bins across the whole body the curve is interpolation between two neighbours rather than a measurement, so the floor is derived from `fft_size` and the sample rate (and is therefore not a constant — a bin is a twentieth of a log axis at 500 Hz and a thousandth of it near Nyquist). The floor applies to what is **shown**, not to what is stored: `view_start`/`view_len` are the window that was asked for, from a gesture or from `/gui_set` alike, and the axis opens them wherever they are finer than it resolves. So a scripted window narrower than the bins is drawn — and reported — opened up, and a pan down the axis that has to open the window gives the asked-for one back on the way up rather than spending it |
+| `signal` | `waveform`, `spectrogram`, `plot`, `scope`, `spectrum`, `phasescope` | **`view`** (`trace` default / `spectrum` / `spectrogram` / `phase`) × the **source** (`bus` = forward-only; `data`/`blob`/`buffer`/`segments`/`path`/`cache` = addressable, and `"data": "keep"` on a redraw = the run the host already holds) × the **capabilities** `navigable`, `selectable`, `editable` × the **layer stack** it draws (`layers`, also spelled `measure`: `peak` / `rms` / `signal` / `momentary` / `short` / `spectrogram`, back to front in one space-separated string or as an array whose entries carry `alpha`, `visible`, `solo` and `y`; the presentation's own by default, see above). `navigable: 0` over addressable samples is the static plot — the whole of it, since a view that does not navigate also resolves its source as the sequence itself rather than as a take, and auto-fits a value axis nobody named. Over a **bus** the missing piece is a past: `retention` (seconds, 0 = none) is the policy that supplies one, so `view: "spectrogram"` + `bus` + `retention` + `navigable` is a **waterfall** — the host keeps that many seconds, analyzes them into columns as they arrive, and the time axis navigates like a file's. It is a policy of the axis, not of the drawing: the same seconds mean the same seconds at any frame rate, `window_size` or `hop`, and a `/gui_set` of it resizes the history live. A live axis **follows the newest until you navigate it**, and then stays where you put it. `navigable` over a **spectrum** means something else, because that view's x is not time but **frequency**: an axis addressable with no retention at all (every bin is there every frame), navigated on a window the element carries alone — `view_start`/`view_len` (`axes.x.start`/`len`) in normalized display units over `[0, Nyquist]`, panned by dragging the axis, zoomed with the wheel under the cursor, reset with `R`, reported as `"view_x"`. It joins no navigation group: nothing else in a window measures in hertz along x. It is opt-in — a bare `spectrum` is the watching spectroscope — which is the one place `navigable` does not default to on. The zoom stops at the **resolution of the analysis**: below a few FFT bins across the whole body the curve is interpolation between two neighbours rather than a measurement, so the floor is derived from `fft_size` and the sample rate (and is therefore not a constant — a bin is a twentieth of a log axis at 500 Hz and a thousandth of it near Nyquist). The floor applies to what is **shown**, not to what is stored: `view_start`/`view_len` are the window that was asked for, from a gesture or from `/gui_set` alike, and the axis opens them wherever they are finer than it resolves. So a scripted window narrower than the bins is drawn — and reported — opened up, and a pan down the axis that has to open the window gives the asked-for one back on the way up rather than spending it |
 | `notes` | `pianoroll` | unchanged properties |
 | `curve` | `bpf` | unchanged properties |
 | `nodes` | `nodetree` | it is an element, not a widget named after a tree |
@@ -1410,6 +1410,36 @@ floor a notch, and Ctrl+wheel zooms the amplitude as it does elsewhere. The
 scroll is the reader's and is not reported. Every row-relative reading (the
 cursor readout, a sweep restricted in value, a held sample, a y zoom's anchor)
 follows the same layout.
+
+### A take that is a list of segments over files
+
+`signal` accepts `segments` in place of `buffer`: **a take that is a list of
+segments over files**, drawn by the host with no server. It is
+`{"channels", "sample_rate", "parts": [...]}`, and each part is a span of a
+file — the clipboard's segment part: `path` (absolute), `start`, `frames`
+(what the part contributes to the list, at the list's rate), `fade_in`,
+`fade_out` and their shapes, `channels` (the map, list channel to file
+channel, `-1` silent, the identity when absent), and the file's own
+`source_channels`, `source_frames` and `source_rate` — plus `peaks`, the path
+of that file's peaks (the CLPK file a `PeaksOut` writes). A file is a PCM
+WAV, W64 or RF64; a part at another rate reads between frames, as a join's
+does. A list that cannot be drawn (no parts, a part of no frames, a map of the
+wrong width, a span past its file) is said in the log and left out. A
+`/gui_set` carries the list as its JSON text, and a new list for the same
+widget is **the same take edited**: the view keeps the picture it holds until
+the new one has come whole, as a buffer told to `reload` does.
+
+**The picture is the files'.** The host reads each file's header and the
+levels of its peaks its window resolves, and a span of its samples only
+under a zoom, natively from the disk and in a page from the page's storage;
+nothing is read whole, and what is held is bounded whatever the take's
+length. A coarse column is folded from the peaks alone, even after an edit
+shifts the take off its files' grid: an edge of the column is rounded to a
+level a thirty-second of the column wide, while a part's own edges and its
+fades are read exactly from the samples. A part whose file has no peaks, or
+peaks of another shape or older than its samples, is summarized from its
+samples as it is asked, which is right and slow over a long file. A list is
+read-only to the host: an edit is its owner's, which sends the new list.
 
 ### A processed signal over its source
 

@@ -248,6 +248,11 @@ pub struct Data {
     /// mapped or fetched it. `None` until then -- and always, for a source that
     /// is not bulk, which keeps its samples inline instead.
     pub body: Option<Arc<WaveformData>>,
+    /// **A take that is a list of segments over files** (the `segments`
+    /// prop), drawn by the host with no server. Its [`buffer`](Self::buffer)
+    /// is the take key the host gave it (`host::disk`), so every question
+    /// a view asks of a buffer it asks of the list, and the host answers.
+    pub segments: Option<Arc<crate::host::disk::List>>,
 }
 
 impl Data {
@@ -611,6 +616,7 @@ impl SignalElement {
                     base_bucket: DEFAULT_BASE_BUCKET,
                     bulk: p.bulk,
                     body: None,
+                    segments: None,
                 })
             },
             caps: p.caps,

@@ -248,6 +248,7 @@ impl Host {
     /// it now is, which holds every widget outside a spliced subtree
     /// unchanged, with the zoom and the scroll it had.
     pub(super) fn tree_changed(&mut self, window: i32, effects: &mut Vec<HostEffect>) {
+        self.sync_lists();
         self.sync_subscriptions();
         self.sync_timeline_groups(Some(window));
         effects.push(HostEffect::OpenWindow(window));
@@ -287,6 +288,8 @@ impl Host {
         self.drawn_clocks.remove(&id);
         self.forget_activity(id);
         if self.window_defs.remove(&id).is_some() {
+            // The lists it drew go with it, unless another window names them.
+            self.sync_lists();
             // The window goes, and with it the scale a shell reported for it.
             self.resolved_metrics.remove(&id);
             // ...and whatever it had in flight: an acknowledgement for a widget
