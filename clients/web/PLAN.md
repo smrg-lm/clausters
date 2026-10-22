@@ -5059,6 +5059,23 @@ sound.
   the pages that write make `out/` with `opfs.makeDirectory` where their
   scripts make it.
 
+- ⬜ **An offline render in a page reads and writes no file** *(found
+  2026-10-22, opening `X28`)*. The page's offline render is one synchronous
+  call into the engine's wasm (`engine/render.ts`), which hands back every
+  sample it rendered: a render of an hour holds the hour, and the streams
+  that read and write files have nobody to serve them, since in a page the
+  host is their reader (`dsp::disk_web`) and nothing drives it during a
+  render. So a `DiskIn`, a `TransportDiskIn` over a list of files, a `DiskOut`
+  and a `PeaksOut` in an offline score do nothing in a page, and
+  `render({ path })` writes the file only once the whole take is in memory.
+  The audio editor's processing is a render that reads a list from files and
+  writes a file with its peaks (`crates/clausters-apps/PLAN.md`, `X28`), so
+  its page half needs this first. What it takes: the render run in the NRT
+  worker, a chunk of blocks at a time, with the streams served between two
+  chunks through sync access handles (the worker can read and write at an
+  offset synchronously), the render's own output written at an offset as it
+  comes, and the same refusal and the same file a native `--nrt` render gives.
+
 - ✅ **A recording or a write in a tab is held whole and rewritten at every
   flush, so a take of hours does not fit** *(found 2026-10-22, closing the
   root plan's `S22`)*. The worker keeps a `DiskOut`'s whole body in memory

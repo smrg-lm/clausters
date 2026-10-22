@@ -2971,7 +2971,11 @@ editors and should port this one.
   the opened file keeps undo working past it, and a second session over that
   file is told the file changed on disk. The
   example pair `editors/audio_lifecycle` runs as before, natively and in a
-  page; by eye and by ear with two windows.
+  page; by eye and by ear with two windows. *Opened 2026-10-22: a page's offline render
+  reads and writes no file (`clients/web/PLAN.md`, Found by use, "An offline
+  render in a page reads and writes no file"), and every edit that makes a
+  take is a render over files, so that entry is taken first; the page's
+  recording at an offset and a list's spectrogram are done.*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
