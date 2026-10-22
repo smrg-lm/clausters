@@ -8644,7 +8644,9 @@ module of its own.
   headless Chrome took the same paste from 3.1 s to 1.9 s. What is left is
   the page engine's pace: it answers once per audio callback, about 40 ms in
   headless, and its ring holds three chunks per answer, so the next step is
-  that ring's capacity in a page, or reading the span under the edit.
+  that ring's capacity in a page, or reading the span under the edit. The
+  browser pass the same day saw the stereo paste land somewhat sooner, and
+  still not at once.
 
 - ⬜ **The GUI host's library suite stopped once on a SIGSEGV** *(found
   2026-10-22, closing the entries of the audio editor's acceptance)*. One
