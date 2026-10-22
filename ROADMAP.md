@@ -195,8 +195,8 @@ a person saw it work.
 
 - ⬜ **Nobody has looked at or listened to `editors/audio_lifecycle`**
   *(`crates/clausters-apps/PLAN.md`, `X24`)*. Everything else in the audio
-  editor's acceptance is done and run; the eye and ear pass over the pair,
-  native and in a browser, is what accepts it, and `X25` waits on it.
+  editor's acceptance is done and run, and the native pass is accepted; the
+  browser's pass over the page is what accepts it, and `X25` waits on it.
 
 - ⬜ **Nobody has listened to `basics/patterns`** *(`clients/python/PLAN.md`,
   `C74`)*. The patterns arc closed with one example in two languages as its

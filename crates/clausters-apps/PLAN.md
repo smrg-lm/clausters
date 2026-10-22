@@ -2771,10 +2771,14 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     nothing; a page's window left on an old version after a shared undo
     restored another window's file, refusing its next gesture; and a page's
     `/buffer_write` making the directory a native server refuses.
-  - ⬜ **The eye and ear pass** over the `editors/audio_lifecycle` pair, native
-    and in a browser, by the user: what each step says to look at and to
-    listen for. A write too short for a hand to edit through is checked by
-    the fault traces, not by this pass.
+  - ✅ **Native eye and ear pass** over `editors/audio_lifecycle.py`, by the
+    user (2026-10-22): every step as the example says. It found a window
+    looping a selection spinning a core on empty frames (fixed) and a paste
+    refused in silence when another program's text replaced the copy
+    (filed below, in "Found by use").
+  - ⬜ **Browser eye and ear pass** over `editors/audio-lifecycle.html`. A
+    write too short for a hand to edit through is checked by the fault
+    traces, not by either pass.
 
 - ⬜ **X25 - Port the proven lifecycle to the other existing editors.** After
   `X24`, compose multitrack, notes, points and score editors with the same
