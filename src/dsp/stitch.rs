@@ -64,9 +64,14 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use clausters_core::segments::{Cut, PartSpan, rate_between};
+
 use super::buffer::Buffer;
 
-/// One source's contribution to a stitched buffer.
+/// One source's contribution to a stitched buffer: the source, and the
+/// part's arithmetic over it ([`PartSpan`], the core's, which the GUI host
+/// reads its own files through). The span's fields read as the part's own
+/// (`part.frames`, `part.map`, `part.start()`).
 pub struct Part {
     /// Where the samples come from. The `Arc` is what keeps a source alive for
     /// as long as something is stitched over it, so freeing the take a join was
@@ -79,59 +84,18 @@ pub struct Part {
     /// answer a join in the same terms `/buffer_stitch` was given it in, which
     /// is what makes a reply something a client can edit and send back.
     pub src_index: i32,
-    /// The first frame read from `src`.
-    pub src_start: usize,
-    /// How many frames this part contributes **to the join**.
-    pub frames: usize,
-    /// **Frames of the source per frame of the join**: `1.0` for a part whose
-    /// samples were written at the join's own rate, and the ratio between the
-    /// two otherwise -- `44100 / 48000` for a 44.1 kHz take joined into a
-    /// 48 kHz session.
-    ///
-    /// It is here, on the part, because it is a fact about *those* samples: a
-    /// join of six spans of five files is one buffer with one rate, and each
-    /// span crosses to it by its own. A part at `1.0` keeps the indexed load a
-    /// plain buffer costs, behind one predicted comparison; one that is not
-    /// reads between two frames, with the same linear reading every reader in
-    /// this server makes.
-    ///
-    /// So the span it reads from its source is `frames * rate` -- the caller
-    /// says what the part contributes to the join and the ratio says what that
-    /// costs in the source, which is the direction every other number here
-    /// runs in (`start` is the join's, `src_start` is the source's).
-    pub rate: f64,
-    /// A fade over this many frames at the part's start, and at its end.
-    /// Two spans that do not continue each other make a step, which is a click
-    /// however well the frames themselves are read -- this is the few
-    /// milliseconds every editor puts on a cut, and it belongs here because
-    /// here is where the seam is.
-    pub fade_in: usize,
-    pub fade_out: usize,
-    /// **The shape of each fade**, as an envelope segment's: linear unless the
-    /// caller says otherwise. A region's fade is drawn as one of these shapes,
-    /// so a join made of regions keeps the shape each edge was drawn with.
-    pub fade_in_shape: FadeShape,
-    pub fade_out_shape: FadeShape,
-    /// `1 / (fade + 1)` for each side, computed once: a fade is a multiply per
-    /// sample rather than two integer-to-float conversions and a divide.
-    fade_in_step: f32,
-    fade_out_step: f32,
-    /// Whether either fade is set at all. The common part has neither, and the
-    /// whole crossfade arm is then one predicted branch.
-    faded: bool,
-    /// Whether [`rate`](Self::rate) is anything but one, so the read path is
-    /// chosen by a comparison made once at build rather than by a float test
-    /// per sample.
-    resampled: bool,
-    /// Stitched channel -> source channel, one entry per channel of the stitched
-    /// buffer. A negative entry is silence. It is **routing and not level**: a
-    /// mono take heard on both sides of a stereo clip is `[0, 0]` here and a pan
-    /// law in the graph, because what is loud is the mixer's question and what
-    /// is where is this one's.
-    pub map: Box<[i32]>,
-    /// The first frame of this part **in the stitched buffer** -- the cumulative
-    /// sum, computed once at build so a lookup is a comparison.
-    start: usize,
+    /// The cut, its rate, its fades, its map and its place in the join.
+    pub span: PartSpan,
+}
+
+impl std::ops::Deref for Part {
+    type Target = PartSpan;
+
+    /// A part *is* its span over a source; the source is what the server
+    /// adds, so the span's fields and reads are reached through the part.
+    fn deref(&self) -> &PartSpan {
+        &self.span
+    }
 }
 
 /// **A part with its source's cells already taken** -- what a reader holds while
@@ -197,124 +161,20 @@ impl Part {
     pub fn sample(&self, inner: usize, channel: usize) -> f32 {
         PartRun::new(self).sample(inner, channel)
     }
-
-    /// **One sample of this part, read through `frame`**: the source's frame
-    /// and channel in, its sample out. The map, the rate and the fades are
-    /// this part's whoever holds the samples, which is what lets a part over
-    /// a buffer and a part over a file be one logic -- a [`PartRun`] reads the
-    /// cells, and a stream reader the span it read from the file.
-    ///
-    /// **A part at another rate** lands between two of its source's frames
-    /// and reads the line between, which is the reading `PlayBuf` and `BufRd`
-    /// make and the one a drawing of these samples claims. It is bounded here
-    /// rather than by the validation, because that is the one thing a ratio
-    /// makes unprovable at build: the last frame of a part whose span does
-    /// not divide evenly lands a fraction past its source, and a clamp is a
-    /// comparison against a read that would be out of bounds.
-    #[inline]
-    pub fn read_with(
-        &self,
-        inner: usize,
-        channel: usize,
-        frame: impl Fn(usize, usize) -> f32,
-    ) -> f32 {
-        let Some(&src_ch) = self.map.get(channel) else {
-            return 0.0;
-        };
-        if src_ch < 0 {
-            return 0.0;
-        }
-        let src_ch = src_ch as usize;
-        let value = if self.resampled {
-            let last = self.src.frames().saturating_sub(1);
-            let pos = self.src_start as f64 + inner as f64 * self.rate;
-            let f0 = (pos as usize).min(last);
-            let frac = pos - f0 as f64;
-            clausters_core::resample::Interpolator::played(
-                frame(f0, src_ch),
-                frame((f0 + 1).min(last), src_ch),
-                frac,
-            )
-        } else {
-            frame(self.src_start + inner, src_ch)
-        };
-        if self.faded {
-            value * fade(self, inner)
-        } else {
-            value
-        }
-    }
-
-    /// **The source frames `inner` frames `lo..hi` of this part read**, as a
-    /// half-open range: what a reader that fetches its samples -- from a file
-    /// -- has to fetch so that [`Part::read_with`] finds every frame it asks
-    /// for. One more than the span at another rate, for the second frame of
-    /// the last interpolation; never past the source's end.
-    pub fn source_span(&self, lo: usize, hi: usize) -> (usize, usize) {
-        let frames = self.src.frames();
-        if hi <= lo {
-            return (self.src_start, self.src_start);
-        }
-        if !self.resampled {
-            return (self.src_start + lo, (self.src_start + hi).min(frames));
-        }
-        let first = (self.src_start as f64 + lo as f64 * self.rate) as usize;
-        let last = (self.src_start as f64 + (hi - 1) as f64 * self.rate) as usize + 2;
-        (first.min(frames), last.min(frames))
-    }
-
-    /// The first frame of this part **in the stitched buffer**.
-    #[inline]
-    pub fn start(&self) -> usize {
-        self.start
-    }
-
-    /// One past its last frame there.
-    #[inline]
-    pub fn end(&self) -> usize {
-        self.start + self.frames
-    }
-
-    /// Whether it reads its source at another rate than the join's.
-    #[inline]
-    pub fn resampled(&self) -> bool {
-        self.resampled
-    }
 }
 
 impl std::fmt::Debug for Part {
     /// Shape only; a part points at millions of samples.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Part")
-            .field("start", &self.start)
+            .field("start", &self.start())
             .field("frames", &self.frames)
             .field("src_start", &self.src_start)
             .finish_non_exhaustive()
     }
 }
 
-/// **The shape of a part's fade**: an envelope segment's shape number
-/// (`clausters_core::envshape`) and its curvature, which only the `curve`
-/// shape reads.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FadeShape {
-    pub shape: i32,
-    pub curve: f32,
-}
-
-impl FadeShape {
-    /// A straight ramp, which is what a fade that names no shape is.
-    pub const LINEAR: Self = Self {
-        shape: clausters_core::envshape::SHAPE_LINEAR,
-        curve: 0.0,
-    };
-}
-
-impl Default for FadeShape {
-    fn default() -> Self {
-        Self::LINEAR
-    }
-}
+pub use clausters_core::segments::FadeShape;
 
 /// What a part is made of before its place in the stitch is known -- the shape a
 /// command parses into, so [`Stitch::new`] is the one place that computes the
@@ -475,14 +335,11 @@ impl Stitch {
                     spec.map.len()
                 ));
             }
-            let rate = match (spec.src.sample_rate(), sample_rate) {
-                (src, join) if src > 0.0 && join > 0.0 => src / join,
-                _ => {
-                    return Err(format!(
-                        "part {i}: a rate of zero is no axis -- source {} Hz, stitch {sample_rate} Hz",
-                        spec.src.sample_rate()
-                    ));
-                }
+            let Some(rate) = rate_between(spec.src.sample_rate(), sample_rate) else {
+                return Err(format!(
+                    "part {i}: a rate of zero is no axis -- source {} Hz, stitch {sample_rate} Hz",
+                    spec.src.sample_rate()
+                ));
             };
             // A list that reads a file is played by a stream reader, which
             // reads its file parts ahead of the transport; one nested inside
@@ -499,29 +356,25 @@ impl Stitch {
                     "part {i}: sources are stitched more than {MAX_DEPTH} deep"
                 ));
             }
-            let half = spec.frames / 2;
-            let (fade_in, fade_out) = (spec.fade_in.min(half), spec.fade_out.min(half));
+            let src_frames = spec.src.frames();
+            let span = PartSpan::new(
+                Cut {
+                    src_start: spec.src_start,
+                    frames: spec.frames,
+                    fade_in: spec.fade_in,
+                    fade_out: spec.fade_out,
+                    fade_in_shape: spec.fade_in_shape,
+                    fade_out_shape: spec.fade_out_shape,
+                    map: spec.map,
+                },
+                src_frames,
+                rate,
+                start,
+            );
             parts.push(Part {
                 src: spec.src,
                 src_index: spec.src_index,
-                src_start: spec.src_start,
-                frames: spec.frames,
-                // Two fades that overlap would multiply into a notch in the
-                // middle of the part; each is capped at half so the worst case
-                // is a triangle.
-                fade_in,
-                fade_out,
-                fade_in_shape: spec.fade_in_shape,
-                fade_out_shape: spec.fade_out_shape,
-                fade_in_step: 1.0 / (fade_in + 1) as f32,
-                fade_out_step: 1.0 / (fade_out + 1) as f32,
-                faded: fade_in > 0 || fade_out > 0,
-                rate,
-                // One comparison at build instead of a float test per sample:
-                // the ordinary join is every part at its join's own rate.
-                resampled: (rate - 1.0).abs() > f64::EPSILON,
-                map: spec.map.into_boxed_slice(),
-                start,
+                span,
             });
             start += spec.frames;
         }
@@ -541,7 +394,7 @@ impl Stitch {
     pub fn copy_into(&self, cells: &[std::sync::atomic::AtomicU32], channels: usize) {
         for part in self.parts.iter() {
             let run = PartRun::new(part);
-            let first = part.start * channels;
+            let first = part.start() * channels;
             let span = &cells[first..(first + part.frames * channels).min(cells.len())];
             for (inner, frame) in span.chunks(channels).enumerate() {
                 for (ch, cell) in frame.iter().enumerate() {
@@ -561,7 +414,7 @@ impl Stitch {
     /// in order (a stream reader filling ahead). `None` past the end.
     pub fn part_at(&self, frame: usize) -> Option<(usize, &Part)> {
         (frame < self.frames).then(|| {
-            let i = self.parts.partition_point(|p| p.start <= frame) - 1;
+            let i = self.parts.partition_point(|p| p.start() <= frame) - 1;
             (i, &self.parts[i])
         })
     }
@@ -594,7 +447,7 @@ impl Stitch {
     #[inline]
     pub fn sample(&self, frame: usize, channel: usize) -> f32 {
         match self.run_at(frame) {
-            Some(part) => part.sample(frame - part.start, channel),
+            Some(part) => part.sample(frame - part.start(), channel),
             None => 0.0,
         }
     }
@@ -631,7 +484,7 @@ impl Stitch {
         // `partition_point` is the first part that starts *after* the frame, so
         // the one before it is the one that holds it. There is always one: the
         // caller checked the frame is in range and the first part starts at 0.
-        let found = self.parts.partition_point(|p| p.start <= frame) - 1;
+        let found = self.parts.partition_point(|p| p.start() <= frame) - 1;
         self.cursor.store(found, Ordering::Relaxed);
         found
     }
@@ -660,28 +513,7 @@ fn depth(buffer: &Buffer) -> usize {
 
 #[inline]
 fn holds(part: &Part, frame: usize) -> bool {
-    frame >= part.start && frame - part.start < part.frames
-}
-
-/// The crossfade factor at `inner` frames into a part.
-#[inline]
-fn fade(part: &Part, inner: usize) -> f32 {
-    use clausters_core::envshape::shape_value;
-    let mut gain = 1.0f32;
-    if inner < part.fade_in {
-        let t = (inner + 1) as f32 * part.fade_in_step;
-        let FadeShape { shape, curve } = part.fade_in_shape;
-        gain *= shape_value(shape, curve, 0.0, 1.0, t);
-    }
-    let from_end = part.frames - 1 - inner;
-    if from_end < part.fade_out {
-        // The segment from full level to silence, `1 - t` of the way along:
-        // linear, it is the ramp it always was.
-        let t = (from_end + 1) as f32 * part.fade_out_step;
-        let FadeShape { shape, curve } = part.fade_out_shape;
-        gain *= shape_value(shape, curve, 1.0, 0.0, 1.0 - t);
-    }
-    gain
+    frame >= part.start() && frame - part.start() < part.frames
 }
 
 #[cfg(test)]

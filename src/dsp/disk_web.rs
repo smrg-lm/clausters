@@ -302,7 +302,7 @@ fn list_request(slot: &mut Slot) -> Option<StreamRequest> {
 }
 
 /// `len = out.len() / channels` frames of `part` from `inner` on, each read
-/// through `frame` -- [`Part::read_with`], the read every part makes.
+/// through `frame` -- [`PartSpan::read_with`](clausters_core::segments::PartSpan::read_with), the read every part makes.
 fn render_part(
     part: &Part,
     inner: usize,

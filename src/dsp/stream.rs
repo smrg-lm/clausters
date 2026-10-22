@@ -21,7 +21,7 @@
 //!   plays silence until it arrives. It never plays what the ring held
 //!   before: that was another place in the list, or another list.
 //! - The I/O thread renders frames of the list ahead of the transport,
-//!   part by part, through [`Part::read_with`](crate::dsp::stitch::Part) --
+//!   part by part, through [`PartSpan::read_with`](clausters_core::segments::PartSpan::read_with) --
 //!   the read a pool buffer's part makes, over the span it just read from the
 //!   file. A seam is therefore nothing to the audio thread: the next part's
 //!   frames are rendered into the ring before it gets there, and the next
