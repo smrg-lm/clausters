@@ -57,6 +57,7 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
     let layers = parse_layers(props);
     let mut made = Multitrack {
         tracks: parse_tracks(props),
+        drawn_px: std::cell::Cell::new(0.0),
         clips: parse_clips(props),
         track: None,
         bodies: curve_bodies(&curves, &layers, &parse_points(props)),

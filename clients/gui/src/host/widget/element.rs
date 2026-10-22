@@ -1568,6 +1568,19 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **How wide a picture of this element was last drawn**, in physical
+    /// pixels, noted where the frame is collected -- what decides the level
+    /// a take's summary is asked at (`fetch::summary_level`), since that is
+    /// the one number only a drawing knows. `0` for one never drawn, and for an
+    /// element that draws no take.
+    fn drawn_width(&self) -> f32 {
+        0.0
+    }
+
+    /// Notes a picture of this element drawn `px` wide (see
+    /// [`Self::drawn_width`]). Takes `&self`: the frame reads the tree.
+    fn note_width(&self, _px: f32) {}
+
     /// Draws into the window's one mesh, inside `ctx.rect`. `d` carries the
     /// resolved theme and the size table of the placement, so an element names
     /// roles and never literals, the way every built-in does; `ctx` carries the
@@ -2476,6 +2489,18 @@ pub trait Slotted {
     fn slot_dropped(&mut self) {}
 }
 
+/// **A take's shape a view is waiting on the summary of** -- what the server
+/// said it is, and the level its summary was asked at once the view had been
+/// drawn and its width was known.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OwedSummary {
+    pub frames: usize,
+    pub channels: usize,
+    pub sample_rate: f64,
+    /// The bucket asked for, `None` until the view has been drawn.
+    pub asked: Option<usize>,
+}
+
 /// **What a picture of samples owes**, beside what every element owes.
 ///
 /// A facet of [`Element`], reached through [`Element::samples`]: an element
@@ -2639,6 +2664,31 @@ pub trait Samples {
     /// loaded one a single write touched part company.
     fn written(&self) -> Option<u64> {
         None
+    }
+
+    /// **The summary this view is waiting for**: the shape of a take it was
+    /// told about, whose overview is asked at the level the view is drawn at
+    /// and handed over whole. The picture it holds meanwhile -- the take
+    /// before an edit -- stays drawn until then.
+    fn owed_summary(&self) -> Option<OwedSummary> {
+        None
+    }
+
+    /// Sets or clears [`Self::owed_summary`]; `false` for a view that draws no
+    /// summary of a server buffer.
+    fn owe_summary(&mut self, _owed: Option<OwedSummary>) -> bool {
+        false
+    }
+
+    /// The finest bucket this view summarizes at -- the level its summary is
+    /// never asked finer than.
+    fn summary_base(&self) -> usize {
+        crate::host::elements::signal::DEFAULT_BASE_BUCKET
+    }
+
+    /// How wide this view's picture was last drawn, in physical pixels.
+    fn drawn_px(&self) -> f32 {
+        0.0
     }
 
     /// **How far the samples have been written**, in frames -- a buffer's write

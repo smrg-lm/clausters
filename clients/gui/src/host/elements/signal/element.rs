@@ -143,6 +143,14 @@ impl Element for SignalElement {
         self.apply(key, v)
     }
 
+    fn drawn_width(&self) -> f32 {
+        self.drawn_px.get()
+    }
+
+    fn note_width(&self, px: f32) {
+        self.drawn_px.set(px);
+    }
+
     fn set_lane_scroll(&mut self, px: f32) -> bool {
         let px = px.max(0.0);
         let moved = (px - self.lane_scroll).abs() > 0.5;
@@ -466,6 +474,28 @@ impl Samples for SignalElement {
         self.take(data)
     }
 
+    fn owed_summary(&self) -> Option<crate::host::widget::element::OwedSummary> {
+        self.owed_summary
+    }
+
+    fn summary_base(&self) -> usize {
+        self.source
+            .data()
+            .map_or(super::DEFAULT_BASE_BUCKET, |d| d.base_bucket.max(1))
+    }
+
+    fn drawn_px(&self) -> f32 {
+        self.drawn_px.get()
+    }
+
+    fn owe_summary(&mut self, owed: Option<crate::host::widget::element::OwedSummary>) -> bool {
+        if self.source_buffer().is_none() {
+            return false;
+        }
+        self.owed_summary = owed;
+        true
+    }
+
     fn written(&self) -> Option<u64> {
         self.written_frames()
     }
@@ -576,11 +606,10 @@ impl Samples for SignalElement {
             return false;
         };
         // Told to read again by either def -- the one it was or the one it is
-        // now, which can say `reload` in the same message -- it carries
-        // nothing: that is the owner saying these samples changed.
-        if was_el.reload_asked || self.reload_asked {
-            return false;
-        }
+        // now, which can say `reload` in the same message -- the owner is
+        // saying these samples changed: the picture is carried to be drawn
+        // until the new one has come, and the read is still owed.
+        let reload = was_el.reload_asked || self.reload_asked;
         let Source::Data(was) = &was_el.source else {
             return false;
         };
@@ -604,6 +633,9 @@ impl Samples for SignalElement {
         };
         now.body = Some(Arc::clone(body));
         self.written = was_el.written;
+        self.reload_asked = reload;
+        self.owed_summary = was_el.owed_summary;
+        self.drawn_px.set(was_el.drawn_px.get());
         self.slot_dirty = true;
         self.refresh_analysis();
         true

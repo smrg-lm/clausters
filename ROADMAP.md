@@ -295,7 +295,8 @@ its plan; the plan is where its acceptance is read.
   start after every edit, slower the longer the take, because the host walks
   the finest summary of the whole take. The server's half shipped (every
   buffer keeps its summary, a join composes it, any bucket is answered from
-  it); what is left is the host's.
+  it), and so did the host's (a view asks at the level it is drawn at, and an
+  edit replaces the picture whole); what is left is the eye pass.
   Before `X25`, since the other editors' lifecycle draws through the same
   path.
 

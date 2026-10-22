@@ -24,10 +24,12 @@ use std::sync::Arc;
 use clausters_core::osc::{OscMessage, OscType};
 
 use super::activity::Count;
-use super::fetch::{BufferFetches, FetchStep, SpanUse, WaveWant, align_span};
+use super::fetch::{
+    BufferFetches, FetchStep, PeaksDone, PeaksFor, SpanUse, WaveWant, align_span, summary_level,
+};
 use super::frame::{self, Owed};
 use super::instance::Leg;
-use super::widget::element::{Bulk, Loaded, SlotKind};
+use super::widget::element::{Bulk, Loaded, OwedSummary, SlotKind};
 use super::{Host, diag};
 use crate::waveform::WaveformData;
 
@@ -159,25 +161,39 @@ pub(crate) trait Front {
                 }
             }
             // **The overview of a take that is standing still**, asked for
-            // rather than pushed. Identical payload, so it folds through the
-            // same door -- and then the walk continues, because one reply
-            // carries only so many buckets.
+            // rather than pushed: the take's summary at the level its views
+            // draw, or the finer grid one view's zoom wants. The conversation
+            // collects the replies and hands the grid over whole, so a view
+            // never draws half of one over the picture it had.
             "/buffer_peaks.reply" => {
                 if let Some((bufnum, start, bucket, stats)) = super::stream_report(&msg.args) {
-                    // **Which of the two summaries this is, told by its
-                    // bucket**: a detail grid is asked for finer than the view
-                    // it is for, and the walk asks at the view's own -- so a
-                    // reply some view asked for at that bucket and start is
-                    // that view's, and everything else is the walk's.
-                    if let Some((def_id, widget_id)) =
-                        self.fetches().detail_reply(bufnum, start, bucket)
-                    {
-                        self.place_detail(bufnum, def_id, widget_id, start, bucket, &stats);
-                    } else {
-                        self.on_stream_report(bufnum, start, bucket, &stats);
-                        if let Some(next) = self.fetches().on_peaks(bufnum, start, stats.len()) {
-                            self.to_server(next);
-                        }
+                    let (done, next) = self.fetches().on_peaks(bufnum, start, bucket, &stats);
+                    for msg in next {
+                        self.to_server(msg);
+                    }
+                    match done {
+                        Some(
+                            done @ PeaksDone {
+                                purpose: PeaksFor::Summary,
+                                ..
+                            },
+                        ) => self.place_level(done),
+                        Some(PeaksDone {
+                            purpose: PeaksFor::Detail { def_id, widget_id },
+                            bufnum,
+                            start,
+                            bucket,
+                            stats,
+                            ..
+                        }) => self.place_detail(
+                            bufnum,
+                            def_id,
+                            widget_id,
+                            start as u64,
+                            bucket,
+                            &stats,
+                        ),
+                        None => {}
                     }
                 }
             }
@@ -362,7 +378,9 @@ pub(crate) trait Front {
             wants.len(),
             if ask_summary { "asked for" } else { "streamed" }
         );
-        let mut bucket = None;
+        if ask_summary {
+            return self.owe_summary(bufnum, frames, channels, sample_rate, wants);
+        }
         for want in wants {
             if self
                 .host()
@@ -394,7 +412,6 @@ pub(crate) trait Front {
                 {
                     w.take_bulk_of(bufnum, || Loaded::Peaks(data.clone()));
                 }
-                bucket = bucket.or(Some(base_bucket));
                 self.redraw_window(want.def_id);
                 continue;
             }
@@ -415,15 +432,136 @@ pub(crate) trait Front {
             }
             self.keep(want, &Loaded::Peaks(data));
             self.finish_placement(want, frames, sample_rate);
-            bucket = bucket.or(Some(base_bucket));
         }
-        // **And then the summary itself**, when it is not being pushed: one
-        // walk per buffer, however many views drew the empty picture, at the
-        // bucket their pyramids are built on.
-        if let (true, Some(bucket)) = (ask_summary, bucket)
-            && let Some(msg) = self.fetches().want_peaks(bufnum, bucket, channels, frames)
-        {
-            self.to_server(msg);
+    }
+
+    /// **A take standing still that its views are owed the summary of.** Each
+    /// view keeps the picture it holds -- the take before an edit -- and notes
+    /// the shape; the summary is asked once the view has been drawn and its
+    /// width says the level (`ask_owed_spans`), and handed over whole when it
+    /// has come ([`Self::place_level`]). A plural asker -- a multitrack's
+    /// clips, a view's preview -- is owed it in the fetch machine, at the
+    /// widest picture the asker draws.
+    fn owe_summary(
+        &mut self,
+        bufnum: i32,
+        frames: usize,
+        channels: usize,
+        sample_rate: f64,
+        wants: Vec<WaveWant>,
+    ) {
+        let owed = OwedSummary {
+            frames,
+            channels,
+            sample_rate,
+            asked: None,
+        };
+        for want in wants {
+            let Some(w) = self
+                .host_mut()
+                .window_def_mut(want.def_id)
+                .and_then(|t| t.find_mut(want.widget_id))
+            else {
+                continue;
+            };
+            if w.bulk_target().kind.needs().takes.contains(&bufnum) {
+                self.fetches()
+                    .owe(want.def_id, want.widget_id, bufnum, owed);
+                self.redraw_window(want.def_id);
+                continue;
+            }
+            let owes =
+                w.bulk_target_mut().kind.as_samples_mut().is_some_and(|el| {
+                    el.source_buffer() == Some(bufnum) && el.owe_summary(Some(owed))
+                });
+            if owes {
+                self.redraw_window(want.def_id);
+            }
+        }
+    }
+
+    /// **A take's summary at one level, come whole**: every view of it waiting
+    /// at that level takes it in place of the picture it held, and a
+    /// multitrack's clips of it take it as their body.
+    fn place_level(&mut self, done: PeaksDone) {
+        let PeaksDone {
+            bufnum,
+            bucket,
+            end: frames,
+            channels,
+            sample_rate,
+            stats,
+            ..
+        } = done;
+        let mut multi = clausters_core::peaks::MultiPyramid::empty(frames, channels, bucket);
+        if !multi.write_buckets(0, bucket, &stats) {
+            return diag::info!("buffer {bufnum}: a summary that does not fit its take, dropped");
+        }
+        let data = WaveformData::with_multi_pyramid(multi);
+        diag::info!(
+            "buffer {bufnum}: summary of {} bucket(s) of {bucket} placed",
+            stats.len() / (channels * 3)
+        );
+        let mut views = Vec::new();
+        let mut plural = Vec::new();
+        for def_id in self.host().window_def_ids() {
+            let Some(tree) = self.host().window_def(def_id) else {
+                continue;
+            };
+            for w in tree.descendants() {
+                let Some(widget_id) = w.id else {
+                    continue;
+                };
+                if w.bulk_target().kind.needs().takes.contains(&bufnum) {
+                    plural.push((def_id, widget_id));
+                } else if w.bulk_target().kind.as_samples().is_some_and(|el| {
+                    el.source_buffer() == Some(bufnum)
+                        && el.owed_summary().is_some_and(|o| o.asked == Some(bucket))
+                }) {
+                    views.push((def_id, widget_id));
+                }
+            }
+        }
+        for (def_id, widget_id) in plural {
+            if let Some(w) = self
+                .host_mut()
+                .window_def_mut(def_id)
+                .and_then(|t| t.find_mut(widget_id))
+            {
+                let body = Arc::new(data.clone());
+                w.take_bulk_of(bufnum, || Loaded::Peaks(body.clone()));
+            }
+            self.redraw_window(def_id);
+        }
+        for (def_id, widget_id) in views {
+            let want = WaveWant {
+                def_id,
+                widget_id,
+                shape_only: false,
+            };
+            if let Some(el) = self
+                .host_mut()
+                .window_def_mut(def_id)
+                .and_then(|t| t.find_mut(widget_id))
+                .and_then(|w| w.bulk_target_mut().kind.as_samples_mut())
+            {
+                el.owe_summary(None);
+            }
+            let body = Arc::new(data.clone());
+            let geometry = matches!(
+                self.host()
+                    .window_def(def_id)
+                    .and_then(|t| t.find(widget_id))
+                    .and_then(|w| w.bulk_target().kind.needs().slot),
+                Some(SlotKind::Geometry { .. })
+            );
+            self.release_slot(def_id, widget_id);
+            if self.window_open(def_id) && geometry {
+                self.place_slot(def_id, widget_id, Loaded::Peaks(body.clone()));
+            }
+            self.keep(want, &Loaded::Peaks(body));
+            self.finish_placement(want, frames, sample_rate);
+            self.redraw_window(def_id);
         }
     }
 
@@ -666,6 +804,72 @@ pub(crate) trait Front {
         for msg in self.fetches().tick() {
             self.to_server(msg);
         }
+        // **The summaries owed**, at the level each view was just drawn at:
+        // the first draw is what says how wide a view is, and a window
+        // widened past its level asks again at the finer one.
+        let mut summaries: Vec<(i32, usize, OwedSummary)> = Vec::new();
+        for &def_id in defs {
+            let Some(tree) = self.host_mut().window_def_mut(def_id) else {
+                continue;
+            };
+            crate::host::takes::samples_views(tree, &mut |el| {
+                let (Some(owed), Some(bufnum)) = (el.owed_summary(), el.source_buffer()) else {
+                    return false;
+                };
+                let base = el.summary_base();
+                let Some(bucket) = summary_level(owed.frames, el.drawn_px(), base) else {
+                    return false;
+                };
+                if owed.asked != Some(bucket) {
+                    el.owe_summary(Some(OwedSummary {
+                        asked: Some(bucket),
+                        ..owed
+                    }));
+                    summaries.push((bufnum, bucket, owed));
+                }
+                false
+            });
+        }
+        // ...and those of the plural askers, at the widest picture each draws.
+        for &def_id in defs {
+            let widths: Vec<(i32, f32)> = self
+                .fetches()
+                .owed_widgets(def_id)
+                .into_iter()
+                .map(|widget_id| {
+                    let width = self
+                        .host()
+                        .window_def(def_id)
+                        .and_then(|t| t.find(widget_id))
+                        .and_then(|w| w.bulk_target().kind.as_element())
+                        .map_or(0.0, |e| e.drawn_width());
+                    (widget_id, width)
+                })
+                .collect();
+            let width_of = |widget_id: i32| {
+                widths
+                    .iter()
+                    .find(|(w, _)| *w == widget_id)
+                    .map_or(0.0, |(_, px)| *px)
+            };
+            for (bufnum, width, owed) in self.fetches().take_owed_summaries(def_id, width_of) {
+                let base = crate::host::elements::signal::DEFAULT_BASE_BUCKET;
+                if let Some(bucket) = summary_level(owed.frames, width, base) {
+                    summaries.push((bufnum, bucket, owed));
+                }
+            }
+        }
+        for (bufnum, bucket, owed) in summaries {
+            if let Some(msg) = self.fetches().want_summary(
+                bufnum,
+                bucket,
+                owed.channels,
+                owed.frames,
+                owed.sample_rate,
+            ) {
+                self.to_server(msg);
+            }
+        }
         let mut asked: Vec<(i32, i32, i32, usize, Owed)> = Vec::new();
         for &def_id in defs {
             for (widget_id, owed) in self.take_owed(def_id) {
@@ -681,15 +885,26 @@ pub(crate) trait Front {
                 else {
                     continue;
                 };
+                // A view waiting for its take's new summary is drawing the
+                // take it had: a span asked for now would be read out of the
+                // new samples into the old picture.
+                if el.owed_summary().is_some() {
+                    continue;
+                }
                 asked.push((def_id, widget_id, bufnum, channels, owed));
             }
         }
         for (def_id, widget_id, bufnum, channels, owed) in asked {
             let msg = match owed {
-                Owed::Summary { a, b, bucket } => {
-                    self.fetches()
-                        .want_detail(bufnum, def_id, widget_id, a, b - a, bucket)
-                }
+                Owed::Summary { a, b, bucket } => self.fetches().want_detail(
+                    bufnum,
+                    def_id,
+                    widget_id,
+                    a,
+                    b - a,
+                    bucket,
+                    channels,
+                ),
                 Owed::Samples { a, b } => self.fetches().want_span(
                     bufnum,
                     a,
@@ -788,3 +1003,6 @@ fn number(arg: &OscType) -> f64 {
         _ => 0.0,
     }
 }
+
+#[cfg(test)]
+mod tests;

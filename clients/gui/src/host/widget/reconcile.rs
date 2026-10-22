@@ -215,16 +215,20 @@ fn carry<'a>(
     // **What the host loaded of a buffer the def names again** carries with
     // no word from the def ([`Samples::carry_resolved`](super::element::Samples)):
     // it is the host's own download, and the same buffer is the same samples
-    // until the server or the owner says they are not -- and a def that says
-    // `reload` is the owner saying exactly that.
+    // until the server or the owner says they are not. A def that says
+    // `reload` is the owner saying exactly that, and the picture is carried
+    // anyway, to be drawn until the new one has come: the element keeps the
+    // read owed.
     let reloads = says
         .get("reload")
         .is_some_and(|v| v.as_bool() == Some(true) || v.as_f64().is_some_and(|n| n != 0.0));
-    if !reloads
-        && let (Some(before), Some(now)) = (held.kind.as_element(), fresh.kind.as_element_mut())
-        && let Some(samples) = now.samples_mut()
+    if let (Some(before), Some(now)) = (held.kind.as_element(), fresh.kind.as_element_mut())
+        && now
+            .samples_mut()
+            .is_some_and(|samples| samples.carry_resolved(before))
+        && reloads
     {
-        samples.carry_resolved(before);
+        now.set("reload", &Value::from(1));
     }
     // Nothing on the wire sets the mark a marquee left, so there is no "the def
     // said so" case for it: it is the host's, always.

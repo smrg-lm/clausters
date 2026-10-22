@@ -264,45 +264,82 @@ pub(crate) struct BufferFetches {
     /// number: frames since the last ask, and how many asks have gone out.
     /// Asked again by [`Self::tick`]; see [`ABSENT_ASKS`].
     absent: HashMap<i32, (usize, usize)>,
-    /// The summary walks under way, by buffer number.
-    peaks: HashMap<i32, PeaksWalk>,
-    /// **The finer grids asked for**, one per view -- `(def_id, widget_id)`,
-    /// because two views of one take are at two zooms over two spans and each
-    /// gets its own answer.
-    details: HashMap<(i32, i32), DetailAsk>,
+    /// **The summary conversations**: the walks over a take at the level its
+    /// views draw, and the finer grids one view's zoom asks for, at most
+    /// [`PEAKS_IN_FLIGHT`] of them answering at once.
+    peaks: Vec<PeaksAsk>,
+    /// **Takes a plural asker is owed the summary of** -- a multitrack's
+    /// clips, a view's preview -- waiting for the asker to be drawn, since its
+    /// width is what says the level: `(def_id, widget_id, bufnum, shape)`.
+    owed: Vec<(i32, i32, i32, crate::host::widget::element::OwedSummary)>,
 }
 
-/// **A finer summary asked for one view**, over the span it is showing.
+/// **How many summary conversations may be answering at once.** A reply is at
+/// most 8 KiB (`MAX_STREAM_BYTES` on the server), so two of them beside the
+/// [`CHUNKS_IN_FLIGHT`] chunk replies fill the 64 KiB ring and no more; a third
+/// waits for one of them to finish rather than for the ring to drop it.
+const PEAKS_IN_FLIGHT: usize = 2;
+
+/// What a summary conversation is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PeaksFor {
+    /// **The take's summary at the level its views draw**, over the whole of
+    /// it, for every view of that buffer at that level.
+    Summary,
+    /// **A finer grid over the span one view is showing**, for that view.
+    Detail { def_id: i32, widget_id: i32 },
+}
+
+/// **A summary asked for, over a span at one bucket**: the take's own at the
+/// level its views draw, or the finer grid one view's zoom wants.
 ///
-/// It is a single request rather than a walk: the bucket is chosen so the whole
-/// span fits one reply, because a detail grid is replaced rather than extended.
-/// What it shares with a walk is the reason it is here -- a carrier that is
-/// allowed to lose a reply -- so it is re-asked when nothing comes back.
-struct DetailAsk {
+/// One request out at a time, each asking from where the last answer ended,
+/// and what came back collected here until the span is covered -- so a view
+/// is handed the whole grid at once and never draws half of one over the
+/// picture it had. It lives here rather than in a front because it needs what
+/// the downloads need: a reply that never arrives must not stop it, and a
+/// carrier that is allowed to lose one would otherwise leave the view at the
+/// picture it had with nothing to notice it.
+struct PeaksAsk {
     bufnum: i32,
-    start: usize,
-    frames: usize,
     bucket: usize,
-    /// Frames since it was asked, in ticks of [`BufferFetches::tick`].
+    /// The span, in frames.
+    start: usize,
+    end: usize,
+    /// The frame the next answer begins at.
+    next: usize,
+    channels: usize,
+    /// The take's rate, which a summary hands on to the views it fills.
+    sample_rate: f64,
+    /// What came back, bucket-major from `start`, as the wire carries it.
+    stats: Vec<f32>,
+    /// Whether a request is out, and frames since it went (in ticks of
+    /// [`BufferFetches::tick`]).
+    asked: bool,
     stalled: usize,
+    purpose: PeaksFor,
 }
 
-/// **A walk over a buffer's summary**: what is left to ask for, and how long it
-/// has been since anything came back.
-///
-/// It lives here rather than in a front because it needs what the downloads
-/// need -- a reply that never arrives must not stop it. A summary is asked for
-/// once and answered in multitracks; a multitrack lost on a carrier that is allowed to
-/// lose one would otherwise leave a hole in the picture for the rest of the
-/// session, with nothing to notice it.
-struct PeaksWalk {
-    /// The next frame to ask from, and where the take ends.
-    next: usize,
-    end: usize,
-    bucket: usize,
-    channels: usize,
-    /// Frames since the last answer, in ticks of [`BufferFetches::tick`].
-    stalled: usize,
+impl PeaksAsk {
+    fn request(&self) -> OscMessage {
+        detail_request(self.bufnum, self.bucket, self.next, self.end - self.next)
+    }
+}
+
+/// **A summary conversation that has covered its span**: the grid, whole.
+#[derive(Debug)]
+pub(crate) struct PeaksDone {
+    pub bufnum: i32,
+    pub bucket: usize,
+    pub start: usize,
+    /// One past the last frame the grid covers -- the take's length, for a
+    /// summary.
+    pub end: usize,
+    pub channels: usize,
+    pub sample_rate: f64,
+    /// Bucket-major and channel-minor from `start`: min, max and mean square.
+    pub stats: Vec<f32>,
+    pub purpose: PeaksFor,
 }
 
 impl BufferFetches {
@@ -378,7 +415,10 @@ impl BufferFetches {
     }
 
     pub(crate) fn pending(&self) -> bool {
-        !self.wants.is_empty() || !self.fetches.is_empty() || !self.absent.is_empty()
+        !self.wants.is_empty()
+            || !self.fetches.is_empty()
+            || !self.absent.is_empty()
+            || !self.peaks.is_empty()
     }
 
     /// `/buffer_query.reply` for a buffer we are waiting on: the shape its
@@ -630,67 +670,57 @@ impl BufferFetches {
         self.channels.insert(bufnum, channels);
     }
 
-    /// **Starts a walk over `bufnum`'s summary**, returning the first
-    /// `/buffer_peaks` to send.
+    /// **Asks for `bufnum`'s summary at one level**, returning the first
+    /// `/buffer_peaks` to send -- `None` when that level is already on its way,
+    /// or when the request waits for room.
     ///
-    /// `bucket` must be the one the asking pyramid is built at, or what comes
-    /// back cannot be folded into it; `frames` is how long the take is, which
-    /// is what says when the walk is done.
-    pub(crate) fn want_peaks(
+    /// `bucket` is the level the views of it draw at (`summary_level`), and
+    /// the whole grid is handed back at once ([`PeaksDone`]) for whoever
+    /// builds the picture from it; `frames` is how long the take is, which is
+    /// what says when it is covered. Two levels of one take are two
+    /// conversations, so two windows at two widths do not end each other's.
+    pub(crate) fn want_summary(
         &mut self,
         bufnum: i32,
         bucket: usize,
         channels: usize,
         frames: usize,
+        sample_rate: f64,
     ) -> Option<OscMessage> {
         if bucket == 0 || frames == 0 {
             return None;
         }
-        let walk = PeaksWalk {
-            next: 0,
-            end: frames,
+        if self
+            .peaks
+            .iter()
+            .any(|a| a.bufnum == bufnum && a.bucket == bucket && a.purpose == PeaksFor::Summary)
+        {
+            return None; // that level of that take is already on its way
+        }
+        self.start_peaks(PeaksAsk {
+            bufnum,
             bucket,
+            start: 0,
+            end: frames,
+            next: 0,
             channels: channels.max(1),
+            sample_rate,
+            stats: Vec::new(),
+            asked: false,
             stalled: 0,
-        };
-        let msg = peaks_request(bufnum, walk.bucket, walk.next);
-        self.peaks.insert(bufnum, walk);
-        Some(msg)
-    }
-
-    /// One `/buffer_peaks.reply` landed: advance the walk and return the next
-    /// request, or `None` when the summary is covered (or nothing is walking
-    /// that buffer).
-    ///
-    /// The reply says where it began and its own length says how many buckets
-    /// it carried, so the walk reads its place out of the answer rather than
-    /// assuming the server answered the request it made.
-    pub(crate) fn on_peaks(&mut self, bufnum: i32, start: u64, stats: usize) -> Option<OscMessage> {
-        let walk = self.peaks.get_mut(&bufnum)?;
-        let buckets = stats / (walk.channels * 3);
-        if buckets == 0 {
-            self.peaks.remove(&bufnum); // no whole bucket left: it is covered
-            return None;
-        }
-        walk.stalled = 0;
-        walk.next = (start as usize + buckets * walk.bucket).max(walk.next);
-        // To the end, the last bucket too: the server answers one the take's
-        // end cuts short when the span runs to it.
-        if walk.next >= walk.end {
-            self.peaks.remove(&bufnum);
-            return None;
-        }
-        Some(peaks_request(bufnum, walk.bucket, walk.next))
+            purpose: PeaksFor::Summary,
+        })
     }
 
     /// **Asks for a finer grid over the span one view is showing**, or `None`
-    /// when that exact grid is already in flight for it.
+    /// when that exact grid is already on its way for it (or waits its turn).
     ///
-    /// `bucket` is finer than the view's own summary and the span is sized to
-    /// one reply, both decided where the zoom is known (`frame::owed`). The ask
-    /// is keyed by the view, so a new span for the same view **replaces** the
-    /// old one: what is wanted is where the eye is now, and a reply for a span
-    /// nobody is looking at any more is ignored when it lands.
+    /// `bucket` is finer than the view's own summary, decided where the zoom
+    /// is known (`frame::owed`). The ask is keyed by the view, so a new span
+    /// for the same view **replaces** the old one: what is wanted is where the
+    /// eye is now, and a reply for a span nobody is looking at any more is
+    /// ignored when it lands. It takes as many replies as the span needs.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn want_detail(
         &mut self,
         bufnum: i32,
@@ -699,53 +729,149 @@ impl BufferFetches {
         start: usize,
         frames: usize,
         bucket: usize,
+        channels: usize,
     ) -> Option<OscMessage> {
         if bucket == 0 || frames < bucket {
             return None;
         }
         let (start, frames) = align_span(start, frames, bucket);
-        let ask = DetailAsk {
-            bufnum,
-            start,
-            frames,
-            bucket,
-            stalled: 0,
-        };
-        if let Some(old) = self.details.get(&(def_id, widget_id))
-            && old.bufnum == bufnum
-            && old.start == start
-            && old.frames == frames
-            && old.bucket == bucket
-        {
-            return None; // the same grid is already on its way
+        let purpose = PeaksFor::Detail { def_id, widget_id };
+        if let Some(old) = self.peaks.iter().position(|a| a.purpose == purpose) {
+            let old = &self.peaks[old];
+            if old.bufnum == bufnum
+                && old.start == start
+                && old.end == start + frames
+                && old.bucket == bucket
+            {
+                return None; // the same grid is already on its way
+            }
+            self.peaks.retain(|a| a.purpose != purpose);
         }
-        let msg = detail_request(bufnum, bucket, start, frames);
-        self.details.insert((def_id, widget_id), ask);
-        Some(msg)
+        self.start_peaks(PeaksAsk {
+            bufnum,
+            bucket,
+            start,
+            end: start + frames,
+            next: start,
+            channels: channels.max(1),
+            sample_rate: 0.0,
+            stats: Vec::new(),
+            asked: false,
+            stalled: 0,
+            purpose,
+        })
     }
 
-    /// **One `/buffer_peaks.reply` that answers a view's detail grid**, or
-    /// `None` when it answers the summary walk instead (or nobody asked).
+    /// Notes that widget `widget_id` of window `def_id`, a plural asker, is
+    /// owed `bufnum`'s summary, to be asked once it has been drawn
+    /// ([`Self::take_owed_summaries`]).
+    pub(crate) fn owe(
+        &mut self,
+        def_id: i32,
+        widget_id: i32,
+        bufnum: i32,
+        shape: crate::host::widget::element::OwedSummary,
+    ) {
+        self.owed
+            .retain(|o| !(o.0 == def_id && o.1 == widget_id && o.2 == bufnum));
+        self.owed.push((def_id, widget_id, bufnum, shape));
+    }
+
+    /// The plural askers of window `def_id` still owed a summary.
+    pub(crate) fn owed_widgets(&self, def_id: i32) -> Vec<i32> {
+        self.owed
+            .iter()
+            .filter(|o| o.0 == def_id)
+            .map(|o| o.1)
+            .collect()
+    }
+
+    /// The summaries owed to plural askers of window `def_id`, handed out to
+    /// be asked for -- `width_of` answers each asker's drawn width, and one not
+    /// drawn yet stays owed.
+    pub(crate) fn take_owed_summaries(
+        &mut self,
+        def_id: i32,
+        width_of: impl Fn(i32) -> f32,
+    ) -> Vec<(i32, f32, crate::host::widget::element::OwedSummary)> {
+        let mut out = Vec::new();
+        self.owed.retain(|&(def, widget, bufnum, shape)| {
+            if def != def_id {
+                return true;
+            }
+            let width = width_of(widget);
+            if width < 1.0 {
+                return true;
+            }
+            out.push((bufnum, width, shape));
+            false
+        });
+        out
+    }
+
+    /// Files a conversation and asks its first request if there is room.
+    fn start_peaks(&mut self, ask: PeaksAsk) -> Option<OscMessage> {
+        self.peaks.push(ask);
+        self.ask_peaks().into_iter().next()
+    }
+
+    /// The first request of every conversation waiting its turn, while there
+    /// is room for one.
+    fn ask_peaks(&mut self) -> Vec<OscMessage> {
+        let room = PEAKS_IN_FLIGHT.saturating_sub(self.peaks.iter().filter(|a| a.asked).count());
+        let mut out = Vec::new();
+        for ask in self.peaks.iter_mut().filter(|a| !a.asked).take(room) {
+            ask.asked = true;
+            ask.stalled = 0;
+            out.push(ask.request());
+        }
+        out
+    }
+
+    /// **One `/buffer_peaks.reply` landed**: the conversation it answers, if
+    /// any, takes it. Returns that conversation whole when the reply covered
+    /// its span, and the requests to send -- its next one, or the first of a
+    /// conversation that was waiting for room.
     ///
-    /// The two are told apart by the **bucket**: a detail grid is asked for
-    /// finer than the view's own summary, which is the bucket a walk asks at,
-    /// so a reply carrying a bucket some view asked for at that start is that
-    /// view's. Consumed, because one reply is the whole grid.
-    pub(crate) fn detail_reply(
+    /// The reply says where it began and its own length says how many buckets
+    /// it carried, so the place is read out of the answer: a reply for a frame
+    /// nobody is asking from (a duplicate, or an answer to a grid a view has
+    /// moved on from) is nobody's.
+    pub(crate) fn on_peaks(
         &mut self,
         bufnum: i32,
         start: u64,
         bucket: usize,
-    ) -> Option<(i32, i32)> {
-        let key = *self
-            .details
-            .iter()
-            .find(|(_, ask)| {
-                ask.bufnum == bufnum && ask.bucket == bucket && ask.start as u64 == start
-            })
-            .map(|(key, _)| key)?;
-        self.details.remove(&key);
-        Some(key)
+        stats: &[f32],
+    ) -> (Option<PeaksDone>, Vec<OscMessage>) {
+        let Some(at) = self.peaks.iter().position(|a| {
+            a.asked && a.bufnum == bufnum && a.bucket == bucket && a.next as u64 == start
+        }) else {
+            return (None, Vec::new());
+        };
+        let ask = &mut self.peaks[at];
+        let buckets = stats.len() / (ask.channels * 3);
+        ask.stats
+            .extend_from_slice(&stats[..buckets * ask.channels * 3]);
+        ask.next += buckets * ask.bucket;
+        ask.stalled = 0;
+        // Covered, or nothing whole was left to answer: either way the grid is
+        // what came.
+        if buckets == 0 || ask.next >= ask.end {
+            let ask = self.peaks.remove(at);
+            let done = PeaksDone {
+                bufnum: ask.bufnum,
+                bucket: ask.bucket,
+                start: ask.start,
+                end: ask.end.min(ask.next),
+                channels: ask.channels,
+                sample_rate: ask.sample_rate,
+                stats: ask.stats,
+                purpose: ask.purpose,
+            };
+            return (Some(done), self.ask_peaks());
+        }
+        (None, vec![ask.request()])
     }
 
     /// **The frame clock of every conversation with the server**: what never
@@ -790,25 +916,17 @@ impl BufferFetches {
         for bufnum in abandoned {
             self.fetches.remove(&bufnum);
         }
-        for (bufnum, walk) in self.peaks.iter_mut() {
-            walk.stalled += 1;
-            if walk.stalled >= STALLED_ASKS {
-                walk.stalled = 0;
-                again.push(peaks_request(*bufnum, walk.bucket, walk.next));
-            }
-        }
-        // A detail grid is one request and one reply, so a lost reply is the
-        // whole of it: the view stays at the bucket it had with nothing to say
-        // so. Same clock, same reason.
-        for ask in self.details.values_mut() {
+        // **A summary conversation that went quiet** asks again from where it
+        // was, with nothing to undo: the answer is placed by the frame it
+        // names, so a duplicate is nobody's.
+        for ask in self.peaks.iter_mut().filter(|a| a.asked) {
             ask.stalled += 1;
             if ask.stalled >= STALLED_ASKS {
                 ask.stalled = 0;
-                again.push(detail_request(
-                    ask.bufnum, ask.bucket, ask.start, ask.frames,
-                ));
+                again.push(ask.request());
             }
         }
+        again.extend(self.ask_peaks());
         // **What the server said is not there is asked for again**, on the same
         // clock, and let go of when it stays away (see [`ABSENT_ASKS`]).
         self.absent
@@ -861,7 +979,9 @@ impl BufferFetches {
             wants.retain(|w| w.def_id != def_id);
         }
         self.wants.retain(|_, wants| !wants.is_empty());
-        self.details.retain(|(def, _), _| *def != def_id);
+        self.peaks
+            .retain(|a| !matches!(a.purpose, PeaksFor::Detail { def_id: d, .. } if d == def_id));
+        self.owed.retain(|o| o.0 != def_id);
         self.absent
             .retain(|bufnum, _| self.wants.contains_key(bufnum));
     }
@@ -884,6 +1004,25 @@ impl BufferFetches {
     }
 }
 
+/// **The level a take is summarized at for a view `width` pixels wide**: the
+/// coarsest bucket, `base * 2^k`, that still gives every column of the whole
+/// take at least one -- never resolving finer than the screen, so what the
+/// summary costs follows the width and not the length. Zoomed past it, a view
+/// asks for a finer grid over what it shows (`frame::owed`). `None` while the
+/// view has not been drawn, since nothing says how wide it is yet.
+pub(crate) fn summary_level(frames: usize, width: f32, base: usize) -> Option<usize> {
+    // A width that is not a number is not drawn either.
+    if width.is_nan() || width < 1.0 || base == 0 {
+        return None;
+    }
+    let per_column = frames as f64 / width as f64;
+    let mut bucket = base;
+    while (bucket * 2) as f64 <= per_column {
+        bucket *= 2;
+    }
+    Some(bucket)
+}
+
 /// **Widens a span to whole summary buckets.** A run that ends inside a bucket
 /// can only patch that bucket from part of it, which would report a peak the
 /// samples do not have -- so the request is widened rather than the answer
@@ -895,24 +1034,6 @@ pub(crate) fn align_span(start: usize, frames: usize, bucket: usize) -> (usize, 
     let first = (start / bucket) * bucket;
     let end = (start + frames).div_ceil(bucket) * bucket;
     (first, end - first)
-}
-
-/// **The `/buffer_peaks` that asks for a take's overview** from `first_frame`
-/// on, at the bucket the asking summary is built at -- so what comes back folds
-/// into it with nothing converted.
-///
-/// `frames` is left at "to the end": the server answers as much as one reply
-/// holds and says where it ended, which is what the walk reads.
-pub(crate) fn peaks_request(bufnum: i32, bucket: usize, first_frame: usize) -> OscMessage {
-    OscMessage {
-        addr: "/buffer_peaks".into(),
-        args: vec![
-            OscType::Int(bufnum),
-            OscType::Int(bucket as i32),
-            OscType::Int(first_frame as i32),
-            OscType::Int(-1),
-        ],
-    }
 }
 
 /// **The `/buffer_peaks` that asks for a finer grid over one span** -- the same
@@ -1418,77 +1539,114 @@ mod tests {
         assert!(samples.iter().all(|s| *s == 0.5));
     }
 
-    /// **A summary arrives in multitracks and the walk survives losing one.** The
-    /// carrier may drop a reply -- a full ring drops rather than blocks -- so a
-    /// walk that hears nothing asks again instead of leaving a hole in the
-    /// picture that nothing would ever notice.
-    #[test]
-    fn a_summary_walk_advances_on_each_answer_and_asks_again_when_one_is_lost() {
-        let mut fetches = BufferFetches::default();
-        // A stereo take of 40 buckets, answered ten buckets at a time.
-        let msg = fetches
-            .want_peaks(3, 256, 2, 40 * 256)
-            .expect("a take longer than a bucket is walked");
-        assert_eq!(msg.addr, "/buffer_peaks");
-        assert_eq!(ints(&msg), vec![3, 256, 0, -1]);
+    /// `n` buckets of `channels` channels, each bucket's numbers its index.
+    fn grid(n: usize, channels: usize) -> Vec<f32> {
+        (0..n)
+            .flat_map(|b| std::iter::repeat_n(b as f32, channels * 3))
+            .collect()
+    }
 
-        let next = fetches
-            .on_peaks(3, 0, 10 * 2 * 3)
-            .expect("more of the take is left");
-        assert_eq!(
-            ints(&next),
-            vec![3, 256, 10 * 256, -1],
-            "it continues where the answer ended, not where the request did"
+    /// **A summary comes over several replies and is handed over whole**, and
+    /// the conversation survives losing one. The carrier may drop a reply -- a
+    /// full ring drops rather than blocks -- so a walk that hears nothing asks
+    /// again instead of leaving the view at the picture it had.
+    #[test]
+    fn a_summary_is_collected_and_handed_over_whole() {
+        let mut fetches = BufferFetches::default();
+        // A stereo take of 40 buckets of 1024, answered ten buckets at a time.
+        let msg = fetches
+            .want_summary(3, 1_024, 2, 40 * 1_024, 48_000.0)
+            .expect("the first request");
+        assert_eq!(msg.addr, "/buffer_peaks");
+        assert_eq!(ints(&msg), vec![3, 1_024, 0, 40 * 1_024]);
+        assert!(
+            fetches
+                .want_summary(3, 1_024, 2, 40 * 1_024, 48_000.0)
+                .is_none(),
+            "that level of that take is already on its way"
         );
 
-        // Nothing comes back. The frame ticks, and the same multitrack is asked for
-        // again once the silence has gone on long enough.
+        let (done, next) = fetches.on_peaks(3, 0, 1_024, &grid(10, 2));
+        assert!(done.is_none(), "nothing is handed over half done");
+        assert_eq!(
+            ints(&next[0]),
+            vec![3, 1_024, 10 * 1_024, 30 * 1_024],
+            "it continues where the answer ended"
+        );
+        // Nothing comes back: the frame ticks and the same request goes again.
         for _ in 0..STALLED_ASKS - 1 {
             assert!(fetches.tick().is_empty(), "a moment's wait is not a loss");
         }
         let again = fetches.tick();
-        assert_eq!(again.len(), 1);
-        assert_eq!(
-            ints(&again[0]),
-            vec![3, 256, 10 * 256, -1],
-            "the same multitrack"
-        );
+        assert_eq!(ints(&again[0]), vec![3, 1_024, 10 * 1_024, 30 * 1_024]);
+        // A duplicate of the first answer is nobody's.
+        assert!(fetches.on_peaks(3, 0, 1_024, &grid(10, 2)).0.is_none());
 
-        // The rest lands, and the walk ends rather than asking past the take.
-        assert!(fetches.on_peaks(3, 10 * 256, 30 * 2 * 3).is_none());
+        let (done, next) = fetches.on_peaks(3, 10 * 1_024, 1_024, &grid(30, 2));
+        let done = done.expect("the take is covered");
+        assert!(next.is_empty());
+        assert_eq!((done.bufnum, done.bucket, done.end), (3, 1_024, 40 * 1_024));
+        assert_eq!(done.purpose, PeaksFor::Summary);
+        assert_eq!(done.stats.len(), 40 * 2 * 3, "every bucket, in order");
+        assert_eq!(done.stats[10 * 6], 0.0, "the second answer from its start");
         assert!(fetches.tick().is_empty(), "a finished walk ticks nothing");
+    }
+
+    /// **Two levels of one take are two conversations**, so two windows at
+    /// two widths do not end each other's; and at most two summary
+    /// conversations answer at once, a third waiting for room in the ring.
+    #[test]
+    fn levels_are_their_own_conversations_and_the_ring_bounds_them() {
+        let mut fetches = BufferFetches::default();
+        assert!(fetches.want_summary(3, 256, 1, 10_000, 0.0).is_some());
+        assert!(fetches.want_summary(3, 4_096, 1, 10_000, 0.0).is_some());
         assert!(
-            fetches.on_peaks(3, 0, 6).is_none(),
-            "and a late answer to a walk that ended is nobody's"
+            fetches.want_summary(4, 256, 1, 10_000, 0.0).is_none(),
+            "a third waits"
+        );
+        let (done, next) = fetches.on_peaks(3, 0, 4_096, &grid(3, 1));
+        assert!(done.is_some(), "the coarse level is done");
+        assert_eq!(
+            ints(&next[0]),
+            vec![4, 256, 0, 10_000],
+            "and the third asks"
         );
     }
 
-    /// **A walk runs to the take's end, its last short bucket too**: the server
-    /// answers a bucket the end cuts short when the span runs to it, so a walk
-    /// whose answer stopped on a whole bucket asks once more, and a take
-    /// shorter than one bucket is asked for at all.
+    /// **A walk runs to the take's end, its last short bucket too**, and a
+    /// take shorter than one bucket is asked for at all.
     #[test]
-    fn a_summary_walk_asks_for_the_tail_shorter_than_a_bucket() {
+    fn a_summary_runs_to_the_tail_shorter_than_a_bucket() {
         let mut fetches = BufferFetches::default();
-        // Ten buckets and a hundred frames, the first answer covering ten.
-        fetches.want_peaks(3, 256, 1, 10 * 256 + 100).unwrap();
-        let tail = fetches
-            .on_peaks(3, 0, 10 * 3)
-            .expect("a hundred frames are left");
-        assert_eq!(ints(&tail), vec![3, 256, 10 * 256, -1]);
-        assert!(
-            fetches.on_peaks(3, 10 * 256, 3).is_none(),
-            "and then it ends"
-        );
+        fetches
+            .want_summary(3, 256, 1, 10 * 256 + 100, 0.0)
+            .unwrap();
+        let (done, next) = fetches.on_peaks(3, 0, 256, &grid(10, 1));
+        assert!(done.is_none());
+        assert_eq!(ints(&next[0]), vec![3, 256, 10 * 256, 100]);
+        let done = fetches.on_peaks(3, 10 * 256, 256, &grid(1, 1)).0;
+        assert_eq!(done.expect("covered").stats.len(), 11 * 3);
 
-        let short = fetches
-            .want_peaks(4, 256, 1, 100)
-            .expect("a take shorter than a bucket has a summary too");
-        assert_eq!(ints(&short), vec![4, 256, 0, -1]);
+        assert!(fetches.want_summary(4, 256, 1, 100, 0.0).is_some());
         assert!(
-            fetches.want_peaks(5, 256, 1, 0).is_none(),
+            fetches.want_summary(5, 256, 1, 0, 0.0).is_none(),
             "an empty one has none"
         );
+    }
+
+    /// The level a view's summary is asked at: the coarsest that gives every
+    /// column a bucket, never finer than the base.
+    #[test]
+    fn the_level_follows_the_width() {
+        let ten_minutes = 10 * 60 * 48_000;
+        assert_eq!(summary_level(ten_minutes, 760.0, 256), Some(32_768));
+        assert_eq!(summary_level(ten_minutes, 1_520.0, 256), Some(16_384));
+        assert_eq!(
+            summary_level(96_000, 760.0, 256),
+            Some(256),
+            "never finer than the base"
+        );
+        assert_eq!(summary_level(ten_minutes, 0.0, 256), None, "not drawn yet");
     }
 
     /// A span is widened to whole buckets, so what comes back can replace what
@@ -1516,38 +1674,48 @@ mod tests {
         ));
     }
 
-    /// **A finer grid is one request and one reply, and it is one view's.**
-    /// The same view asking for the same grid does not ask twice; a new span
-    /// replaces the old; and a reply is routed by the bucket it was measured
-    /// at, so the walk's own replies are never taken for a detail.
+    /// **A finer grid is one view's, and it comes over as many replies as it
+    /// needs.** The same view asking for the same grid does not ask twice; a
+    /// new span replaces the old; the grid is handed over whole; a lost reply
+    /// is asked again; and a window closing takes its grids with it.
     #[test]
-    fn a_detail_grid_is_one_conversation_per_view_and_is_told_by_its_bucket() {
+    fn a_detail_grid_is_one_conversation_per_view() {
         let mut fetches = BufferFetches::default();
         let msg = fetches
-            .want_detail(7, 1, 100, 4_096, 8_192, 32)
+            .want_detail(7, 1, 100, 4_096, 8_192, 32, 2)
             .expect("the grid asks");
         assert_eq!(msg.addr, "/buffer_peaks");
         assert_eq!(ints(&msg), vec![7, 32, 4_096, 8_192]);
         assert!(
-            fetches.want_detail(7, 1, 100, 4_096, 8_192, 32).is_none(),
+            fetches
+                .want_detail(7, 1, 100, 4_096, 8_192, 32, 2)
+                .is_none(),
             "the same grid is already on its way"
         );
         // Another view of the same take, at its own zoom over its own span.
-        assert!(fetches.want_detail(7, 1, 200, 0, 8_192, 64).is_some());
+        assert!(fetches.want_detail(7, 1, 200, 0, 8_192, 64, 2).is_some());
 
-        // A reply at a bucket nobody asked for is not a detail -- it is the
-        // summary walk's, and goes to the pyramid itself.
-        assert_eq!(fetches.detail_reply(7, 4_096, 256), None);
-        assert_eq!(fetches.detail_reply(9, 4_096, 32), None, "another buffer");
-        assert_eq!(fetches.detail_reply(7, 4_096, 32), Some((1, 100)));
+        // 256 buckets of 32 over the first view's span, in two replies.
+        let (done, next) = fetches.on_peaks(7, 4_096, 32, &grid(100, 2));
+        assert!(done.is_none(), "half a grid is not handed over");
+        assert_eq!(ints(&next[0]), vec![7, 32, 4_096 + 3_200, 8_192 - 3_200]);
+        let done = fetches
+            .on_peaks(7, 4_096 + 3_200, 32, &grid(156, 2))
+            .0
+            .expect("the grid is whole");
         assert_eq!(
-            fetches.detail_reply(7, 4_096, 32),
-            None,
-            "one reply is the whole grid: it is consumed"
+            done.purpose,
+            PeaksFor::Detail {
+                def_id: 1,
+                widget_id: 100
+            }
+        );
+        assert_eq!(
+            (done.start, done.end, done.stats.len()),
+            (4_096, 12_288, 256 * 6)
         );
 
-        // The other view's is still waiting, and a lost reply is asked for
-        // again on the same clock a walk is.
+        // The other view's is still waiting, and asked again when nothing came.
         for _ in 0..STALLED_ASKS - 1 {
             assert!(fetches.tick().is_empty());
         }
@@ -1555,9 +1723,11 @@ mod tests {
         assert_eq!(again.len(), 1, "the grid nobody answered");
         assert_eq!(ints(&again[0]), vec![7, 64, 0, 8_192]);
 
-        // A window closing takes its grids with it.
         fetches.drop_def(1);
-        assert_eq!(fetches.detail_reply(7, 0, 64), None);
+        assert!(
+            fetches.on_peaks(7, 0, 64, &grid(128, 2)).0.is_none(),
+            "closed with its window"
+        );
     }
 
     /// A span that does not start on a bucket boundary is widened to one: a
@@ -1567,12 +1737,11 @@ mod tests {
     fn a_detail_grid_is_asked_for_on_whole_buckets() {
         let mut fetches = BufferFetches::default();
         let msg = fetches
-            .want_detail(3, 1, 10, 1_000, 500, 64)
+            .want_detail(3, 1, 10, 1_000, 500, 64, 1)
             .expect("the grid asks");
         assert_eq!(ints(&msg), vec![3, 64, 960, 576]);
-        assert_eq!(fetches.detail_reply(3, 960, 64), Some((1, 10)));
         // Nothing to summarize: a span shorter than one bucket.
-        assert!(fetches.want_detail(3, 1, 10, 0, 32, 64).is_none());
-        assert!(fetches.want_detail(3, 1, 10, 0, 640, 0).is_none());
+        assert!(fetches.want_detail(3, 1, 10, 0, 32, 64, 1).is_none());
+        assert!(fetches.want_detail(3, 1, 10, 0, 640, 0, 1).is_none());
     }
 }

@@ -161,6 +161,10 @@ const MIN_CLIP_W: f32 = 3.0;
 pub struct Multitrack {
     /// The tracks, top to bottom.
     pub(crate) tracks: Vec<TrackRow>,
+    /// The widest any clip's picture was last drawn, in physical pixels: the
+    /// width the takes' summaries are asked for
+    /// ([`Element::drawn_width`]).
+    pub(crate) drawn_px: std::cell::Cell<f32>,
     /// The clips, each naming the track it is on.
     pub(crate) clips: Vec<Clip>,
     /// **The track automations**: each a row of its own under the track it
@@ -357,6 +361,7 @@ impl Default for Multitrack {
     fn default() -> Self {
         Self {
             tracks: Vec::new(),
+            drawn_px: std::cell::Cell::new(0.0),
             clips: Vec::new(),
             curves: Vec::new(),
             layers: Vec::new(),
@@ -481,6 +486,15 @@ impl boxes::Holder for Multitrack {
 impl Element for Multitrack {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         self.apply_prop(key, v)
+    }
+
+    fn drawn_width(&self) -> f32 {
+        self.drawn_px.get()
+    }
+
+    // The widest of its clips, so one level answers every box of a take.
+    fn note_width(&self, px: f32) {
+        self.drawn_px.set(self.drawn_px.get().max(px));
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {

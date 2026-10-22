@@ -117,6 +117,16 @@ code that keeps it lives.
   redefines the window (`restructure`), and the host keeps the zoom, the
   selection and the layer in hand.
 
+- **An edit replaces a picture whole, never from the left.** A take edited
+  under the same buffer (a paste, a cut, an undo: the owner's `reload`) goes
+  on being drawn as it was until the summary of the new take has come whole,
+  and is then replaced at once, extent included. A view asks for a take's
+  summary at the level its width resolves, once it has been drawn, so what an
+  edit costs follows the window's width and not the take's length; zoomed
+  past that level it asks a finer grid over what it shows, handed over whole
+  too. A view that is not drawn (a window closed, a canvas off screen) asks
+  for nothing.
+
 ## The time axis
 
 - **A take bounds its axis.** A group that holds a view of stored samples (a

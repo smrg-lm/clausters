@@ -740,8 +740,10 @@ impl WaveformData {
             return false;
         }
         let buckets = stats.len() / stride;
-        let frames = buckets * bucket;
-        if start + frames > self.total_samples() {
+        // The last bucket of a grid that runs to the take's end holds what is
+        // left of it.
+        let frames = (buckets * bucket).min(self.total_samples().saturating_sub(start));
+        if frames == 0 || frames.div_ceil(bucket) != buckets {
             return false;
         }
         let mut multi = MultiPyramid::empty(frames, channels, bucket);

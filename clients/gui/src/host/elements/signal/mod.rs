@@ -553,6 +553,12 @@ pub struct SignalElement {
     /// [`SignalElement::reread`] and taken by
     /// [`Samples::wants_reload`](crate::host::widget::element::Samples::wants_reload).
     pub reload_asked: bool,
+    /// The summary this view is waiting for, while the picture it holds stays
+    /// drawn ([`Samples::owed_summary`](crate::host::widget::element::Samples::owed_summary)).
+    pub owed_summary: Option<crate::host::widget::element::OwedSummary>,
+    /// How wide its picture was last drawn, in physical pixels
+    /// ([`Element::drawn_width`](crate::host::widget::element::Element::drawn_width)).
+    pub drawn_px: std::cell::Cell<f32>,
     /// The edit the hand is making **right now**, before anyone has applied it.
     ///
     /// The host owns no data, so a dragged sample is not a change to the
@@ -618,6 +624,8 @@ impl SignalElement {
             live: LiveState::default(),
             slot_dirty: true,
             reload_asked: false,
+            owed_summary: None,
+            drawn_px: std::cell::Cell::new(0.0),
         }
     }
 

@@ -43,7 +43,15 @@ impl SignalElement {
         if data.path.is_none() && data.cache.is_none() && data.buffer.is_none() {
             return;
         }
-        data.body = None;
+        // **A server buffer keeps the picture it has** until the new one has
+        // come whole: an edit replaces the take under the same number, and a
+        // view that forgot its body here drew nothing, then the new summary
+        // filling in from the left. A file or a cache is read again at once,
+        // and forgets.
+        let keeps = data.buffer.is_some() && data.path.is_none() && data.cache.is_none();
+        if !keeps {
+            data.body = None;
+        }
         // **The ask a loader answers.** The comment on the `reload` prop says
         // the loader picks it up on the next pass, and for a long time there
         // was no next pass: the bulk walk ran once, when the window opened, so
@@ -79,7 +87,7 @@ impl SignalElement {
             return None;
         }
         self.reload_asked = false;
-        self.want()
+        self.want_ignoring_body()
     }
 
     /// The bulk resource this element wants, in the form it draws from, or
@@ -91,6 +99,17 @@ impl SignalElement {
     /// samples, and a server buffer being the one thing the host has to ask
     /// another process for.
     pub fn want(&self) -> Option<Bulk> {
+        self.wanted(true)
+    }
+
+    /// [`Self::want`] as if nothing were drawn yet -- what a `reload` asks for,
+    /// since a server buffer keeps the picture it has until the new one comes
+    /// ([`Self::reread`]).
+    fn want_ignoring_body(&self) -> Option<Bulk> {
+        self.wanted(false)
+    }
+
+    fn wanted(&self, held_counts: bool) -> Option<Bulk> {
         let Source::Data(data) = &self.source else {
             return None; // a bus is fed forward-only; there is nothing to load
         };
@@ -138,7 +157,7 @@ impl SignalElement {
                 _ => None,
             };
         }
-        if data.body.is_some() {
+        if held_counts && data.body.is_some() {
             return None; // the pyramid is already here
         }
         // **A take being recorded into is asked for its shape, not its
@@ -171,7 +190,9 @@ impl SignalElement {
                 base_bucket: data.base_bucket,
             });
         }
-        data.buffer.filter(|_| data.is_empty()).map(Bulk::Buffer)
+        data.buffer
+            .filter(|_| !held_counts || data.is_empty())
+            .map(Bulk::Buffer)
     }
 
     /// The GPU slot this element claims, when its picture cannot go into the

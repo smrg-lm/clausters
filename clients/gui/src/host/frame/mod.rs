@@ -656,9 +656,12 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
     }
 }
 
-/// **How many buckets one `/buffer_peaks` reply carries** (`docs/schemas.md`),
-/// which is what bounds the span one request can summarize.
-const DETAIL_REPLY_BUCKETS: usize = 4096;
+/// **How many buckets one detail grid may hold**: what bounds the span one
+/// grid summarizes. A grid comes over as many replies as it needs (a reply is
+/// 8 KiB, `docs/schemas.md`) and is handed to the view whole, so this is a
+/// bound on the grid's cost -- a dozen replies of stereo at most -- and not on
+/// one reply.
+const DETAIL_GRID_BUCKETS: usize = 4096;
 
 /// **The grid to ask for a span of `span` frames at `per_px` samples a pixel**,
 /// or `None` where no summary is worth asking for and the samples are the
@@ -668,10 +671,10 @@ const DETAIL_REPLY_BUCKETS: usize = 4096;
 /// the fold's position error stays under half a pixel -- one bucket a column
 /// would put it at a whole one, which is the resolution the coarse summary
 /// already has and the reason this is being asked for at all. And the span has
-/// to fit **one reply**: a detail grid is replaced rather than extended (one
-/// grid per view, like one window per view), so a span that would need two
-/// requests is summarized at a coarser bucket instead, which is still finer
-/// than the view's own and still one round trip.
+/// to fit **one grid**: a detail grid is replaced rather than extended (one
+/// grid per view, like one window per view), so a span that would need more
+/// than [`DETAIL_GRID_BUCKETS`] is summarized at a coarser bucket instead,
+/// which is still finer than the view's own.
 ///
 /// It returns a power of two so a zoom holds still: a grid at `bucket` answers
 /// every column from `bucket` samples wide upwards (the levels above it are the
@@ -687,8 +690,8 @@ fn detail_bucket(per_px: f64, span: usize, base: usize) -> Option<usize> {
     while (bucket * 2) as f64 <= target {
         bucket *= 2;
     }
-    // Coarsened until one reply holds the whole span.
-    while bucket < base && span.div_ceil(bucket) > DETAIL_REPLY_BUCKETS {
+    // Coarsened until one grid holds the whole span.
+    while bucket < base && span.div_ceil(bucket) > DETAIL_GRID_BUCKETS {
         bucket *= 2;
     }
     (bucket < base).then_some(bucket)
@@ -3009,7 +3012,7 @@ mod tests {
         assert_eq!(detail_bucket(1_000.0, 8_192, base), None);
         // A span too long for one reply is summarized coarser rather than in
         // two, because a grid is replaced and not extended.
-        let long = DETAIL_REPLY_BUCKETS * 64;
+        let long = DETAIL_GRID_BUCKETS * 64;
         assert_eq!(detail_bucket(64.0, long, base), Some(64));
         assert_eq!(
             detail_bucket(64.0, long * 8, base),

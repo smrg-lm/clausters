@@ -303,6 +303,7 @@ pub(super) fn collect_widgets(
                     // its picture goes and at what vertical window, the axis
                     // says the rest (the chrome every group member shares).
                     let mut timeline = |body: Rect, look: TimelineLook| {
+                        el.note_width(body.w);
                         if let Some(editor) = p.widget.kind.editor() {
                             timeline_items.push(TimelineItem {
                                 id,

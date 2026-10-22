@@ -280,11 +280,20 @@ fn a_redefine_over_the_same_buffer_keeps_what_the_host_loaded() {
     assert!(!summary(&host), "a different buffer starts empty");
 }
 
+/// Whether the take of widget 40 is owed a read -- what a front's bulk walk
+/// asks the server for next.
+fn rereads(host: &mut Host) -> bool {
+    host.window_def_mut(1)
+        .and_then(|t| t.find_mut(40))
+        .and_then(|w| w.kind.as_samples_mut())
+        .is_some_and(|s| s.wants_reload().is_some())
+}
+
 #[test]
-fn a_take_told_to_read_again_carries_nothing() {
+fn a_take_told_to_read_again_keeps_its_picture_and_asks() {
     // `reload` is the owner saying the samples changed under the same
-    // buffer -- an undo over it. What was loaded is then exactly what must
-    // not survive.
+    // buffer -- an undo over it. The picture stays drawn until the new one
+    // has come, and the read is owed.
     let mut host = Host::new();
     define(&mut host, &buffer_view(7, "trace"));
     resolve(&mut host);
@@ -300,11 +309,12 @@ fn a_take_told_to_read_again_carries_nothing() {
         from(),
     );
     define(&mut host, &buffer_view(7, "trace"));
-    assert!(!summary(&host), "re-read, it asks again");
+    assert!(summary(&host), "the picture before the edit stays drawn");
+    assert!(rereads(&mut host), "re-read, it asks again");
 }
 
 #[test]
-fn a_redefine_that_says_reload_carries_nothing() {
+fn a_redefine_that_says_reload_keeps_its_picture_and_asks() {
     // The owner can say it in the def itself: the same buffer, read again.
     let mut host = Host::new();
     define(&mut host, &buffer_view(7, "trace"));
@@ -313,7 +323,11 @@ fn a_redefine_that_says_reload_carries_nothing() {
         &mut host,
         &buffer_view(7, "trace").replace(r#""channels":1"#, r#""channels":1,"reload":true"#),
     );
-    assert!(!summary(&host), "the def said the samples changed");
+    assert!(
+        summary(&host),
+        "the picture stays until the new one has come"
+    );
+    assert!(rereads(&mut host), "the def said the samples changed");
 }
 
 #[test]
