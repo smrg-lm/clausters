@@ -4650,3 +4650,15 @@ wrong.
   the script on the editor, as the page does, or teaching the audit that the
   host a `wait` is reached through is part of the ending, makes the pair read
   as one.
+
+- ⬜ **A paste refused for what the clipboard holds says nothing**
+  *(found 2026-10-22, the eye pass over `editors/audio_lifecycle`)*. Text
+  copied in another program after a copy of samples is what a paste pastes,
+  and over a take it is refused -- correctly -- but in silence: Ctrl+V does
+  nothing, a script's `paste()` returns as though it had pasted, and the
+  window's readings still say `samples` until it publishes them again, since
+  the host reads the platform's clipboard only at the paste. Found when the
+  steps were copied from one terminal into another, which put each command's
+  text on the clipboard between `copy_first()` and `paste_second()`. The
+  refusal should be said where a refusal is said, and the readings follow
+  the clipboard.

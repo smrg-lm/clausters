@@ -165,6 +165,10 @@ already carry it.
   display** *(`clients/gui/PLAN.md`, Found by use)*. Found in the eye pass
   over the audio editor's lifecycle example; the cause is not established.
 
+- ⬜ **A paste refused for what the clipboard holds says nothing**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found in the eye pass
+  over the audio editor's lifecycle example.
+
 - ⬜ **The Open file chooser gives its label too much of the width**
   *(`clients/gui/PLAN.md`, Found by use)*. Small; the room it frees is where a
   file preview could go later.
