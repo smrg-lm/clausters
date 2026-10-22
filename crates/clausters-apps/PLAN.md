@@ -2833,6 +2833,158 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   that an additional option in a migrated editor requires no new lifecycle
   orchestration in clients or application-specific shared infrastructure.
 
+### The turn: an application's takes live on disk
+
+*Opened 2026-10-22 by the user, after successive pastes of a long selection
+failed natively with `no reply to /buffer_stitch`.* The audio editor's model
+does not reach a file of hours, and the failure showed why: every open file is
+read whole into a pool buffer (`/buffer_allocRead`), a copy is made in the
+server's memory (`/buffer_gen copy`), and a server that shares its buffers
+copies each new join whole into a region a peer maps and summarizes it. So the
+cost of an edit grows with the take and its memory with the history; once one
+copy passed the client's 5 s, the reply was given up for lost. Making each of
+those cheaper (`G44`, the region copied part by part) does not change their
+order. The model below replaces it, for the audio editor and the multitrack
+alike, and is what the milestones of this section build.
+
+**The model** (decided with the user, 2026-10-22):
+
+- **Two kinds of samples.** A **pool buffer** is finite and short and lives in
+  a server's memory: a sampler's samples, an oscillator's table, a stroke
+  being drawn. A **file** is any length its format admits (W64, RF64: hours or
+  days) and lives on disk, never read whole. An application's takes are files.
+- **Segments over either.** A segment list (a part names a source, a frame
+  range, its fades and its channel map) is one logic whatever its parts
+  name; only where the data is differs. A sampler reads segments of pool
+  buffers with random access; an editor and a multitrack read segments of
+  files as a stream.
+- **The session holds metadata only.** The audio editor works as the
+  multitrack does: an edit is a new segment list over files that never
+  change. Cut, copy, paste, move, undo and redo move no samples at any length,
+  and the clipboard holds segments.
+- **Two servers, by the kind of work.** The **RT server** plays a list, and
+  previews an effect live, reading the files ahead of the playhead. The **NRT
+  server** processes: a gain, a mix, a stroke, an effect, a consolidation each
+  read their spans from disk and write a new file in the session's working
+  folder, which the list then names. A render is temporary until it is saved,
+  and so is the folder.
+- **Several NRT servers, and the RT server beside them.** A render reads
+  files that never change and writes a new one, so renders share no state and
+  run on as many NRT instances at once as the cores and the disk allow: two
+  files processed at the same time, or a long render split into spans where
+  the process keeps no state across them (one with a tail or memory overlaps
+  its spans). They finish in any order, and an edit names its render only once
+  it is done, which is the coordinator's per-completion wait. The RT server
+  goes on playing while they work: it previews an effect live, and when the
+  render lands the list names the new file with no break in what is heard. It
+  can also play a render still being written, up to how far it is written
+  (the frontier `S20` publishes); the other way round, the RT server records
+  and an NRT instance measures what it recorded.
+- **The server holds audio functions, not editing.** No command exists for
+  one application's verb: an edit's processing is a def rendered offline, so
+  `/buffer_gain`, `/buffer_reverse`, `/buffer_mix` and `/buffer_render` go
+  (root `PLAN.md`, `S23`).
+- **Drawing reads the files.** Each file has a peaks file (the CLPK
+  format), written once, by a peaks UGen beside the `DiskOut` that writes the
+  samples or by an NRT render over an imported file. The host composes a list's
+  picture from its parts' peaks and reads a short span of a file when a view
+  is zoomed to samples: from disk natively, from OPFS in a page.
+- **Memory is bounded by the work in hand, never by a take's length**: the RT
+  reader's ring, the NRT's blocks, the window's columns.
+
+**What stays.** The document's `Location::File` and `Location::Segments`, and a
+`Part` that already names a source and a range; the segment logic of
+`dsp::stitch`, generalized; G44's composition of a join's summary, moved from
+the server to `clausters-core`; the host's asking at the drawn level and
+placing whole (`G44c`); `DiskIn`'s thread and ring; the NRT session; and, for
+pool buffers, `/buffer_stitch`, `/buffer_parts` and `/buffer_peaks`.
+
+**What goes.** Reading a take whole to open it, `/buffer_gen copy` as the
+editor's copy, the region copy of a join and its overview, and the four edit
+commands above.
+
+**The decisions**, refined with the user on 2026-10-22 after the plan was
+written; none is left open:
+
+1. ✅ **Reverse** *(decided 2026-10-22 by the user)*. As an edit it is
+   processing, so it is an NRT render like a gain, in `X28`. Reading
+   backwards is the RT reader's capability, a playhead that runs backwards,
+   and is filed in the root plan's Future directions ("A list reader plays
+   backwards"); once it exists, a part read backwards can be the editor's
+   optimization of a reverse over a long file.
+2. ✅ **Who writes a file's peaks** *(decided 2026-10-22 by the user)*. A
+   UGen of its own, beside `DiskOut` and not inside it: each writes its own
+   data to its own file. A render or a recording that wants its file drawn
+   puts both on the same signal, and an imported file is measured by an NRT
+   render of `DiskIn` into the peaks UGen alone. No command is added, and the
+   audio is not copied.
+3. ✅ **The base bucket of a peaks file on disk** is the one the format
+   already has, 256 frames: no decision was needed. With its levels a peaks
+   file is about 2.3 % of an f32 file, 3.1 % of a 24-bit one and 4.7 % of a
+   16-bit one (a day of 48 kHz stereo is about 0.78 GB of peaks).
+4. ✅ **Saving over the file that was opened** *(decided 2026-10-22 by the
+   user)*. Undo keeps working after a save. The save renders to a new file
+   and replaces the original by a rename; the original's content moves to the
+   working folder and is deleted by `O34`'s rule, when nothing names it.
+   Another session editing the same file is concurrent editing, as with two
+   desktop applications over one file: when the file changes on disk the
+   other is told in the standard way, and nothing is shared between them.
+   Two windows of one session are views of one document and are not this
+   case.
+5. ✅ **The working folder, and where peaks live** *(decided 2026-10-22 by
+   the user)*. The audio editor's working folder is temporary: its renders
+   and the peaks of what it opened live there, nothing is written beside the
+   user's file, and the folder goes when the editor closes. A render is
+   deleted earlier, as soon as no history entry and no clipboard names it.
+   The multitrack keeps its peaks, as the field does, beside the files or in
+   a tree of their own; which of the two is `X29`'s.
+6. ✅ **How the RT reader follows the transport** is not a decision: `S21`
+   states it (positioned by the transport, refilled on a locate), and what is
+   left, its ring size and how far ahead of a seam it reads, is measured
+   there against comping parts a quarter second long from different files.
+
+**The order**: `S21` and `S22` (root `PLAN.md`), `O34`
+(`crates/clausters-document/PLAN.md`), `G45` (`clients/gui/PLAN.md`), then
+`X28`, `X29` here, and `S23` last, once nothing calls what it removes. The
+turn comes before `X25`, which ports the audio editor's lifecycle to the other
+editors and should port this one.
+
+- ⬜ **X28 - The audio editor edits files on disk.** After `S21`, `S22`,
+  `O34` and `G45`. Opening a file reads its header and its peaks (measured
+  once if it has none) and nothing else; every edit is a list; the clipboard
+  holds segments; processing (gain, reverse, mix, a stroke,
+  an effect) is an NRT render into the working folder; playing and previewing
+  are the RT server's list reader; saving writes the session, or consolidates
+  the list into a file by an NRT render. The editor's shared crate, both
+  clients and the standalone host change together; nothing reads a take
+  whole. **Acceptance:** on a two-hour stereo file and a synthetic W64 file of
+  more than 4 GB, ten successive pastes of an hour each answer in the same
+  time as one paste into a two-second take, reading no samples but those
+  under the seams' fades; the server's and the host's memory stay flat across the
+  ten and across undo and redo; copy and paste between two windows and two
+  files move no samples; a gain over an hour is an NRT render whose progress
+  is shown and which leaves the RT server playing; two renders over two files
+  run on two NRT instances at once and land in either order; an effect
+  previewed live and then applied goes from the preview to its render with
+  nothing heard but the effect; a save of the session is
+  instant and a consolidation's file reads back sample for sample; a save over
+  the opened file keeps undo working past it, and a second session over that
+  file is told the file changed on disk. The
+  example pair `editors/audio_lifecycle` runs as before, natively and in a
+  page; by eye and by ear with two windows.
+
+- ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
+  After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
+  reading files into pool buffers and stitching joins in memory: a track
+  plays its regions through the RT list reader, and a bounce or a freeze is an
+  NRT render into the session's folder. Its peaks are kept, beside the files or
+  in a tree of their own (the turn's fifth decision leaves the choice here). **Acceptance:** a session of several
+  tracks of hour-long takes opens in the time it takes to read their peaks,
+  plays from any position, and a comping pass of quarter-second parts plays
+  without a click or an underrun; the server's memory does not grow with the
+  takes; the multitrack example pair and a saved session open and sound
+  natively, in a page and in the standalone host.
+
 ## Definition of done (per milestone)
 
 The project rule: code plus tests, a clear commit message, this file's checkbox,

@@ -10727,3 +10727,38 @@ segment copies an edit's join into a region a peer maps. Filled part by part
 and summarized from the region's cells, that is 183 ms for ten minutes of
 stereo, from 545 ms sample by sample; it stays a pass over the take for as long
 as a peer maps a join flattened (the GUI plan's "Found by use").
+
+## An application's takes live on disk, and the server holds audio functions (2026-10-22)
+
+*Decided 2026-10-22 by the user, after successive pastes of a long selection
+in the audio editor failed natively with `no reply to /buffer_stitch`.* The
+editor read each file whole into a pool buffer, copied a selection in the
+server's memory, and, with a shared segment, copied every new join whole into
+a region a peer maps. An edit cost a pass over the take and memory grew with
+the history, so a take of hours was out of reach whatever each step was made
+to cost.
+
+**Pool buffers are finite and short**: a sampler's samples, an oscillator's
+table, a stroke being drawn. **An application's takes are files**, of any
+length their format admits (W64, RF64), and are never read whole. The same
+segment logic reads either: a sampler reads segments of pool buffers with
+random access, an editor and a multitrack read segments of files as a stream.
+
+**A session holds metadata**: an edit of the audio editor is a new segment
+list over files that never change, as an edit of the multitrack already is, so
+cut, copy, paste, undo and redo move no samples at any length. **The RT server
+plays and previews**, reading files ahead of the playhead; **the NRT server
+processes**, reading spans from disk and writing a new file that the list then
+names, temporary until a save keeps it. Renders share no state, so several
+NRT instances run at once, and the RT server plays beside them. **Drawing reads the files' peaks**,
+composed by the host, so it needs no server.
+
+**The server is the module of audio functions, not of editing logic**: no
+command exists for one application's verb. That retires the commands added
+for the editor's verbs (`/buffer_gain`, `/buffer_reverse`, `/buffer_mix`,
+`/buffer_render`); an edit's processing is a def rendered offline.
+
+The model, its decisions and its milestones are in
+`crates/clausters-apps/PLAN.md`, "The turn: an application's takes live on
+disk"; the server's half is the root plan's `S21`-`S23`, the document's
+`O34`, the host's `G45`.

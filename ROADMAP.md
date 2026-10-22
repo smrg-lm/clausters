@@ -288,10 +288,33 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **The turn: an application's takes live on disk**, milestones `S21`, `S22`,
+  `O34`, `G45`, `X28`, `X29`, `S23` *(`crates/clausters-apps/PLAN.md`, "The
+  turn: an application's takes live on disk", with each milestone in its own
+  plan)*. **Taken next**, on the user's word: the audio editor's model does
+  not reach a file of hours, and successive pastes of a long selection fail
+  natively. In that order: the server's list reader and long files first,
+  then the document, the host, the audio editor, the multitrack, and the
+  removal of the editing commands last. Its decisions are taken. Before
+  `X25`, which should port this lifecycle and not the one it replaces.
+  **Related:** it takes the GUI plan's "An edit of a long take costs a native
+  server with a segment a pass over it" and the root plan's "A long take is
+  played out of the pool, and `DiskIn` cannot be positioned".
+
+  | Order | Milestone | Plan |
+  |---|---|---|
+  | 1 | `S21` — A segment list reads pool buffers or files, and the RT server plays one from disk | root `PLAN.md` |
+  | 2 | `S22` — A file of any length, and a peaks file for it | root `PLAN.md` |
+  | 3 | `O34` — A source is a file, a clipboard holds segments, and a render is temporary | `crates/clausters-document/PLAN.md` |
+  | 4 | `G45` — The host draws a list of segments from its files | `clients/gui/PLAN.md` |
+  | 5 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
+  | 6 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
+  | 7 | `S23` — The server keeps no editing commands | root `PLAN.md` |
+
 - ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
   summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A
   take's picture is read at the level it is drawn, out of summaries kept
-  once")*. **Taken next**, on the user's word: a page redraws a take from its
+  once")*. Its eye pass goes beside the turn above: a page redraws a take from its
   start after every edit, slower the longer the take, because the host walks
   the finest summary of the whole take. The server's half shipped (every
   buffer keeps its summary, a join composes it, any bucket is answered from
@@ -299,10 +322,6 @@ its plan; the plan is where its acceptance is read.
   edit replaces the picture whole); what is left is the eye pass.
   Before `X25`, since the other editors' lifecycle draws through the same
   path.
-
-- ⬜ **An edit of a long take costs a native server with a segment a pass
-  over it** *(`clients/gui/PLAN.md`, "Found by use")*. After `G44`, which
-  settles what a host reads; this is what a peer maps.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
