@@ -320,6 +320,12 @@ code that keeps it lives.
   found nothing to draw waits for no refresh, and asking again after it spins
   a core (`Host::asks_next_frame`). Check it with `editors/audio_lifecycle`:
   loop `a.wav`, then `copy_first()`, and `activity()` stays near the tick.
+  It is drawn **where the transport is at that refresh**: the engine
+  publishes its counters once per audio block, which is the device's period
+  (47 times a second at 1024 frames), so a rolling counter is carried between
+  blocks at the engine's rate and never steps back (`clocks::Glide`). Read
+  only as published, two frames in five on a 60 Hz display found the cursor
+  unmoved, and each such frame asked for no next one.
 
 
 - **A failed repair remains reachable.** After resolving an I/O failure, an audio editor's `retry_pending()` / `retryPending()` retries its pending repairs without repeating the edits. Until repair succeeds, the affected objects remain locked and their sources retained. Concurrent retries cannot dispatch the same repair twice; a successful retry does not repeat the original gesture receipt or change history.

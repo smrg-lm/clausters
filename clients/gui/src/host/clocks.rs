@@ -21,7 +21,7 @@ use super::*;
 /// launched by a client opens its segment before it is told what it is
 /// drawing, and because the browser has no segment at all and answers the same
 /// question from `/transport_query`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum HeadClock {
     /// The device clock: samples processed since boot, never stopping. What a
     /// host attached to a live server wants -- its meters, scopes and taps are
@@ -149,9 +149,13 @@ impl Host {
         let Some(bus) = bus else {
             return HeadClocks::default();
         };
-        let read = |head: HeadClock| match head {
-            HeadClock::Device => bus.sample_clock(),
-            HeadClock::Transport(transport) => bus.transport_position(transport),
+        let now = web_time::Instant::now();
+        let read = |head: HeadClock| {
+            let value = match head {
+                HeadClock::Device => bus.sample_clock(),
+                HeadClock::Transport(transport) => bus.transport_position(transport),
+            };
+            self.glided(head, value, now)
         };
         let window = self.window_head_clock(def_id);
         let mut clocks = HeadClocks {
@@ -228,6 +232,15 @@ impl Host {
         clocks
     }
 
+    /// **Counter `head` read as `value` at `now`, carried on between blocks**:
+    /// see [`Glide`].
+    fn glided(&self, head: HeadClock, value: f64, now: web_time::Instant) -> f64 {
+        let mut glides = self.glides.borrow_mut();
+        let glide = glides.entry(head).or_insert_with(|| Glide::new(value, now));
+        glide.seen(value, now, self.server_rate);
+        glide.at(now, self.server_rate)
+    }
+
     /// `/gui_headClock <id> <which> [<int32 transport>]` -- draw the playheads
     /// of `id` from this counter from now on: a window, or a widget and every
     /// view under it that names none of its own. `"transport"` reads transport
@@ -287,5 +300,184 @@ impl Host {
             .iter()
             .find(|(_, tree)| tree.find(id).is_some())
             .map(|(def, _)| *def)
+    }
+}
+
+/// **A counter carried on between the blocks that publish it.**
+///
+/// The engine publishes its clocks once per audio block, which is the
+/// device's period and not the display's: at 1024 frames, 47 times a second,
+/// so on a 60 Hz display two frames in five found the play cursor where the
+/// last one drew it and the line moved in uneven steps. A rolling counter is
+/// therefore drawn where it is *now* -- the last block's reading plus the
+/// time since it was seen, at the engine's rate -- which is the reading the
+/// next block will publish. The rest keeps it honest:
+///
+/// - **Rolling** means it moved forward within a few periods of its last
+///   move, and by no more than that time plus a period at the engine's rate;
+///   anything else is a locate, and a counter that only jumps is not carried. A jump back while
+///   rolling is a loop wrapping and keeps the roll.
+/// - The carry is at most one **period** (the average interval between
+///   blocks), and past a period and a half with no block the counter has
+///   stopped and the reading is drawn as it is.
+/// - While rolling the line never steps back: a block that publishes less
+///   than was drawn holds the line until the reading passes it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Glide {
+    /// The last block's reading, and when it was first seen.
+    value: f64,
+    seen_at: web_time::Instant,
+    /// The average interval between blocks, while rolling.
+    period: Option<f64>,
+    /// The last reading drawn.
+    drawn: f64,
+}
+
+impl Glide {
+    fn new(value: f64, now: web_time::Instant) -> Self {
+        Self {
+            value,
+            seen_at: now,
+            period: None,
+            drawn: value,
+        }
+    }
+
+    /// A reading of `value` at `now`, at `rate` samples a second.
+    fn seen(&mut self, value: f64, now: web_time::Instant, rate: f64) {
+        if value == self.value {
+            return;
+        }
+        let dt = now.duration_since(self.seen_at).as_secs_f64();
+        let step = value - self.value;
+        let longest = self.period.unwrap_or(0.1);
+        // a block comes within a few periods of the last; after a longer
+        // silence the counter was stopped, and whatever it moved by is a locate
+        let rolled = dt <= longest * 3.0 && step <= (dt + longest) * rate;
+        self.period = if step > 0.0 && rate > 0.0 && rolled {
+            // the average over a few blocks, since a callback may come in bursts
+            Some(
+                self.period
+                    .map_or(dt, |p| p + (dt - p) * 0.25)
+                    .clamp(0.001, 0.25),
+            )
+        } else if step < 0.0 {
+            // a wrap while rolling stays rolling, and draws from the new place
+            self.drawn = value;
+            self.period
+        } else {
+            self.drawn = value;
+            None
+        };
+        self.value = value;
+        self.seen_at = now;
+    }
+
+    /// Where the counter is drawn at `now`.
+    fn at(&mut self, now: web_time::Instant, rate: f64) -> f64 {
+        let Some(period) = self.period.filter(|_| rate > 0.0) else {
+            self.drawn = self.value;
+            return self.value;
+        };
+        let since = now.duration_since(self.seen_at).as_secs_f64();
+        if since > period * 1.5 {
+            // stopped: the reading as it is
+            self.drawn = self.value;
+            return self.value;
+        }
+        let ahead = (self.value + since.min(period) * rate).floor();
+        self.drawn = self.drawn.max(ahead);
+        self.drawn
+    }
+}
+
+#[cfg(test)]
+mod glide_tests {
+    use super::Glide;
+    use web_time::{Duration, Instant};
+
+    const RATE: f64 = 48_000.0;
+    const BLOCK: f64 = 1024.0;
+
+    fn ms(n: f64) -> Duration {
+        Duration::from_secs_f64(n / 1000.0)
+    }
+
+    /// Blocks every 21.3 ms, read every 16.7 ms: the line moves every frame,
+    /// forward, and lands on each block's reading rather than past it.
+    #[test]
+    fn a_rolling_counter_moves_every_frame_between_blocks() {
+        let t0 = Instant::now();
+        let mut g = Glide::new(0.0, t0);
+        let period = BLOCK / RATE * 1000.0;
+        let mut last = -1.0;
+        let mut moved = 0;
+        for frame in 1..60 {
+            let now = t0 + ms(f64::from(frame) * 16.7);
+            let blocks = (now.duration_since(t0).as_secs_f64() * 1000.0 / period).floor();
+            g.seen(blocks * BLOCK, now, RATE);
+            let at = g.at(now, RATE);
+            assert!(at >= last, "never back: {at} after {last}");
+            assert!(
+                at <= (blocks + 1.0) * BLOCK,
+                "no further than the next block"
+            );
+            if at > last {
+                moved += 1;
+            }
+            last = at;
+        }
+        assert!(moved >= 57, "moved on {moved} of 59 frames");
+    }
+
+    /// A counter that stops is drawn where it stopped once a period and a
+    /// half passes with no block.
+    #[test]
+    fn a_stopped_counter_is_drawn_as_it_reads() {
+        let t0 = Instant::now();
+        let mut g = Glide::new(0.0, t0);
+        for i in 1..=4 {
+            g.seen(f64::from(i) * BLOCK, t0 + ms(f64::from(i) * 21.3), RATE);
+        }
+        let last = t0 + ms(4.0 * 21.3);
+        assert!(
+            g.at(last + ms(10.0), RATE) > 4.0 * BLOCK,
+            "carried while rolling"
+        );
+        assert_eq!(g.at(last + ms(40.0), RATE), 4.0 * BLOCK, "stopped");
+    }
+
+    /// A locate after a stop is not a roll, however near it lands.
+    #[test]
+    fn a_locate_after_a_stop_is_not_carried() {
+        let t0 = Instant::now();
+        let mut g = Glide::new(0.0, t0);
+        let later = t0 + Duration::from_secs(10);
+        g.seen(2.0 * RATE, later, RATE);
+        assert_eq!(g.at(later + ms(100.0), RATE), 2.0 * RATE);
+    }
+
+    /// A locate is not a roll, and a wrap while rolling draws from where it
+    /// wrapped to.
+    #[test]
+    fn a_locate_is_drawn_where_it_lands_and_a_wrap_keeps_rolling() {
+        let t0 = Instant::now();
+        let mut g = Glide::new(0.0, t0);
+        g.seen(96_000.0, t0 + ms(5.0), RATE);
+        assert_eq!(g.at(t0 + ms(10.0), RATE), 96_000.0, "a jump is not carried");
+        for i in 1..=4 {
+            g.seen(
+                96_000.0 + f64::from(i) * BLOCK,
+                t0 + ms(5.0 + f64::from(i) * 21.3),
+                RATE,
+            );
+        }
+        let wrapped = t0 + ms(5.0 + 5.0 * 21.3);
+        g.seen(1_000.0, wrapped, RATE);
+        let at = g.at(wrapped + ms(8.0), RATE);
+        assert!(
+            at > 1_000.0 && at < 1_000.0 + BLOCK,
+            "rolls on from the wrap: {at}"
+        );
     }
 }

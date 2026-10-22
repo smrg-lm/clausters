@@ -8605,7 +8605,7 @@ module of its own.
   frees is where a preview of the selected file could go later, which is a
   design of its own and not part of this fix.
 
-- ⬜ **A playhead looping over a selection moves at the tick, not the
+- ✅ **A playhead looping over a selection moves at the tick, not the
   display** *(found 2026-10-22, the eye pass over the audio editor's
   lifecycle example)*. Looping the whole take, the editor's window draws its
   playhead about 48 times a second, paced by the display; looping a
@@ -8615,6 +8615,12 @@ module of its own.
   advance only when the tick reads the transport while a loop span is set.
   Measured with the fix for the core it spun (`Host::asks_next_frame`); the
   cause is not established.
+  *Fixed 2026-10-22:* the selection was not the cause. The engine publishes
+  a transport's position once per audio block (47 a second at a 1024-frame
+  period), so with the whole take or a selection alike two frames in five
+  found the cursor unmoved and asked for no next frame. A rolling counter is
+  now carried between blocks (`clocks::Glide`): 120 of 120 frames move over
+  two seconds of either loop, and a stopped window draws none.
 
 
 - ⬜ **A page shows an edit of a short take a second and a half late**

@@ -153,10 +153,6 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **A playhead looping over a selection moves at the tick, not the
-  display** *(`clients/gui/PLAN.md`, Found by use)*. Found in the eye pass
-  over the audio editor's lifecycle example; the cause is not established.
-
 - ⬜ **A page shows an edit of a short take a second and a half late**
   *(`clients/gui/PLAN.md`, Found by use)*. The edit lands at once; the
   window re-downloads the take a chunk per frame. A decision about the page's

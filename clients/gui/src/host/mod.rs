@@ -1031,6 +1031,11 @@ pub struct Host {
     /// What each window's playheads read on the last frame tick that found
     /// them moved ([`Host::playheads_moved`]).
     drawn_clocks: HashMap<i32, world::HeadClocks>,
+    /// **Each counter's last block, and the line drawn from it**, so a
+    /// rolling one is carried between the blocks that publish it
+    /// ([`clocks::Glide`]). Interior, because a reading is taken through
+    /// `&self` by every front and by the tick alike.
+    glides: std::cell::RefCell<HashMap<HeadClock, clocks::Glide>>,
     /// **What this host did on its own and a front still has to carry out**:
     /// a window it opened in answer to a gesture -- the roll a double click on
     /// a box of notes asks for. Drained by the front ([`Host::take_effects`]),
@@ -1059,6 +1064,7 @@ impl Host {
             head_clock: HeadClock::default(),
             head_clocks: HashMap::new(),
             drawn_clocks: HashMap::new(),
+            glides: std::cell::RefCell::new(HashMap::new()),
             window_defs: HashMap::new(),
             watched_buses: Vec::new(),
             buffer_stream: (Vec::new(), 0),
