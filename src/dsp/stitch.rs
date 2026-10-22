@@ -333,6 +333,104 @@ pub struct PartSpec {
     pub map: Vec<i32>,
 }
 
+/// **Where a part's samples are**, as a command names them: a buffer already
+/// in the pool, or a file whose shape has not been read yet.
+pub enum PartSource {
+    Buffer(Arc<Buffer>),
+    File(String),
+}
+
+/// A part as `/buffer_stitch` names it, before its file -- if it names one --
+/// has been looked at. [`resolve`] turns a list of these into [`PartSpec`]s.
+///
+/// Reading a file's shape is I/O, so it is the job's and never the parse's:
+/// natively the NRT thread opens the file, and in a page the host reads it
+/// where the page's files are. Both then validate the parts through the same
+/// [`resolve`].
+pub struct PartRequest {
+    pub src: PartSource,
+    pub src_index: i32,
+    pub src_start: usize,
+    pub frames: usize,
+    pub fade_in: usize,
+    pub fade_out: usize,
+    pub fade_in_shape: FadeShape,
+    pub fade_out_shape: FadeShape,
+    pub map: Vec<i32>,
+}
+
+/// The files `parts` name, each once, in the order they first appear.
+pub fn files(parts: &[PartRequest]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for part in parts {
+        if let PartSource::File(path) = &part.src
+            && !out.contains(path)
+        {
+            out.push(path.clone());
+        }
+    }
+    out
+}
+
+/// **Resolves a command's parts**: each file through `shape_of`, once, and
+/// every part checked against its source -- the span inside it and the map
+/// inside its channels -- whichever kind the source is.
+pub fn resolve(
+    parts: Vec<PartRequest>,
+    mut shape_of: impl FnMut(&str) -> Result<crate::dsp::pcm::Layout, String>,
+) -> Result<Vec<PartSpec>, String> {
+    let mut opened: Vec<Arc<Buffer>> = Vec::new();
+    let mut specs = Vec::with_capacity(parts.len());
+    for (n, part) in parts.into_iter().enumerate() {
+        let (src, label) = match part.src {
+            PartSource::Buffer(b) => (b, format!("buffer {}", part.src_index)),
+            PartSource::File(path) => {
+                let found = opened
+                    .iter()
+                    .find(|b| b.file().is_some_and(|l| l.path == path))
+                    .cloned();
+                let b = match found {
+                    Some(b) => b,
+                    None => {
+                        let layout = shape_of(&path).map_err(|e| format!("part {n}: {e}"))?;
+                        let b = Arc::new(Buffer::on_file(layout));
+                        opened.push(Arc::clone(&b));
+                        b
+                    }
+                };
+                (b, format!("file {path}"))
+            }
+        };
+        let end = part.src_start + part.frames;
+        if end > src.frames() {
+            return Err(format!(
+                "part {n}: {label} has {} frames and the part asks for {end}",
+                src.frames()
+            ));
+        }
+        for (c, &to) in part.map.iter().enumerate() {
+            if to >= src.channels() as i32 {
+                return Err(format!(
+                    "part {n}: channel {c} maps to source channel {to} and {label} has {}",
+                    src.channels()
+                ));
+            }
+        }
+        specs.push(PartSpec {
+            src,
+            src_index: part.src_index,
+            src_start: part.src_start,
+            frames: part.frames,
+            fade_in: part.fade_in,
+            fade_out: part.fade_out,
+            fade_in_shape: part.fade_in_shape,
+            fade_out_shape: part.fade_out_shape,
+            map: part.map,
+        });
+    }
+    Ok(specs)
+}
+
 /// The list of parts a stitched buffer reads, plus the cursor that makes
 /// reading it forward cost a comparison.
 #[derive(Debug)]

@@ -120,7 +120,9 @@ pub enum NrtJob {
     Stitch {
         channels: usize,
         sample_rate: f64,
-        parts: Vec<crate::dsp::stitch::PartSpec>,
+        /// The parts as the command named them; a file part's shape is read
+        /// by the job (`dsp::stitch::resolve`).
+        parts: Vec<crate::dsp::stitch::PartRequest>,
     },
     /// `/buffer_free`: ordered behind the other jobs (see module docs).
     Free,
@@ -532,6 +534,12 @@ pub enum DelegatedKind {
         /// this many frames and asks for them a run at a time.
         frames: usize,
     },
+    /// `/buffer_stitch` with parts over files: read the shape of each file
+    /// (its channels, rate and frames) where the files are, and answer them
+    /// with [`NrtRunner::finish_delegated_shapes`], which resolves the parts
+    /// and installs the join as the NRT thread would. Nothing but the shapes
+    /// travels: a part over a file holds none of its samples.
+    Shapes { paths: Vec<String> },
 }
 
 /// What a job becomes when it leaves, or `None` when it stays here.
@@ -570,6 +578,10 @@ fn delegated_kind(job: &NrtJob) -> Option<DelegatedKind> {
                 sample_rate: buffer.sample_rate(),
                 frames,
             })
+        }
+        NrtJob::Stitch { parts, .. } => {
+            let paths = crate::dsp::stitch::files(parts);
+            (!paths.is_empty()).then_some(DelegatedKind::Shapes { paths })
         }
         _ => None,
     }
@@ -699,6 +711,70 @@ impl NrtRunner {
             request.queued,
             started,
             outcome.map(|()| NrtAction::None),
+        ));
+    }
+
+    /// Answers a delegated [`DelegatedKind::Shapes`]: the shape of each file
+    /// it named, in its order, or why that file could not be read. The parts
+    /// are resolved and the join built here (`dsp::stitch::resolve`), so a
+    /// page validates and installs it exactly as the NRT thread does, and the
+    /// `/done` or `/fail` follows. A ticket that is not the outstanding one,
+    /// or not a stitch, is ignored.
+    pub fn finish_delegated_shapes(
+        &mut self,
+        ticket: u64,
+        shapes: Vec<Result<crate::dsp::pcm::Layout, String>>,
+    ) {
+        let NrtRunner::Delegating {
+            outstanding,
+            results,
+            ..
+        } = self
+        else {
+            return;
+        };
+        if !matches!(outstanding, Some((held, r, _)) if *held == ticket
+            && matches!(r.job, NrtJob::Stitch { .. }))
+        {
+            return;
+        }
+        let (_, request, started) = outstanding.take().expect("checked just above");
+        let NrtJob::Stitch {
+            channels,
+            sample_rate,
+            parts,
+        } = request.job
+        else {
+            unreachable!("checked just above");
+        };
+        let paths = crate::dsp::stitch::files(&parts);
+        let mut shapes = shapes.into_iter();
+        let mut found: Vec<(String, Result<crate::dsp::pcm::Layout, String>)> = paths
+            .into_iter()
+            .map(|p| {
+                let shape = shapes
+                    .next()
+                    .unwrap_or_else(|| Err(format!("{p}: no shape was read")));
+                (p, shape)
+            })
+            .collect();
+        let outcome = crate::dsp::stitch::resolve(parts, |path| {
+            found.iter_mut().find(|(p, _)| p == path).map_or_else(
+                || Err(format!("{path}: no shape was read")),
+                |(_, s)| s.clone(),
+            )
+        })
+        .and_then(|parts| crate::dsp::stitch::Stitch::new(parts, channels, sample_rate))
+        .map(|stitch| {
+            NrtAction::Install(Arc::new(Buffer::stitched(stitch, channels, sample_rate)))
+        });
+        results.push_back(NrtResult::finished(
+            request.cmd,
+            request.index,
+            request.client,
+            request.queued,
+            started,
+            outcome,
         ));
     }
 
@@ -965,6 +1041,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             sample_rate,
             parts,
         } => {
+            let parts = crate::dsp::stitch::resolve(parts, crate::dsp::pcm::Layout::open)?;
             let stitch = crate::dsp::stitch::Stitch::new(parts, channels, sample_rate)?;
             Ok(NrtAction::Install(Arc::new(Buffer::stitched(
                 stitch,

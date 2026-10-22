@@ -31,11 +31,15 @@
       That last part is the one that matters: it is the only thing that says
       the spans crossed the port and landed in the ring in time. Then it streams
       from a start frame: half way in it sounds, past the end it is silent.
+      Last, a join whose parts name two files plays at the transport's position
+      through transportDiskIn: every sample the bus carries is a frame of one
+      of the two files (or the silence of a refill), both files are heard, and
+      a locate under the moving playhead keeps it so.
     -->
     <script type="module">
-      import { Session, opfs, loadCore, SynthDef, Synth, Bus, data }
+      import { Session, opfs, loadCore, SynthDef, Synth, Group, Bus, Buffer, data }
         from "../dist/index.js";
-      import { diskIn, diskOut, out, sine } from "../dist/defs/index.js";
+      import { diskIn, diskOut, out, sine, transportDiskIn } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -119,12 +123,69 @@
         const past = await level(Math.floor(frames) + 48000);
         log(`from half way: peak ${half.toFixed(3)}; from past the end: peak ${past.toFixed(3)}`);
 
-        const ok = riff === "RIFF" && frames > 24000 && peak > 0.1 && half > 0.1 && past < 0.01;
+        // 4) A join of two files at the transport's position. Each file holds
+        //    one value, so every sample the bus carries says which file it
+        //    came from -- or that a refill was still on its way.
+        const constant = (value) => {
+          const n = 48000;
+          const bytes = new Uint8Array(44 + n * 4);
+          const view = new DataView(bytes.buffer);
+          const ascii = (at, text) => [...text].forEach((c, i) => (bytes[at + i] = c.charCodeAt(0)));
+          ascii(0, "RIFF"); view.setUint32(4, 36 + n * 4, true); ascii(8, "WAVE");
+          ascii(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 3, true);
+          view.setUint16(22, 1, true); view.setUint32(24, 48000, true);
+          view.setUint32(28, 48000 * 4, true); view.setUint16(32, 4, true);
+          view.setUint16(34, 32, true); ascii(36, "data"); view.setUint32(40, n * 4, true);
+          for (let i = 0; i < n; i++) view.setFloat32(44 + i * 4, value, true);
+          return bytes;
+        };
+        await opfs.writeFile("takes/a.wav", constant(0.25));
+        await opfs.writeFile("takes/b.wav", constant(-0.5));
+        const join = await Buffer.stitch([
+          { source: "takes/a.wav", start: 0, frames: 12000 },
+          { source: "takes/b.wav", start: 6000, frames: 12000 },
+          { source: "takes/a.wav", start: 24000, frames: 12000 },
+        ], { channels: 1, server });
+        const named = (await join.parts()).map((p) => p.source).join(",");
+        await new SynthDef("list",
+          out(playBus.index, transportDiskIn(join.bufnum, 0, 0, 0, 1))).send(server);
+        // The engine's transport rolls what a bound group holds.
+        const governed = new Group({ server });
+        await server.setTransport(0, 2.0);
+        await server.transportGroup(governed);
+        await server.transportPlay();
+        const list = new Synth("list", {}, { target: governed, server });
+        const heard = new Set();
+        const foreign = [];
+        const listen = async (ms) => {
+          for (let waited = 0; waited < ms; waited += 40) {
+            await wait(40);
+            const window = taps.window(playBus.index);
+            for (const v of window ? window.samples : []) {
+              if (v === 0.25 || v === -0.5) heard.add(v);
+              else if (v !== 0) foreign.push(v);
+            }
+          }
+        };
+        await listen(1500);
+        await server.transportLocateSample(18000);
+        await listen(1000);
+        list.free();
+        await server.transportStop();
+        governed.free();
+        log(`join of two files: heard ${[...heard].join(" and ")}, ${foreign.length} foreign samples; parts ${named}`);
+        const joined = heard.size === 2 && foreign.length === 0 &&
+          named === "takes/a.wav,takes/b.wav,takes/a.wav";
+
+        const ok = riff === "RIFF" && frames > 24000 && peak > 0.1 && half > 0.1 && past < 0.01 &&
+          joined;
         verdict(ok
           ? `PASS: diskOut recorded ${(frames / 48000).toFixed(2)} s into the page's ` +
             `filesystem (${size} bytes of RIFF) and diskIn streamed it back at ` +
-            `peak ${peak.toFixed(3)}, and from a start frame where it was asked to`
-          : `FAIL: riff "${riff}", ${frames} frames, peak ${peak}, from half ${half}, from past ${past}`);
+            `peak ${peak.toFixed(3)}, and from a start frame where it was asked to; ` +
+            `a join of two files played at the transport's position, through a locate`
+          : `FAIL: riff "${riff}", ${frames} frames, peak ${peak}, from half ${half}, from past ${past}, ` +
+            `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}`);
         await session.close();
       }
 

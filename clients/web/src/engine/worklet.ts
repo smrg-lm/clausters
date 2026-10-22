@@ -67,6 +67,13 @@ type ShapeResult =
     | { type: "shape"; ticket: number; channels: number; sampleRate: number; frames: number }
     | { type: "shape"; ticket: number; error: string };
 
+/** The shapes a `/buffer_stitch` with parts over files asked for. */
+type ShapesResult = {
+    type: "shapes";
+    ticket: number;
+    shapes: ({ channels: number; sampleRate: number; frames: number } | { error: string })[];
+};
+
 /** One span of a file being streamed by a `DiskIn`. */
 type SpanResult =
     | { type: "span"; ticket: number; samples: Float32Array; frames: number }
@@ -136,6 +143,12 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     >;
     /** `DiskOut` streams: where each one is being written. */
     recording: Map<number, { path: string; format: string; waiting: boolean }>;
+    /** `TransportDiskIn` streams: the span in flight for each, and which
+     *  refill and list frames it renders. One at a time, so an answer is
+     *  always the one its state describes. */
+    lists: Map<number, { generation: number; at: number; listFrames: number; waiting: boolean }>;
+    /** Delegated `/buffer_stitch` jobs: the paths each asked the shapes of. */
+    stitching: Map<number, string[]>;
     /** The engine instance's own wasm exports: its memory and its table. */
     engine: EngineExports;
     /** Faust compilations out with the Worker. The value is the def's name,
@@ -170,6 +183,8 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         this.write = null;
         this.spans = new Map();
         this.recording = new Map();
+        this.lists = new Map();
+        this.stitching = new Map();
         this.compiling = new Map();
         this.linked = [];
         this.port.onmessage = (e) => this.onMessage(e.data as InMessage);
@@ -198,6 +213,9 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             this.nrt.onmessage = (e: MessageEvent) => {
                 const result = e.data as NrtResult;
                 if (result.type === "shape") this.onShape(result as ShapeResult);
+                else if (result.type === "shapes") this.onShapes(result as ShapesResult);
+                else if (result.type === "span" && this.lists.has(result.ticket))
+                    this.onListSpan(result as SpanResult);
                 else if (result.type === "span") this.onSpan(result as SpanResult);
                 else if (result.type === "record") this.onRecorded(result as RecordResult);
                 else if (result.type === "write") this.onWritten(result as WriteResult);
@@ -284,6 +302,14 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             frames: number;
         };
         this.outstanding.set(job.ticket, job.index);
+        if (job.kind === "shapes") {
+            // A join over files holds none of their samples: all that leaves
+            // is the paths, and all that comes back is their shapes.
+            const paths = (job as unknown as { paths: string[] }).paths;
+            this.stitching.set(job.ticket, paths);
+            this.nrt.postMessage({ type: "shapes", ticket: job.ticket, paths });
+            return;
+        }
         if (job.kind === "write") {
             // A write leaves in runs and takes several turns: the samples are
             // in this module's memory, and copying a minute of them in one go
@@ -466,18 +492,23 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         if (this.nrt === null) return;
         const streams = JSON.parse(this.server.diskPoll()) as {
             id: number;
-            direction: "in" | "out";
+            direction: "in" | "out" | "list";
             path: string;
             channels: number;
             looping: boolean;
             start: number;
             format: string;
             samples: number;
+            generation: number;
+            at: number;
+            listFrames: number;
+            span: number;
         }[];
         const live = new Set<number>();
         for (const s of streams) {
             live.add(s.id);
             if (s.direction === "in") this.feed(s);
+            else if (s.direction === "list") this.feedList(s);
             else this.drain(s);
         }
         // A synth that was freed took its stream with it; close its recording.
@@ -496,6 +527,79 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             });
         }
         for (const id of [...this.spans.keys()]) if (!live.has(id)) this.spans.delete(id);
+        for (const id of [...this.lists.keys()]) if (!live.has(id)) this.lists.delete(id);
+    }
+
+    /**
+     * One `TransportDiskIn`: ask for the span of a file its next part reads.
+     *
+     * The engine renders the part from the span (the same read every part
+     * makes), so all this moves is the file's frames. A span is asked for
+     * only when the previous one is answered: an answer for an older refill
+     * is refused by the engine, which then asks for the frames it is at now.
+     */
+    private feedList(s: {
+        id: number;
+        path: string;
+        start: number;
+        generation: number;
+        at: number;
+        listFrames: number;
+        span: number;
+    }): void {
+        const state = this.lists.get(s.id);
+        if (state?.waiting || s.span === 0) return;
+        this.lists.set(s.id, {
+            generation: s.generation,
+            at: s.at,
+            listFrames: s.listFrames,
+            waiting: true,
+        });
+        this.nrt!.postMessage({
+            type: "span",
+            ticket: s.id,
+            path: s.path,
+            frame: s.start,
+            frames: s.span,
+        });
+    }
+
+    onListSpan(result: { ticket: number; samples?: Float32Array; error?: string }): void {
+        const state = this.lists.get(result.ticket);
+        if (state === undefined) return;
+        state.waiting = false;
+        if (result.error !== undefined || result.samples === undefined) return;
+        this.server.diskListPush(
+            result.ticket,
+            state.generation,
+            state.at,
+            state.listFrames,
+            result.samples,
+        );
+    }
+
+    /** A join's file shapes: the engine resolves its parts and installs it. */
+    onShapes(result: ShapesResult): void {
+        const paths = this.stitching.get(result.ticket);
+        if (paths === undefined) return;
+        this.stitching.delete(result.ticket);
+        this.outstanding.delete(result.ticket);
+        const at = (i: number) => result.shapes[i] ?? { error: "no shape was read" };
+        const read = (i: number) => {
+            const shape = at(i);
+            return "error" in shape ? undefined : shape;
+        };
+        this.server.finishShapes(
+            result.ticket,
+            paths,
+            Uint32Array.from(paths, (_, i) => read(i)?.channels ?? 0),
+            Float64Array.from(paths, (_, i) => read(i)?.sampleRate ?? 0),
+            Float64Array.from(paths, (_, i) => read(i)?.frames ?? 0),
+            paths.map((_, i) => {
+                const shape = at(i);
+                return "error" in shape ? shape.error : "";
+            }),
+        );
     }
 
     /** One `DiskIn`: hand it what arrived, then ask for more if there is room. */

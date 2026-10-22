@@ -571,6 +571,15 @@ impl OscServer {
         self.nrt.finish_delegated(ticket, outcome);
     }
 
+    /// Answers a delegated `/buffer_stitch` with the shapes of its files.
+    pub fn finish_delegated_shapes(
+        &mut self,
+        ticket: u64,
+        shapes: Vec<Result<crate::dsp::pcm::Layout, String>>,
+    ) {
+        self.nrt.finish_delegated_shapes(ticket, shapes);
+    }
+
     /// The Faust compilations waiting for the host, if this build's compiler is
     /// the page's queue rather than a thread. See `faust::compiler_web`.
     #[cfg(all(feature = "faust", target_arch = "wasm32"))]

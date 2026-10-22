@@ -92,6 +92,14 @@ pub mod sine;
 pub mod spectral;
 #[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
 pub mod stream;
+/// In a page the list reader is the host-fed one beside `DiskIn`'s.
+#[cfg(all(feature = "synth", target_arch = "wasm32"))]
+pub mod stream {
+    pub use super::disk::TransportDiskIn;
+
+    /// The ring, in samples, as natively.
+    pub const RING_SAMPLES: usize = 1 << 17;
+}
 #[cfg(feature = "synth")]
 pub mod trig;
 #[cfg(feature = "synth")]

@@ -421,6 +421,16 @@ impl WebServer {
                     channels,
                 )
             }
+            DelegatedKind::Shapes { paths } => format!(
+                r#"{{"ticket":{},"index":{},"kind":"shapes","paths":[{}]}}"#,
+                job.ticket,
+                job.index,
+                paths
+                    .iter()
+                    .map(|p| json_string(p))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
             DelegatedKind::Write {
                 path,
                 sample_format,
@@ -470,8 +480,13 @@ impl WebServer {
     }
 
     /// Every open disk stream and what it wants right now, as JSON: an array of
-    /// `{id, direction: "in"|"out", path, channels, looping, start, format,
-    /// samples}`. `start` is the frame an `in` reads from first; `samples` is room to fill for an `in`, and samples waiting for an `out`.
+    /// `{id, direction: "in"|"out"|"list", path, channels, looping, start,
+    /// format, samples, generation, at, listFrames, span}`. `start` is the
+    /// frame an `in` reads from first; `samples` is room to fill for an `in`,
+    /// and samples waiting for an `out`. A `list` (`TransportDiskIn`) asks for
+    /// `span` frames of `path` (a file of `channels` channels) from `start`,
+    /// to render `listFrames` frames of its list from `at`; the answer goes to
+    /// [`disk_list_push`](Self::disk_list_push) with its `generation`.
     ///
     /// This is the whole interface between the graph and whatever is reading
     /// files: the host walks it each turn, fills what is hungry with
@@ -486,15 +501,23 @@ impl WebServer {
                 .into_iter()
                 .map(|r| {
                     format!(
-                        r#"{{"id":{},"direction":"{}","path":{},"channels":{},"looping":{},"start":{},"format":{},"samples":{}}}"#,
+                        r#"{{"id":{},"direction":"{}","path":{},"channels":{},"looping":{},"start":{},"format":{},"samples":{},"generation":{},"at":{},"listFrames":{},"span":{}}}"#,
                         r.id,
-                        if r.direction == Direction::In { "in" } else { "out" },
+                        match r.direction {
+                            Direction::In => "in",
+                            Direction::Out => "out",
+                            Direction::List => "list",
+                        },
                         json_string(&r.path),
                         r.channels,
                         r.looping,
                         r.start,
                         json_string(&r.format),
                         r.samples,
+                        r.generation,
+                        r.at,
+                        r.list_frames,
+                        r.span,
                     )
                 })
                 .collect();
@@ -517,6 +540,36 @@ impl WebServer {
         {
             let _ = (id, samples);
             0
+        }
+    }
+
+    /// Answers a `list` stream's request with the span it asked for,
+    /// interleaved. Returns whether it was taken: a span for an older refill
+    /// (another `generation`) or for frames the stream has left is dropped,
+    /// and the stream asks again.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskListPush))]
+    pub fn disk_list_push(
+        &mut self,
+        id: u32,
+        generation: u32,
+        at: f64,
+        list_frames: u32,
+        samples: &[f32],
+    ) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            clausters::dsp::disk::list_push(
+                id,
+                generation,
+                at as u64,
+                list_frames as usize,
+                samples,
+            )
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (id, generation, at, list_frames, samples);
+            false
         }
     }
 
@@ -547,6 +600,37 @@ impl WebServer {
             _ => Ok(()),
         };
         self.inner.finish_delegated(ticket as u64, outcome);
+    }
+
+    /// Answers a delegated `shapes` job (`/buffer_stitch` with parts over
+    /// files): one entry per path it named, in its order -- `channels`,
+    /// `sample_rates` and `frames` for a file the host read, and a non-empty
+    /// `errors[i]` for one it could not. The join is resolved and installed
+    /// here, and the `/done` or `/fail` follows.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = finishShapes))]
+    pub fn finish_shapes(
+        &mut self,
+        ticket: f64,
+        paths: Vec<String>,
+        channels: &[u32],
+        sample_rates: &[f64],
+        frames: &[f64],
+        errors: Vec<String>,
+    ) {
+        let shapes = paths
+            .iter()
+            .enumerate()
+            .map(|(i, path)| match errors.get(i) {
+                Some(e) if !e.is_empty() => Err(format!("{path}: {e}")),
+                _ => Ok(clausters::dsp::pcm::Layout::read_elsewhere(
+                    path,
+                    channels.get(i).copied().unwrap_or(0) as usize,
+                    sample_rates.get(i).copied().unwrap_or(0.0),
+                    frames.get(i).copied().unwrap_or(0.0) as u64,
+                )),
+            })
+            .collect();
+        self.inner.finish_delegated_shapes(ticket as u64, shapes);
     }
 
     /// The Faust compilations waiting for this page's compiler, as a JSON

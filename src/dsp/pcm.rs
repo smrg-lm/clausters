@@ -75,6 +75,20 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// **The shape of a file read somewhere else**: in a page, where the host
+    /// reads the page's files and hands the samples over already decoded, so
+    /// the offset and the encoding are the host's to know and are not kept.
+    pub fn read_elsewhere(path: &str, channels: usize, sample_rate: f64, frames: u64) -> Self {
+        Layout {
+            path: path.to_string(),
+            data_offset: 0,
+            channels,
+            sample_rate,
+            encoding: Encoding::F32,
+            frames,
+        }
+    }
+
     /// Bytes per frame.
     pub fn frame_bytes(&self) -> usize {
         self.channels * self.encoding.bytes()

@@ -30,7 +30,6 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         |c, ctx| Box::new(DiskOut::open(c, &ctx.meters)),
     ),
     // --- a segment list streamed from disk, following the transport ---
-    #[cfg(not(target_arch = "wasm32"))]
     desc(
         "TransportDiskIn",
         Fixed(5),

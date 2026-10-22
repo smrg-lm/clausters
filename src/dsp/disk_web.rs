@@ -33,7 +33,9 @@ use std::sync::Arc;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::dsp::buffer::Buffer;
 use crate::dsp::registry::UGenConfig;
+use crate::dsp::stitch::Part;
 use crate::dsp::{ProcessCtx, UGen, at};
 use crate::server::meters::Meters;
 
@@ -47,6 +49,10 @@ pub enum Direction {
     In,
     /// The graph being written to a file (`DiskOut`).
     Out,
+    /// A segment list played at the transport's position (`TransportDiskIn`):
+    /// the host reads the span of a file one of its parts names, and the
+    /// engine renders the part from it.
+    List,
 }
 
 /// What one open stream wants from the host right now.
@@ -68,6 +74,24 @@ pub struct StreamRequest {
     /// `DiskIn`: room in the ring, in samples -- how much the host may push.
     /// `DiskOut`: samples waiting to be pulled.
     pub samples: usize,
+    /// `List`: which refill this span is for. A span answered for an older one
+    /// is thrown away by [`list_push`].
+    pub generation: u32,
+    /// `List`: the frame of the list the span renders from, and how many.
+    pub at: u64,
+    pub list_frames: usize,
+    /// `List`: how many frames of the file to read, from `start`.
+    pub span: usize,
+}
+
+/// A list stream's side of the registry: what it plays and where the host
+/// has rendered it to.
+struct ListState {
+    list: Option<Arc<Buffer>>,
+    /// The next list frame to render; `None` before the first refill.
+    next: Option<u64>,
+    generation: u32,
+    looping: bool,
 }
 
 enum End {
@@ -84,6 +108,7 @@ struct Slot {
     start: u64,
     format: String,
     end: End,
+    list: Option<ListState>,
 }
 
 thread_local! {
@@ -143,9 +168,31 @@ fn release(id: u32) {
 /// A stream whose synth has been freed is simply not here any more.
 pub fn poll() -> Vec<StreamRequest> {
     STREAMS.with(|s| {
-        s.borrow()
-            .iter()
-            .map(|slot| StreamRequest {
+        let mut s = s.borrow_mut();
+        let mut out = Vec::with_capacity(s.len());
+        for slot in s.iter_mut() {
+            if slot.direction == Direction::List {
+                // Reported whether or not it wants a span (`span` 0 when it
+                // does not), so the host can tell a live stream from a freed
+                // one.
+                let request = list_request(slot).unwrap_or_else(|| StreamRequest {
+                    id: slot.id,
+                    direction: Direction::List,
+                    path: String::new(),
+                    channels: 0,
+                    looping: false,
+                    start: 0,
+                    format: String::new(),
+                    samples: 0,
+                    generation: 0,
+                    at: 0,
+                    list_frames: 0,
+                    span: 0,
+                });
+                out.push(request);
+                continue;
+            }
+            out.push(StreamRequest {
                 id: slot.id,
                 direction: slot.direction,
                 path: slot.path.clone(),
@@ -157,9 +204,182 @@ pub fn poll() -> Vec<StreamRequest> {
                     End::Feeding(p) => p.slots(),
                     End::Draining(c) => c.slots(),
                 },
-            })
-            .collect()
+                generation: 0,
+                at: 0,
+                list_frames: 0,
+                span: 0,
+            });
+        }
+        out
     })
+}
+
+/// The frames a list stream renders in one span: 0.4 s at 48 kHz, what a
+/// `DiskIn` stream asks for at most. One span is in flight at a time, so a
+/// span has to outlast the host's round trip to the page's files, or a
+/// stream that has just been refilled chases the playhead and never catches
+/// it.
+const LIST_SPAN: usize = 19_200;
+
+/// **What a list stream wants from the host**, after rendering what it can
+/// without it: the parts over buffers are in memory and go straight into the
+/// ring, and the first part over a file is the span the host is asked for.
+/// `None` while the ring is full, the list is played out or nothing has been
+/// asked for yet.
+fn list_request(slot: &mut Slot) -> Option<StreamRequest> {
+    let End::Feeding(producer) = &mut slot.end else {
+        return None;
+    };
+    let state = slot.list.as_mut()?;
+    let list = state.list.clone()?;
+    let channels = list.channels().max(1);
+    let total = list.frames() as u64;
+    loop {
+        let mut at = state.next?;
+        if at >= total {
+            if state.looping && total > 0 {
+                at = 0;
+                state.next = Some(0);
+            } else {
+                return None;
+            }
+        }
+        let room = producer.slots() / channels;
+        let want = LIST_SPAN.min(room).min((total - at) as usize);
+        if want == 0 || (room < LIST_SPAN && want < (total - at) as usize) {
+            return None;
+        }
+        let Some(stitch) = list.stitch() else {
+            // A buffer that owns its samples, played through the same reader.
+            let mut frames = Vec::with_capacity(want * channels);
+            for f in 0..want {
+                for c in 0..channels {
+                    frames.push(list.sample(at as usize + f, c));
+                }
+            }
+            push_frames(producer, &frames);
+            state.next = Some(at + want as u64);
+            continue;
+        };
+        let (_, part) = stitch.part_at(at as usize)?;
+        let inner = at as usize - part.start();
+        let len = want.min(part.end() - at as usize);
+        match part.src.file() {
+            Some(layout) => {
+                let (first, end) = part.source_span(inner, inner + len);
+                return Some(StreamRequest {
+                    id: slot.id,
+                    direction: Direction::List,
+                    path: layout.path.clone(),
+                    channels: layout.channels,
+                    looping: state.looping,
+                    start: first as u64,
+                    format: String::new(),
+                    samples: producer.slots(),
+                    generation: state.generation,
+                    at,
+                    list_frames: len,
+                    span: end - first,
+                });
+            }
+            None => {
+                let mut frames = vec![0.0; len * channels];
+                render_part(part, inner, channels, &mut frames, |f, c| {
+                    part.src.sample(f, c)
+                });
+                push_frames(producer, &frames);
+                state.next = Some(at + len as u64);
+            }
+        }
+    }
+}
+
+/// `len = out.len() / channels` frames of `part` from `inner` on, each read
+/// through `frame` -- [`Part::read_with`], the read every part makes.
+fn render_part(
+    part: &Part,
+    inner: usize,
+    channels: usize,
+    out: &mut [f32],
+    frame: impl Fn(usize, usize) -> f32,
+) {
+    for (j, cells) in out.chunks_mut(channels).enumerate() {
+        for (c, cell) in cells.iter_mut().enumerate() {
+            *cell = part.read_with(inner + j, c, &frame);
+        }
+    }
+}
+
+fn push_frames(producer: &mut Producer<f32>, frames: &[f32]) {
+    if let Ok(chunk) = producer.write_chunk_uninit(frames.len()) {
+        chunk.fill_from_iter(frames.iter().copied());
+    }
+}
+
+/// **Hands a list stream the span it asked for**: frames `start..start +
+/// span` of the file, interleaved, for the `list_frames` list frames from
+/// `at`. The part is rendered from them into the ring. Returns whether it was
+/// taken: a span for an older refill, or for frames the stream is no longer
+/// at, is thrown away.
+pub fn list_push(id: u32, generation: u32, at: u64, list_frames: usize, samples: &[f32]) -> bool {
+    STREAMS.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(slot) = s.iter_mut().find(|slot| slot.id == id) else {
+            return false;
+        };
+        let End::Feeding(producer) = &mut slot.end else {
+            return false;
+        };
+        let Some(state) = slot.list.as_mut() else {
+            return false;
+        };
+        if state.generation != generation || state.next != Some(at) {
+            return false;
+        }
+        let Some(list) = state.list.clone() else {
+            return false;
+        };
+        let Some((_, part)) = list.stitch().and_then(|st| st.part_at(at as usize)) else {
+            return false;
+        };
+        let Some(layout) = part.src.file() else {
+            return false;
+        };
+        let channels = list.channels().max(1);
+        if producer.slots() < list_frames * channels {
+            return false;
+        }
+        let inner = at as usize - part.start();
+        let (first, _) = part.source_span(inner, inner + list_frames);
+        let width = layout.channels;
+        let mut frames = vec![0.0; list_frames * channels];
+        render_part(part, inner, channels, &mut frames, |f, c| {
+            f.checked_sub(first)
+                .and_then(|f| samples.get(f * width + c))
+                .copied()
+                .unwrap_or(0.0)
+        });
+        push_frames(producer, &frames);
+        state.next = Some(at + list_frames as u64);
+        true
+    })
+}
+
+/// Points a list stream at `frame` of `list` (or of the list it holds), for
+/// a new refill: what the host renders next starts there.
+fn refill_slot(id: u32, list: Option<Arc<Buffer>>, frame: u64, looping: bool) {
+    STREAMS.with(|s| {
+        if let Some(slot) = s.borrow_mut().iter_mut().find(|slot| slot.id == id)
+            && let Some(state) = slot.list.as_mut()
+        {
+            if list.is_some() {
+                state.list = list;
+            }
+            state.next = Some(frame);
+            state.generation = state.generation.wrapping_add(1);
+            state.looping = looping;
+        }
+    });
 }
 
 /// Pushes interleaved frames into a `DiskIn` stream, returning how many
@@ -249,6 +469,7 @@ impl DiskIn {
             start: config.start,
             format: String::new(),
             end: End::Feeding(producer),
+            list: None,
         });
         Self {
             active: Some(Active {
@@ -342,6 +563,7 @@ impl DiskOut {
             start: 0,
             format,
             end: End::Draining(consumer),
+            list: None,
         });
         Self {
             active: Some(Active {
@@ -387,5 +609,200 @@ impl Drop for DiskOut {
         if let Some(a) = self.active.as_ref() {
             release(a.id);
         }
+    }
+}
+
+// ---- TransportDiskIn ----
+
+/// Plays a segment list at the transport's position, the page's half of
+/// `dsp::stream`. Inputs as natively: 0 `bufnum`, 1 `chan`, 2 `offset`,
+/// 3 `start`, 4 `loop`.
+///
+/// **One thread, so no epochs.** Natively a refill is a request to another
+/// thread, and the frames already in the ring have to be told apart from the
+/// ones after it. Here the host renders between blocks on this same thread:
+/// a refill throws the ring away and points the registry at the new frame in
+/// one go, and a span still travelling for the old one is refused when it
+/// arrives (its generation is old). The silence a refill costs is the host's
+/// round trip to the page's files, and it is not counted as running out of
+/// lead; a ring that runs dry afterwards is.
+pub struct TransportDiskIn {
+    id: u32,
+    consumer: Consumer<f32>,
+    meters: Arc<Meters>,
+    sent: usize,
+    looping: bool,
+    head: Option<u64>,
+    /// Since the last refill nothing has arrived: its silence is the refill's.
+    fresh: bool,
+    channels: usize,
+    frames: u64,
+}
+
+impl TransportDiskIn {
+    pub fn open(meters: &Arc<Meters>) -> Self {
+        let (producer, consumer) = RingBuffer::new(crate::dsp::stream::RING_SAMPLES);
+        let id = fresh_id();
+        register(Slot {
+            id,
+            direction: Direction::List,
+            path: String::new(),
+            channels: 0,
+            looping: false,
+            start: 0,
+            format: String::new(),
+            end: End::Feeding(producer),
+            list: Some(ListState {
+                list: None,
+                next: None,
+                generation: 0,
+                looping: false,
+            }),
+        });
+        Self {
+            id,
+            consumer,
+            meters: Arc::clone(meters),
+            sent: 0,
+            looping: false,
+            head: None,
+            fresh: true,
+            channels: 1,
+            frames: 0,
+        }
+    }
+
+    fn refill(&mut self, list: Option<Arc<Buffer>>, frame: u64) {
+        let stale = self.consumer.slots();
+        if let Ok(chunk) = self.consumer.read_chunk(stale) {
+            chunk.commit_all();
+        }
+        refill_slot(self.id, list, frame, self.looping);
+        self.head = Some(frame);
+        self.fresh = true;
+    }
+
+    fn advance(&self, frame: u64, by: u64) -> u64 {
+        let next = frame + by;
+        if self.looping && self.frames > 0 {
+            next % self.frames
+        } else {
+            next
+        }
+    }
+
+    fn take(&mut self, frame: u64, channel: usize, starved: &mut u64) -> f32 {
+        let Some(head) = self.head else {
+            self.refill(None, frame);
+            return 0.0;
+        };
+        if head != frame {
+            let ring = (crate::dsp::stream::RING_SAMPLES / self.channels) as u64;
+            if head < frame && frame - head <= ring {
+                let have = (self.consumer.slots() / self.channels) as u64;
+                let n = (frame - head).min(have);
+                if let Ok(chunk) = self.consumer.read_chunk(n as usize * self.channels) {
+                    chunk.commit_all();
+                }
+                self.head = Some(self.advance(head, n));
+            } else {
+                self.refill(None, frame);
+                return 0.0;
+            }
+        }
+        if self.head != Some(frame) || self.consumer.slots() < self.channels {
+            if !self.fresh {
+                *starved += 1;
+            }
+            return 0.0;
+        }
+        self.fresh = false;
+        let mut value = 0.0;
+        for c in 0..self.channels {
+            let v = self.consumer.pop().unwrap_or(0.0);
+            if c == channel {
+                value = v;
+            }
+        }
+        self.head = Some(self.advance(frame, 1));
+        value
+    }
+}
+
+impl UGen for TransportDiskIn {
+    fn reset(&mut self) {
+        // A stream is the host's and cannot be restarted from here: a
+        // `Voices` node refuses a def that holds one.
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let index = inputs[0][0].max(0.0) as usize;
+        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_ref()) else {
+            output.fill(0.0);
+            return;
+        };
+        let frames = buf.frames() as u64;
+        let looping = inputs[4][0] != 0.0;
+        let base = ctx.transport.position as f64;
+        let rolling = ctx.transport.rolling;
+        let place = |i: usize| -> (Option<u64>, Option<u64>) {
+            if frames == 0 {
+                return (None, None);
+            }
+            let played = if rolling { i as f64 } else { 0.0 };
+            let raw = base + played - at(inputs[2], i) as f64 + at(inputs[3], i) as f64;
+            if looping {
+                let f = (raw.rem_euclid(frames as f64) as u64).min(frames - 1);
+                (Some(f), Some(f))
+            } else if raw < 0.0 {
+                (None, Some(0))
+            } else if raw >= frames as f64 {
+                (None, None)
+            } else {
+                (Some(raw as u64), Some(raw as u64))
+            }
+        };
+        let address = Arc::as_ptr(buf) as usize;
+        if address != self.sent || looping != self.looping {
+            self.looping = looping;
+            self.sent = address;
+            self.channels = buf.channels().max(1);
+            self.frames = frames;
+            self.refill(Some(Arc::clone(buf)), place(0).1.unwrap_or(0));
+            output.fill(0.0);
+            return;
+        }
+        let channel = (inputs[1][0].max(0.0) as usize).min(self.channels - 1);
+        if !rolling {
+            output.fill(0.0);
+            if let (_, Some(f)) = place(0)
+                && self.head != Some(f)
+            {
+                self.refill(None, f);
+            }
+            return;
+        }
+        let mut starved = 0u64;
+        for (i, s) in output.iter_mut().enumerate() {
+            *s = match place(i) {
+                (Some(f), _) => self.take(f, channel, &mut starved),
+                (None, Some(ready)) => {
+                    if self.head != Some(ready) {
+                        self.refill(None, ready);
+                    }
+                    0.0
+                }
+                (None, None) => 0.0,
+            };
+        }
+        if starved > 0 {
+            self.meters.starve(starved);
+        }
+    }
+}
+
+impl Drop for TransportDiskIn {
+    fn drop(&mut self) {
+        release(self.id);
     }
 }

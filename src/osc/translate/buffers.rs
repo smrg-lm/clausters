@@ -701,8 +701,8 @@ fn stitch_parts(
     args: &[OscType],
     channels: usize,
     mirror: &BufferPool,
-) -> Result<Vec<crate::dsp::stitch::PartSpec>, String> {
-    use crate::dsp::stitch::FadeShape;
+) -> Result<Vec<crate::dsp::stitch::PartRequest>, String> {
+    use crate::dsp::stitch::{FadeShape, PartRequest, PartSource};
     const HEAD: usize = 9;
     const CURVES: [usize; 2] = [6, 8];
     let width = HEAD + channels;
@@ -714,8 +714,6 @@ fn stitch_parts(
         ));
     }
     let mut parts = Vec::with_capacity(args.len() / width);
-    // A file named by several parts is read for its shape once.
-    let mut files: Vec<Arc<crate::dsp::buffer::Buffer>> = Vec::new();
     for (n, group) in args.chunks_exact(width).enumerate() {
         let mut ints = Vec::with_capacity(width);
         let mut curves = [0.0f32; 2];
@@ -733,7 +731,8 @@ fn stitch_parts(
                 OscType::Long(v) if (1..=2).contains(&i) => ints.push(*v),
                 // **A part's source is a buffer or a file**: a path where the
                 // buffer number goes names the span of a PCM file, with the
-                // same fades and map as a span of a buffer.
+                // same fades and map as a span of a buffer. Its shape is read
+                // by the job, never here.
                 OscType::String(p) if i == 0 => {
                     path = Some(p.clone());
                     ints.push(-1);
@@ -743,24 +742,8 @@ fn stitch_parts(
         }
         let (src, src_start, frames, fade_in, fade_out) =
             (ints[0], ints[1], ints[2], ints[3], ints[4]);
-        let (source, label) = match path {
-            Some(path) => {
-                let found = files
-                    .iter()
-                    .find(|b| b.file().is_some_and(|l| l.path == path))
-                    .cloned();
-                let source = match found {
-                    Some(b) => b,
-                    None => {
-                        let layout = crate::dsp::pcm::Layout::open(&path)
-                            .map_err(|e| format!("part {n}: {e}"))?;
-                        let b = Arc::new(crate::dsp::buffer::Buffer::on_file(layout));
-                        files.push(Arc::clone(&b));
-                        b
-                    }
-                };
-                (source, format!("file {path}"))
-            }
+        let source = match path {
+            Some(path) => PartSource::File(path),
             None => {
                 if src < 0 || src as usize >= mirror.len() {
                     return Err(format!("part {n}: buffer index out of range: {src}"));
@@ -768,7 +751,7 @@ fn stitch_parts(
                 let Some(source) = mirror[src as usize].clone() else {
                     return Err(format!("part {n}: buffer {src} is not allocated"));
                 };
-                (source, format!("buffer {src}"))
+                PartSource::Buffer(source)
             }
         };
         if src_start < 0 || frames <= 0 || fade_in < 0 || fade_out < 0 {
@@ -776,22 +759,7 @@ fn stitch_parts(
                 "part {n}: srcStart, fadeIn and fadeOut must be non-negative and frames positive"
             ));
         }
-        let end = src_start as usize + frames as usize;
-        if end > source.frames() {
-            return Err(format!(
-                "part {n}: {label} has {} frames and the part asks for {end}",
-                source.frames()
-            ));
-        }
-        for (c, &to) in ints[HEAD..].iter().enumerate() {
-            if to >= source.channels() as i64 {
-                return Err(format!(
-                    "part {n}: channel {c} maps to source channel {to} and {label} has {}",
-                    source.channels()
-                ));
-            }
-        }
-        parts.push(crate::dsp::stitch::PartSpec {
+        parts.push(PartRequest {
             src: source,
             src_index: src as i32,
             src_start: src_start as usize,

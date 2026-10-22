@@ -46,6 +46,13 @@ interface ShapeRequest {
     path: string;
 }
 
+/** `/buffer_stitch` with parts over files: the shape of each, in order. */
+interface ShapesRequest {
+    type: "shapes";
+    ticket: number;
+    paths: string[];
+}
+
 /** `DiskIn`: the next span of a file being streamed. */
 interface SpanRequest {
     type: "span";
@@ -125,6 +132,7 @@ interface FaustHeapRequest {
 type Request =
     | ReadRequest
     | ShapeRequest
+    | ShapesRequest
     | SpanRequest
     | WriteRequest
     | RecordRequest
@@ -151,6 +159,11 @@ type Response =
           frames: number;
       }
     | { type: "shape"; ticket: number; error: string }
+    | {
+          type: "shapes";
+          ticket: number;
+          shapes: ({ channels: number; sampleRate: number; frames: number } | { error: string })[];
+      }
     | { type: "span"; ticket: number; samples: Float32Array; frames: number }
     | { type: "span"; ticket: number; error: string }
     | { type: "record"; ticket: number; error?: string }
@@ -371,6 +384,27 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         } catch (e) {
             post({ type: "shape", ticket: request.ticket, error: message(e) });
         }
+        return;
+    }
+    if (request.type === "shapes") {
+        // Read anew: a file named by a join may have been rewritten since a
+        // stream last looked at it.
+        for (const path of request.paths) shapes.delete(path);
+        const found: ({ channels: number; sampleRate: number; frames: number } | { error: string })[] =
+            [];
+        for (const path of request.paths) {
+            try {
+                const shape = await shapeOf(path);
+                found.push({
+                    channels: shape.channels,
+                    sampleRate: shape.sampleRate,
+                    frames: shape.frames,
+                });
+            } catch (e) {
+                found.push({ error: message(e) });
+            }
+        }
+        post({ type: "shapes", ticket: request.ticket, shapes: found });
         return;
     }
     if (request.type === "span") {

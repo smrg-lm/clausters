@@ -288,28 +288,26 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The turn: an application's takes live on disk**, milestones `S21`, `S22`,
+- ⬜ **The turn: an application's takes live on disk**, milestones `S22`,
   `O34`, `G45`, `X28`, `X29`, `S23` *(`crates/clausters-apps/PLAN.md`, "The
   turn: an application's takes live on disk", with each milestone in its own
   plan)*. **Taken next**, on the user's word: the audio editor's model does
   not reach a file of hours, and successive pastes of a long selection fail
-  natively. In that order: the server's list reader and long files first,
-  then the document, the host, the audio editor, the multitrack, and the
+  natively. In that order: long files and their peaks first, then the
+  document, the host, the audio editor, the multitrack, and the
   removal of the editing commands last. Its decisions are taken. Before
   `X25`, which should port this lifecycle and not the one it replaces.
   **Related:** it takes the GUI plan's "An edit of a long take costs a native
-  server with a segment a pass over it" and the root plan's "A long take is
-  played out of the pool, and `DiskIn` cannot be positioned".
+  server with a segment a pass over it".
 
   | Order | Milestone | Plan |
   |---|---|---|
-  | 1 | `S21` — A segment list reads pool buffers or files, and the RT server plays one from disk | root `PLAN.md` |
-  | 2 | `S22` — A file of any length, and a peaks file for it | root `PLAN.md` |
-  | 3 | `O34` — A source is a file, a clipboard holds segments, and a render is temporary | `crates/clausters-document/PLAN.md` |
-  | 4 | `G45` — The host draws a list of segments from its files | `clients/gui/PLAN.md` |
-  | 5 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
-  | 6 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
-  | 7 | `S23` — The server keeps no editing commands | root `PLAN.md` |
+  | 1 | `S22` — A file of any length, and a peaks file for it | root `PLAN.md` |
+  | 2 | `O34` — A source is a file, a clipboard holds segments, and a render is temporary | `crates/clausters-document/PLAN.md` |
+  | 3 | `G45` — The host draws a list of segments from its files | `clients/gui/PLAN.md` |
+  | 4 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
+  | 5 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
+  | 6 | `S23` — The server keeps no editing commands | root `PLAN.md` |
 
 - ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
   summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A
