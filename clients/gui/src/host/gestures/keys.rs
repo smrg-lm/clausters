@@ -554,10 +554,10 @@ impl Gestures {
                 .selection_addressee(ctx.def_id)
                 .or_else(|| sole_take(host, ctx.def_id))?,
         };
-        let frames = host.buffer_frames(ctx.def_id, id)?;
         let mut out = Vec::new();
         match tag {
             None => {
+                let frames = host.buffer_frames(ctx.def_id, id)?;
                 super::nav::set_selection(host, &mut out, ctx.def_id, id, 0.0, frames as f64, None)
             }
             Some(tag) => {
@@ -1001,11 +1001,7 @@ pub(crate) fn sole_take(host: &Host, def_id: i32) -> Option<i32> {
     let tree = host.window_def(def_id)?;
     let takes: Vec<i32> = timeline_ids(tree)
         .into_iter()
-        .filter(|id| {
-            tree.find(*id)
-                .and_then(|w| w.kind.as_samples())
-                .is_some_and(|s| s.sample_shape().is_some())
-        })
+        .filter(|id| tree.find(*id).is_some_and(|w| w.kind.holds_samples()))
         .collect();
     match takes.as_slice() {
         [id] => Some(*id),

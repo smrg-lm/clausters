@@ -930,7 +930,36 @@ impl Host {
         let tree = self.window_def(def_id)?;
         tree.find(id)?;
         let key = self.timeline_key(id)?;
-        self.timelines.state(key)?.selection().map(|_| id)
+        self.timelines
+            .state(key)?
+            .selection()
+            .map(|_| self.holding_samples(def_id, id))
+    }
+
+    /// **The view of samples a selection on `id` stands for**: `id` itself
+    /// when it holds samples, else the one view on its time axis in window
+    /// `def_id` that does. A take's pane carries the axis, the band and the
+    /// ruler, and its picture the samples, so a selection a script set on the
+    /// pane, or a sweep over its ruler, addresses the picture: a copy asked
+    /// of the pane has nothing to read. Several views of samples on one axis
+    /// leave `id` as it is, since which one is meant is not the axis's to say.
+    fn holding_samples(&self, def_id: i32, id: i32) -> i32 {
+        let Some(tree) = self.window_def(def_id) else {
+            return id;
+        };
+        let holds = |id: i32| tree.find(id).is_some_and(|w| w.kind.holds_samples());
+        if holds(id) {
+            return id;
+        }
+        let key = self.timeline_key(id);
+        let mut on_axis = tree
+            .descendants()
+            .filter_map(|w| w.id)
+            .filter(|other| self.timeline_key(*other) == key && holds(*other));
+        match (on_axis.next(), on_axis.next()) {
+            (Some(one), None) => one,
+            _ => id,
+        }
     }
 
     /// **Who a paste is addressed to when the pointer is over nothing**: the
@@ -942,7 +971,9 @@ impl Host {
         let id = self.timelines.last_selected()?;
         let tree = self.window_def(def_id)?;
         tree.find(id)?;
-        self.timelines.state(self.timeline_key(id)?).map(|_| id)
+        self.timelines
+            .state(self.timeline_key(id)?)
+            .map(|_| self.holding_samples(def_id, id))
     }
 
     /// Sets widget `id`'s group playhead anchor. Returns the roots to repaint

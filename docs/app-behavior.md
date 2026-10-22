@@ -244,7 +244,13 @@ code that keeps it lives.
   addresses the view under the pointer; a menu entry has no pointer over the
   take, so it addresses the window's last selection or its one take, and a
   pane, its take and a curve over it are one take (`gestures::keys::sole_take`
-  counts the views that hold samples themselves).
+  counts the views that hold samples themselves). A selection put on the
+  pane -- by a script's `select`, or a sweep over its ruler -- addresses the
+  take on that axis, since the pane has no samples to copy. A take whose owner
+  copies is a take before any of its samples reach the host, as in a page
+  whose window is out of view and fetches nothing, so a script's `cut()`,
+  `copy()`, `delete()` and `paste()` and the Edit menu act on it the same
+  (`WidgetKind::holds_samples`).
 - **What the owner holds, the owner answers.** A press on a folded strip asks
   the owner to unfold it; a dialog's `OK` answers an outcome (`newFile`,
   `openFile`) the client acts on, since the client is what opens windows.

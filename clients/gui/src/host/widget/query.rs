@@ -482,6 +482,16 @@ impl WidgetKind {
         self.as_element()?.samples()
     }
 
+    /// **Whether this is a view of samples a block operation addresses**:
+    /// one whose samples have reached the host, or one whose owner copies --
+    /// that holds its samples before any arrive, as a take in a window out of
+    /// view does, where nothing is fetched. A pane over a take is not one:
+    /// it carries the axis, and its picture the samples.
+    pub fn holds_samples(&self) -> bool {
+        self.as_samples()
+            .is_some_and(|s| s.owner_copies() || s.sample_shape().is_some())
+    }
+
     /// [`as_samples`](WidgetKind::as_samples), mutably -- what a write, a
     /// summary refresh and a view's own request go through.
     pub fn as_samples_mut(&mut self) -> Option<&mut dyn Samples> {

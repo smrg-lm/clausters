@@ -796,3 +796,70 @@ fn a_delete_asks_for_the_span_and_leaves_the_clipboard_alone() {
         .expect("the view answers");
     assert!(!host.clipboard.is_empty(), "a cut copies");
 }
+
+/// **A selection a script set on a take's pane addresses the take**: the pane
+/// carries the time axis and the band, its picture the samples, so a cut, a
+/// copy or a delete with no pointer -- a script's verb, a menu entry -- is
+/// asked of the picture, not refused by the pane that has nothing to read.
+#[test]
+fn a_selection_set_on_a_pane_cuts_its_take_with_no_pointer() {
+    let mut host = host_from(
+        &serde_json::json!({"type": "window", "main": 50, "children": [
+            {"id": 40, "type": "pane", "children": [
+                {"id": 50, "type": "signal", "view": "trace", "copies": "owner"}]}]})
+        .to_string(),
+    );
+    // no samples have reached the host: the owner copies them
+    host.set_timeline_total(50, 1000);
+    for (prop, value) in [("sel_start", 100.0), ("sel_len", 200.0)] {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: super::super::GUI_SET.into(),
+                args: vec![
+                    OscType::Int(40),
+                    OscType::String(prop.into()),
+                    OscType::Double(value),
+                ],
+            }),
+            ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+    }
+    let mut g = Gestures::default();
+    for verb in ["copy", "cut", "delete"] {
+        let effects = g.command(&mut host, &ctx(), verb);
+        assert!(
+            emitted(&effects).iter().any(|(id, args)| *id == 50
+                && args.first() == Some(&OscType::String(verb.into()))
+                && args.get(1) == Some(&OscType::Double(100.0))),
+            "{verb}: {:?}",
+            emitted(&effects)
+        );
+    }
+}
+
+/// **A paste with no pointer and no selection lands in the window's one
+/// take** even before its samples reach the host: its owner copies, so the
+/// take is a take whether or not the host has read it -- as in a page whose
+/// window is out of view, where nothing is fetched.
+#[test]
+fn a_paste_reaches_the_one_take_its_owner_holds_before_any_samples_arrive() {
+    let mut host = host_from(
+        &serde_json::json!({"type": "window", "main": 50, "children": [
+            {"id": 40, "type": "pane", "children": [
+                {"id": 50, "type": "signal", "view": "trace", "copies": "owner"}]}]})
+        .to_string(),
+    );
+    host.set_timeline_total(50, 1000);
+    host.clipboard.put_samples(vec![0.25; 8].into(), 1, 48000.0);
+    let effects = Gestures::default().command(&mut host, &ctx(), "paste");
+    assert!(
+        emitted(&effects)
+            .iter()
+            .any(|(id, args)| *id == 50 && args.first() == Some(&OscType::String("paste".into()))),
+        "{:?}",
+        emitted(&effects)
+    );
+}
