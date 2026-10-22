@@ -32,6 +32,7 @@ import {
     readRange,
     sizeOf,
     trimDirectory,
+    writeAt,
     writeFile,
 } from "./opfs.ts";
 import { HEAD_BYTES, wrapSpan, type WavShape } from "./wav.ts";
@@ -92,11 +93,13 @@ interface FaustRequest {
  * `/buffer_write`: put a span of a buffer in the page's filesystem.
  *
  * The runs arrive one per serving turn -- the samples leave the engine's memory
- * paced, the way a long load arrives paced -- and the file is written **once**,
- * at `final`. Nothing is visible until then, which is the same rule a staged
- * load follows: a half-written file is not a shorter take, it is a wrong one.
- * That is what separates this from `record`, which rewrites its file at every
- * flush because a recording has to survive the tab closing mid-take.
+ * paced, the way a long load arrives paced -- and each is written where the
+ * body has reached, so only the run is held. The header is written **once**,
+ * at `final`: until then the file's head is zeros and it reads as no sound
+ * file at all, which is the same rule a staged load follows -- a half-written
+ * file is not a shorter take, it is a wrong one. That is what separates this
+ * from `record`, whose header is written again at every flush because a
+ * recording has to survive the tab closing mid-take.
  */
 interface WriteRequest {
     type: "write";
@@ -396,14 +399,36 @@ function compiler(): Promise<{ lib: FaustLib; mod: FaustModule }> {
 /** A file being streamed: its shape, remembered so a span costs one read. */
 const shapes = new Map<string, WavShape>();
 
-/** A `/buffer_write` in progress: the runs handed over so far, held until the
- *  last one says the span is complete. */
-const writes = new Map<string, Uint8Array<ArrayBuffer>>();
+/**
+ * A file being written a run at a time, by `/buffer_write` or by a `DiskOut`:
+ * how many body bytes are in it so far, and the first failure, which a
+ * `/buffer_write` reports at its end since its runs are not answered. Only
+ * the count is held -- the samples go to storage as they arrive, which is the
+ * whole point of streaming them.
+ */
+interface Streamed {
+    bytes: number;
+    failed?: string;
+}
+const writes = new Map<string, Streamed>();
+const recordings = new Map<string, Streamed>();
 
-/** A recording in progress: what has been written, so the header can be fixed
- *  at the close. Kept in memory only as a byte count -- the samples go to
- *  storage as they arrive, which is the whole point of streaming them. */
-const recordings = new Map<string, { bytes: Uint8Array<ArrayBuffer>; frames: number }>();
+/** The work under way on each path, so that a write and a read of one file
+ *  never hold its access handle at once: a second handle on a file is
+ *  refused while the first is open, and the requests are handled
+ *  concurrently. Each path's work runs in the order it was asked for. */
+const queues = new Map<string, Promise<unknown>>();
+
+function serial<T>(path: string, work: () => Promise<T>): Promise<T> {
+    const before = queues.get(path) ?? Promise.resolve();
+    const done = before.then(work, work);
+    const tail = done.catch(() => {});
+    queues.set(path, tail);
+    void tail.then(() => {
+        if (queues.get(path) === tail) queues.delete(path);
+    });
+    return done;
+}
 
 /** A peaks file being summarized: the runs of base buckets so far. */
 const peaks = new Map<string, Float32Array[]>();
@@ -414,7 +439,9 @@ async function shapeOf(path: string): Promise<WavShape> {
     // The framing is the server crate's (`dsp::pcm`): a WAV, an RF64 or a
     // W64, read from the head of a file whose whole length is known.
     const { soundShape } = await load();
-    const read = soundShape(await readRange(path, 0, HEAD_BYTES), path, await sizeOf(path));
+    const [head, size] = await serial(path, async () =>
+        [await readRange(path, 0, HEAD_BYTES), await sizeOf(path)] as const);
+    const read = soundShape(head, path, size);
     const shape: WavShape = {
         channels: read.channels,
         sampleRate: read.sampleRate,
@@ -476,7 +503,7 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
             const shape = await shapeOf(request.path);
             const at = shape.dataOffset + request.frame * shape.blockAlign;
             const want = request.frames * shape.blockAlign;
-            const body = await readRange(request.path, at, want);
+            const body = await serial(request.path, () => readRange(request.path, at, want));
             // A span is not a file until it has a header of its own -- and it
             // has to become one, because the decode belongs to the server's
             // decoder rather than to anything written here.
@@ -520,44 +547,44 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         return;
     }
     if (request.type === "write") {
+        const { path } = request;
+        const fresh = !writes.has(path);
+        const state = writes.get(path) ?? { bytes: 0 };
+        writes.set(path, state);
         try {
             const { encodeWavFrames, soundHeader } = await load();
-            const held = writes.get(request.path) ?? new Uint8Array(0);
+            // The header's length is the container's, whatever the body's.
+            const head = soundHeader(path, request.container, request.channels,
+                request.sampleRate, request.format, 0).byteLength;
             const body = request.samples.length > 0
                 ? encodeWavFrames(request.samples, request.format)
                 : new Uint8Array(0);
-            const grown = new Uint8Array(held.byteLength + body.byteLength);
-            grown.set(held);
-            grown.set(body, held.byteLength);
+            const at = head + state.bytes;
+            state.bytes += body.byteLength;
+            const runs = body.byteLength > 0 ? [{ at, bytes: body }] : [];
             if (!request.final) {
                 // No acknowledgement per run, only at the end: the runs are
                 // ordered by the port itself, and an ack for an early run
                 // arriving after the last one was posted would answer the
-                // command before the file exists.
-                writes.set(request.path, grown);
+                // command before the file exists. A failure waits for it.
+                // A directory that is not there refuses the write.
+                await serial(path, () => writeAt(path, runs, fresh)).catch((e) => {
+                    state.failed ??= message(e);
+                });
                 return;
             }
-            writes.delete(request.path);
+            writes.delete(path);
+            if (state.failed !== undefined) throw new Error(state.failed);
             // The framing is the server crate's, bound here rather than written
             // in TypeScript: a second int16 rounding is a second answer, and a
             // file that differs by a bit between a tab and a window is exactly
             // the divergence nothing names.
-            const header = soundHeader(
-                request.path,
-                request.container,
-                request.channels,
-                request.sampleRate,
-                request.format,
-                grown.byteLength,
-            );
-            const file = new Uint8Array(header.byteLength + grown.byteLength);
-            file.set(header);
-            file.set(grown, header.byteLength);
-            // a directory that is not there refuses the write
-            await writeFile(request.path, file);
+            const header = soundHeader(path, request.container, request.channels,
+                request.sampleRate, request.format, state.bytes);
+            await serial(path, () => writeAt(path, [...runs, { at: 0, bytes: header }], fresh));
             post({ type: "write", ticket: request.ticket });
         } catch (e) {
-            writes.delete(request.path);
+            writes.delete(path);
             post({ type: "write", ticket: request.ticket, error: message(e) });
         }
         return;
@@ -589,40 +616,31 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         return;
     }
     if (request.type === "record") {
+        const { path } = request;
+        const fresh = !recordings.has(path);
+        const take = recordings.get(path) ?? { bytes: 0 };
+        recordings.set(path, take);
+        if (request.final) recordings.delete(path);
         try {
             const { encodeWavFrames, soundHeader } = await load();
-            let take = recordings.get(request.path);
-            if (take === undefined) {
-                take = { bytes: new Uint8Array(0), frames: 0 };
-                recordings.set(request.path, take);
-            }
-            if (request.samples.length > 0) {
-                const body = encodeWavFrames(request.samples, request.format);
-                const grown = new Uint8Array(take.bytes.byteLength + body.byteLength);
-                grown.set(take.bytes);
-                grown.set(body, take.bytes.byteLength);
-                take.bytes = grown;
-                take.frames += request.samples.length / request.channels;
-            }
-            // Rewritten whole each time rather than appended: OPFS gives a
-            // sync handle, not an append, and a take that is only correct once
-            // it ends is a take that is lost when a tab closes. This costs a
-            // rewrite per flush and buys a file that is valid at every moment.
-            // The container is the path's, as a native `DiskOut`'s is.
-            const header = soundHeader(
-                request.path,
-                "",
-                request.channels,
-                request.sampleRate,
-                request.format,
-                take.bytes.byteLength,
-            );
-            const file = new Uint8Array(header.byteLength + take.bytes.byteLength);
-            file.set(header);
-            file.set(take.bytes, header.byteLength);
+            const body = request.samples.length > 0
+                ? encodeWavFrames(request.samples, request.format)
+                : new Uint8Array(0);
+            const head = soundHeader(path, "", request.channels, request.sampleRate,
+                request.format, 0).byteLength;
+            const at = head + take.bytes;
+            take.bytes += body.byteLength;
+            // The run goes where the body ends and the header is written
+            // again over the first bytes, so the file is valid at every
+            // moment -- a take that is only correct once it ends is a take
+            // that is lost when a tab closes -- and the worker holds one run,
+            // whatever the take's length. The container is the path's, as a
+            // native `DiskOut`'s is.
+            const header = soundHeader(path, "", request.channels, request.sampleRate,
+                request.format, take.bytes);
+            const runs = body.byteLength > 0 ? [{ at, bytes: body }] : [];
             // a directory that is not there refuses the write
-            await writeFile(request.path, file);
-            if (request.final) recordings.delete(request.path);
+            await serial(path, () => writeAt(path, [...runs, { at: 0, bytes: header }], fresh));
             post({ type: "record", ticket: request.ticket });
         } catch (e) {
             post({ type: "record", ticket: request.ticket, error: message(e) });
@@ -631,7 +649,7 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
     }
     const { ticket, path } = request;
     try {
-        const bytes = await readFile(path);
+        const bytes = await serial(path, () => readFile(path));
         const { decodeAudio } = await load();
         const decoded = decodeAudio(
             bytes,

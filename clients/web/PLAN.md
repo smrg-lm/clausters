@@ -5059,7 +5059,7 @@ sound.
   the pages that write make `out/` with `opfs.makeDirectory` where their
   scripts make it.
 
-- ⬜ **A recording or a write in a tab is held whole and rewritten at every
+- ✅ **A recording or a write in a tab is held whole and rewritten at every
   flush, so a take of hours does not fit** *(found 2026-10-22, closing the
   root plan's `S22`)*. The worker keeps a `DiskOut`'s whole body in memory
   and writes the file again from its first byte at each flush, so that it is
@@ -5070,3 +5070,10 @@ sound.
   containers exist for is out of reach. What it takes: an OPFS sync handle
   that writes at an offset -- the body appended where it ends and the header
   written again at the start -- so the worker holds a run and not the take.
+  *Fixed 2026-10-22, opening `X28`:* each run is written where the body
+  ends and a recording's header again at the start, through a sync handle
+  closed after each flush so a reader finds the file free between two;
+  a `/buffer_write` writes its header only at the end, so until then it
+  reads as no sound file. One path's reads and writes are serialized in
+  the worker. `PeaksOut` still holds its base buckets to the end, about
+  2.3 % of the samples, as natively.

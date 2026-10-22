@@ -106,6 +106,53 @@ export async function writeFile(path: string, bytes: Uint8Array<ArrayBuffer>): P
 }
 
 /**
+ * **Writes each run at its own offset** into `path`, creating the file, and
+ * emptying it first when `fresh`: how a file of any length is written a run
+ * at a time, with only the run in memory. A gap a run leaves before it reads
+ * as zeros. The handle is closed again before this returns, so the file is
+ * free for a reader between two writes: a sync access handle holds the file
+ * for as long as it is open.
+ */
+export async function writeAt(
+    path: string,
+    runs: { at: number; bytes: Uint8Array }[],
+    fresh: boolean,
+): Promise<void> {
+    let dir: FileSystemDirectoryHandle;
+    let name: string;
+    try {
+        [dir, name] = await parentOf(path, false);
+    } catch (error) {
+        if ((error as { name?: string }).name !== "NotFoundError") throw error;
+        throw new Error(`${path}: no such directory`);
+    }
+    const handle = await dir.getFileHandle(name, { create: true });
+    if (typeof handle.createSyncAccessHandle === "function") {
+        const access = await handle.createSyncAccessHandle();
+        try {
+            if (fresh) access.truncate(0);
+            for (const { at, bytes } of runs) access.write(bytes as Uint8Array<ArrayBuffer>, { at });
+            access.flush();
+        } finally {
+            access.close();
+        }
+        return;
+    }
+    if (typeof handle.createWritable === "function") {
+        const stream = await handle.createWritable({ keepExistingData: !fresh });
+        for (const { at, bytes } of runs) {
+            await stream.write({ type: "write", position: at, data: bytes as Uint8Array<ArrayBuffer> });
+        }
+        await stream.close();
+        return;
+    }
+    throw new Error(
+        `${path}: this context can neither open a sync access handle (a ` +
+            `dedicated Worker can) nor a writable stream`,
+    );
+}
+
+/**
  * A byte range of a file, for reading it a part at a time. `length` past the
  * end simply returns what is there -- a short read is the end of the file, not
  * an error.

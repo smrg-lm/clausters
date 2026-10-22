@@ -303,11 +303,10 @@ its plan; the plan is where its acceptance is read.
   removal of the editing commands last. Its
   decisions are taken. Before `X25`, which should port this lifecycle and not
   the one it replaces. **Related:** it takes the GUI plan's "An edit of a long
-  take costs a native server with a segment a pass over it", and the page half
-  of `X28` needs the web plan's "A recording or a write in a tab is held whole
-  and rewritten at every flush" (Found by use) first, and `X28` decides the
-  GUI plan's "A list of segments over files draws no spectrogram" (Found by
-  use).
+  take costs a native server with a segment a pass over it", and `X28`
+  first takes the GUI plan's "A list of segments over files draws no
+  spectrogram" (Found by use), decided as an analysis of the span under the
+  eye.
 
   | Order | Milestone | Plan |
   |---|---|---|

@@ -37,7 +37,9 @@
       a locate under the moving playhead keeps it so. Then the long-file
       containers: diskOut records into a W64 with peaksOut writing its peaks
       file beside it, both read back, and buffer.write writes an RF64 that
-      Buffer.read reads back.
+      Buffer.read reads back sample for sample. Mid-take, the recording is
+      already a sound file of what it holds: a run is written where the body
+      ends and the header again, so the worker never holds the take.
     -->
     <script type="module">
       import { Session, opfs, loadCore, SynthDef, Synth, Group, Bus, Buffer, data }
@@ -69,7 +71,26 @@
         await new SynthDef("rec",
           out(recBus.index, diskOut(sine(440).mul(0.5), { path: PATH, format: "float" }))).send(server);
         const recording = new Synth("rec", {}, { server });
-        await wait(1500);
+        // Mid-take the file is a sound file of what is written so far: each
+        // run lands where the body ends and the header is written again, so
+        // a reader -- the host, a second stream -- finds a whole file.
+        // The first run lands once a span is recorded, after the stream's
+        // start, so the page waits for it rather than for a fixed time.
+        let midSize = 0;
+        let midData = 0;
+        for (let waited = 0; waited < 1200 && midData === 0; waited += 100) {
+          await wait(100);
+          if (!(await opfs.exists(PATH))) continue;
+          midSize = await opfs.sizeOf(PATH);
+          const head = await opfs.readRange(PATH, 0, 44);
+          midData = head.byteLength === 44 ? new DataView(head.buffer).getUint32(40, true) : 0;
+        }
+        const midTake = await Buffer.read(PATH, { server });
+        const midFrames = midTake.frames;
+        midTake.free();
+        log(`mid-take: ${midSize} bytes, header says ${midData} of data, read back ${midFrames} frames`);
+        const midOk = midData > 0 && midData <= midSize - 44 && midFrames > 0;
+        await wait(700);
         recording.free();
         // The final flush is owed to the stream being gone; give the worker a
         // turn to write it.
@@ -198,20 +219,25 @@
         await w64.write("takes/back.rf64", { sampleFormat: "float" });
         const rf64 = await Buffer.read("takes/back.rf64", { server });
         const rf64Head = String.fromCharCode(...(await opfs.readRange("takes/back.rf64", 0, 4)));
+        // A write is a run at a time into the file, so it reads back sample
+        // for sample however many runs it took.
+        const wrote = await w64.getSamples({ start: 0, count: w64.frames });
+        const back = await rf64.getSamples({ start: 0, count: rf64.frames });
+        const same = wrote.length === back.length && wrote.every((v, i) => v === back[i]);
         log(`W64 "${w64Head}" of ${w64.frames} frames at peak ${w64Peak.toFixed(3)}, peaks "${peaksHead}"; ` +
             `RF64 "${rf64Head}" of ${rf64.frames} frames`);
         const longOk = w64Head === "riff" && w64.frames > 24000 && w64Peak > 0.45 &&
-          peaksHead === "CLPK" && rf64Head === "RF64" && rf64.frames === w64.frames;
+          peaksHead === "CLPK" && rf64Head === "RF64" && rf64.frames === w64.frames && same;
 
         const ok = riff === "RIFF" && frames > 24000 && peak > 0.1 && half > 0.1 && past < 0.01 &&
-          joined && longOk;
+          joined && longOk && midOk;
         verdict(ok
           ? `PASS: diskOut recorded ${(frames / 48000).toFixed(2)} s into the page's ` +
             `filesystem (${size} bytes of RIFF) and diskIn streamed it back at ` +
-            `peak ${peak.toFixed(3)}, and from a start frame where it was asked to; ` +
+            `peak ${peak.toFixed(3)}, read back whole mid-take, and from a start frame where it was asked to; ` +
             `a join of two files played at the transport's position, through a locate; ` +
             `a W64 with its peaks file and an RF64 written and read back`
-          : `FAIL: riff "${riff}", ${frames} frames, peak ${peak}, from half ${half}, from past ${past}, ` +
+          : `FAIL: riff "${riff}", ${frames} frames, mid-take ${midSize} bytes, ${midData} in the header, ${midFrames} frames read, peak ${peak}, from half ${half}, from past ${past}, ` +
             `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}, ` +
             `long files ${longOk}`);
         await session.close();
