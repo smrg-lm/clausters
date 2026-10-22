@@ -288,6 +288,12 @@ code that keeps it lives.
 - **A window drawn again shows the dialog that was up**, its fields holding
   what was typed and its chooser where it was, with nothing selected; a
   window closed and opened again has none up (`forms::Dialogs`).
+- **A closed window leaves the page, as it leaves the screen.** The canvas a
+  page's client made for a window -- in the element it was given, or of its
+  own -- is removed when the window closes, by a script's `close()` or the
+  host's `/gui_closed`; a canvas the page handed over is the page's and stays.
+  Kept on the page, it went on showing the last frame of a window that no
+  longer existed.
 - **A correction addresses only what the window drew.** A prop set after a
   turn -- the play cursor, the level meter -- names a widget of the window as
   it was last drawn; a widget the window was asked for and did not draw (the

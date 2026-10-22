@@ -355,6 +355,12 @@ export class GuiHost {
     /** Window id -> the disposer that stops following its element's box. */
     private readonly fitted = new Map<number, () => void>();
     /**
+     * The canvases this host made for a window -- in an element, or of its
+     * own -- which go when the window does, as a native window leaves the
+     * screen. A canvas the page handed over is the page's and stays.
+     */
+    private readonly made = new Map<number, HTMLCanvasElement>();
+    /**
      * Widget id -> the sources that widget draws, so a recycled widget stops
      * being one of the live ends a `Source.set` reaches.
      */
@@ -598,6 +604,7 @@ export class GuiHost {
             // way it is this view's canvas and not a page-wide one, which is
             // what lets a document hold as many as it opens.
             canvas = element != null ? canvasIn(element) : newCanvas();
+            if (!(element instanceof HTMLCanvasElement)) this.made.set(wid, canvas);
             // Before the `/gui_def`: the carrier attaches the page's fallback
             // canvas to a def fed without one, and `attach` is idempotent, so
             // the canvas chosen here is the one the def keeps.
@@ -1188,7 +1195,14 @@ export class GuiHost {
         this.fitted.delete(id);
         this.free(id);
         this.opened.delete(id);
+        this.unmount(id);
         this.notifyWaiters();
+    }
+
+    /** The canvas this host made for window `id`, taken off the page. */
+    private unmount(id: number): void {
+        this.made.get(id)?.remove();
+        this.made.delete(id);
     }
 
     /** Whether `id` is a window this host opened and has not seen close. */
@@ -1562,6 +1576,9 @@ export class GuiHost {
         } else if (msg.addr === "/gui_closed" && msg.args.length > 0) {
             const id = Number(msg.args[0]);
             this.opened.delete(id);
+            this.fitted.get(id)?.();
+            this.fitted.delete(id);
+            this.unmount(id);
             this.onClosedHandlers.get(id)?.();
             // Last, so an editor's own `windowId` (cleared by the subscription
             // above) and this set agree before anybody waiting is woken.

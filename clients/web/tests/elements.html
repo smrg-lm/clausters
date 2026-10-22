@@ -170,6 +170,8 @@ fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
         check(raised.length === 0, `the page raised: ${raised.join(" | ")}`);
 
         win.close();
+        // a closed window leaves the page, as a native one leaves the screen
+        check(stage.querySelector("canvas") === null, "the closed window's canvas is still on the page");
         session.close();
         verdict(failures.length === 0
           ? `PASS: ${names.length} elements built, drawn for 1.5 s and still answering`
