@@ -137,10 +137,10 @@ for nothing.</div>
                 Math.sin(2 * Math.PI * freq * (1 + c / 8) * i / rate);
             }
           }
-          // a write goes into a directory that is there, as on a disk
-          await opfs.makeDirectory("out");
           return SoundFile.write(`out/${file}`, samples, channels, rate, { sampleFormat: "float" });
         };
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const a = await tone("a.wav", 440.0, 1);
         const b = await tone("b.wav", 660.0, 2);
         const c = await tone("c.wav", 880.0, 6);

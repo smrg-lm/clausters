@@ -140,10 +140,10 @@ the last event so the last note's release is not cut.</div>
         session.seed(70);
         const phrase = ppar([melody, counter]);
 
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
         const stats = await render(phrase, {
           clock: session.clock, defs: [glider()], tail: 0.5,
-          // a write goes into a directory that is there, as on a disk
-          await opfs.makeDirectory("out");
           sampleRate: SR, channels: 2, path: "out/patterns.wav",
         });
 
