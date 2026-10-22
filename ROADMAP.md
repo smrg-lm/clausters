@@ -288,6 +288,15 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
+  summaries kept once** (`G44a`-`G44c`) *(`clients/gui/PLAN.md`, "G44 — A
+  take's picture is read at the level it is drawn, out of summaries kept
+  once")*. **Taken next**, on the user's word: a page redraws a take from its
+  start after every edit, slower the longer the take, because the host walks
+  the finest summary of the whole take and the server reads the samples to
+  answer it. Before `X25`, since the other editors' lifecycle draws through
+  the same path.
+
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
   sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening
