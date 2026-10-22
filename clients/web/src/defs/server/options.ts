@@ -167,7 +167,7 @@ export function formatServerInfo(info: ServerInfo): string {
  * answer to {@link Server.status}.
  *
  * The reply carries exactly these fields, in this order: the four counts, the
- * two CPU meters, the two sample rates and `lateBlocks`.
+ * two CPU meters, the two sample rates, `lateBlocks` and `starvedSamples`.
  *
  * `avgCpu` and `peakCpu` are the audio thread's per-block processing time as a
  * **percentage of the block budget**, not of a core: the average is an
@@ -181,6 +181,10 @@ export function formatServerInfo(info: ServerInfo): string {
  * **A server with no clock reports none of the three**: `avgCpu`, `peakCpu`
  * and `lateBlocks` are `null` -- not zero, which would read as an idle engine.
  * An engine in a page is that server.
+ *
+ * `starvedSamples` is counted, not timed, so every server reports it: the
+ * samples a disk stream played as silence since boot because the frame it
+ * needed had not been read yet. Zero is a disk keeping up.
  */
 /**
  * What a figure that comes from timing reads as when the server has no clock
@@ -556,6 +560,11 @@ export interface ServerStatus {
      * server too old to report it, `null` from one that cannot time itself.
      */
     lateBlocks: number | null;
+    /**
+     * Samples disk streams played as silence for want of a frame, since boot.
+     * `0` against a server too old to report it.
+     */
+    starvedSamples: number;
 }
 
 /**
@@ -581,5 +590,6 @@ export function formatServerStatus(status: ServerStatus): string {
             `${status.ugens} ugens`,
         `  loaded  ${status.defs} defs`,
         `  cpu     ${cpu}`,
+        ...(status.starvedSamples ? [`  disk    ${status.starvedSamples} samples starved`] : []),
     ].join("\n");
 }

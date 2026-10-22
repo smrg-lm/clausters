@@ -59,7 +59,7 @@ const PARK: Duration = Duration::from_millis(2);
 /// done in it -- a thread that wakes to a ring still full, or still empty, did
 /// no work and is not a call. Dropping it closes the last stretch, so every
 /// way out of a thread's loop is accounted.
-struct Turn {
+pub(crate) struct Turn {
     meters: Arc<Meters>,
     role: Role,
     since: Stamp,
@@ -67,7 +67,7 @@ struct Turn {
 }
 
 impl Turn {
-    fn new(meters: Arc<Meters>, role: Role) -> Self {
+    pub(crate) fn new(meters: Arc<Meters>, role: Role) -> Self {
         Self {
             meters,
             role,
@@ -77,14 +77,16 @@ impl Turn {
     }
 
     /// Something was done in this stretch.
-    fn worked(&mut self) {
+    pub(crate) fn worked(&mut self) {
         self.worked = true;
     }
 
-    /// Closes the stretch, parks, and opens the next one.
-    fn park(&mut self) {
+    /// Closes the stretch, parks, and opens the next one. A park is cut short
+    /// by an unpark, which is how a reader that follows the transport is
+    /// woken for a refill.
+    pub(crate) fn park(&mut self) {
         self.close();
-        std::thread::sleep(PARK);
+        std::thread::park_timeout(PARK);
         self.since = stamp();
     }
 

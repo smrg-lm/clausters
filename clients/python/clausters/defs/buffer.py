@@ -13,10 +13,12 @@ always reusable, a double free is refused loudly, exhaustion raises instead of
 wrapping. The `Server` sizes it from its `ServerOptions` (``max_buffers``).
 """
 
+import os
 from array import array
 from typing import NamedTuple
 
 from .. import _native
+from ..base._osclib import Int64
 from ..base.bulk import blob_to_samples, samples_to_blob
 from ..errors import CommandError, CommandRingFull
 from .info import BufferInfo, parse_buffer_list
@@ -29,8 +31,13 @@ class Part(NamedTuple):
     """One source's contribution to a join -- what `Buffer.stitch` takes and
     `Buffer.parts` gives back.
 
-    ``source`` is a `Buffer` or a bare slot number, ``start`` the first frame
-    read from it and ``frames`` how many frames **of the join** it fills. The
+    ``source`` is a `Buffer`, a bare slot number or **the path of a PCM WAV
+    file**, ``start`` the first frame read from it and ``frames`` how many
+    frames **of the join** it fills. A part over a file is the same part with
+    its samples somewhere else: a join with one is played from disk by
+    ``TransportDiskIn``, which follows the transport and reads ahead of it, and
+    everything that would read it at random (``BufRd``, `get`, `peaks`, a copy)
+    refuses it by name. The
     two are the same count while the source is at the join's own rate; a source
     at another rate is read through the ratio the two make, so a second of a
     44.1 kHz take fills 48000 frames of a 48 kHz join and reads 44100 of its
@@ -51,7 +58,7 @@ class Part(NamedTuple):
     what a join keeps of the shape a region's edge was drawn with.
     """
 
-    source: "Buffer | int"
+    source: "Buffer | int | str"
     start: int = 0
     frames: int = 0
     fade_in: int = 0
@@ -62,6 +69,13 @@ class Part(NamedTuple):
     fade_out_shape: int = 1
     fade_out_curve: float = 0.0
 
+
+
+def _frame_count(n) -> "int | Int64":
+    """A frame number as the wire carries it: an int, or an int64 past what
+    an int32 counts -- a frame of a file hours long."""
+    n = int(n)
+    return n if -2**31 <= n < 2**31 else Int64(n)
 
 
 def _file_path(path) -> str:
@@ -261,8 +275,12 @@ class Buffer:
         args = []
         for part in parts:
             source = part.source
-            args += [int(getattr(source, "bufnum", source)), int(part.start),
-                     int(part.frames), int(part.fade_in), int(part.fade_out),
+            if isinstance(source, (str, os.PathLike)):
+                source = os.fspath(source)
+            else:
+                source = int(getattr(source, "bufnum", source))
+            args += [source, _frame_count(part.start),
+                     _frame_count(part.frames), int(part.fade_in), int(part.fade_out),
                      int(part.fade_in_shape), float(part.fade_in_curve),
                      int(part.fade_out_shape), float(part.fade_out_curve)]
             mapped = part.channels
@@ -665,7 +683,8 @@ class Buffer:
 
         The sources come back as slot numbers rather than `Buffer` handles: what
         the server holds is an index, and which handle in this program stands
-        for it is this program's business.
+        for it is this program's business. A part over a file comes back as
+        its path.
 
         RT only (it needs a reply)."""
         srv = self._server()
@@ -673,7 +692,10 @@ class Buffer:
                               expect=("/buffer_parts.reply",))
         channels = max(1, int(args[1]))
         width = 9 + channels
-        return [Part(source=int(group[0]), start=int(group[1]),
+        def source(value):
+            return value if isinstance(value, str) else int(value)
+
+        return [Part(source=source(group[0]), start=int(group[1]),
                      frames=int(group[2]), fade_in=int(group[3]),
                      fade_out=int(group[4]),
                      fade_in_shape=int(group[5]),

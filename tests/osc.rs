@@ -222,8 +222,8 @@ fn status_reply_format() {
 
     assert_eq!(reply.addr, "/server_status.reply");
     // The 8 scsynth-shaped fields it kept -- the leading unused int is not one
-    // of them -- plus the appended late-block counter.
-    assert_eq!(reply.args.len(), 9);
+    // of them -- plus the appended late-block and starved-sample counters.
+    assert_eq!(reply.args.len(), 10);
     assert_eq!(reply.args[1], OscType::Int(0)); // no synths yet
     assert_eq!(reply.args[2], OscType::Int(1)); // root group
     assert_eq!(reply.args[3], OscType::Int(1)); // the built-in "default" def
@@ -236,6 +236,7 @@ fn status_reply_format() {
     }
     assert_eq!(reply.args[6], OscType::Double(48_000.0));
     assert!(matches!(reply.args[8], OscType::Int(n) if n >= 0)); // late blocks
+    assert_eq!(reply.args[9], OscType::Long(0)); // no disk stream starved
 
     server.quit();
 }

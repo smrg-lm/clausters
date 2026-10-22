@@ -278,6 +278,12 @@ impl OscServer {
         buffer: Arc<crate::dsp::buffer::Buffer>,
     ) -> Arc<crate::dsp::buffer::Buffer> {
         use crate::dsp::region::Region;
+        if buffer.reads_from_disk() {
+            // **A list that reads a file is not copied into a region**: its
+            // samples are in its files, where a peer reads them too, and
+            // copying hours of them into memory is what it exists not to do.
+            return buffer;
+        }
         if !self.owns_samples {
             // Somebody else's directory: this server's own allocations stay in
             // its own memory rather than taking a row and a buffer number that

@@ -692,6 +692,11 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
                 continue
             raddr, rargs = _osclib.decode(packet)
             log.debug("<- %s %s", raddr, rargs)
+            if raddr == "/fail" and expect is not None and "/fail" not in expect \
+                    and rargs and str(rargs[0]) == addr:
+                # **A refused query is an error, not a silence**: the server
+                # said why, and waiting out the timeout would only lose it.
+                raise CommandError(f"{addr} failed: {rargs[1] if len(rargs) > 1 else rargs}")
             if expect is not None and raddr in expect and not _answers(addr, raddr, rargs):
                 # Somebody else's completion. A ``/done`` names the command it
                 # closes, and taking one that names another is how a wait
@@ -932,6 +937,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
             nominal_sample_rate=float(args[6]),
             actual_sample_rate=float(args[7]),
             late_blocks=None if late is None else int(late),
+            starved_samples=int(args[9]) if len(args) > 9 else 0,
         )
 
     def load(self, timeout: "float | None" = None) -> "list[Load]":

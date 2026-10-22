@@ -51,6 +51,29 @@ def transport_buf_rd(bufnum, chan, offset=0.0, rate=1.0, start=0.0, loop=0.0) ->
     return Ugen("TransportBufRd", [bufnum, chan, offset, rate, start, loop])
 
 
+def transport_disk_in(bufnum, chan, offset=0.0, start=0.0, loop=0.0) -> Ugen:
+    """Plays a buffer **from disk, at the transport's position**: the reader
+    of a join with parts over files (`Buffer.stitch` given a path), which no
+    random-access reader plays.
+
+    It follows the transport as `transport_buf_rd` does -- ``offset`` is where
+    frame ``start`` sits on the transport's axis -- and reads ahead of it on a
+    thread of its own, so a seam between two files is a read made before the
+    playhead gets there. A locate is a short silence and never a stale frame;
+    a disk that cannot keep up plays silence too, counted in
+    `ServerStatus.starved_samples`. Each part carries its own rate, so there is
+    no ``rate`` here. Silent outside the join and while the transport is
+    stopped.
+
+    Mono, like every buffer reader: ``chan`` picks one channel of the join.
+
+    ```python
+    take = transport_disk_in(join.bufnum, 0, offset=clip_start)
+    ```
+    """
+    return Ugen("TransportDiskIn", [bufnum, chan, offset, start, loop])
+
+
 def buf_wr(bufnum, chan, phase, loop, signal) -> Ugen:
     """**Writes** ``signal`` into a buffer at ``phase`` (frames) -- `buf_rd`'s
     write-side twin, and stateless in the same way.

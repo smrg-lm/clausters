@@ -11,7 +11,7 @@
 // missing, so `npm test` stays runnable from a source tree without a build.
 
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -289,6 +289,59 @@ test("a join plays as one buffer and says what it is made of", { skip: !hasServe
         join.free();
         one.free();
         two.free();
+    });
+});
+
+/** A 16-bit PCM WAV of `samples`, as the standard library writes one in the
+ *  Python half of the test. */
+function pcm16Wav(samples: Int16Array, channels: number, rate: number): Uint8Array {
+    const bytes = new Uint8Array(44 + samples.length * 2);
+    const view = new DataView(bytes.buffer);
+    const ascii = (at: number, text: string) => {
+        for (let i = 0; i < text.length; i++) bytes[at + i] = text.charCodeAt(i);
+    };
+    ascii(0, "RIFF");
+    view.setUint32(4, 36 + samples.length * 2, true);
+    ascii(8, "WAVE");
+    ascii(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels, true);
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * channels * 2, true);
+    view.setUint16(32, channels * 2, true);
+    view.setUint16(34, 16, true);
+    ascii(36, "data");
+    view.setUint32(40, samples.length * 2, true);
+    samples.forEach((v, i) => view.setInt16(44 + i * 2, v, true));
+    return bytes;
+}
+
+test("a part names a file and the join is read from disk", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        // The same test the Python client runs: a part's source may be a
+        // file, the join answers its parts with the path, and every read that
+        // would take its samples at random is refused by name.
+        const folder = await mkdtemp(join(tmpdir(), "clausters-file-part-"));
+        try {
+            const path = join(folder, "take.wav");
+            const samples = new Int16Array(40).map((_, i) => i * 100);
+            await writeFile(path, pcm16Wav(samples, 1, 48_000));
+            const stitched = await Buffer.stitch(
+                [{ source: path, start: 10, frames: 20 }],
+                { channels: 1, server },
+            );
+            assert.equal(stitched.frames, 20);
+            const back = await stitched.parts();
+            assert.deepEqual(back.map((p) => [p.source, p.start, p.frames]), [[path, 10, 20]]);
+            await assert.rejects(
+                () => stitched.getSamples({ start: 0, count: 4 }),
+                /reads a file/,
+            );
+            stitched.free();
+        } finally {
+            await rm(folder, { recursive: true, force: true });
+        }
     });
 });
 

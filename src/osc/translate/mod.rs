@@ -70,7 +70,7 @@ mod queries;
 pub(crate) mod voices;
 
 pub use buffers::{BUFFER_JOBS, parse_buffer_gen, parse_buffer_msg};
-pub(crate) use buffers::{allocated, mirror_buffer};
+pub(crate) use buffers::{allocated, mirror_buffer, readable};
 
 /// What a live node was built from, mirrored per node ID so `/node_set` can
 /// resolve control names off the audio thread.

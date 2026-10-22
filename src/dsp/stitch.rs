@@ -173,26 +173,11 @@ impl<'a> PartRun<'a> {
     /// One sample, `inner` frames into the part.
     #[inline]
     pub fn sample(&self, inner: usize, channel: usize) -> f32 {
-        let Some(&src_ch) = self.part.map.get(channel) else {
-            return 0.0;
-        };
-        if src_ch < 0 {
-            return 0.0;
-        }
-        let value = if self.part.resampled {
-            self.between(inner, src_ch as usize)
-        } else {
-            let frame = self.part.src_start + inner;
-            // The part was validated when it was built -- its span is inside
-            // its source and its map inside the source's channels -- so this
-            // is an indexed load and not a second bounds check.
-            self.frame(frame, src_ch as usize)
-        };
-        if self.part.faded {
-            value * fade(self.part, inner)
-        } else {
-            value
-        }
+        // The part was validated when it was built -- its span is inside its
+        // source and its map inside the source's channels -- so a frame read
+        // here is an indexed load and not a second bounds check.
+        self.part
+            .read_with(inner, channel, |frame, src_ch| self.frame(frame, src_ch))
     }
 
     /// One frame of the source, by the cheapest path this run has.
@@ -203,29 +188,6 @@ impl<'a> PartRun<'a> {
             None => self.part.src.sample(frame, src_ch),
         }
     }
-
-    /// **The sample a part at another rate reads** `inner` frames into the
-    /// join: the source's own frames run `rate` per join frame, so this lands
-    /// between two of them and reads the line between, which is the reading
-    /// `PlayBuf` and `BufRd` make and the one a drawing of these samples
-    /// claims.
-    ///
-    /// Bounded here rather than by the validation, because that is the one
-    /// thing a ratio makes unprovable at build: the last frame of a part whose
-    /// span does not divide evenly lands a fraction past its source, and a
-    /// clamp is a comparison against a read that would be out of bounds.
-    #[inline]
-    fn between(&self, inner: usize, src_ch: usize) -> f32 {
-        let last = self.part.src.frames().saturating_sub(1);
-        let pos = self.part.src_start as f64 + inner as f64 * self.part.rate;
-        let f0 = (pos as usize).min(last);
-        let frac = pos - f0 as f64;
-        clausters_core::resample::Interpolator::played(
-            self.frame(f0, src_ch),
-            self.frame((f0 + 1).min(last), src_ch),
-            frac,
-        )
-    }
 }
 
 impl Part {
@@ -234,6 +196,71 @@ impl Part {
     #[inline]
     pub fn sample(&self, inner: usize, channel: usize) -> f32 {
         PartRun::new(self).sample(inner, channel)
+    }
+
+    /// **One sample of this part, read through `frame`**: the source's frame
+    /// and channel in, its sample out. The map, the rate and the fades are
+    /// this part's whoever holds the samples, which is what lets a part over
+    /// a buffer and a part over a file be one logic -- a [`PartRun`] reads the
+    /// cells, and a stream reader the span it read from the file.
+    ///
+    /// **A part at another rate** lands between two of its source's frames
+    /// and reads the line between, which is the reading `PlayBuf` and `BufRd`
+    /// make and the one a drawing of these samples claims. It is bounded here
+    /// rather than by the validation, because that is the one thing a ratio
+    /// makes unprovable at build: the last frame of a part whose span does
+    /// not divide evenly lands a fraction past its source, and a clamp is a
+    /// comparison against a read that would be out of bounds.
+    #[inline]
+    pub fn read_with(
+        &self,
+        inner: usize,
+        channel: usize,
+        frame: impl Fn(usize, usize) -> f32,
+    ) -> f32 {
+        let Some(&src_ch) = self.map.get(channel) else {
+            return 0.0;
+        };
+        if src_ch < 0 {
+            return 0.0;
+        }
+        let src_ch = src_ch as usize;
+        let value = if self.resampled {
+            let last = self.src.frames().saturating_sub(1);
+            let pos = self.src_start as f64 + inner as f64 * self.rate;
+            let f0 = (pos as usize).min(last);
+            let frac = pos - f0 as f64;
+            clausters_core::resample::Interpolator::played(
+                frame(f0, src_ch),
+                frame((f0 + 1).min(last), src_ch),
+                frac,
+            )
+        } else {
+            frame(self.src_start + inner, src_ch)
+        };
+        if self.faded {
+            value * fade(self, inner)
+        } else {
+            value
+        }
+    }
+
+    /// **The source frames `inner` frames `lo..hi` of this part read**, as a
+    /// half-open range: what a reader that fetches its samples -- from a file
+    /// -- has to fetch so that [`Part::read_with`] finds every frame it asks
+    /// for. One more than the span at another rate, for the second frame of
+    /// the last interpolation; never past the source's end.
+    pub fn source_span(&self, lo: usize, hi: usize) -> (usize, usize) {
+        let frames = self.src.frames();
+        if hi <= lo {
+            return (self.src_start, self.src_start);
+        }
+        if !self.resampled {
+            return (self.src_start + lo, (self.src_start + hi).min(frames));
+        }
+        let first = (self.src_start as f64 + lo as f64 * self.rate) as usize;
+        let last = (self.src_start as f64 + (hi - 1) as f64 * self.rate) as usize + 2;
+        (first.min(frames), last.min(frames))
     }
 
     /// The first frame of this part **in the stitched buffer**.
@@ -315,6 +342,8 @@ pub struct Stitch {
     /// The part index last resolved. A hint shared by every reader; see the
     /// module docs.
     cursor: AtomicUsize,
+    /// Whether some part's source is a file (`Buffer::reads_from_disk`).
+    on_disk: bool,
 }
 
 impl Stitch {
@@ -357,6 +386,16 @@ impl Stitch {
                     ));
                 }
             };
+            // A list that reads a file is played by a stream reader, which
+            // reads its file parts ahead of the transport; one nested inside
+            // another would be a file read at random, which is what no reader
+            // here does. Its parts are named instead.
+            if spec.src.reads_from_disk() && spec.src.file().is_none() {
+                return Err(format!(
+                    "part {i}: a list that reads a file is not a source of another list -- \
+                     name its parts instead"
+                ));
+            }
             if depth(&spec.src) >= MAX_DEPTH {
                 return Err(format!(
                     "part {i}: sources are stitched more than {MAX_DEPTH} deep"
@@ -388,10 +427,12 @@ impl Stitch {
             });
             start += spec.frames;
         }
+        let on_disk = parts.iter().any(|p| p.src.file().is_some());
         Ok(Stitch {
             parts: parts.into_boxed_slice(),
             frames: start,
             cursor: AtomicUsize::new(0),
+            on_disk,
         })
     }
 
@@ -410,6 +451,21 @@ impl Stitch {
                 }
             }
         }
+    }
+
+    /// Whether some part reads a file -- a list played by a stream reader and
+    /// refused by everything that reads at random.
+    pub fn reads_from_disk(&self) -> bool {
+        self.on_disk
+    }
+
+    /// The part holding `frame` and its index, for a reader walking the list
+    /// in order (a stream reader filling ahead). `None` past the end.
+    pub fn part_at(&self, frame: usize) -> Option<(usize, &Part)> {
+        (frame < self.frames).then(|| {
+            let i = self.parts.partition_point(|p| p.start <= frame) - 1;
+            (i, &self.parts[i])
+        })
     }
 
     /// How many frames the whole join is.

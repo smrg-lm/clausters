@@ -6,7 +6,7 @@
 
 use super::super::*;
 use crate::dsp::summary::SUMMARY_BUCKET;
-use crate::osc::translate::{allocated, mirror_buffer};
+use crate::osc::translate::{allocated, mirror_buffer, readable};
 use clausters_core::osc::{push_sample, sample_blob};
 
 impl OscServer {
@@ -283,10 +283,19 @@ impl OscServer {
             buffer.as_ref().map_or(0.0, |b| b.sample_rate() as f32),
         ));
         if let Some(stitch) = buffer.as_ref().and_then(|b| b.stitch()) {
+            // A frame count past an `i32` goes as a long, as it may arrive.
+            let count = |n: usize| match i32::try_from(n) {
+                Ok(n) => OscType::Int(n),
+                Err(_) => OscType::Long(n as i64),
+            };
             for part in stitch.parts() {
-                out.push(OscType::Int(part.src_index));
-                out.push(OscType::Int(part.src_start as i32));
-                out.push(OscType::Int(part.frames as i32));
+                // A part over a file names it by its path, as it was given.
+                out.push(match part.src.file() {
+                    Some(layout) => OscType::String(layout.path.clone()),
+                    None => OscType::Int(part.src_index),
+                });
+                out.push(count(part.src_start));
+                out.push(count(part.frames));
                 out.push(OscType::Int(part.fade_in as i32));
                 out.push(OscType::Int(part.fade_out as i32));
                 out.push(OscType::Int(part.fade_in_shape.shape));
@@ -314,6 +323,9 @@ impl OscServer {
     ) -> Answer {
         let bufnum = args.int()?;
         let buffer = mirror_buffer(&self.translator.buffers, bufnum);
+        if let Some(b) = buffer.as_deref() {
+            readable(b, bufnum)?;
+        }
         let data = buffer.as_deref();
         let mut out = vec![OscType::Int(bufnum)];
         while !args.is_empty() {
@@ -349,6 +361,9 @@ impl OscServer {
         let bufnum = args.int()?;
         args.expect_groups_of(2, "(start, count) pairs")?;
         let buffer = mirror_buffer(&self.translator.buffers, bufnum);
+        if let Some(b) = buffer.as_deref() {
+            readable(b, bufnum)?;
+        }
         let data = buffer.as_deref();
         let held = data.map_or(0, |b| b.len());
         let mut out = vec![OscType::Int(bufnum)];
@@ -416,6 +431,7 @@ impl OscServer {
         let start = args.opt_int()?.unwrap_or(0).max(0) as usize;
         let asked = args.opt_int()?.unwrap_or(-1);
         let buffer = allocated(&self.translator.buffers, bufnum)?;
+        readable(&buffer, bufnum)?;
         let frames = buffer.frames();
         // Rounded to the grid the answer is folded into: a bucket summarized
         // from part of itself would report a peak the samples do not have.
@@ -496,6 +512,7 @@ impl OscServer {
     ) -> Answer {
         let (bufnum, path) = (args.int()?, args.str()?);
         let buffer = allocated(&self.translator.buffers, bufnum)?;
+        readable(&buffer, bufnum)?;
         // One snapshot, then the encode: an export is a reading of the buffer
         // at a moment, and taking it in one pass keeps it from straddling a
         // recording UGen's write head more than it has to.

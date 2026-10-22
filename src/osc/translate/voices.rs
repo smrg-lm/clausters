@@ -88,7 +88,7 @@ impl CmdTranslator {
                 if let Some(u) = def
                     .ugens
                     .iter()
-                    .find(|u| matches!(u.desc.name, "DiskIn" | "DiskOut"))
+                    .find(|u| matches!(u.desc.name, "DiskIn" | "DiskOut" | "TransportDiskIn"))
                 {
                     return Err(format!(
                         "{name}: a voice cannot restart a {} stream, so it cannot be a voice",

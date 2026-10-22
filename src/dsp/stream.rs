@@ -1,0 +1,574 @@
+//! **A segment list played from disk**: `TransportDiskIn`, the reader of a
+//! list whose parts name files.
+//!
+//! A part of a segment list names a pool buffer or a span of a PCM file, with
+//! the same fades, rate and channel map either way (`dsp::stitch`); only where
+//! its samples are differs. A list of pool buffers is read at random by
+//! `BufRd` and its family, because its samples are in memory. A list with a
+//! file part cannot be: an hour of take is not in the pool, and reading it
+//! where the audio thread asks would be I/O on the audio thread. So it is
+//! **streamed**, by `DiskIn`'s design generalized -- one I/O thread per
+//! reader, racing the audio thread through a lock-free ring -- and the
+//! generalization is that the stream **follows the transport** instead of
+//! running from a file's top:
+//!
+//! - The audio thread works out which frame of the list each sample plays, as
+//!   `TransportBufRd` does (`offset` is the transport frame at which frame
+//!   `start` of the list plays). While those frames are the ones at the
+//!   ring's head, it pops them.
+//! - When they are not -- a locate, the list replaced by an edit, a transport
+//!   standing somewhere new -- it **asks for a refill** from that frame and
+//!   plays silence until it arrives. It never plays what the ring held
+//!   before: that was another place in the list, or another list.
+//! - The I/O thread renders frames of the list ahead of the transport,
+//!   part by part, through [`Part::read_with`](crate::dsp::stitch::Part) --
+//!   the read a pool buffer's part makes, over the span it just read from the
+//!   file. A seam is therefore nothing to the audio thread: the next part's
+//!   frames are rendered into the ring before it gets there, and the next
+//!   part's file is opened [`SEAM_LEAD`] frames ahead of its seam.
+//!
+//! # Which frames are in the ring
+//!
+//! A refill is an **epoch**. The audio thread sends a request carrying the
+//! frame and a new epoch number and stops reading; the I/O thread, on taking
+//! it, publishes the epoch together with how many samples it had pushed so
+//! far -- the **boundary** -- and pushes the new frames after it. The audio
+//! thread, seeing its epoch published, throws away everything before the
+//! boundary in one commit (no per-sample work) and knows the ring's head is
+//! the frame it asked for. One atomic carries both numbers, so the two are
+//! read together.
+//!
+//! # What running out of lead sounds like
+//!
+//! If the ring is empty where the audio thread needs a frame, that sample is
+//! **silence, counted**: `Meters::starve` adds it to a total the server
+//! reports (`/server_status`), so a session that outruns the disk says so in
+//! a number and never as a click from a stale frame. The frames that went
+//! missing are skipped when they arrive, so the list stays where the
+//! transport is.
+//!
+//! The audio thread neither allocates nor waits: it pops, commits and sends a
+//! request through a fixed ring, and wakes the I/O thread with
+//! [`std::thread::Thread::unpark`] -- a futex wake, the way a real-time
+//! thread signals a disk thread. The list reaches the I/O thread as an `Arc`
+//! cloned on the audio thread (a count incremented) and dropped over there.
+//!
+//! Mono per UGen, like every buffer reader here: `chan` picks one channel of
+//! the list, and a stereo clip is two readers with the same inputs.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::thread::JoinHandle;
+
+use rtrb::{Consumer, Producer, RingBuffer};
+
+use crate::dsp::buffer::Buffer;
+use crate::dsp::pcm::{Layout, Reader};
+use crate::dsp::{ProcessCtx, UGen, at};
+use crate::server::meters::{Meters, Role};
+
+/// The ring, in samples: about 2.7 s of mono at 48 kHz, 1.4 s of stereo.
+///
+/// It is the lead the reader keeps over the transport, and it only has to
+/// cover a slow read: the next part's file is opened ahead of its seam, so a
+/// seam costs the ring nothing it does not cost in the middle of a part.
+pub const RING_SAMPLES: usize = 1 << 17;
+
+/// **How far ahead of a seam the next part's file is opened**, in frames of
+/// the list. Opening a file and reading its first span is the one cost a
+/// seam adds to a read; done this far ahead, it happens while the ring still
+/// holds the frames before the seam.
+pub const SEAM_LEAD: usize = 1 << 14;
+
+/// The frames rendered in one turn of the I/O thread.
+const CHUNK: usize = 4096;
+
+/// The first turn after a refill renders this few, so the frames the audio
+/// thread is waiting for arrive as soon as one short read allows.
+const FIRST_CHUNK: usize = 256;
+
+/// How many refills may be in flight. The audio thread asks once per block at
+/// most, and the I/O thread takes only the latest.
+const REQUESTS: usize = 8;
+
+/// How many files one reader keeps open: a list cut from many takes reopens
+/// one only after this many others were read since.
+const OPEN_FILES: usize = 8;
+
+/// The low 48 bits of the published word: the boundary in samples.
+const BOUNDARY: u64 = (1 << 48) - 1;
+
+/// A refill: start rendering from `frame`, of `list` if it names one and of
+/// the list already held otherwise.
+struct Request {
+    list: Option<Arc<Buffer>>,
+    frame: u64,
+    epoch: u16,
+    looping: bool,
+}
+
+/// What the two threads share besides the rings.
+struct Shared {
+    stop: AtomicBool,
+    /// The epoch taken (high 16 bits) and the samples pushed before its first
+    /// frame (low 48).
+    ack: AtomicU64,
+}
+
+/// Streams a segment list from disk, following the transport. Inputs:
+/// 0 `bufnum` (the list, or any buffer), 1 `chan`, 2 `offset` (the transport
+/// frame at which frame `start` plays), 3 `start`, 4 `loop`. Outside the
+/// list, and while the transport is stopped, it is silent.
+pub struct TransportDiskIn {
+    consumer: Consumer<f32>,
+    requests: Producer<Request>,
+    shared: Arc<Shared>,
+    thread: std::thread::Thread,
+    handle: Option<JoinHandle<()>>,
+    meters: Arc<Meters>,
+    /// The list last sent to the I/O thread, as an address: it holds that
+    /// `Arc`, so the address cannot be reused while it is the one compared.
+    sent: usize,
+    looping: bool,
+    /// The epoch last asked for.
+    epoch: u16,
+    /// The frame the refill in flight starts at.
+    pending: Option<u64>,
+    /// The list frame at the ring's head, once a refill has landed.
+    head: Option<u64>,
+    /// Samples popped or thrown away since the start, the boundary's measure.
+    popped: u64,
+    /// The channels and frames of the list the current epoch reads.
+    channels: usize,
+    frames: u64,
+}
+
+impl TransportDiskIn {
+    /// Starts the reader's I/O thread, which accounts its work to `meters`
+    /// as a `disk-in` thread.
+    pub fn open(meters: &Arc<Meters>) -> Self {
+        let (producer, consumer) = RingBuffer::new(RING_SAMPLES);
+        let (requests, inbox) = RingBuffer::new(REQUESTS);
+        let shared = Arc::new(Shared {
+            stop: AtomicBool::new(false),
+            ack: AtomicU64::new(0),
+        });
+        let handle = {
+            let shared = Arc::clone(&shared);
+            let turn = crate::dsp::disk::Turn::new(Arc::clone(meters), Role::DiskIn);
+            std::thread::Builder::new()
+                .name("diskin-list".into())
+                .spawn(move || fill(inbox, producer, shared, turn))
+                .expect("failed to spawn the TransportDiskIn thread")
+        };
+        Self {
+            consumer,
+            requests,
+            shared,
+            thread: handle.thread().clone(),
+            handle: Some(handle),
+            meters: Arc::clone(meters),
+            sent: 0,
+            looping: false,
+            epoch: 0,
+            pending: None,
+            head: None,
+            popped: 0,
+            channels: 1,
+            frames: 0,
+        }
+    }
+
+    /// Asks for a refill from `frame`, of `list` when it changed. Fails, and
+    /// changes nothing, when the request ring is full: the next block asks
+    /// again.
+    fn refill(&mut self, list: Option<Arc<Buffer>>, frame: u64) -> bool {
+        let epoch = self.epoch.wrapping_add(1);
+        let request = Request {
+            list,
+            frame,
+            epoch,
+            looping: self.looping,
+        };
+        if self.requests.push(request).is_err() {
+            return false;
+        }
+        self.epoch = epoch;
+        self.pending = Some(frame);
+        self.head = None;
+        self.thread.unpark();
+        true
+    }
+
+    /// Lands the refill in flight once the I/O thread has taken it: what it
+    /// pushed before is thrown away in one commit, and the head is the frame
+    /// that was asked for.
+    fn collect(&mut self) {
+        let Some(frame) = self.pending else {
+            return;
+        };
+        let ack = self.shared.ack.load(Ordering::Acquire);
+        if (ack >> 48) as u16 != self.epoch {
+            return;
+        }
+        let stale = (ack & BOUNDARY).saturating_sub(self.popped) as usize;
+        // Everything before the boundary was pushed before it was published,
+        // so it is all in the ring.
+        let stale = stale.min(self.consumer.slots());
+        if let Ok(chunk) = self.consumer.read_chunk(stale) {
+            chunk.commit_all();
+        }
+        self.popped += stale as u64;
+        self.pending = None;
+        self.head = Some(frame);
+        // The thread may be parked on a ring that was full of what was just
+        // thrown away.
+        self.thread.unpark();
+    }
+
+    /// Throws away `frames` frames at the head, as many as are there.
+    fn skip(&mut self, frames: u64) -> u64 {
+        let have = (self.consumer.slots() / self.channels) as u64;
+        let n = frames.min(have);
+        let samples = n as usize * self.channels;
+        if let Ok(chunk) = self.consumer.read_chunk(samples) {
+            chunk.commit_all();
+        }
+        self.popped += samples as u64;
+        if let Some(h) = self.head {
+            self.head = Some(self.advance(h, n));
+        }
+        n
+    }
+
+    fn advance(&self, frame: u64, by: u64) -> u64 {
+        let next = frame + by;
+        if self.looping && self.frames > 0 {
+            next % self.frames
+        } else {
+            next
+        }
+    }
+
+    /// The sample of `channel` at list frame `frame`, or silence -- counted
+    /// in `starved` when the frame should have been there and was not.
+    fn take(&mut self, frame: u64, channel: usize, starved: &mut u64) -> f32 {
+        if self.pending.is_some() {
+            return 0.0;
+        }
+        let Some(head) = self.head else {
+            self.refill(None, frame);
+            return 0.0;
+        };
+        if head != frame {
+            let ring = (RING_SAMPLES / self.channels) as u64;
+            if head < frame && frame - head <= ring {
+                // Behind: frames that arrived late, or never. They are
+                // skipped so the list stays where the transport is.
+                self.skip(frame - head);
+            } else {
+                self.refill(None, frame);
+                return 0.0;
+            }
+        }
+        if self.head != Some(frame) || self.consumer.slots() < self.channels {
+            *starved += 1;
+            return 0.0;
+        }
+        let mut value = 0.0;
+        for c in 0..self.channels {
+            let v = self.consumer.pop().unwrap_or(0.0);
+            if c == channel {
+                value = v;
+            }
+        }
+        self.popped += self.channels as u64;
+        self.head = Some(self.advance(frame, 1));
+        value
+    }
+}
+
+impl UGen for TransportDiskIn {
+    fn reset(&mut self) {
+        // A stream is its I/O thread's and cannot be restarted from here: a
+        // `Voices` node refuses a def that holds one.
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        self.collect();
+        let index = inputs[0][0].max(0.0) as usize;
+        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_ref()) else {
+            output.fill(0.0);
+            return;
+        };
+        let frames = buf.frames() as u64;
+        let looping = inputs[4][0] != 0.0;
+        let base = ctx.transport.position as f64;
+        let rolling = ctx.transport.rolling;
+        // Which list frame sample `i` plays: `None` outside the list, and the
+        // frame to stand ready at besides.
+        let place = |i: usize| -> (Option<u64>, Option<u64>) {
+            if frames == 0 {
+                return (None, None);
+            }
+            let played = if rolling { i as f64 } else { 0.0 };
+            let raw = base + played - at(inputs[2], i) as f64 + at(inputs[3], i) as f64;
+            if looping {
+                let f = raw.rem_euclid(frames as f64) as u64;
+                (Some(f.min(frames - 1)), Some(f.min(frames - 1)))
+            } else if raw < 0.0 {
+                (None, Some(0))
+            } else if raw >= frames as f64 {
+                (None, None)
+            } else {
+                let f = raw as u64;
+                (Some(f), Some(f))
+            }
+        };
+        let address = Arc::as_ptr(buf) as usize;
+        if address != self.sent || looping != self.looping {
+            // A new list, or the same one read another way: what the ring
+            // holds is not what will play. Silence until the refill lands.
+            self.looping = looping;
+            let frame = place(0).1.unwrap_or(0);
+            if self.refill(Some(Arc::clone(buf)), frame) {
+                self.sent = address;
+                self.channels = buf.channels().max(1);
+                self.frames = frames;
+            }
+            output.fill(0.0);
+            return;
+        }
+        let channel = (inputs[1][0].max(0.0) as usize).min(self.channels - 1);
+        if !rolling {
+            // Standing: silent, and ready at the frame it stands on.
+            output.fill(0.0);
+            if let (_, Some(f)) = place(0)
+                && self.head != Some(f)
+                && self.pending != Some(f)
+            {
+                self.refill(None, f);
+            }
+            return;
+        }
+        let mut starved = 0u64;
+        for (i, s) in output.iter_mut().enumerate() {
+            *s = match place(i) {
+                (Some(f), _) => self.take(f, channel, &mut starved),
+                (None, Some(ready)) => {
+                    // Before the list: ready at its first frame.
+                    if self.head != Some(ready) && self.pending != Some(ready) {
+                        self.refill(None, ready);
+                    }
+                    0.0
+                }
+                (None, None) => 0.0,
+            };
+        }
+        if starved > 0 {
+            self.meters.starve(starved);
+        }
+    }
+}
+
+impl Drop for TransportDiskIn {
+    fn drop(&mut self) {
+        self.shared.stop.store(true, Ordering::Release);
+        self.thread.unpark();
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+
+/// The files one reader has open, the most recently read first.
+struct Files {
+    open: Vec<Reader>,
+}
+
+impl Files {
+    fn reader(&mut self, layout: &Layout) -> Option<&mut Reader> {
+        let found = self.open.iter().position(|r| r.layout() == layout);
+        let reader = match found {
+            Some(i) => self.open.remove(i),
+            None => match Reader::open(layout) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("TransportDiskIn: {e}; the part is silent");
+                    return None;
+                }
+            },
+        };
+        self.open.insert(0, reader);
+        self.open.truncate(OPEN_FILES);
+        self.open.first_mut()
+    }
+}
+
+/// The I/O thread: takes the latest refill, renders the list from there into
+/// the ring, and opens each next part's file ahead of its seam.
+fn fill(
+    mut inbox: Consumer<Request>,
+    mut producer: Producer<f32>,
+    shared: Arc<Shared>,
+    mut turn: crate::dsp::disk::Turn,
+) {
+    let mut list: Option<Arc<Buffer>> = None;
+    let mut next: Option<u64> = None;
+    let mut looping = false;
+    let mut first = false;
+    // The refill taken and not yet published: its epoch and its boundary.
+    let mut due: Option<(u16, u64)> = None;
+    let mut pushed: u64 = 0;
+    let mut files = Files { open: Vec::new() };
+    let mut frames = Vec::new();
+    let mut span = Vec::new();
+    loop {
+        if shared.stop.load(Ordering::Acquire) {
+            return;
+        }
+        let mut latest = None;
+        while let Ok(request) = inbox.pop() {
+            if request.list.is_some() {
+                list = request.list.clone();
+            }
+            latest = Some(request);
+        }
+        if let Some(request) = latest {
+            next = Some(request.frame);
+            looping = request.looping;
+            first = true;
+            due = Some((request.epoch, pushed));
+        }
+        // **A refill is published once its first frames are in**, so the
+        // audio thread that lands it finds them there and a locate is not
+        // counted as running out of lead. A ring still full of what the
+        // refill makes stale is the exception: publishing is what lets the
+        // audio thread throw that away.
+        let publish = |due: &mut Option<(u16, u64)>| {
+            if let Some((epoch, boundary)) = due.take() {
+                shared.ack.store(
+                    ((epoch as u64) << 48) | (boundary & BOUNDARY),
+                    Ordering::Release,
+                );
+            }
+        };
+        let (Some(l), Some(at)) = (list.as_ref(), next) else {
+            publish(&mut due);
+            turn.park();
+            continue;
+        };
+        let channels = l.channels().max(1);
+        let total = l.frames() as u64;
+        if at >= total {
+            if looping && total > 0 {
+                next = Some(0);
+            } else {
+                publish(&mut due);
+                turn.park();
+            }
+            continue;
+        }
+        let want = if first { FIRST_CHUNK } else { CHUNK };
+        let room = producer.slots() / channels;
+        let n = want.min(room).min((total - at) as usize);
+        if n == 0 || (!first && room < want && (total - at) as usize > room) {
+            publish(&mut due);
+            turn.park();
+            continue;
+        }
+        turn.worked();
+        render(l, at, n, &mut frames, &mut span, &mut files);
+        if let Ok(chunk) = producer.write_chunk_uninit(frames.len()) {
+            chunk.fill_from_iter(frames.iter().copied());
+        }
+        pushed += frames.len() as u64;
+        next = Some(at + n as u64);
+        first = false;
+        publish(&mut due);
+        open_ahead(l, at + n as u64, &mut files);
+    }
+}
+
+/// Renders `n` frames of `list` from `at` into `out`, interleaved.
+fn render(
+    list: &Buffer,
+    at: u64,
+    n: usize,
+    out: &mut Vec<f32>,
+    span: &mut Vec<f32>,
+    files: &mut Files,
+) {
+    let channels = list.channels().max(1);
+    out.clear();
+    out.resize(n * channels, 0.0);
+    let at = at as usize;
+    if let Some(stitch) = list.stitch() {
+        let mut k = 0;
+        while k < n {
+            let Some((_, part)) = stitch.part_at(at + k) else {
+                break;
+            };
+            let inner = at + k - part.start();
+            let len = (part.end() - (at + k)).min(n - k);
+            let dst = &mut out[k * channels..(k + len) * channels];
+            if let Some(layout) = part.src.file() {
+                let (first, end) = part.source_span(inner, inner + len);
+                let read = files
+                    .reader(layout)
+                    .map(|r| r.read(first as u64, end - first, span));
+                if !matches!(read, Some(Ok(_))) {
+                    span.clear();
+                }
+                let width = layout.channels;
+                let span = &*span;
+                for (j, frame) in dst.chunks_mut(channels).enumerate() {
+                    for (c, cell) in frame.iter_mut().enumerate() {
+                        *cell = part.read_with(inner + j, c, |f, sc| {
+                            f.checked_sub(first)
+                                .and_then(|f| span.get(f * width + sc))
+                                .copied()
+                                .unwrap_or(0.0)
+                        });
+                    }
+                }
+            } else {
+                for (j, frame) in dst.chunks_mut(channels).enumerate() {
+                    for (c, cell) in frame.iter_mut().enumerate() {
+                        *cell = part.read_with(inner + j, c, |f, sc| part.src.sample(f, sc));
+                    }
+                }
+            }
+            k += len;
+        }
+    } else if let Some(layout) = list.file() {
+        if let Some(reader) = files.reader(layout)
+            && reader.read(at as u64, n, span).is_ok()
+        {
+            out[..span.len()].copy_from_slice(span);
+        }
+    } else {
+        for (j, frame) in out.chunks_mut(channels).enumerate() {
+            for (c, cell) in frame.iter_mut().enumerate() {
+                *cell = list.sample(at + j, c);
+            }
+        }
+    }
+}
+
+/// Opens the next part's file when the frames rendered are within
+/// [`SEAM_LEAD`] of its seam.
+fn open_ahead(list: &Buffer, at: u64, files: &mut Files) {
+    let Some(stitch) = list.stitch() else {
+        return;
+    };
+    let Some((i, part)) = stitch.part_at(at as usize) else {
+        return;
+    };
+    if part.end() - at as usize > SEAM_LEAD {
+        return;
+    }
+    if let Some(layout) = stitch.parts().get(i + 1).and_then(|p| p.src.file()) {
+        files.reader(layout);
+    }
+}

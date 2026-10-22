@@ -99,7 +99,13 @@ impl OscServer {
         // **A server with no clock says nil, not zero.** The three figures
         // that come from timing a block are measurements; where nothing can
         // take them, a zero would read as an idle engine.
+        //
+        // **The last int is counted, not timed**: the samples a disk stream
+        // played as silence because its ring was empty where it needed a
+        // frame, since boot -- a session outrunning its disk, said in a
+        // number rather than heard as a click.
         let [avg, peak, late] = cpu_args(counters, self.handle.meters().timed());
+        let starved = self.handle.meters().starved();
         let args = vec![
             OscType::Int(counters.ugens.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.synths.load(Ordering::Relaxed) as i32),
@@ -110,6 +116,7 @@ impl OscServer {
             OscType::Double(self.info.nominal_sample_rate),
             OscType::Double(self.info.actual_sample_rate),
             late,
+            OscType::Long(starved as i64),
         ];
         self.reply(to, "/server_status.reply", args);
     }

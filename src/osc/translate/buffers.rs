@@ -301,6 +301,7 @@ pub fn parse_buffer_msg(
             let Some(source) = mirror_buffer(mirror, src) else {
                 return Err(format!("no source buffer allocated at {src}"));
             };
+            readable(&source, src)?;
             if start < 0 || src_start < 0 {
                 return Err("start frames must not be negative".into());
             }
@@ -522,6 +523,7 @@ pub fn parse_buffer_gen(
             let Some(src) = mirror_buffer(mirror, *src_buf) else {
                 return Err(format!("no source buffer allocated at {src_buf}"));
             };
+            readable(&src, *src_buf)?;
             GenCommand::Copy {
                 dst_start: (*dst_start).max(0) as usize,
                 src,
@@ -581,6 +583,7 @@ pub fn parse_buffer_gen(
             let Some(src) = mirror_buffer(mirror, *src_buf) else {
                 return Err(format!("no source buffer allocated at {src_buf}"));
             };
+            readable(&src, *src_buf)?;
             // The whole impulse response is prepared or nothing is: a kernel
             // cut to fit its buffer, or to what a Conv can hold, would
             // convolve with a shorter response than the one given.
@@ -711,9 +714,12 @@ fn stitch_parts(
         ));
     }
     let mut parts = Vec::with_capacity(args.len() / width);
+    // A file named by several parts is read for its shape once.
+    let mut files: Vec<Arc<crate::dsp::buffer::Buffer>> = Vec::new();
     for (n, group) in args.chunks_exact(width).enumerate() {
         let mut ints = Vec::with_capacity(width);
         let mut curves = [0.0f32; 2];
+        let mut path = None;
         for (i, arg) in group.iter().enumerate() {
             if let Some(k) = CURVES.iter().position(|&at| at == i) {
                 curves[k] = float_value(arg)
@@ -722,17 +728,48 @@ fn stitch_parts(
                 continue;
             }
             match arg {
-                OscType::Int(v) => ints.push(*v),
+                OscType::Int(v) => ints.push(*v as i64),
+                // A frame of a file hours long is past what an `i32` counts.
+                OscType::Long(v) if (1..=2).contains(&i) => ints.push(*v),
+                // **A part's source is a buffer or a file**: a path where the
+                // buffer number goes names the span of a PCM file, with the
+                // same fades and map as a span of a buffer.
+                OscType::String(p) if i == 0 => {
+                    path = Some(p.clone());
+                    ints.push(-1);
+                }
                 _ => return Err(format!("part {n}: argument {i} is not an int")),
             }
         }
         let (src, src_start, frames, fade_in, fade_out) =
             (ints[0], ints[1], ints[2], ints[3], ints[4]);
-        if src < 0 || src as usize >= mirror.len() {
-            return Err(format!("part {n}: buffer index out of range: {src}"));
-        }
-        let Some(source) = mirror[src as usize].clone() else {
-            return Err(format!("part {n}: buffer {src} is not allocated"));
+        let (source, label) = match path {
+            Some(path) => {
+                let found = files
+                    .iter()
+                    .find(|b| b.file().is_some_and(|l| l.path == path))
+                    .cloned();
+                let source = match found {
+                    Some(b) => b,
+                    None => {
+                        let layout = crate::dsp::pcm::Layout::open(&path)
+                            .map_err(|e| format!("part {n}: {e}"))?;
+                        let b = Arc::new(crate::dsp::buffer::Buffer::on_file(layout));
+                        files.push(Arc::clone(&b));
+                        b
+                    }
+                };
+                (source, format!("file {path}"))
+            }
+            None => {
+                if src < 0 || src as usize >= mirror.len() {
+                    return Err(format!("part {n}: buffer index out of range: {src}"));
+                }
+                let Some(source) = mirror[src as usize].clone() else {
+                    return Err(format!("part {n}: buffer {src} is not allocated"));
+                };
+                (source, format!("buffer {src}"))
+            }
         };
         if src_start < 0 || frames <= 0 || fade_in < 0 || fade_out < 0 {
             return Err(format!(
@@ -742,34 +779,34 @@ fn stitch_parts(
         let end = src_start as usize + frames as usize;
         if end > source.frames() {
             return Err(format!(
-                "part {n}: buffer {src} has {} frames and the part asks for {end}",
+                "part {n}: {label} has {} frames and the part asks for {end}",
                 source.frames()
             ));
         }
         for (c, &to) in ints[HEAD..].iter().enumerate() {
-            if to >= source.channels() as i32 {
+            if to >= source.channels() as i64 {
                 return Err(format!(
-                    "part {n}: channel {c} maps to source channel {to} and buffer {src} has {}",
+                    "part {n}: channel {c} maps to source channel {to} and {label} has {}",
                     source.channels()
                 ));
             }
         }
         parts.push(crate::dsp::stitch::PartSpec {
             src: source,
-            src_index: src,
+            src_index: src as i32,
             src_start: src_start as usize,
             frames: frames as usize,
             fade_in: fade_in as usize,
             fade_out: fade_out as usize,
             fade_in_shape: FadeShape {
-                shape: ints[5],
+                shape: ints[5] as i32,
                 curve: curves[0],
             },
             fade_out_shape: FadeShape {
-                shape: ints[7],
+                shape: ints[7] as i32,
                 curve: curves[1],
             },
-            map: ints[HEAD..].to_vec(),
+            map: ints[HEAD..].iter().map(|&m| m as i32).collect(),
         });
     }
     Ok(parts)
@@ -838,4 +875,18 @@ pub(crate) fn mirror_buffer(mirror: &BufferPool, index: i32) -> Option<Arc<Buffe
 /// refusal every command gives for an empty slot.
 pub(crate) fn allocated(mirror: &BufferPool, index: i32) -> Result<Arc<Buffer>, String> {
     mirror_buffer(mirror, index).ok_or_else(|| format!("no buffer allocated at {index}"))
+}
+
+/// **Refuses a list that reads a file** to a command that reads its samples
+/// at random. Its file parts are on disk and nothing reads them but a stream
+/// reader (`TransportDiskIn`); answering silence for them instead would hand
+/// a client a wrong copy, a wrong export or a wrong picture.
+pub(crate) fn readable(buffer: &Buffer, index: i32) -> Result<(), String> {
+    if buffer.reads_from_disk() {
+        return Err(format!(
+            "buffer {index} is a list that reads a file: it is played by TransportDiskIn, \
+             and its samples are read from its files"
+        ));
+    }
+    Ok(())
 }

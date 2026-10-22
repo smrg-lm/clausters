@@ -129,6 +129,13 @@ pub enum Storage {
     /// costs and what it takes away (nothing: a stitch is replaced, not
     /// written).
     Stitched(crate::dsp::stitch::Stitch),
+    /// **Samples in a file**: a PCM file a segment list names as the source of
+    /// a part. Nothing is read here -- a random-access read of it is silence
+    /// -- because a file is streamed, by a reader that follows the transport
+    /// and reads ahead of it on a thread of its own (`dsp::stream`). This is
+    /// the shape the file was found to have, so a part over it is validated
+    /// and placed exactly as a part over a buffer is.
+    File(crate::dsp::pcm::Layout),
 }
 
 impl Storage {
@@ -141,7 +148,7 @@ impl Storage {
             Storage::Owned(v) => Some(v),
             #[cfg(unix)]
             Storage::Shared(r) => Some(r.cells()),
-            Storage::Stitched(_) => None,
+            Storage::Stitched(_) | Storage::File(_) => None,
         }
     }
 }
@@ -388,6 +395,46 @@ impl Buffer {
         }
     }
 
+    /// The file this buffer's samples are in, when they are in one.
+    #[inline]
+    pub fn file(&self) -> Option<&crate::dsp::pcm::Layout> {
+        match &self.data {
+            Storage::File(layout) => Some(layout),
+            _ => None,
+        }
+    }
+
+    /// **Whether reading this buffer reads a file**: it is one, or it is a
+    /// segment list with a part over one. Such a buffer is played by a stream
+    /// reader and by nothing that reads at random -- a random-access read of a
+    /// file part is silence -- so every command that would read its samples
+    /// refuses it by name.
+    #[inline]
+    pub fn reads_from_disk(&self) -> bool {
+        match &self.data {
+            Storage::File(_) => true,
+            Storage::Stitched(s) => s.reads_from_disk(),
+            _ => false,
+        }
+    }
+
+    /// A buffer over the samples of the PCM file `layout` describes. It holds
+    /// none of them: see [`Storage::File`].
+    pub fn on_file(layout: crate::dsp::pcm::Layout) -> Self {
+        let (channels, frames, sample_rate) =
+            (layout.channels, layout.frames as usize, layout.sample_rate);
+        Self {
+            frames,
+            data: Storage::File(layout),
+            channels,
+            sample_rate,
+            written: AtomicU64::new(0),
+            frontier: None,
+            writes: AtomicU64::new(0),
+            summary: Default::default(),
+        }
+    }
+
     /// Whether this buffer is a join -- what a write path checks before
     /// refusing, and what `/buffer_query` reports so a client never tries.
     #[inline]
@@ -429,6 +476,7 @@ impl Buffer {
             #[cfg(unix)]
             Storage::Shared(r) => Self::load(&r.cells()[frame * self.channels + channel]),
             Storage::Stitched(stitch) => stitch.sample(frame, channel),
+            Storage::File(_) => 0.0,
         }
     }
 

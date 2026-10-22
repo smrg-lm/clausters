@@ -2261,3 +2261,127 @@ fn an_mpe_stream_does_not_allocate_on_the_audio_thread() {
         assert_no_alloc(|| engine.process_block(&mut out));
     }
 }
+
+/// **A list streamed from disk costs the audio thread nothing it may not
+/// spend**: playing it, landing a refill after a locate, and taking a new list
+/// in its place (an `Arc` cloned and sent to the reader's thread) allocate
+/// nothing. The list is a part of a file, stitched as a server stitches one.
+#[test]
+fn a_list_streamed_from_disk_does_not_allocate_on_the_audio_thread() {
+    use clausters::server::nrt::{NrtAction, run_job};
+    use clausters::synthdef::SynthDefSpec;
+    use rosc::OscType;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let path = std::env::temp_dir().join(format!("clausters_rt_list_{}.wav", std::process::id()));
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(&path, spec).unwrap();
+    for n in 0..48_000 {
+        w.write_sample(((n % 100) as i16 + 1) * 100).unwrap();
+    }
+    w.finalize().unwrap();
+    let path = path.to_str().unwrap().to_string();
+    let list = |start: i32| {
+        let mut args = vec![OscType::Int(0), OscType::Int(1), OscType::Float(48_000.0)];
+        for at in [start, 0] {
+            args.extend([
+                OscType::String(path.clone()),
+                OscType::Int(at),
+                OscType::Int(20_000),
+                OscType::Int(32),
+                OscType::Int(32),
+                OscType::Int(1),
+                OscType::Float(0.0),
+                OscType::Int(1),
+                OscType::Float(0.0),
+                OscType::Int(0),
+            ]);
+        }
+        let mirror = vec![None; 4];
+        let (_, job) =
+            clausters::osc::translate::parse_buffer_msg("/buffer_stitch", &args, &mirror, 48_000.0)
+                .unwrap();
+        match run_job(job).unwrap() {
+            NrtAction::Install(b) => b,
+            _ => unreachable!(),
+        }
+    };
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(list(1_000)),
+        })
+        .ok()
+        .unwrap();
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{"name": "list", "ugens": [
+            {"kind": "TransportDiskIn", "inputs": [{"const": 0.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]}"#,
+    )
+    .unwrap();
+    let synth = Box::new(UGenSynth::metered(
+        Arc::new(compile(spec).unwrap()),
+        48_000.0,
+        SEED_STRIDE,
+        Arc::clone(handle.meters()),
+    ));
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth,
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
+        .ok()
+        .unwrap();
+    let mut run = |engine: &mut clausters::server::engine::Engine| {
+        let mut heard = false;
+        for _ in 0..100 {
+            assert_no_alloc(|| engine.process_block(&mut out));
+            heard |= out.iter().any(|s| *s != 0.0);
+            std::thread::sleep(std::time::Duration::from_micros(1_333));
+        }
+        heard
+    };
+    assert!(run(&mut engine), "the list played");
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 30_000,
+        })
+        .ok()
+        .unwrap();
+    assert!(run(&mut engine), "and played after a locate");
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(list(5_000)),
+        })
+        .ok()
+        .unwrap();
+    assert!(run(&mut engine), "and played the list put in its place");
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..10 {
+            engine.process_block(&mut out);
+        }
+    });
+    handle.collect_garbage();
+    std::fs::remove_file(&path).ok();
+}

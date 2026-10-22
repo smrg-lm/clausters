@@ -13,6 +13,7 @@ pub mod buffer;
 pub mod compensation;
 pub mod denormals;
 pub mod events;
+pub mod pcm;
 #[cfg(unix)]
 pub mod region;
 pub mod stitch;
@@ -47,6 +48,8 @@ pub mod disk;
 #[cfg(all(feature = "synth", target_arch = "wasm32"))]
 #[path = "disk_web.rs"]
 pub mod disk;
+// A segment list with file parts, streamed by a reader that follows the
+// transport -- `DiskIn`'s thread and ring, positioned.
 #[cfg(feature = "synth")]
 pub mod envgen;
 #[cfg(feature = "synth")]
@@ -87,6 +90,8 @@ pub mod scalar;
 pub mod sine;
 #[cfg(feature = "synth")]
 pub mod spectral;
+#[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
+pub mod stream;
 #[cfg(feature = "synth")]
 pub mod trig;
 #[cfg(feature = "synth")]

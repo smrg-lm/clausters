@@ -29,6 +29,25 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         true,
         |c, ctx| Box::new(DiskOut::open(c, &ctx.meters)),
     ),
+    // --- a segment list streamed from disk, following the transport ---
+    #[cfg(not(target_arch = "wasm32"))]
+    desc(
+        "TransportDiskIn",
+        Fixed(5),
+        &[
+            inp("bufnum", 0.0),
+            inp("chan", 0.0),
+            inp_opt("offset", 0.0),
+            inp_opt("start", 0.0),
+            inp_opt("loop", 0.0),
+        ],
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(crate::dsp::stream::TransportDiskIn::open(&ctx.meters)),
+    ),
     // --- synth-private feedback (synth-coordinated execution) ---
     desc(
         "LocalIn",

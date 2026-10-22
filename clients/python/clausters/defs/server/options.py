@@ -604,7 +604,8 @@ class ServerStatus:
     (read-only; the result of `Server.status`).
 
     The reply carries exactly these fields, in this order: the four counts, the
-    two CPU meters, the two sample rates and ``late_blocks``.
+    two CPU meters, the two sample rates, ``late_blocks`` and
+    ``starved_samples``.
 
     ``avg_cpu`` and ``peak_cpu`` are the audio thread's per-block processing
     time as a **percentage of the block budget**, not of a core: the average is
@@ -625,6 +626,10 @@ class ServerStatus:
     **A server with no clock reports none of the three**: ``avg_cpu``,
     ``peak_cpu`` and ``late_blocks`` are ``None`` -- not zero, which would read
     as an idle engine. An engine in a page is that server.
+
+    ``starved_samples`` is counted, not timed, so every server reports it: the
+    samples a disk stream played as silence since boot because the frame it
+    needed had not been read yet. Zero is a disk keeping up.
     """
 
     #: Live UGen instances across every playing node.
@@ -648,6 +653,9 @@ class ServerStatus:
     #: Blocks that missed their budget since boot. ``0`` against a server too
     #: old to report it, ``None`` from one that cannot time itself.
     late_blocks: "int | None" = 0
+    #: Samples disk streams played as silence for want of a frame, since boot.
+    #: ``0`` against a server too old to report it.
+    starved_samples: int = 0
 
     def __str__(self) -> str:
         drift = ("" if self.actual_sample_rate == self.nominal_sample_rate
@@ -663,4 +671,5 @@ class ServerStatus:
             f"{self.ugens} ugens",
             f"  loaded  {self.defs} defs",
             f"  cpu     {cpu}",
-        ])
+        ] + ([f"  disk    {self.starved_samples} samples starved"]
+             if self.starved_samples else []))

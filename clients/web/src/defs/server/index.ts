@@ -1192,16 +1192,26 @@ export class Server {
             timeout?: number;
         },
     ): Promise<OscMessage> {
+        // **A refused query is an error, not a silence**: the server said
+        // why, and waiting out the timeout would only lose it. A caller that
+        // lists `/fail` itself reads it as an answer.
+        const refused = (msg: OscMessage) =>
+            msg.addr === "/fail" && !expect.includes("/fail") && msg.args[0] === addr;
         const reply = this.awaitReply(
             (msg) =>
-                expect.includes(msg.addr) &&
-                (cmd === undefined || msg.args[0] === cmd) &&
-                (match === undefined || msg.addr === "/fail" || match(msg.args)),
+                refused(msg) ||
+                (expect.includes(msg.addr) &&
+                    (cmd === undefined || msg.args[0] === cmd) &&
+                    (match === undefined || msg.addr === "/fail" || match(msg.args))),
             timeout,
             `reply to ${addr}`,
         );
         this.sendMsg(addr, ...args);
-        return reply;
+        const msg = await reply;
+        if (refused(msg)) {
+            throw new CommandError(`${addr} failed: ${String(msg.args[1] ?? msg.args)}`);
+        }
+        return msg;
     }
 
     /**
@@ -1417,6 +1427,7 @@ export class Server {
             nominalSampleRate: at(6),
             actualSampleRate: at(7),
             lateBlocks: msg.args.length > 8 ? timed(8) : 0,
+            starvedSamples: msg.args.length > 9 ? at(9) : 0,
         };
     }
 

@@ -216,6 +216,9 @@ pub struct Meters {
     workers: usize,
     /// Whether this build has a clock to bracket work with.
     timed: bool,
+    /// Samples a stream reader played as silence because its ring was empty
+    /// where it needed a frame (`dsp::stream`). Counted, never timed.
+    starved: AtomicU64,
     #[cfg(not(target_arch = "wasm32"))]
     epoch: std::time::Instant,
 }
@@ -264,6 +267,7 @@ impl Meters {
             phases,
             workers,
             timed,
+            starved: AtomicU64::new(0),
             #[cfg(not(target_arch = "wasm32"))]
             epoch: std::time::Instant::now(),
         })
@@ -290,6 +294,18 @@ impl Meters {
             }
         };
         self.slots.get(i)
+    }
+
+    /// Adds `samples` played as silence by a stream reader that ran out of
+    /// lead. An atomic add: legal on the audio thread.
+    pub fn starve(&self, samples: u64) {
+        self.starved.fetch_add(samples, Ordering::Relaxed);
+    }
+
+    /// The samples stream readers played as silence for want of a frame,
+    /// since boot.
+    pub fn starved(&self) -> u64 {
+        self.starved.load(Ordering::Relaxed)
     }
 
     /// Whether the seconds this table reports were measured. `false` for a

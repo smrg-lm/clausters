@@ -238,6 +238,37 @@ def test_a_join_plays_as_one_buffer_and_says_what_it_is_made_of():
     two.free()
 
 
+def test_a_part_names_a_file_and_the_join_is_read_from_disk(tmp_path):
+    """A part's source may be a file: the join over it is played from disk
+    (`transport_disk_in`), answers its parts with the path, and refuses by name
+    every read that would take its samples at random."""
+    _embed_or_skip()
+    try:
+        import wave
+        from clausters import Session
+        from clausters.defs import Part
+        from clausters.errors import CommandError
+        session = Session.embed()
+    except (OSError, RuntimeError) as e:
+        pytest.skip(f"embedded server unavailable: {e}")
+
+    path = tmp_path / "take.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(48_000)
+        w.writeframes(b"".join(int(v).to_bytes(2, "little", signed=True)
+                               for v in range(0, 4000, 100)))
+    server = session.server
+    join = Buffer.stitch([Part(str(path), 10, 20)], channels=1, server=server)
+    assert (join.frames, join.channels) == (20, 1)
+    back = join.parts()
+    assert [(p.source, p.start, p.frames) for p in back] == [(str(path), 10, 20)]
+    with pytest.raises(CommandError, match="reads a file"):
+        join.get_samples(0, 4)
+    join.free()
+
+
 def _swapped_session() -> dict:
     """A session whose one box is a join of two takes, the second take's tail
     first, beside a box over samples that were never written down."""

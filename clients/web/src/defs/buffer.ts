@@ -60,7 +60,14 @@ function filePath(file: string | SoundFile): string {
  * of the shape a region's edge was drawn with.
  */
 export interface Part {
-    source: Buffer | number;
+    /**
+     * A `Buffer`, a bare slot number or **the path of a PCM WAV file**. A part
+     * over a file is the same part with its samples somewhere else: a join
+     * with one is played from disk by `TransportDiskIn`, which follows the
+     * transport and reads ahead of it, and everything that would read it at
+     * random (`BufRd`, `get`, `peaks`, a copy) refuses it by name.
+     */
+    source: Buffer | number | string;
     start?: number;
     frames: number;
     fadeIn?: number;
@@ -892,7 +899,7 @@ export class Buffer {
      *
      * The sources come back as slot numbers rather than `Buffer` handles: what
      * the server holds is an index, and which handle in this program stands for
-     * it is this program's business.
+     * it is this program's business. A part over a file comes back as its path.
      */
     async parts(timeout?: number): Promise<Part[]> {
         const msg = await this.srv().request("/buffer_parts", [["i", this.bufnum]], {
@@ -904,8 +911,10 @@ export class Buffer {
         const width = 9 + channels;
         const out: Part[] = [];
         for (let at = 3; at + width <= ints.length; at += width) {
+            // A part over a file comes back as its path.
+            const named = msg.args[at];
             out.push({
-                source: ints[at]!,
+                source: typeof named === "string" ? named : ints[at]!,
                 start: ints[at + 1]!,
                 frames: ints[at + 2]!,
                 fadeIn: ints[at + 3]!,
@@ -1200,6 +1209,13 @@ export class Buffer {
  * It is a function of the parts and nothing else, which is what lets the two
  * forms of the verb (waited for, and sent) share one reading of them.
  */
+/** A frame number as the wire carries it: an int, or an int64 past what an
+ *  int32 counts -- a frame of a file hours long. */
+function frameCount(n: number): MsgArg {
+    const whole = Math.trunc(n);
+    return whole >= -(2 ** 31) && whole < 2 ** 31 ? ["i", whole] : ["h", BigInt(whole)];
+}
+
 function stitchParts(
     parts: Part[],
     { channels, server: on }: { channels?: number; server?: Server },
@@ -1207,7 +1223,8 @@ function stitchParts(
     const server = resolveServer(on);
     const first = parts[0];
     if (!first) throw new Error("a join needs at least one part");
-    const width = channels ?? (typeof first.source === "number" ? 0 : first.source.channels);
+    const width =
+        channels ?? (typeof first.source === "object" ? first.source.channels : 0);
     if (!width) {
         throw new Error(
             "the join's width: the first part's source does not know its own, " +
@@ -1217,7 +1234,10 @@ function stitchParts(
     const args: MsgArg[] = [];
     let frames = 0;
     for (const part of parts) {
-        const source = typeof part.source === "number" ? part.source : part.source.bufnum;
+        const source: MsgArg =
+            typeof part.source === "string"
+                ? ["s", part.source]
+                : ["i", Math.trunc(typeof part.source === "number" ? part.source : part.source.bufnum)];
         const mapped = part.channels ?? [...Array(width).keys()];
         if (mapped.length !== width) {
             throw new Error(
@@ -1226,9 +1246,9 @@ function stitchParts(
             );
         }
         args.push(
-            ["i", Math.trunc(source)],
-            ["i", Math.trunc(part.start ?? 0)],
-            ["i", Math.trunc(part.frames)],
+            source,
+            frameCount(part.start ?? 0),
+            frameCount(part.frames),
             ["i", Math.trunc(part.fadeIn ?? 0)],
             ["i", Math.trunc(part.fadeOut ?? 0)],
             ["i", Math.trunc(part.fadeInShape ?? 1)],

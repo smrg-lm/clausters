@@ -181,6 +181,7 @@ export {
     bufWr,
     recordBuf,
     transportBufRd,
+    transportDiskIn,
     bufSampleRate,
     osc,
     oscN,
