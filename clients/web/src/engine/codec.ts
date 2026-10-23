@@ -33,6 +33,15 @@ interface Codec {
         ext: string,
         label: string,
     ) => { frames: number; channels: number; sampleRate: number; codec: string; sampleFormat: string };
+    soundHeader: (
+        path: string,
+        container: string,
+        channels: number,
+        sampleRate: number,
+        sampleFormat: string,
+        dataBytes: number,
+    ) => Uint8Array;
+    peaksFile: (frames: number, channels: number, stats: Float32Array) => Uint8Array;
 }
 
 let loaded: Promise<Codec> | null = null;
@@ -130,6 +139,26 @@ export async function probeSoundfile(
         sampleRate: info.sampleRate,
         codec: info.codec,
         sampleFormat: info.sampleFormat,
+    };
+}
+
+/**
+ * The parts of a sound file written a run at a time, as a native render
+ * writes one: the header for `dataBytes` of body in the container `path`'s
+ * extension names (a WAV, a W64 or an RF64, whose header's length does not
+ * change with the body's), and a run of the body.
+ */
+export async function soundFraming(): Promise<{
+    header: (path: string, channels: number, sampleRate: number, sampleFormat: string, dataBytes: number) => Uint8Array;
+    body: (samples: Float32Array, sampleFormat: string) => Uint8Array;
+    peaks: (frames: number, channels: number, stats: Float32Array) => Uint8Array;
+}> {
+    const module = await codec();
+    return {
+        header: (path, channels, sampleRate, sampleFormat, dataBytes) =>
+            module.soundHeader(path, "", channels, sampleRate, sampleFormat, dataBytes),
+        body: (samples, sampleFormat) => module.encodeWavFrames(samples, sampleFormat),
+        peaks: (frames, channels, stats) => module.peaksFile(frames, channels, stats),
     };
 }
 

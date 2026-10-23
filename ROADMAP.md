@@ -306,13 +306,10 @@ its plan; the plan is where its acceptance is read.
   take costs a native server with a segment a pass over it". Found while
   opening it, and to look at in a page before `X28`'s eye pass: the GUI
   plan's "A spectrogram of a server buffer may draw nothing in a host that
-  cannot map it" (Found by use). The page's offline render comes first
-  because every edit that makes a take is a render over files, and the two
-  clients' editors change in one commit.
+  cannot map it" (Found by use).
 
   | Order | Milestone | Plan |
   |---|---|---|
-  | 0 | "An offline render in a page reads and writes no file" (Found by use) | `clients/web/PLAN.md` |
   | 1 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
   | 2 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
   | 3 | `S23` — The server keeps no editing commands | root `PLAN.md` |

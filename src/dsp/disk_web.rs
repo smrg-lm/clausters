@@ -114,11 +114,89 @@ struct Slot {
     format: String,
     end: End,
     list: Option<ListState>,
+    /// `DiskIn` in an offline render whose host reads its files on the spot:
+    /// the file, and the frame read to.
+    offline: Option<OfflineRead>,
+}
+
+/// What an offline `DiskIn` has read of its file.
+struct OfflineRead {
+    layout: crate::dsp::pcm::Layout,
+    next: u64,
 }
 
 thread_local! {
     static STREAMS: RefCell<Vec<Slot>> = const { RefCell::new(Vec::new()) };
     static NEXT_ID: RefCell<u32> = const { RefCell::new(0) };
+    static FILES: RefCell<Option<std::rc::Rc<dyn PageFiles>>> = const { RefCell::new(None) };
+}
+
+/// **The files of an offline render in a page, read on the spot.**
+///
+/// Natively an offline render's streams wait for their threads: a frame not
+/// read yet is waited for, never played as silence (`dsp::disk::wait_for`).
+/// A page's engine cannot wait inside a block, but the Worker an offline
+/// render runs in can read a file synchronously (a sync access handle), so
+/// its host hands one of these over for the render ([`install_files`]) and
+/// the input streams read through it the moment they need to: a list stream
+/// its next span, a `DiskIn` its next run. What is rendered is then what a
+/// native render renders. The outputs (`DiskOut`, `PeaksOut`) need nothing of
+/// it: the host drains them between two runs, as it does live.
+pub trait PageFiles {
+    /// The length of the file at `path`, in bytes.
+    fn size(&self, path: &str) -> Result<u64, String>;
+    /// `len` bytes of the file at `path` from `offset`; fewer at its end.
+    fn read(&self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>, String>;
+}
+
+/// Hands the files an offline render reads over, or takes them back
+/// (`None`) once it is done.
+pub fn install_files(files: Option<std::rc::Rc<dyn PageFiles>>) {
+    FILES.with(|f| *f.borrow_mut() = files);
+}
+
+fn files() -> Option<std::rc::Rc<dyn PageFiles>> {
+    FILES.with(|f| f.borrow().clone())
+}
+
+/// **The layout of the file at `path`, read through the render's files**:
+/// its head, and a larger one when the header runs past it.
+pub fn layout_through_files(path: &str) -> Result<crate::dsp::pcm::Layout, String> {
+    let files = files().ok_or_else(|| {
+        format!(
+            "{path}: a page's engine reaches no file outside an offline render whose host \
+             reads them for it"
+        )
+    })?;
+    let size = files.size(path)?;
+    let mut head = files.read(path, 0, (1 << 16).min(size as usize))?;
+    let parsed =
+        crate::dsp::pcm::Layout::parse_within(&mut std::io::Cursor::new(&head), path, Some(size));
+    if parsed.is_ok() || head.len() as u64 >= size {
+        return parsed;
+    }
+    head = files.read(path, 0, (1 << 20).min(size as usize))?;
+    crate::dsp::pcm::Layout::parse_within(&mut std::io::Cursor::new(&head), path, Some(size))
+}
+
+/// `frames` frames of `layout` from `first`, decoded and interleaved.
+fn read_frames(
+    files: &dyn PageFiles,
+    layout: &crate::dsp::pcm::Layout,
+    first: u64,
+    frames: usize,
+) -> Result<Vec<f32>, String> {
+    let width = layout.frame_bytes();
+    let bytes = files.read(
+        &layout.path,
+        layout.data_offset + first * width as u64,
+        frames * width,
+    )?;
+    let one = layout.encoding.bytes();
+    Ok(bytes
+        .chunks_exact(one)
+        .map(|b| layout.encoding.decode(b))
+        .collect())
 }
 
 /// Tells a stream how many channels its file has, once the host has looked.
@@ -334,6 +412,19 @@ pub fn list_push(id: u32, generation: u32, at: u64, list_frames: usize, samples:
         let Some(slot) = s.iter_mut().find(|slot| slot.id == id) else {
             return false;
         };
+        take_span(slot, generation, at, list_frames, samples)
+    })
+}
+
+/// [`list_push`] into a stream already found.
+fn take_span(
+    slot: &mut Slot,
+    generation: u32,
+    at: u64,
+    list_frames: usize,
+    samples: &[f32],
+) -> bool {
+    {
         let End::Feeding(producer) = &mut slot.end else {
             return false;
         };
@@ -369,7 +460,97 @@ pub fn list_push(id: u32, generation: u32, at: u64, list_frames: usize, samples:
         push_frames(producer, &frames);
         state.next = Some(at + list_frames as u64);
         true
-    })
+    }
+}
+
+/// **Serves a list stream on the spot**, through the files an offline
+/// render's host handed over: every span it asks for, read and rendered,
+/// until its ring has no room for another. Nothing without them.
+fn serve_list(id: u32) {
+    let Some(files) = files() else {
+        return;
+    };
+    STREAMS.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(slot) = s.iter_mut().find(|slot| slot.id == id) else {
+            return;
+        };
+        while let Some(request) = list_request(slot) {
+            let layout = slot
+                .list
+                .as_ref()
+                .and_then(|state| state.list.clone())
+                .and_then(|list| {
+                    let (_, part) = list.stitch()?.part_at(request.at as usize)?;
+                    part.src.file().cloned()
+                });
+            let Some(layout) = layout else {
+                return;
+            };
+            match read_frames(files.as_ref(), &layout, request.start, request.span) {
+                Ok(samples) => {
+                    if !take_span(
+                        slot,
+                        request.generation,
+                        request.at,
+                        request.list_frames,
+                        &samples,
+                    ) {
+                        return;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("TransportDiskIn: {e}");
+                    return;
+                }
+            }
+        }
+    });
+}
+
+/// **Serves a `DiskIn` on the spot**, as [`serve_list`] does a list: runs of
+/// its file from where it has read to, until its ring is full or the file is
+/// played out (and from the top again, looping).
+fn serve_in(id: u32) {
+    let Some(files) = files() else {
+        return;
+    };
+    STREAMS.with(|s| {
+        let mut s = s.borrow_mut();
+        let Some(slot) = s.iter_mut().find(|slot| slot.id == id) else {
+            return;
+        };
+        let looping = slot.looping;
+        let (End::Feeding(producer), Some(read)) = (&mut slot.end, slot.offline.as_mut()) else {
+            return;
+        };
+        let channels = read.layout.channels.max(1);
+        loop {
+            if read.next >= read.layout.frames {
+                if !looping || read.layout.frames == 0 {
+                    return;
+                }
+                read.next = 0;
+            }
+            let room = producer.slots() / channels;
+            let n = room
+                .min(LIST_SPAN)
+                .min((read.layout.frames - read.next) as usize);
+            if n == 0 {
+                return;
+            }
+            match read_frames(files.as_ref(), &read.layout, read.next, n) {
+                Ok(samples) => {
+                    push_frames(producer, &samples);
+                    read.next += n as u64;
+                }
+                Err(e) => {
+                    tracing::warn!("DiskIn: {e}");
+                    return;
+                }
+            }
+        }
+    });
 }
 
 /// Points a list stream at `frame` of `list` (or of the list it holds), for
@@ -450,16 +631,35 @@ struct Active {
     consumer: Option<Consumer<f32>>,
     producer: Option<Producer<f32>>,
     channels: usize,
+    /// Served on the spot each block, in an offline render ([`PageFiles`]).
+    serve: bool,
 }
 
 impl DiskIn {
     /// The load table is taken and unused: the reader here is the host, not a
     /// thread of the engine, and `wasm32` has no clock to bracket with anyway.
-    pub fn open(config: &UGenConfig, _ctx: &BuildCtx) -> Self {
+    pub fn open(config: &UGenConfig, ctx: &BuildCtx) -> Self {
         let Some(path) = config.path.clone() else {
             tracing::warn!("DiskIn has no path; it will be silent");
             return Self { active: None };
         };
+        // An offline render whose host reads files on the spot: the file's
+        // shape is read now, as natively, and the stream is served as it
+        // plays.
+        let offline = (ctx.offline && files().is_some())
+            .then(|| match layout_through_files(&path) {
+                Ok(layout) => Some(OfflineRead {
+                    next: config.start.min(layout.frames),
+                    layout,
+                }),
+                Err(e) => {
+                    tracing::warn!("DiskIn: {e}");
+                    None
+                }
+            })
+            .flatten();
+        let channels = offline.as_ref().map_or(0, |r| r.layout.channels);
+        let serve = offline.is_some();
         // The channel count is not knowable here (see the module docs): the
         // stream starts shapeless and the host fills it in. The ring is sized
         // in samples rather than frames for the same reason -- there is no
@@ -471,19 +671,21 @@ impl DiskIn {
             id,
             direction: Direction::In,
             path,
-            channels: 0,
+            channels,
             looping: config.looping,
             start: config.start,
             format: String::new(),
             end: End::Feeding(producer),
             list: None,
+            offline,
         });
         Self {
             active: Some(Active {
                 id,
                 consumer: Some(consumer),
                 producer: None,
-                channels: 0,
+                channels,
+                serve,
             }),
         }
     }
@@ -500,6 +702,9 @@ impl UGen for DiskIn {
             output.fill(0.0);
             return;
         };
+        if a.serve {
+            serve_in(a.id);
+        }
         let Some(consumer) = a.consumer.as_mut() else {
             output.fill(0.0);
             return;
@@ -553,7 +758,7 @@ pub struct DiskOut {
 
 impl DiskOut {
     /// As [`DiskIn::open`]: the writer is the host.
-    pub fn open(config: &UGenConfig, _ctx: &BuildCtx) -> Self {
+    pub fn open(config: &UGenConfig, ctx: &BuildCtx) -> Self {
         let Some(path) = config.path.clone() else {
             tracing::warn!("DiskOut has no path; it will discard its input");
             return Self { active: None };
@@ -571,6 +776,7 @@ impl DiskOut {
             format,
             end: End::Draining(consumer),
             list: None,
+            offline: None,
         });
         Self {
             active: Some(Active {
@@ -578,6 +784,10 @@ impl DiskOut {
                 consumer: None,
                 producer: Some(producer),
                 channels: 1,
+                // An offline render's host drains it between runs, and the
+                // last run's samples are still in the ring when the synth
+                // goes: it is told the synth is gone rather than forgotten.
+                serve: ctx.offline && files().is_some(),
             }),
         }
     }
@@ -613,9 +823,21 @@ impl UGen for DiskOut {
 
 impl Drop for DiskOut {
     fn drop(&mut self) {
-        if let Some(a) = self.active.as_ref() {
+        let Some(a) = self.active.as_ref() else {
+            return;
+        };
+        if !a.serve {
             release(a.id);
+            return;
         }
+        // Offline the host drains what is left and releases it (`looping`
+        // says the synth is gone, as a `PeaksOut`'s does).
+        let id = a.id;
+        STREAMS.with(|s| {
+            if let Some(slot) = s.borrow_mut().iter_mut().find(|slot| slot.id == id) {
+                slot.looping = true;
+            }
+        });
     }
 }
 
@@ -644,6 +866,9 @@ pub struct TransportDiskIn {
     fresh: bool,
     channels: usize,
     frames: u64,
+    /// Served on the spot, in an offline render whose host reads files
+    /// ([`PageFiles`]): a refill lands inside the call, as natively.
+    serve: bool,
 }
 
 impl TransportDiskIn {
@@ -666,6 +891,7 @@ impl TransportDiskIn {
                 generation: 0,
                 looping: false,
             }),
+            offline: None,
         });
         Self {
             id,
@@ -677,6 +903,7 @@ impl TransportDiskIn {
             fresh: true,
             channels: 1,
             frames: 0,
+            serve: ctx.offline && files().is_some(),
         }
     }
 
@@ -699,7 +926,46 @@ impl TransportDiskIn {
         }
     }
 
+    /// **Frame `frame` of the list, read the moment it is needed**, in an
+    /// offline render whose host reads files on the spot: what would be a
+    /// wait natively is a read here, so a frame is never played as silence.
+    fn take_served(&mut self, frame: u64, channel: usize) -> f32 {
+        let ring = (crate::dsp::stream::RING_SAMPLES / self.channels) as u64;
+        if let Some(head) = self.head
+            && head < frame
+            && frame - head <= ring
+        {
+            let have = (self.consumer.slots() / self.channels) as u64;
+            let n = (frame - head).min(have);
+            if let Ok(chunk) = self.consumer.read_chunk(n as usize * self.channels) {
+                chunk.commit_all();
+            }
+            self.head = Some(self.advance(head, n));
+        }
+        if self.head != Some(frame) {
+            self.refill(None, frame);
+        }
+        if self.consumer.slots() < self.channels {
+            serve_list(self.id);
+        }
+        if self.head != Some(frame) || self.consumer.slots() < self.channels {
+            return 0.0;
+        }
+        let mut value = 0.0;
+        for c in 0..self.channels {
+            let v = self.consumer.pop().unwrap_or(0.0);
+            if c == channel {
+                value = v;
+            }
+        }
+        self.head = Some(self.advance(frame, 1));
+        value
+    }
+
     fn take(&mut self, frame: u64, channel: usize, starved: &mut u64) -> f32 {
+        if self.serve {
+            return self.take_served(frame, channel);
+        }
         let Some(head) = self.head else {
             self.refill(None, frame);
             return 0.0;
@@ -777,8 +1043,10 @@ impl UGen for TransportDiskIn {
             self.channels = buf.channels().max(1);
             self.frames = frames;
             self.refill(Some(Arc::clone(buf)), place(0).1.unwrap_or(0));
-            output.fill(0.0);
-            return;
+            if !self.serve {
+                output.fill(0.0);
+                return;
+            }
         }
         let channel = (inputs[1][0].max(0.0) as usize).min(self.channels - 1);
         if !rolling {
@@ -856,6 +1124,7 @@ impl PeaksOut {
             format: String::new(),
             end: End::Draining(consumer),
             list: None,
+            offline: None,
         });
         Self {
             active: Some(PeaksActive {

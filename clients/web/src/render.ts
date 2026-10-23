@@ -72,9 +72,8 @@ import type { Event } from "./seq/event.ts";
 import { Timeline } from "./seq/timeline.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
 import { channelStats } from "./data/analysis.ts";
-import { renderScoreBytes } from "./engine/render.ts";
-import { encodeWav } from "./engine/codec.ts";
-import { writeFileAt } from "./base/files.ts";
+import { consoleRenderLog, entropySeed, renderScoreBytes } from "./engine/render.ts";
+import { renderFile } from "./engine/file-render.ts";
 
 /**
  * How many events -- or values -- a render takes before it decides its source
@@ -200,10 +199,33 @@ export async function renderScore(
     score: Uint8Array,
     { sampleRate = 48_000.0, channels = 2, seed, path, sampleFormat = "float" }: RenderOptions = {},
 ): Promise<RenderStats> {
-    const { samples, seed: used, events } = await renderScoreBytes(score, sampleRate, channels, seed);
     if (path !== undefined) {
-        await writeFileAt(path, await encodeWav(samples, channels, sampleRate, sampleFormat));
+        // **Written as it is rendered**, a run at a time, reading the files
+        // the score reads as it needs them: a render to a file holds a run,
+        // never the take (`engine/file-render.ts`).
+        const written = await renderFile({
+            score,
+            sampleRate,
+            channels,
+            seed: seed === undefined ? entropySeed() : BigInt(seed),
+            path,
+            sampleFormat,
+        });
+        consoleRenderLog(written.log);
+        return {
+            frames: written.frames,
+            channels,
+            sampleRate,
+            events: written.events,
+            duration: sampleRate > 0 ? written.frames / sampleRate : 0,
+            peak: written.peak,
+            rms: written.rms,
+            seed: written.seed,
+            path,
+            samples: null,
+        };
     }
+    const { samples, seed: used, events } = await renderScoreBytes(score, sampleRate, channels, seed);
     const frames = channels > 0 ? Math.floor(samples.length / channels) : 0;
     const peak: number[] = [];
     const rms: number[] = [];
@@ -221,8 +243,8 @@ export async function renderScore(
         peak,
         rms,
         seed: used,
-        path: path ?? null,
-        samples: path === undefined ? samples : null,
+        path: null,
+        samples,
     };
 }
 

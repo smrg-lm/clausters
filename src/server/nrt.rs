@@ -1055,7 +1055,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             sample_rate,
             parts,
         } => {
-            let parts = crate::dsp::stitch::resolve(parts, crate::dsp::pcm::Layout::open)?;
+            let parts = crate::dsp::stitch::resolve(parts, crate::dsp::pcm::layout_of)?;
             let stitch = crate::dsp::stitch::Stitch::new(parts, channels, sample_rate)?;
             Ok(NrtAction::Install(Arc::new(Buffer::stitched(
                 stitch,

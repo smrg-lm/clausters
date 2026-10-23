@@ -33,6 +33,7 @@ use crate::server::render_log::{self, LogLine};
 
 /// One score entry: the messages of a bundle, executed atomically at `time`
 /// seconds from the start of the render.
+#[derive(Clone)]
 pub struct ScoreEvent {
     pub time: f64,
     pub messages: Vec<OscMessage>,
@@ -89,6 +90,55 @@ impl OscScore {
             }
         }
         Ok(jobs)
+    }
+
+    /// **Every file the score reads**, once each, in the order they are
+    /// first named: the string sources of its `/buffer_stitch` parts and the
+    /// paths of its synth defs' `DiskIn`s.
+    ///
+    /// What it is for is a page, whose engine reaches no file: an offline
+    /// render's host opens each of these before the render starts, and the
+    /// render reads them through it (`dsp::disk::PageFiles`), as a page
+    /// compiles a score's Faust defs first.
+    pub fn files(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut add = |path: &str| {
+            if !out.iter().any(|p| p == path) {
+                out.push(path.to_string());
+            }
+        };
+        for msg in self.events.iter().flat_map(|ev| &ev.messages) {
+            match msg.addr.as_str() {
+                "/buffer_stitch" => {
+                    for arg in msg.args.iter().skip(3) {
+                        if let OscType::String(path) = arg {
+                            add(path);
+                        }
+                    }
+                }
+                // A synth def's `DiskIn`s, by the path each is given.
+                "/def_send" if matches!(msg.args.first(), Some(OscType::String(f)) if f == "synth") => {
+                    for arg in &msg.args[1..] {
+                        let OscType::String(text) = arg else {
+                            continue;
+                        };
+                        let Ok(def) = serde_json::from_str::<serde_json::Value>(text) else {
+                            continue;
+                        };
+                        let ugens = def["ugens"].as_array().cloned().unwrap_or_default();
+                        for ugen in ugens {
+                            if ugen["kind"] == "DiskIn"
+                                && let Some(path) = ugen["path"].as_str()
+                            {
+                                add(path);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
     }
 
     /// Parses the scsynth binary score format: length-prefixed OSC packets.
@@ -252,142 +302,229 @@ pub struct RenderStats {
 pub fn render(
     score: &OscScore,
     cfg: &RenderConfig,
-    sink: impl FnMut(&[f32]) -> Result<(), String>,
-) -> Result<RenderStats, String> {
-    let (result, log) = render_log::during(|| render_logged(score, cfg, sink));
-    result.map(|stats| RenderStats { log, ..stats })
-}
-
-/// [`render`] without the log kept.
-fn render_logged(
-    score: &OscScore,
-    cfg: &RenderConfig,
     mut sink: impl FnMut(&[f32]) -> Result<(), String>,
 ) -> Result<RenderStats, String> {
-    if cfg.channels == 0 || cfg.channels > NUM_AUDIO_BUSES {
-        return Err(format!("channels must be 1-{NUM_AUDIO_BUSES}"));
-    }
-    if !(cfg.sample_rate.is_finite() && cfg.sample_rate > 0.0) {
-        return Err("sample rate must be positive".into());
-    }
-    let sr = cfg.sample_rate;
-    let total = (score.duration() * sr).round() as u64;
-    if total == 0 {
-        return Err(
-            "empty render: a score ends at its last bundle's time -- close it with a \
-             final bundle (e.g. an /node_free) at the total duration"
-                .into(),
-        );
+    let mut render = OfflineRender::new(score, cfg)?;
+    while !render.step(u64::MAX, &mut sink)? {}
+    render.finish()
+}
+
+/// **An offline render, a run of frames at a time.** [`render`] is one of
+/// these driven to its end in one call; a host that has to serve the
+/// render's file streams between two runs -- a page, whose files are read by
+/// the host and not by the engine (`dsp::disk_web`) -- drives it itself:
+/// [`step`](Self::step) as far as it likes, the streams served, and again,
+/// until it answers that it is done, then [`finish`](Self::finish). The score
+/// is read once and the engine is the same one, so the samples are the same
+/// whatever the runs.
+///
+/// What the render logs is kept across the runs, and comes back in the stats.
+pub struct OfflineRender {
+    r: Renderer,
+    events: Vec<ScoreEvent>,
+    /// The next event to schedule.
+    next: usize,
+    total: u64,
+    peak: Vec<f32>,
+    sumsq: Vec<f64>,
+    seed: u64,
+    log: Vec<LogLine>,
+}
+
+impl OfflineRender {
+    /// Builds the engine for `score` under `cfg`, or says why it cannot.
+    pub fn new(score: &OscScore, cfg: &RenderConfig) -> Result<Self, String> {
+        let (built, log) = render_log::during(|| Self::build(score, cfg));
+        let mut render = built?;
+        render.log = log;
+        Ok(render)
     }
 
-    // Measured on the way past, not in a second pass: the driver already
-    // touches every sample handing it to the sink, and for `render_to_wav`
-    // the samples are gone once the call returns.
-    let channels = cfg.channels;
-    let mut peak = vec![0.0f32; channels];
-    let mut sumsq = vec![0.0f64; channels];
-
-    // Resolved once, here, so the number that goes into the translator is the
-    // number that comes back in the stats -- a take is only repeatable if the
-    // render reports the seed it actually used.
-    let seed = cfg.seed.unwrap_or_else(clausters_core::rng::entropy_seed);
-
-    crate::dsp::denormals::flush_to_zero();
-    let (engine, handle) = engine_pair_full(
-        sr as f32,
-        cfg.channels,
-        cfg.workers,
-        None,
-        DEFAULT_AUDIO_BUSES,
-        DEFAULT_CONTROL_BUSES,
-        cfg.limits,
-    );
-    let mut r = Renderer {
-        engine,
-        handle,
-        translator: {
-            let mut t = CmdTranslator::with_limits(
-                sr as f32,
-                DEFAULT_AUDIO_BUSES,
-                DEFAULT_CONTROL_BUSES,
-                cfg.limits,
+    fn build(score: &OscScore, cfg: &RenderConfig) -> Result<Self, String> {
+        if cfg.channels == 0 || cfg.channels > NUM_AUDIO_BUSES {
+            return Err(format!("channels must be 1-{NUM_AUDIO_BUSES}"));
+        }
+        if !(cfg.sample_rate.is_finite() && cfg.sample_rate > 0.0) {
+            return Err("sample rate must be positive".into());
+        }
+        let sr = cfg.sample_rate;
+        let total = (score.duration() * sr).round() as u64;
+        if total == 0 {
+            return Err(
+                "empty render: a score ends at its last bundle's time -- close it with a \
+                 final bundle (e.g. an /node_free) at the total duration"
+                    .into(),
             );
-            t.set_seed(seed);
-            t.offline = true;
-            #[cfg(all(
-                any(feature = "plugin-clap", feature = "plugin-vst3"),
-                target_os = "linux"
-            ))]
-            {
-                t.offline_plugins = true;
-            }
-            t
-        },
-        block: vec![0.0; BLOCK_SIZE * cfg.channels],
-        now: 0,
-        channels: cfg.channels,
-        sample_rate: sr,
-        dropped: false,
-    };
+        }
+        // Resolved once, here, so the number that goes into the translator is
+        // the number that comes back in the stats -- a take is only repeatable
+        // if the render reports the seed it actually used.
+        let seed = cfg.seed.unwrap_or_else(clausters_core::rng::entropy_seed);
 
-    let mut measured = |chunk: &[f32]| -> Result<(), String> {
-        for (i, &x) in chunk.iter().enumerate() {
-            let c = i % channels;
-            let a = x.abs();
-            if a > peak[c] {
-                peak[c] = a;
-            }
-            sumsq[c] += (x as f64) * (x as f64);
-        }
-        sink(chunk)
-    };
-
-    for ev in &score.events {
-        let target = ((ev.time * sr).round() as u64).min(total);
-        // The event lands in a future block: render up to it.
-        while r.now + BLOCK_SIZE as u64 <= target {
-            r.process_block(total, &mut measured)?;
-        }
-        let cmds = r
-            .event_cmds(&ev.messages)
-            .map_err(|e| format!("score event at {:.6}s: {e}", ev.time))?;
-        if cmds.is_empty() {
-            continue;
-        }
-        // The engine splits the upcoming block at the exact sample.
-        if r.handle.send(Cmd::Schedule { time: target, cmds }).is_err() {
-            return Err(format!(
-                "score event at {:.6}s: command FIFO full (too many bundles inside one block)",
-                ev.time
-            ));
-        }
-    }
-    while r.now < total {
-        r.process_block(total, &mut measured)?;
-    }
-    r.collect();
-    if r.dropped {
-        return Err(
-            "the engine dropped scheduled bundles (queue full): the score is too dense".into(),
+        crate::dsp::denormals::flush_to_zero();
+        let (engine, handle) = engine_pair_full(
+            sr as f32,
+            cfg.channels,
+            cfg.workers,
+            None,
+            DEFAULT_AUDIO_BUSES,
+            DEFAULT_CONTROL_BUSES,
+            cfg.limits,
         );
-    }
-    Ok(RenderStats {
-        frames: total,
-        events: score.events.len(),
-        seed,
-        peak,
-        rms: sumsq
-            .iter()
-            .map(|&s| {
-                if total == 0 {
-                    0.0
-                } else {
-                    (s / total as f64).sqrt() as f32
+        let r = Renderer {
+            engine,
+            handle,
+            translator: {
+                let mut t = CmdTranslator::with_limits(
+                    sr as f32,
+                    DEFAULT_AUDIO_BUSES,
+                    DEFAULT_CONTROL_BUSES,
+                    cfg.limits,
+                );
+                t.set_seed(seed);
+                t.offline = true;
+                #[cfg(all(
+                    any(feature = "plugin-clap", feature = "plugin-vst3"),
+                    target_os = "linux"
+                ))]
+                {
+                    t.offline_plugins = true;
                 }
-            })
-            .collect(),
-        log: Vec::new(),
-    })
+                t
+            },
+            block: vec![0.0; BLOCK_SIZE * cfg.channels],
+            now: 0,
+            channels: cfg.channels,
+            sample_rate: sr,
+            dropped: false,
+        };
+        Ok(Self {
+            r,
+            events: score.events.clone(),
+            next: 0,
+            total,
+            // Measured on the way past, not in a second pass: the driver
+            // already touches every sample handing it to the sink, and for
+            // `render_to_wav` the samples are gone once the call returns.
+            peak: vec![0.0; cfg.channels],
+            sumsq: vec![0.0; cfg.channels],
+            seed,
+            log: Vec::new(),
+        })
+    }
+
+    /// How many frames the render comes to.
+    pub fn total_frames(&self) -> u64 {
+        self.total
+    }
+
+    /// How many it has rendered so far.
+    pub fn frames_done(&self) -> u64 {
+        self.r.now.min(self.total)
+    }
+
+    /// **Renders about `frames` more frames** -- whole blocks, so the run may
+    /// end a block past it -- handing each block to `sink`, and answers
+    /// whether the render is done.
+    pub fn step(
+        &mut self,
+        frames: u64,
+        sink: &mut impl FnMut(&[f32]) -> Result<(), String>,
+    ) -> Result<bool, String> {
+        let (done, lines) = render_log::during(|| self.run(frames, sink));
+        self.log.extend(lines);
+        done
+    }
+
+    fn run(
+        &mut self,
+        frames: u64,
+        sink: &mut impl FnMut(&[f32]) -> Result<(), String>,
+    ) -> Result<bool, String> {
+        crate::dsp::denormals::flush_to_zero();
+        let until = self.r.now.saturating_add(frames);
+        let total = self.total;
+        let channels = self.r.channels;
+        let (peak, sumsq) = (&mut self.peak, &mut self.sumsq);
+        let mut measured = |chunk: &[f32]| -> Result<(), String> {
+            for (i, &x) in chunk.iter().enumerate() {
+                let c = i % channels;
+                let a = x.abs();
+                if a > peak[c] {
+                    peak[c] = a;
+                }
+                sumsq[c] += (x as f64) * (x as f64);
+            }
+            sink(chunk)
+        };
+        let sr = self.r.sample_rate;
+        while let Some(ev) = self.events.get(self.next) {
+            let target = ((ev.time * sr).round() as u64).min(total);
+            // The event lands in a future block: render up to it.
+            while self.r.now + BLOCK_SIZE as u64 <= target {
+                if self.r.now >= until {
+                    return Ok(false);
+                }
+                self.r.process_block(total, &mut measured)?;
+            }
+            let cmds = self
+                .r
+                .event_cmds(&ev.messages)
+                .map_err(|e| format!("score event at {:.6}s: {e}", ev.time))?;
+            let time = ev.time;
+            self.next += 1;
+            if cmds.is_empty() {
+                continue;
+            }
+            // The engine splits the upcoming block at the exact sample.
+            if self
+                .r
+                .handle
+                .send(Cmd::Schedule { time: target, cmds })
+                .is_err()
+            {
+                return Err(format!(
+                    "score event at {time:.6}s: command FIFO full (too many bundles inside one block)"
+                ));
+            }
+        }
+        while self.r.now < total {
+            if self.r.now >= until {
+                return Ok(false);
+            }
+            self.r.process_block(total, &mut measured)?;
+        }
+        Ok(true)
+    }
+
+    /// The render's numbers, once [`step`](Self::step) has said it is done.
+    pub fn finish(mut self) -> Result<RenderStats, String> {
+        self.r.collect();
+        if self.r.dropped {
+            return Err(
+                "the engine dropped scheduled bundles (queue full): the score is too dense".into(),
+            );
+        }
+        let total = self.total;
+        Ok(RenderStats {
+            frames: total,
+            events: self.events.len(),
+            seed: self.seed,
+            peak: self.peak,
+            rms: self
+                .sumsq
+                .iter()
+                .map(|&s| {
+                    if total == 0 {
+                        0.0
+                    } else {
+                        (s / total as f64).sqrt() as f32
+                    }
+                })
+                .collect(),
+            log: self.log,
+        })
+    }
 }
 
 /// Renders a score into an interleaved in-memory signal (tests, asserts).
@@ -545,6 +682,63 @@ impl Renderer {
                     }
                     NrtAction::None => {}
                 }
+                Ok(())
+            }
+            // **The transports, offline.** A render has no network thread to
+            // keep a transport's grid and broadcast it, so what a score can
+            // ask of one is what the engine itself does: bind the group it
+            // governs, roll it, stop it and stand it at a sample -- each at
+            // its exact sample, like the rest of the event -- which is what a
+            // render that plays a list at the transport's position
+            // (`TransportDiskIn`) needs. A play from a beat needs a grid,
+            // which a render keeps none of, and is refused.
+            "/transport_group"
+            | "/transport_play"
+            | "/transport_stop"
+            | "/transport_locateSample" => {
+                let transport = match msg.args.first() {
+                    Some(OscType::Int(k))
+                        if *k >= 0 && (*k as usize) < crate::dsp::DEFAULT_TRANSPORTS =>
+                    {
+                        *k as usize
+                    }
+                    _ => {
+                        return Err(format!(
+                            "expected a transport index below {}",
+                            crate::dsp::DEFAULT_TRANSPORTS
+                        ));
+                    }
+                };
+                let rest = &msg.args[1..];
+                cmds.push(match (msg.addr.as_str(), rest) {
+                    ("/transport_group", [OscType::Int(id)]) => {
+                        Cmd::TransportGroup { transport, id: *id }
+                    }
+                    ("/transport_play", []) => Cmd::TransportRun {
+                        transport,
+                        rolling: true,
+                    },
+                    ("/transport_play", [_]) => {
+                        return Err(
+                            "an offline render keeps no grid, so a transport plays from where it \
+                             stands: locate it with /transport_locateSample first"
+                                .into(),
+                        );
+                    }
+                    ("/transport_stop", []) => Cmd::TransportRun {
+                        transport,
+                        rolling: false,
+                    },
+                    ("/transport_locateSample", [OscType::Int(n)]) => Cmd::TransportLocate {
+                        transport,
+                        position: (*n).max(0) as u64,
+                    },
+                    ("/transport_locateSample", [OscType::Long(n)]) => Cmd::TransportLocate {
+                        transport,
+                        position: (*n).max(0) as u64,
+                    },
+                    _ => return Err("unexpected arguments".into()),
+                });
                 Ok(())
             }
             _ => self.translator.translate(msg, cmds),

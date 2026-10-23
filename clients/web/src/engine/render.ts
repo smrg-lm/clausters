@@ -52,6 +52,25 @@ export type EngineModule = {
     faustJobs: (score: Uint8Array) => string;
     /** Adopts a def this side has compiled and linked, under its score name. */
     linkFaust: (name: string, compute: number, init: number, json: string) => void;
+    /** The files a score reads, as a JSON array of paths. */
+    scoreFiles: (score: Uint8Array) => string;
+    /** An offline render a run of frames at a time (`./file-render.ts`). */
+    OfflineRender: new (
+        score: Uint8Array,
+        sampleRate: number,
+        channels: number,
+        seed?: bigint | null,
+    ) => {
+        step(frames: number): Float32Array;
+        done(): boolean;
+        framesDone(): number;
+        totalFrames(): number;
+        finish(): string;
+        diskPoll(): string;
+        diskPull(id: number, max: number): Float32Array;
+        diskRelease(id: number): void;
+        free(): void;
+    };
 };
 
 let loaded: Promise<EngineModule> | null = null;
@@ -94,7 +113,7 @@ export function loadRenderer(source?: BufferSource): Promise<EngineModule> {
  *
  * A score with no Faust def in it does none of this and loads no compiler.
  */
-async function prepareFaust(engine: EngineModule, score: Uint8Array): Promise<void> {
+export async function prepareFaust(engine: EngineModule, score: Uint8Array): Promise<void> {
     const jobs = JSON.parse(engine.faustJobs(score)) as FaustJob[];
     if (jobs.length === 0) return;
     const compiled = await compileFaustDefs(jobs);
@@ -165,7 +184,7 @@ export function consoleRenderLog(text: string): void {
  * client states holds here too: a render with no seed is a new take, and
  * `stats.seed` is how you get it back.
  */
-function entropySeed(): bigint {
+export function entropySeed(): bigint {
     const words = new Uint32Array(2);
     if (typeof crypto !== "undefined" && crypto.getRandomValues) {
         crypto.getRandomValues(words);

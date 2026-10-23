@@ -39,11 +39,14 @@
       file beside it, both read back, and buffer.write writes an RF64 that
       Buffer.read reads back sample for sample. Mid-take, the recording is
       already a sound file of what it holds: a run is written where the body
-      ends and the header again, so the worker never holds the take.
+      ends and the header again, so the worker never holds the take. Last,
+      an offline render in a Worker of its own reads the two files as a list
+      and writes its own file and peaks: the list is there from its first
+      frame, and the live engine goes on streaming one of the files beside it.
     -->
     <script type="module">
-      import { Session, opfs, loadCore, SynthDef, Synth, Group, Bus, Buffer, data }
-        from "../dist/index.js";
+      import { Session, opfs, loadCore, SynthDef, Synth, Group, Bus, Buffer, data,
+        OscNrtInterface, renderScore } from "../dist/index.js";
       import { diskIn, diskOut, out, peaksOut, sine, transportDiskIn } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
@@ -229,17 +232,68 @@
         const longOk = w64Head === "riff" && w64.frames > 24000 && w64Peak > 0.45 &&
           peaksHead === "CLPK" && rf64Head === "RF64" && rf64.frames === w64.frames && same;
 
+        // 6) An offline render that reads the two files as a list and writes
+        //    its own file, run in a Worker of its own: the list is read from
+        //    its first frame (a stream reads inside the block that needs it),
+        //    and the peaks are written beside the output.
+        const reader = transportDiskIn(1, 0, 0, 0, 0);
+        const listDef = new SynthDef("rendered", out(0, reader),
+          peaksOut(reader, { path: "takes/rendered.peaks" }));
+        const s = (v) => ["s", v];
+        const i = (v) => ["i", v];
+        const f = (v) => ["f", v];
+        const part = (path) => [s(path), i(0), i(12000), i(0), i(0), i(0), f(0), i(0), f(0), i(0)];
+        const nrt = new OscNrtInterface();
+        nrt.addBundle(0, [
+          { addr: "/buffer_stitch", args: [i(1), i(1), f(48000), ...part("takes/a.wav"), ...part("takes/b.wav")] },
+          { addr: "/def_send", args: [s("synth"), s(listDef.dumpDef())] },
+          { addr: "/group_new", args: [i(100), i(1), i(0)] },
+          { addr: "/transport_group", args: [i(0), i(100)] },
+          { addr: "/transport_play", args: [i(0)] },
+          { addr: "/synth_new", args: [s("rendered"), i(1000), i(0), i(100)] },
+        ]);
+        nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
+        // The live engine streams the same file while the render reads it:
+        // neither locks it from the other.
+        const liveDef = new SynthDef("alongside", out(playBus.index, diskIn(0, { path: "takes/a.wav", loop: true })));
+        await liveDef.send(server);
+        const alongside = new Synth("alongside", {}, { server });
+        const sounding = async () => {
+          let top = 0;
+          for (let waited = 0; waited < 3000 && top <= 0.1; waited += 100) {
+            await wait(100);
+            const window = taps.window(playBus.index);
+            top = window ? Math.max(...window.samples.map(Math.abs)) : 0;
+          }
+          return top;
+        };
+        const before = await sounding();
+        const renderedStats = await renderScore(nrt.score.bytes(),
+          { sampleRate: 48000, channels: 1, path: "takes/rendered.wav" });
+        const livePeak = Math.min(before, await sounding());
+        alongside.free();
+        const renderedBuf = await Buffer.read("takes/rendered.wav", { server });
+        const rendered = await renderedBuf.getSamples({ start: 0, count: renderedBuf.frames });
+        const renderedPeaks = String.fromCharCode(...(await opfs.readRange("takes/rendered.peaks", 0, 4)));
+        const renderedOk = renderedStats.frames === 24000 && rendered.length === 24000 &&
+          rendered.slice(0, 12000).every((v) => v === 0.25) &&
+          rendered.slice(12000).every((v) => v === -0.5) && renderedPeaks === "CLPK" &&
+          livePeak > 0.1;
+        log(`rendered a list of two files: ${rendered.length} frames, first ${rendered[0]}, ` +
+            `at the seam ${rendered[12000]}, peaks "${renderedPeaks}", the same file streamed live at ${livePeak}`);
+
         const ok = riff === "RIFF" && frames > 24000 && peak > 0.1 && half > 0.1 && past < 0.01 &&
-          joined && longOk && midOk;
+          joined && longOk && midOk && renderedOk;
         verdict(ok
           ? `PASS: diskOut recorded ${(frames / 48000).toFixed(2)} s into the page's ` +
             `filesystem (${size} bytes of RIFF) and diskIn streamed it back at ` +
             `peak ${peak.toFixed(3)}, read back whole mid-take, and from a start frame where it was asked to; ` +
             `a join of two files played at the transport's position, through a locate; ` +
-            `a W64 with its peaks file and an RF64 written and read back`
+            `a W64 with its peaks file and an RF64 written and read back; an offline ` +
+            `render read a list of two files from its first frame and wrote its file and peaks`
           : `FAIL: riff "${riff}", ${frames} frames, mid-take ${midSize} bytes, ${midData} in the header, ${midFrames} frames read, peak ${peak}, from half ${half}, from past ${past}, ` +
             `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}, ` +
-            `long files ${longOk}`);
+            `long files ${longOk}, rendered ${renderedOk}`);
         await session.close();
       }
 

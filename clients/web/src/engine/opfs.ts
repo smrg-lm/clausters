@@ -157,9 +157,9 @@ export async function writeAt(
  * end simply returns what is there -- a short read is the end of the file, not
  * an error.
  *
- * The synchronous access handle reads at an offset, which is what makes a
- * stream possible at all: a whole-file read would put the file in memory,
- * which is the thing streaming exists not to do.
+ * A slice of the `File` reads only the range, which is what makes a stream
+ * possible at all: a whole-file read would put the file in memory, which is
+ * the thing streaming exists not to do.
  */
 export async function readRange(
     path: string,
@@ -168,20 +168,9 @@ export async function readRange(
 ): Promise<Uint8Array<ArrayBuffer>> {
     const [dir, name] = await parentOf(path, false);
     const handle = await dir.getFileHandle(name);
-    if (typeof handle.createSyncAccessHandle === "function") {
-        const access = await handle.createSyncAccessHandle();
-        try {
-            const size = access.getSize();
-            const want = Math.max(0, Math.min(length, size - at));
-            const out = new Uint8Array(want);
-            if (want > 0) access.read(out, { at });
-            return out;
-        } finally {
-            access.close();
-        }
-    }
-    // No sync handle (the main thread): a `File` slices without reading the
-    // whole of it either.
+    // A `File` slices without reading the whole of it, and takes no lock: a
+    // sync access handle would hold the file for as long as it is open, and
+    // an offline render reading the same take holds one for the whole render.
     const file = await handle.getFile();
     return new Uint8Array(await file.slice(at, at + length).arrayBuffer());
 }

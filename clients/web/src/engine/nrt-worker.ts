@@ -36,6 +36,8 @@ import {
     writeFile,
 } from "./opfs.ts";
 import { HEAD_BYTES, wrapSpan, type WavShape } from "./wav.ts";
+import { opfsFiles, renderToFile, type FileRenderRequest } from "./file-render.ts";
+import { loadRenderer } from "./render.ts";
 
 /** What the worklet asks for. `ticket` comes back untouched. */
 interface ReadRequest {
@@ -155,7 +157,19 @@ interface FaustHeapRequest {
     ticket: number;
 }
 
+/**
+ * **An offline render written to a file of the page's storage**, run here
+ * because this is where a file is read and written synchronously
+ * (`./file-render.ts`). One render per Worker: a page that renders two at
+ * once starts two, which is what several offline servers are in a tab.
+ */
+interface RenderRequest extends FileRenderRequest {
+    type: "render";
+    ticket: number;
+}
+
 type Request =
+    | RenderRequest
     | ReadRequest
     | ShapeRequest
     | ShapesRequest
@@ -194,6 +208,8 @@ type Response =
     | { type: "span"; ticket: number; samples: Float32Array; frames: number }
     | { type: "span"; ticket: number; error: string }
     | { type: "record"; ticket: number; error?: string }
+    | { type: "render-progress"; ticket: number; done: number; total: number }
+    | { type: "render"; ticket: number; result?: unknown; error?: string }
     | { type: "write"; ticket: number; error?: string }
     | {
           type: "faust";
@@ -460,6 +476,16 @@ async function shapeOf(path: string): Promise<WavShape> {
 async function handle(request: Request, post: (r: Response, t?: Transferable[]) => void) {
     if (request.type === "ping") {
         post({ type: "ready" });
+        return;
+    }
+    if (request.type === "render") {
+        try {
+            const result = await renderToFile(await loadRenderer(), request, opfsFiles(),
+                (done, total) => post({ type: "render-progress", ticket: request.ticket, done, total }));
+            post({ type: "render", ticket: request.ticket, result });
+        } catch (e) {
+            post({ type: "render", ticket: request.ticket, error: message(e) });
+        }
         return;
     }
     if (request.type === "shape") {

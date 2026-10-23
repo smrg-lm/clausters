@@ -113,6 +113,16 @@ by its byte count as a big-endian `int32`, with timetags counting seconds from
 the start of the render. The render ends at the **last** bundle, so close every
 score with one that makes no sound (a final `/node_free`) to set the duration.
 
+**A score drives a transport too, in part.** A render keeps no grid and has no
+clients to tell, so of the transport commands it takes the ones the engine
+carries out itself, each at its exact sample like the rest of the bundle:
+`/transport_group` (the group it governs, which the score makes with
+`/group_new`), `/transport_play` with no position, `/transport_stop` and
+`/transport_locateSample`. That is what a render playing a list of files at the
+transport's position needs (`TransportDiskIn` over a `/buffer_stitch` of file
+parts); a play from a beat is refused, since a beat needs a grid. Offline the
+streams wait for what they read, so a list is read from its first frame.
+
 | Flag | Value | Default | What it does |
 | --- | --- | --- | --- |
 | `--rate` | Hz | `48000` | Sample rate. |

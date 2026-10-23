@@ -5059,7 +5059,7 @@ sound.
   the pages that write make `out/` with `opfs.makeDirectory` where their
   scripts make it.
 
-- ⬜ **An offline render in a page reads and writes no file** *(found
+- ✅ **An offline render in a page reads and writes no file** *(found
   2026-10-22, opening `X28`)*. The page's offline render is one synchronous
   call into the engine's wasm (`engine/render.ts`), which hands back every
   sample it rendered: a render of an hour holds the hour, and the streams
@@ -5075,6 +5075,17 @@ sound.
   chunks through sync access handles (the worker can read and write at an
   offset synchronously), the render's own output written at an offset as it
   comes, and the same refusal and the same file a native `--nrt` render gives.
+  *Fixed 2026-10-23, opening `X28`:* the render is the engine's
+  `OfflineRender`, a run of frames at a time, in a Worker of its own (one per
+  render); the files the score reads are opened with sync access handles,
+  read-only where the browser shares them, and the engine reads them through
+  a synchronous reader inside the block that needs them, so a list is there
+  from its first frame as natively; each run is written where the body ends
+  and the outputs are drained between runs. The live engine's span reads take
+  no lock any more (a `File` slice), so a render reading a take does not stop
+  the take streaming. An offline score also learned the transport commands
+  the engine carries out itself, which a render over a list needs, natively
+  too.
 
 - ✅ **A recording or a write in a tab is held whole and rewritten at every
   flush, so a take of hours does not fit** *(found 2026-10-22, closing the

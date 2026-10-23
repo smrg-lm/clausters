@@ -5,6 +5,28 @@
 
 pub use clausters_core::pcm::*;
 
+/// **The layout of the file at `path`**, for a job that names it (a join's
+/// part over a file). Natively the file is opened. In a page the engine
+/// reaches no file of its own: an offline render's host hands over a reader
+/// of the page's storage for the render (`dsp::disk::install_files`), and the
+/// head is read through it.
+pub fn layout_of(path: &str) -> Result<Layout, String> {
+    #[cfg(all(target_arch = "wasm32", feature = "synth"))]
+    {
+        crate::dsp::disk::layout_through_files(path)
+    }
+    #[cfg(all(target_arch = "wasm32", not(feature = "synth")))]
+    {
+        Err(format!(
+            "{path}: a page's engine reaches no file of its own"
+        ))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Layout::open(path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
