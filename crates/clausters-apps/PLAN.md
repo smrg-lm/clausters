@@ -2858,16 +2858,16 @@ alike, and is what the milestones of this section build.
   name; only where the data is differs. A sampler reads segments of pool
   buffers with random access; an editor and a multitrack read segments of
   files as a stream.
-- **The session holds metadata only.** The audio editor works as the
-  multitrack does: an edit is a new segment list over files that never
-  change. Cut, copy, paste, move, undo and redo move no samples at any length,
+- **An edit is a list.** The audio editor works as the multitrack does: an
+  edit is a new segment list over files that never change. Cut, copy, paste, move, undo and redo move no samples at any length,
   and the clipboard holds segments.
 - **Two servers, by the kind of work.** The **RT server** plays a list, and
   previews an effect live, reading the files ahead of the playhead. The **NRT
   server** processes: a gain, a mix, a stroke, an effect, a consolidation each
-  read their spans from disk and write a new file in the session's working
-  folder, which the list then names. A render is temporary until it is saved,
-  and so is the folder.
+  read their spans from disk and write a new file in the editor's working
+  folder, which the list then names. A render is temporary, and so is the
+  folder: what outlives the editor is the file a save consolidates the list
+  into (the seventh decision below).
 - **Several NRT servers, and the RT server beside them.** A render reads
   files that never change and writes a new one, so renders share no state and
   run on as many NRT instances at once as the cores and the disk allow: two
@@ -2926,10 +2926,10 @@ written; none is left open:
    user)*. Undo keeps working after a save. The save renders to a new file
    and replaces the original by a rename; the original's content moves to the
    working folder and is deleted by `O34`'s rule, when nothing names it.
-   Another session editing the same file is concurrent editing, as with two
+   Another editor editing the same file is concurrent editing, as with two
    desktop applications over one file: when the file changes on disk the
    other is told in the standard way, and nothing is shared between them.
-   Two windows of one session are views of one document and are not this
+   Two windows of one editor are views of one document and are not this
    case.
 5. ✅ **The working folder, and where peaks live** *(decided 2026-10-22 by
    the user)*. The audio editor's working folder is temporary: its renders
@@ -2942,6 +2942,12 @@ written; none is left open:
    states it (positioned by the transport, refilled on a locate), and what is
    left, its ring size and how far ahead of a seam it reads, is measured
    there against comping parts a quarter second long from different files.
+7. ✅ **The audio editor has no session** *(decided 2026-10-23 by the
+   user)*. Each file is independent: an audio editor edits a file, as a
+   text editor does, and a multitrack mixes many files into one, so the two
+   are not compatible applications and the audio editor's takes do not live
+   in a multitrack's session. Saving with edits half done means nothing
+   here; a save consolidates the list into the file.
 
 **The order**: `S21` and `S22` (root `PLAN.md`), `O34`
 (`crates/clausters-document/PLAN.md`), `G45` (`clients/gui/PLAN.md`), then
@@ -2954,8 +2960,8 @@ editors and should port this one.
   once if it has none) and nothing else; every edit is a list; the clipboard
   holds segments; processing (gain, reverse, mix, a stroke,
   an effect) is an NRT render into the working folder; playing and previewing
-  are the RT server's list reader; saving writes the session, or consolidates
-  the list into a file by an NRT render. The editor's shared crate, both
+  are the RT server's list reader; saving consolidates the list into a file by an
+  NRT render. The editor's shared crate, both
   clients and the standalone host change together; nothing reads a take
   whole. **Acceptance:** on a two-hour stereo file and a synthetic W64 file of
   more than 4 GB, ten successive pastes of an hour each answer in the same
@@ -2966,10 +2972,9 @@ editors and should port this one.
   is shown and which leaves the RT server playing; two renders over two files
   run on two NRT instances at once and land in either order; an effect
   previewed live and then applied goes from the preview to its render with
-  nothing heard but the effect; a save of the session is
-  instant and a consolidation's file reads back sample for sample; a save over
-  the opened file keeps undo working past it, and a second session over that
-  file is told the file changed on disk. The
+  nothing heard but the effect; a consolidation's file reads back sample
+  for sample; a save over the opened file keeps undo working past it, and a
+  second editor over that file is told the file changed on disk. The
   example pair `editors/audio_lifecycle` runs as before, natively and in a
   page; by eye and by ear with two windows. *Opened 2026-10-22: done towards it, a page's
   recording at an offset, a list's spectrogram, an offline render in a
@@ -2987,8 +2992,9 @@ editors and should port this one.
   memory where it was), and renders over two files at once: a run that stops
   on a render hands it out, so an edit of another file runs meanwhile and
   the two land in either order, each committed to its own file. Left: the
-  session save, the handoff from an effect's preview to its render (root
-  `PLAN.md`, Found by use) and the eye and ear pass.*
+  handoff from an effect's preview to its render (root `PLAN.md`, Found by
+  use) and the eye and ear pass. The session save the acceptance named
+  first was dropped (2026-10-23, the seventh decision).*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
