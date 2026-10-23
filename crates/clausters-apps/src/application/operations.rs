@@ -65,7 +65,7 @@ pub struct Operation<C> {
     pub batches: Vec<Batch>,
     /// New resources reserved by preparation, never discovered from OSC strings.
     pub allocations: Vec<Source>,
-    /// Existing resources that must survive this operation, including spilled ones.
+    /// Existing resources that must survive this operation.
     pub reads: Vec<ResourceId>,
     /// The application-specific change, applied only after all batches succeed.
     pub commit: C,
@@ -477,7 +477,6 @@ mod tests {
                 member: 2,
                 bytes: 400,
                 owned: true,
-                stored: None,
             }],
             reads: Vec::new(),
             commit: "delta",

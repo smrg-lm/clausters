@@ -216,10 +216,6 @@ pub struct Turned {
     /// which stop the joins from reading them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub freed: Vec<Freed>,
-    /// **The takes to write to disk**, once the turn's own steps are carried
-    /// out: past the resident budget, the oldest takes only the history holds.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub stored: Vec<Stored>,
     /// The version after the turn.
     pub version: i64,
 }
@@ -305,10 +301,6 @@ pub struct Freed {
     /// The buffer numbers, to give back: an audio editor's takes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub buffers: Vec<i64>,
-    /// Those of them whose take was on disk: the number goes back, and there
-    /// is no buffer on the server to free.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub spilled: Vec<i64>,
     /// **A multitrack's joins**, by source id: no region reads one and no
     /// entry can put one back, so the buffer the caller built for it is freed
     /// and the source leaves its table. The multitrack's editor has already
@@ -320,21 +312,6 @@ pub struct Freed {
     /// name them, so the caller deletes the files.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<String>,
-}
-
-/// **A take leaving memory**: only the history holds it, and the resident
-/// budget is past. Its spill is an operation: the caller carries its batches
-/// out and completes them, and a write the server refuses leaves the take in
-/// its buffer.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Stored {
-    /// The member whose take it is.
-    pub member: MemberId,
-    /// Its buffer, which stays its number while it is on disk.
-    pub buffer: i64,
-    /// The prepared storage operation whose waits and confirmation must be
-    /// executed.
-    pub operation: crate::application::operations::Prepared,
 }
 
 /// **What a step of the history came to.**
@@ -358,9 +335,6 @@ pub struct Stepped {
     /// [`Turned::freed`].
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub freed: Vec<Freed>,
-    /// The takes to write to disk. See [`Turned::stored`].
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub stored: Vec<Stored>,
     /// The version after the step.
     pub version: i64,
 }
@@ -413,11 +387,7 @@ impl Editing {
     /// **The takes no entry and no member reaches any more**, forgotten by
     /// every member and handed back as the buffers to free -- after the byte
     /// limit, when there is one, has trimmed the pile.
-    fn release(&mut self) -> (Vec<Freed>, Vec<Stored>) {
-        self.release_with_storage(true)
-    }
-
-    fn release_with_storage(&mut self, schedule_storage: bool) -> (Vec<Freed>, Vec<Stored>) {
+    fn release(&mut self) -> Vec<Freed> {
         let editors: Vec<&AudioEditor> = self
             .seats
             .iter()
@@ -489,7 +459,6 @@ impl Editing {
                 out.push(Freed {
                     member,
                     buffers: Vec::new(),
-                    spilled: Vec::new(),
                     sources: Vec::new(),
                     files: Vec::new(),
                 });
@@ -499,9 +468,6 @@ impl Editing {
         for source in released {
             let at = at_member(&mut out, source.member);
             out[at].buffers.push(source.id.buffer);
-            if source.stored.is_some() {
-                out[at].spilled.push(source.id.buffer);
-            }
         }
         for source in released_joins {
             if rooted.contains(&source) {
@@ -532,19 +498,7 @@ impl Editing {
                 }
             }
         }
-        let stored = if schedule_storage {
-            self.store()
-        } else {
-            Vec::new()
-        };
-        (out, stored)
-    }
-
-    /// **What the resident budget sends to disk**: nothing any more. An
-    /// audio editor's takes are files, so nothing an application holds is a
-    /// take in memory the history alone keeps.
-    fn store(&mut self) -> Vec<Stored> {
-        Vec::new()
+        out
     }
 
     fn sync_resources(&mut self) {
@@ -879,13 +833,12 @@ impl Editing {
             }
             stepped = Some(step);
         }
-        let (freed, stored) = self.release();
+        let freed = self.release();
         Some(Turned {
             outcome,
             stepped,
             corrections,
             freed,
-            stored,
             version: self.version,
         })
     }
@@ -914,13 +867,12 @@ impl Editing {
             self.version = outcome.version();
             corrections = self.corrections(Some(member));
         }
-        let (freed, stored) = self.release();
+        let freed = self.release();
         Some(Turned {
             outcome,
             stepped: None,
             corrections,
             freed,
-            stored,
             version: self.version,
         })
     }
@@ -945,7 +897,6 @@ impl Editing {
             effects: Vec::new(),
             corrections: Vec::new(),
             freed: Vec::new(),
-            stored: Vec::new(),
             version: self.version,
         };
         let targets: Vec<_> = self
@@ -1112,7 +1063,7 @@ impl Editing {
         out.stepped = true;
         out.version = self.version;
         out.corrections = self.corrections(None);
-        (out.freed, out.stored) = self.release();
+        out.freed = self.release();
         out
     }
 
@@ -1222,9 +1173,6 @@ pub fn call_json_ids(
 ///   `true` joins it to the context's shared order under `key` instead.
 /// - `bytes` -- `bytes`, or `null` for none: the most bytes of takes only the
 ///   history may hold. Answers `{}`.
-/// - `resident` -- `bytes`, or `null` for none: the most of those kept in
-///   memory; past it the oldest go to disk (a turn's and a step's `stored`).
-///   Answers `{}`.
 /// - `openNotes` -- `key`, `sequence` (the sequence as data, which the
 ///   editor then holds alone -- a caller that shares one opens it with
 ///   [`Editing::open_notes`]) and what a notes editor is built from
@@ -1365,8 +1313,8 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             } else {
                 false
             };
-            let (freed, stored) = editing.release();
-            json!({"retained": retained, "freed": freed, "stored": stored}).to_string()
+            let freed = editing.release();
+            json!({"retained": retained, "freed": freed}).to_string()
         }
         "retain" => {
             editing.sync_resources();
@@ -1382,8 +1330,8 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             if let Ok(root) = serde_json::from_value::<Root>(get(&request, "root")) {
                 editing.services.resources.drop_root(root);
             }
-            let (freed, stored) = editing.release();
-            json!({"freed": freed, "stored": stored}).to_string()
+            let freed = editing.release();
+            json!({"freed": freed}).to_string()
         }
         "invalidate" => {
             let invalidated = serde_json::from_value::<ServerInstance>(get(&request, "server"))
@@ -1428,7 +1376,6 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                             effects: Vec::new(),
                             corrections: Vec::new(),
                             freed: Vec::new(),
-                            stored: Vec::new(),
                             version: editing.version(),
                         });
                     };
@@ -1577,7 +1524,6 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                                 member,
                                 bytes: 0,
                                 owned: true,
-                                stored: None,
                             });
                         }
                         editing.services.resources.released(id);
@@ -2127,7 +2073,6 @@ mod tests {
             [Freed {
                 member,
                 buffers: Vec::new(),
-                spilled: Vec::new(),
                 sources: vec![join.0],
                 files: Vec::new(),
             }],
@@ -2716,7 +2661,7 @@ mod tests {
         let mut answer = raw_call(editing, request);
         if answer["outcome"]["operation"].is_object() {
             let (completed, _) = settle_operation(editing, answer["outcome"]["operation"].clone());
-            for key in ["outcome", "freed", "stored", "version"] {
+            for key in ["outcome", "freed", "version"] {
                 if let Some(value) = completed.get(key) {
                     answer[key] = value.clone();
                 }
@@ -2735,23 +2680,15 @@ mod tests {
                     }
                 }
             }
-            for key in ["freed", "stored", "version"] {
+            for key in ["freed", "version"] {
                 if let Some(value) = completed.get(key) {
                     answer[key] = value.clone();
                 }
             }
         }
-        if let Some(stored) = answer["stored"].as_array_mut() {
-            for entry in stored {
-                let (_, steps) = settle_operation(editing, entry["operation"].clone());
-                entry["steps"] = json!(steps);
-            }
-        }
         // Keep the original sparse encoding used by the assertions below.
-        for key in ["freed", "stored"] {
-            if answer[key].as_array().is_some_and(Vec::is_empty) {
-                answer.as_object_mut().unwrap().remove(key);
-            }
+        if answer["freed"].as_array().is_some_and(Vec::is_empty) {
+            answer.as_object_mut().unwrap().remove("freed");
         }
         answer
     }

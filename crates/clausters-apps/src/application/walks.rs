@@ -52,7 +52,7 @@ pub struct Decision<S> {
 }
 
 /// Confirm once, or abort every prepared participant. No snapshot of the
-/// composition, history or spilled payloads is made on either path.
+/// composition or the history is made on either path.
 pub fn finish<C, H: WalkHost<C>>(
     host: &mut H,
     finished: Finished<C>,

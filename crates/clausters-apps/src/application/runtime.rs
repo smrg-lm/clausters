@@ -115,7 +115,7 @@ impl<C, O> Default for Runtime<C, O> {
     }
 }
 impl<C, O> Runtime<C, O> {
-    /// Compose typed history plans without copying histories or spilled data.
+    /// Compose typed history plans without copying histories.
     pub fn prepare_walk(
         &mut self,
         resources: &mut Resources,
@@ -495,7 +495,6 @@ mod tests {
                 member: object as u32,
                 bytes: 400,
                 owned: true,
-                stored: None,
             }],
             commit: delta,
         }

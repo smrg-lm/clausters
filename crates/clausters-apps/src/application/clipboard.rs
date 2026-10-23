@@ -109,7 +109,6 @@ impl Exchange {
                 member,
                 bytes,
                 owned: true,
-                stored: None,
             });
         }
         resources.retain(Self::root(RootKind::Clipboard, self.owner), [id]);
@@ -239,7 +238,6 @@ mod tests {
             member: 7,
             bytes: 16,
             owned: true,
-            stored: None,
         });
         let contents = Root {
             kind: RootKind::Contents,

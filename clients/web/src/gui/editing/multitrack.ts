@@ -798,7 +798,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const changed = this.take(outcome);
         // **A join the edit let go of** -- the redo it dropped was the last
         // entry naming it -- is freed once the turn is carried out.
-        this.editing.release(turned.freed, turned.stored);
+        this.editing.release(turned.freed);
         return changed;
     }
 
@@ -815,7 +815,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
             plain([wid, 0, 0, tag, ...values]) as unknown[],
         );
         const changed = this.take((turned.outcome ?? {}) as Outcome);
-        this.editing.release(turned.freed, turned.stored);
+        this.editing.release(turned.freed);
         return changed;
     }
 

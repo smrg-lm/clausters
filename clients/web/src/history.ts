@@ -99,13 +99,8 @@ export interface StepHandler extends Applier {
     operationReturned?(structure: never | object, server: { connection: number; generation: number }, buffers: number[]): void;
     operationEcho?(structure: never | object, answer: unknown): void;
     soundFile?(structure: never | object, file: Record<string, unknown>): void;
-    /**
-     * An audio editor's: free takes nothing reaches any more. A take on disk
-     * (`spilled`) has no buffer to free, only its number to give back.
-     */
-    free?(structure: never | object, buffers: number[], spilled: number[]): void;
-    /** An audio editor's: write a take to disk and free its buffer. */
-    store?(structure: never | object, buffer: number, operation: Record<string, unknown>): void;
+    /** An audio editor's: free buffers nothing reaches any more. */
+    free?(structure: never | object, buffers: number[]): void;
     /**
      * A multitrack's: free joins no box reads and no undo or redo can put
      * back, by source id -- the buffer built for each, and its place in the
@@ -177,27 +172,12 @@ export interface Effect {
 export interface Freed {
     /** The member whose takes they were. */
     member: number;
-    /** The buffer numbers, to give back: an audio editor's takes. */
+    /** The buffer numbers, to give back: an audio editor's. */
     buffers?: number[];
-    /** Those whose take was on disk: no buffer on the server to free. */
-    spilled?: number[];
     /** A multitrack's joins, by source id, to free and drop from its table. */
     sources?: number[];
     /** An audio editor's renders and their peaks, by path, to delete. */
     files?: string[];
-}
-
-/**
- * **A take leaving memory**: only the history holds it, and the resident budget
- * is past.
- */
-export interface Stored {
-    /** The member whose take it is. */
-    member: number;
-    /** Its buffer, which stays its number while it is on disk. */
-    buffer: number;
-    /** The spill: prepared storage work confirmed by the shared service. */
-    operation: Record<string, unknown>;
 }
 
 /** **What a step of the order came to.** */
@@ -210,10 +190,8 @@ export interface Stepped {
     reason?: string;
     /** What each member carries out. */
     effects?: Effect[];
-    /** The takes to free, once the effects are carried out. */
+    /** What to free and delete, once the effects are carried out. */
     freed?: Freed[];
-    /** The takes to write to disk, once the effects are carried out. */
-    stored?: Stored[];
     /** The version after the step. */
     version?: number;
 }
@@ -224,10 +202,8 @@ export interface Turned {
     outcome?: Record<string, unknown>;
     /** The step an undo or a redo asked for, already taken. */
     stepped?: Stepped;
-    /** The takes to free, once the turn's own steps are carried out. */
+    /** What to free and delete, once the turn's own steps are carried out. */
     freed?: Freed[];
-    /** The takes to write to disk, once the turn's own steps are carried out. */
-    stored?: Stored[];
     /** The version after the turn. */
     version?: number;
 }
@@ -784,7 +760,7 @@ export class Editing {
      */
     carry(stepped: Stepped): void {
         this.applying(() => this.#carry(stepped));
-        this.release(stepped.freed, stepped.stored);
+        this.release(stepped.freed);
     }
 
     #carry(stepped: Stepped): void {
@@ -841,18 +817,18 @@ export class Editing {
     }
 
     /**
-     * **Free the takes nothing reaches any more, and write to disk the ones past
-     * the resident budget** -- what a turn or a step hands back as `freed` and
-     * `stored`, each under the member that made those takes, whose server they
-     * are on. Called after the turn's own steps are carried out, so no join is
-     * still reading them.
+     * **Free what nothing reaches any more** -- what a turn or a step hands
+     * back as `freed`, each under the member that made it, whose server it is
+     * on: an audio editor's buffers and the renders it wrote, a multitrack's
+     * joins by source id. Called after the turn's own steps are carried out,
+     * so no join is still reading them.
      */
-    release(freed: readonly Freed[] | undefined, stored?: readonly Stored[]): void {
+    release(freed: readonly Freed[] | undefined): void {
         for (const entry of freed ?? []) {
             const held = this.handlers.get(Number(entry.member));
             if (held === undefined || held.handler === null) continue;
             if ((entry.buffers ?? []).length > 0) {
-                held.handler.free?.(held.structure as never, entry.buffers ?? [], entry.spilled ?? []);
+                held.handler.free?.(held.structure as never, entry.buffers ?? []);
             }
             if ((entry.sources ?? []).length > 0) {
                 held.handler.freeSources?.(held.structure as never, entry.sources ?? []);
@@ -860,11 +836,6 @@ export class Editing {
             if ((entry.files ?? []).length > 0) {
                 held.handler.deleteFiles?.(held.structure as never, entry.files ?? []);
             }
-        }
-        for (const entry of stored ?? []) {
-            const held = this.handlers.get(Number(entry.member));
-            if (held === undefined || held.handler === null) continue;
-            held.handler.store?.(held.structure as never, Number(entry.buffer), entry.operation);
         }
     }
 

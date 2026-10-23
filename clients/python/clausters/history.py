@@ -450,7 +450,7 @@ class Editing:
         takes the step let go of freed."""
         with self.applying():
             self._carry(stepped)
-        self.release(stepped.get("freed"), stepped.get("stored"))
+        self.release(stepped.get("freed"))
 
     def _carry(self, stepped: dict) -> None:
         if stepped.get("operation") is not None:
@@ -502,7 +502,7 @@ class Editing:
             raise RuntimeError("the operation has no endpoint executor")
         handler.execute_batch(structure, server, steps)
 
-    def release(self, freed, stored=None) -> None:
+    def release(self, freed) -> None:
         """**Free what nothing reaches any more** -- what a turn or a step
         hands back as ``freed``, each under the member that made it, whose
         server it is on: an audio editor's buffers and the renders it wrote, a
@@ -514,17 +514,11 @@ class Editing:
             if handler is None:
                 continue
             if entry.get("buffers") and hasattr(handler, "free"):
-                handler.free(structure, entry.get("buffers") or [],
-                             entry.get("spilled") or [])
+                handler.free(structure, entry.get("buffers") or [])
             if entry.get("sources") and hasattr(handler, "free_sources"):
                 handler.free_sources(structure, entry["sources"])
             if entry.get("files") and hasattr(handler, "delete_files"):
                 handler.delete_files(structure, entry["files"])
-        for entry in stored or ():
-            member = int(entry.get("member", -1))
-            structure, handler = self._handlers.get(member, (None, None))
-            if handler is not None and hasattr(handler, "store"):
-                handler.store(structure, int(entry["buffer"]), entry["operation"])
 
     def state(self, member: "int | None" = None) -> dict:
         """What an undo menu reads of the order `step` walks for ``member``:

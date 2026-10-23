@@ -404,14 +404,9 @@ fn truthy(value: &Value) -> bool {
     }
 }
 
-/// A free-and-store release, when there is anything in it.
-fn release(freed: &Value, stored: &Value) -> Option<Task> {
-    (truthy(freed) || truthy(stored)).then(|| {
-        effect(
-            "release",
-            json!({"freed": freed.clone(), "stored": stored.clone()}),
-        )
-    })
+/// A release of what nothing reaches, when there is anything in it.
+fn release(freed: &Value) -> Option<Task> {
+    truthy(freed).then(|| effect("release", json!({"freed": freed.clone()})))
 }
 
 fn finished(id: u64, raise: Raise, message: &str) -> Value {
@@ -491,7 +486,7 @@ impl Session {
                         lease: false,
                     },
                 ];
-                tasks.extend(release(&turned["freed"], &turned["stored"]));
+                tasks.extend(release(&turned["freed"]));
                 run.reason = Some(outcome["answer"]["reason"].clone());
                 tasks.push(Task::Reason(outcome["answer"]["reason"].clone()));
                 tasks
@@ -656,13 +651,13 @@ impl Session {
                 turned.get("stepped").cloned().unwrap_or(json!({})),
             ));
             tasks.push(effect("echo", json!({"answer": outcome["answer"]})));
-            tasks.extend(release(&turned["freed"], &turned["stored"]));
+            tasks.extend(release(&turned["freed"]));
             tasks.push(Task::Sound { preview: true });
             return tasks;
         }
         run.changed = outcome["changed"] == true;
         tasks.push(Task::Take { outcome, lease });
-        tasks.extend(release(&turned["freed"], &turned["stored"]));
+        tasks.extend(release(&turned["freed"]));
         tasks
     }
 
@@ -1174,7 +1169,7 @@ impl Session {
                     outcome: next,
                     lease: false,
                 });
-                tasks.extend(release(&continued["freed"], &continued["stored"]));
+                tasks.extend(release(&continued["freed"]));
                 self.push(id, tasks);
                 Flow::Next
             }
@@ -1200,7 +1195,7 @@ impl Session {
                     if has(&answer, "returned") {
                         tasks.push(effect("returned", json!({"returned": answer["returned"]})));
                     }
-                    tasks.extend(release(&answer["freed"], &answer["stored"]));
+                    tasks.extend(release(&answer["freed"]));
                 }
                 tasks.push(Task::Take {
                     outcome: answer,
@@ -1285,11 +1280,8 @@ impl Session {
                 if has(&answer, "echo") {
                     effects.push(tagged("operationEcho", json!({"echo": answer["echo"]})));
                 }
-                if truthy(&answer["freed"]) || truthy(&answer["stored"]) {
-                    effects.push(tagged(
-                        "release",
-                        json!({"freed": answer["freed"], "stored": answer["stored"]}),
-                    ));
+                if truthy(&answer["freed"]) {
+                    effects.push(tagged("release", json!({"freed": answer["freed"]})));
                 }
                 if let Some(run) = self.runs.get_mut(&id) {
                     run.completed = answer.clone();
@@ -1424,12 +1416,7 @@ impl Session {
                     editing,
                     json!({"verb": "retainMember", "member": member, "kind": "playback"}),
                 );
-                self.push(
-                    id,
-                    release(&result["freed"], &result["stored"])
-                        .into_iter()
-                        .collect(),
-                );
+                self.push(id, release(&result["freed"]).into_iter().collect());
                 Flow::Next
             }
             Task::DropPlayback => {
@@ -1437,12 +1424,7 @@ impl Session {
                     editing,
                     json!({"verb": "dropRoot", "root": {"kind": "playback", "owner": member}}),
                 );
-                self.push(
-                    id,
-                    release(&result["freed"], &result["stored"])
-                        .into_iter()
-                        .collect(),
-                );
+                self.push(id, release(&result["freed"]).into_iter().collect());
                 Flow::Next
             }
             Task::Close { closed } => {

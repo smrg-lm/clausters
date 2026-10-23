@@ -561,7 +561,8 @@ struct AudioWindowState {
     workspace: Option<String>,
     // The engine's rate, which the join it plays is stitched at.
     engine_rate: f64,
-    scratch_scope: crate::application::resources::ScratchScope,
+    /// The endpoint incarnation the editor's buffers are on.
+    server: crate::application::resources::ServerInstance,
     chunk: usize,
     lane: Option<i32>,
     title: String,
@@ -781,7 +782,7 @@ impl AudioEditor {
                 envelope_widget: None,
                 workspace: None,
                 engine_rate: 0.0,
-                scratch_scope: Default::default(),
+                server: Default::default(),
                 chunk: DEFAULT_CHUNK,
                 lane: None,
                 title: "Audio".into(),
@@ -1041,7 +1042,7 @@ impl AudioEditor {
 
     /// Scope remote references to this endpoint incarnation.
     pub(crate) fn set_server(&mut self, server: crate::application::resources::ServerInstance) {
-        self.window_state.scratch_scope.server = server;
+        self.window_state.server = server;
     }
 
     /// **The files to delete now that nothing names `source`**: a render of
@@ -2025,7 +2026,7 @@ impl AudioEditor {
         &self,
         location: Option<clausters_document::clipboard::BufferLocation>,
     ) -> Result<(), String> {
-        let server = self.window_state.scratch_scope.server;
+        let server = self.window_state.server;
         if let Some(location) = location {
             if location.connection != server.connection || location.generation != server.generation
             {
@@ -2377,7 +2378,7 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// - `play` -- the [`Play`] the space bar would ask for, under the file's
 ///   loop switch. `looping` -- `on`: that switch, as a script sets it.
 ///
-/// Opening, saving, a history step and a spill are not verbs here: each is
+/// Opening, saving and a history step are not verbs here: each is
 /// an operation of the context (`operation`), whose steps commit only once
 /// the server has carried them out.
 ///

@@ -541,7 +541,7 @@ class MultitrackEditor(Marking, Editor):
         changed = self._take(outcome)
         # **A join the edit let go of** -- the redo it dropped was the last
         # entry naming it -- is freed once the turn is carried out.
-        self._editing.release(turned.get("freed"), turned.get("stored"))
+        self._editing.release(turned.get("freed"))
         return changed
 
     def _route(self, args) -> bool:
@@ -552,7 +552,7 @@ class MultitrackEditor(Marking, Editor):
         turned = self._editing.event(self._member, "/gui_event",
                                      _plain([wid, 0, 0, tag, *values]))
         changed = self._take(turned.get("outcome") or {})
-        self._editing.release(turned.get("freed"), turned.get("stored"))
+        self._editing.release(turned.get("freed"))
         return changed
 
     def _take(self, outcome: dict) -> bool:

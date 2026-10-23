@@ -194,7 +194,7 @@ class AudioDomain(Domain):
         if self.editor is not None:
             self.editor._audio("syncSound", file=file)
 
-    def free(self, structure, buffers, spilled=()) -> None:
+    def free(self, structure, buffers) -> None:
         """Free buffers the context handed back: nothing reaches them any
         more."""
         editor = self.editor
@@ -537,7 +537,7 @@ class AudioEditor(Marking, Editor):
         elif kind == "free":
             self.domain.free(self.structure, effect.get("buffers") or [])
         elif kind == "release":
-            self._editing.release(effect.get("freed"), effect.get("stored"))
+            self._editing.release(effect.get("freed"))
         elif kind == "delete":
             _delete(effect.get("files"))
         elif kind == "returned":

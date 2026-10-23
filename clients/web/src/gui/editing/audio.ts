@@ -271,7 +271,7 @@ export class AudioDomain extends Domain<Buffer | null> {
     }
 
     /** Free buffers the context handed back: nothing reaches them any more. */
-    free(_structure: unknown, buffers: number[], _spilled: number[] = []): void {
+    free(_structure: unknown, buffers: number[]): void {
         const editor = this.editor;
         if (editor === null || buffers.length === 0) return;
         this.#queue(() => this.cleanup(buffers));
@@ -904,7 +904,7 @@ export class AudioEditor extends Editor<Buffer | null> {
                 break;
             case "release":
                 await (this.domain as AudioDomain).inline(
-                    () => this.editing.release(effect.freed as never, effect.stored as never));
+                    () => this.editing.release(effect.freed as never));
                 break;
             case "delete":
                 await removeFiles(effect.files as string[] | undefined);

@@ -1,13 +1,11 @@
 //! Source ownership shared by application services, without filesystem I/O.
 //!
-//! A root is replaced atomically. Only history-only sources may spill; an
-//! unreferenced owned source is released once. Endpoints execute storage work
-//! through their existing disk/OPFS buffer commands.
+//! A root is replaced atomically, and an unreferenced owned source is
+//! released once.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A connection incarnation, distinct even when its endpoint and ids repeat.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -63,41 +61,6 @@ pub struct Source {
     pub bytes: u64,
     /// Whether this composition may free it.
     pub owned: bool,
-    /// Its scratch path, when its buffer has been spilled.
-    pub stored: Option<String>,
-}
-
-/// A scratch namespace owned by one composition, on disk or OPFS.
-#[derive(Clone, Debug)]
-pub struct ScratchScope {
-    /// The endpoint incarnation whose samples are stored.
-    pub server: ServerInstance,
-    consumer: u64,
-}
-
-impl Default for ScratchScope {
-    fn default() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(1);
-        Self {
-            server: ServerInstance::default(),
-            consumer: clausters_core::rng::splitmix64(
-                clausters_core::rng::entropy_seed() ^ NEXT.fetch_add(1, Ordering::Relaxed),
-            ),
-        }
-    }
-}
-
-impl ScratchScope {
-    /// A name scoped to the endpoint and composition in its scratch directory.
-    pub fn path(&self, directory: &str, buffer: i64) -> String {
-        format!(
-            "{}/take-{}-{}-{}-{buffer}.wav",
-            directory.trim_end_matches('/'),
-            self.server.connection,
-            self.server.generation,
-            self.consumer
-        )
-    }
 }
 
 /// One exact release attempt, independent of a recycled buffer number.
@@ -128,7 +91,7 @@ struct Retiring {
     reason: Option<String>,
 }
 
-/// Shared source ownership and resident-budget policy.
+/// Shared source ownership and the byte budget's accounting.
 #[derive(Debug, Default)]
 pub struct Resources {
     next_owner: u64,
@@ -260,9 +223,7 @@ impl Resources {
             return None;
         }
         retiring.waiting = true;
-        let steps = if retiring.source.stored.is_some() {
-            serde_json::json!([])
-        } else {
+        let steps = {
             use clausters_core::osc::{OscMessage, OscType};
             use clausters_editing::apply::{Step, steps_json};
             steps_json(&[
@@ -339,52 +300,6 @@ impl Resources {
         out
     }
 
-    /// Oldest resident sources held only by history, until they fit the limit.
-    /// `available` states which sources have a usable storage port.
-    /// This reserves nothing; the caller publishes a stored location after
-    /// execution or leaves the source resident on failure.
-    pub fn spill_candidates(
-        &self,
-        limit: u64,
-        available: impl Fn(ResourceId) -> bool,
-    ) -> Vec<ResourceId> {
-        let eligible: Vec<_> = self
-            .order
-            .iter()
-            .copied()
-            .filter(|id| {
-                let source = &self.sources[id];
-                source.owned
-                    && source.stored.is_none()
-                    && self.retained(*id)
-                    && self.roots.iter().all(|(root, sources)| {
-                        root.kind == RootKind::History || !sources.contains(id)
-                    })
-            })
-            .collect();
-        let mut total: u64 = eligible.iter().map(|id| self.sources[id].bytes).sum();
-        eligible
-            .into_iter()
-            .filter(|id| available(*id))
-            .take_while(|id| {
-                if total <= limit {
-                    return false;
-                }
-                total = total.saturating_sub(self.sources[id].bytes);
-                true
-            })
-            .collect()
-    }
-
-    /// Confirm a spill or restore after the endpoint succeeds.
-    pub fn location(&mut self, id: ResourceId, path: Option<String>) -> bool {
-        let Some(source) = self.sources.get_mut(&id) else {
-            return false;
-        };
-        source.stored = path;
-        true
-    }
-
     /// Forget a lost instance without sending frees to its replacement.
     /// The returned ids let consumers cancel work and discard stale bindings.
     pub fn invalidate(&mut self, server: ServerInstance) -> Vec<ResourceId> {
@@ -422,7 +337,6 @@ mod tests {
             member: 0,
             bytes: 16,
             owned: true,
-            stored: None,
         }
     }
     fn root(kind: RootKind) -> Root {
@@ -443,7 +357,6 @@ mod tests {
             member: 2,
             bytes: 16,
             owned: true,
-            stored: None,
         };
         resources.register(source.clone());
         assert_eq!(
@@ -515,30 +428,6 @@ mod tests {
     }
 
     #[test]
-    fn only_history_only_owned_sources_spill_and_failures_stay_resident() {
-        let mut resources = Resources::default();
-        let first = source(1, 7);
-        let mut second = source(1, 8);
-        second.owned = false;
-        resources.register(first.clone());
-        resources.register(second.clone());
-        resources.retain(root(RootKind::History), [first.id, second.id]);
-        resources.retain(root(RootKind::Playback), [first.id]);
-        assert!(resources.spill_candidates(0, |_| true).is_empty());
-        resources.drop_root(root(RootKind::Playback));
-        assert_eq!(resources.spill_candidates(0, |_| true), [first.id]);
-        assert_eq!(
-            resources.spill_candidates(0, |_| true),
-            [first.id],
-            "a refused write changes no location"
-        );
-        resources.location(first.id, Some("scratch/take-7.wav".into()));
-        assert!(resources.spill_candidates(0, |_| true).is_empty());
-        resources.location(first.id, None);
-        assert_eq!(resources.spill_candidates(0, |_| true), [first.id]);
-    }
-
-    #[test]
     fn a_borrowing_observer_does_not_replace_the_sources_release_owner() {
         let mut resources = Resources::default();
         let original = source(1, 7);
@@ -548,20 +437,6 @@ mod tests {
         borrowed.member = 9;
         resources.register(borrowed);
         assert_eq!(resources.collect(), [original]);
-    }
-
-    #[test]
-    fn a_source_without_storage_does_not_block_other_spill_candidates() {
-        let mut resources = Resources::default();
-        let first = source(1, 7);
-        let second = source(1, 8);
-        resources.register(first.clone());
-        resources.register(second.clone());
-        resources.retain(root(RootKind::History), [first.id, second.id]);
-        assert_eq!(
-            resources.spill_candidates(16, |id| id != first.id),
-            [second.id]
-        );
     }
 
     #[test]

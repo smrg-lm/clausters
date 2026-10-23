@@ -203,7 +203,7 @@ impl Application for AudioEditor {
             if self.window_state.engine_rate > 0.0 {
                 next.window_state.engine_rate = self.window_state.engine_rate;
             }
-            next.window_state.scratch_scope = self.window_state.scratch_scope.clone();
+            next.window_state.server = self.window_state.server;
             let mut plan = next.prepare(
                 Request {
                     command: Command::Open,

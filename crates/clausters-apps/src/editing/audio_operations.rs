@@ -92,8 +92,8 @@ impl Editing {
         match self.prepare_audio(member, Command::AddFile(Box::new(file)), 0) {
             Ok(ticket) => json!({"turn":"route", "operation":self.audio_next(ticket)}),
             Err(error) => {
-                let (freed, stored) = self.release_with_storage(false);
-                json!({"error":error,"freed":freed,"stored":stored,"returned":{
+                let freed = self.release();
+                json!({"error":error,"freed":freed,"returned":{
                     "member":member,"server":self.seats[member as usize].server,"buffers":unused}})
             }
         }
@@ -130,7 +130,6 @@ impl Editing {
                         member,
                         bytes: frames.saturating_mul(u64::from(channels)).saturating_mul(4),
                         owned: false,
-                        stored: None,
                     });
                 }
                 Some(id)
@@ -229,17 +228,16 @@ impl Editing {
             },
         };
         let version = self.version;
-        let (freed, stored) = if outcome.operation.is_none() {
+        let freed = if outcome.operation.is_none() {
             self.release()
         } else {
-            (Vec::new(), Vec::new())
+            Vec::new()
         };
         Turned {
             outcome: Outcome::Audio(Box::new(outcome)),
             stepped: None,
             corrections: Vec::new(),
             freed,
-            stored,
             version,
         }
     }
@@ -257,10 +255,10 @@ impl Editing {
             Dispatch::Finish(finished) => self.finish_audio(finished),
             Dispatch::Response(response) => response,
             Dispatch::Repaired(repair) => {
-                let (freed, stored) = self.release_with_storage(false);
+                let freed = self.release();
                 let echo = repair.echo(self.version);
                 json!({"complete":true,"committed":false,"repaired":true,"outcome":repair.outcome,"echo":echo,"returned":{"member":repair.ticket.target.member,"server":repair.ticket.target.server,"buffers":repair.returned},
-                    "reason":repair.reason,"freed":freed,"stored":stored,"version":self.version})
+                    "reason":repair.reason,"freed":freed,"version":self.version})
             }
         }
     }
@@ -317,8 +315,8 @@ impl Editing {
             binding["structure"] = json!(self.structure(target.member));
             binding["version"] = json!(self.version);
         }
-        let (freed, stored) = self.release_with_storage(completion.committed);
-        json!({"complete":true,"committed":completion.committed,"destination":destination,"outcome":outcome,"recovery":{"member":target.member,"server":target.server,"steps":recovery},"freed":freed,"stored":stored,"version":self.version})
+        let freed = self.release();
+        json!({"complete":true,"committed":completion.committed,"destination":destination,"outcome":outcome,"recovery":{"member":target.member,"server":target.server,"steps":recovery},"freed":freed,"version":self.version})
     }
 
     pub(super) fn prepare_audio_walk(&mut self, direction: Direction) -> Option<Stepped> {
@@ -402,7 +400,6 @@ impl Editing {
             effects: previews,
             corrections: Vec::new(),
             freed: Vec::new(),
-            stored: Vec::new(),
             version: self.version,
         })
     }
@@ -415,7 +412,6 @@ impl Editing {
             effects: Vec::new(),
             corrections: Vec::new(),
             freed: Vec::new(),
-            stored: Vec::new(),
             version: self.version,
         }
     }
@@ -453,11 +449,8 @@ impl Editing {
             self.version,
         );
         let mut freed = std::mem::take(&mut stepped.freed);
-        let mut stored = std::mem::take(&mut stepped.stored);
-        let (more_freed, more_stored) = self.release_with_storage(stepped.stepped);
-        freed.extend(more_freed);
-        stored.extend(more_stored);
-        json!({"complete":true,"committed":stepped.stepped,"stepped":stepped,"echo":echo,"recoveries":[],"freed":freed,"stored":stored,"version":self.version})
+        freed.extend(self.release());
+        json!({"complete":true,"committed":stepped.stepped,"stepped":stepped,"echo":echo,"recoveries":[],"freed":freed,"version":self.version})
     }
 
     pub(super) fn audio_operation_json(&mut self, request: &Value) -> Value {
