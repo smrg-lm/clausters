@@ -16,10 +16,16 @@
 //!   `TransportBufRd` does (`offset` is the transport frame at which frame
 //!   `start` of the list plays). While those frames are the ones at the
 //!   ring's head, it pops them.
-//! - When they are not -- a locate, the list replaced by an edit, a transport
-//!   standing somewhere new -- it **asks for a refill** from that frame and
-//!   plays silence until it arrives. It never plays what the ring held
-//!   before: that was another place in the list, or another list.
+//! - When they are not -- a locate, a transport standing somewhere new -- it
+//!   **asks for a refill** from that frame and plays silence until it
+//!   arrives. It never plays what the ring held before: that was another
+//!   place in the list.
+//! - **A list replaced by an edit while it plays is not a silence.** The
+//!   ring still holds the old list ahead of the playhead, so that plays on
+//!   while the new one is read; once the refill lands, the old fades out and
+//!   the new fades in over [`CROSS`] frames each, from the frame the
+//!   transport has reached. An edit while a take loops is heard as the edit,
+//!   not as a hole.
 //! - The I/O thread renders frames of the list ahead of the transport,
 //!   part by part, through [`PartSpan::read_with`](clausters_core::segments::PartSpan::read_with) --
 //!   the read a pool buffer's part makes, over the span it just read from the
@@ -80,6 +86,10 @@ pub const RING_SAMPLES: usize = 1 << 17;
 /// holds the frames before the seam.
 pub const SEAM_LEAD: usize = 1 << 14;
 
+/// How many frames a replaced list fades out over, and the new one in
+/// ([`crate::dsp::LIST_CROSS`], the page's reader's too).
+pub const CROSS: usize = crate::dsp::LIST_CROSS;
+
 /// The frames rendered in one turn of the I/O thread.
 const CHUNK: usize = 4096;
 
@@ -105,6 +115,18 @@ struct Request {
     frame: u64,
     epoch: u16,
     looping: bool,
+}
+
+/// **The list a replacement took over from**, still in the ring ahead of the
+/// new one: it plays on until the refill lands, then fades out.
+struct Outgoing {
+    /// Its channels, which the ring's frames are interleaved by.
+    channels: usize,
+    /// Its samples left in the ring, once the refill has landed and the
+    /// boundary is known; unknown before.
+    left: Option<usize>,
+    /// How far into its fade-out, once it has begun.
+    fading: usize,
 }
 
 /// What the two threads share besides the rings.
@@ -144,6 +166,10 @@ pub struct TransportDiskIn {
     /// In an offline render: wait for a refill and for each frame, as
     /// scsynth's NRT reads a file, rather than play silence.
     offline: bool,
+    /// The list a replacement while playing took over from, playing out.
+    outgoing: Option<Outgoing>,
+    /// Frames of fade-in left for the list that replaced it.
+    fade_in: usize,
 }
 
 impl TransportDiskIn {
@@ -181,6 +207,8 @@ impl TransportDiskIn {
             channels: 1,
             frames: 0,
             offline: ctx.offline,
+            outgoing: None,
+            fade_in: 0,
         }
     }
 
@@ -229,10 +257,15 @@ impl TransportDiskIn {
         // Everything before the boundary was pushed before it was published,
         // so it is all in the ring.
         let stale = stale.min(self.consumer.slots());
-        if let Ok(chunk) = self.consumer.read_chunk(stale) {
-            chunk.commit_all();
+        if let Some(outgoing) = self.outgoing.as_mut() {
+            // The list it replaced fades out of what is left of it first.
+            outgoing.left = Some(stale);
+        } else {
+            if let Ok(chunk) = self.consumer.read_chunk(stale) {
+                chunk.commit_all();
+            }
+            self.popped += stale as u64;
         }
-        self.popped += stale as u64;
         self.pending = None;
         self.head = Some(frame);
         // The thread may be parked on a ring that was full of what was just
@@ -264,9 +297,81 @@ impl TransportDiskIn {
         }
     }
 
+    /// **The next sample of the list a replacement took over from**: it
+    /// plays on while the new one is read, and fades out once the new one has
+    /// landed; what is left of it then goes, and the new one fades in.
+    fn take_outgoing(&mut self, frame: u64, channel: usize) -> f32 {
+        // The new list has landed once its refill is in and it holds the
+        // frame the transport is at and the fade's length past it: what
+        // played meanwhile is skipped.
+        let behind = self.head.map_or(0, |h| frame.saturating_sub(h)) as usize;
+        let slots = self.consumer.slots();
+        let Some(outgoing) = self.outgoing.as_mut() else {
+            return 0.0;
+        };
+        let channels = outgoing.channels;
+        // and once it has, the fade runs to its end
+        let landed = outgoing.fading > 0
+            || outgoing
+                .left
+                .is_some_and(|left| slots.saturating_sub(left) / self.channels >= behind + CROSS);
+        // Until the boundary is known, never read so near the ring's end that
+        // what is read could be the new list's first frames.
+        let readable = match outgoing.left {
+            Some(left) => left,
+            None => self.consumer.slots().saturating_sub(CROSS * channels),
+        };
+        let done = landed && outgoing.fading >= CROSS;
+        if done || readable < channels {
+            self.end_outgoing();
+            return 0.0;
+        }
+        let mut value = 0.0;
+        for c in 0..channels {
+            let v = self.consumer.pop().unwrap_or(0.0);
+            if c == channel.min(channels - 1) {
+                value = v;
+            }
+        }
+        self.popped += channels as u64;
+        let outgoing = self.outgoing.as_mut().expect("still outgoing");
+        if let Some(left) = outgoing.left.as_mut() {
+            *left -= channels;
+        }
+        if landed {
+            value *= 1.0 - outgoing.fading as f32 / CROSS as f32;
+            outgoing.fading += 1;
+        }
+        value
+    }
+
+    /// The outgoing list is done: what is left of it goes, and the list that
+    /// replaced it fades in from here.
+    fn end_outgoing(&mut self) {
+        if let Some(Outgoing {
+            left: Some(left), ..
+        }) = self.outgoing.take()
+        {
+            if let Ok(chunk) = self.consumer.read_chunk(left.min(self.consumer.slots())) {
+                chunk.commit_all();
+            }
+            self.popped += left as u64;
+            self.fade_in = CROSS;
+        } else {
+            // the refill never landed while it played: a silence, as before
+            self.fade_in = 0;
+        }
+    }
+
     /// The sample of `channel` at list frame `frame`, or silence -- counted
     /// in `starved` when the frame should have been there and was not.
     fn take(&mut self, frame: u64, channel: usize, starved: &mut u64) -> f32 {
+        if self.outgoing.is_some() {
+            let value = self.take_outgoing(frame, channel);
+            if self.outgoing.is_some() || self.pending.is_some() {
+                return value;
+            }
+        }
         if self.pending.is_some() {
             return 0.0;
         }
@@ -307,6 +412,10 @@ impl TransportDiskIn {
         }
         self.popped += self.channels as u64;
         self.head = Some(self.advance(frame, 1));
+        if self.fade_in > 0 {
+            value *= 1.0 - self.fade_in as f32 / CROSS as f32;
+            self.fade_in -= 1;
+        }
         value
     }
 }
@@ -351,7 +460,15 @@ impl UGen for TransportDiskIn {
         let address = Arc::as_ptr(buf) as usize;
         if address != self.sent || looping != self.looping {
             // A new list, or the same one read another way: what the ring
-            // holds is not what will play. Silence until the refill lands.
+            // holds is not what will play. A list that was playing plays on
+            // until the refill lands and then fades into the new one; one
+            // that was not is silence until the refill lands.
+            let playing = rolling
+                && !self.offline
+                && self.head.is_some()
+                && self.pending.is_none()
+                && self.outgoing.is_none();
+            let was = self.channels;
             self.looping = looping;
             let frame = place(0).1.unwrap_or(0);
             // The shape first: offline the refill lands inside the call.
@@ -360,17 +477,29 @@ impl UGen for TransportDiskIn {
             self.frames = frames;
             if self.refill(Some(Arc::clone(buf)), frame) {
                 self.sent = address;
+                if playing {
+                    self.outgoing = Some(Outgoing {
+                        channels: was,
+                        left: None,
+                        fading: 0,
+                    });
+                }
             } else {
                 (self.channels, self.frames) = previous;
             }
-            if !self.offline || self.pending.is_some() {
+            if self.outgoing.is_none() && (!self.offline || self.pending.is_some()) {
                 output.fill(0.0);
                 return;
             }
         }
         let channel = (inputs[1][0].max(0.0) as usize).min(self.channels - 1);
         if !rolling {
-            // Standing: silent, and ready at the frame it stands on.
+            // Standing: silent, and ready at the frame it stands on. A list
+            // that was playing out is done with.
+            if self.outgoing.is_some() {
+                self.end_outgoing();
+                self.fade_in = 0;
+            }
             output.fill(0.0);
             if let (_, Some(f)) = place(0)
                 && self.head != Some(f)

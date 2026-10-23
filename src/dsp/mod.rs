@@ -107,7 +107,15 @@ pub mod stream {
 
     /// The ring, in samples, as natively.
     pub const RING_SAMPLES: usize = 1 << 17;
+
+    pub use super::LIST_CROSS as CROSS;
 }
+
+/// **How many frames a list replaced while it plays fades out over, and the
+/// new one in** (`TransportDiskIn`, natively and in a page): under three
+/// milliseconds at 48 kHz, which a cut heard while looping reads as the cut
+/// and not as a click.
+pub const LIST_CROSS: usize = 128;
 #[cfg(feature = "synth")]
 pub mod trig;
 #[cfg(feature = "synth")]

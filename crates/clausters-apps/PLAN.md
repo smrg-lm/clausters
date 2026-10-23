@@ -2977,10 +2977,12 @@ editors and should port this one.
   render step every endpoint carries out, and (2026-10-23) the editor's takes
   as files in both clients: opening reads the header, every verb is a list or
   a render, the clipboard holds segments, a save renders and moves aside the
-  file the list reads, and the renders nothing names are deleted. Left: a
-  render's progress on the status line, an effect applied from its preview,
-  the session save and the changed-on-disk notice, renders on two NRT
-  instances at once, the measurements and the eye and ear pass.*
+  file the list reads, and the renders nothing names are deleted. Since
+  done: a render's progress on the status bar, the changed-on-disk notice,
+  and a list replaced while it plays fading into the new one instead of a
+  silence. Left: the session save, renders on two NRT instances at once,
+  the handoff from an effect's preview to its render (root `PLAN.md`, Found
+  by use), the measurements and the eye and ear pass.*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops

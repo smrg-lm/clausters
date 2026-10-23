@@ -855,6 +855,12 @@ impl Drop for DiskOut {
 /// arrives (its generation is old). The silence a refill costs is the host's
 /// round trip to the page's files, and it is not counted as running out of
 /// lead; a ring that runs dry afterwards is.
+///
+/// **A list replaced while it plays is not that silence**, as natively: the
+/// next frames of the old list are kept aside ([`KEPT`] samples) before the
+/// ring is thrown away, they play while the new list is read, and the two
+/// fade over [`CROSS`](crate::dsp::stream::CROSS) frames each once the new
+/// list's frames have come.
 pub struct TransportDiskIn {
     id: u32,
     consumer: Consumer<f32>,
@@ -869,7 +875,20 @@ pub struct TransportDiskIn {
     /// Served on the spot, in an offline render whose host reads files
     /// ([`PageFiles`]): a refill lands inside the call, as natively.
     serve: bool,
+    /// The old list's next frames, kept when a replacement threw the ring
+    /// away while it played: allocated once, with the reader.
+    kept: Vec<f32>,
+    /// What of `kept` plays out: its channels, the next sample, the end, and
+    /// how far into the fade-out -- `None` when nothing is playing out.
+    outgoing: Option<(usize, usize, usize, usize)>,
+    /// Frames of fade-in left for the list that replaced it.
+    fade_in: usize,
 }
+
+/// **How many samples of the old list a replacement keeps** to play while
+/// the new one is read: 85 ms of stereo at 48 kHz, which a page's round
+/// trip to its files is well inside.
+pub const KEPT: usize = 8192;
 
 impl TransportDiskIn {
     pub fn open(ctx: &BuildCtx) -> Self {
@@ -904,7 +923,55 @@ impl TransportDiskIn {
             channels: 1,
             frames: 0,
             serve: ctx.offline && files().is_some(),
+            kept: vec![0.0; KEPT],
+            outgoing: None,
+            fade_in: 0,
         }
+    }
+
+    /// **Keeps the old list's next frames aside** before a replacement throws
+    /// the ring away, to play while the new one is read.
+    fn keep_outgoing(&mut self) {
+        let channels = self.channels;
+        let n = self.consumer.slots().min(KEPT / channels * channels);
+        if n < channels {
+            return;
+        }
+        if let Ok(chunk) = self.consumer.read_chunk(n) {
+            let (a, b) = chunk.as_slices();
+            self.kept[..a.len()].copy_from_slice(a);
+            self.kept[a.len()..a.len() + b.len()].copy_from_slice(b);
+        }
+        self.outgoing = Some((channels, 0, n, 0));
+    }
+
+    /// The next sample of the list a replacement took over from: it plays
+    /// while the new one is read and fades out once its frames have come;
+    /// then the new one fades in.
+    fn take_outgoing(&mut self, frame: u64, channel: usize) -> f32 {
+        let Some((channels, next, end, fading)) = self.outgoing else {
+            return 0.0;
+        };
+        // The new list has landed once it holds the frame the transport is at
+        // and the fade's length past it: what played meanwhile is skipped.
+        let behind = self.head.map_or(0, |h| frame.saturating_sub(h)) as usize;
+        // and once it has, the fade runs to its end
+        let landed = fading > 0
+            || self.consumer.slots() / self.channels >= behind + crate::dsp::stream::CROSS;
+        if next + channels > end || fading >= crate::dsp::stream::CROSS {
+            self.outgoing = None;
+            self.fade_in = if landed { crate::dsp::stream::CROSS } else { 0 };
+            return 0.0;
+        }
+        let mut value = self.kept[next + channel.min(channels - 1)];
+        let fading = if landed {
+            value *= 1.0 - fading as f32 / crate::dsp::stream::CROSS as f32;
+            fading + 1
+        } else {
+            fading
+        };
+        self.outgoing = Some((channels, next + channels, end, fading));
+        value
     }
 
     fn refill(&mut self, list: Option<Arc<Buffer>>, frame: u64) {
@@ -966,6 +1033,12 @@ impl TransportDiskIn {
         if self.serve {
             return self.take_served(frame, channel);
         }
+        if self.outgoing.is_some() {
+            let value = self.take_outgoing(frame, channel);
+            if self.outgoing.is_some() {
+                return value;
+            }
+        }
         let Some(head) = self.head else {
             self.refill(None, frame);
             return 0.0;
@@ -999,6 +1072,10 @@ impl TransportDiskIn {
             }
         }
         self.head = Some(self.advance(frame, 1));
+        if self.fade_in > 0 {
+            value *= 1.0 - self.fade_in as f32 / crate::dsp::stream::CROSS as f32;
+            self.fade_in -= 1;
+        }
         value
     }
 }
@@ -1038,18 +1115,25 @@ impl UGen for TransportDiskIn {
         };
         let address = Arc::as_ptr(buf) as usize;
         if address != self.sent || looping != self.looping {
+            // A list that was playing plays on, out of what is kept of it,
+            // while the new one is read.
+            if rolling && !self.serve && !self.fresh && self.outgoing.is_none() {
+                self.keep_outgoing();
+            }
             self.looping = looping;
             self.sent = address;
             self.channels = buf.channels().max(1);
             self.frames = frames;
             self.refill(Some(Arc::clone(buf)), place(0).1.unwrap_or(0));
-            if !self.serve {
+            if !self.serve && self.outgoing.is_none() {
                 output.fill(0.0);
                 return;
             }
         }
         let channel = (inputs[1][0].max(0.0) as usize).min(self.channels - 1);
         if !rolling {
+            self.outgoing = None;
+            self.fade_in = 0;
             output.fill(0.0);
             if let (_, Some(f)) = place(0)
                 && self.head != Some(f)

@@ -298,6 +298,56 @@ fn a_locate_lands_on_silence_and_never_on_a_stale_frame() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// **A list replaced while it plays is not a silence**: the old list plays on
+/// while the new one is read, fades out, and the new one fades in from where
+/// the transport is -- never a run of zeros, never a stale frame of either
+/// list once the fades are done, and then exactly what the new list in memory
+/// plays.
+#[test]
+fn a_list_replaced_while_it_plays_fades_into_the_new_one() {
+    let dir = scratch("replace");
+    let (old, _) = take(&dir, 0, 4 * QUARTER);
+    let (new, new_values) = take(&dir, 2, 4 * QUARTER);
+    let none: Vec<Option<Arc<Buffer>>> = Vec::new();
+    let list = |path: &str| {
+        stitch(
+            &none,
+            vec![part(OscType::String(path.into()), 0, 4 * QUARTER, 0)],
+        )
+    };
+    let pool = vec![Some(Arc::new(Buffer::new(new_values, 1, 4 * QUARTER, SR)))];
+    let in_memory = stitch(&pool, vec![part(OscType::Int(0), 0, 4 * QUARTER, 0)]);
+    let (mut engine, mut handle) = engine_pair(SR as f32, 2);
+    let meters = Meters::detached();
+    install(&mut handle, 0, list(&old));
+    install(&mut handle, 1, Arc::clone(&in_memory));
+    readers(&mut handle, &meters, false);
+    roll(&mut handle, None);
+    let (before, _) = play(&mut engine, 100, true);
+    assert!(before[before.len() - 1] > 0.0, "the old list plays");
+    install(&mut handle, 0, list(&new));
+    let (after, reference) = play(&mut engine, 80, true);
+    let mut zeros = 0;
+    for (i, &d) in after.iter().enumerate() {
+        zeros = if d == 0.0 { zeros + 1 } else { 0 };
+        assert!(
+            zeros <= 2,
+            "sample {i}: a silence where the list was replaced"
+        );
+        assert!((0.0..0.5).contains(&d), "sample {i}: {d} is neither list");
+    }
+    let agrees = (0..after.len())
+        .rev()
+        .find(|&i| after[i] != reference[i])
+        .map_or(0, |i| i + 1);
+    assert!(
+        agrees <= 4 * BLOCK_SIZE + 2 * clausters::dsp::stream::CROSS,
+        "the new list was the list in memory only from sample {agrees}"
+    );
+    assert_eq!(meters.starved(), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// **Running out of lead is silence, counted**: an engine that runs as fast
 /// as it can outruns any disk, and what it cannot read is silence -- never a
 /// stale frame -- and the server says how much there was.

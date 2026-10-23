@@ -197,12 +197,40 @@
         await listen(1500);
         await server.transportLocateSample(18000);
         await listen(1000);
+        // A list replaced while it plays -- the join stitched again, as an
+        // edit does -- fades from the old into the new one rather than going
+        // silent while the new one is read.
+        const longest = { zeros: 0 };
+        const watch = async (ms) => {
+          for (let waited = 0; waited < ms; waited += 20) {
+            await wait(20);
+            const window = taps.window(playBus.index);
+            let run = 0;
+            for (const v of window ? window.samples : []) {
+              run = v === 0 ? run + 1 : 0;
+              longest.zeros = Math.max(longest.zeros, run);
+            }
+          }
+        };
+        await server.transportLocateSample(0);
+        await watch(150);
+        longest.zeros = 0;
+        await watch(150);
+        const quiet = longest.zeros;
+        longest.zeros = 0;
+        const raw = (path, start) => [["s", path], ["i", start], ["i", 12000], ["i", 0], ["i", 0],
+          ["i", 0], ["f", 0], ["i", 0], ["f", 0], ["i", 0]];
+        await server.command("/buffer_stitch", [["i", join.bufnum], ["i", 1], ["f", 0],
+          ...raw("takes/b.wav", 0), ...raw("takes/a.wav", 0), ...raw("takes/b.wav", 12000)]);
+        await watch(250);
+        const replaced = longest.zeros;
         list.free();
         await server.transportStop();
         governed.free();
-        log(`join of two files: heard ${[...heard].join(" and ")}, ${foreign.length} foreign samples; parts ${named}`);
+        log(`join of two files: heard ${[...heard].join(" and ")}, ${foreign.length} foreign samples; parts ${named}; ` +
+            `replaced while it played, the longest silence ${replaced} samples`);
         const joined = heard.size === 2 && foreign.length === 0 &&
-          named === "takes/a.wav,takes/b.wav,takes/a.wav";
+          named === "takes/a.wav,takes/b.wav,takes/a.wav" && replaced <= 4;
 
         // 5) The long-file containers. A W64 recorded with its peaks file
         //    beside it, then read back as a buffer; an RF64 written from a
@@ -292,7 +320,7 @@
             `a W64 with its peaks file and an RF64 written and read back; an offline ` +
             `render read a list of two files from its first frame and wrote its file and peaks`
           : `FAIL: riff "${riff}", ${frames} frames, mid-take ${midSize} bytes, ${midData} in the header, ${midFrames} frames read, peak ${peak}, from half ${half}, from past ${past}, ` +
-            `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}, ` +
+            `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}, replaced with a silence of ${replaced} (${quiet} unreplaced), ` +
             `long files ${longOk}, rendered ${renderedOk}`);
         await session.close();
       }

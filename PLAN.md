@@ -4594,3 +4594,17 @@ should confirm before the fix.
   the next failure's output: the case, and whether it is load, a libfaust
   call outside `faust::ffi_lock()`, or the compiler cache shared between
   suites.
+
+- ⬜ **An effect applied from its preview is heard twice for a moment**
+  *(found 2026-10-23, closing the audio editor's move onto files)*. A gain
+  envelope previewed live and then applied renders the take through the
+  curve, and the join is stitched over the render while the preview's
+  insert still applies the curve; the client puts the insert to unity when
+  the edit's answer comes back, so the curve is heard twice between the
+  reader's fade into the new list and that answer. Putting the insert to
+  unity with the stitch moves the fault to the other side (the dry take for
+  as long as the new list takes to read). The handoff belongs in the
+  server, where both are: the list reader says when the list it plays
+  changed, at the sample its fade begins, and the insert follows it --
+  which is the X28 acceptance's "nothing heard but the effect".
+
