@@ -330,6 +330,9 @@ pub struct OscServer {
     /// Defs whose spare instance the build worker is preparing.
     plugin_spares_building: std::collections::HashSet<String>,
     pending_syncs: Vec<PendingSync>,
+    /// The clients waiting on a `/transport_cue`, with the transport each
+    /// cued: answered together when the engine says the cue is over.
+    pending_cues: Vec<(ClientId, usize)>,
     /// Each transport's network-side state -- its grid, its rolling state, its
     /// bindings -- indexed by transport id and sized at boot (`--transports`).
     transports: Vec<Transport>,

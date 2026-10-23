@@ -161,6 +161,12 @@ pub enum Cmd {
         transport: usize,
         id: i32,
     },
+    /// `/transport_cue`: the readers of transport `transport`'s governed
+    /// group fill their rings where it stands, the transport staying stopped
+    /// and its clock frozen; answered by [`Garbage::TransportCued`].
+    TransportCue {
+        transport: usize,
+    },
     /// `/transport_locate`: moves the transport's position, leaving both clocks
     /// alone. One store of the anchor -- see `server::clock_axis`.
     TransportLocate {
@@ -368,7 +374,19 @@ pub enum Garbage {
     TransportEnded {
         transport: usize,
     },
+    /// A transport's cue is over: its readers hold the frames it stands at
+    /// (`ready`), or the wait ran out, or the transport rolled first. Carried
+    /// here for [`Garbage::TransportEnded`]'s reason.
+    TransportCued {
+        transport: usize,
+        ready: bool,
+    },
 }
+
+/// **How long a cue waits for its readers**, in seconds, before it answers
+/// that they are not ready: a play after it then starts as one with no cue
+/// did, and nothing waits on a disk that does not answer.
+pub const CUE_WAIT_SECS: f64 = 0.2;
 
 /// Where a rolling transport stops (`end`) and where it is located once it
 /// has (`back`; `None` leaves it at `end`), both on the transport's position.
@@ -472,6 +490,8 @@ struct TransportState {
     /// published, so the network thread that hears it reads the position the
     /// pass went back to and not the one before the jump.
     ended: bool,
+    /// A cue in progress (`/transport_cue`), and the blocks it has waited.
+    cue: Option<u32>,
 }
 
 /// **The declick level**, as a straight line over device samples: `from` at
@@ -584,6 +604,7 @@ impl TransportState {
             fade: Ramp::level(0.0),
             stopping: None,
             ended: false,
+            cue: None,
         }
     }
 
@@ -730,6 +751,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::TransportRun { .. }
         | Cmd::TransportGroup { .. }
         | Cmd::TransportFollow { .. }
+        | Cmd::TransportCue { .. }
         | Cmd::TransportLocate { .. }
         | Cmd::TransportLoop { .. }
         | Cmd::TransportEnd { .. }
@@ -1393,6 +1415,7 @@ impl Engine {
             }
         }
 
+        self.cue_transports();
         let phase = stamp();
         self.publish_block(block_end);
         self.meters.add_phase(Phase::Publish, phase.elapsed_nanos());
@@ -1405,6 +1428,49 @@ impl Engine {
         self.apply_done_actions();
         self.drain_replies();
         self.meter_block(meter_start);
+    }
+
+    /// **Every cue in progress, one block further**: a stopped transport's
+    /// governed group runs the synths that stream, standing
+    /// ([`NodeTree::cue_subtree`](crate::node::NodeTree::cue_subtree)), after
+    /// the block's output is out, so nothing it writes is heard. A cue is
+    /// answered once its readers are ready, once it has waited
+    /// [`CUE_WAIT_SECS`], or as soon as the transport rolls.
+    fn cue_transports(&mut self) {
+        let wait = (CUE_WAIT_SECS * self.sample_rate as f64 / BLOCK_SIZE as f64).ceil() as u32;
+        for k in 0..self.transports.len() {
+            let t = &self.transports[k];
+            let Some(waited) = t.cue else {
+                continue;
+            };
+            let ready = match (t.rolling, t.group) {
+                (true, _) => Some(false),
+                (false, None) => Some(true),
+                (false, Some(group)) => {
+                    let ctx = ProcessCtx {
+                        sample_rate: self.sample_rate,
+                        full_sample_rate: self.sample_rate,
+                        buses: &self.buses,
+                        buffers: &self.buffers,
+                        offset: 0,
+                        frames: BLOCK_SIZE,
+                        transport: self.tree.transport_view(k),
+                    };
+                    let ready = self.tree.cue_subtree(group, &ctx);
+                    (ready || waited >= wait).then_some(ready)
+                }
+            };
+            match ready {
+                Some(ready) => {
+                    self.transports[k].cue = None;
+                    self.push_garbage(Garbage::TransportCued {
+                        transport: k,
+                        ready,
+                    });
+                }
+                None => self.transports[k].cue = Some(waited + 1),
+            }
+        }
     }
 
     /// What cuts the block next, and at which device sample: the earliest of
@@ -1852,6 +1918,7 @@ impl Engine {
                     rolling: t.rolling,
                     fade: t.fade.at(device),
                     fade_step: t.fade.step(device),
+                    looping: t.looping.as_ref().map(|span| (span.start, span.end)),
                 },
             );
         }
@@ -1973,6 +2040,13 @@ impl Engine {
                     }
                     if id >= 0 && self.tree.set_following(id, Some(transport)) {
                         t.follow = Some(id);
+                    }
+                }
+                Cmd::TransportCue { transport } => {
+                    // A cue asked again waits afresh; the next block's end
+                    // runs it.
+                    if let Some(t) = self.transports.get_mut(transport) {
+                        t.cue = Some(0);
                     }
                 }
                 Cmd::TransportLocate {

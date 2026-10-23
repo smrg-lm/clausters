@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::buffer::Buffer;
-use clausters::node::{AddAction, ROOT_NODE_ID};
-use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
+use clausters::node::{AddAction, Group, ROOT_NODE_ID};
+use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, engine_pair};
 use clausters::server::meters::Meters;
 use clausters::server::nrt::{NrtAction, run_job};
 use clausters::synthdef::instance::UGenSynth;
@@ -93,6 +93,35 @@ fn stitch(pool: &[Option<Arc<Buffer>>], parts: Vec<Vec<OscType>>) -> Arc<Buffer>
 /// The two readers: `TransportDiskIn` over buffer 0 to bus 0 and
 /// `TransportBufRd` over buffer 1 to bus 1, both from frame 0 at transport 0.
 fn readers(handle: &mut EngineHandle, meters: &Arc<Meters>, looping: bool) {
+    readers_in(handle, meters, looping, ROOT_NODE_ID);
+}
+
+/// The group transport 0 governs, frozen while it stands.
+const GOVERNED: i32 = 500;
+
+/// [`readers`] in the group transport 0 governs, as an application plays
+/// them.
+fn governed_readers(handle: &mut EngineHandle, meters: &Arc<Meters>) {
+    handle
+        .send(Cmd::AddGroup {
+            id: GOVERNED,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::with_capacity(8),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: GOVERNED,
+        })
+        .ok()
+        .unwrap();
+    readers_in(handle, meters, false, GOVERNED);
+}
+
+fn readers_in(handle: &mut EngineHandle, meters: &Arc<Meters>, looping: bool, target: i32) {
     let flag = if looping { 1.0 } else { 0.0 };
     let json = format!(
         r#"{{"name": "pair", "ugens": [
@@ -114,7 +143,7 @@ fn readers(handle: &mut EngineHandle, meters: &Arc<Meters>, looping: bool) {
     handle
         .send(Cmd::AddSynth {
             id: 1000,
-            target: ROOT_NODE_ID,
+            target,
             action: AddAction::Tail,
             synth: Box::new(synth),
             usage: Default::default(),
@@ -345,6 +374,108 @@ fn a_list_replaced_while_it_plays_fades_into_the_new_one() {
         "the new list was the list in memory only from sample {agrees}"
     );
     assert_eq!(meters.starved(), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **A cue, then the engine's answer**: blocks of a stopped transport, paced,
+/// until the cue is over. Answers whether its readers were ready, and how
+/// many blocks it took.
+fn cue(engine: &mut Engine, handle: &mut EngineHandle) -> (bool, usize) {
+    handle
+        .send(Cmd::TransportCue { transport: 0 })
+        .ok()
+        .unwrap();
+    for blocks in 1..=400 {
+        play(engine, 1, true);
+        while let Some(garbage) = handle.pop_garbage() {
+            if let Garbage::TransportCued {
+                transport: 0,
+                ready,
+            } = garbage
+            {
+                return (ready, blocks);
+            }
+        }
+    }
+    panic!("the cue was never answered");
+}
+
+/// **A cued play sounds from its first frame**: with the readers in the
+/// group the transport governs, frozen while it stands, a cue fills the ring
+/// where it stands and the play after it is the list in memory from its very
+/// first sample, with nothing silent and nothing counted as running out of
+/// lead. The cue moves nothing: the transport's clock has not advanced.
+#[test]
+fn a_cued_play_sounds_from_its_first_frame() {
+    let dir = scratch("cue");
+    let (on_disk, in_memory) = quarter_list(&dir, 0);
+    let (mut engine, mut handle) = engine_pair(SR as f32, 2);
+    let meters = Meters::detached();
+    install(&mut handle, 0, on_disk);
+    install(&mut handle, 1, in_memory);
+    governed_readers(&mut handle, &meters);
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 3 * QUARTER as u64 + 500,
+        })
+        .ok()
+        .unwrap();
+    let (ready, blocks) = cue(&mut engine, &mut handle);
+    assert!(ready, "the readers were not ready after {blocks} blocks");
+    assert_eq!(
+        handle.current_transport_samples(0),
+        0,
+        "a cue moves no clock"
+    );
+    roll(&mut handle, None);
+    let (disk, reference) = play(&mut engine, 200, true);
+    assert!(reference[0] != 0.0);
+    for (i, (&d, &r)) in disk.iter().zip(&reference).enumerate() {
+        assert_eq!(d, r, "sample {i} after the play");
+    }
+    assert_eq!(meters.starved(), 0, "nothing ran out of lead");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **A loop is read straight through**: a cued play over a loop that spans
+/// three parts of three files plays what the list in memory plays across
+/// three wraps, every sample of every pass, with no silence at a wrap.
+#[test]
+fn a_loop_is_read_straight_through() {
+    let dir = scratch("loop");
+    let (on_disk, in_memory) = quarter_list(&dir, 0);
+    let (mut engine, mut handle) = engine_pair(SR as f32, 2);
+    let meters = Meters::detached();
+    install(&mut handle, 0, on_disk);
+    install(&mut handle, 1, in_memory);
+    governed_readers(&mut handle, &meters);
+    let (start, end) = (QUARTER as u64 + 100, 3 * QUARTER as u64 + 7);
+    handle
+        .send(Cmd::TransportLoop {
+            transport: 0,
+            span: Some(start..end),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: start,
+        })
+        .ok()
+        .unwrap();
+    let (ready, _) = cue(&mut engine, &mut handle);
+    assert!(ready);
+    roll(&mut handle, None);
+    let pass = (end - start) as usize;
+    let (disk, reference) = play(&mut engine, 3 * pass / BLOCK_SIZE + 20, true);
+    assert!(disk.len() > 3 * pass);
+    for (i, (&d, &r)) in disk.iter().zip(&reference).enumerate() {
+        assert!(d != 0.0, "sample {i} (pass {}) is silent", i / pass);
+        assert_eq!(d, r, "sample {i} (pass {})", i / pass);
+    }
+    assert_eq!(meters.starved(), 0, "a wrap ran out of nothing");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

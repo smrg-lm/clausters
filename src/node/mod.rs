@@ -99,6 +99,16 @@ pub trait SynthNode: Send {
     /// here). Runs on the audio thread -- allocation-free.
     fn resume(&mut self) {}
 
+    /// **A cue of the transport standing over this synth**
+    /// (`/transport_cue`): a synth that streams from disk runs one standing
+    /// block, so its readers fill their rings where the transport stands,
+    /// and answers whether they hold it. `None` for a synth that streams
+    /// nothing, which is not run: a cue moves nothing but the readers.
+    /// Runs on the audio thread -- allocation-free.
+    fn cue(&mut self, _ctx: &mut crate::dsp::ProcessCtx) -> Option<bool> {
+        None
+    }
+
     /// **The synth starts again on its own memory** -- what a `Voices` node
     /// does to a voice it hands to a new note: every piece of signal state
     /// back to where a fresh instance's first block finds it (each UGen's
@@ -1053,6 +1063,57 @@ impl NodeTree {
             }
         }
         true
+    }
+
+    /// **Cues the subtree of group `group_id`**, which its transport holds
+    /// frozen: every synth under it that streams from disk runs one standing
+    /// block ([`SynthNode::cue`]), reading the transport the group is bound
+    /// to, and the answer is whether all of them hold the frames they stand
+    /// at. The group's own freeze is what a cue looks past; a node paused on
+    /// its own (`/node_run 0`) is skipped, with its subtree, as a block
+    /// skips it. An unknown id or a synth is ready: there is nothing to cue.
+    ///
+    /// The walk [`resume_subtree`](Self::resume_subtree) makes, so it is
+    /// RT-safe.
+    pub fn cue_subtree(&mut self, group_id: i32, ctx: &ProcessCtx) -> bool {
+        let Some(idx) = self.find(group_id) else {
+            return true;
+        };
+        if self.group_of(idx).is_none() {
+            return true;
+        }
+        let transport = self.slot(idx).map_or(NO_TRANSPORT, |s| s.transport);
+        let mut ctx = ProcessCtx {
+            transport: if transport == NO_TRANSPORT {
+                ctx.transport
+            } else {
+                self.transport_view(transport as usize)
+            },
+            ..*ctx
+        };
+        let mut ready = true;
+        debug_assert!(self.dfs_stack.is_empty());
+        self.dfs_stack.clear();
+        self.dfs_stack.push(idx);
+        while let Some(gidx) = self.dfs_stack.pop() {
+            let mut i = 0;
+            while let Some(&child) = self.group_of(gidx).unwrap().children.get(i) {
+                i += 1;
+                match self.slot_mut(child) {
+                    Some(slot) if slot.paused => {}
+                    Some(NodeSlot {
+                        kind: NodeKind::Synth { node, .. },
+                        ..
+                    }) => ready &= node.cue(&mut ctx) != Some(false),
+                    Some(NodeSlot {
+                        kind: NodeKind::Group(_),
+                        ..
+                    }) => self.dfs_stack.push(child),
+                    None => {}
+                }
+            }
+        }
+        ready
     }
 
     /// The node ID of the sibling `delta` positions from node `id` within its

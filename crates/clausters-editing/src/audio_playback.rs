@@ -326,7 +326,11 @@ impl AudioEditorPlayback {
 
     /// **Plays file `file` from frame `start`**, the pass ending as `pass`
     /// says: the file comes into focus (the one that was pauses), the loop or
-    /// the end mark is set, the transport is located and rolls.
+    /// the end mark is set, the transport is located, **cued** and rolls.
+    /// The cue (`/transport_cue`) has the readers read where the transport
+    /// stands, and over the loop straight through, before it rolls, so the
+    /// first frame played is the take's and not a silence while the disk
+    /// catches up; the play waits for its `/done`.
     pub fn play(&mut self, file: u64, start: u64, pass: Pass) -> Vec<Step> {
         self.looping = matches!(pass, Pass::Loop { .. });
         let mut steps = self.focus_on(file);
@@ -338,6 +342,7 @@ impl AudioEditorPlayback {
             "/transport_locateSample",
             vec![OscType::Long(self.frames_to_samples(&f, start))],
         ));
+        steps.extend(self.command("/transport_cue", vec![]));
         steps.extend(self.resume());
         steps
     }
@@ -1053,9 +1058,20 @@ mod tests {
                 "/transport_loop",
                 "/transport_end",
                 "/transport_locateSample",
+                "/transport_cue",
                 "/transport_play"
             ]
         );
+        // the play waits for the cue's /done, which comes once the readers
+        // hold where the transport stands
+        let cue = played
+            .iter()
+            .position(|s| matches!(s, Step::Send(m) if m.addr == "/transport_cue"))
+            .unwrap();
+        assert!(matches!(
+            &played[cue + 1],
+            Step::AwaitDone { command, .. } if command == "/transport_cue"
+        ));
     }
 
     /// **Positions are the frame at the engine's rate**: a 44.1 kHz take in a

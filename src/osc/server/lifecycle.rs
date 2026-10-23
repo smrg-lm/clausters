@@ -182,6 +182,7 @@ impl OscServer {
             faust_submitted: 0,
             faust_drained: 0,
             pending_syncs: Vec::new(),
+            pending_cues: Vec::new(),
             transports,
             lanes: Default::default(),
             post_errors: true,
@@ -712,6 +713,9 @@ impl OscServer {
                 }
                 Garbage::FreedBuffer(_) | Garbage::RetiredSynth(_) => {}
                 Garbage::TransportEnded { transport } => self.on_transport_ended(transport),
+                Garbage::TransportCued { transport, ready } => {
+                    self.on_transport_cued(transport, ready)
+                }
                 Garbage::SpentBundle(cmds) => {
                     // The executed shell of a timed bundle (empty), or one a
                     // `/sched_clear` dropped with its commands still in it:

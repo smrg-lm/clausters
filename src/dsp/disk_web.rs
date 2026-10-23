@@ -36,7 +36,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use crate::dsp::buffer::Buffer;
 use crate::dsp::registry::{BuildCtx, UGenConfig};
 use crate::dsp::stitch::Part;
-use crate::dsp::{ProcessCtx, UGen, at};
+use crate::dsp::{CUE_LEAD, ListWrap, ProcessCtx, UGen, at};
 use crate::server::meters::Meters;
 
 /// Ring capacity in samples, as natively (~1.4 s of mono at 48 kHz).
@@ -97,6 +97,8 @@ struct ListState {
     next: Option<u64>,
     generation: u32,
     looping: bool,
+    /// The transport's loop, rendered straight through.
+    wrap: Option<ListWrap>,
 }
 
 enum End {
@@ -330,8 +332,11 @@ fn list_request(slot: &mut Slot) -> Option<StreamRequest> {
             }
         }
         let room = producer.slots() / channels;
-        let want = LIST_SPAN.min(room).min((total - at) as usize);
-        if want == 0 || (room < LIST_SPAN && want < (total - at) as usize) {
+        // A span stops at the loop's end, and the next one starts at its
+        // start.
+        let left = ListWrap::before(state.wrap, at).unwrap_or(total - at) as usize;
+        let want = LIST_SPAN.min(room).min(left);
+        if want == 0 || (room < LIST_SPAN && want < left) {
             return None;
         }
         let Some(stitch) = list.stitch() else {
@@ -343,7 +348,7 @@ fn list_request(slot: &mut Slot) -> Option<StreamRequest> {
                 }
             }
             push_frames(producer, &frames);
-            state.next = Some(at + want as u64);
+            state.next = Some(ListWrap::advance(state.wrap, at, want as u64));
             continue;
         };
         let (_, part) = stitch.part_at(at as usize)?;
@@ -373,7 +378,7 @@ fn list_request(slot: &mut Slot) -> Option<StreamRequest> {
                     part.src.sample(f, c)
                 });
                 push_frames(producer, &frames);
-                state.next = Some(at + len as u64);
+                state.next = Some(ListWrap::advance(state.wrap, at, len as u64));
             }
         }
     }
@@ -458,7 +463,7 @@ fn take_span(
                 .unwrap_or(0.0)
         });
         push_frames(producer, &frames);
-        state.next = Some(at + list_frames as u64);
+        state.next = Some(ListWrap::advance(state.wrap, at, list_frames as u64));
         true
     }
 }
@@ -555,7 +560,13 @@ fn serve_in(id: u32) {
 
 /// Points a list stream at `frame` of `list` (or of the list it holds), for
 /// a new refill: what the host renders next starts there.
-fn refill_slot(id: u32, list: Option<Arc<Buffer>>, frame: u64, looping: bool) {
+fn refill_slot(
+    id: u32,
+    list: Option<Arc<Buffer>>,
+    frame: u64,
+    looping: bool,
+    wrap: Option<ListWrap>,
+) {
     STREAMS.with(|s| {
         if let Some(slot) = s.borrow_mut().iter_mut().find(|slot| slot.id == id)
             && let Some(state) = slot.list.as_mut()
@@ -566,6 +577,7 @@ fn refill_slot(id: u32, list: Option<Arc<Buffer>>, frame: u64, looping: bool) {
             state.next = Some(frame);
             state.generation = state.generation.wrapping_add(1);
             state.looping = looping;
+            state.wrap = wrap;
         }
     });
 }
@@ -861,12 +873,22 @@ impl Drop for DiskOut {
 /// ring is thrown away, they play while the new list is read, and the two
 /// fade over [`CROSS`](crate::dsp::stream::CROSS) frames each once the new
 /// list's frames have come.
+///
+/// **A transport's loop is read straight through, and a cue fills the ring
+/// where the transport stands**, as natively: the host is asked for the
+/// loop's start after its end, and [`UGen::cued`] answers whether the ring
+/// holds the standing frame and [`CUE_LEAD`] past it.
 pub struct TransportDiskIn {
     id: u32,
     consumer: Consumer<f32>,
     meters: Arc<Meters>,
     sent: usize,
     looping: bool,
+    /// The transport's loop in the list's frames, as natively.
+    wrap: Option<ListWrap>,
+    /// Where the transport stands over the list while it is stopped, as
+    /// natively: what a cue fills the ring at.
+    standing: Option<u64>,
     head: Option<u64>,
     /// Since the last refill nothing has arrived: its silence is the refill's.
     fresh: bool,
@@ -909,6 +931,7 @@ impl TransportDiskIn {
                 next: None,
                 generation: 0,
                 looping: false,
+                wrap: None,
             }),
             offline: None,
         });
@@ -918,6 +941,8 @@ impl TransportDiskIn {
             meters: Arc::clone(meters),
             sent: 0,
             looping: false,
+            wrap: None,
+            standing: None,
             head: None,
             fresh: true,
             channels: 1,
@@ -979,18 +1004,31 @@ impl TransportDiskIn {
         if let Ok(chunk) = self.consumer.read_chunk(stale) {
             chunk.commit_all();
         }
-        refill_slot(self.id, list, frame, self.looping);
+        refill_slot(self.id, list, frame, self.looping, self.wrap);
         self.head = Some(frame);
         self.fresh = true;
     }
 
     fn advance(&self, frame: u64, by: u64) -> u64 {
-        let next = frame + by;
         if self.looping && self.frames > 0 {
-            next % self.frames
+            (frame + by) % self.frames
         } else {
-            next
+            ListWrap::advance(self.wrap, frame, by)
         }
+    }
+
+    /// Whether the ring holds frame `frame` and the lead a play wants past
+    /// it, as natively.
+    fn holds(&self, frame: u64) -> bool {
+        let ahead = if self.looping || ListWrap::before(self.wrap, frame).is_some() {
+            CUE_LEAD as u64
+        } else {
+            self.frames.saturating_sub(frame).min(CUE_LEAD as u64)
+        };
+        let ring = (crate::dsp::stream::RING_SAMPLES / self.channels) as u64;
+        self.outgoing.is_none()
+            && self.head == Some(frame)
+            && (self.consumer.slots() / self.channels) as u64 >= ahead.min(ring)
     }
 
     /// **Frame `frame` of the list, read the moment it is needed**, in an
@@ -1086,9 +1124,14 @@ impl UGen for TransportDiskIn {
         // `Voices` node refuses a def that holds one.
     }
 
+    fn cued(&self) -> Option<bool> {
+        Some(self.standing.is_none_or(|f| self.holds(f)))
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_ref()) else {
+            self.standing = None;
             output.fill(0.0);
             return;
         };
@@ -1096,6 +1139,11 @@ impl UGen for TransportDiskIn {
         let looping = inputs[4][0] != 0.0;
         let base = ctx.transport.position as f64;
         let rolling = ctx.transport.rolling;
+        let delta = at(inputs[3], 0) as f64 - at(inputs[2], 0) as f64;
+        let wrap = match looping {
+            true => None,
+            false => ListWrap::of(ctx.transport.looping, delta, frames),
+        };
         let place = |i: usize| -> (Option<u64>, Option<u64>) {
             if frames == 0 {
                 return (None, None);
@@ -1113,14 +1161,16 @@ impl UGen for TransportDiskIn {
                 (Some(raw as u64), Some(raw as u64))
             }
         };
+        self.standing = if rolling { None } else { place(0).1 };
         let address = Arc::as_ptr(buf) as usize;
-        if address != self.sent || looping != self.looping {
+        if address != self.sent || looping != self.looping || wrap != self.wrap {
             // A list that was playing plays on, out of what is kept of it,
             // while the new one is read.
             if rolling && !self.serve && !self.fresh && self.outgoing.is_none() {
                 self.keep_outgoing();
             }
             self.looping = looping;
+            self.wrap = wrap;
             self.sent = address;
             self.channels = buf.channels().max(1);
             self.frames = frames;
@@ -1135,7 +1185,7 @@ impl UGen for TransportDiskIn {
             self.outgoing = None;
             self.fade_in = 0;
             output.fill(0.0);
-            if let (_, Some(f)) = place(0)
+            if let Some(f) = self.standing
                 && self.head != Some(f)
             {
                 self.refill(None, f);

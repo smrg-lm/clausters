@@ -2376,6 +2376,38 @@ fn a_list_streamed_from_disk_does_not_allocate_on_the_audio_thread() {
         .ok()
         .unwrap();
     assert!(run(&mut engine), "and played the list put in its place");
+    // A cue walks the governed group and fills the ring standing, and a loop
+    // is read straight through: neither allocates.
+    for cmd in [
+        Cmd::TransportGroup {
+            transport: 0,
+            id: ROOT_NODE_ID,
+        },
+        Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        },
+        Cmd::TransportLoop {
+            transport: 0,
+            span: Some(2_000..30_000),
+        },
+        Cmd::TransportLocate {
+            transport: 0,
+            position: 2_000,
+        },
+        Cmd::TransportCue { transport: 0 },
+    ] {
+        handle.send(cmd).ok().unwrap();
+    }
+    assert!(!run(&mut engine), "a cue is not heard");
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
+        .ok()
+        .unwrap();
+    assert!(run(&mut engine), "and played a cued loop");
     handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
     assert_no_alloc(|| {
         for _ in 0..10 {

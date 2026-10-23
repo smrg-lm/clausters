@@ -488,6 +488,11 @@ test("a governed group freezes the transport clock", { skip: !hasServer }, async
         await sleep(120);
         assert.equal((await server.transportState())!.transportSample, first);
 
+        // A cue readies the group's disk readers and moves nothing: with none
+        // in the group it is ready at once, and the clock is still frozen.
+        assert.equal(await server.transportCue(), true);
+        assert.equal((await server.transportState())!.transportSample, first);
+
         // A resume moves it again.
         await server.transportPlay();
         await sleep(120);

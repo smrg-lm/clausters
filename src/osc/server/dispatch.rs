@@ -526,6 +526,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_synth_get_text(Args::new(m), f)
     }),
     ("/synth_new", OscServer::handle_via_translate),
+    ("/transport_cue", |s, _, m, f| {
+        s.handle_transport_cue(Args::new(m), f)
+    }),
     ("/transport_end", |s, _, m, f| {
         s.handle_transport_end(Args::new(m), f)
     }),

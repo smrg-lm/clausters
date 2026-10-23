@@ -39,6 +39,9 @@ pub struct UGenSynth {
     /// `Poll`); precomputed so `has_replies` is O(1) and the tree only
     /// enqueues these synths for the reply drain.
     has_reply_ugens: bool,
+    /// True when any UGen streams from disk (`UGen::cued`): the synths a
+    /// transport's cue runs.
+    streams: bool,
 }
 
 /// One demand UGen's inputs as the pull protocol sees them -- the synth
@@ -206,6 +209,7 @@ impl UGenSynth {
             .map(|&sz| SpectralChain::new(sz))
             .collect();
         let has_reply_ugens = ugens.iter().any(|u| u.is_reply());
+        let streams = ugens.iter().any(|u| u.cued().is_some());
         Self {
             def,
             controls,
@@ -216,6 +220,7 @@ impl UGenSynth {
             chains,
             initialized: false,
             has_reply_ugens,
+            streams,
         }
     }
 }
@@ -236,6 +241,14 @@ impl SynthNode for UGenSynth {
         for u in &mut self.ugens {
             u.resume();
         }
+    }
+
+    fn cue(&mut self, ctx: &mut ProcessCtx) -> Option<bool> {
+        if !self.streams {
+            return None;
+        }
+        self.process(ctx);
+        Some(self.ugens.iter().all(|u| u.cued() != Some(false)))
     }
 
     fn reset(&mut self) {

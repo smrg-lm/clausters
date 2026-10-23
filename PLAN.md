@@ -4654,7 +4654,7 @@ should confirm before the fix.
   live over to its render, should one need it (the apps plan's Future
   directions, "An effect heard live before it is applied").
 
-- ⬜ **A disk reader starts with a click, and a loop clicks at every
+- ✅ **A disk reader starts with a click, and a loop clicks at every
   wrap** *(found 2026-10-23, by ear on the audio lifecycle example; design
   decided with the user the same day)*. `TransportDiskIn` lives in the
   transport's governed group, which is frozen while the transport stands,
@@ -4684,6 +4684,10 @@ should confirm before the fix.
   - Native and page readers alike (`dsp::stream`, `dsp::disk_web`), the
     reference in `docs/schemas.md`, both clients' builders, and a test that
     plays from a stand and across a wrap with no silent frame.
+  Shipped as designed (2026-10-23): the cue waits at most 0.2 s, and a
+  reader is ready holding 4096 frames past where it stands. The page's
+  reader has no automated test of its own; it is checked by ear in the
+  page's example.
   The recording side of the same timing is a Future direction ("Recording,
   monitoring and playback aligned as one model of the transport's
   latencies").

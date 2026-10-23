@@ -25,6 +25,16 @@
 //!   of the playhead, so that plays on while the new one is read; once the
 //!   refill lands, the old fades out and the new fades in over [`CROSS`]
 //!   frames each, from the frame the transport has reached.
+//! - **A transport's loop is read straight through**: the reader is told the
+//!   loop's span (`TransportCtx::looping`, as [`ListWrap`] frames of the
+//!   list), the I/O thread renders from its end on at its start, and the
+//!   head wraps with the position, so a wrap is in the ring before it is
+//!   played. A loop set, moved or cleared is the list read another way, a
+//!   replacement like the one above.
+//! - **A cue fills the ring where the transport stands** (`/transport_cue`):
+//!   the engine runs the reader one standing block at a time, and
+//!   [`UGen::cued`] says whether it holds that frame and [`CUE_LEAD`] past
+//!   it, so the play after the cue starts on frames already read.
 //! - The I/O thread renders frames of the list ahead of the transport,
 //!   part by part, through [`PartSpan::read_with`](clausters_core::segments::PartSpan::read_with) --
 //!   the read a pool buffer's part makes, over the span it just read from the
@@ -69,7 +79,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::dsp::buffer::Buffer;
 use crate::dsp::pcm::{Layout, Reader};
-use crate::dsp::{ProcessCtx, UGen, at};
+use crate::dsp::{CUE_LEAD, ListWrap, ProcessCtx, UGen, at};
 use crate::server::meters::{Meters, Role};
 
 /// The ring, in samples: about 2.7 s of mono at 48 kHz, 1.4 s of stereo.
@@ -114,6 +124,7 @@ struct Request {
     frame: u64,
     epoch: u16,
     looping: bool,
+    wrap: Option<ListWrap>,
 }
 
 /// **The list a replacement took over from**, still in the ring ahead of the
@@ -151,6 +162,13 @@ pub struct TransportDiskIn {
     /// `Arc`, so the address cannot be reused while it is the one compared.
     sent: usize,
     looping: bool,
+    /// The transport's loop in the list's frames, which the I/O thread reads
+    /// straight through.
+    wrap: Option<ListWrap>,
+    /// Where the transport stands over the list while it is stopped: the
+    /// frame a cue fills the ring at. `None` while it rolls, and outside the
+    /// list.
+    standing: Option<u64>,
     /// The epoch last asked for.
     epoch: u16,
     /// The frame the refill in flight starts at.
@@ -199,6 +217,8 @@ impl TransportDiskIn {
             meters: Arc::clone(meters),
             sent: 0,
             looping: false,
+            wrap: None,
+            standing: None,
             epoch: 0,
             pending: None,
             head: None,
@@ -221,6 +241,7 @@ impl TransportDiskIn {
             frame,
             epoch,
             looping: self.looping,
+            wrap: self.wrap,
         };
         if self.requests.push(request).is_err() {
             return false;
@@ -288,12 +309,26 @@ impl TransportDiskIn {
     }
 
     fn advance(&self, frame: u64, by: u64) -> u64 {
-        let next = frame + by;
         if self.looping && self.frames > 0 {
-            next % self.frames
+            (frame + by) % self.frames
         } else {
-            next
+            ListWrap::advance(self.wrap, frame, by)
         }
+    }
+
+    /// Whether the ring holds frame `frame` and the lead a play wants past
+    /// it: [`CUE_LEAD`] frames, or what is left before the list ends.
+    fn holds(&self, frame: u64) -> bool {
+        let ahead = if self.looping || ListWrap::before(self.wrap, frame).is_some() {
+            CUE_LEAD as u64
+        } else {
+            self.frames.saturating_sub(frame).min(CUE_LEAD as u64)
+        };
+        let ring = (RING_SAMPLES / self.channels) as u64;
+        self.pending.is_none()
+            && self.outgoing.is_none()
+            && self.head == Some(frame)
+            && (self.consumer.slots() / self.channels) as u64 >= ahead.min(ring)
     }
 
     /// **The next sample of the list a replacement took over from**: it
@@ -425,10 +460,15 @@ impl UGen for TransportDiskIn {
         // `Voices` node refuses a def that holds one.
     }
 
+    fn cued(&self) -> Option<bool> {
+        Some(self.standing.is_none_or(|f| self.holds(f)))
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         self.collect();
         let index = inputs[0][0].max(0.0) as usize;
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_ref()) else {
+            self.standing = None;
             output.fill(0.0);
             return;
         };
@@ -436,6 +476,14 @@ impl UGen for TransportDiskIn {
         let looping = inputs[4][0] != 0.0;
         let base = ctx.transport.position as f64;
         let rolling = ctx.transport.rolling;
+        // The transport's loop, read straight through: what its wrap plays
+        // next is in the ring before the position gets there. A list that
+        // loops on its own wraps at its own end instead.
+        let delta = at(inputs[3], 0) as f64 - at(inputs[2], 0) as f64;
+        let wrap = match looping {
+            true => None,
+            false => ListWrap::of(ctx.transport.looping, delta, frames),
+        };
         // Which list frame sample `i` plays: `None` outside the list, and the
         // frame to stand ready at besides.
         let place = |i: usize| -> (Option<u64>, Option<u64>) {
@@ -456,19 +504,23 @@ impl UGen for TransportDiskIn {
                 (Some(f), Some(f))
             }
         };
+        self.standing = if rolling { None } else { place(0).1 };
         let address = Arc::as_ptr(buf) as usize;
-        if address != self.sent || looping != self.looping {
-            // A new list, or the same one read another way: what the ring
-            // holds is not what will play. A list that was playing plays on
-            // until the refill lands and then fades into the new one; one
-            // that was not is silence until the refill lands.
+        if address != self.sent || looping != self.looping || wrap != self.wrap {
+            // A new list, or the same one read another way -- a loop set,
+            // moved or cleared is one: what the ring holds is not what will
+            // play. A list that was playing plays on until the refill lands
+            // and then fades into the new one; one that was not is silence
+            // until the refill lands.
             let playing = rolling
                 && !self.offline
                 && self.head.is_some()
                 && self.pending.is_none()
                 && self.outgoing.is_none();
             let was = self.channels;
+            let previous_wrap = (self.looping, self.wrap);
             self.looping = looping;
+            self.wrap = wrap;
             let frame = place(0).1.unwrap_or(0);
             // The shape first: offline the refill lands inside the call.
             let (channels, previous) = (buf.channels().max(1), (self.channels, self.frames));
@@ -485,6 +537,7 @@ impl UGen for TransportDiskIn {
                 }
             } else {
                 (self.channels, self.frames) = previous;
+                (self.looping, self.wrap) = previous_wrap;
             }
             if self.outgoing.is_none() && (!self.offline || self.pending.is_some()) {
                 output.fill(0.0);
@@ -500,7 +553,7 @@ impl UGen for TransportDiskIn {
                 self.fade_in = 0;
             }
             output.fill(0.0);
-            if let (_, Some(f)) = place(0)
+            if let Some(f) = self.standing
                 && self.head != Some(f)
                 && self.pending != Some(f)
             {
@@ -573,6 +626,7 @@ fn fill(
     let mut list: Option<Arc<Buffer>> = None;
     let mut next: Option<u64> = None;
     let mut looping = false;
+    let mut wrap = None;
     let mut first = false;
     // The refill taken and not yet published: its epoch and its boundary.
     let mut due: Option<(u16, u64)> = None;
@@ -594,6 +648,7 @@ fn fill(
         if let Some(request) = latest {
             next = Some(request.frame);
             looping = request.looping;
+            wrap = request.wrap;
             first = true;
             due = Some((request.epoch, pushed));
         }
@@ -628,8 +683,11 @@ fn fill(
         }
         let want = if first { FIRST_CHUNK } else { CHUNK };
         let room = producer.slots() / channels;
-        let n = want.min(room).min((total - at) as usize);
-        if n == 0 || (!first && room < want && (total - at) as usize > room) {
+        // A read stops at the loop's end, and the next one starts at its
+        // start: the ring holds the loop straight through.
+        let left = ListWrap::before(wrap, at).unwrap_or(total - at) as usize;
+        let n = want.min(room).min(left);
+        if n == 0 || (!first && room < want && left > room) {
             publish(&mut due);
             turn.park();
             continue;
@@ -640,10 +698,11 @@ fn fill(
             chunk.fill_from_iter(frames.iter().copied());
         }
         pushed += frames.len() as u64;
-        next = Some(at + n as u64);
+        let after = ListWrap::advance(wrap, at, n as u64);
+        next = Some(after);
         first = false;
         publish(&mut due);
-        open_ahead(l, at + n as u64, &mut files);
+        open_ahead(l, after, wrap, &mut files);
     }
 }
 
@@ -714,11 +773,20 @@ fn render(
 }
 
 /// Opens the next part's file when the frames rendered are within
-/// [`SEAM_LEAD`] of its seam.
-fn open_ahead(list: &Buffer, at: u64, files: &mut Files) {
+/// [`SEAM_LEAD`] of its seam -- or, before a loop's end, the file its start
+/// reads.
+fn open_ahead(list: &Buffer, at: u64, wrap: Option<ListWrap>, files: &mut Files) {
     let Some(stitch) = list.stitch() else {
         return;
     };
+    if let Some(w) = wrap
+        && ListWrap::before(wrap, at).is_some_and(|left| left <= SEAM_LEAD as u64)
+        && let Some(layout) = stitch
+            .part_at(w.from as usize)
+            .and_then(|(_, p)| p.src.file())
+    {
+        files.reader(layout);
+    }
     let Some((i, part)) = stitch.part_at(at as usize) else {
         return;
     };

@@ -724,11 +724,12 @@ impl Renderer {
             // governs, roll it, stop it and stand it at a sample -- each at
             // its exact sample, like the rest of the event -- which is what a
             // render that plays a list at the transport's position
-            // (`TransportDiskIn`) needs. A play from a beat needs a grid,
+            // (`TransportDiskIn`) needs, and cue it. A play from a beat needs a grid,
             // which a render keeps none of, and is refused.
             "/transport_group"
             | "/transport_play"
             | "/transport_stop"
+            | "/transport_cue"
             | "/transport_locateSample" => {
                 let transport = match msg.args.first() {
                     Some(OscType::Int(k))
@@ -763,6 +764,10 @@ impl Renderer {
                         transport,
                         rolling: false,
                     },
+                    // Offline a reader waits for every frame it reads, so a
+                    // cue has nothing to wait for; it is run all the same,
+                    // the way the server runs it.
+                    ("/transport_cue", []) => Cmd::TransportCue { transport },
                     ("/transport_locateSample", [OscType::Int(n)]) => Cmd::TransportLocate {
                         transport,
                         position: (*n).max(0) as u64,
@@ -864,7 +869,8 @@ impl Renderer {
                 | Garbage::RetiredSynth(_)
                 | Garbage::FreedBuffer(_)
                 | Garbage::EventLaneSpent { .. }
-                | Garbage::TransportEnded { .. } => {}
+                | Garbage::TransportEnded { .. }
+                | Garbage::TransportCued { .. } => {}
             }
         }
         let mut compensation = Vec::new();

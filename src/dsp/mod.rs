@@ -116,6 +116,56 @@ pub mod stream {
 /// milliseconds at 48 kHz, which a cut heard while looping reads as the cut
 /// and not as a click.
 pub const LIST_CROSS: usize = 128;
+
+/// **How much of a list a cued reader holds before it says it is ready**
+/// (`/transport_cue`), in frames: 85 ms at 48 kHz, the lead its refills
+/// then keep ahead of the playhead -- or less, where the list ends sooner.
+pub const CUE_LEAD: usize = 4096;
+
+/// **A transport's loop, in the frames of a list a reader plays**: the
+/// reader that reaches frame `to` goes on at frame `from`, so the disk side
+/// renders the loop straight through and a wrap costs no refill. What the
+/// two `TransportDiskIn`s (natively and in a page) share.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ListWrap {
+    /// The first frame after a wrap.
+    pub from: u64,
+    /// The frame a wrap happens at, never read: the loop is half-open.
+    pub to: u64,
+}
+
+impl ListWrap {
+    /// The loop `looping` of the transport's axis, over a list of `frames`
+    /// frames whose frame is the position plus `delta`. Clamped to the list:
+    /// a loop that starts before it wraps to its first frame (the reader
+    /// waits there while the transport is before the list), and one that
+    /// ends after it wraps at its end (the frames past it are silence).
+    /// `None` when the loop does not cross the list.
+    pub fn of(looping: Option<(u64, u64)>, delta: f64, frames: u64) -> Option<Self> {
+        let (start, end) = looping?;
+        let frame = |p: u64| (p as f64 + delta).floor();
+        let from = frame(start).max(0.0) as u64;
+        let to = frame(end).clamp(0.0, frames as f64) as u64;
+        (from < to).then_some(Self { from, to })
+    }
+
+    /// The frame `by` frames after `frame`, wrapped when it crosses `to` from
+    /// before it: a frame already past the loop runs on, as the transport
+    /// does.
+    pub fn advance(wrap: Option<Self>, frame: u64, by: u64) -> u64 {
+        let next = frame + by;
+        match wrap {
+            Some(w) if frame < w.to && next >= w.to => w.from + (next - w.to) % (w.to - w.from),
+            _ => next,
+        }
+    }
+
+    /// The frames a read from `frame` may render before it wraps, or `None`
+    /// when no wrap is ahead of it.
+    pub fn before(wrap: Option<Self>, frame: u64) -> Option<u64> {
+        wrap.filter(|w| frame < w.to).map(|w| w.to - frame)
+    }
+}
 #[cfg(feature = "synth")]
 pub mod trig;
 #[cfg(feature = "synth")]
@@ -766,6 +816,12 @@ pub struct TransportCtx {
     /// here, and the reader clamps to `[0, 1]`: the engine cuts the block
     /// where a falling one ends (the freeze), and a rising one ends at `1`.
     pub fade_step: f32,
+    /// **The span the position wraps inside**, `[start, end)`, while the
+    /// transport loops. A disk reader reads it straight through
+    /// ([`ListWrap`]), so its wrap is in the ring before the position gets
+    /// there; nothing else needs it, since the engine cuts the block at the
+    /// wrap.
+    pub looping: Option<(u64, u64)>,
 }
 
 /// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes --
@@ -1018,6 +1074,14 @@ pub trait UGen: Send {
     /// are the signal itself and stay. Runs on the audio thread, so it is
     /// arithmetic and nothing else.
     fn resume(&mut self) {}
+
+    /// **Whether a reader that streams from disk holds the frames it stands
+    /// at** (`/transport_cue`): `None` for a UGen that streams nothing, which
+    /// is every kind but `TransportDiskIn`. Read after a cue has run the
+    /// synth standing, so its next play starts on frames already in the ring.
+    fn cued(&self) -> Option<bool> {
+        None
+    }
 
     /// **The voice starts again**: return to the state the constructor left,
     /// on the memory the UGen already owns, so the next block sounds as a
