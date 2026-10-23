@@ -553,6 +553,22 @@ pub fn render_to_wav(
     render_to_wav_with(score, cfg, path, sample_format, |_, _| {})
 }
 
+/// **A render whose output is kept nowhere**: what its synths write is its
+/// work (a `PeaksOut` measuring a file). `progress` as [`render_to_wav_with`].
+pub fn render_discarding(
+    score: &OscScore,
+    cfg: &RenderConfig,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<RenderStats, String> {
+    let mut render = OfflineRender::new(score, cfg)?;
+    let run = cfg.sample_rate.max(1.0) as u64;
+    while !render.step(run, &mut |_: &[f32]| Ok(()))? {
+        progress(render.frames_done(), render.total_frames());
+    }
+    progress(render.total_frames(), render.total_frames());
+    render.finish()
+}
+
 /// [`render_to_wav`], telling `progress` the frames done and the frames the
 /// render comes to after each second of the score.
 pub fn render_to_wav_with(

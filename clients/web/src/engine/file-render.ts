@@ -32,7 +32,7 @@ export interface FileRenderRequest {
     sampleRate: number;
     channels: number;
     seed: bigint;
-    /** The file the render's output is written to. */
+    /** The file the render's output is written to; empty for none. */
     path: string;
     sampleFormat: string;
 }
@@ -110,7 +110,10 @@ export async function renderToFile(
     for (const path of JSON.parse(engine.scoreFiles(request.score)) as string[]) {
         await files.openRead(path);
     }
-    await files.create(request.path);
+    // An empty path keeps nothing of the output: the render's work is what
+    // its synths write (a `PeaksOut` measuring a file).
+    const keep = request.path !== "";
+    if (keep) await files.create(request.path);
     const scope = globalThis as unknown as Record<string, unknown>;
     scope.claustersRenderFileSize = (path: string) => files.size(path);
     scope.claustersRenderFileRead = (path: string, at: number, length: number) =>
@@ -130,7 +133,7 @@ export async function renderToFile(
         let body = 0;
         for (;;) {
             const run = render.step(RUN_FRAMES);
-            if (run.length > 0) {
+            if (keep && run.length > 0) {
                 const bytes = framing.body(run, request.sampleFormat);
                 files.write(request.path, head + body, bytes);
                 body += bytes.byteLength;
@@ -144,8 +147,10 @@ export async function renderToFile(
         };
         // What the synths that just went left behind.
         await drain(render, files, framing, recordings, summaries, request.sampleRate);
-        files.write(request.path, 0, framing.header(request.path, request.channels,
-            request.sampleRate, request.sampleFormat, body));
+        if (keep) {
+            files.write(request.path, 0, framing.header(request.path, request.channels,
+                request.sampleRate, request.sampleFormat, body));
+        }
         return {
             frames: stats.frames,
             events: stats.events,

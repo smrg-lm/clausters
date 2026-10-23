@@ -50,3 +50,19 @@ def test_a_render_is_followed_as_it_goes(tmp_path):
                  "channels": 1, "format": "float"},
                 progress=lambda done, total: seen.append((done, total)))
     assert seen and seen[-1] == (24_000, 24_000)
+
+
+def test_a_render_with_no_path_keeps_no_output_and_does_its_work(tmp_path):
+    from clausters._steps import render_step
+    from clausters.defs import peaks_out
+
+    peaks = tmp_path / "tone.peaks"
+    nrt = OscNrtInterface()
+    nrt.send_msg(None, "/def_send", "synth",
+                 SynthDef("measured", peaks_out(sine(660), path=str(peaks))).dump_def())
+    nrt.send_msg(None, "/synth_new", "measured", 1000, 0, 0)
+    nrt.send_bundle(None, 0.5, ("/node_free", 1000))
+    render_step({"score": nrt.score.bytes().hex(), "path": "", "rate": 48_000.0,
+                 "channels": 1, "format": "float"})
+    assert peaks.read_bytes()[:4] == b"CLPK"
+    assert list(tmp_path.iterdir()) == [peaks]

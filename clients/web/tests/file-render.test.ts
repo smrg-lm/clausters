@@ -145,3 +145,26 @@ test("a render step writes its file and releases what follows it", async () => {
         await rm(dir, { recursive: true, force: true });
     }
 });
+
+test("a render with no path keeps no output and does its work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
+    try {
+        const peaks = join(dir, "tone.peaks");
+        const nrt = new OscNrtInterface();
+        const def = new SynthDef("measured", peaksOut(sine(660), { path: peaks }));
+        nrt.addBundle(0, [
+            { addr: "/def_send", args: [s("synth"), s(def.dumpDef())] },
+            { addr: "/synth_new", args: [s("measured"), i(1000), i(0), i(0)] },
+        ]);
+        nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
+        const score = [...nrt.score.bytes()].map((b) => b.toString(16).padStart(2, "0")).join("");
+        const { renderStep } = await import("../src/steps.ts");
+        await renderStep({ score, path: "", rate: RATE, channels: 1, format: "float" });
+        const head = new TextDecoder().decode((await readFile(peaks)).subarray(0, 4));
+        assert.equal(head, "CLPK");
+        const { readdir } = await import("node:fs/promises");
+        assert.deepEqual(await readdir(dir), ["tone.peaks"]);
+    } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});

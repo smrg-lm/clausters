@@ -84,7 +84,9 @@ def render_step(render: dict, progress=None) -> None:
     the render comes to."""
     from .render import render_to_file
 
-    render_to_file(bytes.fromhex(render["score"]), render["path"], float(render["rate"]),
+    # An empty path keeps nothing of the output (`--nrt`'s `-`): the render's
+    # work is what its synths write, a `PeaksOut` measuring a file.
+    render_to_file(bytes.fromhex(render["score"]), render["path"] or "-", float(render["rate"]),
                    int(render["channels"]), 0, None, render.get("format", "float"),
                    progress=progress)
 

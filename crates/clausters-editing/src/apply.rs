@@ -76,7 +76,9 @@ pub struct Render {
     /// The binary score.
     pub score: Vec<u8>,
     /// The file the render's output is written to; its extension names the
-    /// container (a WAV, a W64 or an RF64).
+    /// container (a WAV, a W64 or an RF64). Empty for a render whose output
+    /// is kept nowhere, its work being what its synths write (a `PeaksOut`
+    /// measuring a file).
     pub path: String,
     /// The render's sample rate.
     pub rate: f64,

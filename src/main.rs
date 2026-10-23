@@ -77,6 +77,7 @@ usage:
                            workers; `--pin fast` keeps the audio thread and
                            the workers on the fastest cores of a hybrid CPU
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
+                           (`-` for the output keeps none of it)
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
       --format <fmt>       int16 | int24 | float (default float)
@@ -259,7 +260,8 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
             }
             // A flag this does not know is a mistake, not a file name: taken
             // for the output path, `--help` once rendered a WAV called that.
-            other if other.starts_with('-') => {
+            // `-` alone is an output (kept nowhere), not an option.
+            other if other.starts_with('-') && other != "-" => {
                 return Err(format!("unknown option {other}\n{USAGE}"));
             }
             other => paths.push(other.to_string()),
@@ -270,11 +272,18 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
     };
 
     let score = OscScore::load(score_path)?;
-    let stats = render_to_wav_with(&score, &cfg, out_path, &format, |done, total| {
+    let report = |done: u64, total: u64| {
         if progress {
             eprintln!("progress {done} {total}");
         }
-    })?;
+    };
+    // `-` keeps nothing of the output: a render whose work is what its
+    // synths write (a `PeaksOut` measuring a file, a `DiskOut`).
+    let stats = if out_path == "-" {
+        clausters::server::render::render_discarding(&score, &cfg, report)?
+    } else {
+        render_to_wav_with(&score, &cfg, out_path, &format, report)?
+    };
     if stats_json {
         // One machine-readable line, for a client driving `--nrt` as a
         // subprocess: it gets the render's stats without reading the file it
