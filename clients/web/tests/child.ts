@@ -23,9 +23,11 @@ export interface Spawned {
     readonly child: ChildProcess;
     /**
      * Kills it and unregisters the signal handlers. Idempotent, and safe to
-     * call from a `finally` beside the ordinary teardown.
+     * call from a `finally` beside the ordinary teardown. Resolves once the
+     * process has exited, so a suite that boots the next one on the same
+     * port can wait for this one to have let it go.
      */
-    stop(): void;
+    stop(): Promise<void>;
 }
 
 /**
@@ -39,6 +41,10 @@ export interface Spawned {
 export function spawnChild(bin: string, args: readonly string[]): Spawned {
     const child = spawn(bin, [...args], { stdio: "ignore" });
     let stopped = false;
+    const exited = new Promise<void>((resolve) => {
+        if (child.exitCode !== null || child.signalCode !== null) resolve();
+        else child.once("exit", () => resolve());
+    });
     const onSignal = () => {
         child.kill("SIGKILL");
         process.exit(143);
@@ -48,11 +54,13 @@ export function spawnChild(bin: string, args: readonly string[]): Spawned {
     return {
         child,
         stop() {
-            if (stopped) return;
-            stopped = true;
-            child.kill();
-            process.off("SIGTERM", onSignal);
-            process.off("SIGINT", onSignal);
+            if (!stopped) {
+                stopped = true;
+                child.kill();
+                process.off("SIGTERM", onSignal);
+                process.off("SIGINT", onSignal);
+            }
+            return exited;
         },
     };
 }

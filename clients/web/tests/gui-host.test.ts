@@ -59,7 +59,8 @@ async function withHost(body: (gui: GuiHost) => Promise<void>): Promise<void> {
             connection.close();
         }
     } finally {
-        host.stop();
+        // the next test's host binds the same port
+        await host.stop();
     }
 }
 
