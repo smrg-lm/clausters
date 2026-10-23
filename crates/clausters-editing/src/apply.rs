@@ -118,6 +118,33 @@ impl Default for Endpoint {
     }
 }
 
+/// **Where a playback's ops are carried out**: into steps an endpoint walks
+/// against a server ([`Applier`]), or into the commands of an engine the
+/// application holds, pushed as they are applied (which answer no steps). A
+/// playback is written once over either.
+pub trait Medium: std::fmt::Debug {
+    /// Carries `ops` out, allocating from `ids`; the steps left to walk.
+    fn apply(&mut self, ops: Vec<Op>, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError>;
+    /// The first bus of the run a handle became, and how long it is.
+    fn bus(&self, handle: &str) -> Option<(i32, usize)>;
+    /// How many nodes it is holding.
+    fn node_count(&self) -> usize;
+}
+
+impl Medium for Applier {
+    fn apply(&mut self, ops: Vec<Op>, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
+        Applier::apply(self, ops, ids)
+    }
+
+    fn bus(&self, handle: &str) -> Option<(i32, usize)> {
+        Applier::bus(self, handle)
+    }
+
+    fn node_count(&self) -> usize {
+        Applier::node_count(self)
+    }
+}
+
 /// **What the ops made**, and the steps that make more.
 #[derive(Debug, Clone)]
 pub struct Applier {

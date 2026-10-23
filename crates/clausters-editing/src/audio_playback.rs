@@ -44,7 +44,7 @@ use clausters_core::ids::{IdError, IdSpaces, Space};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::apply::{Applier, Endpoint, Step};
+use crate::apply::{Applier, Endpoint, Medium, Step};
 use crate::instance::{Op, Port, Ports};
 
 /// How long a stop and a play ramp, in seconds: short enough that nobody hears
@@ -124,10 +124,11 @@ struct File {
     rate: f64,
 }
 
-/// **The audio editor, as it is playing.**
+/// **The audio editor, as it is playing**, its ops carried out in `M`: steps
+/// for a server by default, or an engine the application holds.
 #[derive(Debug, Clone)]
-pub struct AudioEditorPlayback {
-    applier: Applier,
+pub struct AudioEditorPlayback<M: Medium = Applier> {
+    applier: M,
     /// The transport it plays on, once it has one.
     transport: Option<i32>,
     /// Whether the transport was allocated from the id spaces, and so is
@@ -160,8 +161,22 @@ impl AudioEditorPlayback {
     /// out its steps for `endpoint`: it allocates a transport of its own the
     /// first time it needs one ([`Self::alloc_transport`]).
     pub fn new(endpoint: Endpoint) -> AudioEditorPlayback {
+        AudioEditorPlayback::in_medium(Applier::new(endpoint))
+    }
+
+    /// A playback on transport `transport`, which is the caller's to name and
+    /// is not given back.
+    pub fn on(endpoint: Endpoint, transport: i32) -> AudioEditorPlayback {
+        AudioEditorPlayback::in_medium_on(Applier::new(endpoint), transport)
+    }
+}
+
+impl<M: Medium> AudioEditorPlayback<M> {
+    /// A playback that has made nothing yet and holds no transport, its ops
+    /// carried out in `medium`.
+    pub fn in_medium(medium: M) -> AudioEditorPlayback<M> {
         AudioEditorPlayback {
-            applier: Applier::new(endpoint),
+            applier: medium,
             transport: None,
             owned: true,
             rate: 48_000.0,
@@ -175,14 +190,19 @@ impl AudioEditorPlayback {
         }
     }
 
-    /// A playback on transport `transport`, which is the caller's to name and
-    /// is not given back.
-    pub fn on(endpoint: Endpoint, transport: i32) -> AudioEditorPlayback {
+    /// [`Self::in_medium`] on transport `transport`, which is the caller's
+    /// to name and is not given back.
+    pub fn in_medium_on(medium: M, transport: i32) -> AudioEditorPlayback<M> {
         AudioEditorPlayback {
             transport: Some(transport),
             owned: false,
-            ..AudioEditorPlayback::new(endpoint)
+            ..AudioEditorPlayback::in_medium(medium)
         }
+    }
+
+    /// The medium its ops are carried out in.
+    pub fn medium(&self) -> &M {
+        &self.applier
     }
 
     /// The transport it plays on -- what its commands name, and what a view

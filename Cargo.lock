@@ -282,6 +282,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "clausters-app-engine"
+version = "0.11.0"
+dependencies = [
+ "clausters",
+ "clausters-core",
+ "clausters-editing",
+ "hound",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "clausters-apps"
 version = "0.11.0"
 dependencies = [

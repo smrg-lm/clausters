@@ -775,7 +775,7 @@ impl CmdTranslator {
 
     /// Forget a freed processor only if its isolated generation still matches.
     /// A node ID can already have been reused before garbage is collected.
-    pub(crate) fn forget_freed_synth(&mut self, id: i32, incarnation: u64) {
+    pub fn forget_freed_synth(&mut self, id: i32, incarnation: u64) {
         #[cfg(all(
             any(feature = "plugin-clap", feature = "plugin-vst3"),
             target_os = "linux"
@@ -1366,21 +1366,14 @@ impl CmdTranslator {
     /// `/def_free name...`. Live synths keep their `Arc<SynthDef>`: scsynth
     /// semantics. Same for Faust factories (instances refcount them).
     pub fn d_free(&mut self, args: &[OscType]) -> Result<(), String> {
+        let mut names = Vec::with_capacity(args.len());
         for arg in args {
             let OscType::String(name) = arg else {
                 return Err("expected synthdef names".into());
             };
-            #[cfg(feature = "synth")]
-            self.synth_defs.remove(name);
-            #[cfg(feature = "faust")]
-            self.faust_defs.remove(name);
-            #[cfg(all(
-                any(feature = "plugin-clap", feature = "plugin-vst3"),
-                target_os = "linux"
-            ))]
-            self.plugin_defs.remove(name);
-            self.graph_defs.remove(name);
+            names.push(name.clone());
         }
+        self.free_defs(&names);
         Ok(())
     }
 

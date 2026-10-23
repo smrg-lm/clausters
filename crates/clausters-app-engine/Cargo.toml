@@ -1,0 +1,31 @@
+[package]
+name = "clausters-app-engine"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The engine an editing application holds: the server's engine in the application's process, spoken to with built commands rather than OSC, and the medium a playback's ops are carried out in."
+
+[features]
+default = ["synth"]
+# The def families, passed through to the engine.
+synth = ["clausters/synth"]
+faust = ["clausters/faust"]
+# The audio device: without it the engine is driven by hand, block by block,
+# which is what the tests do.
+realtime = ["clausters/realtime"]
+
+[dependencies]
+# The engine, its command translator and its device backend, taken as a
+# library: the application builds the engine's commands with the translator's
+# typed doors, so there is one implementation of what a synth, a group or a
+# graph is.
+clausters = { path = "../..", default-features = false }
+clausters-core = { path = "../clausters-core" }
+# The ops a playback answers, and the medium trait they are carried out
+# through.
+clausters-editing = { path = "../clausters-editing" }
+serde_json = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+hound = "3"

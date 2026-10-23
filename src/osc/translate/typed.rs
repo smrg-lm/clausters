@@ -185,3 +185,22 @@ impl CmdTranslator {
         })
     }
 }
+
+impl CmdTranslator {
+    /// **Gives defs back by name**, of every family: `/def_free`, typed. Live
+    /// synths keep the def they were built from.
+    pub fn free_defs(&mut self, names: &[String]) {
+        for name in names {
+            #[cfg(feature = "synth")]
+            self.synth_defs.remove(name);
+            #[cfg(feature = "faust")]
+            self.faust_defs.remove(name);
+            #[cfg(all(
+                any(feature = "plugin-clap", feature = "plugin-vst3"),
+                target_os = "linux"
+            ))]
+            self.plugin_defs.remove(name);
+            self.graph_defs.remove(name);
+        }
+    }
+}

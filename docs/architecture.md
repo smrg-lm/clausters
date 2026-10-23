@@ -1024,6 +1024,19 @@ question, whoever asks it".
 
 ### The applications: what an editor opens
 
+`crates/clausters-app-engine` is **the engine an editing application holds**:
+the server's engine and its command translator taken as a library, spoken to
+with built commands through the engine's FIFO and never with OSC.
+`AppEngine` holds the engine's handle, the translator whose typed doors build
+the commands (`CmdTranslator::new_synth`, `new_graph`, `add_slot`, `set_node`,
+`define_synth`, ...; the OSC commands decode their arguments and call the same
+doors) and, with `realtime`, the device; `pump` takes the engine's garbage and
+node ends back on the application's turn. `EngineMedium` is a playback's
+medium over it (`clausters_editing::apply::Medium`, whose other implementation
+is the OSC `Applier`): a playback written once answers ops, and this carries
+them out at once, so it answers no steps. It is the first piece of the apps
+plan's second turn ("an editing application holds its engine").
+
 `crates/clausters-apps` sits over the projections and holds the **applications**
 the project is built around — the multitrack editor today, the audio and score
 editors after it. A projection is a function of one structure; an application is

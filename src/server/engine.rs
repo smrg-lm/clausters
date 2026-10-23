@@ -307,7 +307,7 @@ pub enum Cmd {
 /// Dropping it is the right answer, so this says so at `debug` rather than
 /// warning about an ordinary transport gesture. Everything else is somebody's
 /// mistake or a real limit, and keeps its warning.
-pub(crate) fn report_rejected(id: i32, why: Reject, who: &str) {
+pub fn report_rejected(id: i32, why: Reject, who: &str) {
     if why.is_fault() {
         tracing::warn!("{who} rejected node {id}: {}", why.as_str());
     } else {
