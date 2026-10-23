@@ -294,27 +294,34 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The turn: an application's takes live on disk**, milestones `X28`,
-  `X29`, `S23` *(`crates/clausters-apps/PLAN.md`, "The
-  turn: an application's takes live on disk", with each milestone in its own
-  plan)*. **Taken next**, on the user's word: the audio editor's model does
-  not reach a file of hours, and successive pastes of a long selection fail
-  natively. In that order: the audio editor, the multitrack, and the
-  removal of the editing commands last. Its
-  decisions are taken. Before `X25`, which should port this lifecycle and not
-  the one it replaces. **Related:** it takes the GUI plan's "An edit of a long
-  take costs a native server with a segment a pass over it". Found while
-  opening it, and to look at in a page before `X28`'s eye pass: the GUI
-  plan's "A spectrogram of a server buffer may draw nothing in a host that
-  cannot map it" (Found by use). Found moving the editor onto files, and taken
-  after `X28`: the apps plan's "A compressed file opens through a buffer of
-  all of it" (Found by use).
+- ⬜ **The second turn: an editing application holds its engine**,
+  milestones `X30` to `X34`, then `S23` *(`crates/clausters-apps/PLAN.md`,
+  "The second turn: an editing application holds its engine"; `S23` in root
+  `PLAN.md`)*. **Taken next**, on the user's word: a copy and paste pattern
+  that reaches hours hangs the audio editor, because each paste flattens the
+  clipboard into the list and the whole list is sent to the server as one
+  message that outgrows a packet. It revises the first turn
+  ("The turn: an application's takes live on disk", `X28` and `X29`), whose
+  surviving work carries over. In that order: the engine held by the
+  application first, since the take's structure and the reader are written
+  against it; the shared blocks, measured against the pattern; the
+  application's reader and peaks; the audio editor's session file; the
+  multitrack on the same modules; and the server's cleaning last, once
+  nothing calls what it removes. Before `X25`, which should port this
+  lifecycle. **Related:** found moving the editor onto files, and taken
+  after `X32`: the apps plan's "A compressed file opens through a buffer of
+  all of it" (Found by use); to look at in a page before the audio editor's
+  eye pass: the GUI plan's "A spectrogram of a server buffer may draw nothing
+  in a host that cannot map it" (Found by use).
 
   | Order | Milestone | Plan |
   |---|---|---|
-  | 1 | `X28` — The audio editor edits files on disk | `crates/clausters-apps/PLAN.md` |
-  | 2 | `X29` — The multitrack and the standalone host read takes from disk | `crates/clausters-apps/PLAN.md` |
-  | 3 | `S23` — The server keeps no editing commands | root `PLAN.md` |
+  | 1 | `X30` — An editing application holds its engine | `crates/clausters-apps/PLAN.md` |
+  | 2 | `X31` — A take is shared blocks | `crates/clausters-apps/PLAN.md` |
+  | 3 | `X32` — The application reads its takes, and draws them | `crates/clausters-apps/PLAN.md` |
+  | 4 | `X33` — The audio editor's session file | `crates/clausters-apps/PLAN.md` |
+  | 5 | `X34` — The multitrack over the same modules | `crates/clausters-apps/PLAN.md` |
+  | 6 | `S23` — The server keeps no editing commands, widened | root `PLAN.md` |
 
 - ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
   summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A

@@ -2943,7 +2943,8 @@ written; none is left open:
    left, its ring size and how far ahead of a seam it reads, is measured
    there against comping parts a quarter second long from different files.
 7. ✅ **The audio editor has no session** *(decided 2026-10-23 by the
-   user)*. Each file is independent: an audio editor edits a file, as a
+   user; superseded the same day by the second turn below, where it has a
+   session file per file being worked on)*. Each file is independent: an audio editor edits a file, as a
    text editor does, and a multitrack mixes many files into one, so the two
    are not compatible applications and the audio editor's takes do not live
    in a multitrack's session. Saving with edits half done means nothing
@@ -2964,7 +2965,9 @@ written; none is left open:
 turn comes before `X25`, which ports the audio editor's lifecycle to the other
 editors and should port this one.
 
-- ⬜ **X28 - The audio editor edits files on disk.** After `S21`, `S22`,
+- ⬜ **X28 - The audio editor edits files on disk.** *(Its model is
+  revised by the second turn below, measured 2026-10-23: what it built that
+  the model keeps carries over to `X30` to `X33`.)* After `S21`, `S22`,
   `O34` and `G45`. Opening a file reads its header and its peaks (measured
   once if it has none) and nothing else; every edit is a list; the clipboard
   holds segments; processing (gain, reverse, mix, a stroke,
@@ -3005,6 +3008,7 @@ editors and should port this one.
   and then applied (the eighth).*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
+  *(Taken over by `X34` in the second turn below.)*
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
   reading files into pool buffers and stitching joins in memory: a track
   plays its regions through the RT list reader, and a bounce or a freeze is an
@@ -3019,6 +3023,227 @@ editors and should port this one.
   without a click or an underrun; the server's memory does not grow with the
   takes; the multitrack example pair and a saved session open and sound
   natively, in a page and in the standalone host.
+
+### The second turn: an editing application holds its engine
+
+*Opened 2026-10-23 by the user, after measuring a copy and paste pattern
+that reaches hours.* Ten seconds copied and pasted five times make a minute;
+that minute copied and pasted nine times makes ten; then ten minutes six
+times, and so on. Measured in release on the editor and an offline server
+over a 20 s file, each paste at the end:
+
+| Copied | Pasted | Length | Parts | Worst paste, editor | Stitch to the server |
+|---|---|---|---|---|---|
+| 10 s | 5 | 1.2 min | 6 | 0.1 ms | 69 arguments |
+| 1 min | 9 | 10 min | 51 | 0.9 ms | 564 arguments |
+| 10 min | 6 | 70 min | 351 | 4.6 ms | 3,864 arguments |
+| 70 min | 6 | 8 h | 2,451 | 33 ms | 26,964 arguments, not sent |
+| 8 h | 4 | 41 h | 12,251 | 192 ms | 134,764 arguments |
+| 41 h | 3 | 163 h | 49,001 | 784 ms | 539,014 arguments |
+
+Three things are wrong, and the first turn's model has all of them: a paste
+flattens the clipboard into the list, so the parts grow with the product of
+the pastes and not with the work; every edit rebuilds the whole list and
+sends it whole, to the server as one `/buffer_stitch` and to the window as
+its `segments`; and once the stitch outgrows a packet the server never
+receives it, so the editor waits for a `/done` that does not come and the
+application hangs. The root of it is where the model was put: an
+application's lists, their reading from disk and their peaks were placed in
+the server, as if the server were the application, and every edit became a
+message carrying them.
+
+**The field's shape** (two reference applications studied with the user,
+2026-10-23, described here by technique): the edit structure, the disk
+reading and the peaks are the application's, in its own process, and the
+real-time engine receives only samples already read. A track is an ordered
+array of references to immutable blocks of samples of bounded size,
+shared between the take, the clipboard and the history: a copy shares the
+whole blocks and copies only the two partial ones at its edges, and a paste
+splits one block at the insertion point and shares the rest, so the number
+of entries follows the length and never the number of pastes. Or a track is a
+playlist of regions, each a window onto a file with its fades, and an edit
+changes regions. Either way a thread of the application reads the structure
+ahead of the playhead into one ring per channel, following the transport's
+position and its loop (a loop read straight through), and the real-time
+callback only consumes the rings, mixes and runs the effects. An edit sends
+the engine nothing: the structure changes and the reading thread refills. A
+crossfade between overlapping regions is applied by that reading, on the
+fly, from the regions' fade curves; a destructive one is a render of the
+span into new blocks. The transport is owned by the engine side and
+advanced by the real-time thread; the reader follows it, and a locate waits
+for the reader to refill before it rolls (the pre-roll).
+
+**The scope** *(the user, 2026-10-23)*. Only the design of the
+applications that edit and mix audio changes: the audio editor and the
+multitrack. The clients keep their live, offline and embedded servers, the
+design of server and host to client stays, and so does the shared memory
+between the clients, the host and the server. What changes is how these
+applications are built from what exists, and that the server is cleaned of
+what belongs to an application's domain.
+
+**The model** *(decided with the user, 2026-10-23)*:
+
+- **An application holds its engine.** An editing application is one
+  program, natively and in a page: the host (its windows and drawing), the
+  application's domain (`clausters-apps`, the document, the take's
+  structure, undo, peaks, the disk reader, the session file) and the engine
+  (the node tree, the DSP, the transport, the effects), embedded and spoken
+  to by direct calls: built commands through the engine's lock-free FIFO,
+  garbage back through its FIFO, the transport read from atomics. No OSC
+  between them, and no external channel. A client drives the application by
+  its handler's verbs, as it does now, and never speaks to its engine.
+- **The two domains are kept apart.** The engine knows no file, segment,
+  list or peaks; the application knows no DSP beyond asking for nodes and
+  effects.
+- **A take is shared blocks, and an edit costs the edit.** The take's
+  structure shares what a copy, a paste, an undo and a redo share, so a
+  paste's cost and the take's size follow the length edited and never the
+  number of pastes before it; the clipboard holds a reference. The exact
+  structure (bounded blocks, or regions over files, or a tree of either) is
+  the milestone's to measure against the pattern above.
+- **The application reads its takes.** A thread of the application reads
+  the structure ahead of the transport into one ring per channel, which a
+  node of the engine consumes through memory both own, with no copy but the
+  read into the ring. It follows the transport's position and loop, and the
+  application pre-rolls it before a play. Fades, channel maps, seams and
+  crossfades are applied in that read.
+- **Everything is done with the core's functions, identical bit for bit**
+  natively and in a page: the PCM reads and writes, a part's read with its
+  fades and map, the peaks' summary, the offline render. A render the
+  application needs (a gain, a mix, a stroke, a consolidation, peaks) runs on
+  the core's offline render in the application's own threads.
+- **Written once, for both applications.** The take's structure, the reader,
+  the rings, the peaks and the session file are modules the audio editor and
+  the multitrack share, with no code duplicated between them or between the
+  native host and the page.
+- **An effect is added to the application, not to the engine** *(the
+  user)*. A client may send a def of an effect, in the application's
+  context: where the application has a list of effects or plugins, sending
+  it a def adds one to that list, and the application loads it into its
+  engine and inserts it where it belongs.
+- **The audio editor has a session file** *(the user; it supersedes the
+  first turn's seventh decision)*. Ephemeral if need be, one per file being
+  worked on, holding the state of its edit and the information related to
+  it. What it holds beyond that, and where it lives, is decided with the user
+  when its milestone opens.
+- **The server's transports keep their role** *(the user)*: patterns and
+  sound generated in real time, sample-synchronous playback of files, and OSC
+  and MIDI messages (messages, not buffers of samples). Optimizations of
+  those stay; editing logic in general does not belong there.
+
+**What `edit` gives a client** *(discussed with the user, 2026-10-23)*.
+The verb's intention does not change: it opens the application and answers
+the editor, which **stays the handler** the client drives the application
+through, for both applications. What the client keeps is data it can use.
+
+- **The audio editor** answers the editor; the edited **file** is the data
+  the client uses. **Only sound files are edited** *(decided by the user,
+  2026-10-23)*: `edit` of a `clausters.Buffer` goes, since a buffer is loaded
+  in another server (the client's), which the application's engine does not
+  reach.
+- **The multitrack** opens from its session file: `edit` of a
+  `clausters.multitrack.Session` (the file, not `clausters.Session`, the
+  client's connection to a server, and not the audio editor's session file:
+  three things, kept apart by name) has the application resolve its
+  sources, read its takes and play them on its engine. The `Multitrack`
+  object stays a live handle: while the application has it open, a read or
+  a write through it (`region.position = 2.0`) goes through the handler to
+  the application, the document's one owner, so the client sees in the same
+  object what a hand did and there are never two copies to keep in step;
+  closed, it is a document the client edits and saves by code. The client
+  writes a multitrack by code, reads it as data, and hands it to the
+  application to hear it; it does not play or render one itself, and asks
+  the application for that (an offline render with no window is one of its
+  verbs).
+- **What leaves the client**: `server=` and `sources=` on both editors, the
+  playback over the client's server (`MultitrackEditor.playback`),
+  `Session.load(server)` and the table of buffers it answers, and the
+  client's loading plan (`editing_load`), in both clients.
+
+**In a page** the same program runs with the engine in the audio worklet
+and the application in a worker, sharing memory (a `SharedArrayBuffer`, wasm
+with threads, and the origin isolation that needs). Moving spans with
+`postMessage`, which copies, goes. **An editing application in a page
+requires cross-origin isolation** *(decided by the user, 2026-10-23)*: it is
+served with `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`, and the earlier rule that the
+page's engine never uses shared memory, so as to embed in pages whose
+headers nobody controls (`docs/decisions.md`, "The browser engine is one wasm
+instance inside the AudioWorklet"), did not hold up and does not bind these
+applications.
+
+**What the server gives up** is root `PLAN.md`'s `S23`, widened to the
+application's domain (the lists with file parts, their reading, the editor's
+peaks and the cue serve an application and are audited there against the
+transports' role above).
+
+The milestones below replace what of `X28` and `X29` this turn changes;
+what `X28` built that the model keeps (renders into a working folder, the
+coordinator's per-completion waits, the changed-on-disk notice, the save
+over the opened file) carries over.
+
+- ⬜ **X30 - An editing application holds its engine.** The host links the
+  engine and speaks to it by direct calls, natively and in a page (the
+  engine in the worklet, the application in a worker, over shared memory);
+  the audio editor's playback, its transport and its nodes move from OSC
+  steps to those calls; a client's verbs reach the application through its
+  handler as before. **The design** *(the survey of 2026-10-23 and the
+  user's answers the same day)*:
+  - **Where the application runs today, and where it goes.** The audio
+    editor's coordinator, operations and playback run inside the client's
+    process (the Python client through its FFI, a page in its wasm): the
+    client owns the window, takes its `/gui_event`s, walks the steps and
+    sends their OSC to its server, and the host only draws. The standalone
+    host already owns a multitrack and a take monitor and walks their steps
+    itself (`host/instance.rs`). In this milestone the **host becomes the
+    audio editor's owner**: it runs the coordinator of `clausters-apps` and
+    its playback against an engine of its own, the same code natively, in a
+    page and standalone.
+  - **The client is the handler, through the host's doors.** `edit` of a
+    `SoundFile` asks the host to open the application on it and answers the
+    editor; the verbs go through `/gui_verb`, as now; what `call_json` and
+    the editor's queries (`file`, `save`, `parts`) answer today comes back
+    through a call door of the GUI protocol (an open and a call, with their
+    replies, named when they are written). Both clients are the same thin
+    handler, and the coordinator they run today through the FFI goes at the
+    end of the milestone.
+  - **The engine is spoken to with built commands, never OSC** *(decided by
+    the user)*: the application builds the engine's `Cmd`s itself (a synth
+    from its compiled def, a group, a transport command, a buffer) and
+    pushes them through the engine's FIFO, with the engine's own device
+    stream in the host's process. The building is shared with the server
+    (the def compilation and the synth's construction its translator already
+    does), taken as a library, not written twice.
+  - **A page** keeps the engine in the worklet; the application runs in the
+    host's wasm, over the shared memory the section above requires.
+  - **Beside a client's server**: the application's device stream and a
+    live server a client boots are two engines on one machine, as the user
+    accepted.
+  **Acceptance:** the audio editor plays, loops, stops and
+  locates with no OSC between application and engine, natively and in a
+  page; a client's verbs and the application's answers are unchanged in both
+  clients; a live server a client boots beside it plays on undisturbed.
+- ⬜ **X31 - A take is shared blocks.** The take's structure, the clipboard
+  and the history share what they hold; copy, paste, cut, undo and redo cost
+  the span edited. **Acceptance:** the pattern above run to more than a
+  hundred hours, each paste answering in a time that does not grow with the
+  length or with the pastes before it, the window's update bounded by what it
+  draws, and memory bounded by the structure's size, measured in release in
+  `tests/`.
+- ⬜ **X32 - The application reads its takes, and draws them.** The
+  application's reader thread fills the rings an engine node consumes,
+  following the transport and its loop, pre-rolled before a play; the peaks
+  are measured and read by the application through the core. **Acceptance:**
+  a cued play sounds from its first frame, a loop across seams of three files
+  plays with no silent frame, a locate never plays a stale frame, the audio
+  thread neither allocates nor waits, natively and in a page.
+- ⬜ **X33 - The audio editor's session file.** Contents and place decided
+  with the user when it opens. **Acceptance:** written with it.
+- ⬜ **X34 - The multitrack over the same modules.** What `X29` asked
+  (sessions of hour-long takes opening in the time of their peaks, a comping
+  pass of quarter-second parts with no click or underrun), on the modules of
+  `X30` to `X32`, regions with their fades and crossfades read by the
+  application's reader.
 
 ## Definition of done (per milestone)
 

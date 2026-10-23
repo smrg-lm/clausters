@@ -1631,6 +1631,10 @@ ring the native embed mode uses (`Segment::in_memory`), and each 128-frame
 render quantum runs one serving turn before its two 64-frame engine blocks
 (the pulled `step()` pacing, tested natively in `tests/headless.rs`).
 
+- *(Revised 2026-10-23: this requirement did not hold up, and an editing
+  application in a page requires cross-origin isolation and shares memory;
+  see "An editing application holds its engine, and the server holds no
+  application's lists".)*
 - **No SharedArrayBuffer, by requirement.** SAB needs COOP/COEP isolation
   headers, which an embeddable component cannot demand of its host page. The
   MessagePort path has no header requirement at all. The ring seam keeps a
@@ -10895,3 +10899,65 @@ does not wait for a render out: that render commits after the step, and
 waiting on it from inside the queue its rest is queued on would never end.
 A page or a test that wants everything landed waits from outside the queue
 (`AudioDomain.settled`).
+
+## An editing application holds its engine, and the server holds no application's lists (2026-10-23)
+
+The first turn (above, "An application's takes live on disk") put the audio
+editor's take on disk as a segment list, and put the list in the server: a
+`/buffer_stitch` whose parts name files, read by a stream reader inside the
+server, with the editor's peaks measured by server renders. Measured with a
+pattern of copies and pastes that reaches hours (ten seconds pasted five
+times, that minute nine times, those ten minutes six times, and on), it
+fails in three ways. A paste flattens the clipboard into the list, so the
+list grows with the product of the pastes (6, 51, 351, 2,451, 12,251, 49,001
+parts) rather than with the work. Every edit rebuilds the list and sends it
+whole, to the server and to the window, so an edit costs the take's size
+(784 ms at 163 hours, in the editor alone). And at about 2,500 parts the
+stitch outgrows a packet: the server never receives it, the editor waits for
+its `/done`, and the application hangs.
+
+The cause is not a slow function but where the model lives. The server is a
+real-time sound server, close to a plugin host; an editing application
+handles its information otherwise. The field's editors keep the edit
+structure, the disk reading and the peaks in the application, sharing
+immutable blocks between the take, the clipboard and the history so a paste
+costs what it edits, and a thread of the application reads ahead of the
+playhead into one ring per channel; the real-time engine receives only
+samples already read, and an edit sends it nothing.
+
+**So an editing application holds its engine.** The audio editor and the
+multitrack are each one program, natively and in a page: the host, the
+application's domain and the engine, embedded and spoken to by direct calls
+(built commands through the engine's FIFO, the transport read from
+atomics), with no OSC and no external channel between them. The
+application owns the take's structure, its reading into rings an engine node
+consumes, its peaks and its session file, all through the core's functions,
+identical bit for bit in both places, and written once for both
+applications. A client drives the application by its handler's verbs, and
+an effect a client sends is added to the application's own list of effects,
+which loads it into its engine.
+
+**The scope is these applications.** The clients keep their live, offline
+and embedded servers, the server and host to client design stays, and so
+does the shared memory between them. The server's transports keep their
+role: patterns and sound generated in real time, sample-synchronous playback
+of files, and OSC and MIDI messages. What the server held for an
+application's domain is audited and removed (root `PLAN.md`, `S23`).
+
+Three answers of the user the same day set its edges. The application
+speaks to its engine with built `Cmd`s, never OSC, building them with the
+server's own def compilation taken as a library. The audio editor edits
+sound files only: a `Buffer` lives in another server, which the
+application's engine does not reach. And an editing application in a page
+requires cross-origin isolation: the rule that the page's engine never uses
+shared memory, so as to embed in pages whose headers nobody controls (above,
+"The browser engine is one wasm instance inside the AudioWorklet"), did not
+hold up, and does not bind these applications.
+
+The trade-off: the application now carries an engine and a reader thread of
+its own, and a page needs shared memory between its worklet and its worker
+(a `SharedArrayBuffer`, wasm threads and origin isolation). In exchange an
+edit costs the edit, nothing crosses a process boundary per edit or per
+block, and the server's surface stops growing with the applications' needs.
+The plan is `crates/clausters-apps/PLAN.md`, "The second turn: an editing
+application holds its engine".
