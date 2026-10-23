@@ -834,15 +834,6 @@ impl TimeSpace {
     }
 }
 
-/// A shared picture compares by identity, without comparing all its samples.
-#[derive(Debug, Clone)]
-pub struct PreviewData(pub std::sync::Arc<crate::waveform::WaveformData>);
-impl PartialEq for PreviewData {
-    fn eq(&self, other: &Self) -> bool {
-        std::sync::Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
 /// What a claimed slot is fed this frame, with its resolved drawing rules.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SlotFrame {
@@ -899,8 +890,6 @@ pub enum SlotFrame {
         /// **The loudness layer**: the measured curve, its own scale and what
         /// a span of it measures. Empty where no layer asks for one.
         loudness: crate::host::elements::signal::LoudnessFrame,
-        /// Processed samples, sharing the original axis and body.
-        preview: Option<PreviewData>,
         /// How a texture layer is coloured and scaled. Meaningless where the
         /// stack has none, and cheap enough to state anyway.
         look: TextureLook,
@@ -2331,7 +2320,7 @@ pub trait OnAxis {
     /// **Whether this element bounds its group's axis**: a view of a take,
     /// whose time ends where its samples do. A group holding one navigates
     /// exactly that extent -- no authoring headroom, no empty grid -- and the
-    /// other members on the axis (a curve over the take, its preview) are read
+    /// other members on the axis (a curve over the take) are read
     /// on it without lengthening it. `false` by default.
     fn bounds_axis(&self) -> bool {
         false

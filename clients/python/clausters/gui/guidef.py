@@ -939,7 +939,7 @@ def _folded(folded):
 
 
 def signal(*, view: str | None = None, data=None, blob: int | None = None,
-           buffer: int | None = None, preview_buffer: int | None = None, segments: dict | None = None, path: str | None = None, cache: str | None = None,
+           buffer: int | None = None, segments: dict | None = None, path: str | None = None, cache: str | None = None,
            bus: int | None = None, rate: str | None = None, channels: int | None = None,
            retention: float | None = None,
            base_bucket: int | None = None, navigable: bool | None = None,
@@ -1014,10 +1014,6 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       from its storage. Setting a new list is the same take edited: the view
       keeps its picture until the new one has come whole.
 
-    - ``preview_buffer`` -- an optional processed server buffer drawn over the
-      original samples on the same axis. It never becomes the edit/copy source.
-      Set it to ``None`` to clear the overlay.
-
     - ``folded`` -- the channel indices a stacked view draws folded: a strip one
       control tall with the channel's name and its peaks, the open rows sharing
       the rest. A press on a strip's name reports ``"unfold" channel``. An open
@@ -1076,7 +1072,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     through the window its container states, which is the ordinary one.
     """
     extra = _drop_none(view=view, data=_samples_arg(data),
-                       blob=blob, buffer=buffer, preview_buffer=preview_buffer, segments=segments, path=path, cache=cache,
+                       blob=blob, buffer=buffer, segments=segments, path=path, cache=cache,
                        retention=retention, folded=_folded(folded),
                        bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
                        layers=layers, measure=measure, at=at, dur=dur, start=start,
@@ -1989,7 +1985,7 @@ def dialog(*children, title: str | None = None, flow: str | None = None,
 
 
 def waveform(*, autofit: bool | None = None,
-             data=None, blob: int | None = None, buffer: int | None = None, preview_buffer: int | None = None, segments: dict | None = None,
+             data=None, blob: int | None = None, buffer: int | None = None, segments: dict | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, overlay: bool | None = None, folded=None,
              layers=None, measure: str | None = None, fills: bool | None = None,
@@ -2129,7 +2125,7 @@ def waveform(*, autofit: bool | None = None,
     (it keeps the view it had). Only the vertical window ``y_start``/``y_len``
     stays per-view."""
     extra = _drop_none(data=_samples_arg(data),
-                       blob=blob, buffer=buffer, preview_buffer=preview_buffer, segments=segments, path=path, cache=cache,
+                       blob=blob, buffer=buffer, segments=segments, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket, folded=_folded(folded),
                        layers=layers, measure=measure,
                        loudness_target=loudness_target, loudness_scale=loudness_scale,
@@ -2153,7 +2149,7 @@ def waveform(*, autofit: bool | None = None,
 
 
 def spectrogram(*, autofit: bool | None = None,
-                data=None, blob: int | None = None, buffer: int | None = None, preview_buffer: int | None = None, segments: dict | None = None,
+                data=None, blob: int | None = None, buffer: int | None = None, segments: dict | None = None,
                 path: str | None = None, cache: str | None = None, channels: int | None = None,
                 folded=None, window_size: int | None = None, hop: int | None = None,
                 sample_rate: float | None = None, db_floor: float | None = None,
@@ -2216,7 +2212,7 @@ def spectrogram(*, autofit: bool | None = None,
     documented whole in `signal`; the ``y`` is what keeps two quantities off
     one vertical."""
     extra = _drop_none(data=_samples_arg(data),
-                       blob=blob, buffer=buffer, preview_buffer=preview_buffer, segments=segments, path=path, cache=cache,
+                       blob=blob, buffer=buffer, segments=segments, path=path, cache=cache,
                        channels=channels, folded=_folded(folded), window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        colormap=colormap, layers=layers, color=color)

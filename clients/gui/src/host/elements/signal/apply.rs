@@ -24,27 +24,6 @@ impl SignalElement {
     /// Applies one `/gui_set` key/value to this element.
     pub(crate) fn apply(&mut self, key: &str, v: &Value) -> bool {
         let handled = match key {
-            "preview_buffer" => {
-                self.preview_buffer = v.as_i64().filter(|n| *n >= 0).map(|n| n as i32);
-                self.preview_view = self.preview_buffer.map(|buffer| {
-                    let mut view = SignalElement::from_preset(&super::point(
-                        Presentation::Signal,
-                        false,
-                        true,
-                    ));
-                    if let Source::Data(data) = &mut view.source {
-                        data.buffer = Some(buffer);
-                    }
-                    Box::new(view)
-                });
-                self.preview_asked = false;
-                // A texture drawn from the preview goes back to the source's
-                // samples, or waits for the new preview's.
-                if self.is_texture_view() {
-                    self.slot_dirty = true;
-                }
-                true
-            }
             // The source.
             "bus" => match self.source.bus_mut() {
                 Some(b) => v.as_i64().map(|n| b.bus = n as i32).is_some(),

@@ -751,34 +751,6 @@ pub(super) fn draw_timeline_meshes(
                 }
             }
         }
-        // **The preview is drawn as the view it previews**: over traces, the
-        // processed trace; over a texture, nothing here -- the texture itself
-        // is analyzed from the preview's samples (`SignalElement::fill`).
-        if let Some(preview) = &look.preview
-            && look.axis == Domain::Amplitude
-        {
-            let trace = crate::host::graphics::signal::trace::Trace::Data(&preview.0);
-            for ch in 0..channels.min(preview.0.num_channels()) {
-                let row = look
-                    .lanes
-                    .rect(body, rows, if look.overlay { 0 } else { ch });
-                crate::waveform::draw_channel(
-                    over,
-                    row,
-                    &trace,
-                    ch,
-                    &local,
-                    look.domain,
-                    look.y,
-                    crate::host::graphics::signal::trace::TraceStyle::new(
-                        with_alpha(th.series(channel_series(look.overlay, ch) + 1), 0.7),
-                        m.trace_w,
-                    )
-                    .with_measure(crate::host::graphics::signal::trace::Measure::Peak)
-                    .with_rate(item.editor.sample_rate),
-                );
-            }
-        }
         for ch in 1..rows {
             let row = look.lanes.rect(body, rows, ch);
             over.rect(

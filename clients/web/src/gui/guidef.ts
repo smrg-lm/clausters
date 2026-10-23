@@ -1331,7 +1331,7 @@ export type SignalLayers = string | (string | SignalLayer)[];
  * name and document the six common points of the product.
  */
 export function signal(
-    options: SourceOptions & PreviewOptions & SegmentsOptions & {
+    options: SourceOptions & SegmentsOptions & {
         view?: string;
         bus?: number;
         rate?: "audio" | "control";
@@ -1440,7 +1440,7 @@ export function signal(
     } = {},
 ): GuiNode {
     const {
-        view, cache, path, buffer, previewBuffer, segments, data, blob, channels, bus, rate, retention,
+        view, cache, path, buffer, segments, data, blob, channels, bus, rate, retention,
         baseBucket, navigable, selectable, editable, overlay, folded, layers, measure, fills, at, dur,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats,
         start, loop, axes: pair, label: text, ...rest
@@ -1448,7 +1448,7 @@ export function signal(
     return node("signal", {
         ...rest,
         ...(pair === undefined ? {} : { axes: pair }),
-        ...sourceProps({ cache, path, buffer, previewBuffer, segments, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, segments, data, blob, channels }),
         ...drop([
             ["view", view],
             ["bus", bus],
@@ -2709,7 +2709,7 @@ export function dialog(
  * there.
  */
 export function waveform(
-    options: SourceOptions & PreviewOptions & SegmentsOptions & TimelineOptions & {
+    options: SourceOptions & SegmentsOptions & TimelineOptions & {
         /** The peak-pyramid bucket size (default 256). */
         baseBucket?: number;
         /** Draw the channels as overlaid traces instead of stacked lanes. */
@@ -2775,7 +2775,7 @@ export function waveform(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, previewBuffer, segments, data, blob, channels, baseBucket, overlay,
+        cache, path, buffer, segments, data, blob, channels, baseBucket, overlay,
         folded, rulerY, bitDepth, min, max, layers, measure, fills,
         loudnessTarget, loudnessScale, loudnessRuler, loudnessStats, ...timeline
     } = options;
@@ -2785,7 +2785,7 @@ export function waveform(
             timeline,
             drop([["unit", rulerY], ["bit_depth", bitDepth], ["min", min], ["max", max]]),
         ),
-        ...sourceProps({ cache, path, buffer, previewBuffer, segments, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, segments, data, blob, channels }),
         ...drop([
             ["base_bucket", baseBucket],
             ["overlay", flag(overlay)],
@@ -2817,7 +2817,7 @@ export function waveform(
  * and `colormap` picks 0 viridis / 1 magma / 2 grayscale.
  */
 export function spectrogram(
-    options: SourceOptions & PreviewOptions & SegmentsOptions & TimelineOptions & {
+    options: SourceOptions & SegmentsOptions & TimelineOptions & {
         windowSize?: number;
         hop?: number;
         dbFloor?: number;
@@ -2842,13 +2842,13 @@ export function spectrogram(
     } = {},
 ): GuiNode {
     const {
-        cache, path, buffer, previewBuffer, segments, data, blob, channels, folded, windowSize,
+        cache, path, buffer, segments, data, blob, channels, folded, windowSize,
         hop, dbFloor, dbCeil, freqScale, logFreq, colormap, layers, rulerY, ...timeline
     } = options;
     return node("signal", {
         view: "spectrogram",
         ...timelineProps(timeline, drop([["unit", rulerY]])),
-        ...sourceProps({ cache, path, buffer, previewBuffer, segments, data, blob, channels }),
+        ...sourceProps({ cache, path, buffer, segments, data, blob, channels }),
         ...drop([
             ["folded", folded === undefined ? undefined : [...folded]],
             ["window_size", windowSize],
@@ -3659,22 +3659,15 @@ export const curve = bpf;
 export const nodes = nodetree;
 export const keys = piano;
 
-/** A navigable view's processed picture over its source. */
-export interface PreviewOptions {
-    /** Processed buffer drawn over the source; never used for edits or copy. */
-    previewBuffer?: number | null;
-}
-
 /** A heavy view's data source as wire props. */
 function sourceProps(options: Pick<SourceOptions,
-    "cache" | "path" | "buffer" | "data" | "blob" | "channels"> & PreviewOptions & SegmentsOptions): Props {
-    const { cache, path, buffer, previewBuffer, data, blob, channels, segments } = options;
+    "cache" | "path" | "buffer" | "data" | "blob" | "channels"> & SegmentsOptions): Props {
+    const { cache, path, buffer, data, blob, channels, segments } = options;
     return drop([
         ["cache", cache],
         ["path", path],
         ["buffer", buffer],
         ["segments", segments],
-        ["preview_buffer", previewBuffer],
         // A `Source` and `KEEP` pass through untouched -- `node` expands a
         // source into the carrier it picked, and a keep is a word about the
         // host's own copy; anything else is read into an array here.

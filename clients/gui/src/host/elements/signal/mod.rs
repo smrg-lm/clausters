@@ -483,10 +483,6 @@ pub struct Display {
 pub struct SignalElement {
     pub presentation: Presentation,
     pub source: Source,
-    /// Optional processed samples drawn over the immutable edit source.
-    pub preview_buffer: Option<i32>,
-    pub preview_view: Option<Box<SignalElement>>,
-    pub preview_asked: bool,
     /// **The layer stack this picture is**: what is drawn on the one body, in
     /// what order, at what weight, and which of them the vertical belongs to.
     ///
@@ -589,9 +585,6 @@ impl SignalElement {
         SignalElement {
             presentation: p.presentation,
             layers: crate::host::graphics::signal::layers::of_presentation(p.presentation),
-            preview_buffer: None,
-            preview_view: None,
-            preview_asked: false,
             fills: false,
             owner_copies: false,
             written: 0,

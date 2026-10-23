@@ -190,9 +190,6 @@ pub(crate) fn signal_element(
             .map(|n| (n as usize).max(1))
             .unwrap_or(1)
     });
-    if let Some(preview) = props.get("preview_buffer") {
-        el.apply("preview_buffer", preview);
-    }
     el.source = if p.live {
         signal::Source::Bus(signal::Bus {
             bus: int_prop(props, "bus", 0),

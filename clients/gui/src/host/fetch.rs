@@ -269,7 +269,7 @@ pub(crate) struct BufferFetches {
     /// [`PEAKS_IN_FLIGHT`] of them answering at once.
     peaks: Vec<PeaksAsk>,
     /// **Takes a plural asker is owed the summary of** -- a multitrack's
-    /// clips, a view's preview -- waiting for the asker to be drawn, since its
+    /// clips -- waiting for the asker to be drawn, since its
     /// width is what says the level: `(def_id, widget_id, bufnum, shape)`.
     owed: Vec<(i32, i32, i32, crate::host::widget::element::OwedSummary)>,
     /// **The spectrogram columns a view of a list is owed** over the span it

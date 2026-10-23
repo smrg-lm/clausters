@@ -103,15 +103,9 @@ impl SignalElement {
         fills
     }
 
-    /// **The samples an analysis can be run over**, interleaved: the
-    /// preview's, while one is shown and its samples are here -- the preview
-    /// of a spectrogram is the spectrogram of the result, drawn in its place
-    /// -- else this element's own.
+    /// **The samples an analysis can be run over**, interleaved.
     fn analyzable(&self) -> Option<(Vec<f32>, usize)> {
-        self.preview_view
-            .as_deref()
-            .and_then(SignalElement::own_analyzable)
-            .or_else(|| self.own_analyzable())
+        self.own_analyzable()
     }
 
     /// The samples of this element's own source: the inline run, else the
@@ -351,35 +345,5 @@ mod tests {
             crate::host::bands::Lanes::default(),
             "overlaid traces share one row and fold nothing"
         );
-    }
-
-    /// **A preview is drawn as the view it previews.** A spectrogram with a
-    /// preview shown is analyzed from the preview's samples once they land,
-    /// so the texture is the result's; cleared, it is the take's again.
-    #[test]
-    fn a_spectrograms_preview_is_the_spectrogram_of_the_result() {
-        use crate::host::widget::element::{Loaded, Samples};
-        let mut take = element(
-            r#"{"id":1,"type":"signal","view":"trace","measure":"spectrogram","buffer":7}"#,
-        );
-        take.take(Loaded::Raw {
-            samples: vec![0.5; 1024],
-            channels: 1,
-        });
-        assert_eq!(take.analyzable().unwrap().0[0], 0.5, "the take's own");
-        assert!(take.apply("preview_buffer", &serde_json::json!(8)));
-        take.slot_dirty = false;
-        assert!(take.bulk_of(
-            8,
-            Loaded::Raw {
-                samples: vec![0.125; 1024],
-                channels: 1
-            }
-        ));
-        assert!(take.slot_dirty, "the preview's samples rebuild the texture");
-        assert_eq!(take.analyzable().unwrap().0[0], 0.125, "the result's");
-        assert!(take.apply("preview_buffer", &serde_json::json!(-1)));
-        assert!(take.slot_dirty);
-        assert_eq!(take.analyzable().unwrap().0[0], 0.5, "the take's again");
     }
 }

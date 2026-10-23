@@ -1283,6 +1283,3 @@ reads seconds-based quads, `show_envelope` selects the curve body, and
 same undo order as host gestures. The window request accepts the caller-owned
 `envelope` widget id beside `widget` and `pane`. These are JSON payloads over
 the existing door; no C or wasm symbol or ABI counter changes.
-
-Signal builders spell the wire `preview_buffer` as Python `preview_buffer`
-and TypeScript `previewBuffer`.

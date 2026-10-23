@@ -195,19 +195,12 @@ impl Element for SignalElement {
     /// array where any of them is not. A script reads back what it set, and a
     /// script that set nothing reads what the presentation drew.
     fn info(&self) -> Vec<(String, Value)> {
-        vec![
-            ("layers".into(), Value::String(self.layers.to_wire())),
-            (
-                "preview_buffer".into(),
-                self.preview_buffer.map_or(Value::Null, Value::from),
-            ),
-        ]
+        vec![("layers".into(), Value::String(self.layers.to_wire()))]
     }
 
     fn needs(&self) -> Needs {
         let mut needs = Needs {
             retention: self.retention(),
-            takes: self.preview_buffer.into_iter().collect(),
             bulk: self.want(),
             slot: self.slot_kind(),
             ..Default::default()
@@ -430,36 +423,10 @@ impl Slotted for SignalElement {
 }
 
 impl Samples for SignalElement {
-    fn ask_takes(&mut self, all: bool) -> Vec<i32> {
-        if all || !self.preview_asked {
-            self.preview_asked = true;
-            self.preview_buffer.into_iter().collect()
-        } else {
-            Vec::new()
-        }
-    }
-
-    fn bulk_of(&mut self, bufnum: i32, data: Loaded) -> bool {
-        if self.preview_buffer != Some(bufnum) {
-            return self.source_buffer() != Some(bufnum);
-        }
-        let took = self
-            .preview_view
-            .as_mut()
-            .is_some_and(|view| view.take(data));
-        // A texture is analyzed from the preview's samples: they landed, so
-        // the picture is built again from them.
-        if took && self.is_texture_view() {
-            self.slot_dirty = true;
-        }
-        took
-    }
-
-    fn secondary_samples(&mut self) -> Vec<&mut dyn Samples> {
-        self.preview_view
-            .as_mut()
-            .map(|v| vec![v.as_mut() as &mut dyn Samples])
-            .unwrap_or_default()
+    fn bulk_of(&mut self, bufnum: i32, _data: Loaded) -> bool {
+        // An answer for a take this view does not read is consumed rather
+        // than applied through its own source's unlabelled fallback.
+        self.source_buffer() != Some(bufnum)
     }
 
     fn wants_reload(&mut self) -> Option<crate::host::widget::element::Bulk> {
@@ -766,10 +733,6 @@ impl SignalElement {
 }
 
 impl SignalElement {
-    pub(super) fn preview_data(&self) -> Option<Arc<crate::waveform::WaveformData>> {
-        self.preview_view.as_ref()?.source.data()?.body.clone()
-    }
-
     /// The one picture a signal is, or `None` when it draws on the mesh.
     fn one_slot(&self, ctx: &Ctx) -> Option<SlotFrame> {
         if !self.caps.navigable {
@@ -795,9 +758,6 @@ impl SignalElement {
                 y: self.editor.y_view(),
                 overlay: self.display.overlay,
                 lanes: self.lanes(ctx.metrics),
-                preview: self
-                    .preview_data()
-                    .map(crate::host::widget::element::PreviewData),
                 loudness: self.loudness.frame(),
                 look: self.look(),
             }),

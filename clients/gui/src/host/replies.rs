@@ -472,9 +472,7 @@ pub(crate) trait Front {
                 .window_def(want.def_id)
                 .and_then(|t| t.find(want.widget_id))
                 .and_then(|w| w.bulk_target().signal())
-                .is_some_and(|signal| {
-                    signal.source_buffer() != Some(bufnum) && signal.preview_buffer != Some(bufnum)
-                })
+                .is_some_and(|signal| signal.source_buffer() != Some(bufnum))
             {
                 continue;
             }
@@ -525,7 +523,7 @@ pub(crate) trait Front {
     /// the shape; the summary is asked once the view has been drawn and its
     /// width says the level (`ask_owed_spans`), and handed over whole when it
     /// has come ([`Self::place_level`]). A plural asker -- a multitrack's
-    /// clips, a view's preview -- is owed it in the fetch machine, at the
+    /// clips -- is owed it in the fetch machine, at the
     /// widest picture the asker draws.
     fn owe_summary(
         &mut self,

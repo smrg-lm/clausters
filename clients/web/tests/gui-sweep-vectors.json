@@ -2752,15 +2752,6 @@
  },
  {
   "builder": "signal",
-  "option": "preview_buffer",
-  "value": 7,
-  "tree": {
-   "type": "signal",
-   "preview_buffer": 7
-  }
- },
- {
-  "builder": "signal",
   "option": "segments",
   "value": {
    "a": "b"
@@ -3144,16 +3135,6 @@
    "type": "signal",
    "view": "spectrogram",
    "buffer": 7
-  }
- },
- {
-  "builder": "spectrogram",
-  "option": "preview_buffer",
-  "value": 7,
-  "tree": {
-   "type": "signal",
-   "view": "spectrogram",
-   "preview_buffer": 7
   }
  },
  {
@@ -4386,6 +4367,33 @@
  },
  {
   "builder": "view",
+  "option": "activation",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "activation": 1
+  }
+ },
+ {
+  "builder": "view",
+  "option": "progress",
+  "value": 3.5,
+  "tree": {
+   "type": "window",
+   "progress": 3.5
+  }
+ },
+ {
+  "builder": "view",
+  "option": "progress_label",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "progress_label": "q"
+  }
+ },
+ {
+  "builder": "view",
   "option": "split",
   "value": true,
   "tree": {
@@ -4520,16 +4528,6 @@
    "type": "signal",
    "view": "trace",
    "buffer": 7
-  }
- },
- {
-  "builder": "waveform",
-  "option": "preview_buffer",
-  "value": 7,
-  "tree": {
-   "type": "signal",
-   "view": "trace",
-   "preview_buffer": 7
   }
  },
  {
@@ -5116,6 +5114,33 @@
   "tree": {
    "type": "window",
    "ask_close": 1
+  }
+ },
+ {
+  "builder": "window",
+  "option": "activation",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "activation": 1
+  }
+ },
+ {
+  "builder": "window",
+  "option": "progress",
+  "value": 3.5,
+  "tree": {
+   "type": "window",
+   "progress": 3.5
+  }
+ },
+ {
+  "builder": "window",
+  "option": "progress_label",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "progress_label": "q"
   }
  },
  {

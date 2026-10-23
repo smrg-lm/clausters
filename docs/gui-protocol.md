@@ -1454,15 +1454,3 @@ the take's length — over an hour of stereo, 760 columns read 37 MB and take
 under a tenth of a second natively. The view keeps the columns it has until the
 new ones have come, and an edit's new list is analyzed the same way. `hop` is
 the view's to choose here and is not read.
-
-### A processed signal over its source
-
-`signal` accepts optional `preview_buffer` (a server buffer id; a negative id or `null`
-clears it). **The preview is drawn as the view it previews**: where traces
-claim the vertical, the processed waveform is drawn on the same time axis and
-amplitude scale over the original; where a spectrogram claims it, the texture
-is analyzed from the processed samples instead of the original's, and no
-waveform is drawn over it. Both use the existing buffer fetch and peak summary
-paths. The original `buffer`/`path`/`cache` remains the source for editing, copy, cursor
-readout and navigation. The owner renders and frees the processed buffer; the
-host only reads it. Setting the prop again refreshes that picture.
