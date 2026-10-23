@@ -472,6 +472,42 @@ impl Applier {
                     ));
                 }
             }
+            Op::TransportRun { transport, rolling } => steps.extend(transport_command(
+                transport,
+                if rolling {
+                    "/transport_play"
+                } else {
+                    "/transport_stop"
+                },
+                Vec::new(),
+            )),
+            Op::TransportLocate { transport, sample } => steps.extend(transport_command(
+                transport,
+                "/transport_locateSample",
+                vec![OscType::Long(sample)],
+            )),
+            Op::TransportLoop { transport, span } => steps.extend(transport_command(
+                transport,
+                "/transport_loop",
+                span.map_or_else(Vec::new, |(start, end)| {
+                    vec![OscType::Long(start), OscType::Long(end)]
+                }),
+            )),
+            Op::TransportEnd { transport, mark } => steps.extend(transport_command(
+                transport,
+                "/transport_end",
+                mark.map_or_else(Vec::new, |(end, back)| {
+                    vec![OscType::Long(end), OscType::Long(back)]
+                }),
+            )),
+            Op::TransportFade { transport, samples } => steps.extend(transport_command(
+                transport,
+                "/transport_fade",
+                vec![OscType::Long(samples)],
+            )),
+            Op::TransportCue { transport } => {
+                steps.extend(transport_command(transport, "/transport_cue", Vec::new()))
+            }
         }
         Ok(())
     }

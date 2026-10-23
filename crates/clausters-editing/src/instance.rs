@@ -315,6 +315,52 @@ pub enum Op {
         /// Their names.
         names: Vec<String>,
     },
+    /// **Roll or stop transport `transport`** (`/transport_play`,
+    /// `/transport_stop`).
+    TransportRun {
+        /// The transport.
+        transport: i32,
+        /// Whether it rolls.
+        rolling: bool,
+    },
+    /// **Stand transport `transport` at `sample`** of its own axis
+    /// (`/transport_locateSample`).
+    TransportLocate {
+        /// The transport.
+        transport: i32,
+        /// Where it stands.
+        sample: i64,
+    },
+    /// **The span transport `transport` wraps inside**, or none
+    /// (`/transport_loop`).
+    TransportLoop {
+        /// The transport.
+        transport: i32,
+        /// `[start, end)` in samples, or `None` to stop looping.
+        span: Option<(i64, i64)>,
+    },
+    /// **Where a rolling transport stops**, and where it goes back to
+    /// (`/transport_end`), or no mark.
+    TransportEnd {
+        /// The transport.
+        transport: i32,
+        /// The end and the return, in samples, or `None` to clear the mark.
+        mark: Option<(i64, i64)>,
+    },
+    /// **How long a stop and a play ramp** on transport `transport`, in
+    /// samples (`/transport_fade`).
+    TransportFade {
+        /// The transport.
+        transport: i32,
+        /// The ramp's length.
+        samples: i64,
+    },
+    /// **Ready transport `transport`'s disk readers where it stands**
+    /// (`/transport_cue`), before a play.
+    TransportCue {
+        /// The transport.
+        transport: i32,
+    },
 }
 
 /// The multitrack's own instance.

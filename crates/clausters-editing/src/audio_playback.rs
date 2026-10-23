@@ -41,7 +41,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use clausters_core::audio_editor as ae;
 use clausters_core::ids::{IdError, IdSpaces, Space};
-use clausters_core::osc::OscType;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -338,11 +337,9 @@ impl AudioEditorPlayback {
             return steps;
         };
         steps.extend(self.pass_steps(&f, pass));
-        steps.extend(self.command(
-            "/transport_locateSample",
-            vec![OscType::Long(self.frames_to_samples(&f, start))],
-        ));
-        steps.extend(self.command("/transport_cue", vec![]));
+        let sample = self.frames_to_samples(&f, start);
+        steps.extend(self.transport_op(|transport| Op::TransportLocate { transport, sample }));
+        steps.extend(self.transport_op(|transport| Op::TransportCue { transport }));
         steps.extend(self.resume());
         steps
     }
@@ -388,25 +385,14 @@ impl AudioEditorPlayback {
     }
 
     /// The loop and the end mark `pass` asks of the transport, in `f`'s frames.
-    fn pass_steps(&self, f: &File, pass: Pass) -> Vec<Step> {
-        let (looping, end) = match pass {
-            Pass::Loop { from, to } => (
-                vec![
-                    OscType::Long(self.frames_to_samples(f, from)),
-                    OscType::Long(self.frames_to_samples(f, to)),
-                ],
-                vec![],
-            ),
-            Pass::Until { end, back } => (
-                vec![],
-                vec![
-                    OscType::Long(self.frames_to_samples(f, end)),
-                    OscType::Long(self.frames_to_samples(f, back)),
-                ],
-            ),
+    fn pass_steps(&mut self, f: &File, pass: Pass) -> Vec<Step> {
+        let at = |frame| self.frames_to_samples(f, frame);
+        let (span, mark) = match pass {
+            Pass::Loop { from, to } => (Some((at(from), at(to))), None),
+            Pass::Until { end, back } => (None, Some((at(end), at(back)))),
         };
-        let mut steps = self.command("/transport_loop", looping);
-        steps.extend(self.command("/transport_end", end));
+        let mut steps = self.transport_op(|transport| Op::TransportLoop { transport, span });
+        steps.extend(self.transport_op(|transport| Op::TransportEnd { transport, mark }));
         steps
     }
 
@@ -414,7 +400,10 @@ impl AudioEditorPlayback {
     /// continuing where it paused.
     pub fn resume(&mut self) -> Vec<Step> {
         self.rolling = true;
-        self.command("/transport_play", vec![])
+        self.transport_op(|transport| Op::TransportRun {
+            transport,
+            rolling: true,
+        })
     }
 
     /// **Pauses where it stands**: the stop rolls out its ramp, the output's
@@ -423,7 +412,10 @@ impl AudioEditorPlayback {
     /// frozen.
     pub fn pause(&mut self) -> Vec<Step> {
         self.rolling = false;
-        self.command("/transport_stop", vec![])
+        self.transport_op(|transport| Op::TransportRun {
+            transport,
+            rolling: false,
+        })
     }
 
     /// **Stops and goes back to `back`**, a frame of the file in focus: the
@@ -489,7 +481,10 @@ impl AudioEditorPlayback {
             Some(f) => self.frames_to_samples(f, frame),
             None => frame as i64,
         };
-        self.command("/transport_locateSample", vec![OscType::Long(at)])
+        self.transport_op(|transport| Op::TransportLocate {
+            transport,
+            sample: at,
+        })
     }
 
     /// **Loops the transport over frames `[from, to)` of the file in focus**,
@@ -503,11 +498,8 @@ impl AudioEditorPlayback {
             Some(f) => self.frames_to_samples(f, frame),
             None => frame as i64,
         };
-        let args = match span {
-            Some((from, to)) => vec![OscType::Long(at(from)), OscType::Long(at(to))],
-            None => vec![],
-        };
-        self.command("/transport_loop", args)
+        let span = span.map(|(from, to)| (at(from), at(to)));
+        self.transport_op(|transport| Op::TransportLoop { transport, span })
     }
 
     /// Frees everything the editor made, and the transport's marks with it,
@@ -521,8 +513,14 @@ impl AudioEditorPlayback {
         if self.rolling {
             steps.extend(self.pause());
         }
-        steps.extend(self.command("/transport_loop", vec![]));
-        steps.extend(self.command("/transport_end", vec![]));
+        steps.extend(self.transport_op(|transport| Op::TransportLoop {
+            transport,
+            span: None,
+        }));
+        steps.extend(self.transport_op(|transport| Op::TransportEnd {
+            transport,
+            mark: None,
+        }));
         let mut forget = vec![GOVERNED.to_string(), OUTPUT.to_string()];
         for (&file, f) in &self.files {
             forget.push(play_handle(file));
@@ -665,8 +663,8 @@ impl AudioEditorPlayback {
                 ],
                 ids,
             )?);
-            let fade = (FADE_SECS * self.rate).round() as i64;
-            steps.extend(self.command("/transport_fade", vec![OscType::Long(fade)]));
+            let samples = (FADE_SECS * self.rate).round() as i64;
+            steps.extend(self.transport_op(|transport| Op::TransportFade { transport, samples }));
         } else {
             steps.extend(self.applier.apply(
                 vec![
@@ -790,9 +788,9 @@ impl AudioEditorPlayback {
 
     /// A transport command on this playback's transport, awaited; nothing
     /// before it has one, since nothing of it is on the server yet.
-    fn command(&self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
+    fn transport_op(&mut self, op: impl FnOnce(i32) -> Op) -> Vec<Step> {
         match self.transport {
-            Some(transport) => crate::apply::transport_command(transport, addr, args),
+            Some(transport) => self.apply_plain(vec![op(transport)]),
             None => Vec::new(),
         }
     }
@@ -944,6 +942,7 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
 mod tests {
     use super::*;
     use clausters_core::ids::{IdShare, ServerShape};
+    use clausters_core::osc::OscType;
 
     fn spaces() -> IdSpaces {
         IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE)
