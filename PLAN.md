@@ -4603,8 +4603,12 @@ should confirm before the fix.
   the edit's answer comes back, so the curve is heard twice between the
   reader's fade into the new list and that answer. Putting the insert to
   unity with the stitch moves the fault to the other side (the dry take for
-  as long as the new list takes to read). The handoff belongs in the
-  server, where both are: the list reader says when the list it plays
-  changed, at the sample its fade begins, and the insert follows it --
-  which is the X28 acceptance's "nothing heard but the effect".
+  as long as the new list takes to read). A signal from the reader to the
+  insert does not reach it either: the insert gets the old list and the new
+  one already mixed by the reader's fade. What does is **the curve riding
+  the list**: a join carries the gain automation it is previewed with, the
+  list reader applies each list's own curve, and its fade then plays the old
+  list through its curve into the new one rendered through it -- which is
+  the X28 acceptance's "nothing heard but the effect", and also keeps a
+  curve aligned when a cut moves it under a preview that plays.
 
