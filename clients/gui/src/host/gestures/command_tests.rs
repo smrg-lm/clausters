@@ -499,6 +499,17 @@ fn a_paste_is_read_against_the_clipboard_and_its_destination() {
     assert!(!enabled(&host, "paste").enabled, "another channel count");
     host.clipboard.put(copy(2, 48000.0, 8), Vec::new());
     assert!(!enabled(&host, "paste").enabled, "another connection");
+    // a copy of spans of files, which an audio editor's copy is
+    let mut spans = Clipboard::text("");
+    spans.content = Content::Segments {
+        channels: 2,
+        frames: 10,
+        sample_rate: 48000.0,
+        parts: Vec::new(),
+    };
+    host.clipboard.put(spans, Vec::new());
+    assert!(enabled(&host, "paste").enabled, "segments paste");
+    assert!(enabled(&host, "mix").enabled, "and mix");
     host.clipboard.set_text("words");
     assert!(!enabled(&host, "paste").enabled, "text is not samples");
 }

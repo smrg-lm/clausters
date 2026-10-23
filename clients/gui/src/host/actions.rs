@@ -224,6 +224,12 @@ fn paste_fits(state: &mut ActionState, target: PasteTarget, mix: bool, clip: &Cl
                 frames,
                 sample_rate,
                 ..
+            }
+            | Content::Segments {
+                channels,
+                frames,
+                sample_rate,
+                ..
             },
         ) => {
             if *frames == 0 {
