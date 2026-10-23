@@ -136,6 +136,11 @@ pub enum Storage {
     /// the shape the file was found to have, so a part over it is validated
     /// and placed exactly as a part over a buffer is.
     File(crate::dsp::pcm::Layout),
+    /// **Samples its owner feeds**: frames a program that embeds the engine
+    /// reads and hands over through a ring, positioned by the transport
+    /// (`dsp::fed`). Nothing is held here and a random-access read is
+    /// silence, as for a file: one stream reader plays it.
+    Fed(std::sync::Arc<crate::dsp::fed::Fed>),
 }
 
 impl Storage {
@@ -148,7 +153,7 @@ impl Storage {
             Storage::Owned(v) => Some(v),
             #[cfg(unix)]
             Storage::Shared(r) => Some(r.cells()),
-            Storage::Stitched(_) | Storage::File(_) => None,
+            Storage::Stitched(_) | Storage::File(_) | Storage::Fed(_) => None,
         }
     }
 }
@@ -395,6 +400,36 @@ impl Buffer {
         }
     }
 
+    /// The fed stream this buffer is, when it is one.
+    #[inline]
+    pub fn fed(&self) -> Option<&std::sync::Arc<crate::dsp::fed::Fed>> {
+        match &self.data {
+            Storage::Fed(fed) => Some(fed),
+            _ => None,
+        }
+    }
+
+    /// **A buffer its owner feeds**, `frames` long and `channels` wide at
+    /// `sample_rate`, through `fed`. A buffer made again over the same `fed`
+    /// (the stream at a new length) keeps its reader's rings.
+    pub fn fed_by(
+        fed: std::sync::Arc<crate::dsp::fed::Fed>,
+        channels: usize,
+        frames: usize,
+        sample_rate: f64,
+    ) -> Self {
+        Self {
+            frames,
+            data: Storage::Fed(fed),
+            channels: channels.max(1),
+            sample_rate,
+            written: AtomicU64::new(0),
+            frontier: None,
+            writes: AtomicU64::new(0),
+            summary: Default::default(),
+        }
+    }
+
     /// The file this buffer's samples are in, when they are in one.
     #[inline]
     pub fn file(&self) -> Option<&crate::dsp::pcm::Layout> {
@@ -412,7 +447,7 @@ impl Buffer {
     #[inline]
     pub fn reads_from_disk(&self) -> bool {
         match &self.data {
-            Storage::File(_) => true,
+            Storage::File(_) | Storage::Fed(_) => true,
             Storage::Stitched(s) => s.reads_from_disk(),
             _ => false,
         }
@@ -476,7 +511,7 @@ impl Buffer {
             #[cfg(unix)]
             Storage::Shared(r) => Self::load(&r.cells()[frame * self.channels + channel]),
             Storage::Stitched(stitch) => stitch.sample(frame, channel),
-            Storage::File(_) => 0.0,
+            Storage::File(_) | Storage::Fed(_) => 0.0,
         }
     }
 

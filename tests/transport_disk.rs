@@ -624,3 +624,121 @@ fn measure_the_locate_silence_and_the_cost_of_a_seam() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **A list fed by its owner plays what the list in memory plays**: the
+/// reader's buffer holds only a fed stream, a thread of the owner's renders
+/// the list into it as the reader asks (`FedList`), and from the first
+/// sounding frame on every sample is the one the list in memory plays, with
+/// a cue before the play and a loop read straight through across three
+/// files.
+#[test]
+fn a_list_its_owner_feeds_plays_what_the_list_in_memory_plays() {
+    use clausters::dsp::fed::feed;
+    use clausters::dsp::stream::FedList;
+
+    let dir = scratch("fed");
+    let (on_disk, in_memory) = quarter_list(&dir, 0);
+    let (mut engine, mut handle) = engine_pair(SR as f32, 2);
+    let meters = Meters::detached();
+    let (fed, feeder) = feed();
+    let fed = Arc::new(fed);
+    let owner = FedList::start(feeder, Arc::clone(&meters));
+    owner.set(Arc::clone(&on_disk));
+    install(
+        &mut handle,
+        0,
+        Arc::new(Buffer::fed_by(
+            Arc::clone(&fed),
+            on_disk.channels(),
+            on_disk.frames(),
+            SR,
+        )),
+    );
+    install(&mut handle, 1, in_memory);
+    governed_readers(&mut handle, &meters);
+    let (start, end) = (QUARTER as u64 + 100, 3 * QUARTER as u64 + 7);
+    handle
+        .send(Cmd::TransportLoop {
+            transport: 0,
+            span: Some(start..end),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: start,
+        })
+        .ok()
+        .unwrap();
+    let (ready, _) = cue(&mut engine, &mut handle);
+    assert!(ready, "the owner's thread filled the ring where it stands");
+    roll(&mut handle, None);
+    let pass = (end - start) as usize;
+    let (disk, reference) = play(&mut engine, 3 * pass / BLOCK_SIZE + 20, true);
+    for (i, (&d, &r)) in disk.iter().zip(&reference).enumerate() {
+        assert!(d != 0.0, "sample {i} (pass {}) is silent", i / pass);
+        assert_eq!(d, r, "sample {i} (pass {})", i / pass);
+    }
+    assert_eq!(meters.starved(), 0);
+    drop(owner);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **The owner's new contents are a list replaced while it plays**: setting
+/// another list on the owner's thread fades the reader into it from where
+/// the transport is, with no run of silence, and then it is the new list.
+#[test]
+fn new_contents_from_the_owner_fade_in_while_it_plays() {
+    use clausters::dsp::fed::feed;
+    use clausters::dsp::stream::FedList;
+
+    let dir = scratch("fed-replace");
+    let (old, _) = take(&dir, 0, 4 * QUARTER);
+    let (new, new_values) = take(&dir, 2, 4 * QUARTER);
+    let none: Vec<Option<Arc<Buffer>>> = Vec::new();
+    let list = |path: &str| {
+        stitch(
+            &none,
+            vec![part(OscType::String(path.into()), 0, 4 * QUARTER, 0)],
+        )
+    };
+    let pool = vec![Some(Arc::new(Buffer::new(new_values, 1, 4 * QUARTER, SR)))];
+    let in_memory = stitch(&pool, vec![part(OscType::Int(0), 0, 4 * QUARTER, 0)]);
+    let (mut engine, mut handle) = engine_pair(SR as f32, 2);
+    let meters = Meters::detached();
+    let (fed, feeder) = feed();
+    let fed = Arc::new(fed);
+    let owner = FedList::start(feeder, Arc::clone(&meters));
+    owner.set(list(&old));
+    install(
+        &mut handle,
+        0,
+        Arc::new(Buffer::fed_by(Arc::clone(&fed), 1, 4 * QUARTER, SR)),
+    );
+    install(&mut handle, 1, Arc::clone(&in_memory));
+    readers(&mut handle, &meters, false);
+    roll(&mut handle, None);
+    let (before, _) = play(&mut engine, 100, true);
+    assert!(before[before.len() - 1] > 0.0, "the old list plays");
+    owner.set(list(&new));
+    let (after, reference) = play(&mut engine, 80, true);
+    let mut zeros = 0;
+    for (i, &d) in after.iter().enumerate() {
+        zeros = if d == 0.0 { zeros + 1 } else { 0 };
+        assert!(
+            zeros <= 2,
+            "sample {i}: a silence where the list was replaced"
+        );
+    }
+    let agrees = (0..after.len())
+        .rev()
+        .find(|&i| after[i] != reference[i])
+        .map_or(0, |i| i + 1);
+    assert!(
+        agrees <= 4 * BLOCK_SIZE + 2 * clausters::dsp::stream::CROSS,
+        "the new list was the list in memory only from sample {agrees}"
+    );
+    drop(owner);
+    let _ = std::fs::remove_dir_all(&dir);
+}

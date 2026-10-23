@@ -905,6 +905,9 @@ pub struct TransportDiskIn {
     outgoing: Option<(usize, usize, usize, usize)>,
     /// Frames of fade-in left for the list that replaced it.
     fade_in: usize,
+    /// Where the transport stands in the block after the last one it
+    /// played, as natively: only a list replaced while it plays on fades.
+    continues: Option<u64>,
 }
 
 /// **How many samples of the old list a replacement keeps** to play while
@@ -951,6 +954,7 @@ impl TransportDiskIn {
             kept: vec![0.0; KEPT],
             outgoing: None,
             fade_in: 0,
+            continues: None,
         }
     }
 
@@ -1129,6 +1133,16 @@ impl UGen for TransportDiskIn {
     }
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let next = ctx.transport.position + output.len() as u64;
+        let rolling = ctx.transport.rolling;
+        self.play(ctx, inputs, output);
+        self.continues = rolling.then_some(next);
+    }
+}
+
+impl TransportDiskIn {
+    /// One block of [`UGen::process`].
+    fn play(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_ref()) else {
             self.standing = None;
@@ -1166,7 +1180,12 @@ impl UGen for TransportDiskIn {
         if address != self.sent || looping != self.looping || wrap != self.wrap {
             // A list that was playing plays on, out of what is kept of it,
             // while the new one is read.
-            if rolling && !self.serve && !self.fresh && self.outgoing.is_none() {
+            if rolling
+                && self.continues == Some(ctx.transport.position)
+                && !self.serve
+                && !self.fresh
+                && self.outgoing.is_none()
+            {
                 self.keep_outgoing();
             }
             self.looping = looping;

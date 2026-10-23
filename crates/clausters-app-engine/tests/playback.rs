@@ -19,6 +19,18 @@ use clausters_editing::audio_playback::{AudioEditorPlayback, Pass};
 const SR: f64 = 48_000.0;
 const FRAMES: usize = 24_000;
 
+/// Where the output first sounds and its 5 ms ramp is over: from there the
+/// output is the take. The first refill lands when the reader's thread gets
+/// to it, which a loaded machine delays.
+fn settled(heard: &[f32]) -> usize {
+    let first = heard
+        .iter()
+        .position(|&s| s != 0.0)
+        .expect("the take was heard");
+    assert!(first < 12_000, "the first refill took {first} samples");
+    first + 256
+}
+
 /// A mono float file whose every frame is told apart from every other.
 fn take(name: &str) -> (String, Vec<f32>) {
     let values: Vec<f32> = (0..FRAMES)
@@ -105,9 +117,8 @@ fn the_audio_editor_plays_on_an_engine_it_holds() {
         }
         std::thread::sleep(Duration::from_micros(1_333));
     }
-    assert!(left.iter().any(|&s| s != 0.0), "the take was heard");
-    // The play's ramp is 5 ms; past the first refill the output is the file.
-    for i in 4_000..12_000 {
+    // Past the first refill and the play's ramp, the output is the file.
+    for i in settled(&left)..16_000 {
         assert_eq!(left[i], values[i], "left, sample {i}");
         assert_eq!(right[i], values[i], "right, sample {i}");
     }
@@ -155,7 +166,7 @@ fn loops_stops_and_locates_on_an_engine_it_holds() {
     let heard = blocks(&mut engine, &app, 300);
     // Past the first refill and the ramp, every sample is the loop's frame.
     let span = (to - from) as usize;
-    for (i, &s) in heard.iter().enumerate().skip(1_000) {
+    for (i, &s) in heard.iter().enumerate().skip(settled(&heard)) {
         let frame = from as usize + i % span;
         assert_eq!(s, values[frame], "sample {i}, frame {frame}");
     }
@@ -176,8 +187,12 @@ fn loops_stops_and_locates_on_an_engine_it_holds() {
             back: 0,
         },
     );
-    let heard = blocks(&mut engine, &app, 60);
-    for (i, &s) in heard.iter().enumerate().skip(1_000) {
+    let heard = blocks(&mut engine, &app, 200);
+    for (i, &s) in heard.iter().enumerate().skip(settled(&heard)) {
+        // The stop's ramp ends on the end mark, 5 ms before it.
+        if at as usize + i >= FRAMES - 512 {
+            break;
+        }
         assert_eq!(s, values[at as usize + i], "sample {i} after the locate");
     }
     let _ = std::fs::remove_file(&path);

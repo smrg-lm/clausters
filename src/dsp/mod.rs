@@ -60,6 +60,7 @@ pub mod peaks_out {
 // transport -- `DiskIn`'s thread and ring, positioned.
 #[cfg(feature = "synth")]
 pub mod envgen;
+pub mod fed;
 #[cfg(feature = "synth")]
 pub mod filter;
 #[cfg(feature = "synth")]

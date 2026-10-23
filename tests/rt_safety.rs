@@ -2472,3 +2472,131 @@ fn a_peaks_file_is_summarized_without_allocating() {
     assert_eq!((kept.num_channels(), kept.frames()), (2, 500 * BLOCK_SIZE));
     std::fs::remove_file(&path).ok();
 }
+
+/// **A stream its owner feeds is played without allocating**: the reader
+/// takes the owner's rings once (two atomic swaps), asks for refills, and
+/// fades into new contents, and none of it allocates on the audio thread.
+#[test]
+fn a_stream_its_owner_feeds_does_not_allocate_on_the_audio_thread() {
+    use clausters::dsp::buffer::Buffer;
+    use clausters::dsp::fed::feed;
+    use clausters::dsp::stream::FedList;
+    use clausters::server::nrt::{NrtAction, run_job};
+    use clausters::synthdef::SynthDefSpec;
+    use rosc::OscType;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let path = std::env::temp_dir().join(format!("clausters_rt_fed_{}.wav", std::process::id()));
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(&path, spec).unwrap();
+    for n in 0..48_000 {
+        w.write_sample(((n % 100) as i16 + 1) * 100).unwrap();
+    }
+    w.finalize().unwrap();
+    let path = path.to_str().unwrap().to_string();
+    let list = |start: i32| {
+        let mut args = vec![OscType::Int(0), OscType::Int(1), OscType::Float(48_000.0)];
+        args.extend([
+            OscType::String(path.clone()),
+            OscType::Int(start),
+            OscType::Int(20_000),
+            OscType::Int(32),
+            OscType::Int(32),
+            OscType::Int(1),
+            OscType::Float(0.0),
+            OscType::Int(1),
+            OscType::Float(0.0),
+            OscType::Int(0),
+        ]);
+        let mirror = vec![None; 4];
+        let (_, job) =
+            clausters::osc::translate::parse_buffer_msg("/buffer_stitch", &args, &mirror, 48_000.0)
+                .unwrap();
+        match run_job(job).unwrap() {
+            NrtAction::Install(b) => b,
+            _ => unreachable!(),
+        }
+    };
+    let (fed, feeder) = feed();
+    let fed = Arc::new(fed);
+    let owner = FedList::start(feeder, Arc::clone(handle.meters()));
+    owner.set(list(1_000));
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::new(Buffer::fed_by(
+                Arc::clone(&fed),
+                1,
+                20_000,
+                48_000.0,
+            ))),
+        })
+        .ok()
+        .unwrap();
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{"name": "fed", "ugens": [
+            {"kind": "TransportDiskIn", "inputs": [{"const": 0.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]}"#,
+    )
+    .unwrap();
+    let synth = Box::new(UGenSynth::metered(
+        Arc::new(compile(spec).unwrap()),
+        48_000.0,
+        SEED_STRIDE,
+        Arc::clone(handle.meters()),
+    ));
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth,
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
+        .ok()
+        .unwrap();
+    let mut run = |engine: &mut clausters::server::engine::Engine| {
+        let mut heard = false;
+        for _ in 0..100 {
+            assert_no_alloc(|| engine.process_block(&mut out));
+            heard |= out.iter().any(|s| *s != 0.0);
+            std::thread::sleep(std::time::Duration::from_micros(1_333));
+        }
+        heard
+    };
+    assert!(run(&mut engine), "the fed stream played");
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 12_000,
+        })
+        .ok()
+        .unwrap();
+    assert!(run(&mut engine), "and played after a locate");
+    owner.set(list(5_000));
+    assert!(run(&mut engine), "and played the owner's new contents");
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..10 {
+            engine.process_block(&mut out);
+        }
+    });
+    handle.collect_garbage();
+    drop(owner);
+    std::fs::remove_file(&path).ok();
+}
