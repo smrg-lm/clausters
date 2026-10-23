@@ -30,6 +30,10 @@ pub const CANCEL: &str = "cancel";
 /// as when the window's bar has one.
 pub const CLOSE: &str = "close";
 
+/// The verb a window that asks for it (`activation`) reports when it is
+/// activated or put away.
+pub const ACTIVATED: &str = "activated";
+
 /// The tag a moved divider reports: `"split"` and the size of each child of
 /// the strip along it, in logical pixels.
 pub const SPLIT: &str = "split";
@@ -146,6 +150,32 @@ impl Gestures {
                 vec![OscType::String(CLOSE.into())],
             );
         }
+        Some(out)
+    }
+
+    /// **The window was activated, or put away** (`active` false): its owner
+    /// is told, as the `"activated"` verb with `1` or `0`, when the window
+    /// asks to be (the `activation` prop), and nothing is said on its status
+    /// bar -- it is no edit. `None` for a window that did not ask.
+    pub fn activated(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        active: bool,
+    ) -> Option<Vec<GestureEffect>> {
+        if !host.window_activation(ctx.def_id) {
+            return None;
+        }
+        let mut out = Vec::new();
+        super::effects::tell(
+            host,
+            &mut out,
+            ctx.def_id,
+            vec![
+                OscType::String(ACTIVATED.into()),
+                OscType::Int(active as i32),
+            ],
+        );
         Some(out)
     }
 

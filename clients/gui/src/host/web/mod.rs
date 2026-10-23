@@ -154,6 +154,8 @@ enum WebEvent {
     /// The tab was put in the background or brought back
     /// (`visibilitychange`).
     PageShown,
+    /// The page's window gained the platform's focus, or lost it.
+    Activated(bool),
     /// The async WebGPU device for one canvas is ready.
     /// Boxed: a `Gpu` is ~276 bytes and every other variant is a handful, so
     /// carrying it inline would size the whole event queue to it.
@@ -298,6 +300,10 @@ struct WebApp {
     /// The document's `visibilitychange` listener: a tab put in the
     /// background hides every canvas in it, as scrolling one away does.
     _visibility: Option<Listener>,
+    /// The page's window gaining and losing the platform's focus: what tells
+    /// a window that asked for it (`activation`) that it came back.
+    _focus: Option<Listener>,
+    _blur: Option<Listener>,
     /// How long the last tick was, for whatever advances in time.
     tick_clock: live::TickClock,
     /// Whether the first streamed `/bus_stream.reply` snapshot was logged (one line as
@@ -353,6 +359,16 @@ impl WebApp {
             _visibility: Listener::on_document("visibilitychange", move || {
                 if let Some(proxy) = web_proxy() {
                     let _ = proxy.send_event(HostEvent::To(id, WebEvent::PageShown));
+                }
+            }),
+            _focus: Listener::on_window("focus", move || {
+                if let Some(proxy) = web_proxy() {
+                    let _ = proxy.send_event(HostEvent::To(id, WebEvent::Activated(true)));
+                }
+            }),
+            _blur: Listener::on_window("blur", move || {
+                if let Some(proxy) = web_proxy() {
+                    let _ = proxy.send_event(HostEvent::To(id, WebEvent::Activated(false)));
                 }
             }),
             tick_clock: Default::default(),
@@ -1007,7 +1023,9 @@ impl WebApp {
                     self.request_redraw(def);
                 }
                 self.on_tree_changed();
+                self.activated(!page_hidden());
             }
+            WebEvent::Activated(active) => self.activated(active),
             WebEvent::ReadBack => self.read_back_now(),
             WebEvent::HostEffects => {
                 let effects = self.host.take_effects();
@@ -1079,9 +1097,9 @@ fn page_hidden() -> bool {
         .is_some_and(|d| d.hidden())
 }
 
-/// A listener on the document, removed when it is dropped.
+/// A listener on the document or the window, removed when it is dropped.
 struct Listener {
-    document: web_sys::Document,
+    target: web_sys::EventTarget,
     event: &'static str,
     closure: Closure<dyn FnMut()>,
 }
@@ -1089,12 +1107,24 @@ struct Listener {
 impl Listener {
     fn on_document(event: &'static str, f: impl FnMut() + 'static) -> Option<Self> {
         let document = web_sys::window()?.document()?;
+        Self::on(document.into(), event, f)
+    }
+
+    fn on_window(event: &'static str, f: impl FnMut() + 'static) -> Option<Self> {
+        Self::on(web_sys::window()?.into(), event, f)
+    }
+
+    fn on(
+        target: web_sys::EventTarget,
+        event: &'static str,
+        f: impl FnMut() + 'static,
+    ) -> Option<Self> {
         let closure = Closure::<dyn FnMut()>::new(f);
-        document
+        target
             .add_event_listener_with_callback(event, closure.as_ref().unchecked_ref())
             .ok()?;
         Some(Self {
-            document,
+            target,
             event,
             closure,
         })
@@ -1104,7 +1134,7 @@ impl Listener {
 impl Drop for Listener {
     fn drop(&mut self) {
         let _ = self
-            .document
+            .target
             .remove_event_listener_with_callback(self.event, self.closure.as_ref().unchecked_ref());
     }
 }

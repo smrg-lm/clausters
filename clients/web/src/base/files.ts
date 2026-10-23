@@ -51,6 +51,24 @@ export async function makeDirectoryAt(path: string): Promise<void> {
 }
 
 /**
+ * **A file as it is**, where {@link readFileAt} reads it: when it was last
+ * modified, in milliseconds since the epoch, and its size in bytes -- or
+ * `null` for one that is not there.
+ */
+export async function statAt(path: string): Promise<{ modified: number; size: number } | null> {
+    try {
+        if (underNode()) {
+            const { stat } = await import("node:fs/promises");
+            const st = await stat(path);
+            return { modified: st.mtimeMs, size: st.size };
+        }
+        return await opfs.stat(path);
+    } catch {
+        return null;
+    }
+}
+
+/**
  * **Moves the file at `from` to `to`**, over whatever is there: on the disk
  * under node, in the page's storage in a tab.
  */

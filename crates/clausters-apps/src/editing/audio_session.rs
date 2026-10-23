@@ -137,6 +137,9 @@ enum Resume {
     Rolling(Rolled),
     /// One file read into buffers, to add.
     Read,
+    /// The open files looked at on disk, the window having come back: the
+    /// stamps go to the editor, which answers the window's `seq`.
+    Stat { seq: Value },
     /// An operation's batch carried out: complete it.
     Batch {
         ticket: Value,
@@ -215,6 +218,9 @@ enum Task {
     CutAct(Value),
     /// Files read and added, one at a time.
     Read(VecDeque<Value>),
+    /// The files a window coming back reads, looked at on disk
+    /// (`checkDisk`: `{paths, seq}`).
+    Stat(Value),
     /// A read file added to the editor.
     AddFile(Value),
     /// Make what sounds be the take as it now is.
@@ -810,6 +816,24 @@ impl Session {
                 );
                 self.push(id, vec![Task::OperationDone { answer, repairing }]);
             }
+            // A look that failed finds nothing changed: the window's event
+            // is answered all the same.
+            (Resume::Stat { seq }, failed) => {
+                let stamps = if failed.is_some() {
+                    json!({})
+                } else {
+                    result["stamps"].clone()
+                };
+                let answer = member_call(
+                    editing,
+                    member,
+                    json!({"verb": "on_disk", "stamps": stamps, "seq": seq}),
+                );
+                self.push(
+                    id,
+                    vec![effect("echo", json!({"answer": answer["answer"]}))],
+                );
+            }
             (_, Some(reason)) => {
                 if let Some(answer) = self.unwind(
                     editing,
@@ -1173,6 +1197,12 @@ impl Session {
                 self.push(id, tasks);
                 Flow::Next
             }
+            Task::Stat(check) => Flow::Await(
+                tagged("stat", json!({"paths": check["paths"]})),
+                Resume::Stat {
+                    seq: check["seq"].clone(),
+                },
+            ),
             Task::Read(mut files) => {
                 let Some(file) = files.pop_front() else {
                     return Flow::Next;
@@ -1596,6 +1626,9 @@ impl Session {
         if has(&outcome, "openFile") {
             tasks.push(Task::Read(paths(&outcome["openFile"]["paths"])));
         }
+        if has(&outcome, "checkDisk") {
+            tasks.push(Task::Stat(outcome["checkDisk"].clone()));
+        }
         if has(&outcome, "playbackUpdate") {
             let update = &outcome["playbackUpdate"];
             tasks.push(Task::SyncSound(update["file"].clone()));
@@ -1684,6 +1717,8 @@ mod tests {
         fail: Option<&'static str>,
         trace: Vec<String>,
         effects: Vec<Value>,
+        /// What a look on disk finds, by path.
+        stamps: Value,
     }
 
     impl Client {
@@ -1695,6 +1730,7 @@ mod tests {
                 fail: None,
                 trace: Vec::new(),
                 effects: Vec::new(),
+                stamps: json!({}),
             }
         }
 
@@ -1776,6 +1812,7 @@ mod tests {
             }
             match kind {
                 "rolling" => json!({"rolling": self.rolling}),
+                "stat" => json!({"stamps": self.stamps}),
                 "shape" => {
                     let display = self.buffer();
                     json!({"frames": 200, "channels": 2, "rate": 48000.0,
@@ -1871,6 +1908,60 @@ mod tests {
             .iter()
             .position(|k| k == kind)
             .unwrap_or_else(|| panic!("no {kind} in {trace:?}"))
+    }
+
+    /// **The window coming back looks at the files on disk**: the
+    /// activation asks the client for their stamps, and a file that changed
+    /// is said in the answer to the window's event.
+    #[test]
+    fn a_window_coming_back_is_told_a_file_changed_on_disk() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = client.call(
+            &mut editing,
+            json!({"verb": "openAudio", "key": "take:3", "path": "/in/take3.wav",
+                "workspace": "/work", "frames": 100, "display": 9,
+                "stamp": {"modified": 1.0, "size": 10}}),
+        )["member"]
+            .as_u64()
+            .unwrap() as MemberId;
+        client.call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "sync", "window": 900}}),
+        );
+        client.call(
+            &mut editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "window", "widget": 12}}),
+        );
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "open", "chunk": 4096, "rate": 48000.0, "empty": false, "window": true}),
+        );
+        client.stamps = json!({"/in/take3.wav": {"modified": 2.0, "size": 10}});
+        client.trace.clear();
+        client.effects.clear();
+        let version = editing.version();
+        let back = client.run(
+            &mut editing,
+            member,
+            json!({"verb": "event", "addr": "/gui_event", "window": true,
+                "args": [900, 7, version, "activated", 1]}),
+        );
+        assert!(back["error"].is_null(), "{back}");
+        assert!(
+            client.trace.contains(&"await:stat".to_string()),
+            "{:?}",
+            client.trace
+        );
+        let said = client
+            .effects
+            .iter()
+            .find(|e| e["kind"] == "echo")
+            .map(|e| e["answer"].clone())
+            .unwrap();
+        assert_eq!(said["seq"], 7);
+        assert_eq!(said["reason"], "take3.wav changed on disk");
     }
 
     #[test]

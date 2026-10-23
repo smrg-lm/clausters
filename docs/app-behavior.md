@@ -209,6 +209,13 @@ code that keeps it lives.
   neither clears history nor deletes a file a list still reads. A file the
   editor opened is never deleted: only renders are.
 
+- **A file changed on disk is said when the window comes back.** The
+  window asks to be told when it is activated; each open file read from the
+  disk is then looked at, and one that changed since the editor read it -- or
+  is gone -- is said on the status bar, once. The editor's own save over the
+  file is no change. The take reads what is there now: nothing was kept of
+  what it read before, and the notice is what lets a person know it.
+
 - **A choice in the file list is navigation.** It is never refused as stale,
   and the list keeps its widget across switches, so a hand clicking down it
   lands on the file it clicked last.

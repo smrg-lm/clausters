@@ -1097,7 +1097,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
          status: bool | None = None, plays: bool | None = None,
          keys: list | str | None = None, verbs: dict | None = None,
-         ask_close: bool | None = None,
+         ask_close: bool | None = None, activation: bool | None = None,
+         progress: float | None = None, progress_label: str | None = None,
          split: bool | None = None, menu: list | None = None,
          main: int | None = None, glyphs: dict | None = None,
          theme: dict | None = None, color: str | None = None, **props) -> View:
@@ -1162,6 +1163,15 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     window once nothing is left to lose. Asked again before the owner has
     answered, it closes. Off by default.
 
+    ``activation`` says **the owner is told when the window comes back** --
+    it gains or loses the platform's focus, or its page is shown or hidden --
+    as the window's ``activated`` verb, ``1`` or ``0``. Off by default.
+
+    ``progress`` is **work the owner is doing for the window**, a fraction in
+    ``0..1`` with ``progress_label`` naming it, drawn at the right end of the
+    status bar while it is set; a negative value takes it away. An owner sets
+    it as the work goes (``host.set(window, progress=...)``).
+
     ``theme`` is a partial color-role table (``{"role": "#rrggbb[aa]"}``, the
     same shape as the host's TOML style file) overlaying the host theme for
     the whole window -- a **theme group**. On the root it persists with a named
@@ -1205,6 +1215,12 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["plays"] = 1 if plays else 0
     if ask_close is not None:
         extra["ask_close"] = 1 if ask_close else 0
+    if activation is not None:
+        extra["activation"] = 1 if activation else 0
+    if progress is not None:
+        extra["progress"] = float(progress)
+    if progress_label is not None:
+        extra["progress_label"] = progress_label
     return node("window", children=children, **extra, **props)
 
 

@@ -28,6 +28,9 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         WidgetKind::Window { plays, .. } if key == "plays" => {
             truthy(v).map(|b| *plays = b).is_some()
         }
+        WidgetKind::Window { activation, .. } if key == "activation" => {
+            truthy(v).map(|b| *activation = b).is_some()
+        }
         WidgetKind::Window { ask_close, .. } if key == "ask_close" => {
             truthy(v).map(|b| *ask_close = b).is_some()
         }

@@ -211,6 +211,17 @@ class AudioDomain(Domain):
         _delete(files)
 
 
+def _stamp(path):
+    """A file as it is on disk: when it was last modified, in milliseconds,
+    and its size -- or ``None`` for one that is not there."""
+    import os
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return {"modified": st.st_mtime * 1000.0, "size": st.st_size}
+
+
 def _delete(files) -> None:
     import os
     for path in files or ():
@@ -471,6 +482,8 @@ class AudioEditor(Marking, Editor):
             return {"rolling": bool(transport.state()["playing"])}
         if kind == "shape":
             return self._shape(wait)
+        if kind == "stat":
+            return {"stamps": {path: _stamp(path) for path in wait.get("paths") or ()}}
         if kind == "batch":
             self._editing._run_batch(wait["member"], wait["server"], wait.get("steps") or [])
             return {}

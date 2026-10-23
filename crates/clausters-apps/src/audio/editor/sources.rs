@@ -34,6 +34,15 @@ pub(crate) struct FileSource {
 /// The table of a file's sources, by id.
 pub(crate) type Sources = BTreeMap<SourceId, FileSource>;
 
+/// **A file as it was on disk** when the editor last read it: when it was
+/// last modified, in milliseconds since the epoch, and its size in bytes --
+/// what a client's `stat` answers, natively and in a page alike.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub(crate) struct DiskStamp {
+    pub modified: f64,
+    pub size: u64,
+}
+
 /// **The id of the file at `path`**: a hash of the path (FNV-1a, 64 bits),
 /// the same wherever the file is named.
 pub(crate) fn id_of(path: &str) -> SourceId {

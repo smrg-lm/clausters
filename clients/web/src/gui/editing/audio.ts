@@ -57,7 +57,7 @@ import { resolveServer } from "../../defs/wire.ts";
 import { disk, runSteps } from "../../steps.ts";
 import type { RenderProgress } from "../../steps.ts";
 import { executeSteps, releaseBuffer } from "./cleanup.ts";
-import { makeDirectoryAt, removeDirectoryAt, temporaryFolder } from "../../base/files.ts";
+import { makeDirectoryAt, removeDirectoryAt, statAt, temporaryFolder } from "../../base/files.ts";
 import { serviceInstance } from "./application.ts";
 import { exchange, bindExchange, type ExchangeLease } from "./clipboard.ts";
 import { Domain } from "./domain.ts";
@@ -823,6 +823,11 @@ export class AudioEditor extends Editor<Buffer | null> {
                 return { rolling: (await this.server.transportAt(Number(request.transport)).state()).playing };
             case "shape":
                 return this.shape(request);
+            case "stat": {
+                const stamps: Record<string, unknown> = {};
+                for (const path of (request.paths ?? []) as string[]) stamps[path] = await statAt(path);
+                return { stamps };
+            }
             case "batch":
                 await this.editing.executeBatch(Number(request.member), request.server, request.steps ?? []);
                 return {};

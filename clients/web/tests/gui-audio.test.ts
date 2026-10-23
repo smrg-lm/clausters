@@ -75,8 +75,8 @@ class FakeHost {
     onMessage(): () => void {
         return () => {};
     }
-    ack(seq: number): void {
-        this.acks.push([seq, [], undefined]);
+    ack(seq: number, _docVersion = 0, _generations: readonly (readonly [number, number])[] = [], reason?: string): void {
+        this.acks.push([seq, [], reason]);
     }
     push(
         seq: number,
@@ -305,6 +305,26 @@ test("a render's progress is on the window while it runs", async () => {
     assert.equal(seen[0]!.progress, 0.5);
     assert.equal(seen[0]!.progress_label, "rendering 1-2-stroke.w64");
     assert.equal(host.props.get(window)!.progress, -1, "taken away once it has ended");
+});
+
+test("a file changed on disk is said when the window comes back", async () => {
+    const { mkdtemp, utimes } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const folder = await mkdtemp(`${tmpdir()}/clausters-stat-`);
+    const path = `${folder}/take.wav`;
+    const file = await SoundFile.write(path, new Float32Array(100), 1, SR, { sampleFormat: "float" });
+    const [editor, host] = await opened(new FakeBuffer(), { file });
+    const window = Number((editor as unknown as { windowId: number }).windowId);
+    editor.apply("/gui_event", [window, 1, 0, "activated", 1]);
+    await settle();
+    assert.equal(host.acks.at(-1)![2], undefined, "the first look takes the file as it is");
+    await utimes(path, 1_000_000, 1_000_000);
+    editor.apply("/gui_event", [window, 2, 0, "activated", 1]);
+    await settle();
+    assert.equal(host.acks.at(-1)![2], "take.wav changed on disk");
+    editor.apply("/gui_event", [window, 3, 0, "activated", 1]);
+    await settle();
+    assert.equal(host.acks.at(-1)![2], undefined, "said once");
 });
 
 test("a cut copies the span's parts and renders nothing", async () => {

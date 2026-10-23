@@ -248,6 +248,9 @@ fn dressed(w: &Window<'_>, body: Vec<Value>) -> Value {
         // **The space bar and `L` are the application's**: it plays its own
         // take through its own playback, so the host's monitor stays out.
         "plays": true,
+        // **The window coming back is told**, which is when the files it
+        // reads are looked at on disk.
+        "activation": true,
         "keys": [clausters_editing::verbs::AUDIO_SCOPE],
         "verbs": clausters_editing::verbs::declaration(&[(
             clausters_editing::verbs::AUDIO_SCOPE, clausters_editing::verbs::AUDIO,

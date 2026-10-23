@@ -1114,6 +1114,16 @@ impl ApplicationHandler<UserEvent> for App {
         };
         match event {
             WindowEvent::CloseRequested => self.user_close(def_id, Loop::Shown(event_loop)),
+            // **The window came back, or went**: an owner that asked is told,
+            // which is when an editor checks its files on disk.
+            WindowEvent::Focused(active) => {
+                let ctx = self.gesture_ctx(def_id);
+                if let Some(ws) = self.windows.get_mut(&def_id)
+                    && let Some(effects) = ws.gestures.activated(&mut self.host, &ctx, active)
+                {
+                    self.apply_gesture_effects(effects);
+                }
+            }
             WindowEvent::Resized(size) => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.gpu.resize(size.width, size.height);

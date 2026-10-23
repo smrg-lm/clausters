@@ -1569,6 +1569,21 @@ export function view(
      */
     askClose?: boolean;
     /**
+     * **The owner is told when the window comes back** -- it gains or loses
+     * the platform's focus, or its page is shown or hidden -- as the window's
+     * `activated` verb, `1` or `0`. Off by default.
+     */
+    activation?: boolean;
+    /**
+     * **Work the owner is doing for the window**, a fraction in `0..1` with
+     * `progressLabel` naming it, drawn at the right end of the status bar while
+     * it is set; a negative value takes it away. An owner sets it as the work
+     * goes (`host.set(window, { progress })`).
+     */
+    progress?: number;
+    /** What {@link progress} is called on the status bar. */
+    progressLabel?: string;
+    /**
      * The gaps between the window's own children are dividers a drag moves,
      * as on {@link layout}.
      */
@@ -1606,7 +1621,7 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        theme, split, menu: bar, main, glyphs, ...rest
+        activation, progress, progressLabel, theme, split, menu: bar, main, glyphs, ...rest
     } = options;
     return node("window", {
         ...rest,
@@ -1627,6 +1642,9 @@ export function view(
             ["keys", keys === undefined ? undefined : [...keys]],
             ["verbs", verbs === undefined ? undefined : { ...verbs }],
             ["ask_close", flag(askClose)],
+            ["activation", flag(activation)],
+            ["progress", progress],
+            ["progress_label", progressLabel],
         ]),
         children: [...(options.children ?? []), ...children],
     });

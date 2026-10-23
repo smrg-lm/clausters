@@ -275,6 +275,22 @@ def test_a_render_s_progress_is_on_the_window_while_it_runs(monkeypatch):
     assert host.props[window]["progress"] == -1, "taken away once it has ended"
 
 
+def test_a_file_changed_on_disk_is_said_when_the_window_comes_back(tmp_path):
+    import os
+    from clausters.soundfile import SoundFile
+    path = str(tmp_path / "take.wav")
+    file = SoundFile.write(path, [0.0] * 100, 1, SR, sample_format="float")
+    editor, host, _wid, _context = opened(FakeBuffer(), file=file)
+    window = int(editor._window)
+    editor.apply("/gui_event", [window, 1, 0, "activated", 1])
+    assert host.acks[-1][2] is None, "the first look takes the file as it is"
+    os.utime(path, (1_000_000, 1_000_000))
+    editor.apply("/gui_event", [window, 2, 0, "activated", 1])
+    assert host.acks[-1][2] == "take.wav changed on disk"
+    editor.apply("/gui_event", [window, 3, 0, "activated", 1])
+    assert host.acks[-1][2] is None, "said once"
+
+
 def test_a_cut_copies_the_span_s_parts_and_renders_nothing(disk):
     take = FakeBuffer()
     editor, host, wid, _context = opened(take)

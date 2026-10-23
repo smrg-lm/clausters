@@ -192,6 +192,12 @@ pub struct Outcome {
     /// The file binding the client focuses or closes, chosen by the app.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_action: Option<Value>,
+    /// **The files to look at on disk** (`checkDisk`), the window having come
+    /// back: `{paths, seq}`, the open files read from the disk, for the
+    /// client to `stat` and hand to the `on_disk` verb, which answers the
+    /// window's `seq`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_disk: Option<Value>,
     /// **A copy made on the server**: the clipboard document naming the
     /// buffer it is in, for the client to put on the host's clipboard
     /// (`/gui_clipboard`). The buffer is the clipboard's from now on, and
@@ -294,6 +300,29 @@ impl Converse for AudioEditor {
         }
         if message.addr != "/gui_event" || !message.is_window {
             return false;
+        }
+        // **The window came back**: the files it reads are looked at on
+        // disk, as a desktop program does. Nothing changes until the client
+        // says what it found; the window put away asks for nothing.
+        if message.tag == "activated" {
+            out.turn = Kind::Route;
+            let paths = if args.get(4).and_then(Value::as_i64) == Some(1) {
+                self.disk_paths()
+            } else {
+                Vec::new()
+            };
+            if paths.is_empty() {
+                out.answer = Some(conversation::answer(
+                    message.seq,
+                    out.version,
+                    None,
+                    Vec::new(),
+                ));
+            } else {
+                // answered by `on_disk`, with what was found
+                out.check_disk = Some(json!({"paths": paths, "seq": message.seq}));
+            }
+            return true;
         }
         // **With no file open** the window's own verbs are all it answers:
         // whatever would act on a file is refused, and says why.
@@ -442,7 +471,14 @@ pub struct Follow {
 /// **The verbs that need no file**: the window's own, which an editor with
 /// no file open still answers -- adding a file, its keys, its file list and
 /// closing it.
-const WINDOW_LEVEL: &[&str] = &["new_file", "open_file", "keys", "toggle_files", "close"];
+const WINDOW_LEVEL: &[&str] = &[
+    "new_file",
+    "open_file",
+    "keys",
+    "toggle_files",
+    "close",
+    "activated",
+];
 
 /// The JSON verbs an editor with no file open answers.
 const EMPTY_VERBS: &[&str] = &[
@@ -529,6 +565,11 @@ struct AudioFileState {
     sample_format: Option<String>,
     effect_installed: bool,
     name: Option<String>,
+    // The file on disk the take came from, as it was when the editor last
+    // read it: what a window coming back checks it against. No stamp for a
+    // file the editor has just saved over, which the next look adopts; none
+    // at all for a file the editor made.
+    disk: Option<(String, Option<sources::DiskStamp>)>,
 }
 
 #[derive(Clone, Debug)]
@@ -774,6 +815,7 @@ impl AudioEditor {
                 sample_format: None,
                 effect_installed: false,
                 name: None,
+                disk: None,
             },
             window_state: AudioWindowState {
                 active: true,
@@ -911,6 +953,79 @@ impl AudioEditor {
                     .unwrap_or_default()
             })
             .collect()
+    }
+
+    /// **The paths of the open files read from the disk**, the focused one
+    /// first: what a window coming back looks at.
+    pub(crate) fn disk_paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = Vec::new();
+        if self.open_files.open {
+            paths.extend(self.file.disk.as_ref().map(|(path, _)| path.clone()));
+        }
+        for state in self.open_files.parked.values() {
+            if let Some((path, _)) = &state.disk
+                && !paths.contains(path)
+            {
+                paths.push(path.clone());
+            }
+        }
+        paths
+    }
+
+    /// **What the client found on disk** (`stamps`, a path to its stamp, or
+    /// `null` for one that is gone): a file that changed since the editor
+    /// read it is said on the window's status bar, once -- the stamp is
+    /// taken as the file's from then on. The take reads what is there now:
+    /// nothing was kept of what it read before.
+    pub(crate) fn on_disk(&mut self, stamps: &Value) -> Option<String> {
+        let mut changed = Vec::new();
+        let mut gone = Vec::new();
+        let mut look = |disk: &mut Option<(String, Option<sources::DiskStamp>)>| {
+            let Some((path, held)) = disk.as_mut() else {
+                return;
+            };
+            let Some(found) = stamps.get(path.as_str()) else {
+                return;
+            };
+            // a file this editor saved over is taken as it is now
+            let Some(stamp) = held.as_mut() else {
+                *held = serde_json::from_value(found.clone()).ok();
+                return;
+            };
+            let name = std::path::Path::new(path.as_str())
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.clone());
+            match serde_json::from_value::<sources::DiskStamp>(found.clone()) {
+                Ok(now) if now != *stamp => {
+                    *stamp = now;
+                    changed.push(name);
+                }
+                Ok(_) => {}
+                Err(_) if found.is_null() => {
+                    gone.push(name);
+                    *disk = None;
+                }
+                Err(_) => {}
+            }
+        };
+        look(&mut self.file.disk);
+        for state in self.open_files.parked.values_mut() {
+            look(&mut state.disk);
+        }
+        let said = |names: &[String], what: &str| match names {
+            [] => None,
+            [one] => Some(format!("{one} {what}")),
+            many => Some(format!("{} {what}", many.join(", "))),
+        };
+        let lines: Vec<String> = [
+            said(&changed, "changed on disk"),
+            said(&gone, "is no longer on disk"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        (!lines.is_empty()).then(|| lines.join("; "))
     }
 
     /// **A request for a file to add, in this editor's folder**: a file
@@ -2127,6 +2242,9 @@ struct Facts {
     untitled: Option<bool>,
     /// The working folder the editor writes its renders into.
     workspace: Option<String>,
+    /// The opened file's stamp on disk, when the caller has it; otherwise
+    /// the window's first look takes the file as it is.
+    stamp: Option<sources::DiskStamp>,
     /// The engine's rate, which the join it plays is stitched at.
     engine_rate: Option<f64>,
     #[serde(deserialize_with = "present")]
@@ -2320,6 +2438,8 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     }
     editor.file.presentation.layers = stack;
     editor.file.codec = facts.codec.clone();
+    // without a stamp, the first look takes the file as it is
+    editor.file.disk = path.clone().map(|path| (path, facts.stamp));
     editor.file.sample_format = facts.sample_format.clone();
     editor.adopt(Facts {
         layers: None,
@@ -2575,6 +2695,13 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "playback" => editor.playback_file().to_string(),
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
         "segments" => editor.segments().to_string(),
+        "on_disk" => {
+            let reason = editor.on_disk(&request["stamps"]);
+            let seq = request["seq"].as_i64().unwrap_or(0);
+            json!({"turn": "route",
+                "answer": conversation::answer(seq, version, reason, Vec::new())})
+            .to_string()
+        }
         "span" => {
             let span = get("span")
                 .as_array()

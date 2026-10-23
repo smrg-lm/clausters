@@ -1450,3 +1450,29 @@ fn a_window_that_asks_first_reports_its_close_to_the_owner() {
     let mut host = host_from(r#"{"type":"window","children":[]}"#);
     assert!(g.close(&mut host, &ctx).is_none(), "it does not ask");
 }
+
+/// **A window that asks is told when it is activated and put away**, as its
+/// `activated` verb, and one that does not ask hears nothing; neither says
+/// anything on the status bar.
+#[test]
+fn a_window_that_asks_is_told_when_it_is_activated() {
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let mut host = host_from(r#"{"type":"window","activation":true,"children":[]}"#);
+    let came = g.activated(&mut host, &ctx, true).expect("told");
+    assert_eq!(
+        emitted(&came, 1),
+        vec![vec![OscType::String("activated".into()), OscType::Int(1)]]
+    );
+    let went = g.activated(&mut host, &ctx, false).expect("told");
+    assert_eq!(
+        emitted(&went, 1),
+        vec![vec![OscType::String("activated".into()), OscType::Int(0)]]
+    );
+    assert!(
+        host.statuses().get(&1).is_none_or(|s| s.is_empty()),
+        "no line said"
+    );
+    let mut quiet = host_from(r#"{"type":"window","children":[]}"#);
+    assert!(g.activated(&mut quiet, &ctx, true).is_none());
+}

@@ -1363,6 +1363,18 @@ impl Host {
         }
     }
 
+    /// Whether window `id`'s owner is told when it is activated (the
+    /// `activation` prop).
+    pub fn window_activation(&self, id: i32) -> bool {
+        matches!(
+            self.window_def(id).map(|w| &w.kind),
+            Some(WidgetKind::Window {
+                activation: true,
+                ..
+            })
+        )
+    }
+
     /// Whether window `id`'s owner plays it (the `plays` prop): the space bar
     /// is then the window's own verb, and the monitor stays out.
     pub fn window_plays(&self, id: i32) -> bool {

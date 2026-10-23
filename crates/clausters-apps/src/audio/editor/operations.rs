@@ -550,6 +550,14 @@ impl Application for AudioEditor {
                         saved["channels"] = json!(channels);
                         saved["rate"] = json!(rate);
                         delta.outcome.saved = Some(saved);
+                        // a file saved over is changed on disk by this
+                        // editor: the next look takes it as it is
+                        if let (Target::File(path), Some((read, stamp))) =
+                            (&target, editor.file.disk.as_mut())
+                            && read == path
+                        {
+                            *stamp = None;
+                        }
                         editor.file.target = target;
                         editor.file.written_format = Some(format);
                         editor.file.saved_revision = revision;
@@ -1006,6 +1014,30 @@ mod tests {
         );
         assert_eq!(editor.target(), &Target::File("saved.wav".into()));
         assert!(editor.file.dirty);
+    }
+
+    /// **A save over the file this editor reads is no change on disk**: the
+    /// next look takes the file as it is, and a change after it is said.
+    #[test]
+    fn a_save_over_the_read_file_is_not_told_as_changed_on_disk() {
+        let mut editor = super::super::new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":100,"channels":1,"rate":48000,"display":2,"stamp":{"modified":1.0,"size":10}}"#).unwrap();
+        editor.window(17, None);
+        let mut services = Harness::default();
+        let ticket = begin(
+            &mut editor,
+            &mut services,
+            Command::Save {
+                target: None,
+                format: "float".into(),
+            },
+        );
+        assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
+        let stamps = |modified: f64| json!({"/in/take1.wav": {"modified": modified, "size": 20}});
+        assert_eq!(editor.on_disk(&stamps(2.0)), None, "the save's own change");
+        assert_eq!(
+            editor.on_disk(&stamps(3.0)).as_deref(),
+            Some("take1.wav changed on disk")
+        );
     }
 
     #[test]

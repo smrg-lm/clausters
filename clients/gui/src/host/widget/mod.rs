@@ -130,6 +130,13 @@ pub enum WidgetKind {
         /// away. A fact the owner has and the host has not, so it is a prop
         /// like any other, never a line of the status log.
         progress: Option<(f32, String)>,
+        /// The `activation` prop: **the owner is told when the window is
+        /// activated** -- it gains or loses the platform's focus, or its page
+        /// is shown or put away -- as the window's `"activated"` verb. What an
+        /// editor over files checks them on, as a desktop program does when
+        /// its window comes back. Off by default: a window's owner hears
+        /// nothing it did not ask for.
+        activation: bool,
     },
     /// A nestable container.
     Panel {

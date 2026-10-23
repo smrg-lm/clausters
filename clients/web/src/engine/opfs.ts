@@ -73,6 +73,16 @@ export async function moveFile(from: string, to: string): Promise<void> {
     await source.removeEntry(name);
 }
 
+/**
+ * **A file as it is**: when it was last modified, in milliseconds since the
+ * epoch, and its size. Throws if it is not there.
+ */
+export async function stat(path: string): Promise<{ modified: number; size: number }> {
+    const [dir, name] = await parentOf(path, false);
+    const file = await (await dir.getFileHandle(name)).getFile();
+    return { modified: file.lastModified, size: file.size };
+}
+
 /** **Removes the file at `path`**; one that is not there is no error. */
 export async function removeFile(path: string): Promise<void> {
     try {

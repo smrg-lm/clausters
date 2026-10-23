@@ -81,6 +81,23 @@ impl WebApp {
     /// machine), and a repaint of the canvas the effect names -- a linked-view
     /// mutation can name a *different* def than the one gestured on, and with a
     /// canvas each that now lands where it belongs.
+    /// **The page came back, or went**: every canvas whose window asked
+    /// (`activation`) tells its owner.
+    pub(super) fn activated(&mut self, active: bool) {
+        let defs: Vec<i32> = self.canvases.keys().copied().collect();
+        for def in defs {
+            let Some(ctx) = self.window_ctx(def) else {
+                continue;
+            };
+            let Some(slot) = self.canvases.get_mut(&def) else {
+                continue;
+            };
+            if let Some(effects) = slot.gestures.activated(&mut self.host, &ctx, active) {
+                self.apply_gesture_effects(effects);
+            }
+        }
+    }
+
     pub(super) fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
         // A gesture may have sent a chooser into another directory.
         self.start_listings();

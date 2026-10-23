@@ -43,6 +43,7 @@ pub(super) fn build_kind(
             ask_close: props.get("ask_close").and_then(truthy).unwrap_or(false),
             main: main_of(props.get("main")),
             progress: progress_of(props.get("progress"), props.get("progress_label")),
+            activation: props.get("activation").and_then(truthy).unwrap_or(false),
         },
         // A container with no axes. `stack` -- one child at a time, the one
         // `index` names -- is one of the arrangements rather than a type of its

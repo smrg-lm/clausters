@@ -1388,3 +1388,62 @@ fn the_preview_switch_turns_either_way_and_reads_checked() {
     );
     assert_eq!(on(&editor), Some(false));
 }
+
+/// **A window coming back looks at its files on disk**: the activation asks
+/// for the opened file's stamp, a stamp that moved is said on the status
+/// bar once, and a file gone is said too.
+#[test]
+fn a_file_changed_on_disk_is_said_when_the_window_comes_back() {
+    let stamp = |modified: f64| json!({"modified": modified, "size": 4_000});
+    let mut editor = new_json(
+        &json!({"path": "/in/take3.wav", "workspace": "/work", "frames": 100, "channels": 1,
+                "rate": 44100, "display": 9, "stamp": stamp(1.0)})
+        .to_string(),
+    )
+    .unwrap();
+    call(&mut editor, json!({"verb": "window", "widget": 12}));
+    call(&mut editor, json!({"verb": "sync", "window": 900}));
+    let back = event(&mut editor, json!([900, 4, 0, "activated", 1]));
+    assert_eq!(back["checkDisk"]["paths"], json!(["/in/take3.wav"]));
+    assert_eq!(back["checkDisk"]["seq"], 4);
+    assert!(
+        back["answer"].is_null(),
+        "answered once the files are looked at"
+    );
+    let away = event(&mut editor, json!([900, 5, 0, "activated", 0]));
+    assert!(
+        away.get("checkDisk").is_none(),
+        "a window put away asks for nothing"
+    );
+
+    let look = |editor: &mut AudioEditor, found: Value| {
+        call(
+            editor,
+            json!({"verb": "on_disk", "seq": 4,
+            "stamps": {"/in/take3.wav": found}}),
+        )["answer"]
+            .clone()
+    };
+    assert!(
+        look(&mut editor, stamp(1.0))["reason"].is_null(),
+        "unchanged"
+    );
+    assert_eq!(
+        look(&mut editor, stamp(2.0))["reason"],
+        "take3.wav changed on disk"
+    );
+    assert!(
+        look(&mut editor, stamp(2.0))["reason"].is_null(),
+        "said once"
+    );
+    assert_eq!(
+        look(&mut editor, Value::Null)["reason"],
+        "take3.wav is no longer on disk"
+    );
+    assert!(
+        event(&mut editor, json!([900, 6, 0, "activated", 1]))
+            .get("checkDisk")
+            .is_none(),
+        "a file gone is looked for no more"
+    );
+}
