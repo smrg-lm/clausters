@@ -39,6 +39,9 @@ it, and deleted when none can. The working folder is a temporary one unless
 one is given, and goes with the editor.
 """
 
+import logging
+import threading
+
 from ... import _native
 from ..._steps import run_steps
 from ...errors import CommandError
@@ -436,13 +439,24 @@ class AudioEditor(Marking, Editor):
         """**One action of the shared coordinator, carried out to its end**:
         its effects performed in order, each await answered, and its result
         handed back -- or what failed raised. ``held`` is the clipboard lease
-        an event's payload came with, which a run says when to release."""
+        an event's payload came with, which a run says when to release.
+
+        **A render does not hold the window.** An action of the window's loop
+        that stops on a render hands it to a thread of its own and returns
+        what its first answer said (whether the take changed); the rest of
+        the run comes back to the loop when the render lands, so a render of
+        another file starts meanwhile and either lands first. A script's
+        action waits for its end, as it always did."""
         self._check_server()
         action = {"verb": verb, "window": self._host is not None and self._window is not None,
                   **args}
         answer = self._editing.core.call_ids(self._server.ids, "audio", member=self._member,
                                              do=action)
-        failure = None
+        return self._drive(answer, held, None, answer.get("changed"))
+
+    def _drive(self, answer: dict, held, failure, changed):
+        """A run carried on from ``answer`` to its end, or to a render the
+        loop hands off (`_audio`)."""
         while True:
             if "run" not in answer:
                 raise RuntimeError(answer.get("error", "the audio editor did not answer"))
@@ -456,6 +470,10 @@ class AudioEditor(Marking, Editor):
                 if error is not None:
                     raise _RAISED.get(error.get("type"), RuntimeError)(error.get("message"))
                 return answer.get("result")
+            loop = self._handing_off(answer["await"])
+            if loop is not None:
+                self._hand_off(loop, answer, held, failure)
+                return changed
             try:
                 result = self._await(answer["await"]) or {}
             except Exception as error:  # noqa: BLE001 -- the run decides what it means
@@ -463,6 +481,44 @@ class AudioEditor(Marking, Editor):
                 result = {"failed": str(error) or type(error).__name__}
             answer = self._editing.core.call_ids(self._server.ids, "audio", member=self._member,
                                                  run=answer["run"], result=result)
+
+    def _handing_off(self, wait: dict):
+        """The loop a run waiting on ``wait`` goes back to once it is done
+        elsewhere: the window's, when the run is on it and the await renders."""
+        if wait.get("kind") not in ("batch", "steps") or not any(
+                "render" in step for step in wait.get("steps") or ()):
+            return None
+        host = self._host
+        loop = getattr(host, "loop", None) if host is not None else None
+        if loop is None or not loop.is_current():
+            return None
+        return loop
+
+    def _hand_off(self, loop, answer: dict, held, failure) -> None:
+        """**A render carried out off the loop**: on a thread of its own, its
+        result handed back on the loop, in a turn of this editor's, so the
+        other windows hear what it changed."""
+        def resume(result, failure):
+            with self._editing.turn(self):
+                try:
+                    resumed = self._editing.core.call_ids(
+                        self._server.ids, "audio", member=self._member,
+                        run=answer["run"], result=result)
+                    self._drive(resumed, held, failure, None)
+                except Exception:  # noqa: BLE001 -- nobody is left to raise it to
+                    logging.getLogger(__name__).exception("an audio editor's render")
+            self._publish_actions()
+
+        def render():
+            failed = failure
+            try:
+                result = self._await(answer["await"]) or {}
+            except Exception as error:  # noqa: BLE001 -- the run decides what it means
+                failed = error
+                result = {"failed": str(error) or type(error).__name__}
+            loop.post(lambda: resume(result, failed))
+
+        threading.Thread(target=render, name="AudioEditorRender", daemon=True).start()
 
     def _await(self, wait: dict) -> dict:
         """What a run waits on, done here: the client's own work."""

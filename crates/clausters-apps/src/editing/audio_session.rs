@@ -21,7 +21,11 @@
 //!
 //! Runs stack: a run waiting on the client can see the client start another
 //! (a release that stores a take, a history step that restores one), and the
-//! second runs to its end before the first is resumed.
+//! second runs to its end before the first is resumed. A run waiting on a
+//! render is the exception: a client carries the render out beside its other
+//! work, so runs over other files start and end meanwhile, and each run is
+//! resumed by its number, in whichever order its render lands. The file it
+//! edits has pending work until then, which refuses another edit of it.
 //!
 //! # What is the client's
 //!

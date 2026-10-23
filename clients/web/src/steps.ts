@@ -71,6 +71,18 @@ export async function renderStep(
     }, onProgress);
 }
 
+/** How {@link runSteps} carries its steps out. */
+export interface StepOptions {
+    /** Which server the runner addresses the steps to. */
+    to?: "sound" | "samples";
+    /** How long each awaited reply may take, in seconds. */
+    timeout?: number;
+    /** Told how each offline render goes. */
+    progress?: RenderProgress;
+    /** Runs each awaited request, alone on its server. */
+    exclusive?: <T>(request: () => Promise<T>) => Promise<T>;
+}
+
 /** The walk each runner is on, so the next one starts after it. */
 const walking = new WeakMap<StepRunner, Promise<void>>();
 
@@ -85,7 +97,9 @@ const walking = new WeakMap<StepRunner, Promise<void>>();
  * when the server refuses a step or answers one with something it does not
  * wait on. `progress` is told how each offline render goes -- `(render, done,
  * total)` as it runs, in frames, and `(render, null, null)` once it has ended,
- * either way.
+ * either way. `exclusive` runs each awaited request, and never a render, so
+ * two walks on one server cannot take each other's `/done` while their
+ * renders run at once.
  *
  * **One walk at a time per runner.** The runner holds one sequence, so a
  * second walk begun while the first waits on a reply would find the first's
@@ -99,7 +113,7 @@ export function runSteps(
     server: Server,
     runner: StepRunner,
     steps: unknown[],
-    options: { to?: "sound" | "samples"; timeout?: number; progress?: RenderProgress } = {},
+    options: StepOptions = {},
 ): Promise<void> {
     const before = walking.get(runner) ?? Promise.resolve();
     const walk = before.then(() => walkSteps(server, runner, steps, options));
@@ -131,7 +145,7 @@ async function walkSteps(
     server: Server,
     runner: StepRunner,
     steps: unknown[],
-    { to = "sound", timeout, progress }: { to?: "sound" | "samples"; timeout?: number; progress?: RenderProgress },
+    { to = "sound", timeout, progress, exclusive = (request) => request() }: StepOptions,
 ): Promise<void> {
     const call = (request: object): Record<string, unknown> =>
         JSON.parse(runner.call(JSON.stringify(request))) as Record<string, unknown>;
@@ -191,20 +205,21 @@ async function walkSteps(
         }
         const last = messages.pop();
         if (last === undefined) throw new Error("clausters: the runner waits on a step nothing was sent for");
-        for (const message of messages) {
-            server.sendMsg(message.addr, ...message.args.map(stepArg));
-        }
-        const reply =
-            "sync" in awaiting.step
-                ? await server.request(last.addr, last.args.map(stepArg), {
+        const reply = await exclusive(() => {
+            for (const message of messages) {
+                server.sendMsg(message.addr, ...message.args.map(stepArg));
+            }
+            return "sync" in awaiting.step
+                ? server.request(last.addr, last.args.map(stepArg), {
                       expect: ["/server_sync.reply"],
                       timeout,
                   })
-                : await server.request(last.addr, last.args.map(stepArg), {
+                : server.request(last.addr, last.args.map(stepArg), {
                       expect: ["/done", "/fail"],
                       cmd: last.addr,
                       timeout,
                   });
+        });
         const answered = call({
             verb: "reply",
             from: to,

@@ -1115,4 +1115,49 @@ mod tests {
         assert!(editor.file.dirty);
         assert!(services.shared.histories.can_undo());
     }
+
+    #[test]
+    fn strokes_over_two_files_render_together_and_land_in_either_order() {
+        let (mut editor, mut services) = opened();
+        let first = editor.focused_file();
+        let held = begin(&mut editor, &mut services, stroke());
+        editor.add_file(
+            super::super::new_json(
+                r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"display":51}"#,
+            )
+            .unwrap(),
+        );
+        let second = editor.focused_file();
+        let opened = begin(&mut editor, &mut services, Command::Open);
+        assert!(finish(&mut editor, &mut services, opened, OperationResult::Success).committed);
+        let other = begin(&mut editor, &mut services, stroke());
+        // both renders are out at once; the second lands first
+        let (_, first_batch) = services.operations.next(held).unwrap();
+        let (_, second_batch) = services.operations.next(other).unwrap();
+        for batch in [&first_batch, &second_batch] {
+            assert!(batch.steps.iter().any(|s| matches!(s, Step::Render(_))));
+        }
+        for ticket in [other, held] {
+            let finished = services
+                .operations
+                .complete(
+                    &services.shared.resources,
+                    ticket,
+                    0,
+                    OperationResult::Success,
+                )
+                .expect("one batch");
+            assert!(
+                services
+                    .operations
+                    .finish(&mut editor, &mut services.shared, finished)
+                    .committed
+            );
+        }
+        assert_eq!(editor.focused_file(), second, "the view stays where it was");
+        for file in [first, second] {
+            editor.focus_file(file).unwrap();
+            assert!(editor.file.dirty, "each file holds its own stroke");
+        }
+    }
 }

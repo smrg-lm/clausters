@@ -10857,3 +10857,35 @@ state rather than history: a second render replaces it, and the log keeps
 only what the host did. The client sets it from the progress the render
 reports, at most ten times a second, and takes it away when the render ends
 either way.
+
+## A render is carried out beside an editor's work, not in its queue (2026-10-23)
+
+An audio edit that makes samples is an offline render, and a gain over an
+hour is a long one. Both clients used to carry a run's awaits out in order:
+the Python client on the window's event loop, which a render blocked, and
+the page in the editor's queue of work, which a render held. So a second
+file's edit waited for the first file's render, though nothing in it
+depended on that render: the operations already lock per file, and the
+coordinator resumes a run by its number.
+
+**A run that stops on a render hands the render out and lets the editor go
+on.** The Python client carries it out on a thread of its own when the run
+is on the window's loop, and posts the rest of the run back to the loop, in
+a turn, when it lands; a script's call still waits for its end. The page
+carries it out beside the queue and queues the rest of the run when it
+lands, and a page's promise still resolves at the end. A batch's endpoint
+lock covers each request that waits on a `/done`, never a render, since two
+waits for one command's `/done` on one server cannot be told apart but two
+renders share nothing.
+
+The trade-off is in what waits. An edit of the file a render is out on is
+refused while it is out ("the file has pending work", which the window's
+actions already read) rather than queued behind it; an edit of any other
+file runs at once, and two renders land in either order, each committed to
+the file it was made on. A history step is ordered by when entries commit,
+so an entry of a render that lands later is later in the history. Waiting
+for every member's queued work, which a history step does before it redraws,
+does not wait for a render out: that render commits after the step, and
+waiting on it from inside the queue its rest is queued on would never end.
+A page or a test that wants everything landed waits from outside the queue
+(`AudioDomain.settled`).

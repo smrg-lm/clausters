@@ -275,6 +275,70 @@ def test_a_render_s_progress_is_on_the_window_while_it_runs(monkeypatch):
     assert host.props[window]["progress"] == -1, "taken away once it has ended"
 
 
+def test_two_renders_over_two_files_run_at_once_and_land_in_either_order(monkeypatch):
+    """**A render does not hold the window**: a stroke in each of two files,
+    made on the window's loop, renders on a thread of its own; both are
+    rendering at once, the second lands first, and each file's list names
+    its own stroke."""
+    import threading
+    import time
+    from clausters import SoundFile
+    from clausters.base.loop import EventLoop
+    gates, started = {}, []
+
+    def render(render, progress=None):
+        if not render["path"]:
+            return  # a file's peaks, measured as it opens
+        gate = gates.setdefault(render["path"], threading.Event())
+        started.append(render["path"])
+        assert gate.wait(5), "released"
+
+    monkeypatch.setattr("clausters._steps.render_step", render)
+    monkeypatch.setattr(SoundFile, "open", staticmethod(
+        lambda path: SoundFile(str(path), 200, 1, SR, codec="wav", sample_format="float")))
+    loop = EventLoop("test-renders")
+    loop.start()
+    try:
+        editor, host, wid, context = opened(FakeBuffer())
+        host.loop = loop
+
+        def on_loop(func):
+            done, out = threading.Event(), []
+            loop.post(lambda: (out.append(func()), done.set()))
+            assert done.wait(5)
+            return out[0]
+
+        def until(check):
+            deadline = time.monotonic() + 5
+            while not check():
+                assert time.monotonic() < deadline, "in time"
+                time.sleep(0.005)
+
+        def stroked(index):
+            editor.focus_file(index)
+            return any(stem.endswith("-stroke") for stem, *_ in stems(editor))
+
+        on_loop(lambda: editor.open_file("/takes/b.wav"))
+        until(lambda: on_loop(lambda: len(editor.files)) == 2)
+        # a stroke in the second file, then one in the first while it renders
+        on_loop(lambda: editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10,
+                                                    [0.5], [0.0]]))
+        on_loop(lambda: editor.focus_file(0))
+        on_loop(lambda: editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 10,
+                                                    [0.5], [0.0]]))
+        until(lambda: len(started) == 2)
+        gates[started[1]].set()
+        until(lambda: on_loop(lambda: stroked(0)))
+        assert not on_loop(lambda: stroked(1)), "the first is still rendering"
+        gates[started[0]].set()
+        until(lambda: on_loop(lambda: stroked(1)))
+        assert on_loop(lambda: editor.can_undo), "each stroke is its file's edit"
+    finally:
+        for gate in gates.values():
+            gate.set()
+        loop.stop()
+
+
 def test_a_file_changed_on_disk_is_said_when_the_window_comes_back(tmp_path):
     import os
     from clausters.soundfile import SoundFile

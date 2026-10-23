@@ -307,6 +307,47 @@ test("a render's progress is on the window while it runs", async () => {
     assert.equal(host.props.get(window)!.progress, -1, "taken away once it has ended");
 });
 
+test("two renders over two files run at once and land in either order", async () => {
+    const [editor, , wid, context] = await opened(new FakeBuffer());
+    const originalOpen = SoundFile.open;
+    SoundFile.open = async (path: string) => new SoundFile(path, 200, 1, SR, "wav", "float");
+    const recorded = endpoint.render;
+    const gates = new Map<string, () => void>();
+    const started: string[] = [];
+    endpoint.render = (render) => {
+        if (!render.path) return Promise.resolve(); // a file's peaks, measured as it opens
+        started.push(render.path);
+        return new Promise<void>((resolve) => gates.set(render.path, resolve));
+    };
+    const stroked = async (index: number): Promise<boolean> => {
+        await editor.focusFile(index);
+        return stems(editor).some(([stem]) => stem.endsWith("-stroke"));
+    };
+    try {
+        await editor.openFile("/takes/b.wav");
+        await settle();
+        // a stroke in the second file, then one in the first while it renders
+        editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]]);
+        await settle();
+        await editor.focusFile(0);
+        editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 10, [0.5], [0.0]]);
+        await settle();
+        assert.equal(started.length, 2, "both render at once");
+        gates.get(started[1]!)!();
+        await settle();
+        assert.equal(await stroked(0), true, "the second landed");
+        assert.equal(await stroked(1), false, "the first is still rendering");
+        gates.get(started[0]!)!();
+        await settle();
+        assert.equal(await stroked(1), true, "and then the first");
+        assert.equal(editor.canUndo, true, "each stroke is its file's edit");
+    } finally {
+        for (const release of gates.values()) release();
+        endpoint.render = recorded;
+        SoundFile.open = originalOpen;
+    }
+});
+
 test("a file changed on disk is said when the window comes back", async () => {
     const { mkdtemp, utimes } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");

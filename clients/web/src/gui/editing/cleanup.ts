@@ -7,21 +7,25 @@ import { serviceInstance } from "./application.ts";
 
 const executors = new WeakMap<object, Promise<void>>();
 
-/** Serialize indistinguishable command waits on one endpoint. @internal */
-export function executeSteps(
+/**
+ * Serialize indistinguishable command waits on one endpoint: each awaited
+ * request waits for the one before it, and a render waits for nothing, so
+ * batches of two files render at once. @internal
+ */
+export async function executeSteps(
     server: Server,
     instance: { connection: number; generation: number },
     steps: unknown[],
     progress?: RenderProgress,
 ): Promise<void> {
-    const work = (executors.get(server) ?? Promise.resolve()).catch(() => {}).then(async () => {
-        const current = serviceInstance(server);
-        if (current.connection !== instance.connection || current.generation !== instance.generation) throw new Error("the batch belongs to another server instance");
-        await runSteps(server, new StepRunner(), steps as never, { progress });
-    });
-    executors.set(server, work);
-    void work.catch(() => {});
-    return work;
+    const current = serviceInstance(server);
+    if (current.connection !== instance.connection || current.generation !== instance.generation) throw new Error("the batch belongs to another server instance");
+    const exclusive = <T>(request: () => Promise<T>): Promise<T> => {
+        const work = (executors.get(server) ?? Promise.resolve()).then(request);
+        executors.set(server, work.then(() => {}, () => {}));
+        return work;
+    };
+    await runSteps(server, new StepRunner(), steps as never, { progress, exclusive });
 }
 
 /** Return an id only after its exact cleanup ticket is confirmed. @internal */

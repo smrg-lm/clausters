@@ -580,3 +580,89 @@ fn a_render_the_clipboard_names_outlives_the_entry_that_made_it() {
     assert_eq!(client.heard()[0], 0.5, "the copy, heard");
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+/// **Two renders over two files at once, landing in either order**: a
+/// stroke in each of two editors stops on its render, both wait together,
+/// the second lands first, and each file hears its own stroke.
+#[test]
+fn two_renders_over_two_files_land_in_either_order() {
+    let directory = scratch("two-renders");
+    let mut client = Client::new(&directory);
+    client.open();
+    let first = client.member.clone();
+    // a second editor, over a file of its own
+    let other = directory.join("other.wav").to_string_lossy().into_owned();
+    std::fs::copy(&client.take, &other).unwrap();
+    let work = directory.join("other-work");
+    std::fs::create_dir(&work).unwrap();
+    client.take = other;
+    client.work = work;
+    client.open();
+    let second = client.member.clone();
+    assert_ne!(first, second);
+
+    // each stroke carried as far as its render, and held there
+    let mut held = Vec::new();
+    for (seq, (member, value)) in [(&first, 0.5), (&second, 0.25)].into_iter().enumerate() {
+        client.member = member.clone();
+        let args = vec![
+            json!(PICTURE),
+            json!(seq + 1),
+            json!(client.editing.version()),
+            json!("draw"),
+            json!(0),
+            json!(10),
+            json!([value]),
+            json!([0]),
+        ];
+        let mut answer = client.call(json!({"verb": "audio", "member": member, "do":
+            {"verb": "event", "addr": "/gui_event", "args": args, "lease": false,
+             "window": true}}));
+        loop {
+            for effect in answer["effects"].as_array().cloned().unwrap_or_default() {
+                client.effect(&effect);
+            }
+            assert_ne!(
+                answer["done"], true,
+                "the stroke ended before its render: {answer}"
+            );
+            let renders = steps_from_json(&answer["await"]["steps"])
+                .iter()
+                .any(|step| matches!(step, Step::Render(_)));
+            if answer["await"]["kind"] == "batch" && renders {
+                break;
+            }
+            let result = client.wait(&answer["await"]);
+            answer = client.call(json!({"verb": "audio", "member": member,
+                "run": answer["run"], "result": result}));
+        }
+        held.push((member.clone(), answer));
+    }
+
+    // the second lands first, then the first
+    for (member, mut answer) in held.into_iter().rev() {
+        client.member = member.clone();
+        loop {
+            let result = client.wait(&answer["await"]);
+            answer = client.call(json!({"verb": "audio", "member": member,
+                "run": answer["run"], "result": result}));
+            assert!(answer["run"].is_u64(), "{answer}");
+            for effect in answer["effects"].as_array().cloned().unwrap_or_default() {
+                client.effect(&effect);
+            }
+            if answer["done"] == true {
+                assert!(answer["error"].is_null(), "{answer}");
+                break;
+            }
+        }
+    }
+    for (member, value) in [(&first, 0.5), (&second, 0.25)] {
+        client.member = member.clone();
+        let heard = client.heard();
+        assert_eq!(heard[10], value, "each file hears its own stroke");
+        assert_eq!(heard[9], ramp(9));
+        assert_eq!(client.binding()["dirty"], true);
+    }
+    assert_eq!(client.pending_cleanup(), 0);
+    std::fs::remove_dir_all(directory).unwrap();
+}

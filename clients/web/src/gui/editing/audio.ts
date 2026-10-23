@@ -302,6 +302,37 @@ export class AudioDomain extends Domain<Buffer | null> {
         return this.#work;
     }
 
+    /** The renders carried out beside the queue, until their run is queued again. */
+    readonly #out = new Set<Promise<void>>();
+
+    /**
+     * Count `landed` as work in flight until it settles: a render a run
+     * carries out beside the queue.
+     *
+     * @internal
+     */
+    hold(landed: Promise<void>): void {
+        const held: Promise<void> = landed.then(() => {}, () => {}).finally(() => this.#out.delete(held));
+        this.#out.add(held);
+    }
+
+    /**
+     * **Every piece of work landed**, the renders carried out beside the
+     * queue and what their runs queued after them: what a test or a page
+     * waits on from outside the queue. Never awaited from inside it, which
+     * {@link idle} is for.
+     *
+     * @internal
+     */
+    async settled(): Promise<void> {
+        for (;;) {
+            const work = this.#work;
+            await work.catch(() => {});
+            if (this.#out.size === 0 && work === this.#work) return;
+            await Promise.all(this.#out);
+        }
+    }
+
     /**
      * Run `then` once the work queued so far has landed: what a turn's answer
      * waits for, since it asks the window to read a join the steps replace.
@@ -354,6 +385,12 @@ export class AudioDomain extends Domain<Buffer | null> {
         this.#work = this.#work.catch(() => {}).then(run);
         void this.#work.catch(() => {});
     }
+}
+
+/** Whether a run's await carries an offline render out. */
+function renders(request: Record<string, any>): boolean {
+    return (request.kind === "batch" || request.kind === "steps")
+        && ((request.steps ?? []) as Record<string, unknown>[]).some((step) => "render" in step);
 }
 
 /** Removes each of `files`; one that is not there is no error. */
@@ -737,8 +774,20 @@ export class AudioEditor extends Editor<Buffer | null> {
      * which the run says when to release.
      */
     private async finish(first: RunAnswer, held?: ExchangeLease): Promise<any> {
+        const ended = await this.carryOn(first, held, undefined, false);
+        return (ended as { value: unknown }).value;
+    }
+
+    /**
+     * A run carried on from `answer`: to its end, or -- when `handOff` is set
+     * -- to an await that renders, which is started and handed back without
+     * waiting for it (`landed`), so the work queued after the run is not held
+     * by the render.
+     */
+    private async carryOn(first: RunAnswer, held: ExchangeLease | undefined, failed: unknown, handOff: boolean):
+        Promise<{ value: unknown } | { run: number; landed: Promise<[Record<string, unknown>, unknown]> }> {
         let answer = first;
-        let failure: unknown = undefined;
+        let failure: unknown = failed;
         for (;;) {
             if (answer.run === undefined) {
                 throw new Error(String(answer.error ?? "the audio editor did not answer"));
@@ -751,17 +800,46 @@ export class AudioEditor extends Editor<Buffer | null> {
                 if (error !== undefined && typeof error === "object") {
                     throw (RAISED[error.type] ?? RAISED.runtime!)(error.message);
                 }
-                return answer.result;
+                return { value: answer.result };
             }
+            const awaited = this.answerAwait(answer.await!).then(
+                (result): [Record<string, unknown>, unknown] => [result, failure],
+                (error): [Record<string, unknown>, unknown] => [
+                    { failed: error instanceof Error ? error.message : String(error) }, error],
+            );
+            if (handOff && renders(answer.await!)) return { run: answer.run, landed: awaited };
             let result: Record<string, unknown>;
-            try {
-                result = await this.answerAwait(answer.await!);
-            } catch (error) {
-                failure = error;
-                result = { failed: error instanceof Error ? error.message : String(error) };
-            }
+            [result, failure] = await awaited;
             answer = this.callAudio({ run: answer.run, result });
         }
+    }
+
+    /**
+     * **A render does not hold the editor's work**: one leg of a run, carried
+     * on inside the domain's queue, and a render it stops on carried out
+     * beside the queue, the next leg queued again when the render lands -- so
+     * a render of another file starts meanwhile, and either lands first.
+     * `settle` hears the run's result, or what it failed with, once it ends;
+     * with none, a failure fails the queued work, as a hand's gesture does.
+     */
+    private async leg(next: () => RunAnswer, held: ExchangeLease | undefined, failed: unknown,
+        settle?: (value: unknown, error?: unknown) => void): Promise<void> {
+        const domain = this.domain as AudioDomain;
+        let ended: Awaited<ReturnType<AudioEditor["carryOn"]>>;
+        try {
+            ended = await this.carryOn(next(), held, failed, true);
+        } catch (error) {
+            if (settle === undefined) throw error;
+            settle(undefined, error);
+            return;
+        }
+        if ("value" in ended) {
+            settle?.(ended.value);
+            return;
+        }
+        const run = ended.run;
+        domain.hold(ended.landed.then(([result, failure]) => domain.after(
+            () => this.leg(() => this.callAudio({ run, result }), held, failure, settle))));
     }
 
     /** Run an action now, from inside the queued work. @internal */
@@ -772,13 +850,8 @@ export class AudioEditor extends Editor<Buffer | null> {
     /** Run an action once the work queued before it has landed. @internal */
     audio(verb: string, args: Record<string, unknown> = {}): Promise<any> {
         return new Promise((resolve, reject) => {
-            (this.domain as AudioDomain).after(async () => {
-                try {
-                    resolve(await this.carry(verb, args));
-                } catch (error) {
-                    reject(error);
-                }
-            });
+            (this.domain as AudioDomain).after(() => this.leg(() => this.begin(verb, args), undefined, undefined,
+                (value, error) => (error === undefined ? resolve(value) : reject(error))));
         });
     }
 
@@ -795,7 +868,7 @@ export class AudioEditor extends Editor<Buffer | null> {
         this.publishActions();
         (this.domain as AudioDomain).after(async () => {
             await Promise.all(landing);
-            await this.finish({ ...answer, effects: [] }, held);
+            await this.leg(() => ({ ...answer, effects: [] }), held, undefined);
         });
         const error = answer.error;
         if (answer.done === true && error !== undefined && typeof error === "object") {

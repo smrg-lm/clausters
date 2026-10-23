@@ -12,14 +12,15 @@ _EXECUTORS_LOCK = threading.RLock()
 
 
 def execute_steps(server, instance, steps, progress=None):
-    """Serialize indistinguishable command waits on one endpoint. ``progress``
-    is told how each offline render goes (`run_steps`)."""
+    """Serialize indistinguishable command waits on one endpoint: each awaited
+    request holds the endpoint's lock, and a render holds nothing, so batches
+    of two files render at once. ``progress`` is told how each offline render
+    goes (`run_steps`)."""
     with _EXECUTORS_LOCK:
         lock = _EXECUTORS.setdefault(server, threading.RLock())
-    with lock:
-        if instance != _service_instance(server):
-            raise RuntimeError("the batch belongs to another server instance")
-        run_steps(server, _native.StepRunner(), steps, progress=progress)
+    if instance != _service_instance(server):
+        raise RuntimeError("the batch belongs to another server instance")
+    run_steps(server, _native.StepRunner(), steps, progress=progress, lock=lock)
 
 
 def release_buffer(server, core, resource):

@@ -2984,8 +2984,10 @@ editors and should port this one.
   release: ten pastes of an hour into two hours and into 4.8 GB, and their
   undo and redo, answer in 0.05 ms at the median and 0.3 ms at worst, as
   into two seconds, render nothing, and leave the editor's and the server's
-  memory where it was). Left: the session save, renders on two NRT instances
-  at once, the handoff from an effect's preview to its render (root
+  memory where it was), and renders over two files at once: a run that stops
+  on a render hands it out, so an edit of another file runs meanwhile and
+  the two land in either order, each committed to its own file. Left: the
+  session save, the handoff from an effect's preview to its render (root
   `PLAN.md`, Found by use) and the eye and ear pass.*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**

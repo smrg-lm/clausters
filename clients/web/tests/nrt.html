@@ -206,11 +206,8 @@
         // a folder handed over is the caller's to make
         await opfs.makeDirectory("application-work");
         const editor = new AudioEditor(buf, { workspace: "application-work" });
-        const idle = async () => {
-          let waiting;
-          do { waiting = editor.domain.idle(); await waiting; }
-          while (waiting !== editor.domain.idle());
-        };
+        // every piece of work landed, the renders carried out beside the queue too
+        const idle = () => editor.domain.settled();
         await idle();
         editor.coreCall("window", { widget: 1234 });
         const stroke = async (seq, value) => {

@@ -8,13 +8,16 @@ page's and the GUI host's; what is left here is a socket and waiting on it.
 """
 
 from array import array
+from contextlib import nullcontext
 
 from .base import _osclib
 from .errors import CommandError
 
+_UNLOCKED = nullcontext()
+
 
 def run_steps(server, runner, steps: list, *, to: str = "sound",
-              timeout: "float | None" = None, progress=None) -> None:
+              timeout: "float | None" = None, progress=None, lock=None) -> None:
     """Carry ``steps`` out on ``server`` through ``runner``.
 
     What may go out is sent; where something is awaited, the runner puts the
@@ -32,6 +35,9 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         progress: told how each offline render goes -- ``(render, done,
             total)`` as it runs, in frames, and ``(render, None, None)`` once
             it has ended, either way.
+        lock: held around each awaited request and never across a render,
+            so two batches on one server cannot take each other's ``/done``
+            while their renders run at once.
 
     Raises:
         CommandError: when the server refuses a step, or answers one with
@@ -83,13 +89,14 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         if not messages:
             raise CommandError("the runner waits on a step nothing was sent for")
         *first, last = messages
-        for message in first:
-            server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
         expect = (("/server_sync.reply",) if "sync" in awaiting["step"]
                   else ("/done", "/fail"))
-        raddr, rargs = server.request(
-            last["addr"], *[step_arg(a) for a in last["args"]], expect=expect,
-            timeout=timeout)
+        with lock if lock is not None else _UNLOCKED:
+            for message in first:
+                server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
+            raddr, rargs = server.request(
+                last["addr"], *[step_arg(a) for a in last["args"]], expect=expect,
+                timeout=timeout)
         answer = runner.call("reply", **{"from": to}, addr=raddr,
                              args=[tagged(a) for a in rargs])
         if answer.get("reply") == "refused":
