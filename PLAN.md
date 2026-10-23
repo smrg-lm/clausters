@@ -2425,6 +2425,42 @@ Further formats/platforms are checkbox entries under Future directions. Document
 
 ## Future directions (a design that is not a fix)
 
+- ⬜ **Recording, monitoring and playback aligned as one model of the
+  transport's latencies** *(asked by the user, 2026-10-23, deciding the
+  disk readers' cue)*. Nothing compensates a recording yet: a take recorded
+  while the transport plays lands late by the device's round trip, and an
+  overdub does not line up with what was heard. It is to be designed whole,
+  so the implementation is not one patch behind another. What it has to
+  hold together:
+  - **The device's latencies**: output and input, as the backend reports
+    them (cpal natively, the AudioContext's `outputLatency` and the
+    worklet's in a page), and a measured round trip where what is reported
+    is not to be trusted. Published where a client reads them
+    (`/server_status`), never guessed by a client.
+  - **The graph's delay compensation** (`J8`): a path's declared latency is
+    already aligned inside the graph; a recording taken after such a path,
+    or a monitor sent through one, adds it to the device's.
+  - **The disk readers' pre-roll** (the cue, Found by use, "A disk reader
+    starts with a click"): what plays is ready before the transport rolls,
+    and a recording armed on the same transport starts on the same sample.
+  - **Where the shift lands**: a recorded take is placed earlier by the
+    total latency on the transport's axis -- a list's part starting at an
+    offset, or a region's position -- and its samples are never rewritten
+    for it.
+  - **Monitoring**: direct (the hardware's) or through the graph, which
+    adds the graph's and the device's latency to what is heard while
+    recording, and which the person must be able to choose.
+  - **Punch in and out, and a loop recording**: the punch points are on the
+    transport's axis and the recorded frames are cut there after the shift,
+    so a punch is exact on the take whatever the latency.
+  - **Several transports started together**: a timetagged bundle starts them
+    on one sample; their cues are waited for before it, and their latencies
+    are the same device's.
+  - **Offline**: an NRT render has no device, so nothing is shifted there,
+    and the same score gives the same samples.
+  - **A latency that changes** (a plugin reporting a new one, a device
+    reopened): a recording in progress keeps the latency it started with.
+
 - ⬜ **A list reader plays backwards** *(named 2026-10-22 by the user, deciding how the audio editor reverses: as an edit it is an NRT render, and reading backwards is the reader's)*. The transport-positioned list reader of `S21` reads forward; reading backwards gives a playhead that runs backwards (scrubbing, a reverse play) for every application that plays a list, and lets an editor reverse a long span as a part read backwards instead of rendering it. What it takes: the disk thread fills the ring ahead in the direction of play, each part's fades and seams read the other way, and a channel map and a resampled part stay correct. After `S21`.
 
 - ✅ **A measured bound on what one block drains** *(named 2026-10-15, by the
@@ -4618,3 +4654,36 @@ should confirm before the fix.
   live over to its render, should one need it (the apps plan's Future
   directions, "An effect heard live before it is applied").
 
+- ⬜ **A disk reader starts with a click, and a loop clicks at every
+  wrap** *(found 2026-10-23, by ear on the audio lifecycle example; design
+  decided with the user the same day)*. `TransportDiskIn` lives in the
+  transport's governed group, which is frozen while the transport stands,
+  so the reader never fills its ring at the standing position: the first
+  block after a play finds it empty, plays silence until the refill lands,
+  and the take comes in as a step after the declick's ramp has ended. A
+  loop does the same at each wrap, since the reader does not know the
+  transport's loop and reads past its end. **The decided design**, the
+  field's pre-roll, which keeps every transport's timing as it is:
+  - **`/transport_cue <transport>`**, a new command: the transport stays
+    stopped where it is, its governed group runs with `rolling` false so
+    the disk readers fill their rings at the standing position, and the
+    reply is `/done` once every reader holds it (or after a bounded wait,
+    reported). Nothing else moves: the transport's clock stays frozen, so
+    its bundles and lanes are where they were.
+  - **`/transport_play` is unchanged**: it rolls on the sample it lands on,
+    alone or in a timetagged bundle, so transports started together stay
+    together. A play with no cue before it behaves as today.
+  - **The audio editor plays by cue, `/done`, then play**: the playback's
+    play and a play after the cursor moved go through the cue in both
+    clients, through the coordinator's steps.
+  - **A loop is read straight through**: the reader is told the transport's
+    loop span (`TransportCtx`), the disk thread renders from the loop's end
+    back to its start, and the audio thread's head wraps with it, so a wrap
+    costs no refill. A span changed while it plays is a list replaced while
+    it plays, which already fades.
+  - Native and page readers alike (`dsp::stream`, `dsp::disk_web`), the
+    reference in `docs/schemas.md`, both clients' builders, and a test that
+    plays from a stand and across a wrap with no silent frame.
+  The recording side of the same timing is a Future direction ("Recording,
+  monitoring and playback aligned as one model of the transport's
+  latencies").
