@@ -2979,10 +2979,14 @@ editors and should port this one.
   a render, the clipboard holds segments, a save renders and moves aside the
   file the list reads, and the renders nothing names are deleted. Since
   done: a render's progress on the status bar, the changed-on-disk notice,
-  and a list replaced while it plays fading into the new one instead of a
-  silence. Left: the session save, renders on two NRT instances at once,
-  the handoff from an effect's preview to its render (root `PLAN.md`, Found
-  by use), the measurements and the eye and ear pass.*
+  a list replaced while it plays fading into the new one instead of a
+  silence, and the measurement of the edits (`tests/long_takes.rs`, in
+  release: ten pastes of an hour into two hours and into 4.8 GB, and their
+  undo and redo, answer in 0.05 ms at the median and 0.3 ms at worst, as
+  into two seconds, render nothing, and leave the editor's and the server's
+  memory where it was). Left: the session save, renders on two NRT instances
+  at once, the handoff from an effect's preview to its render (root
+  `PLAN.md`, Found by use) and the eye and ear pass.*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
