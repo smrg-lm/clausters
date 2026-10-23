@@ -2861,8 +2861,8 @@ alike, and is what the milestones of this section build.
 - **An edit is a list.** The audio editor works as the multitrack does: an
   edit is a new segment list over files that never change. Cut, copy, paste, move, undo and redo move no samples at any length,
   and the clipboard holds segments.
-- **Two servers, by the kind of work.** The **RT server** plays a list, and
-  previews an effect live, reading the files ahead of the playhead. The **NRT
+- **Two servers, by the kind of work.** The **RT server** plays a list,
+  reading the files ahead of the playhead. The **NRT
   server** processes: a gain, a mix, a stroke, an effect, a consolidation each
   read their spans from disk and write a new file in the editor's working
   folder, which the list then names. A render is temporary, and so is the
@@ -2875,8 +2875,8 @@ alike, and is what the milestones of this section build.
   the process keeps no state across them (one with a tail or memory overlaps
   its spans). They finish in any order, and an edit names its render only once
   it is done, which is the coordinator's per-completion wait. The RT server
-  goes on playing while they work: it previews an effect live, and when the
-  render lands the list names the new file with no break in what is heard. It
+  goes on playing while they work, and when the render lands the list names
+  the new file with no break in what is heard. It
   can also play a render still being written, up to how far it is written
   (the frontier `S20` publishes); the other way round, the RT server records
   and an NRT instance measures what it recorded.
@@ -2948,6 +2948,15 @@ written; none is left open:
    are not compatible applications and the audio editor's takes do not live
    in a multitrack's session. Saving with edits half done means nothing
    here; a save consolidates the list into the file.
+8. ✅ **The gain envelope has no preview** *(decided 2026-10-23 by the
+   user)*. Drawing a preview of an envelope means a processed picture of
+   the take, and over hours of multichannel audio that is not a picture to
+   make; the curve is edited over the take and heard once it is applied.
+   Its insert, its table and its processed picture went. Hearing an effect
+   live before applying it, which a real-time effect allows with nothing
+   drawn or with a graph animated as it plays (the spectrum an equalizer
+   leaves), is a different thing, filed in Future directions ("An effect
+   heard live before it is applied").
 
 **The order**: `S21` and `S22` (root `PLAN.md`), `O34`
 (`crates/clausters-document/PLAN.md`), `G45` (`clients/gui/PLAN.md`), then
@@ -2959,8 +2968,8 @@ editors and should port this one.
   `O34` and `G45`. Opening a file reads its header and its peaks (measured
   once if it has none) and nothing else; every edit is a list; the clipboard
   holds segments; processing (gain, reverse, mix, a stroke,
-  an effect) is an NRT render into the working folder; playing and previewing
-  are the RT server's list reader; saving consolidates the list into a file by an
+  an effect) is an NRT render into the working folder; playing is the RT
+  server's list reader; saving consolidates the list into a file by an
   NRT render. The editor's shared crate, both
   clients and the standalone host change together; nothing reads a take
   whole. **Acceptance:** on a two-hour stereo file and a synthetic W64 file of
@@ -2970,9 +2979,7 @@ editors and should port this one.
   ten and across undo and redo; copy and paste between two windows and two
   files move no samples; a gain over an hour is an NRT render whose progress
   is shown and which leaves the RT server playing; two renders over two files
-  run on two NRT instances at once and land in either order; an effect
-  previewed live and then applied goes from the preview to its render with
-  nothing heard but the effect; a consolidation's file reads back sample
+  run on two NRT instances at once and land in either order; a consolidation's file reads back sample
   for sample; a save over the opened file keeps undo working past it, and a
   second editor over that file is told the file changed on disk. The
   example pair `editors/audio_lifecycle` runs as before, natively and in a
@@ -2991,10 +2998,10 @@ editors and should port this one.
   into two seconds, render nothing, and leave the editor's and the server's
   memory where it was), and renders over two files at once: a run that stops
   on a render hands it out, so an edit of another file runs meanwhile and
-  the two land in either order, each committed to its own file. Left: the
-  handoff from an effect's preview to its render (root `PLAN.md`, Found by
-  use) and the eye and ear pass. The session save the acceptance named
-  first was dropped (2026-10-23, the seventh decision).*
+  the two land in either order, each committed to its own file. Left: the eye
+  and ear pass. The session save the acceptance named first was dropped
+  (2026-10-23, the seventh decision), and so was the effect previewed live
+  and then applied (the eighth).*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
@@ -3021,6 +3028,17 @@ only for a choice with non-obvious context.
 ## Future directions (to fold into milestones as they firm up)
 
 Every entry carries a checkbox.
+
+- ⬜ **An effect heard live before it is applied** *(the user, 2026-10-23,
+  removing the gain envelope's preview)*. An effect that runs in real time
+  can be heard on the take as it plays and then rendered into it, with
+  nothing drawn or with a graph animated as it plays (the spectrum an
+  equalizer leaves). The play graph keeps its insert slot (`fx`) for it.
+  "Preview" names this badly, since it also reads as a picture; the name is
+  part of the design. What it has to settle: which effects, how one is
+  chosen and set, and how its render takes over from what is heard (the
+  root plan's "An effect applied from its preview is heard twice for a
+  moment" holds one way, should it apply).
 
 - ⬜ **Persist an application's multi-file workspace** *(ownership audit,
   2026-10-18)*. Saving an audio file is not saving the open-file set. Define
@@ -3054,7 +3072,9 @@ Every entry carries a checkbox.
   a file holds exactly one, the preview's, and took no argument saying which).
   Several effects per file need identity -- an effect in the file's chain,
   with its own insert, bypass and free verbs -- and are part of this design.
-  Still open: the one Apply.
+  Still open: the one Apply. *Since 2026-10-23* the menu has no preview
+  entries: the gain envelope's preview was removed (the turn to disk's
+  eighth decision), and Edit holds only *Apply gain envelope*.
 
 - ⬜ **A roll may need its tempo and its barlines as parameters** *(the
   user, 2026-10-06, hearing the page of a sequence against the rolls over
@@ -3386,7 +3406,9 @@ Every entry carries a checkbox.
   playback's `end`, and a script copies it into `Session.end` when it
   saves.)*
 
-- ✅ **Effects in preview in the audio editor** *(out of X7)*: the first
+- ✅ **Effects in preview in the audio editor** *(out of X7; removed
+  2026-10-23 with the gain envelope's preview, the turn to disk's eighth
+  decision)*: the first
   insert is the take's gain envelope, heard through `ReplaceOut` and a
   linear-ASR `LinXFade2` bypass, then paused at exact dry. Preview on/off,
   remove and Apply are distinct verbs. The processed picture uses a scratch

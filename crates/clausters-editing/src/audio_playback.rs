@@ -151,31 +151,11 @@ pub struct AudioEditorPlayback {
     /// Whether the pass last asked for loops, which is what a selection
     /// redrawn while it plays goes by ([`Self::follow`]).
     looping: bool,
-    effects: BTreeMap<u64, GainEffect>,
-}
-
-#[derive(Debug, Clone)]
-struct GainEffect {
-    buffer: i32,
-    scratch: i32,
-    frames: u64,
-    source: i32,
-    revision: Value,
-    points: Vec<clausters_document::Point<clausters_document::timebase::Second>>,
-    on: bool,
 }
 
 fn dry_handle(file: u64) -> String {
     format!("dry:{file}")
 }
-fn effect_slot(file: u64) -> String {
-    format!("fx:{file}")
-}
-
-fn effect_handle(file: u64) -> String {
-    format!("gain:{file}")
-}
-
 impl AudioEditorPlayback {
     /// A playback that has made nothing yet and holds no transport, carrying
     /// out its steps for `endpoint`: it allocates a transport of its own the
@@ -193,7 +173,6 @@ impl AudioEditorPlayback {
             viewed: None,
             rolling: false,
             looping: false,
-            effects: BTreeMap::new(),
         }
     }
 
@@ -269,11 +248,7 @@ impl AudioEditorPlayback {
             .files
             .get(&file)
             .is_some_and(|f| f.channels != channels);
-        let mut steps = if rebuild {
-            self.remove_effect(file, ids)?
-        } else {
-            Vec::new()
-        };
+        let mut steps = Vec::new();
         if rebuild {
             steps.extend(self.applier.apply(
                 vec![Op::FreeBus {
@@ -328,10 +303,8 @@ impl AudioEditorPlayback {
         if self.files.len() == 1 {
             return self.close(ids);
         }
-        let mut cleanup = self.remove_effect(file, ids)?;
         self.files.remove(&file);
         let mut steps = Vec::new();
-        steps.append(&mut cleanup);
         if self.focus == Some(file) {
             self.focus = None;
             if self.rolling {
@@ -348,212 +321,6 @@ impl AudioEditorPlayback {
             ],
             ids,
         )?);
-        Ok(steps)
-    }
-
-    /// Install or update the gain insert, with a sample-rate table made by
-    /// the same server operations as Apply. No samples cross the client wire.
-    pub fn gain(
-        &mut self,
-        file: u64,
-        points: Vec<clausters_document::Point<clausters_document::timebase::Second>>,
-        on: bool,
-        ids: &mut IdSpaces,
-    ) -> Result<Vec<Step>, IdError> {
-        let Some(f) = self.files.get(&file).cloned() else {
-            return Ok(Vec::new());
-        };
-        let mut steps = Vec::new();
-        let changed = self
-            .effects
-            .get(&file)
-            .is_none_or(|e| e.points != points || e.frames != f.frames || e.source != f.buffer);
-        if changed {
-            let frames = points
-                .last()
-                .map_or(f.frames, |p| {
-                    f.frames.max((p.at.0 * f.rate).round().max(0.0) as u64)
-                })
-                .max(1);
-            if frames
-                .checked_mul(f.channels as u64)
-                .is_none_or(|n| n > i32::MAX as u64)
-            {
-                return Err(IdError::Exhausted(Space::Buffers));
-            }
-            let buffer = ids.alloc(Space::Buffers, 2)? as i32;
-            let scratch = buffer + 1;
-            let send = |addr: &str, args| {
-                Step::Send(clausters_core::osc::OscMessage {
-                    addr: addr.into(),
-                    args,
-                })
-            };
-            steps.push(send(
-                "/buffer_alloc",
-                vec![
-                    OscType::Int(buffer),
-                    OscType::Int(frames as i32),
-                    OscType::Int(1),
-                ],
-            ));
-            steps.push(Step::AwaitDone {
-                command: "/buffer_alloc".into(),
-                index: Some(buffer),
-            });
-            steps.push(send(
-                "/buffer_fill",
-                vec![
-                    OscType::Int(buffer),
-                    OscType::Int(0),
-                    OscType::Int(frames as i32),
-                    OscType::Float(1.0),
-                ],
-            ));
-            // The fill and the gains are writes in place, run in queue order;
-            // the gains' completion barriers finish the table before any node
-            // reads it.
-            steps.extend(crate::gain::steps(buffer, frames, f.rate, &points));
-            steps.push(send(
-                "/buffer_alloc",
-                vec![
-                    OscType::Int(scratch),
-                    OscType::Int(frames as i32),
-                    OscType::Int(f.channels as i32),
-                ],
-            ));
-            steps.push(Step::AwaitDone {
-                command: "/buffer_alloc".into(),
-                index: Some(scratch),
-            });
-            steps.push(send(
-                "/buffer_gen",
-                vec![
-                    OscType::Int(scratch),
-                    OscType::String("copy".into()),
-                    OscType::Int(0),
-                    OscType::Int(f.buffer),
-                    OscType::Int(0),
-                    OscType::Int((f.frames * f.channels as u64) as i32),
-                ],
-            ));
-            steps.push(Step::AwaitDone {
-                command: "/buffer_gen".into(),
-                index: Some(scratch),
-            });
-            steps.extend(crate::gain::steps(scratch, frames, f.rate, &points));
-            let controls = ports(&[
-                (
-                    "initial",
-                    Port::from(if !self.rolling && on { 1.0 } else { 0.0 }),
-                ),
-                ("dry", bus(&dry_handle(file), 0)),
-                ("gain", Port::from(buffer as f64)),
-                ("rate", Port::from(f.rate)),
-                ("on", Port::from(if on { 1.0 } else { 0.0 })),
-            ]);
-            if let Some(old) = self.effects.remove(&file) {
-                steps.extend(self.applier.apply(
-                    vec![Op::Set {
-                        handle: effect_handle(file),
-                        ports: controls,
-                    }],
-                    ids,
-                )?);
-                steps.push(send("/buffer_free", vec![OscType::Int(old.buffer)]));
-                steps.push(Step::AwaitDone {
-                    command: "/buffer_free".into(),
-                    index: Some(old.buffer),
-                });
-                steps.push(send("/buffer_free", vec![OscType::Int(old.scratch)]));
-                steps.push(Step::AwaitDone {
-                    command: "/buffer_free".into(),
-                    index: Some(old.scratch),
-                });
-                ids.release(Space::Buffers, old.buffer as i64, 2)?;
-            } else {
-                steps.extend(self.applier.apply(
-                    vec![
-                        Op::Slot {
-                            handle: effect_slot(file),
-                            target: play_handle(file),
-                            slot: ae::FX_SLOT.into(),
-                            ports: Ports::new(),
-                        },
-                        Op::Synth {
-                            handle: effect_handle(file),
-                            def: ae::gain_name(f.channels),
-                            target: effect_slot(file),
-                            ports: controls,
-                        },
-                    ],
-                    ids,
-                )?);
-            }
-            self.effects.insert(
-                file,
-                GainEffect {
-                    buffer,
-                    scratch,
-                    frames: f.frames,
-                    source: f.buffer,
-                    revision: Value::Null,
-                    points,
-                    on,
-                },
-            );
-        }
-        if let Some(effect) = self.effects.get_mut(&file) {
-            effect.on = on;
-            // The insert is a caller-owned synth inside the auto graph, so
-            // PauseSelf and Run address the same node, not a containing group.
-            steps.extend(self.applier.apply(
-                vec![
-                    Op::Run {
-                        handle: effect_handle(file),
-                        run: true,
-                    },
-                    Op::Set {
-                        handle: effect_handle(file),
-                        ports: ports(&[("on", Port::from(if on { 1.0 } else { 0.0 }))]),
-                    },
-                ],
-                ids,
-            )?);
-        }
-        Ok(steps)
-    }
-
-    /// Free a bypassed insert and its table. Bypass first before removing a
-    /// sounding effect; removal itself is deliberately a separate operation.
-    pub fn remove_effect(&mut self, file: u64, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
-        let Some(effect) = self.effects.remove(&file) else {
-            return Ok(Vec::new());
-        };
-        let mut steps = self.applier.apply(
-            vec![Op::Free {
-                handle: effect_slot(file),
-                forget: vec![effect_handle(file)],
-            }],
-            ids,
-        )?;
-        steps.push(Step::Send(clausters_core::osc::OscMessage {
-            addr: "/buffer_free".into(),
-            args: vec![OscType::Int(effect.buffer)],
-        }));
-        steps.push(Step::AwaitDone {
-            command: "/buffer_free".into(),
-            index: Some(effect.buffer),
-        });
-        steps.push(Step::Send(clausters_core::osc::OscMessage {
-            addr: "/buffer_free".into(),
-            args: vec![OscType::Int(effect.scratch)],
-        }));
-        steps.push(Step::AwaitDone {
-            command: "/buffer_free".into(),
-            index: Some(effect.scratch),
-        });
-        ids.release(Space::Buffers, effect.buffer as i64, 2)?;
         Ok(steps)
     }
 
@@ -756,9 +523,6 @@ impl AudioEditorPlayback {
             forget.push(play_handle(file));
             forget.extend((0..f.channels).map(|c| reader_handle(file, c)));
         }
-        for file in self.effects.keys().copied().collect::<Vec<_>>() {
-            steps.extend(self.remove_effect(file, ids)?);
-        }
         steps.extend(self.applier.apply(
             vec![
                 Op::Free {
@@ -773,7 +537,6 @@ impl AudioEditorPlayback {
             ids,
         )?);
         for file in self.files.keys().copied().collect::<Vec<_>>() {
-            steps.extend(self.remove_effect(file, ids)?);
             steps.extend(self.applier.apply(
                 vec![Op::FreeBus {
                     handle: dry_handle(file),
@@ -802,12 +565,6 @@ impl AudioEditorPlayback {
     /// The files it holds, in order.
     pub fn files(&self) -> Vec<u64> {
         self.files.keys().copied().collect()
-    }
-
-    /// **The buffer `file`'s gain preview is heard through**, while its
-    /// preview is on: what each view of the file draws the preview as.
-    pub fn preview(&self, file: u64) -> Option<i32> {
-        self.effects.get(&file).filter(|e| e.on).map(|e| e.scratch)
     }
 
     /// The file that plays.
@@ -1099,18 +856,6 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
             request.get("rate").and_then(Value::as_f64).unwrap_or(0.0),
             ids,
         )),
-        "gain" => {
-            let flat: Vec<f64> = request.get("points").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_f64).collect();
-            let intake = crate::points::intake("points", &flat);
-            let points = intake.payloads.first().and_then(|p| serde_json::from_value(p["points"].clone()).ok()).unwrap_or_default();
-            let file = int("file");
-            let revision = request.get("revision").cloned().unwrap_or(Value::Null);
-            if let Some(effect) = playback.effects.get_mut(&file) && effect.revision != revision { effect.source = -1; }
-            let result = playback.gain(file,points,request.get("on").and_then(Value::as_bool).unwrap_or(true),ids);
-            if result.is_ok() && let Some(effect) = playback.effects.get_mut(&file) { effect.revision = revision; }
-            answer(result)
-        }
-        "removeEffect" => answer(playback.remove_effect(int("file"),ids)),
         "closeFile" => answer(playback.close_file(int("file"), ids)),
         "view" => answer(Ok(playback.view(int("file"), int("frame")))),
         "play" => match request
@@ -1161,7 +906,6 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
             Err(e) => json!({"error": e.to_string()}).to_string(),
         },
         "state" => json!({
-            "previews": playback.effects.iter().map(|(file,e)| (file.to_string(),if e.on {json!(e.scratch)} else {Value::Null})).collect::<serde_json::Map<String,Value>>(),
             "transport": playback.transport(),
             "rolling": playback.rolling(),
             "focus": playback.focus(),

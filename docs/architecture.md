@@ -1084,9 +1084,9 @@ a region holds. The gain body's props and intake use `clausters_editing::points`
 its edits use `SetAutomation` and snapshots include both parts and curves.
 `Editing::act` records a scripted edit through the same history as a gesture.
 Apply renders the list through the curve (`renders::gain`, an `EnvGen` over the
-same shared envelope shapes the live preview's insert plays) into a new file and
-resets the curve to unity in one entry. No samples enter the history.
-Preview processing is not part of this path.
+shared envelope shapes) into a new file and resets the curve to unity in one
+entry. No samples enter the history. The curve is heard once it is applied:
+nothing plays or draws it before.
 
 **The editor's turns are here too** (`clausters_apps::multitrack::editor`). One
 `MultitrackEditor` holds one view's end of the conversation with the host and
@@ -1412,7 +1412,7 @@ so a gesture from an old file is refused by the existing conversation.
 Redraw does not advance the binding generation or recreate file resources.
 Window components use the allocator's drawer identity in their names, so two
 windows over one object have distinct component ids. File focus keeps those
-ids; the context version rejects events from the previous binding. Preview
+ids; the context version rejects events from the previous binding. Its
 corrections wait until the replacement tree has been published, and cursor
 corrections address only lanes that composition actually includes.
 
@@ -1557,8 +1557,7 @@ them (`clients/gui/src/host/activity.rs`, the same rule in both fronts):
 | Hidden | unchanged | unchanged | nothing: an occluded window (reported by the platform, or on Wayland a window whose frame requests the compositor has left unanswered for 500 ms) or a canvas out of view is not ticked, read back or queried for, and playback goes on |
 | Closing | released with the window | released | nothing: the window's demand and counters go with it |
 
-The preview of a gain envelope is a buffer the view draws, fetched when it
-changes, and adds no recurring work. Reactivation draws the window whole.
+Reactivation draws the window whole.
 What each window did and why is counted by the host and answered by
 `/gui_activity` (`docs/gui-protocol.md`, "What a window ticks for"), with
 each drawn frame's cost by phase: `frame::render` times its layout, its
@@ -2748,24 +2747,6 @@ Python staging builds both adapters for server/embed and stages the helper in
 `_bin`. Embedded lookup uses the loaded library's location, so installed wheels
 and relocated prefix installs do not depend on the Python executable's path or
 the build machine's source checkout. An explicit override still wins.
-
-The audio editor's preview gain is an ordinary SynthDef insert between its
-readers and pass, on a per-file dry bus owned by `AudioEditorPlayback`. Its
-mono gain table is filled on the server by the same `gain::steps` used by
-Apply; `TransportPos` reads it at the take's sample rate. A linear ASR into
-`LinXFade2` ramps the bypass to exact dry, then pauses the synth itself. The
-playback owns that synth id, so resume addresses the node that was paused.
-The dry bus is allocated alongside it rather than hidden inside GraphDef: a
-slot group id could not resume a member paused by `PauseSelf`. Auto ordering
-places the read/replace insert between readers and pass.
-
-A second server buffer holds the processed picture. Both clients carry its
-id to the signal's `preview_buffer` prop; they perform no sample arithmetic.
-The existing plural-buffer intake loads this secondary source, and the same
-summary-update walk feeds both sources. The original stays the edit source.
-The gain table and processed picture are replaced when take contents or curve
-change, held while bypassed, and freed on removal or file close. Neither
-belongs to undo history.
 
 The audio application keeps its open files in Rust: the file in focus is the
 editor's state, and each other one is parked whole while it waits. The file

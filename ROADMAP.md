@@ -308,9 +308,7 @@ its plan; the plan is where its acceptance is read.
   plan's "A spectrogram of a server buffer may draw nothing in a host that
   cannot map it" (Found by use). Found moving the editor onto files, and taken
   after `X28`: the apps plan's "A compressed file opens through a buffer of
-  all of it" (Found by use). Taken within `X28`, since its acceptance needs
-  it: the root plan's "An effect applied from its preview is heard twice for
-  a moment" (Found by use).
+  all of it" (Found by use).
 
   | Order | Milestone | Plan |
   |---|---|---|

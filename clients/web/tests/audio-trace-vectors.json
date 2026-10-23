@@ -51,7 +51,6 @@
     "await:batch",
     "version",
     "await:steps:service",
-    "set",
     "changed",
     "await:rolling",
     "await:steps:service",
@@ -73,8 +72,7 @@
     "version",
     "operationEcho",
     "await:steps:service",
-    "echo",
-    "set"
+    "echo"
    ]
   ],
   [
@@ -96,8 +94,6 @@
     "await:rolling",
     "await:steps:service",
     "publish",
-    "set",
-    "set",
     "changed",
     "echo",
     "set",
@@ -113,7 +109,6 @@
     "await:rolling",
     "await:steps:service",
     "publish",
-    "set",
     "echo",
     "set",
     "set",
@@ -131,7 +126,6 @@
     "await:rolling",
     "await:steps:service",
     "publish",
-    "set",
     "echo",
     "set",
     "set",
@@ -144,8 +138,6 @@
    [
     "layers",
     "publish",
-    "set",
-    "set",
     "echo"
    ]
   ],
@@ -180,7 +172,6 @@
     "await:batch",
     "version",
     "await:steps:service",
-    "set",
     "changed",
     "await:rolling",
     "await:steps:service",
@@ -260,8 +251,7 @@
     "version",
     "operationEcho",
     "await:steps:service",
-    "echo",
-    "set"
+    "echo"
    ],
    {
     "path": "/takes/a.wav",
@@ -307,8 +297,6 @@
     "await:rolling",
     "await:steps:service",
     "publish",
-    "set",
-    "set",
     "changed",
     "echo",
     "set",
@@ -333,7 +321,6 @@
     "await:rolling",
     "await:steps:service",
     "publish",
-    "set",
     "echo",
     "set",
     "set",
@@ -370,7 +357,6 @@
     "await:rolling",
     "await:steps:service",
     "publish",
-    "set",
     "echo",
     "set",
     "set",

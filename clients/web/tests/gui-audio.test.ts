@@ -712,35 +712,6 @@ test("invalid gain quads leave history and samples unchanged", async () => {
 });
 
 
-test("preview switches keep samples and history and release the insert", async () => {
-    const take = new FakeBuffer();
-    const [editor, , , context] = await opened(take);
-    editor.setEnvelope([0, 0.25, 1, 0, 100 / SR, 0.75, 1, 0]);
-    await settle();
-    const before = editor.parts;
-    const version = context.version;
-    take.server.sent.length = 0;
-    editor.previewOn();
-    await settle();
-    assert.deepEqual(editor.parts,before);
-    assert.equal(context.version,version);
-    assert.ok(take.server.addrs().includes("/buffer_gain"));
-    assert.ok(take.server.addrs().includes("/synth_new"));
-    take.server.sent.length = 0;
-    editor.previewOff();
-    await settle();
-    assert.equal(take.server.addrs().includes("/buffer_alloc"),false);
-    editor.previewOn();
-    await settle();
-    assert.equal(take.server.addrs().includes("/buffer_alloc"),false);
-    editor.freePreview();
-    await settle();
-    assert.equal(take.server.addrs().filter(addr => addr === "/buffer_free").length,2);
-    assert.deepEqual(editor.parts,before);
-    assert.equal(context.version,version);
-    assert.equal(editor.envelope[1],0.25);
-});
-
 test("an empty sound file opens untitled and asks for a path", async () => {
     const [editor, host] = await opened(new FakeBuffer(4800, 2), { file: SoundFile.empty(2, 4800, SR) });
     assert.equal(editor.buffer.frames, 4800);

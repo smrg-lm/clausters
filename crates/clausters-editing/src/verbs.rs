@@ -271,9 +271,6 @@ pub const AUDIO: &[Verb] = &[
     choice("views", "view_wave", &["W"], "Waveform"),
     choice("layer", "layer_take", &[], "Edit audio"),
     choice("layer", "show_envelope", &[], "Edit gain envelope"),
-    // the effect heard and drawn before it is applied: today the gain envelope
-    toggle("toggle_preview", &[], "Preview edits"),
-    verb("free_preview", &[], "Free preview"),
     verb("apply", &[], "Apply effect"),
     verb("apply_envelope", &[], "Apply gain envelope"),
     verb("reverse", &[], "Reverse"),

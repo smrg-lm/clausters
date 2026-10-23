@@ -147,13 +147,12 @@ pub fn menu(app: App, saves: bool) -> Value {
     }
     edit.extend([entry(app, "delete"), sep(), entry(app, "select_all")]);
     if app == App::Audio {
-        // what the hand edits, and the effect it previews and applies
+        // what the hand edits, and the curve applied to the take
         edit.extend([
             sep(),
             entry(app, "layer_take"),
             entry(app, "show_envelope"),
             sep(),
-            entry(app, "toggle_preview"),
             entry(app, "apply_envelope"),
         ]);
     }

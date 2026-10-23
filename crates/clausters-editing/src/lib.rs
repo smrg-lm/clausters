@@ -38,7 +38,6 @@ pub mod audio_playback;
 pub mod conversation;
 pub mod event_curves;
 pub mod events;
-pub mod gain;
 pub mod instance;
 pub mod intake;
 pub mod load;

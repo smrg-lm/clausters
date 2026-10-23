@@ -57,7 +57,7 @@ impl AudioEditor {
             return json!({"active": false});
         }
         json!({"id":self.file.id, "display":self.file.display, "channels":self.file.channels,
-            "frames":self.length(), "rate":self.file.rate, "preview":self.preview_state(), "active":self.window_state.active})
+            "frames":self.length(), "rate":self.file.rate, "active":self.window_state.active})
     }
 
     /// The file in focus as a client binds it, or `null` with no file open.

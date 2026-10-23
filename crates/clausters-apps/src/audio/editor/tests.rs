@@ -1368,27 +1368,6 @@ fn truncated_and_non_numeric_sample_payloads_refuse_without_allocating() {
     }
 }
 
-/// **The menu's preview is one switch**: each `toggle_preview` turns it the other way,
-/// and the reading checks it while it is on.
-#[test]
-fn the_preview_switch_turns_either_way_and_reads_checked() {
-    let mut editor = opened(1);
-    let on = |editor: &AudioEditor| {
-        editor.actions(0, ServerInstance::default(), false, false, false)["toggle_preview"].checked
-    };
-    assert_eq!(on(&editor), Some(false));
-    assert_eq!(
-        call(&mut editor, json!({"verb": "toggle_preview"}))["preview"]["on"],
-        true
-    );
-    assert_eq!(on(&editor), Some(true));
-    assert_eq!(
-        call(&mut editor, json!({"verb": "toggle_preview"}))["preview"]["on"],
-        false
-    );
-    assert_eq!(on(&editor), Some(false));
-}
-
 /// **A window coming back looks at its files on disk**: the activation asks
 /// for the opened file's stamp, a stamp that moved is said on the status
 /// bar once, and a file gone is said too.

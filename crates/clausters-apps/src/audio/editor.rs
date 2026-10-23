@@ -100,9 +100,6 @@ pub struct Outcome {
     /// A view change, also returned when no window is open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layers: Option<Value>,
-    /// A preview-chain change, independent of the take and its history.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub preview: Option<Value>,
     /// Playback update for the original object, independent of current focus.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub playback_update: Option<Value>,
@@ -376,10 +373,6 @@ impl Converse for AudioEditor {
                 | "layer_take"
                 | "show_envelope"
                 | "apply_envelope"
-                | "toggle_preview"
-                | "preview_on"
-                | "preview_off"
-                | "free_preview"
                 | "apply"
                 | "reverse"
                 | "show_all_channels"
@@ -563,7 +556,6 @@ struct AudioFileState {
     written_format: Option<String>,
     codec: Option<String>,
     sample_format: Option<String>,
-    effect_installed: bool,
     name: Option<String>,
     // The file on disk the take came from, as it was when the editor last
     // read it: what a window coming back checks it against. No stamp for a
@@ -576,7 +568,6 @@ struct AudioFileState {
 // Presentation restored with a file, outside the content history. Host-local
 // navigation is projected through the existing window and navigation groups.
 struct AudioFileViewState {
-    preview_on: bool,
     looping: bool,
     layers: Stack,
     views: Views,
@@ -712,7 +703,6 @@ impl AudioEditor {
                 state.checked = match name {
                     "loop" => Some(view.looping),
                     "toggle_files" => Some(self.window_state.files_visible),
-                    "toggle_preview" => Some(view.preview_on),
                     _ => state.value.as_deref().map(|on| on == name),
                 };
                 if !window && !self.open_files.open {
@@ -723,9 +713,6 @@ impl AudioEditor {
                     "redo" if !redo => state.refuse("the file in focus has nothing to redo"),
                     "show_envelope" if self.window_state.envelope_widget.is_none() => {
                         state.refuse("this window has no envelope body");
-                    }
-                    "free_preview" if !self.file.effect_installed => {
-                        state.refuse("no preview is installed");
                     }
                     _ => {}
                 }
@@ -786,7 +773,6 @@ impl AudioEditor {
             file: AudioFileState {
                 id: FileId(1),
                 presentation: AudioFileViewState {
-                    preview_on: false,
                     looping: false,
                     layers: Stack::checked(&json!(layers))?,
                     views: Views::Waveform,
@@ -813,7 +799,6 @@ impl AudioEditor {
                 written_format: None,
                 codec: None,
                 sample_format: None,
-                effect_installed: false,
                 name: None,
                 disk: None,
             },
@@ -1650,12 +1635,6 @@ impl AudioEditor {
         }
         if tag == "points" && self.window_state.envelope_widget.map(i64::from) == Some(widget) {
             return self.set_envelope_event(values, out);
-        }
-        if matches!(
-            tag,
-            "toggle_preview" | "preview_on" | "preview_off" | "free_preview"
-        ) {
-            return self.preview_event(tag, out);
         }
         if matches!(tag, "apply_envelope" | "apply") {
             return self.apply_envelope_event(out);
@@ -2676,9 +2655,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             json!({"turn": "route", "restructure": true}).to_string()
         }
         "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
-        "show_envelope" | "setautomation" | "apply_envelope" | "toggle_preview" | "preview_on"
-        | "preview_off"
-        | "free_preview" | "fold_channel" | "solo_channel" | "show_all_channels" => {
+        "show_envelope" | "setautomation" | "apply_envelope" | "fold_channel" | "solo_channel"
+        | "show_all_channels" => {
             serde_json::to_string(&editor.act(&request, version)).unwrap()
         }
         "props" if editor.window_state.envelope_widget == Some(widget) => editor

@@ -1361,18 +1361,9 @@ export class AudioEditor extends Editor<Buffer | null> {
     /** Show and select the gain curve body over the take. */
     showEnvelope(): void { this.viewLayers("show_envelope"); }
 
-    /** Render gain and reset the curve to unity in one undo step.
-     * Preview playback is not affected until this is applied. */
+    /** Render gain into a new take and reset the curve to unity, in one
+     * undo step. The curve is heard once it is applied. */
     applyEnvelope(): boolean { return this.envelopeAct("apply_envelope"); }
-
-    /** Hear the gain envelope through a ramped insert. */
-    previewOn(): void { this.envelopeAct("preview_on"); }
-
-    /** Ramp to dry and pause the insert, retaining its state. */
-    previewOff(): void { this.envelopeAct("preview_off"); }
-
-    /** Free the preview insert and table, retaining the unapplied curve. */
-    freePreview(): void { this.envelopeAct("free_preview"); }
 
     /**
      * The channels drawn folded, in order: strips one control tall that a

@@ -18,7 +18,7 @@ code that keeps it lives.
 - **A window owns its component bindings.** Switching files changes the
   observed contents and context version while keeping component ids stable.
   Two windows have separate component ids even over one object. A replacement
-  tree is published before preview corrections, and cursor/selection
+  tree is published before its corrections, and cursor/selection
   corrections address only the lanes included in that tree. Old content
   gestures are still refused by the context's version.
   Broadcast events are classified for operations only by the window or
@@ -97,15 +97,10 @@ code that keeps it lives.
 
 - **Four words, each its own question.** A **view** is one picture of an
   object on a lane (the waveform, the spectrogram). A **visualization layer** is
-  a measure drawn inside one view, on that view's vertical (peak, RMS, a
-  preview). An **edit layer** is a body a hand edits, superposed on a view in a
+  a measure drawn inside one view, on that view's vertical (peak, RMS). An **edit layer** is a body a hand edits, superposed on a view in a
   pane (the take, the gain envelope); one is in hand at a time. Views are
   placed as **alternatives** in one lane, one shown at a time, or **stacked**
   in lanes of their own on one axis.
-- **A preview is drawn as the view it previews**: over the waveform, as the
-  processed waveform; in a spectrogram, as the spectrogram of the result, in
-  place of the take's. Every view of the take gets it (`pictures` in the
-  editor's `preview` answer), and a window drawn again is handed it again.
 - **The defaults, not the limits.** The audio editor's menu superposes the
   edit layers (the envelope over the take) and the visualization layers of
   one quantity (RMS inside the peaks), and places the waveform and the
@@ -132,7 +127,7 @@ code that keeps it lives.
 - **A take bounds its axis.** A group that holds a view of stored samples (a
   navigable, not live, `signal`: `OnAxis::bounds_axis`) navigates exactly the
   take's extent: zooming out stops at the take, and nothing else on the axis
-  lengthens it. A curve over the take (the gain envelope), a preview of it, a
+  lengthens it. A curve over the take (the gain envelope), a
   marker list are read *on* that axis. A shortened take shortens the axis
   even where a curve's points still reach past it.
 - **An authoring surface has headroom.** A group with no take and a surface
@@ -221,7 +216,7 @@ code that keeps it lives.
   lands on the file it clicked last.
 - **An edit is in the history; a view state is not.** Cuts, pastes, strokes,
   curve points and Apply are history entries; which layer is shown, which
-  channels are folded, the preview switch, the scroll and the zoom are not.
+  channels are folded, the scroll and the zoom are not.
 - **An application is an API; a menu is a caller.** Every action is a verb
   of the application in the shared crate, which both clients call by the same
   name; a menu entry, a key and a tool only call it and hold no state.

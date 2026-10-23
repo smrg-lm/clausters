@@ -4595,7 +4595,7 @@ should confirm before the fix.
   call outside `faust::ffi_lock()`, or the compiler cache shared between
   suites.
 
-- ⬜ **An effect applied from its preview is heard twice for a moment**
+- ✅ **An effect applied from its preview is heard twice for a moment**
   *(found 2026-10-23, closing the audio editor's move onto files)*. A gain
   envelope previewed live and then applied renders the take through the
   curve, and the join is stitched over the render while the preview's
@@ -4611,4 +4611,10 @@ should confirm before the fix.
   list through its curve into the new one rendered through it -- which is
   the X28 acceptance's "nothing heard but the effect", and also keeps a
   curve aligned when a cut moves it under a preview that plays.
+  *Closed 2026-10-23 by the user's decision to remove the gain envelope's
+  preview* (`crates/clausters-apps/PLAN.md`, the turn to disk's eighth
+  decision): nothing hears the curve before it is applied, so nothing is
+  heard twice. The design above stays as one way to hand an effect heard
+  live over to its render, should one need it (the apps plan's Future
+  directions, "An effect heard live before it is applied").
 

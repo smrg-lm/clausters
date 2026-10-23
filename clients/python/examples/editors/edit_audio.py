@@ -70,7 +70,7 @@ The menus and the tools read each action's state from the file in focus:
 draw in the take, then add a new file -- Edit -> Undo is disabled there, and
 Ctrl+Z does nothing, until you switch back. Cut, Copy and Delete are disabled
 with nothing selected, Paste mixed with a copy at another rate, and the View
-and Edit entries mark the view, the layer and the preview in force. With the
+and Edit entries mark the view and the layer in force. With the
 File -> New file dialog up, Ctrl+Z reaches neither the take nor anything
 behind the dialog; in its name field it undoes the typing. ``editor.actions``
 prints the same readings.
@@ -166,30 +166,12 @@ def both():
 # segment; double-click adds a point. These edits keep the samples intact.
 # `envelope()` shows a shaped fade; `apply_envelope()` renders it into a new
 # file and resets the curve to unity. Undo restores the take and the curve.
-# `preview_on()` hears and draws it; `preview_off()` ramps back to dry --
-# the Edit menu's Preview edits switch, ticked while it is on.
-# `free_preview()` frees the insert and retains the unapplied curve.
 
 # %%
 def envelope():
     """Show and set a gain envelope, with times in seconds."""
     editor.show_envelope()
     editor.set_envelope([0, 0, 3, 0, 0.5, 1, 1, 0, SECONDS, 0.25, 1, 0])
-
-
-def preview_on():
-    """Hear and draw the gain without changing the take."""
-    editor.preview_on()
-
-
-def preview_off():
-    """Ramp to the unprocessed take and pause the insert."""
-    editor.preview_off()
-
-
-def free_preview():
-    """Free the insert and retain the curve for later use."""
-    editor.free_preview()
 
 
 def apply_envelope():

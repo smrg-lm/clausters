@@ -989,20 +989,8 @@ class AudioEditor(Marking, Editor):
 
     def apply_envelope(self) -> bool:
         """Render gain into a new take and reset the curve to unity, in one
-        undo step. An enabled preview follows the reset curve, so gain is applied once."""
+        undo step. The curve is heard once it is applied."""
         return self._envelope_act("apply_envelope")
-
-    def preview_on(self) -> None:
-        """Hear the gain envelope through a ramped insert on the take."""
-        self._envelope_act("preview_on")
-
-    def preview_off(self) -> None:
-        """Ramp to dry and pause the insert, retaining its state."""
-        self._envelope_act("preview_off")
-
-    def free_preview(self) -> None:
-        """Free the preview insert and its table; keep the unapplied curve."""
-        self._envelope_act("free_preview")
 
     def _envelope_act(self, verb: str, **args) -> bool:
         with self._editing.turn(self):

@@ -228,13 +228,9 @@ enum Task {
     /// A read file added to the editor.
     AddFile(Value),
     /// Make what sounds be the take as it now is.
-    Sound { preview: bool },
+    Sound,
     /// One file's playback brought in step.
     SyncSound(Value),
-    /// The preview's gain insert after a file's sync.
-    SyncEffect(Value),
-    /// The preview handed to each view of a file.
-    PreviewBuffers(Value),
     /// The window told where its level is read from.
     TellMeters,
     /// The window's play cursor and the list's play mark corrected.
@@ -468,7 +464,7 @@ impl Session {
                         repairing: false,
                     });
                 }
-                tasks.push(Task::Sound { preview: true });
+                tasks.push(Task::Sound);
                 tasks.push(Task::Answer(
                     json!({"transport": self.playback.transport()}),
                 ));
@@ -575,9 +571,7 @@ impl Session {
             "newFile" => vec![Task::Read(VecDeque::from([
                 json!({"shape": action["shape"]}),
             ]))],
-            "sound" => vec![Task::Sound {
-                preview: action["preview"] != false,
-            }],
+            "sound" => vec![Task::Sound],
             "syncSound" => vec![Task::SyncSound(action["file"].clone())],
             "close" => vec![Task::Close { closed: false }],
             "closed" => vec![Task::Close { closed: true }],
@@ -662,7 +656,7 @@ impl Session {
             ));
             tasks.push(effect("echo", json!({"answer": outcome["answer"]})));
             tasks.extend(release(&turned["freed"]));
-            tasks.push(Task::Sound { preview: true });
+            tasks.push(Task::Sound);
             return tasks;
         }
         run.changed = outcome["changed"] == true;
@@ -1120,7 +1114,7 @@ impl Session {
                     // switch it left, which are its own
                     self.paused = false;
                     tasks.push(effect("bind", json!({"binding": outcome["binding"]})));
-                    tasks.push(Task::Sound { preview: false });
+                    tasks.push(Task::Sound);
                     // a pass in progress goes on: the window only looks elsewhere
                     tasks.push(Task::Rolling(Rolled::View {
                         frame: outcome["binding"]["cursor"].as_u64().unwrap_or(0),
@@ -1337,31 +1331,13 @@ impl Session {
                 }
                 Flow::Next
             }
-            Task::Sound { preview } => {
+            Task::Sound => {
                 let file = member_call(editing, member, json!({"verb": "playback"}));
                 if file["active"] == false || !file.is_object() {
                     return Flow::Next;
                 }
-                let mut tasks = vec![Task::SyncSound(file.clone())];
-                if preview && window {
-                    tasks.push(Task::PreviewBuffers(file));
-                }
-                tasks.push(Task::TellMeters);
+                let tasks = vec![Task::SyncSound(file), Task::TellMeters];
                 self.push(id, tasks);
-                Flow::Next
-            }
-            Task::PreviewBuffers(file) => {
-                let buffer = file["id"]
-                    .as_u64()
-                    .and_then(|file| self.playback.preview(file))
-                    .unwrap_or(-1);
-                // every view of the take, each drawing the preview as itself
-                for widget in file["preview"]["pictures"].as_array().into_iter().flatten() {
-                    effects.push(tagged(
-                        "set",
-                        json!({"widget": widget, "props": {"preview_buffer": buffer}}),
-                    ));
-                }
                 Flow::Next
             }
             Task::SyncSound(file) => {
@@ -1373,29 +1349,8 @@ impl Session {
                     "takeRate": file["rate"], "rate": self.rate});
                 self.push(
                     id,
-                    vec![
-                        Task::Playback { verb: "sync", args },
-                        Task::SyncEffect(file),
-                        Task::RetainPlayback,
-                    ],
+                    vec![Task::Playback { verb: "sync", args }, Task::RetainPlayback],
                 );
-                Flow::Next
-            }
-            Task::SyncEffect(file) => {
-                let preview = &file["preview"];
-                let task = if preview["installed"] == true {
-                    Task::Playback {
-                        verb: "gain",
-                        args: json!({"file": file["id"], "points": preview["points"],
-                            "on": preview["on"], "revision": preview["revision"]}),
-                    }
-                } else {
-                    Task::Playback {
-                        verb: "removeEffect",
-                        args: json!({"file": file["id"]}),
-                    }
-                };
-                self.push(id, vec![task]);
                 Flow::Next
             }
             Task::TellMeters => {
@@ -1574,7 +1529,7 @@ impl Session {
         if outcome["restructure"] == true && window {
             tasks.push(effect("publish", json!({})));
             // the def carries no preview: each view is handed it again
-            tasks.push(Task::Sound { preview: true });
+            tasks.push(Task::Sound);
         }
         if let Some(run) = self.runs.get_mut(&id) {
             run.changed = outcome["changed"] == true;
@@ -1637,17 +1592,14 @@ impl Session {
             let update = &outcome["playbackUpdate"];
             tasks.push(Task::SyncSound(update["file"].clone()));
             if update["publish"] == true {
-                tasks.push(Task::Sound { preview: true });
+                tasks.push(Task::Sound);
             }
         }
         if changed {
             tasks.push(effect("changed", json!({})));
             if outcome["preparedComplete"] != true {
-                tasks.push(Task::Sound { preview: true });
+                tasks.push(Task::Sound);
             }
-        }
-        if has(&outcome, "preview") && !changed {
-            tasks.push(Task::Sound { preview: true });
         }
         if has(&outcome, "play") {
             // The loop switch rides beside the space bar and `L`: a pass that
@@ -2423,30 +2375,6 @@ mod tests {
             last(trace, "await:batch") < last(trace, "echo"),
             "{trace:?}"
         );
-    }
-
-    #[test]
-    fn the_preview_is_handed_back_after_the_window_is_drawn_again() {
-        let mut editing = Editing::new();
-        let mut client = Client::new();
-        let member = opened(&mut client, &mut editing, false);
-        client.effects.clear();
-        client.run(
-            &mut editing,
-            member,
-            json!({"verb": "verb", "call": {"verb": "view_both"}, "window": true}),
-        );
-        let publish = client
-            .effects
-            .iter()
-            .position(|e| e["kind"] == "publish")
-            .expect("a redraw");
-        let preview = client
-            .effects
-            .iter()
-            .position(|e| e["kind"] == "set" && e["props"].get("preview_buffer").is_some())
-            .expect("the preview handed back");
-        assert!(publish < preview, "{:?}", client.effects);
     }
 
     #[test]

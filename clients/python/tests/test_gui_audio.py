@@ -677,29 +677,6 @@ def test_invalid_gain_quads_leave_history_and_samples_unchanged():
     assert not editor.apply_envelope(), "unity does not make another take"
 
 
-def test_preview_switches_keep_samples_and_history_and_release_the_insert():
-    take = FakeBuffer()
-    editor, host, wid, context = opened(take)
-    editor.set_envelope([0, 0.25, 1, 0, 100 / SR, 0.75, 1, 0])
-    before, version = editor.parts, context.version
-    take.server.sent.clear()
-    editor.preview_on()
-    assert editor.parts == before and context.version == version
-    assert "/buffer_gain" in take.server.addrs()
-    assert "/synth_new" in take.server.addrs()
-    assert host.props[wid]["preview_buffer"] >= 0
-    take.server.sent.clear()
-    editor.preview_off()
-    assert "/buffer_alloc" not in take.server.addrs()
-    assert host.props[wid]["preview_buffer"] == -1
-    editor.preview_on()
-    assert "/buffer_alloc" not in take.server.addrs()
-    editor.free_preview()
-    assert take.server.addrs().count("/buffer_free") == 2
-    assert editor.parts == before and context.version == version
-    assert editor.envelope[1] == 0.25
-
-
 def test_an_empty_sound_file_opens_untitled_and_asks_for_a_path():
     from clausters import SoundFile
     editor, host, _wid, _context = opened(FakeBuffer(4800, 2), file=SoundFile.empty(2, 4800, SR))

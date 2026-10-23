@@ -583,7 +583,6 @@ impl Application for AudioEditor {
             delta.outcome.cue = None;
             delta.outcome.follow = None;
             delta.outcome.layers = None;
-            delta.outcome.preview = None;
         }
         if applied && let Some(raw) = delta.outcome.clipboard.as_ref() {
             let doc = Clipboard::parse(raw);

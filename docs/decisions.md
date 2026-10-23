@@ -10433,6 +10433,12 @@ transport-addressed gain immediately follows the current position. A chain
 reorder rebuilds the affected suffix with its saved ports and fresh state,
 since an auto-sorted group refuses manual node moves.
 
+*2026-10-23:* the gain envelope's preview was removed with the takes'
+move onto files, and its curve is heard once it is applied
+(`crates/clausters-apps/PLAN.md`, the turn to disk's eighth decision). What
+is above about the insert's id and bus holds for an effect heard live, if
+one is added.
+
 ## A sound file is a client object, and a buffer is never one (2026-10-16)
 
 The clients read and wrote audio files through scattered verbs:

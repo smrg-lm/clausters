@@ -50,9 +50,9 @@
 //! parent's, since it has none, and the two graphs live in different groups --
 //! so the bus is a number, the way a meter's control bus is.
 //!
-//! The gain preview is an ordinary insert on the playback-owned dry bus.
-//! Its linear bypass reaches dry exactly, then pauses the caller-owned synth.
-//! The processed picture is another server buffer, never the edit source.
+//! The play graph has an insert slot on the playback-owned dry bus
+//! ([`FX_SLOT`]), where an effect heard live would go; nothing fills it
+//! now.
 
 use serde_json::{Value, json};
 
@@ -212,49 +212,6 @@ pub fn pass_def(channels: usize) -> Result<Value, String> {
     }))
 }
 
-/// The gain effect's ordinary SynthDef name.
-pub fn gain_name(channels: usize) -> String {
-    format!("{PREFIX}.gain.{channels}")
-}
-
-/// A sample-rate gain table at the transport position, inserted on dry.
-/// The linear ASR reaches dry exactly and pauses this synth on release.
-pub fn gain_def(channels: usize) -> Result<Value, String> {
-    check(channels)?;
-    let controls = vec![
-        control("dry", 0.0),
-        control("gain", 0.0),
-        control("on", 1.0),
-        control("rate", 48000.0),
-        control("initial", 0.0),
-    ];
-    let mut ugens = vec![
-        json!({"kind":"TransportPos", "inputs":[{"const":0.0}]}),
-        json!({"kind":"SampleRate", "inputs":[]}),
-        json!({"kind":"Div", "inputs":[{"control":3},{"ugen":1}]}),
-        json!({"kind":"Mul", "inputs":[{"ugen":0},{"ugen":2}]}),
-        json!({"kind":"BufRd", "inputs":[{"control":1},{"const":0.0},{"ugen":3},{"const":0.0}]}),
-        json!({"kind":"EnvGen", "inputs":[
-            {"control":2},{"const":1.0},{"const":0.0},{"const":1.0},
-            {"const":1.0},{"control":4},{"const":2.0},{"const":1.0},{"const":-1.0},
-            {"const":1.0},{"const":0.005},{"const":1.0},{"const":0.0},
-            {"const":0.0},{"const":0.005},{"const":1.0},{"const":0.0}]}),
-        json!({"kind":"Mul", "inputs":[{"ugen":5},{"const":2.0}]}),
-        json!({"kind":"Sub", "inputs":[{"ugen":6},{"const":1.0}]}),
-    ];
-    for channel in 0..channels {
-        let i = ugens.len();
-        ugens.extend([
-            json!({"kind":"Add", "inputs":[{"control":0},{"const":channel}]}),
-            json!({"kind":"In", "inputs":[{"ugen":i}]}),
-            json!({"kind":"Mul", "inputs":[{"ugen":i+1},{"ugen":4}]}),
-            json!({"kind":"LinXFade2", "inputs":[{"ugen":i+1},{"ugen":i+2},{"ugen":7},{"const":1.0}]}),
-            json!({"kind":"ReplaceOut", "inputs":[{"ugen":i},{"ugen":i+3}]}),
-        ]);
-    }
-    Ok(json!({"name":gain_name(channels),"controls":controls,"ugens":ugens}))
-}
-
 /// **The level meter**: the multitrack's meter, the same algorithm under the
 /// editor's name, over the editor's bus.
 pub fn meter_def(width: usize) -> Result<Value, String> {
@@ -362,7 +319,6 @@ pub fn defs_for(channels: usize) -> Result<crate::mixer::Defs, String> {
     Ok(crate::mixer::Defs {
         synth: vec![
             reader_def(),
-            gain_def(channels)?,
             pass_def(channels)?,
             meter_def(w)?,
             declick_def(w)?,

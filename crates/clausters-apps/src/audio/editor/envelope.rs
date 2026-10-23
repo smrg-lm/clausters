@@ -12,42 +12,6 @@ use clausters_editing::points;
 const GAIN_MAX: f64 = 1.0;
 
 impl AudioEditor {
-    pub(super) fn preview_state(&self) -> Value {
-        // `pictures` are the widgets the preview is drawn in: every view of
-        // the take, each drawing it as the view it is.
-        json!({"on":self.file.presentation.preview_on, "installed":self.file.effect_installed,
-            "points":self.envelope_quads(false),"revision":self.file.contents.payload().0,
-            "pictures": self.pictures().collect::<Vec<_>>()})
-    }
-
-    pub(super) fn preview_event(
-        &mut self,
-        verb: &str,
-        out: &mut Outcome,
-    ) -> (Option<String>, Vec<Correction>) {
-        self.ensure_envelope();
-        // `toggle_preview` is the menu's switch: whichever of the two it is not now
-        let verb = match verb {
-            "toggle_preview" if self.file.presentation.preview_on => "preview_off",
-            "toggle_preview" => "preview_on",
-            verb => verb,
-        };
-        match verb {
-            "preview_on" => {
-                self.file.presentation.preview_on = true;
-                self.file.effect_installed = true;
-            }
-            "preview_off" => self.file.presentation.preview_on = false,
-            "free_preview" => {
-                self.file.presentation.preview_on = false;
-                self.file.effect_installed = false;
-            }
-            _ => unreachable!(),
-        }
-        out.preview = Some(self.preview_state());
-        (None, Vec::new())
-    }
-
     pub(super) fn pane_label(&self) -> String {
         let take = crate::samples::label(self.take_name().as_deref(), self.file.display);
         if self.file.presentation.edit_layer.starts_with("points") {
@@ -203,9 +167,6 @@ impl AudioEditor {
                         self.envelope_corrections(),
                     ),
                 }
-            }
-            "toggle_preview" | "preview_on" | "preview_off" | "free_preview" => {
-                self.preview_event(request["verb"].as_str().unwrap(), &mut out)
             }
             "apply_envelope" | "apply" => self.apply_envelope_event(&mut out),
             "fold_channel" => self.fold_channel(request.get("channel").and_then(Value::as_u64)),

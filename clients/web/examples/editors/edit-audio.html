@@ -50,8 +50,7 @@ call the same verbs as the menu.
 Edit -&gt; Edit gain envelope selects the curve body, and the vertical ruler reads gain while it is in hand. Drag points, bend a segment,
 or double-click to add a point. Curve edits keep samples intact. The gain envelope
 button shows a shaped fade; Apply envelope renders it into a new file and resets
-the curve to unity. Undo restores both. Preview on hears and draws gain without changing the take. Preview off ramps
-back to dry -- the Edit menu's Preview edits switch, ticked while it is on; free preview frees the insert and retains its curve.<br>
+the curve to unity. Undo restores both.<br>
 
 <b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
 <b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
@@ -96,7 +95,7 @@ The menus and the tools read each action's state from the file in focus:
 draw in the take, then add a new file -- Edit -&gt; Undo is disabled there, and
 Ctrl+Z does nothing, until you switch back. Cut, Copy and Delete are disabled
 with nothing selected, Paste mixed with a copy at another rate, and the View
-and Edit entries mark the view, the layer and the preview in force. With the
+and Edit entries mark the view and the layer in force. With the
 File -&gt; New file dialog up, Ctrl+Z reaches neither the take nor anything
 behind the dialog; in its name field it undoes the typing.
 <code>editor.actions</code> holds the same readings.</div>
@@ -109,9 +108,6 @@ behind the dialog; in its name field it undoes the typing.
         <button id="spectrogram" disabled>spectrogram</button>
         <button id="both" disabled>both</button>
         <button id="envelope" disabled>gain envelope</button>
-        <button id="preview-on" disabled>preview on</button>
-        <button id="preview-off" disabled>preview off</button>
-        <button id="free-preview" disabled>free preview</button>
         <button id="apply-envelope" disabled>apply envelope</button>
         <button id="play" disabled>play the take</button>
         <button id="parts" disabled>what it is made of</button>
@@ -197,12 +193,6 @@ behind the dialog; in its name field it undoes the typing.
           editor.showEnvelope();
           editor.setEnvelope([0, 0, 3, 0, 0.5, 1, 1, 0, SECONDS, 0.25, 1, 0]);
         };
-        $("preview-on").disabled = false;
-        $("preview-on").onclick = () => editor.previewOn();
-        $("preview-off").disabled = false;
-        $("preview-off").onclick = () => editor.previewOff();
-        $("free-preview").disabled = false;
-        $("free-preview").onclick = () => editor.freePreview();
         $("apply-envelope").disabled = false;
         $("apply-envelope").onclick = () => editor.applyEnvelope();
 
