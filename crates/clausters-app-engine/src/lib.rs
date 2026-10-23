@@ -22,6 +22,8 @@
 //! The engine knows no file, no segment and no peaks: what it is handed is
 //! nodes, buses, buffers and transport commands.
 
+pub mod take;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -137,6 +139,40 @@ impl AppEngine {
                 false
             }
         }
+    }
+
+    /// **Puts a take's fed streams in the pool**, one mono buffer per
+    /// channel, `frames` long, at the buffers `buffers` names (allocated by
+    /// [`Self::alloc_take`]), so channel `c`'s reader plays `buffers[c]`. Put
+    /// again after an edit that changes the take's length: the readers keep
+    /// their rings and refill from where they are.
+    pub fn install_take(&mut self, feed: &take::TakeFeed, frames: u64, buffers: &[i32]) -> bool {
+        let rate = self.sample_rate as f64;
+        let cmds = buffers
+            .iter()
+            .enumerate()
+            .filter_map(|(c, &bufnum)| {
+                let stream = feed.stream(c)?;
+                Some(Cmd::SetBuffer {
+                    index: bufnum as usize,
+                    buffer: Some(Arc::new(Buffer::fed_by(
+                        Arc::clone(stream),
+                        1,
+                        frames as usize,
+                        rate,
+                    ))),
+                })
+            })
+            .collect();
+        self.push(cmds)
+    }
+
+    /// **The buffers a take of `channels` channels is played from**, one per
+    /// channel, allocated from `ids`.
+    pub fn alloc_take(channels: usize, ids: &mut IdSpaces) -> Result<Vec<i32>, IdError> {
+        (0..channels.max(1))
+            .map(|_| ids.alloc(Space::Buffers, 1).map(|b| b as i32))
+            .collect()
     }
 
     /// **Takes back what the engine handed over**: freed nodes, buffers and

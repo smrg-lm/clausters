@@ -1035,7 +1035,15 @@ node ends back on the application's turn. `EngineMedium` is a playback's
 medium over it (`clausters_editing::apply::Medium`, whose other implementation
 is the OSC `Applier`): a playback written once answers ops, and this carries
 them out at once, so it answers no steps. It is the first piece of the apps
-plan's second turn ("an editing application holds its engine").
+plan's second turn ("an editing application holds its engine"). **The
+application reads its takes** (`take`): a `ReadList` is a take's
+`SegmentPart`s placed as the core's `PartSpan`s over their files' layouts,
+and a `TakeFeed` is a mono fed stream per channel (`dsp::fed`) with one thread
+of the application rendering the list into them as each reader asks, through
+`pcm::Reader` and `PartSpan::read_with`; `TakeFeed::set` puts an edited list
+in place and the readers fade into it. `AppEngine::install_take` puts the
+streams in the pool, and `AudioEditorPlayback::sync_streams` points each
+channel's reader at its own. No list, stitch or file is in the engine.
 
 `crates/clausters-apps` sits over the projections and holds the **applications**
 the project is built around — the multitrack editor today, the audio and score

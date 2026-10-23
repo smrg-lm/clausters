@@ -197,3 +197,147 @@ fn loops_stops_and_locates_on_an_engine_it_holds() {
     }
     let _ = std::fs::remove_file(&path);
 }
+
+/// A stereo float file whose left and right are told apart, as are its
+/// frames.
+fn stereo(name: &str) -> (String, Vec<[f32; 2]>) {
+    let values: Vec<[f32; 2]> = (0..FRAMES)
+        .map(|n| {
+            let f = n as f32 / (1 << 20) as f32;
+            [0.25 + f, -0.25 - f]
+        })
+        .collect();
+    let path = std::env::temp_dir().join(format!("app-engine-{name}-{}.wav", std::process::id()));
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: SR as u32,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut w = hound::WavWriter::create(&path, spec).unwrap();
+    for frame in &values {
+        w.write_sample(frame[0]).unwrap();
+        w.write_sample(frame[1]).unwrap();
+    }
+    w.finalize().unwrap();
+    (path.to_string_lossy().into_owned(), values)
+}
+
+/// One part of the stereo file.
+fn part_of(path: &str, start: u64, frames: u64) -> clausters_document::clipboard::SegmentPart {
+    clausters_document::clipboard::SegmentPart {
+        path: path.into(),
+        start,
+        frames,
+        fade_in: 0,
+        fade_out: 0,
+        fade_in_shape: Default::default(),
+        fade_out_shape: Default::default(),
+        channels: None,
+        source_channels: 2,
+        source_frames: FRAMES as u64,
+        source_rate: SR,
+    }
+}
+
+/// Both sides, as `blocks` gives the left.
+fn both(
+    engine: &mut clausters::server::engine::Engine,
+    app: &Mutex<AppEngine>,
+    n: usize,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let (mut left, mut right) = (Vec::new(), Vec::new());
+    for _ in 0..n {
+        engine.process_block(&mut out);
+        app.lock().unwrap().pump();
+        for f in out.as_chunks::<2>().0 {
+            left.push(f[0]);
+            right.push(f[1]);
+        }
+        std::thread::sleep(Duration::from_micros(1_333));
+    }
+    (left, right)
+}
+
+/// **The application reads its take, and the engine plays what it is
+/// handed**: a stereo take of two parts over one file, read by the
+/// application's own thread into a mono fed stream per channel, plays each
+/// side's frames; an edit (the parts put the other way round) is a new list
+/// the readers fade into from where they are, and then plays as edited. No
+/// list, no stitch and no file is in the engine.
+#[test]
+fn the_application_reads_its_take_into_the_engine() {
+    use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
+
+    let (path, values) = stereo("take");
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut headers = Headers::default();
+    let half = (FRAMES / 2) as u64;
+    let first = vec![part_of(&path, 0, half), part_of(&path, half, half)];
+    let list = ReadList::of(&first, 2, SR, &mut headers).expect("the file reads");
+    let feed = TakeFeed::start(2);
+    feed.set(Arc::new(list));
+    let buffers = AppEngine::alloc_take(2, &mut ids).unwrap();
+    assert!(
+        app.lock()
+            .unwrap()
+            .install_take(&feed, FRAMES as u64, &buffers)
+    );
+    let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
+    playback
+        .sync_streams(1, buffers.clone(), FRAMES as u64, SR, SR, &mut ids)
+        .unwrap();
+    playback.play(
+        1,
+        0,
+        Pass::Until {
+            end: FRAMES as u64,
+            back: 0,
+        },
+    );
+    let (left, right) = both(&mut engine, &app, 120);
+    let from = settled(&left);
+    for i in from..left.len() {
+        assert_eq!(left[i], values[i][0], "left, sample {i}");
+        assert_eq!(right[i], values[i][1], "right, sample {i}");
+    }
+    // The edit: the second half first.
+    let edited = vec![part_of(&path, half, half), part_of(&path, 0, half)];
+    feed.set(Arc::new(
+        ReadList::of(&edited, 2, SR, &mut headers).unwrap(),
+    ));
+    let played = left.len();
+    let (left, right) = both(&mut engine, &app, 60);
+    let mut zeros = 0;
+    for (i, &s) in left.iter().enumerate() {
+        zeros = if s == 0.0 { zeros + 1 } else { 0 };
+        assert!(
+            zeros <= 2,
+            "sample {i}: a silence where the take was edited"
+        );
+    }
+    let frame = |i: usize| {
+        let at = played + i;
+        if at < half as usize {
+            at + half as usize
+        } else {
+            at - half as usize
+        }
+    };
+    for i in 2_000..left.len() {
+        assert_eq!(
+            left[i],
+            values[frame(i)][0],
+            "left after the edit, sample {i}"
+        );
+        assert_eq!(
+            right[i],
+            values[frame(i)][1],
+            "right after the edit, sample {i}"
+        );
+    }
+    let _ = std::fs::remove_file(&path);
+}

@@ -118,7 +118,9 @@ pub fn space(
 #[derive(Clone, Debug, PartialEq)]
 struct File {
     channels: usize,
-    buffer: i32,
+    /// The buffer each channel's reader plays: one for every channel, or
+    /// one each (a mono stream per channel an application feeds).
+    buffers: Vec<i32>,
     frames: u64,
     /// The take's own rate.
     rate: f64,
@@ -151,6 +153,17 @@ pub struct AudioEditorPlayback<M: Medium = Applier> {
     /// Whether the pass last asked for loops, which is what a selection
     /// redrawn while it plays goes by ([`Self::follow`]).
     looping: bool,
+}
+
+impl File {
+    /// The buffer channel `channel`'s reader plays.
+    fn buffer(&self, channel: usize) -> i32 {
+        self.buffers
+            .get(channel)
+            .or_else(|| self.buffers.first())
+            .copied()
+            .unwrap_or(-1)
+    }
 }
 
 fn dry_handle(file: u64) -> String {
@@ -254,6 +267,37 @@ impl<M: Medium> AudioEditorPlayback<M> {
         rate: f64,
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
+        self.sync_buffers(file, vec![buffer], channels, frames, take_rate, rate, ids)
+    }
+
+    /// [`Self::sync`] with **a buffer per channel**: channel `c`'s reader
+    /// plays `buffers[c]`, a mono stream, which is how an application that
+    /// holds its engine hands each reader its own fed stream.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sync_streams(
+        &mut self,
+        file: u64,
+        buffers: Vec<i32>,
+        frames: u64,
+        take_rate: f64,
+        rate: f64,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<Step>, IdError> {
+        let channels = buffers.len();
+        self.sync_buffers(file, buffers, channels, frames, take_rate, rate, ids)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn sync_buffers(
+        &mut self,
+        file: u64,
+        buffers: Vec<i32>,
+        channels: usize,
+        frames: u64,
+        take_rate: f64,
+        rate: f64,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<Step>, IdError> {
         let channels = channels.clamp(1, ae::MAX_CHANNELS);
         if rate > 0.0 && rate.is_finite() {
             self.rate = rate;
@@ -280,7 +324,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
         steps.extend(self.structure(ae::width(channels), ids)?);
         let now = File {
             channels,
-            buffer,
+            buffers,
             frames,
             rate: take_rate,
         };
@@ -293,7 +337,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
                     ops.push(Op::Set {
                         handle: reader_handle(file, channel),
                         ports: ports(&[
-                            (ae::BUF, Port::from(f64::from(buffer))),
+                            (ae::BUF, Port::from(f64::from(now.buffer(channel)))),
                             (ae::SPAN, Port::from(span)),
                         ]),
                     });
@@ -766,7 +810,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
                 slot: ae::SOURCE_SLOT.into(),
                 ports: ports(&[
                     ("reader_out", bus(&dry_handle(file), 0)),
-                    (ae::BUF, Port::from(f64::from(f.buffer))),
+                    (ae::BUF, Port::from(f64::from(f.buffer(channel)))),
                     (ae::CHAN, Port::from(channel as f64)),
                     (ae::SPAN, Port::from(span)),
                 ]),

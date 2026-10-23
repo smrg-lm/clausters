@@ -21,6 +21,9 @@ realtime = ["clausters/realtime"]
 # graph is.
 clausters = { path = "../..", default-features = false }
 clausters-core = { path = "../clausters-core" }
+# The take's parts, as the document says them: what the application's
+# reader reads.
+clausters-document = { path = "../clausters-document" }
 # The ops a playback answers, and the medium trait they are carried out
 # through.
 clausters-editing = { path = "../clausters-editing" }
