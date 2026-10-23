@@ -55,7 +55,7 @@
  */
 
 export { Application, BASE_ID } from "./application.ts";
-export { AudioDomain, AudioEditor, isTake } from "./audio.ts";
+export { AudioDomain, AudioEditor, isTake, readsInPlace } from "./audio.ts";
 export { ScoreDomain, ScoreEditor, ScoreView, isScore } from "./score.ts";
 export type {
     PageInfo, PageOptions, PageSetup, ScoreEditorOptions, TextOptions,

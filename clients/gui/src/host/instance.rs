@@ -327,13 +327,16 @@ impl Host {
                     _ => self.send_to_player(message),
                 }
             }
-            if !matches!(self.instance.run.awaiting(), Some((_, Step::Render(_)))) {
+            if !matches!(
+                self.instance.run.awaiting(),
+                Some((_, Step::Render(_) | Step::Move { .. }))
+            ) {
                 return;
             }
-            diag::warn!("an offline render was asked of a host that renders none; refused");
+            diag::warn!("an offline render or a file move was asked of a host that does neither");
             self.instance
                 .run
-                .rendered(Some("this host renders nothing offline".into()));
+                .rendered(Some("this host renders and moves no file".into()));
         }
     }
 
@@ -1011,8 +1014,8 @@ mod tests {
                         .collect(),
                 },
                 Some((_, Step::Send(_))) => unreachable!("a send never waits"),
-                Some((_, Step::Render(r))) => {
-                    panic!("a multitrack asks for no render ({})", r.path)
+                Some((_, Step::Render(_) | Step::Move { .. })) => {
+                    panic!("a multitrack renders and moves nothing")
                 }
             };
             assert_eq!(

@@ -42,7 +42,7 @@ import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
 import type { PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
-import { AudioEditor, isTake } from "./audio.ts";
+import { AudioEditor, isTake, readsInPlace } from "./audio.ts";
 import { SoundFile } from "../../soundfile.ts";
 import { ScoreEditor, isScore } from "./score.ts";
 import type { Interpretation, Transcription } from "../notation/sheet.ts";
@@ -158,13 +158,10 @@ export interface EditOptions {
      */
     sharedHistory?: boolean;
     /**
-     * **A buffer's own three**, ignored by every other structure: the audio
-     * editor's history limits and where a take leaves memory for
-     * ({@link AudioEditorOptions}).
+     * **A take's own**, ignored by every other structure: the folder the
+     * audio editor renders its files into ({@link AudioEditorOptions.workspace}).
      */
-    historyBytes?: number | null;
-    residentBytes?: number | null;
-    scratch?: string;
+    workspace?: string;
 }
 
 /**
@@ -190,8 +187,11 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
         ...rest
     } = options;
     if (structure instanceof SoundFile) {
-        // A file is loaded into a buffer of the editor's own, which is the
-        // take it edits; the file is what a save writes.
+        // A file is the take, read where it is -- or, compressed, decoded into
+        // a buffer of the editor's own; it is what a save writes.
+        if (readsInPlace(structure)) {
+            return new AudioEditor(structure, { sampleRate, ...rest }) as unknown as Editor<never>;
+        }
         const { server, ...others } = rest;
         const take = await structure.toBuffer({ server });
         return new AudioEditor(take, {

@@ -60,7 +60,7 @@ and press Ctrl+V over a take: text stays text, the paste is refused, and the
 window's status line says why.<br>
 
 <b>Saves.</b> <b>failed save</b> saves <code>d.wav</code> into a directory that
-does not exist: the write is refused, the error is printed, and <b>status</b>
+does not exist: the render cannot write there, the error is printed, and <b>status</b>
 shows the file still dirty and still called <code>d.wav</code>. <b>save then
 edit</b> saves it, then cuts it: dirty again, since the cut is newer than what
 was written; <b>undo in second</b> brings back the written take, and it is clean.

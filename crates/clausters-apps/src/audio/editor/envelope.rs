@@ -301,52 +301,34 @@ impl AudioEditor {
         if !curve.enabled || curve.points.iter().all(|p| p.value == 1.0) || self.length() == 0 {
             return (None, Vec::new());
         }
-        let curve = curve.points.clone();
+        let curve: Vec<renders::GainPoint> = curve
+            .points
+            .iter()
+            .map(|p| {
+                let q = points::quad(p.at.0, p);
+                renders::GainPoint {
+                    at: q[0],
+                    value: q[1],
+                    shape: q[2],
+                    curve: q[3],
+                }
+            })
+            .collect();
         let frames = self.length();
-        // A cut keeps curves on the take's origin. Render a complete final
-        // segment even if it now ends past the samples, then keep only the
-        // take's span. Shortening a fade must not accelerate its shape.
-        let rendered = curve.last().map_or(frames, |p| {
-            frames.max(secs_to_samples(p.at.0, self.file.rate).max(0) as u64)
-        });
-        if rendered
-            .checked_mul(u64::from(self.file.channels))
-            .is_none_or(|n| n > i32::MAX as u64)
+        // **The whole take, through the curve**: a render of the list into a
+        // file of its own, which the list then is. A cut keeps curves on the
+        // take's origin, so a fade shortened by one keeps its shape.
+        let (list, output) = match self
+            .render_list(0, frames)
+            .and_then(|list| Ok((list, self.render_output("gain")?)))
         {
-            return (
-                Some("the gain render exceeds the server buffer index range".into()),
-                self.envelope_corrections(),
-            );
-        }
-        let buffer = match self.next_buffer() {
-            Ok(b) => b,
-            Err(e) => return (Some(e), Vec::new()),
+            Ok(made) => made,
+            Err(why) => return (Some(why), Vec::new()),
         };
-        let mut steps = self.allocate(buffer, rendered);
-        steps.push(send(
-            "/buffer_gen",
-            vec![
-                OscType::Int(buffer as i32),
-                OscType::String("copy".into()),
-                OscType::Int(0),
-                OscType::Int(self.file.display as i32),
-                OscType::Int(0),
-                OscType::Int((frames * u64::from(self.file.channels)) as i32),
-            ],
-        ));
-        steps.push(Step::AwaitDone {
-            command: "/buffer_gen".into(),
-            index: Some(buffer as i32),
-        });
-        steps.extend(clausters_editing::gain::steps(
-            buffer as i32,
-            rendered,
-            self.file.rate,
-            &curve,
-        ));
+        let mut steps = vec![renders::gain(&list, &curve, &output)];
         let before = self.file.contents.clone();
-        self.file.frames.insert(buffer, rendered);
-        self.file.contents.parts = vec![part(buffer, 0, frames)];
+        let id = self.rendered(&output, frames, self.file.rate);
+        self.file.contents.parts = vec![part(id, 0, frames)];
         self.file.contents.automation[0].points = vec![
             points::point(Second(0.0), 1.0, 1.0, 0.0),
             points::point(Second(frames as f64 / self.file.rate), 1.0, 1.0, 0.0),
@@ -370,7 +352,9 @@ mod tests {
     use clausters_document::history::Direction;
 
     fn editor() -> AudioEditor {
-        let mut e = new_json(r#"{"take":1,"frames":48000,"display":2,"buffers":[3,4,5]}"#).unwrap();
+        let mut e =
+            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":48000,"display":2}"#)
+                .unwrap();
         call_json(
             &mut e,
             r#"{"verb":"window","widget":10,"pane":11,"envelope":12}"#,
@@ -448,9 +432,12 @@ mod tests {
         };
         assert!(out.changed);
         let steps = out.steps.unwrap();
+        assert!(
+            steps[0].get("render").is_some(),
+            "the take rendered through the curve"
+        );
         let wire = steps.to_string();
-        assert!(wire.contains("/buffer_gain") && wire.contains("/buffer_gen"));
-        assert!(!wire.contains("/buffer_render") && !wire.contains("/buffer_setRange"));
+        assert!(!wire.contains("/buffer_gain") && !wire.contains("/buffer_setRange"));
         assert!(
             out.record.unwrap().legs[0]
                 .backward
@@ -462,7 +449,7 @@ mod tests {
         let Some(Member::Audio(e)) = editing.member(id) else {
             panic!("audio");
         };
-        assert_eq!(e.list()[0].source.source, SourceId(1));
+        assert_eq!(e.list()[0].source.source, sources::id_of("/in/take1.wav"));
         assert_eq!(e.envelope_quads(false)[1], 0.0);
         assert!(editing.step(Direction::Undo).stepped);
         let Some(Member::Audio(e)) = editing.member(id) else {
@@ -474,20 +461,22 @@ mod tests {
         let Some(Member::Audio(e)) = editing.member(id) else {
             panic!("audio");
         };
-        assert_eq!(e.list()[0].source.source, SourceId(3));
+        assert_eq!(
+            e.list()[0].source.source,
+            sources::id_of(steps[0]["render"]["path"].as_str().unwrap()),
+            "the render, again"
+        );
         assert_eq!(e.envelope_quads(false)[1], 1.0);
     }
 
     #[test]
-    fn unchanged_refused_and_unity_apply_do_not_consume_buffers_or_history() {
+    fn unchanged_refused_and_unity_apply_render_nothing_and_record_nothing() {
         let mut e = editor();
-        let available = e.file.spare.clone();
         assert!(!e.act(&json!({"verb":"apply_envelope"}), 1).changed);
         let before = e.file.contents.clone();
         let out = e.act(&json!({"verb":"setautomation","points":[0,1,1]}), 1);
         assert!(serde_json::to_value(out.answer.unwrap()).unwrap()["reason"].is_string());
         assert_eq!(e.file.contents, before);
-        assert_eq!(e.file.spare, available);
         let out = e.act(
             &json!({"verb":"setautomation","points":e.envelope_quads(false)}),
             1,
@@ -495,7 +484,8 @@ mod tests {
         assert!(!out.changed);
         assert!(out.record.is_none());
         e.act(&json!({"verb":"setautomation","points":[0,0.5,1,0]}), 1);
-        e.file.spare.clear();
+        // with nowhere to write the render, the apply is refused
+        e.window_state.workspace = None;
         let before = e.file.contents.clone();
         assert!(
             serde_json::to_value(e.act(&json!({"verb":"apply_envelope"}), 2).answer.unwrap())

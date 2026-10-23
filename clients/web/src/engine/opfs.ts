@@ -48,6 +48,57 @@ export async function readFile(path: string): Promise<Uint8Array> {
 }
 
 /**
+ * **Moves the file at `from` to `to`**, over whatever is there: the handle's
+ * own `move` where the browser has one, else a copy and a removal, which a
+ * page's files of an editor's working folder can afford.
+ */
+export async function moveFile(from: string, to: string): Promise<void> {
+    const [source, name] = await parentOf(from, false);
+    const handle = await source.getFileHandle(name);
+    const [target, toName] = await parentOf(to, true);
+    const movable = handle as FileSystemFileHandle & {
+        move?: (dir: FileSystemDirectoryHandle, name: string) => Promise<void>;
+    };
+    if (typeof movable.move === "function") {
+        try {
+            await target.removeEntry(toName);
+        } catch {
+            // nothing there to replace
+        }
+        await movable.move(target, toName);
+        return;
+    }
+    const bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer());
+    await writeFile(to, bytes);
+    await source.removeEntry(name);
+}
+
+/** **Removes the file at `path`**; one that is not there is no error. */
+export async function removeFile(path: string): Promise<void> {
+    try {
+        const [dir, name] = await parentOf(path, false);
+        await dir.removeEntry(name);
+    } catch (error) {
+        if ((error as DOMException)?.name !== "NotFoundError") throw error;
+    }
+}
+
+/**
+ * **Removes directory `path`**: with `recursive`, and what it holds; without,
+ * only when it is empty, and a directory that still holds something is left
+ * as it is. One that is not there is no error.
+ */
+export async function removeDirectory(path: string, recursive: boolean): Promise<void> {
+    try {
+        const [dir, name] = await parentOf(path, false);
+        await dir.removeEntry(name, { recursive });
+    } catch (error) {
+        const kind = (error as DOMException)?.name;
+        if (kind !== "NotFoundError" && kind !== "InvalidModificationError") throw error;
+    }
+}
+
+/**
  * **Makes directory `path`** and every one above it, as a script's
  * `mkdir -p` does on a disk: a directory already there is no error.
  */

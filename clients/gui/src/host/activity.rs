@@ -557,7 +557,7 @@ mod editor_tests {
     /// playheads read transport 0, as both clients set them.
     fn editor_window() -> Host {
         let mut editor =
-            new_json(r#"{"take":1,"frames":48000,"channels":2,"rate":48000}"#).unwrap();
+            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":48000,"channels":2,"rate":48000}"#).unwrap();
         editor.set_meters(Some((-2, 2)));
         let mut def = editor.window(WINDOW, Some(METER));
         // A client names every node it sends, as both clients' drawers do:

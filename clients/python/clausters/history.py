@@ -418,13 +418,6 @@ class Editing:
         if self.core is not None:
             self.core.call("bytes", bytes=None if bytes is None else int(bytes))
 
-    def limit_resident(self, bytes: "int | None") -> None:
-        """**Keeps at most ``bytes`` of the takes only the history holds in
-        memory**, or lifts the limit with ``None``. Past it the oldest are
-        written to disk and read back when a step needs them."""
-        if self.core is not None:
-            self.core.call("resident", bytes=None if bytes is None else int(bytes))
-
     def event(self, member: int, addr: str, args: list) -> dict:
         """**One message to a member**, read, recorded and answered by the
         crate: ``{"outcome", "stepped"?, "corrections", "version"}``."""
@@ -510,11 +503,10 @@ class Editing:
         handler.execute_batch(structure, server, steps)
 
     def release(self, freed, stored=None) -> None:
-        """**Free the takes nothing reaches any more, and write to disk the
-        ones past the resident budget** -- what a turn or a step hands back as
-        ``freed`` and ``stored``, each under the member that made those takes,
-        whose server they are on -- an audio editor's buffers, a multitrack's
-        joins by source id. Called after the turn's own steps are
+        """**Free what nothing reaches any more** -- what a turn or a step
+        hands back as ``freed``, each under the member that made it, whose
+        server it is on: an audio editor's buffers and the renders it wrote, a
+        multitrack's joins by source id. Called after the turn's own steps are
         carried out, so no join is still reading them."""
         for entry in freed or ():
             structure, handler = self._handlers.get(int(entry.get("member", -1)),
@@ -526,6 +518,8 @@ class Editing:
                              entry.get("spilled") or [])
             if entry.get("sources") and hasattr(handler, "free_sources"):
                 handler.free_sources(structure, entry["sources"])
+            if entry.get("files") and hasattr(handler, "delete_files"):
+                handler.delete_files(structure, entry["files"])
         for entry in stored or ():
             member = int(entry.get("member", -1))
             structure, handler = self._handlers.get(member, (None, None))

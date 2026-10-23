@@ -315,6 +315,11 @@ pub struct Freed {
     /// forgotten them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<u64>,
+    /// **An audio editor's renders**, by path, and their peaks: no list
+    /// reads them, no entry can walk back to them and the clipboard does not
+    /// name them, so the caller deletes the files.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 /// **A take leaving memory**: only the history holds it, and the resident
@@ -369,9 +374,6 @@ pub struct Editing {
     seats: Vec<Seat>,
     /// The most bytes of takes only the history holds, when there is a limit.
     bytes: Option<u64>,
-    /// The most of those bytes kept in memory, when there is a limit; the rest
-    /// is on disk.
-    resident: Option<u64>,
     /// Each audio member's coordinator ([`audio_session`]).
     sessions: std::collections::BTreeMap<MemberId, audio_session::Session>,
 }
@@ -397,17 +399,8 @@ impl Editing {
             version: FIRST_VERSION,
             seats: Vec::new(),
             bytes: None,
-            resident: None,
             sessions: Default::default(),
         }
-    }
-
-    /// **Keeps at most `bytes` of the takes only the history holds in
-    /// memory**, or lifts the limit with `None`. Past it the oldest go to disk,
-    /// through the member that made them, and a step that needs one reads it
-    /// back.
-    pub fn set_resident(&mut self, bytes: Option<u64>) {
-        self.resident = bytes;
     }
 
     /// **Limits the takes only the history holds to `bytes`**, or lifts the
@@ -498,6 +491,7 @@ impl Editing {
                     buffers: Vec::new(),
                     spilled: Vec::new(),
                     sources: Vec::new(),
+                    files: Vec::new(),
                 });
                 out.len() - 1
             }
@@ -508,25 +502,33 @@ impl Editing {
             if source.stored.is_some() {
                 out[at].spilled.push(source.id.buffer);
             }
-            for seat in &mut self.seats {
-                if seat.server == source.id.server
-                    && let Member::Audio(editor) = &mut seat.member
-                {
-                    editor.forget(source.id.buffer);
-                }
-            }
         }
         for source in released_joins {
             if rooted.contains(&source) {
                 continue;
             }
             for (owner, seat) in self.seats.iter_mut().enumerate() {
-                if let Member::Multitrack(editor) = &mut seat.member
-                    && editor.is_join(source)
-                {
-                    let at = at_member(&mut out, owner as MemberId);
-                    out[at].sources.push(source.0);
-                    editor.forget_join(source);
+                match &mut seat.member {
+                    Member::Multitrack(editor) if editor.is_join(source) => {
+                        let at = at_member(&mut out, owner as MemberId);
+                        out[at].sources.push(source.0);
+                        editor.forget_join(source);
+                    }
+                    // **A render nothing names any more**: its file and its
+                    // peaks go, unless the clipboard names the file.
+                    Member::Audio(editor) => {
+                        let named = self.services.clipboard.files();
+                        let files: Vec<String> = editor
+                            .release(source)
+                            .into_iter()
+                            .filter(|f| !named.iter().any(|n| n == f))
+                            .collect();
+                        if !files.is_empty() {
+                            let at = at_member(&mut out, owner as MemberId);
+                            out[at].files.extend(files);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -538,48 +540,11 @@ impl Editing {
         (out, stored)
     }
 
-    /// **The takes past the resident budget, out of memory**: of the takes
-    /// only the history holds and still in a buffer, the oldest go to disk
-    /// until what is left fits.
+    /// **What the resident budget sends to disk**: nothing any more. An
+    /// audio editor's takes are files, so nothing an application holds is a
+    /// take in memory the history alone keeps.
     fn store(&mut self) -> Vec<Stored> {
-        let Some(limit) = self.resident else {
-            return Vec::new();
-        };
-        let candidates = self.services.resources.spill_candidates(limit, |id| {
-            self.services.resources.source(id).is_some_and(|source| {
-                matches!(&self.seats[source.member as usize].member,
-                    Member::Audio(editor) if editor.storage_available())
-            })
-        });
-        let selected = self.services.histories.selected();
-        let mut out = Vec::new();
-        for id in candidates {
-            let Some(source) = self.services.resources.source(id) else {
-                continue;
-            };
-            let owner = source.member as usize;
-            let buffer = id.buffer;
-            if let Ok(ticket) = self.prepare_audio(
-                owner as MemberId,
-                audio::operations::Command::Spill(buffer),
-                0,
-            ) && let Some((batch, work)) = self.audio_runtime.operations.next(ticket)
-            {
-                out.push(Stored {
-                    member: owner as MemberId,
-                    buffer,
-                    operation: crate::application::operations::Prepared {
-                        member: work.member,
-                        ticket,
-                        batch,
-                        server: work.server,
-                        steps: work.steps,
-                    },
-                });
-            }
-        }
-        self.services.histories.select(selected);
-        out
+        Vec::new()
     }
 
     fn sync_resources(&mut self) {
@@ -1430,10 +1395,6 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             editing.set_bytes(get(&request, "bytes").as_u64());
             "{}".into()
         }
-        "resident" => {
-            editing.set_resident(get(&request, "bytes").as_u64());
-            "{}".into()
-        }
         "external" => {
             let domain = get(&request, "domain")
                 .as_str()
@@ -1848,52 +1809,6 @@ mod tests {
     /// **A notes editor edits the sequence its holder shares**, and an undo
     /// through the context puts it back there.
     #[test]
-    fn owned_file_buffers_stay_rooted_until_close_even_behind_another_file() {
-        let mut editing = Editing::new();
-        let member = call(&mut editing, json!({"verb":"openAudio", "sharedHistory":true,"key":"owned","take":3,"frames":100,"channels":1,"rate":48000,"display":9,"buffers":[20,21,22],"path":"owned.wav"}))["member"].clone();
-        call(
-            &mut editing,
-            json!({"verb":"member","member":member,"call":{"verb":"open"}}),
-        );
-        let retained = call(
-            &mut editing,
-            json!({"verb":"retainMember","member":member,"kind":"playback"}),
-        );
-        assert!(retained["freed"].as_array().is_none_or(|f| f.is_empty()));
-        call(
-            &mut editing,
-            json!({"verb":"member","member":member,"call":{"verb":"add_file","take":50,"frames":100,"display":51,"buffers":[52,53],"untitled":true}}),
-        );
-        let retained = call(
-            &mut editing,
-            json!({"verb":"retainMember","member":member,"kind":"playback"}),
-        );
-        assert!(retained["freed"].as_array().is_none_or(|f| f.is_empty()));
-        let closing = call(
-            &mut editing,
-            json!({"verb":"member","member":member,"call":{"verb":"close_file","file":1}}),
-        );
-        assert!(
-            !closing["freedBuffers"]
-                .as_array()
-                .unwrap()
-                .contains(&json!(3)),
-            "playback lease defers final release"
-        );
-        let released = call(
-            &mut editing,
-            json!({"verb":"retainMember","member":member,"kind":"playback"}),
-        );
-        assert!(
-            released["freed"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|f| f["buffers"].as_array().unwrap().contains(&json!(3)))
-        );
-    }
-
-    #[test]
     fn a_notes_editor_edits_the_shared_sequence_and_undoes_through_the_context() {
         use clausters_document::EventSequence;
         use clausters_document::events::Event as SeqEvent;
@@ -2214,6 +2129,7 @@ mod tests {
                 buffers: Vec::new(),
                 spilled: Vec::new(),
                 sources: vec![join.0],
+                files: Vec::new(),
             }],
             "the edit after the undo dropped the only entry that named it"
         );
@@ -2227,7 +2143,7 @@ mod tests {
     /// drawn by widget 50 in window 49, with buffers for new takes.
     fn a_take() -> Member {
         let mut editor = audio::new_json(
-            r#"{"take": 7, "frames": 100, "display": 9, "buffers": [20, 21, 22, 23],
+            r#"{"path":"/in/take7.wav","workspace":"/work", "frames": 100, "display": 9,
                 "version": 1}"#,
         )
         .unwrap();
@@ -2273,13 +2189,10 @@ mod tests {
     }
 
     /// The takes an audio member's list reads now, in order.
-    fn reads(editing: &Editing, member: MemberId) -> Vec<u64> {
+    /// The file each part of a member's list reads, by its stem.
+    fn reads(editing: &Editing, member: MemberId) -> Vec<String> {
         match editing.member(member) {
-            Some(Member::Audio(editor)) => editor
-                .list()
-                .iter()
-                .map(|part| part.source.source.0)
-                .collect(),
+            Some(Member::Audio(editor)) => editor.part_files(),
             _ => Vec::new(),
         }
     }
@@ -2307,30 +2220,30 @@ mod tests {
         assert!(editing.can_undo());
         assert_eq!(editing.undo_label().as_deref(), Some("draw the samples"));
 
-        assert_eq!(reads(&editing, take), [7, 20, 7]);
+        assert_eq!(reads(&editing, take), ["take7", "1-2-stroke", "take7"]);
         let undone = editing.step(Direction::Undo);
         assert!(undone.stepped);
         assert_eq!(undone.version, 3);
         assert_eq!(stitched(&undone), 1);
-        assert_eq!(reads(&editing, take), [7]);
-        assert_eq!(
-            undone.corrections,
-            [Corrected {
-                member: take,
-                answer: Answer::Push {
-                    seq: 0,
-                    doc_version: 3,
-                    reason: None,
-                    corrections: vec![clausters_editing::conversation::Correction {
-                        widget: 50,
-                        props: json!({"reload": 1}),
-                    }],
-                },
-            }],
-            "the window reads the take again"
+        assert_eq!(reads(&editing, take), ["take7"]);
+        assert_eq!(undone.corrections.len(), 1);
+        assert_eq!(undone.corrections[0].member, take);
+        let Answer::Push {
+            doc_version,
+            corrections,
+            ..
+        } = &undone.corrections[0].answer
+        else {
+            panic!("a push");
+        };
+        assert_eq!(*doc_version, 3);
+        assert_eq!(corrections[0].widget, 50);
+        assert!(
+            corrections[0].props["segments"].is_object(),
+            "the window is told the list again"
         );
         editing.step(Direction::Redo);
-        assert_eq!(reads(&editing, take), [7, 20, 7]);
+        assert_eq!(reads(&editing, take), ["take7", "1-2-stroke", "take7"]);
     }
 
     /// **Two applications in one context walk one order**: a box moved, a
@@ -2364,7 +2277,7 @@ mod tests {
 
         let back = editing.step(Direction::Undo);
         assert_eq!(stitched(&back), 1, "the stroke, in between");
-        assert_eq!(reads(&editing, take), [7]);
+        assert_eq!(reads(&editing, take), ["take7"]);
         assert_eq!(position(&mut editing, multitrack), 2.0);
 
         editing.step(Direction::Undo);
@@ -2373,7 +2286,7 @@ mod tests {
 
         editing.step(Direction::Redo);
         editing.step(Direction::Redo);
-        assert_eq!(reads(&editing, take), [7, 20, 7]);
+        assert_eq!(reads(&editing, take), ["take7", "1-2-stroke", "take7"]);
     }
 
     /// **Two windows over one take are one structure**: a stroke in one is
@@ -2392,7 +2305,7 @@ mod tests {
         assert_eq!(stitched(&undone), 2, "each window draws its own join");
         assert_eq!(
             (reads(&editing, left), reads(&editing, right)),
-            (vec![7], vec![7])
+            (vec!["take7".to_string()], vec!["take7".to_string()])
         );
         assert!(!editing.can_undo(), "one entry");
         assert!(undone.corrections.iter().any(|c| c.member == right));
@@ -2601,7 +2514,7 @@ mod tests {
         let opening = raw_call(
             &mut editing,
             json!({"verb":"member","member":member,
-            "call":{"verb":"add_file","take":50,"frames":100,"display":51,"buffers":[52,53],"untitled":true}}),
+            "call":{"verb":"add_file","path":"/in/take50.wav","workspace":"/work","frames":100,"display":51,"untitled":true}}),
         );
         assert!(opening["operation"].is_object());
         let files = raw_call(
@@ -2624,15 +2537,10 @@ mod tests {
             &mut editing,
             json!({"verb":"operation","action":"repaired","ticket":failed["repair"]}),
         );
-        assert_eq!(repaired["returned"]["buffers"], json!([51, 53]));
-        let freed = repaired["freed"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .flat_map(|entry| entry["buffers"].as_array().unwrap())
-            .cloned()
-            .collect::<Vec<_>>();
-        assert_eq!(freed, [json!(50), json!(52)]);
+        assert_eq!(repaired["returned"]["buffers"], json!([51]));
+        // a file of the disk reserved no buffer of a take, so nothing else
+        // comes back
+        assert!(repaired["freed"].as_array().is_none_or(|f| f.is_empty()));
         assert_eq!(
             raw_call(
                 &mut editing,
@@ -2750,8 +2658,8 @@ mod tests {
         let mut editing = Editing::default();
         let take = call(
             &mut editing,
-            json!({"verb": "openAudio", "sharedHistory": true, "key": "buffer:7", "take": 7, "frames": 100,
-                   "display": 9, "buffers": [20]}),
+            json!({"verb": "openAudio", "sharedHistory": true, "key": "buffer:7", "path":"/in/take7.wav","workspace":"/work", "frames": 100,
+                   "display": 9}),
         )["member"]
             .clone();
         call(
@@ -2903,8 +2811,8 @@ mod tests {
     fn an_audio_take(editing: &mut Editing) -> MemberId {
         let opened = call(
             editing,
-            json!({"verb": "openAudio", "sharedHistory": true, "key": "take:3", "take": 3, "frames": 100,
-                   "rate": 48000, "display": 9, "buffers": [20, 21, 22, 23]}),
+            json!({"verb": "openAudio", "sharedHistory": true, "key": "take:3", "path":"/in/take3.wav","workspace":"/work", "frames": 100,
+                   "rate": 48000, "display": 9}),
         );
         let member = opened["member"].as_u64().unwrap() as MemberId;
         call(
@@ -2938,104 +2846,11 @@ mod tests {
         let second = draw(&mut editing, take, 2, 30);
         assert_eq!(
             second["freed"],
-            json!([{"member": take, "buffers": [20]}]),
-            "the redo is gone, and 20 with it"
+            json!([{"member": take, "files": ["/work/1-2-stroke.w64", "/work/1-2-stroke.peaks"]}]),
+            "the redo is gone, and the stroke's render with it"
         );
     }
 
-    /// **The byte limit trims what only the history holds**, oldest first, and
-    /// never a take the list still reads.
-    #[test]
-    fn the_byte_limit_frees_the_oldest_takes_only_the_history_holds() {
-        let mut editing = Editing::default();
-        let take = an_audio_take(&mut editing);
-        // One frame of mono is four bytes. Three strokes over one frame leave
-        // two takes only the history reads -- the first and the second, each
-        // replaced by the next -- which is eight: the oldest entries go until
-        // the second is all that is left, and the first is freed.
-        call(&mut editing, json!({"verb": "bytes", "bytes": 4}));
-        draw(&mut editing, take, 1, 10);
-        draw(&mut editing, take, 2, 10);
-        let third = draw(&mut editing, take, 3, 10);
-        assert_eq!(third["freed"], json!([{"member": take, "buffers": [20]}]));
-        assert_eq!(
-            call(&mut editing, json!({"verb": "state"}))["canUndo"],
-            true
-        );
-        let list = call(
-            &mut editing,
-            json!({"verb": "member", "member": take, "call": {"verb": "parts"}}),
-        );
-        let reads: Vec<u64> = list["parts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|p| p["source"]["source"].as_u64().unwrap())
-            .collect();
-        assert_eq!(reads, [3, 22, 3]);
-    }
-
-    /// **Past the resident budget the oldest take only the history holds goes
-    /// to disk**, and the step that needs it reads it back before stitching.
-    #[test]
-    fn a_take_past_the_resident_budget_goes_to_disk_and_comes_back() {
-        let mut editing = Editing::default();
-        let take = an_audio_take(&mut editing);
-        call(
-            &mut editing,
-            json!({"verb": "member", "member": take,
-                   "call": {"verb": "sync", "scratch": "/scratch"}}),
-        );
-        // One frame is four bytes: nothing only the history holds stays in
-        // memory.
-        call(&mut editing, json!({"verb": "resident", "bytes": 0}));
-        draw(&mut editing, take, 1, 10);
-        let second = draw(&mut editing, take, 2, 10);
-        assert_eq!(second["stored"][0]["buffer"], 20, "the first stroke's take");
-        let steps = second["stored"][0]["steps"].as_array().unwrap();
-        assert_eq!(steps[0]["send"]["addr"], "/buffer_write");
-        let stored_path = steps[0]["send"]["args"][1].clone();
-        assert!(
-            stored_path["s"]
-                .as_str()
-                .unwrap()
-                .starts_with("/scratch/take-")
-        );
-        assert!(stored_path["s"].as_str().unwrap().ends_with("-20.wav"));
-        assert_eq!(steps[2]["send"]["addr"], "/buffer_free");
-
-        // Undo the second stroke: the list reads the first one's take again,
-        // so it is read back before the join is stitched.
-        let undone = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
-        let steps = undone["effects"][0]["steps"].as_array().unwrap();
-        assert_eq!(steps[0]["send"]["addr"], "/buffer_allocRead");
-        assert_eq!(steps[0]["send"]["args"][1], stored_path);
-        assert_eq!(steps[2]["send"]["addr"], "/buffer_stitch");
-        // ...and the take the undo left behind is now the one on disk.
-        assert_eq!(undone["stored"][0]["buffer"], 21);
-    }
-
-    /// **A take on disk that the history lets go of frees no buffer**: its
-    /// number goes back, and there is nothing on the server to free.
-    #[test]
-    fn a_take_freed_from_disk_frees_no_buffer() {
-        let mut editing = Editing::default();
-        let take = an_audio_take(&mut editing);
-        call(
-            &mut editing,
-            json!({"verb": "member", "member": take,
-                   "call": {"verb": "sync", "scratch": "/scratch"}}),
-        );
-        call(&mut editing, json!({"verb": "resident", "bytes": 0}));
-        call(&mut editing, json!({"verb": "bytes", "bytes": 4}));
-        draw(&mut editing, take, 1, 10);
-        draw(&mut editing, take, 2, 10);
-        let third = draw(&mut editing, take, 3, 10);
-        assert_eq!(
-            third["freed"],
-            json!([{"member": take, "buffers": [20], "spilled": [20]}])
-        );
-    }
     /// **An empty file in focus has nothing to undo**, whether the edited one
     /// was opened before it or after it: two windows, or two files of one
     /// window, never fall back to each other's order or the context's.
@@ -3044,9 +2859,8 @@ mod tests {
         let open = |editing: &mut Editing, n: i64| {
             let member = call(
                 editing,
-                json!({"verb": "openAudio", "key": format!("file:{n}"), "take": 3 + n,
-                       "frames": 100, "rate": 48000, "display": 9 + n,
-                       "buffers": [20 + n * 10, 21 + n * 10, 22 + n * 10]}),
+                json!({"verb": "openAudio", "key": format!("file:{n}"), "path": format!("/in/take{}.wav", 3 + n), "workspace": "/work",
+                       "frames": 100, "rate": 48000, "display": 9 + n}),
             )["member"]
                 .as_u64()
                 .unwrap() as MemberId;
@@ -3088,8 +2902,8 @@ mod tests {
             call(
                 &mut editing,
                 json!({"verb": "member", "member": member, "call": {"verb": "add_file",
-                       "take": 50, "frames": 100, "channels": 1, "rate": 48000,
-                       "display": 51, "buffers": [52, 53, 54], "untitled": true}}),
+                       "path":"/in/take50.wav","workspace":"/work", "frames": 100, "channels": 1, "rate": 48000,
+                       "display": 51, "untitled": true}}),
             );
             let (first, second) = (0, 1);
             let (edited, empty) = if edited_first {
@@ -3185,8 +2999,8 @@ mod tests {
             call(
                 &mut editing,
                 json!({"verb":"member", "member":member,
-                "call":{"verb":"add_file", "take":50, "frames":100,
-                    "display":51, "buffers":[52,53,54]}}),
+                "call":{"verb":"add_file", "path":"/in/take50.wav","workspace":"/work", "frames":100,
+                    "display":51}}),
             );
             draw(&mut editing, member, 2, 20);
             if direction == "redo" {
@@ -3239,8 +3053,7 @@ mod tests {
         call(
             &mut editing,
             json!({"verb": "member", "member": member, "call": {"verb": "add_file",
-            "take": 50, "frames": 200, "channels": 1, "rate": 48000, "display": 51,
-            "buffers": [52, 53, 54], "untitled": true}}),
+            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "display": 51, "untitled": true}}),
         );
         assert_eq!(
             draw(&mut editing, member, 1, 30)["outcome"]["changed"],
@@ -3248,8 +3061,8 @@ mod tests {
         );
         let other = call(
             &mut editing,
-            json!({"verb": "openAudio", "sharedHistory": true, "key": "take:4", "take": 4, "frames": 100,
-                   "rate": 48000, "display": 19, "buffers": [40, 41, 42, 43]}),
+            json!({"verb": "openAudio", "sharedHistory": true, "key": "take:4", "path":"/in/take4.wav","workspace":"/work", "frames": 100,
+                   "rate": 48000, "display": 19}),
         )["member"]
             .as_u64()
             .unwrap() as MemberId;
@@ -3294,8 +3107,7 @@ mod tests {
         call(
             &mut editing,
             json!({"verb": "member", "member": member, "call": {"verb": "add_file",
-            "take": 50, "frames": 200, "channels": 1, "rate": 48000, "display": 51,
-            "buffers": [52, 53, 54], "untitled": true}}),
+            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "display": 51, "untitled": true}}),
         );
         call(
             &mut editing,
@@ -3329,8 +3141,7 @@ mod tests {
         call(
             &mut editing,
             json!({"verb": "member", "member": member, "call": {"verb": "add_file",
-            "take": 50, "frames": 200, "channels": 1, "rate": 48000, "display": 51,
-            "buffers": [52, 53, 54], "untitled": true}}),
+            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "display": 51, "untitled": true}}),
         );
         let version = editing.version();
         let asked = call(
@@ -3361,7 +3172,7 @@ mod tests {
         let opened = call(
             &mut editing,
             json!({"verb": "openAudio", "key": "audio:empty", "empty": true,
-                   "display": 9, "buffers": [20, 21]}),
+                   "display": 9}),
         );
         let member = opened["member"].as_u64().unwrap() as MemberId;
         let member_call = |editing: &mut Editing, inner: Value| {
@@ -3380,8 +3191,8 @@ mod tests {
         );
         let added = member_call(
             &mut editing,
-            json!({"verb": "add_file", "take": 50, "frames": 200,
-            "channels": 1, "rate": 48000, "display": 51, "buffers": [52, 53], "untitled": true}),
+            json!({"verb": "add_file", "path":"/in/take50.wav","workspace":"/work", "frames": 200,
+            "channels": 1, "rate": 48000, "display": 51, "untitled": true}),
         );
         assert_eq!(added["binding"]["display"], 51, "{added}");
         let version = editing.version();
@@ -3422,8 +3233,8 @@ mod tests {
         let first_parts = member_call(&mut editing, json!({"verb": "parts"}));
         let added = member_call(
             &mut editing,
-            json!({"verb": "add_file", "take": 50, "frames": 200,
-            "channels": 2, "rate": 48000, "display": 51, "buffers": [52, 53, 54], "untitled": true}),
+            json!({"verb": "add_file", "path":"/in/take50.wav","workspace":"/work", "frames": 200,
+            "channels": 2, "rate": 48000, "display": 51, "untitled": true}),
         );
         assert_eq!(added["binding"]["display"], 51);
         assert!(!editing.can_undo(), "a new file has no edits");
@@ -3484,8 +3295,8 @@ mod tests {
         call(
             &mut editing,
             json!({"verb":"member", "member":member, "call":{
-            "verb":"add_file", "take":50, "frames":200, "channels":2,
-            "rate":48000, "display":51, "buffers":[52,53,54]}}),
+            "verb":"add_file", "path":"/in/take50.wav","workspace":"/work", "frames":200, "channels":2,
+            "rate":48000, "display":51}}),
         );
         let before = call(
             &mut editing,
@@ -3507,123 +3318,13 @@ mod tests {
         assert!(!editing.can_undo());
     }
     #[test]
-    fn a_pending_consumer_outlives_redo_and_releases_exactly_once() {
-        let mut editing = Editing::new();
-        let member = an_audio_take(&mut editing);
-        draw(&mut editing, member, 1, 10);
-        let source = json!({"server": {"connection":0,"generation":0}, "buffer":20});
-        let root = json!({"kind":"pending", "owner":100});
-        assert_eq!(
-            call(
-                &mut editing,
-                json!({"verb":"retain", "root":root, "sources":[source]})
-            )["retained"],
-            true
-        );
-        call(&mut editing, json!({"verb":"step", "direction":"undo"}));
-        let replaced = draw(&mut editing, member, 2, 30);
-        assert!(replaced.get("freed").is_none());
-        let released = call(&mut editing, json!({"verb":"dropRoot", "root":root}));
-        assert_eq!(
-            released["freed"],
-            json!([{"member":member, "buffers":[20]}])
-        );
-        assert_eq!(
-            raw_call(&mut editing, json!({"verb":"dropRoot", "root":root}))["freed"],
-            json!([])
-        );
-    }
-
-    #[test]
-    fn closing_a_file_defers_source_release_until_playback_drops_its_root() {
-        let mut editing = Editing::new();
-        let member = an_audio_take(&mut editing);
-        draw(&mut editing, member, 1, 10);
-        assert_eq!(
-            call(
-                &mut editing,
-                json!({"verb":"retainMember", "member":member, "kind":"playback"})
-            )["retained"],
-            true
-        );
-        let closed = call(
-            &mut editing,
-            json!({"verb":"member", "member":member, "call":{"verb":"close_file", "file":1}}),
-        );
-        assert!(
-            !closed["freedBuffers"]
-                .as_array()
-                .unwrap()
-                .contains(&json!(20))
-        );
-        assert!(
-            !closed["steps"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|step| step["send"]["addr"] == "/buffer_free"
-                    && step["send"]["args"][0]["i"] == 20)
-        );
-        let released = call(
-            &mut editing,
-            json!({"verb":"dropRoot", "root":{"kind":"playback", "owner":member}}),
-        );
-        assert!(
-            released["freed"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|entry| entry["buffers"].as_array().unwrap().contains(&json!(20)))
-        );
-    }
-
-    #[test]
-    fn an_inactive_files_history_keeps_sources_and_can_spill_through_its_owner() {
-        let mut editing = Editing::new();
-        let member = an_audio_take(&mut editing);
-        call(
-            &mut editing,
-            json!({"verb":"member", "member":member, "call":{"verb":"sync", "scratch":"scratch"}}),
-        );
-        draw(&mut editing, member, 1, 10);
-        draw(&mut editing, member, 2, 10);
-        call(
-            &mut editing,
-            json!({"verb":"member", "member":member, "call":{"verb":"add_file", "take":50, "frames":200, "display":51,"buffers":[52,53,54]}}),
-        );
-        editing.set_resident(Some(0));
-        let (_, stored) = editing.release();
-        assert_eq!(
-            stored
-                .iter()
-                .map(|stored| stored.buffer)
-                .collect::<Vec<_>>(),
-            [20]
-        );
-        let prepared = &stored[0].operation;
-        let refused = raw_call(
-            &mut editing,
-            json!({"verb":"operation","action":"complete",
-            "ticket":prepared.ticket,"batch":prepared.batch,"result":{"status":"failed","reason":"quota"}}),
-        );
-        raw_call(
-            &mut editing,
-            json!({"verb":"operation","action":"repaired", "ticket":refused["repair"]}),
-        );
-        assert!(
-            matches!(editing.member(member), Some(Member::Audio(editor)) if !editor.is_spilled(20))
-        );
-        let (freed, _) = editing.release();
-        assert!(freed.is_empty());
-    }
-    #[test]
     fn shared_undo_routes_to_an_unfocused_object_without_rebinding_the_window() {
         let mut editing = Editing::new();
         let member = an_audio_take(&mut editing);
         draw(&mut editing, member, 1, 10);
         call(
             &mut editing,
-            json!({"verb":"member", "member":member, "call":{"verb":"add_file", "take":50,"frames":200,"display":51,"buffers":[52,53,54]}}),
+            json!({"verb":"member", "member":member, "call":{"verb":"add_file", "path":"/in/take50.wav","workspace":"/work","frames":200,"display":51}}),
         );
         let binding = call(
             &mut editing,
@@ -3650,37 +3351,6 @@ mod tests {
         assert_eq!(parts["parts"].as_array().unwrap().len(), 1);
     }
 
-    #[test]
-    fn equal_local_buffer_ids_on_different_servers_release_on_their_own_endpoint() {
-        let mut editing = Editing::new();
-        let a = an_audio_take(&mut editing);
-        editing.set_server(
-            a,
-            ServerInstance {
-                connection: 1,
-                generation: 1,
-            },
-        );
-        let b = call(
-            &mut editing,
-            json!({"verb":"openAudio", "sharedHistory":true, "key":"another-server", "take":3,"frames":100,"display":9,
-            "buffers":[20,21,22,23], "server":{"connection":2,"generation":1}}),
-        )["member"]
-            .as_u64()
-            .unwrap() as u32;
-        call(
-            &mut editing,
-            json!({"verb":"member", "member":b,"call":{"verb":"window", "widget":12}}),
-        );
-        draw(&mut editing, a, 1, 10);
-        draw(&mut editing, b, 2, 10);
-        call(&mut editing, json!({"verb":"step", "direction":"undo"}));
-        let replaced = draw(&mut editing, a, 3, 30);
-        assert_eq!(replaced["freed"], json!([{"member":b,"buffers":[20]}]));
-        assert!(
-            matches!(editing.member(a), Some(Member::Audio(editor)) if editor.bytes(20).is_some())
-        );
-    }
     #[test]
     fn a_lost_endpoint_refuses_its_step_without_blocking_unrelated_context_edits() {
         let mut editing = Editing::new();

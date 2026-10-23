@@ -53,7 +53,7 @@ writes changes.
 """
 
 from .application import BASE_ID, Application
-from .audio import AudioDomain, AudioEditor
+from .audio import AudioDomain, AudioEditor, reads_in_place
 from ...history import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
@@ -105,4 +105,5 @@ __all__ = [
     "not_an_edit",
     "watch",
     "measures",
+    "reads_in_place",
 ]

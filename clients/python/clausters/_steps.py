@@ -39,11 +39,25 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         ready = runner.call("ready")
         messages = ready.get("messages", [])
         awaiting = ready.get("awaiting")
-        if awaiting is None or "render" in awaiting["step"]:
+        if awaiting is None or "render" in awaiting["step"] or "move" in awaiting["step"]:
             for message in messages:
                 server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
             if awaiting is None:
                 return
+            if "move" in awaiting["step"]:
+                # **A file moved**, on this client's disk: what a save over a
+                # file the take reads does with it.
+                move = awaiting["step"]["move"]
+                try:
+                    import os
+                    os.replace(move["from"], move["to"])
+                    failed = None
+                except OSError as error:
+                    failed = error
+                runner.call("moved", **({} if failed is None else {"error": str(failed)}))
+                if failed is not None:
+                    raise CommandError(f"moving {move['from']} to {move['to']} failed: {failed}")
+                continue
             # **An offline render**: nothing is sent for it; this client
             # renders the score into its file and says how it went.
             try:

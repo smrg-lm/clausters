@@ -96,6 +96,10 @@ pub struct Window<'a> {
     /// **No file is open**: the window keeps its chrome and its dialogs, and
     /// where the take would be it says how to open one.
     pub empty: bool,
+    /// **The take as a list of segments over files**, which the picture
+    /// draws from its files in place of `buffer`: an audio editor's take
+    /// lives on disk.
+    pub segments: Option<&'a Value>,
 }
 
 /// What a window with no file open says where the take would be.
@@ -142,6 +146,10 @@ pub fn window(w: &Window<'_>) -> Value {
     });
     picture.insert("id".into(), json!(w.widget));
     picture.insert("weight".into(), json!(1.0));
+    if let Some(list) = w.segments {
+        picture.remove("buffer");
+        picture.insert("segments".into(), list.clone());
+    }
     // A take drawn from a summary leaves the host no samples to copy: the
     // editor copies it, naming the takes the span is made of.
     picture.insert("copies".into(), json!("owner"));
@@ -163,6 +171,10 @@ pub fn window(w: &Window<'_>) -> Value {
         });
         lane.insert("id".into(), json!(id));
         lane.insert("weight".into(), json!(1.0));
+        if let Some(list) = w.segments {
+            lane.remove("buffer");
+            lane.insert("segments".into(), list.clone());
+        }
         lane.insert("link".into(), json!(w.pane.unwrap_or(w.widget)));
         // A picture of the take, never a surface a hand edits samples on.
         lane.insert("editable".into(), json!(false));
@@ -314,6 +326,7 @@ mod tests {
             folded: &[],
             lane: None,
             empty: false,
+            segments: None,
         })
     }
 

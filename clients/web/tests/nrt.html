@@ -197,12 +197,15 @@
           info.sampleRate === 48000 && worst < 1e-6 && failed.length > 0 &&
           rightInfo.channels === 1 &&
           [...rightSamples].every((s) => Math.abs(s + 0.25) < 1e-6);
-        // Application services also work with no renderer. Two strokes over
-        // one frame spill the first immutable take, undo restores it from OPFS,
-        // and a new edit releases the spilled redo source through its owner.
-        // a scratch directory handed over is the caller's to make
-        await opfs.makeDirectory("application-scratch");
-        const editor = new AudioEditor(buf, { residentBytes: 0, scratch: "application-scratch" });
+        // **The audio editor over the page's storage**: the buffer is written
+        // to the editor's folder in OPFS, each stroke is a real offline render
+        // in the worker into a file there, an undo names the earlier render
+        // again, and an edit after it deletes the render the redo held. A copy
+        // names files, a paste puts them in, a mix renders, and a render the
+        // clipboard names outlives the editor.
+        // a folder handed over is the caller's to make
+        await opfs.makeDirectory("application-work");
+        const editor = new AudioEditor(buf, { workspace: "application-work" });
         const idle = async () => {
           let waiting;
           do { waiting = editor.domain.idle(); await waiting; }
@@ -214,52 +217,48 @@
           editor.apply("/gui_event", [1234, seq, editor.editing.version, "draw", 0, 10, [value], [0]]);
           await idle();
         };
+        const paths = () => editor.parts.map((part) => part.path);
+        const written = async (path) => (await opfs.exists(path)) && (await opfs.sizeOf(path)) > 80;
+        if (!(await written(paths()[0]))) throw new Error(`the buffer was not written to OPFS: ${paths()[0]}`);
         await stroke(1, 0.5);
+        const first = paths()[1];
         await stroke(2, 0.25);
-        const stored = editor.editing.serviceCall("resources").find((source) => source.stored !== null);
-        if (!stored) throw new Error("history-only samples did not spill to OPFS");
-        const storedBytes = await opfs.readFile(stored.stored);
-        if (storedBytes.length <= 44) throw new Error("the spill contains no WAV samples");
-        if (!editor.undo()) throw new Error("the spilled edit could not be undone");
+        const second = paths()[1];
+        if (!first.endsWith("-stroke.w64") || !(await written(first)) || !(await written(second)))
+          throw new Error(`the strokes were not rendered into OPFS: ${paths()}`);
+        if (!editor.undo()) throw new Error("the second stroke could not be undone");
         await idle();
-        const restored = await editor.buffer.getSamples({ start: 20, count: 2 });
-        if (Math.abs(restored[0] - 0.5) > 1e-6 || Math.abs(restored[1] + 0.25) > 1e-6)
-          throw new Error(`OPFS restore changed samples: ${restored}`);
-        const redo = editor.editing.serviceCall("resources").find((source) => source.stored !== null);
+        if (paths()[1] !== first) throw new Error(`undo did not name the first render again: ${paths()}`);
         await stroke(3, 0.75);
-        if (!redo) throw new Error("undo did not spill its redo source");
-        if (editor.editing.serviceCall("resources").some((source) => source.id.buffer === redo.id.buffer))
-          throw new Error("a discarded spilled redo source was not released");
-        log("application services: OPFS spill/restore and final source release, without a renderer");
+        if (await opfs.exists(second)) throw new Error("the render only the redo held was not deleted");
+        log("audio editor: a buffer written to OPFS, strokes rendered there in the worker, undo naming files, a discarded render deleted");
         let clipboard = "";
         // No renderer: accept the normal host acknowledgement/correction
-        // messages while inspecting the copied document and real samples.
+        // messages while inspecting the copied document.
         editor.host = { clipboard: (document) => { clipboard = document; },
           ack: () => {}, push: () => {}, set: () => {} };
         editor.apply("/gui_event", [1234, 4, editor.editing.version, "copy", 10, 1]);
         await idle();
-        if (!JSON.parse(clipboard).content.location) throw new Error("copy has no exchange identity");
         const copied = clipboard;
-        editor.apply("/gui_event", [1234, 5, editor.editing.version, "paste", 40, "buffer", copied]);
+        const named = JSON.parse(copied).content.parts[0].path;
+        if (JSON.parse(copied).content.kind !== "segments") throw new Error("a copy is not of segments");
+        editor.apply("/gui_event", [1234, 5, editor.editing.version, "paste", 40, "segments", copied]);
         await idle();
-        editor.apply("/gui_event", [1234, 6, editor.editing.version, "mix", 40, "buffer", copied]);
+        if (!paths().includes(named)) throw new Error("a paste did not put the copy's file in");
+        editor.apply("/gui_event", [1234, 6, editor.editing.version, "mix", 40, "segments", copied]);
         await idle();
-        const mixed = await editor.buffer.getSamples({ start: 80, count: 2 });
-        if (Math.abs(mixed[0] - 1.5) > 1e-6 || Math.abs(mixed[1] + 0.5) > 1e-6)
-          throw new Error(`clipboard mix changed samples: ${mixed}`);
-        editor.apply("/gui_event", [1234, 7, editor.editing.version, "copy", 0, 1]);
+        const mixed = paths().find((path) => path.endsWith("-mixed.w64"));
+        if (mixed === undefined || !(await written(mixed))) throw new Error(`the mix was not rendered: ${paths()}`);
+        editor.apply("/gui_event", [1234, 7, editor.editing.version, "copy", 10, 1]);
         await idle();
-        if (clipboard === copied) throw new Error("clipboard was not replaced");
-        if (!editor.undo()) throw new Error("clipboard replacement lost destination history");
+        if (!editor.undo()) throw new Error("a copy lost the destination's history");
         await idle();
-        const pasted = await editor.buffer.getSamples({ start: 80, count: 2 });
-        if (Math.abs(pasted[0] - 0.75) > 1e-6 || Math.abs(pasted[1] + 0.25) > 1e-6)
-          throw new Error(`clipboard OPFS restore changed samples: ${pasted}`);
-        log("clipboard: destination-owned paste/mix, replacement and OPFS history restore");
         editor.host = null;
-
+        const held = JSON.parse(clipboard).content.parts[0].path;
         editor.close();
         await idle();
+        if (!(await opfs.exists(held))) throw new Error("a render the clipboard names was deleted with the editor");
+        log("clipboard: a copy of segments pasted, a mix rendered, and a render it names outliving the editor");
 
         verdict(ok
           ? `PASS: Buffer.read pulled ${info.frames} frames of ${info.channels} ` +
@@ -268,7 +267,8 @@
             `readChannels([1]) came back mono at the right channel's value, and ` +
             `buffer.write went back out and read back at ${backWorst.toExponential(1)}, ` +
             `a ${LONG}-frame take crossing ${Math.ceil(LONG / 4800)} runs at ` +
-            `${longWorst.toExponential(1)} with the caller's array left intact`
+            `${longWorst.toExponential(1)} with the caller's array left intact, ` +
+            `and the audio editor rendered its edits into OPFS in the worker`
           : `FAIL: frames ${info.frames}/${FRAMES}, channels ${info.channels}, ` +
             `rate ${info.sampleRate}, delta ${worst}, failure "${failed}", ` +
             `selected ${rightInfo.channels} ${[...rightSamples]}, ` +

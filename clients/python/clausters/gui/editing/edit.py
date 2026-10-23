@@ -46,7 +46,7 @@ from .controls import NodeEditor
 from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
-from .audio import AudioEditor, is_take
+from .audio import AudioEditor, is_take, reads_in_place
 from ...soundfile import SoundFile
 from .score import ScoreEditor, is_score
 
@@ -130,10 +130,13 @@ def edit(structure, *, sample_rate: float = 0.0,
         if opened is not None:
             return opened
     if isinstance(structure, SoundFile):
-        # A file is loaded into a buffer of the editor's own, which is the
-        # take it edits; the file is what a save writes.
-        take = structure.to_buffer(server=options.pop("server", None))
-        editor = AudioEditor(take, sample_rate=sample_rate, file=structure, **options)
+        # A file is the take, read where it is -- or, compressed, decoded into
+        # a buffer of the editor's own; it is what a save writes.
+        if reads_in_place(structure):
+            editor = AudioEditor(structure, sample_rate=sample_rate, **options)
+        else:
+            take = structure.to_buffer(server=options.pop("server", None))
+            editor = AudioEditor(take, sample_rate=sample_rate, file=structure, **options)
     elif is_take(structure):
         editor = AudioEditor(structure, sample_rate=sample_rate, **options)
     elif is_curve(structure):

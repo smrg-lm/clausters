@@ -8,10 +8,11 @@
 //! the samples back, so what is checked is what is heard and what is written,
 //! not the steps that were asked for.
 //!
-//! The take is a mono ramp, so every edit leaves samples that say which
-//! frames are where: a cut, a paste, a mix, their undo and redo, a save read
-//! back from the WAV it wrote, a write the server refuses, and a history
-//! held on disk and read back for an undo.
+//! The take is a file of a mono ramp, so every edit leaves samples that say
+//! which frames are where: a cut, a paste, a mix, their undo and redo, a save
+//! read back from the WAV it wrote, a write the disk refuses, and strokes
+//! whose renders go when no entry names them. What is heard is read from the
+//! files the list names, as the engine streams them.
 
 #![cfg(feature = "synth")]
 
@@ -19,16 +20,16 @@ use std::collections::VecDeque;
 
 use clausters::rosc::{OscPacket, OscType};
 use clausters::server::nrtsession::{NrtSession, SessionConfig};
+use clausters::server::render::{OscScore, RenderConfig, render_discarding, render_to_wav};
 use clausters_apps::editing::{Editing, call_json_ids};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
-use clausters_editing::apply::steps_from_json;
+use clausters_editing::apply::{Step, steps_from_json};
 use clausters_editing::run::{Reply, Runner, Server};
 use serde_json::{Value, json};
 
 const SR: f64 = 48_000.0;
 const FRAMES: usize = 100;
-/// The take's buffer, its join and the buffers handed over at open.
-const TAKE: i64 = 0;
+/// The join the window plays.
 const DISPLAY: i64 = 1;
 /// The window's picture, as the editor's `window` verb is told.
 const PICTURE: i64 = 10;
@@ -40,16 +41,17 @@ fn ramp(i: usize) -> f32 {
 }
 
 /// **A client of the coordinator over a real server**: what a language
-/// adapter does, in Rust -- the steps carried out on the server, a failure
-/// reported as the run's result, buffer numbers handed over, freed takes
-/// released through their cleanup tickets, a spill and a history step run
-/// as the operations they are.
+/// adapter does, in Rust -- the steps carried out on the server, the renders
+/// and the moves on the disk, a failure reported as the run's result, and
+/// the renders nothing names deleted.
 struct Client {
     server: NrtSession,
+    /// The file the take is opened from, and the editor's working folder.
+    take: String,
+    work: std::path::PathBuf,
     editing: Editing,
     ids: IdSpaces,
     member: Value,
-    next: i64,
     /// The clipboard document the host would hold.
     clipboard: Option<String>,
     /// The writes the server will refuse, by path.
@@ -57,49 +59,29 @@ struct Client {
 }
 
 impl Client {
-    fn new() -> Client {
-        let mut server = NrtSession::open(&SessionConfig {
+    fn new(directory: &std::path::Path) -> Client {
+        let server = NrtSession::open(&SessionConfig {
             sample_rate: SR,
             channels: 2,
             ..Default::default()
         })
         .expect("open");
-        let ramp: Vec<f32> = (0..FRAMES).map(ramp).collect();
-        message(
-            &mut server,
-            "/buffer_alloc",
-            vec![
-                OscType::Int(TAKE as i32),
-                OscType::Int(FRAMES as i32),
-                OscType::Int(1),
-            ],
-        );
-        server.settle_for(4);
-        let blob: Vec<u8> = ramp.iter().flat_map(|v| v.to_le_bytes()).collect();
-        message(
-            &mut server,
-            "/buffer_setRange",
-            vec![
-                OscType::Int(TAKE as i32),
-                OscType::Int(0),
-                OscType::Blob(blob),
-            ],
-        );
-        server.settle_for(4);
+        let take = directory.join("ramp.wav").to_string_lossy().into_owned();
+        let mut w = clausters::dsp::pcm::Writer::create(&take, 1, SR, "float").unwrap();
+        w.write(&(0..FRAMES).map(ramp).collect::<Vec<_>>()).unwrap();
+        w.finalize().unwrap();
+        let work = directory.join("work");
+        std::fs::create_dir(&work).unwrap();
         Client {
             server,
+            take,
+            work,
             editing: Editing::new(),
             ids: IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE),
             member: Value::Null,
-            next: 100,
             clipboard: None,
             refuse: Vec::new(),
         }
-    }
-
-    fn buffer(&mut self) -> i64 {
-        self.next += 1;
-        self.next
     }
 
     fn call(&mut self, request: Value) -> Value {
@@ -116,19 +98,15 @@ impl Client {
         self.call(json!({"verb": "member", "member": member, "call": call}))
     }
 
-    /// Open the take as a window would, with the history kept on disk in
-    /// `scratch` past `resident` bytes.
-    fn open(&mut self, scratch: &std::path::Path, resident: Option<u64>) {
-        let buffers: Vec<i64> = (0..4).map(|_| self.buffer()).collect();
-        self.member = self.call(json!({"verb": "openAudio", "key": "take", "take": TAKE,
-            "frames": FRAMES, "channels": 1, "rate": SR, "display": DISPLAY,
-            "buffers": buffers, "path": "/takes/ramp.wav"}))["member"]
+    /// Open the take as a window would.
+    fn open(&mut self) {
+        let (take, work) = (self.take.clone(), self.work.to_str().unwrap().to_string());
+        self.member = self.call(json!({"verb": "openAudio", "key": "take", "path": take,
+            "workspace": work, "frames": FRAMES, "channels": 1, "rate": SR,
+            "display": DISPLAY}))["member"]
             .clone();
-        self.member(json!({"verb": "sync", "window": WINDOW, "scratch": scratch.to_str()}));
+        self.member(json!({"verb": "sync", "window": WINDOW, "rate": SR}));
         self.member(json!({"verb": "window", "widget": PICTURE}));
-        if resident.is_some() {
-            self.call(json!({"verb": "resident", "bytes": resident}));
-        }
         let opened = self.run(json!({"verb": "open", "chunk": 4096, "rate": SR,
             "empty": false, "window": true}));
         assert!(opened["error"].is_null(), "{opened}");
@@ -136,7 +114,6 @@ impl Client {
 
     /// **One action, carried out to its end**, as `AudioEditor._audio` does.
     fn run(&mut self, action: Value) -> Value {
-        self.top_up();
         let member = self.member.clone();
         let mut answer = self.call(json!({"verb": "audio", "member": member, "do": action}));
         loop {
@@ -150,16 +127,6 @@ impl Client {
             let result = self.wait(&answer["await"]);
             answer = self.call(json!({"verb": "audio", "member": member,
                 "run": answer["run"], "result": result}));
-        }
-    }
-
-    fn top_up(&mut self) {
-        let spare = self.member(json!({"verb": "sync"}))["spare"]
-            .as_u64()
-            .unwrap_or(0);
-        if spare < 2 {
-            let more: Vec<i64> = (spare..2).map(|_| self.buffer()).collect();
-            self.member(json!({"verb": "sync", "buffers": more}));
         }
     }
 
@@ -192,10 +159,6 @@ impl Client {
                 }
                 json!({})
             }
-            "topUp" => {
-                self.top_up();
-                json!({})
-            }
             other => panic!("this client cannot wait on {other}"),
         }
     }
@@ -209,11 +172,14 @@ impl Client {
                         self.release(json!({"server": {"connection": 0, "generation": 0},
                             "buffer": buffer}));
                     }
+                    for file in freed["files"].as_array().into_iter().flatten() {
+                        let _ = std::fs::remove_file(file.as_str().unwrap());
+                    }
                 }
-                for stored in effect["stored"].as_array().into_iter().flatten() {
-                    // a spill the server refuses keeps the take resident
-                    let prepared = stored["operation"].clone();
-                    self.run(json!({"verb": "operation", "prepared": prepared}));
+            }
+            "delete" => {
+                for file in effect["files"].as_array().into_iter().flatten() {
+                    let _ = std::fs::remove_file(file.as_str().unwrap());
                 }
             }
             "bufferFree" => {
@@ -248,14 +214,36 @@ impl Client {
         while !runner.is_idle() {
             ready.extend(runner.ready().into_iter().map(|(_, m)| m));
             while let Some(sent) = ready.pop_front() {
-                let refused = sent.addr == "/buffer_write"
-                    && matches!(sent.args.get(1), Some(OscType::String(path))
-                        if self.refuse.contains(path));
-                if refused {
-                    // what a full disk answers the write
-                    return Err("no space left on device".into());
-                }
                 message(&mut self.server, &sent.addr, sent.args);
+            }
+            // a render or a move is the endpoint's, on the disk
+            match runner.awaiting() {
+                Some((_, Step::Render(render))) => {
+                    let render = render.clone();
+                    if self.refuse.contains(&render.path) {
+                        // what a full disk answers the write
+                        return Err("no space left on device".into());
+                    }
+                    let score = OscScore::from_bytes(&render.score).unwrap();
+                    let cfg = RenderConfig {
+                        sample_rate: render.rate,
+                        channels: render.channels,
+                        ..RenderConfig::default()
+                    };
+                    let done = if render.path.is_empty() {
+                        render_discarding(&score, &cfg, |_, _| {}).map(|_| ())
+                    } else {
+                        render_to_wav(&score, &cfg, &render.path, &render.format).map(|_| ())
+                    };
+                    runner.rendered(done.err().map(|e| e.to_string()));
+                    continue;
+                }
+                Some((_, Step::Move { from, to })) => {
+                    let done = std::fs::rename(from, to);
+                    runner.rendered(done.err().map(|e| e.to_string()));
+                    continue;
+                }
+                _ => {}
             }
             self.server.settle_for(4);
             while let Some(len) = self.server.poll_into(&mut bytes) {
@@ -277,12 +265,28 @@ impl Client {
         Ok(())
     }
 
-    /// The join the window draws, read back: the take as the edits left it.
+    /// The take as the edits left it: the list the window draws, read from
+    /// the files it names.
     fn heard(&mut self) -> Vec<f32> {
-        let frames = self.member(json!({"verb": "parts"}))["frames"]
-            .as_u64()
-            .unwrap() as usize;
-        samples(&mut self.server, DISPLAY as i32, frames)
+        let list = self.member(json!({"verb": "segments"}));
+        let mut heard = Vec::new();
+        for part in list["parts"].as_array().unwrap() {
+            let path = part["path"].as_str().unwrap();
+            let layout = clausters::dsp::pcm::Layout::open(path).unwrap();
+            let mut file = std::fs::File::open(path).unwrap();
+            let (mut bytes, mut out) = (Vec::new(), Vec::new());
+            clausters_core::pcm::read_frames(
+                &mut file,
+                &layout,
+                part["start"].as_u64().unwrap(),
+                part["frames"].as_u64().unwrap() as usize,
+                &mut bytes,
+                &mut out,
+            )
+            .unwrap();
+            heard.extend(out);
+        }
+        heard
     }
 
     fn binding(&mut self) -> Value {
@@ -327,7 +331,7 @@ impl Client {
 
     fn paste(&mut self, seq: i64, tag: &str, at: f64) -> Value {
         let document = self.clipboard.clone().expect("something was copied");
-        self.gesture(seq, tag, &[json!(at), json!("buffer"), json!(document)])
+        self.gesture(seq, tag, &[json!(at), json!("segments"), json!(document)])
     }
 
     fn save(&mut self, path: &str) -> Value {
@@ -343,34 +347,6 @@ impl Client {
 
 fn message(server: &mut NrtSession, addr: &str, args: Vec<OscType>) {
     assert!(server.send_msg(addr, args).expect("encode"), "ring full");
-}
-
-fn samples(server: &mut NrtSession, buffer: i32, frames: usize) -> Vec<f32> {
-    message(
-        server,
-        "/buffer_getRange",
-        vec![
-            OscType::Int(buffer),
-            OscType::Int(0),
-            OscType::Int(frames as i32),
-        ],
-    );
-    server.settle_for(4);
-    let mut bytes = vec![0; 1 << 16];
-    while let Some(len) = server.poll_into(&mut bytes) {
-        if let Ok(OscPacket::Message(reply)) = clausters::osc::decode_packet(&bytes[..len])
-            && reply.addr == "/buffer_getRange.reply"
-            && let Some(OscType::Blob(values)) = reply.args.last()
-        {
-            return values
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|v| f32::from_le_bytes(*v))
-                .collect();
-        }
-    }
-    panic!("no samples came back")
 }
 
 fn assert_close(heard: &[f32], expected: &[f32], what: &str) {
@@ -404,8 +380,8 @@ fn without(start: usize, len: usize) -> Vec<f32> {
 #[test]
 fn edited_samples_undo_redo_and_save_through_the_coordinator() {
     let directory = scratch("coordinator");
-    let mut client = Client::new();
-    client.open(&directory, None);
+    let mut client = Client::new(&directory);
+    client.open();
     let original: Vec<f32> = (0..FRAMES).map(ramp).collect();
     assert_close(&client.heard(), &original, "opened");
 
@@ -455,10 +431,15 @@ fn edited_samples_undo_redo_and_save_through_the_coordinator() {
         .map(Result::unwrap)
         .collect();
     assert_close(&written, &mixed, "the saved file");
+    let opened: Vec<f32> = hound::WavReader::open(&client.take)
+        .unwrap()
+        .samples::<f32>()
+        .map(Result::unwrap)
+        .collect();
     assert_close(
-        &samples(&mut client.server, TAKE as i32, FRAMES),
+        &opened,
         &original,
-        "the take it was opened over is never written",
+        "the file it was opened from is never written",
     );
     assert_eq!(
         client.pending_cleanup(),
@@ -474,8 +455,8 @@ fn edited_samples_undo_redo_and_save_through_the_coordinator() {
 #[test]
 fn a_refused_save_keeps_the_file_dirty_and_a_retry_writes_it() {
     let directory = scratch("refused");
-    let mut client = Client::new();
-    client.open(&directory, None);
+    let mut client = Client::new(&directory);
+    client.open();
     client.gesture(1, "cut", &[json!(10.0), json!(20.0)]);
     let path = directory.join("full.wav");
     let path = path.to_str().unwrap().to_string();
@@ -488,7 +469,8 @@ fn a_refused_save_keeps_the_file_dirty_and_a_retry_writes_it() {
     let binding = client.binding();
     assert_eq!(binding["dirty"], true);
     assert_eq!(
-        binding["file"]["path"], "/takes/ramp.wav",
+        binding["file"]["path"],
+        client.take.as_str(),
         "the target did not move"
     );
     assert!(!std::path::Path::new(&path).exists());
@@ -508,14 +490,14 @@ fn a_refused_save_keeps_the_file_dirty_and_a_retry_writes_it() {
     std::fs::remove_dir_all(directory).unwrap();
 }
 
-/// **The history on disk**: with nothing resident, every take only the
-/// history holds is written out as the next edit lands, and an undo reads
-/// it back before the join is stitched over it.
+/// **A stroke is a render, and it goes when no entry names it**: three
+/// strokes are three files of the working folder, an undo and a redo name
+/// them again, and an edit after an undo lets the stroke it replaced go.
 #[test]
-fn a_history_on_disk_is_read_back_for_its_undo_and_redo() {
-    let directory = scratch("spill");
-    let mut client = Client::new();
-    client.open(&directory, Some(0));
+fn strokes_are_renders_and_one_no_entry_names_is_deleted() {
+    let directory = scratch("strokes");
+    let mut client = Client::new(&directory);
+    client.open();
     let stroke = |client: &mut Client, seq: i64, value: f64| {
         let drawn = client.gesture(
             seq,
@@ -524,26 +506,77 @@ fn a_history_on_disk_is_read_back_for_its_undo_and_redo() {
         );
         assert!(drawn["error"].is_null(), "{drawn}");
     };
+    let renders = |client: &Client| {
+        std::fs::read_dir(&client.work)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|x| x == "w64")
+            })
+            .count()
+    };
     stroke(&mut client, 1, 0.5);
     stroke(&mut client, 2, 0.25);
     stroke(&mut client, 3, 0.75);
-    let spilled = std::fs::read_dir(&directory).unwrap().count();
-    assert!(spilled > 0, "the history went to disk");
+    assert_eq!(renders(&client), 3, "a file each");
     let at = |client: &mut Client| client.heard()[10];
     assert_eq!(at(&mut client), 0.75);
     client.verb(4, "undo");
-    assert_eq!(at(&mut client), 0.25, "read back from disk");
+    assert_eq!(at(&mut client), 0.25);
     client.verb(5, "undo");
     assert_eq!(at(&mut client), 0.5);
-    client.verb(6, "undo");
+    client.verb(6, "redo");
+    assert_eq!(at(&mut client), 0.25, "the render, named again");
+    stroke(&mut client, 7, 0.125);
+    assert_eq!(at(&mut client), 0.125);
+    assert_eq!(renders(&client), 3, "the redo's stroke went, this one came");
+    client.verb(8, "undo");
+    client.verb(9, "undo");
+    client.verb(10, "undo");
     assert_close(
         &client.heard(),
         &(0..FRAMES).map(ramp).collect::<Vec<_>>(),
         "the take",
     );
-    client.verb(7, "redo");
-    client.verb(8, "redo");
-    assert_eq!(at(&mut client), 0.25, "redone from disk");
     assert_eq!(client.pending_cleanup(), 0);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+/// **A copy keeps the render it names**: a span of a stroke copied, the
+/// stroke undone and replaced, and its render is still there for the paste,
+/// which hears it.
+#[test]
+fn a_render_the_clipboard_names_outlives_the_entry_that_made_it() {
+    let directory = scratch("clipboard");
+    let mut client = Client::new(&directory);
+    client.open();
+    let drawn = client.gesture(1, "draw", &[json!(0), json!(10), json!([0.5]), json!([0])]);
+    assert!(drawn["error"].is_null(), "{drawn}");
+    let copied = client.gesture(2, "copy", &[json!(10.0), json!(1.0)]);
+    assert!(copied["error"].is_null(), "{copied}");
+    let named = client.clipboard.clone().expect("a copy");
+    assert!(
+        named.contains("stroke"),
+        "the copy names the stroke's render"
+    );
+    client.verb(3, "undo");
+    let other = client.gesture(4, "draw", &[json!(0), json!(20), json!([0.25]), json!([0])]);
+    assert!(other["error"].is_null(), "{other}");
+    let strokes = std::fs::read_dir(&client.work)
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with("-stroke.w64")
+        })
+        .count();
+    assert_eq!(strokes, 2, "the undone stroke is kept for the clipboard");
+    client.paste(5, "paste", 0.0);
+    assert_eq!(client.heard()[0], 0.5, "the copy, heard");
     std::fs::remove_dir_all(directory).unwrap();
 }

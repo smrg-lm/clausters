@@ -543,8 +543,14 @@ mod tests {
     #[test]
     fn a_sized_verb_runs_once() {
         let e = clausters_apps_editing_new();
-        let first = call(e, r#"{"verb": "openAudio", "key": "a", "take": 1}"#);
-        let second = call(e, r#"{"verb": "openAudio", "key": "b", "take": 2}"#);
+        let first = call(
+            e,
+            r#"{"verb": "openAudio", "key": "a", "path": "/in/a.wav", "workspace": "/work"}"#,
+        );
+        let second = call(
+            e,
+            r#"{"verb": "openAudio", "key": "b", "path": "/in/b.wav", "workspace": "/work"}"#,
+        );
         assert!(first.starts_with(r#"{"member":0,"#), "{first}");
         assert!(second.starts_with(r#"{"member":1,"#), "{second}");
         unsafe { clausters_apps_editing_free(e) };

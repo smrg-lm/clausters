@@ -91,9 +91,10 @@ impl Runner {
                     ));
                     self.awaiting = Some((to, Step::Sync(id)));
                 }
-                Some((to, wait @ (Step::AwaitDone { .. } | Step::Render(_)))) => {
-                    self.awaiting = Some((to, wait))
-                }
+                Some((
+                    to,
+                    wait @ (Step::AwaitDone { .. } | Step::Render(_) | Step::Move { .. }),
+                )) => self.awaiting = Some((to, wait)),
             }
         }
         out
@@ -133,11 +134,15 @@ impl Runner {
         answer
     }
 
-    /// **The render the queue is held behind has finished**, with `failed`
+    /// **The render (or the move) the queue is held behind has finished**,
+    /// with `failed`
     /// saying why it did not: what was held behind it may go out, a failure
     /// releasing it as a refusal does. `Unrelated` when no render is awaited.
     pub fn rendered(&mut self, failed: Option<String>) -> Reply {
-        if !matches!(self.awaiting, Some((_, Step::Render(_)))) {
+        if !matches!(
+            self.awaiting,
+            Some((_, Step::Render(_) | Step::Move { .. }))
+        ) {
             return Reply::Unrelated;
         }
         self.awaiting = None;
@@ -181,9 +186,11 @@ fn server_name(server: Server) -> &'static str {
 ///   pairs a send with its reply send that one last.
 /// - `reply` -- `from`, `addr` and `args` (tagged): answers `{"reply":
 ///   "released"}`, `{"reply": "unrelated"}`, or `{"reply": "refused", "args"}`.
-/// - `rendered` -- `error` when the render the queue is held behind failed:
-///   answers as `reply` does. A render step is awaited with no message sent:
-///   the endpoint renders its score offline itself (`awaiting.step.render`).
+/// - `rendered` (or `moved`) -- `error` when the render or the move the
+///   queue is held behind failed: answers as `reply` does. Either step is
+///   awaited with no message sent: the endpoint renders its score offline
+///   itself (`awaiting.step.render`), or moves the file
+///   (`awaiting.step.move`).
 /// - `idle` -- answers `{"idle": bool}`.
 ///
 /// A verb it does not know answers `{"error": ...}`.
@@ -246,7 +253,7 @@ pub fn call_json(run: &mut Runner, request: &str) -> String {
                 }),
             }
         }
-        Some("rendered") => {
+        Some("rendered" | "moved") => {
             let failed = request
                 .get("error")
                 .and_then(Value::as_str)

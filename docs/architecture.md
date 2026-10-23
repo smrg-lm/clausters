@@ -1056,34 +1056,36 @@ from the other side answers with. The turn's words — `Kind`, `Leg`, `Record`,
 The audio application owns its visual stack in `clausters_document::view::layers`. The View menu presets and both clients' layer methods call the same Rust verbs. Each result carries the canonical stack and an ordinary `Outcome` correction of the signal element's existing `layers` prop; clients apply that answer rather than constructing a second correction. The host retains tolerant parsing for forward-compatible GuiDefs, while authored application stacks use the shared strict validator and refuse conflicting axis domains.
 
 The **audio editor** is the second application (`clausters_apps::audio`), and
-what it opens is a file or a server buffer, through a private copy it edits and
-writes back only on a save. Its window is that one, drawn over a
-**join** the editor owns the recipe of — a flat list of parts over immutable takes
+what it opens is a file -- read where it is -- or a server buffer, which the open
+writes to the editor's working folder (`/buffer_write`); nothing it was handed is
+written but by a save. The take is a flat list of parts over immutable files
 (`clausters_document::parts`, the arithmetic a multitrack's join is minted with
-too). A cut is a new list; a paste, a mix and a pencil stroke each write a new
-take the size of the span they touch and splice it in, so a take a history entry
-names is never written again. A turn answers the steps that make the new take and
-stitch the join again, and the entry it records names the takes each of its two
-lists reads (`history::Entry::holding`). The editing context gives those back: after
-every turn and step it hands the caller, as buffers to free, the takes no entry
-and no member reaches any more (`History::released_sources`), and a byte budget
-trims the oldest entries until what only the history holds fits
-(`History::trim_to_bytes`). A second budget keeps only part of that in memory:
-past it the oldest such takes are written to a scratch directory and their
-buffers freed, the buffer number staying the take's identity, and a step whose
-list reads one reads it back before stitching -- the same rule natively and in a
-page, whose server writes to the origin's private file system.
+too), the files in a table of the editor's own (`audio::editor::sources`: path,
+shape, peaks, and whether the file is a render) keyed by a hash of the path. A
+cut is a new list and a copy names the span's parts (`Clipboard::segments`); a
+paste of a block, a mix, a pencil stroke, a gain apply and a reverse each are an
+**offline render** (`Step::Render`, scored by `audio::renders`) into a new file of
+the working folder, which reads the list with `TransportDiskIn` and writes with
+`DiskOut` beside a `PeaksOut`, so a file a history entry names is never written
+again. A file opened without peaks is measured once the same way, into
+`<workspace>/peaks/`. A turn answers the renders and the `/buffer_stitch` that
+puts the join -- the RT buffer the take plays through, its parts naming file
+spans -- over the new list, and the window draws the list itself, from its
+files (`segments`). The editing context gives back what nothing reaches: after
+every turn and step, the renders no entry, no member and no clipboard names, as
+files to delete (`Freed::files`). A save renders the list into its target; over
+the file the list reads, the render lands beside it, the file is moved into the
+working folder and the render moved where it was (`Step::Move`), the table
+re-pointed by path so every list the history holds reads the moved file -- and
+the file is held until the save lands, while a save elsewhere lets edits go on.
 
 The edited take is `parts::Take`: parts plus the same `Automation<Second>`
 a region holds. The gain body's props and intake use `clausters_editing::points`;
 its edits use `SetAutomation` and snapshots include both parts and curves.
 `Editing::act` records a scripted edit through the same history as a gesture.
-`clausters_editing::gain` projects the curve into existing `/buffer_gain`
-segments; the server's existing shared envelope shapes do all sample arithmetic.
-Apply copies the join into a new owned buffer, applies the segments and resets
-the curve to unity in one entry. If a cut leaves a segment ending beyond the
-take, the render includes that segment's silent tail so its shape is unchanged;
-the resulting part keeps only the take's span. No samples enter the history.
+Apply renders the list through the curve (`renders::gain`, an `EnvGen` over the
+same shared envelope shapes the live preview's insert plays) into a new file and
+resets the curve to unity in one entry. No samples enter the history.
 Preview processing is not part of this path.
 
 **The editor's turns are here too** (`clausters_apps::multitrack::editor`). One
@@ -1367,7 +1369,7 @@ is not thereby that owner.
 | Undo contexts | `crates/clausters-apps/src/editing.rs`: `Editing` holds `History`, members, versions, source accounting and audio-specific scope tables | Keep `Editing` and `clausters_document::History`; generalize context selection around explicit object/context associations. Shared objects reference one context, rather than copying a history into each window |
 | Playback and effects | `crates/clausters-editing/src/audio_playback.rs`: `AudioEditorPlayback` already distinguishes `viewed` from playing `focus`; output `width` only grows | Keep that mechanism, composed as an explicitly supplied service. A playback instance owns transport/routing and leases its sources. Its playing file, viewed file and bus capacity are distinct facts |
 | Clipboard | `clausters_document::Clipboard` describes contents -- a copy over takes on disk is `Content::Segments`, parts naming their files by absolute path, so it carries no blob and crosses as text; host `Clip` stores document/blobs/system-text mirror; `application::clipboard::Exchange` owns immutable remote publications and pending-reader leases; adapters keep endpoint-scoped service handles | A host-scope clipboard service owns publication and replacement; a resource service owns storage leases. Applications acquire immutable clipboard snapshots. Sharing a host does not make server-local buffer numbers portable |
-| Samples and temporary storage | `AudioEditor` tracks `frames`, `rates`, `spilled`, `scratch` and spare ids; `Editing` emits `Freed`/`Stored`; adapters execute them | Explicit resource service associated with a supplied server instance and connection generation. Contents, history, clipboard, playback and pending operations are retention roots. Disk/OPFS storage survives view redraw, not application disposal unless explicitly persisted |
+| Samples and temporary storage | `AudioEditor` holds its files in `sources` and renders into its working folder; `Editing` emits `Freed` -- buffers, and the files to delete; adapters execute them | Explicit resource service associated with a supplied server instance and connection generation. Contents, history, clipboard, playback and pending operations are retention roots. Disk/OPFS storage survives view redraw, not application disposal unless explicitly persisted |
 | Pending work | Before the coordinator: Python audio `_take` ran steps synchronously; TypeScript `take` scheduled through `AudioDomain.after`; policy was distributed across handlers | Application coordinator owns operation identity, dependencies, commit and cleanup; adapters only execute effects and return results |
 | Host interaction and demand | `clients/gui/src/host` owns navigation, focus, gesture feedback and GPU state; `live.rs` provides `LiveDemand` (currently consumed by the browser front) | Keep host-local interaction there. Application projections restore file-specific state explicitly; subscription demand follows visible consumers and playback needs, with equivalent native/browser behavior |
 | Client window set | Python/TypeScript `gui/editing/application` owns host resolution, widget-id allocation, editor registration and event draining | Keep these as language/platform adapters. Shared lifecycle and effect ordering move to the Rust coordinator, without another client policy copy |
@@ -1462,11 +1464,11 @@ A step resolves each structure back to the object that was registered, including
 
 `Resources` records a `ResourceId` as a `ServerInstance` plus a local buffer number, its byte size, release endpoint and resident/stored location. `RootKind` separates contents, history, clipboard, playback and pending operations. For takes on disk the same three roots are the document's own (`clausters_document::workspace`): a render is a temporary source in a `Workspace` -- the audio editor's temporary folder, or a multitrack's session folder -- and `Session::release_renders` hands back the files no document node, no held history entry and no clipboard part names, while `Session::for_saving` writes a session that names no temporary file. Replacing one root does not drop another consumer's lease; invalid acquisitions leave the previous root intact. Collection reports each unreferenced owned source once, and never frees a borrowed source. History roots include inactive orders. The audio adapters retain playback roots after their graph updates and drop them after closing the graph, so trimming a history or closing a file cannot free a source playback still holds. Clipboard publications and paste readers use those resource leases through `application::clipboard::Exchange`; general operation commit integration remains pending.
 
-The byte limit applies independently to each undo order, with endpoint-aware accounting that excludes sources held by another service. The resident limit applies across the composition's history-only sources. Candidates are chosen in creation order; the owning audio file supplies the existing write/free steps even when out of focus, and a restore precedes the dependent stitch. A refused spill keeps its samples resident; successful write and free are separate dependencies, and restoration precedes the dependent stitch. `ScratchScope` names files by endpoint incarnation, composition namespace and buffer, under the supplied scratch directory. Existing disk and OPFS execution ports write float WAVs. The caller owns the scratch directory and its cleanup; a final source release gives back its buffer lease, or only its id when stored.
+The byte limit applies independently to each undo order, with endpoint-aware accounting that excludes sources held by another service. An audio editor's takes are files and hold no buffer, so it bounds nothing of theirs: a render no entry names is deleted, and the history holds lists. The working folder is the client's: a temporary directory natively, a folder of the page's storage in a tab, made when the editor opens and removed when it closes but for what the clipboard still names.
 
 Each adapter supplies a random connection identity and an allocator incarnation. Reattaching with reconciled allocators advances that incarnation; old editors and playback handles refuse work before addressing the replacement endpoint, and the resource service invalidates the old leases without sending frees to the replacement. This is conservative connection identity: two handles are not assumed to be the same endpoint merely because their addresses or local buffer ids match. A server restarted without reattaching has not established a new valid application connection. Operation admission, cancellation and cleanup validate that same incarnation.
 
-The services need no renderer. The real native NRT endpoint and the browser NRT/OPFS acceptance execute the same spill, restore and release decisions and compare restored samples. Playback remains `clausters_editing::audio_playback::AudioEditorPlayback`, held by the member's coordinator, with one transport per editor; injecting an editing context does not share a transport.
+The services need no renderer of their own: a render is a step the endpoint carries out offline, natively on an `--nrt` process and in a page on the NRT worker over the page's storage. Playback remains `clausters_editing::audio_playback::AudioEditorPlayback`, held by the member's coordinator, with one transport per editor; injecting an editing context does not share a transport.
 
 `application::clipboard::Exchange` is independent of open documents and receives endpoint identity through its port. Both adapters keep one service handle per server connection incarnation, using the existing editing JSON door. The table stores handles rather than copied-buffer state or compatibility policy. After copy steps complete, `publish` installs a fresh immutable publication; `event` resolves paste/mix references and acquires a pending-reader lease; `release` ends that lease on completion or failure. Replacement drops only the publication root, so a pending paste can finish using the old snapshot. Invalidating an incarnation forgets it without freeing ids on the replacement. A source window's close does not close the exchange. Python serializes service lookup and each complete EditingCore size/fill response (including disposal), since ctypes releases the GIL and the host callback can race a script query; this is adapter synchronization rather than application policy.
 

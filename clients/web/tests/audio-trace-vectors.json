@@ -46,10 +46,7 @@
    "cut",
    [
     "version",
-    "await:batch",
-    "version",
     "await:clipboard",
-    "await:topUp",
     "version",
     "await:batch",
     "version",
@@ -84,16 +81,14 @@
    "save",
    [
     "await:batch",
-    "await:batch",
     "version",
-    "release",
     "echo"
    ]
   ],
   [
    "open a file",
    [
-    "await:read",
+    "await:shape",
     "await:batch",
     "version",
     "bind",
@@ -131,7 +126,7 @@
    [
     "await:steps:service",
     "free",
-    "release",
+    "delete",
     "bind",
     "await:rolling",
     "await:steps:service",
@@ -180,10 +175,7 @@
    "cut",
    [
     "version",
-    "await:batch",
-    "version",
     "await:clipboard",
-    "await:topUp",
     "version",
     "await:batch",
     "version",
@@ -215,11 +207,9 @@
    [
     "await:batch",
     "await:batch",
-    "await:batch",
     "version",
     "returned",
-    "operationEcho",
-    "release"
+    "operationEcho"
    ],
    {
     "path": "/takes/a.wav",
@@ -235,9 +225,7 @@
    "the save retried",
    [
     "await:batch",
-    "await:batch",
     "version",
-    "release",
     "echo"
    ],
    {
@@ -286,15 +274,17 @@
    }
   ],
   [
-   "a cut whose copy is refused",
+   "a cut whose stitch is refused",
    [
+    "version",
+    "await:clipboard",
     "version",
     "await:batch",
     "await:batch",
     "version",
     "returned",
     "operationEcho",
-    "release"
+    "echo"
    ],
    {
     "path": "/takes/a.wav",
@@ -309,7 +299,7 @@
   [
    "open another file",
    [
-    "await:read",
+    "await:shape",
     "await:batch",
     "version",
     "bind",

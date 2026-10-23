@@ -20,6 +20,33 @@ from clausters.errors import CommandError
 SR = 48_000.0
 
 
+@pytest.fixture(autouse=True)
+def disk(monkeypatch):
+    """What a run does on the disk, recorded rather than done: the renders
+    (what one writes is the offline server's, tested where it is,
+    `test_render_step`), the moves and the files deleted."""
+    done = types.SimpleNamespace(renders=[], moves=[], deleted=[], refuse=None)
+
+    def render(render, progress=None):
+        if done.refuse is not None and done.refuse(render["path"]):
+            raise OSError("quota exceeded")
+        done.renders.append(render)
+
+    monkeypatch.setattr("clausters._steps.render_step", render)
+    monkeypatch.setattr("os.replace", lambda a, b: done.moves.append((a, b)))
+    monkeypatch.setattr("clausters.gui.editing.audio._delete",
+                        lambda files: done.deleted.extend(files or ()))
+    return done
+
+
+def stems(editor) -> list:
+    """The take's list as ``(file stem, start, frames)``: which file each part
+    reads, and where."""
+    import os
+    return [(os.path.splitext(os.path.basename(p["path"]))[0], p["start"], p["frames"])
+            for p in editor._call("segments")["parts"]]
+
+
 class FakeHost:
     """What the host is told, so an answer can be read."""
 
@@ -54,6 +81,9 @@ class FakeHost:
 
     def close(self, id):
         pass
+
+    def verb(self, window, name):
+        self.__dict__.setdefault("verbs", []).append(name)
 
     def head_clock(self, id, name, transport=0):
         self.clock = name
@@ -158,6 +188,8 @@ def picture(tree: dict) -> dict:
 
 
 def opened(take, **options):
+    # a folder of no disk: what is done there is recorded (`disk`)
+    options.setdefault("workspace", "/work")
     context = Editing()
     editor = AudioEditor(take, context=context, **options)
     host = FakeHost()
@@ -165,15 +197,17 @@ def opened(take, **options):
     return editor, host, picture(host.trees[0])["id"], context
 
 
-def test_the_window_draws_a_join_over_a_private_copy_of_the_take():
+def test_a_buffer_is_written_to_the_working_folder_and_the_join_reads_it(disk):
     take = FakeBuffer()
-    editor, _host, _wid, _context = opened(take)
+    editor, host, _wid, _context = opened(take)
     display = editor.buffer.bufnum
-    copy = [args for addr, args in take.server.sent if addr == "/buffer_gen"][0]
-    assert (copy[1], copy[3]) == ("copy", take.bufnum), "copied out of the take"
+    write = [args for addr, args in take.server.sent if addr == "/buffer_write"][0]
+    assert write[0] == take.bufnum and write[1].endswith("-opened.w64"), "the buffer, out"
+    assert write[1].startswith("/work/")
     stitched = [args for addr, args in take.server.sent if addr == "/buffer_stitch"]
     assert stitched and stitched[0][0] == display
-    assert stitched[0][3] == copy[0], "it reads the copy"
+    assert stitched[0][3] == write[1], "the join reads the file"
+    assert picture(host.trees[0])["segments"]["parts"][0]["path"] == write[1]
     assert editor.buffer.frames == 100
     assert "/buffer_setRange" not in take.server.addrs(), "the take is never written"
 
@@ -188,50 +222,52 @@ def test_the_window_opens_with_both_cursors_on_the_transport_clock():
     assert host.clock_of == 901, "the editor's own window"
 
 
-def test_a_stroke_writes_a_new_take_and_the_join_reads_it():
+def test_a_stroke_renders_a_file_and_the_join_reads_it(disk):
     take = FakeBuffer()
     editor, _host, wid, _context = opened(take)
     take.server.sent.clear()
     assert editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 40,
                                        [0.5, -0.5], [0.0, 0.0]]) is True
-    assert take.server.addrs() == ["/buffer_alloc", "/server_sync",
-                                   "/buffer_setRange", "/buffer_stitch"]
-    new = take.server.sent[0][1][0]
-    copy = editor.parts[0]["source"]["source"]
-    assert [(p["source"]["source"], p["source"]["range"]["start"])
-            for p in editor.parts] == [(copy, 0), (new, 0), (copy, 42)]
+    assert disk.renders[-1]["path"].endswith("-stroke.w64"), "the stroke, rendered"
+    assert take.server.addrs() == ["/buffer_stitch"]
+    opened_stem = stems(editor)[0][0]
+    assert stems(editor) == [(opened_stem, 0, 40), ("1-2-stroke", 0, 2),
+                             (opened_stem, 42, 58)]
 
 
-def test_a_take_the_history_cannot_reach_is_freed():
+def test_a_render_the_history_cannot_reach_is_deleted(disk):
     take = FakeBuffer()
     editor, _host, wid, context = opened(take)
     editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 10, [0.5], [0.0]])
-    first = editor.parts[1]["source"]["source"]
+    first = disk.renders[-1]["path"]
     assert editor.undo() is True
-    assert first not in take.server.buffers.freed, "a redo can still find it"
+    assert first not in disk.deleted, "a redo can still find it"
     editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 30, [0.5], [0.0]])
-    assert first in take.server.buffers.freed
-    assert ("/buffer_free", (first,)) in take.server.sent
+    assert first in disk.deleted
 
 
-def test_the_history_is_held_to_its_byte_limit():
+def test_reverse_renders_the_selection_backwards(disk):
+    editor, _host, wid, _context = opened(FakeBuffer())
+    editor.apply("/gui_event", [wid, 1, 0, "selection", 10, 20])
+    assert editor.reverse() is True
+    assert _host.verbs == ["reverse"], "the host performs the window's verb"
+    # and the window's event comes back
+    editor.apply("/gui_event", [int(editor._window), 2, 0, "reverse"])
+    assert disk.renders[-1]["path"].endswith("-reversed.w64")
+    assert [frames for _, _, frames in stems(editor)] == [10, 20, 70]
+    assert editor.undo() is True
+    assert len(stems(editor)) == 1
+
+
+def test_a_cut_copies_the_span_s_parts_and_renders_nothing(disk):
     take = FakeBuffer()
-    editor, _host, wid, context = opened(take, history_bytes=4)
-    for seq in (1, 2, 3):
-        editor.apply("/gui_event", [wid, seq, context.version, "draw", 0, 10,
-                                    [0.5], [0.0]])
-    assert len(take.server.buffers.freed) == 1, "the oldest take only the history held"
-    assert editor.can_undo
-
-
-def test_a_cut_copies_before_removing_samples():
-    take = FakeBuffer()
-    editor, _host, wid, _context = opened(take)
+    editor, host, wid, _context = opened(take)
     take.server.sent.clear()
+    rendered = len(disk.renders)
     editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0])
-    assert take.server.addrs()[:4] == ["/buffer_alloc", "/server_sync", "/buffer_gen", "/buffer_stitch"], \
-        "the join stitched, the readers' window set to its new length, and the " \
-        "transport cued to where the span was"
+    assert take.server.addrs()[0] == "/buffer_stitch"
+    assert len(disk.renders) == rendered, "nothing is made"
+    assert json.loads(host.clip)["content"]["kind"] == "segments"
     assert editor.buffer.frames == 80
     assert editor.undo() is True
     assert editor.buffer.frames == 100
@@ -249,50 +285,34 @@ def test_a_delete_removes_samples_without_copying_them():
     assert editor.buffer.frames == 100
 
 
-def test_a_take_past_the_resident_budget_goes_to_disk_and_comes_back():
+def test_a_save_renders_the_take_over_its_file_or_as_another(disk):
+    from clausters.soundfile import SoundFile
+    file = SoundFile("/takes/a.wav", 100, 1, SR, "wav", "float")
     take = FakeBuffer()
-    editor, _host, wid, context = opened(take, resident_bytes=0, scratch="/scratch")
-    take.server.sent.clear()
-    for seq in (1, 2):
-        editor.apply("/gui_event", [wid, seq, context.version, "draw", 0, 10,
-                                    [0.5], [0.0]])
-    first = take.server.sent[take.server.addrs().index("/buffer_alloc")][1][0]
-    writes = [args for addr, args in take.server.sent if addr == "/buffer_write"]
-    assert any(args[0] == first and args[1].startswith("/scratch/take-")
-               and args[1].endswith(f"-{first}.wav") and args[2:] == ("wav", "float")
-               for args in writes)
-    take.server.sent.clear()
-    assert editor.undo() is True
-    assert take.server.addrs()[:2] == ["/buffer_allocRead", "/buffer_stitch"]
-
-
-def test_a_save_writes_the_edited_take_over_its_file_or_as_another():
-    take = FakeBuffer()
-    take.path = "/takes/a.wav"
-    editor, _host, _wid, _context = opened(take)
-    take.server.sent.clear()
+    editor, _host, wid, _context = opened(take, file=file)
+    assert stems(editor) == [("a", 0, 100)], "the file, read where it is"
+    assert "/buffer_write" not in take.server.addrs()
+    editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0])
     assert editor.save() == "/takes/a.wav"
-    write = next(args for addr, args in take.server.sent if addr == "/buffer_write")
-    snapshot = write[0]
-    assert snapshot != editor.buffer.bufnum
-    assert write[1:] == ("/takes/a.wav", "wav", "float")
-    assert any(addr == "/buffer_gen" and args[0] == snapshot and args[3] == editor.buffer.bufnum
-               for addr, args in take.server.sent)
-    assert ("/buffer_free", (snapshot,)) in take.server.sent
+    # the file the take reads is moved aside, never written while it is read
+    (aside, held), (fresh, back) = disk.moves
+    assert aside == "/takes/a.wav" and held.startswith("/work/")
+    assert fresh == disk.renders[-1]["path"] and back == "/takes/a.wav"
     assert editor.save("/takes/b.wav", sample_format="int24") == "/takes/b.wav"
+    assert (disk.renders[-1]["path"], disk.renders[-1]["format"]) == ("/takes/b.wav", "int24")
+    assert len(disk.moves) == 2, "a file nothing reads is rendered in place"
     assert editor.save() == "/takes/b.wav"
 
 
-def test_a_save_over_a_buffer_rewrites_it_or_writes_a_new_one():
+def test_a_save_over_a_buffer_reads_a_render_into_it_or_into_a_new_one(disk):
     take = FakeBuffer()
     editor, _host, wid, _context = opened(take)
     editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0])
     take.server.sent.clear()
     saved = editor.save()
     assert saved.bufnum == take.bufnum and saved.frames == 80
-    copies = [args for addr, args in take.server.sent if addr == "/buffer_gen"]
-    assert copies[0][3] == editor.buffer.bufnum
-    assert copies[-1][0] == take.bufnum and copies[-1][3] == copies[0][0]
+    read = [args for addr, args in take.server.sent if addr == "/buffer_allocRead"]
+    assert read[0][0] == take.bufnum and read[0][1] == disk.renders[-1]["path"]
     fresh = editor.save(buffer=True)
     assert fresh.bufnum not in (take.bufnum, editor.buffer.bufnum)
     assert editor.save().bufnum == fresh.bufnum, "a later save writes there"
@@ -310,10 +330,11 @@ def test_a_takes_window_is_composed_by_the_crate():
     assert tree["children"][1]["flow"] == "row", "the take, and its level beside it"
     taken = picture(tree)
     assert taken["type"] == "signal" and taken["id"] == wid
-    assert (taken["buffer"], taken["channels"]) == (editor.buffer.bufnum, 2)
+    assert taken["channels"] == 2 and "buffer" not in taken
+    assert taken["segments"]["parts"][0]["path"].endswith("-opened.w64")
     assert taken["measure"] == "peak rms"
     assert taken["gestures"] == {"drag": "select", "alt": "draw", "ctrl": "sample"}
-    assert editor.view.props(editor, wid) == {"reload": 1}
+    assert set(editor.view.props(editor, wid)) == {"segments"}
 
 
 def test_a_refused_measure_stack_keeps_the_one_the_picture_had():
@@ -520,7 +541,7 @@ def test_edit_layer_is_the_panes_body_and_not_the_visual_stack():
     assert editor.layer == "take"
 
 
-def test_gain_curve_edits_and_apply_share_the_take_history():
+def test_gain_curve_edits_and_apply_share_the_take_history(disk):
     take = FakeBuffer()
     editor, host, _wid, context = opened(take)
     original = editor.parts
@@ -534,9 +555,9 @@ def test_gain_curve_edits_and_apply_share_the_take_history():
     assert "/buffer_gain" not in take.server.addrs()
     assert "/buffer_setRange" not in take.server.addrs()
     assert editor.apply_envelope()
-    gains = [args for addr, args in take.server.sent if addr == "/buffer_gain"]
-    assert gains and gains[0][0] not in (take.bufnum, editor.buffer.bufnum)
-    assert gains[0][1:7] == (0, 100, 0.25, 0.75, 5, -3.0)
+    assert disk.renders[-1]["path"].endswith("-gain.w64"), "the take, rendered through the curve"
+    assert "/buffer_gain" not in take.server.addrs()
+    assert [stem.split("-")[-1] for stem, _, _ in stems(editor)] == ["gain"]
     assert editor.envelope[1] == 1
     assert editor.undo()
     assert editor.parts == original
@@ -606,7 +627,7 @@ def _asked(editor) -> list:
         asked.append(wait.get("shape") or wait.get("path"))
         raise RuntimeError("not read here")
 
-    editor._read = read
+    editor._shape = read
     return asked
 
 
@@ -861,39 +882,23 @@ def test_shared_undo_updates_an_unfocused_file_without_moving_focus(monkeypatch)
     editor.close()
 
 
-def test_clipboard_replacement_does_not_free_a_previous_server_incarnations_id():
-    take = FakeBuffer()
-    first, _host, _wid, _context = opened(take)
-    first._clipboard(json.dumps({"content": {"kind": "buffer", "channels": 1, "frames": 4, "sample_rate": SR, "buffer": 700}}), 700)
-    take.server.ids = _native.IdSpaces(max_nodes=8192, audio_buses=1024, outputs=2,
-                                      control_buses=16384, buffers=4096)
-    second = AudioEditor(take, context=Editing())
-    take.server.sent.clear()
-    second._clipboard(json.dumps({"content": {"kind": "buffer", "channels": 1, "frames": 4, "sample_rate": SR, "buffer": 701}}), 701)
-    assert not any(addr == "/buffer_free" and args == (700,) for addr, args in take.server.sent)
-    second._clipboard(json.dumps({"content": {"kind": "buffer", "channels": 1, "frames": 4, "sample_rate": SR, "buffer": 702}}), 702)
-    assert ("/buffer_free", (701,)) in take.server.sent
-    second.close()
-
-
-def test_clipboard_copy_survives_origin_close_and_paste_owns_its_samples():
+def test_a_copy_outlives_the_editor_it_was_made_in_and_pastes_elsewhere(disk):
     take = FakeBuffer()
     first, host, wid, context = opened(take)
     first.apply("/gui_event", [wid, 1, context.version, "copy", 10, 20])
     copied = host.clip
-    assert json.loads(copied)["content"]["location"]["publication"] >= 0
-    source = json.loads(copied)["content"]["buffer"]
+    named = json.loads(copied)["content"]["parts"][0]["path"]
+    assert named.startswith("/work/")
     first.close()
-    assert source not in take.server.buffers.freed
-    second, other_host, other_wid, other_context = opened(take)
-    second.apply("/gui_event", [other_wid, 1, other_context.version, "paste", 50, "buffer", copied])
+    assert named not in disk.deleted, "the clipboard still names it"
+    second, other_host, other_wid, other_context = opened(FakeBuffer())
+    second.apply("/gui_event", [other_wid, 1, other_context.version, "paste", 50, "segments", copied])
     assert second.buffer.frames == 120
-    assert all(p["source"]["source"] != source for p in second.parts)
-    second.apply("/gui_event", [other_wid, 2, other_context.version, "mix", 0, "buffer", copied])
+    assert [p["path"] for p in second._call("segments")["parts"]][1] == named
+    second.apply("/gui_event", [other_wid, 2, other_context.version, "mix", 0, "segments", copied])
     assert second.buffer.frames == 120
-    assert "/buffer_mix" in take.server.addrs()
+    assert disk.renders[-1]["path"].endswith("-mixed.w64")
     second.apply("/gui_event", [other_wid, 3, other_context.version, "copy", 0, 3])
-    assert source in take.server.buffers.freed
     assert other_host.clip != copied
     second.undo()
     assert second.buffer.frames == 120
@@ -902,48 +907,40 @@ def test_clipboard_copy_survives_origin_close_and_paste_owns_its_samples():
     second.close()
 
 
-def test_failed_cut_copy_keeps_contents_and_previous_publication():
+def test_a_failed_cut_keeps_the_take():
     take = FakeBuffer()
     editor, host, wid, context = opened(take)
-    editor.apply("/gui_event", [wid, 1, context.version, "copy", 0, 4])
-    previous = host.clip
     request = take.server.request
 
-    def refuse_copy(addr, *args, **options):
-        if addr == "/buffer_gen":
-            return "/fail", [addr, "copy failed"]
+    def refuse_stitch(addr, *args, **options):
+        if addr == "/buffer_stitch":
+            return "/fail", [addr, "stitch failed"]
         return request(addr, *args, **options)
 
-    take.server.request = refuse_copy
+    take.server.request = refuse_stitch
     with pytest.raises(CommandError, match="failed"):
         editor.apply("/gui_event", [wid, 2, context.version, "cut", 10, 20])
     assert editor.buffer.frames == 100
     assert not editor.can_undo
-    assert host.clip == previous
     take.server.request = request
+    # the join over what was there is stitched again before anything else
+    editor.retry_pending()
     editor.apply("/gui_event", [wid, 3, context.version, "cut", 10, 20])
     assert editor.buffer.frames == 80
-    assert host.clip != previous
     editor.close()
 
 
-def test_paste_refuses_other_servers_stale_publications_and_external_text():
+def test_a_paste_of_text_puts_nothing_in_and_clears_the_copy(disk):
     take = FakeBuffer()
     editor, host, wid, context = opened(take)
     editor.apply("/gui_event", [wid, 1, context.version, "copy", 0, 4])
     copied = host.clip
-    other, _host, other_wid, other_context = opened(FakeBuffer())
-    other.apply("/gui_event", [other_wid, 1, other_context.version, "paste", 0, "buffer", copied])
-    assert other.buffer.frames == 100
-    assert not other.can_undo
-    editor.apply("/gui_event", [wid, 2, context.version, "copy", 10, 4])
-    editor.apply("/gui_event", [wid, 3, context.version, "paste", 0, "buffer", copied])
+    editor.apply("/gui_event", [wid, 2, context.version, "paste", 0, "text",
+                                json.dumps({"content": {"kind": "text", "text": "external"}})])
     assert editor.buffer.frames == 100
-    current = host.clip
-    editor.apply("/gui_event", [wid, 4, context.version, "paste", 0, "text", json.dumps({"content": {"kind": "text", "text": "external"}})])
-    assert json.loads(current)["content"]["buffer"] in take.server.buffers.freed
-    assert editor.buffer.frames == 100
-    other.close()
+    assert not editor.can_undo
+    editor.apply("/gui_event", [wid, 3, context.version, "paste", 0, "segments", copied])
+    assert editor.buffer.frames == 104, "a copy pasted again is still the copy"
     editor.close()
 
 
@@ -1012,20 +1009,18 @@ def test_undo_redo_correct_only_composed_views_while_optional_ids_stay_stable():
     editor.close()
 
 
-def test_failed_save_keeps_destination_and_undo_to_saved_revision_is_clean():
+def test_failed_save_keeps_destination_and_undo_to_saved_revision_is_clean(disk):
     take = FakeBuffer()
     editor, _host, wid, context = opened(take)
     editor.apply("/gui_event", [wid, 1, context.version, "draw", 0, 10, [0.5], [0.0]])
     editor.save("/takes/saved.wav")
     editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 20, [0.25], [0.0]])
-    request = take.server.request
-    take.server.request = lambda addr, *args, **kw: (
-        ("/fail", [addr, "quota exceeded"]) if addr == "/buffer_write" else request(addr, *args, **kw))
+    disk.refuse = lambda path: path == "/takes/refused.wav"
     with pytest.raises(CommandError, match="quota"):
         editor.save("/takes/refused.wav")
     assert editor.file.path == "/takes/saved.wav"
     assert editor.dirty
-    take.server.request = request
+    disk.refuse = None
     assert editor.undo()
     assert not editor.dirty
     assert editor.redo()
@@ -1035,54 +1030,18 @@ def test_failed_save_keeps_destination_and_undo_to_saved_revision_is_clean():
     editor.close()
 
 
-def test_failed_file_open_keeps_existing_files_and_returns_reserved_ids(monkeypatch):
-    from clausters import SoundFile
+def test_a_new_file_whose_render_fails_is_not_added_and_its_buffer_returns(disk):
     take = FakeBuffer()
     editor, _host, _wid, _context = opened(take)
-    allocated = []
-
-    def load(file, *, server=None, **options):
-        number = server.buffers.alloc()
-        allocated.append(number)
-        return types.SimpleNamespace(bufnum=number, frames=file.frames, channels=file.channels,
-                                     sample_rate=file.sample_rate, server=server, path=file.path)
-
-    monkeypatch.setattr(SoundFile, "to_buffer", load)
-    request = take.server.request
-    take.server.request = lambda addr, *args, **kw: (
-        ("/fail", [addr, "copy refused"]) if addr == "/buffer_gen" else request(addr, *args, **kw))
+    disk.refuse = lambda path: path.endswith("-new.w64")
     before = len(editor.files)
-    with pytest.raises(CommandError, match="copy refused"):
+    with pytest.raises(CommandError, match="quota"):
         editor.new_file(1, 50, SR)
     assert len(editor.files) == before
-    assert allocated[0] in take.server.buffers.freed
     assert len(take.server.buffers.freed) == len(set(take.server.buffers.freed))
-    take.server.request = request
+    disk.refuse = None
     editor.new_file(1, 50, SR)
     assert len(editor.files) == before + 1
-    editor.close()
-
-
-def test_failed_cleanup_keeps_buffer_id_reserved_until_successful_retry():
-    take = FakeBuffer()
-    editor, _host, wid, context = opened(take)
-    editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 10, [0.5], [0.0]])
-    first = editor.parts[1]["source"]["source"]
-    assert editor.undo()
-    request = take.server.request
-    take.server.request = lambda addr, *args, **kw: (
-        ("/fail", [addr, "free refused"]) if addr == "/buffer_free" else request(addr, *args, **kw))
-    editor.apply("/gui_event", [wid, 2, context.version, "draw", 0, 30, [0.5], [0.0]])
-    assert first not in take.server.buffers.freed
-    pending = context._service_call("cleanup", action="pending")["tickets"]
-    assert len(pending) == 1
-    assert pending[0]["ticket"]["resource"]["buffer"] == first
-    assert "free refused" in pending[0]["reason"]
-    take.server.request = request
-    editor.domain.free(editor.structure, [first])
-    editor.domain.free(editor.structure, [first])
-    assert take.server.buffers.freed.count(first) == 1
-    assert context._service_call("cleanup", action="pending")["tickets"] == []
     editor.close()
 
 
@@ -1231,6 +1190,8 @@ def audio_trace(monkeypatch) -> list:
                                               channels=file.channels, sample_rate=file.sample_rate,
                                               server=server, path=file.path))
     monkeypatch.setattr(SoundFile, "open", staticmethod(lambda path: SoundFile(str(path), 200, 2, SR)))
+    # what a render writes is the offline server's, not this script's
+    monkeypatch.setattr("clausters._steps.render_step", lambda render, progress=None: None)
     take = FakeBuffer(100, 1)
     trace: list = []
     editor = AudioEditor(take, context=Editing())
@@ -1292,7 +1253,14 @@ class FaultyServer(FakeServer):
     """**A server that refuses, and one that is slow**: each command named in
     ``fail`` is answered once with a ``/fail``, and while the first command
     named in ``slow`` is out, its action runs before the reply comes -- what
-    a hand does in the window while a write is in flight."""
+    a hand does in the window while a write is in flight. ``"render"`` names
+    an offline render, which `render` carries out."""
+
+    def render(self, render, progress=None):
+        if "render" in self.fail:
+            raise OSError(self.fail.pop("render"))
+        if "render" in self.slow:
+            self.slow.pop("render")()
 
     def __init__(self):
         super().__init__()
@@ -1328,6 +1296,7 @@ def audio_fault_trace(monkeypatch) -> list:
     take = FakeBuffer(100, 1)
     take.path = "/takes/a.wav"
     server = take.server = FaultyServer()
+    monkeypatch.setattr("clausters._steps.render_step", server.render)
     trace: list = []
     editor = AudioEditor(take, context=Editing(), file=SoundFile("/takes/a.wav", 100, 1, SR))
     effect, wait = editor._effect, editor._await
@@ -1383,22 +1352,22 @@ def audio_fault_trace(monkeypatch) -> list:
 
     step("open", lambda: editor.open(host))
     step("cut", cut)
-    server.fail["/buffer_write"] = "no space left on device"
+    server.fail["render"] = "no space left on device"
     step("a refused save", lambda: editor.save())
     step("the save retried", lambda: editor.save())
-    step("a cut while the write is out", lambda: slow("/buffer_write", cut, editor.save),
+    step("a cut while the write is out", lambda: slow("render", cut, editor.save),
          concurrent=True)
     step("undo to what was written", lambda: window("undo"))
-    server.fail["/buffer_gen"] = "copy refused"
-    step("a cut whose copy is refused", cut)
+    server.fail["/buffer_stitch"] = "stitch refused"
+    step("a cut whose stitch is refused", cut)
     step("open another file", lambda: editor.open_file(["/takes/b.wav"]))
     step("back to the first", lambda: editor.focus_file(0))
     step("the second cut while the first is written",
-         lambda: slow("/buffer_write", lambda: (pick(1), cut()), editor.save),
+         lambda: slow("render", lambda: (pick(1), cut()), editor.save),
          concurrent=True)
     step("back to the first again", lambda: editor.focus_file(0))
     step("the window closed while a write is out",
-         lambda: slow("/buffer_write", editor.close, lambda: editor.save("/takes/c.wav")),
+         lambda: slow("render", editor.close, lambda: editor.save("/takes/c.wav")),
          concurrent=True)
     return trace
 
@@ -1412,7 +1381,7 @@ def test_the_shared_fault_trace_is_what_the_coordinator_answers_this_client(monk
     assert states["the save retried"]["dirty"] is False
     assert states["a cut while the write is out"]["dirty"] is True
     assert states["undo to what was written"]["dirty"] is False
-    assert states["a cut whose copy is refused"]["frames"] == states["undo to what was written"]["frames"]
+    assert states["a cut whose stitch is refused"]["frames"] == states["undo to what was written"]["frames"]
     second = states["the second cut while the first is written"]
     assert second["path"] == "/takes/b.wav" and second["dirty"] is True
     assert states["back to the first again"]["dirty"] is False

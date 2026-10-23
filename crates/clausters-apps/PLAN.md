@@ -2972,8 +2972,15 @@ editors and should port this one.
   file is told the file changed on disk. The
   example pair `editors/audio_lifecycle` runs as before, natively and in a
   page; by eye and by ear with two windows. *Opened 2026-10-22: done towards it, a page's
-  recording at an offset, a list's spectrogram, and an offline render in a
-  page that reads and writes files (`clients/web/PLAN.md`, Found by use).*
+  recording at an offset, a list's spectrogram, an offline render in a
+  page that reads and writes files (`clients/web/PLAN.md`, Found by use), a
+  render step every endpoint carries out, and (2026-10-23) the editor's takes
+  as files in both clients: opening reads the header, every verb is a list or
+  a render, the clipboard holds segments, a save renders and moves aside the
+  file the list reads, and the renders nothing names are deleted. Left: a
+  render's progress on the status line, an effect applied from its preview,
+  the session save and the changed-on-disk notice, renders on two NRT
+  instances at once, the measurements and the eye and ear pass.*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
@@ -4831,3 +4838,11 @@ wrong.
   the platform's clipboard as it is at the paste and when a menu opens; the
   owner's readings carry only where a paste lands, so they had nothing to
   follow.
+
+- ⬜ **A compressed file opens through a buffer of all of it**
+  *(found 2026-10-23, moving the audio editor onto files)*. A part streams
+  PCM only (WAV, RF64, W64), so an MP3 or a FLAC is decoded whole into a
+  server buffer by `edit`, which the open then writes to the working folder:
+  an hour of it costs the memory and the time the files model removes for
+  everything else. It should be decoded into the working folder a run at a
+  time, as an offline render reads a stream, without a buffer between.

@@ -49,3 +49,58 @@ export async function makeDirectoryAt(path: string): Promise<void> {
     }
     await opfs.makeDirectory(path);
 }
+
+/**
+ * **Moves the file at `from` to `to`**, over whatever is there: on the disk
+ * under node, in the page's storage in a tab.
+ */
+export async function moveFileAt(from: string, to: string): Promise<void> {
+    if (underNode()) {
+        const { rename } = await import("node:fs/promises");
+        await rename(from, to);
+        return;
+    }
+    await opfs.moveFile(from, to);
+}
+
+/** **Removes the file at `path`**; one that is not there is no error. */
+export async function removeFileAt(path: string): Promise<void> {
+    if (underNode()) {
+        const { rm } = await import("node:fs/promises");
+        await rm(path, { force: true });
+        return;
+    }
+    await opfs.removeFile(path);
+}
+
+/**
+ * **Removes directory `path`**: with `recursive`, and what it holds; without,
+ * only when it is empty -- one that still holds something is left as it is.
+ */
+export async function removeDirectoryAt(path: string, { recursive = false } = {}): Promise<void> {
+    if (underNode()) {
+        const { rm, rmdir } = await import("node:fs/promises");
+        try {
+            if (recursive) await rm(path, { recursive: true, force: true });
+            else await rmdir(path);
+        } catch {
+            // not empty, or not there
+        }
+        return;
+    }
+    await opfs.removeDirectory(path, recursive);
+}
+
+/**
+ * **A folder for a client's temporary files, named `name`**: under the
+ * system's temporary directory under node, at the root of the page's storage
+ * in a tab. Not made: {@link makeDirectoryAt} makes it.
+ */
+export function temporaryFolder(name: string): string {
+    if (underNode()) {
+        const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+        const base = (env.TMPDIR || env.TEMP || env.TMP || "/tmp").replace(/\/+$/, "");
+        return `${base}/${name}-${Date.now().toString(36)}`;
+    }
+    return `${name}-${Date.now().toString(36)}`;
+}

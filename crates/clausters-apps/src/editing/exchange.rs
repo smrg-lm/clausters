@@ -79,15 +79,6 @@ impl Editing {
             _ => json!({"error":"unknown clipboard exchange action"}),
         };
         let released = self.services.resources.collect();
-        for source in &released {
-            for seat in &mut self.seats {
-                if seat.server == source.id.server
-                    && let Member::Audio(editor) = &mut seat.member
-                {
-                    editor.forget(source.id.buffer);
-                }
-            }
-        }
         result["released"] = json!(
             released
                 .into_iter()

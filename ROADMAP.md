@@ -306,7 +306,9 @@ its plan; the plan is where its acceptance is read.
   take costs a native server with a segment a pass over it". Found while
   opening it, and to look at in a page before `X28`'s eye pass: the GUI
   plan's "A spectrogram of a server buffer may draw nothing in a host that
-  cannot map it" (Found by use).
+  cannot map it" (Found by use). Found moving the editor onto files, and taken
+  after `X28`: the apps plan's "A compressed file opens through a buffer of
+  all of it" (Found by use).
 
   | Order | Milestone | Plan |
   |---|---|---|

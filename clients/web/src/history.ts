@@ -112,6 +112,9 @@ export interface StepHandler extends Applier {
      * table.
      */
     freeSources?(structure: never | object, sources: number[]): void;
+    /** Delete files no entry and no member names any more: an audio
+     *  editor's renders. */
+    deleteFiles?(structure: never | object, files: string[]): void;
 }
 
 /**
@@ -180,6 +183,8 @@ export interface Freed {
     spilled?: number[];
     /** A multitrack's joins, by source id, to free and drop from its table. */
     sources?: number[];
+    /** An audio editor's renders and their peaks, by path, to delete. */
+    files?: string[];
 }
 
 /**
@@ -749,15 +754,6 @@ export class Editing {
         if (this.#core !== null) this.#call("bytes", { bytes });
     }
 
-    /**
-     * **Keeps at most `bytes` of the takes only the history holds in memory**,
-     * or lifts the limit with `null`. Past it the oldest are written to disk
-     * and read back when a step needs them.
-     */
-    limitResident(bytes: number | null): void {
-        if (this.#core !== null) this.#call("resident", { bytes });
-    }
-
     /** **One message to a member**, read, recorded and answered by the crate. */
     event(member: number, addr: string, args: unknown[]): Turned {
         const turned = this.#call("event", { member, addr, args }) as Turned | null;
@@ -860,6 +856,9 @@ export class Editing {
             }
             if ((entry.sources ?? []).length > 0) {
                 held.handler.freeSources?.(held.structure as never, entry.sources ?? []);
+            }
+            if ((entry.files ?? []).length > 0) {
+                held.handler.deleteFiles?.(held.structure as never, entry.files ?? []);
             }
         }
         for (const entry of stored ?? []) {

@@ -1,22 +1,22 @@
-"""Editing a take as **a list of parts over immutable takes**: the audio editor.
+"""Editing a take as **a list of parts over immutable files**: the audio editor.
 
-What it opens is **a file or a server buffer**, and it edits a private copy:
-nothing it was handed is written until it is saved. The window draws a
-**join** -- a buffer made of spans of other buffers (`Buffer.stitch`) -- and
-every edit leaves a new list of those spans: a cut takes a span out, a paste
-puts a new take in, a mix adds the block onto a new take over the frames it
-lands on, and a pencil stroke writes **a new take the size of the stroke** and
-splices it over the frames it was drawn on. Nothing a history entry names is
-ever written again, so an undo is the list before, stitched: it costs the list
-and not the samples.
+What it opens is **a file or a server buffer**, and nothing it was handed is
+written until it is saved. The take is a list of spans of files on disk: a cut
+takes a span out, a paste of a copy puts its spans in, and an edit that makes
+new samples -- a pencil stroke, a pasted block, a mix, a gain curve applied,
+a reverse -- **renders** them offline into a file of the editor's working
+folder, which the list then names. Nothing a history entry names is ever
+written again, so an undo is the list before: it costs the list and not the
+samples. The window draws the list from its files, and the take sounds
+through a **join** -- a buffer made of the list's spans (`Buffer.stitch`),
+streamed from disk.
 
 **The editor is the shared crate's** (`clausters._native.EditingCore`, the
-``openAudio`` member): what each gesture does to the list, the steps that make
-a new take and stitch the join again, and which takes the history can no
-longer reach. What is here is what a language owns: the server the steps are
-walked against, the buffer numbers the crate is handed for new takes (from this
-client's allocator, topped up before every turn), and freeing the takes the
-context hands back.
+``openAudio`` member): what each gesture does to the list, the renders that
+make its new files, and which renders the history can no longer reach. What
+is here is what a language owns: the server the steps are walked against,
+the renders run on offline servers of their own, the working folder, and
+deleting the renders the context hands back.
 
 **What a gesture, a verb or the transport leads to is the shared crate's
 coordinator's** (the context's ``audio`` door): every action runs there and
@@ -33,11 +33,10 @@ and declicks every play and stop on the way to the hardware. The window shows
 the level on a meter beside the take, and the space bar and ``L`` are the
 editor's -- the window says so (``plays``), so the host's monitor stays out.
 
-**Memory is spent on what the history holds.** Every take a stroke or a paste
-made is kept while an undo or a redo can still reach it, and freed when neither
-can -- the history's budget trimmed it, or an edit after an undo dropped the
-redo. ``history_bytes`` caps what only the history holds; past it the oldest
-entries go first.
+**Disk is spent on what the history holds.** Every file a stroke or a paste
+rendered is kept while an undo or a redo, or the clipboard, can still reach
+it, and deleted when none can. The working folder is a temporary one unless
+one is given, and goes with the editor.
 """
 
 from ... import _native
@@ -52,9 +51,9 @@ from .editor import Editor
 from .marking import Marking
 from .samples import MEASURES, SamplesView, _plain, measures
 
-#: How many buffers the crate holds for new takes before a turn: a stroke or a
-#: paste takes one, a mix two.
-_SPARE = 2
+#: The containers a part of a list reads in place; a file of any other codec
+#: is opened through a buffer of it.
+_STREAMED = ("wav", "w64", "rf64")
 
 
 #: Why a verb that acts on a file is refused by an editor with none open.
@@ -196,9 +195,8 @@ class AudioDomain(Domain):
             self.editor._audio("syncSound", file=file)
 
     def free(self, structure, buffers, spilled=()) -> None:
-        """Free takes the context handed back: nothing reaches them any more.
-        A take on disk (``spilled``) has no buffer to free, only its number to
-        give back."""
+        """Free buffers the context handed back: nothing reaches them any
+        more."""
         editor = self.editor
         if editor is None:
             return
@@ -207,18 +205,19 @@ class AudioDomain(Domain):
             release_buffer(editor._server, editor._editing.core,
                            {"server": editor._instance, "buffer": int(bufnum)})
 
-    def store(self, structure, buffer: int, operation) -> None:
-        """Write a take to disk and free its buffer: the spill ``operation``
-        the crate prepared, carried out. A write the server refuses -- no room
-        -- fails the operation, and the take stays in memory."""
-        editor = self.editor
-        if editor is None:
-            return
-        editor._check_server()
+    def delete_files(self, structure, files) -> None:
+        """Delete renders the context handed back: no list, no entry and no
+        clipboard names them any more."""
+        _delete(files)
+
+
+def _delete(files) -> None:
+    import os
+    for path in files or ():
         try:
-            editor._operation(None, prepared=operation)
-        except CommandError:
-            pass  # the operation's own failure: the crate kept the take resident
+            os.remove(path)
+        except FileNotFoundError:
+            pass
 
 
 class AudioEditor(Marking, Editor):
@@ -241,34 +240,39 @@ class AudioEditor(Marking, Editor):
     until one is added (`new_file`, `open_file`).
 
     Args:
-        take: the `clausters.defs.Buffer` to edit. It is never written.
-            ``None`` opens the editor with no file.
+        take: the `clausters.SoundFile` or the `clausters.defs.Buffer` to
+            edit. It is never written. A file is read where it is, a buffer
+            written to the working folder first. ``None`` opens the editor
+            with no file.
         server: the server an editor with no file opens on; the ambient one
             when not given. An editor over a take uses the take's.
         sample_rate: the take's rate, when the handle does not know it.
         title: the window's title.
         layers: what the picture measures, innermost last.
-        history_bytes: the most bytes of takes only the history may hold, or
-            ``None`` for no limit.
-        resident_bytes: the most of those kept in memory, or ``None`` for all
-            of them; past it the oldest are written to ``scratch`` and read
-            back when an undo or a redo needs them.
         shared_history: whether the take's undo order is the editing
             context's shared one, which the other members of ``context`` walk
             too. By default each file the editor holds has an order of its own,
             whatever was opened before it.
-        scratch: the directory, on the server's filesystem, a take leaves
-            memory for. A temporary one when not given.
+        workspace: the directory the editor renders its files into, on the
+            server's filesystem. A temporary one when not given, removed when
+            the editor closes; one handed over is left where it is.
         file: the `clausters.SoundFile` `take` was loaded from, which a save
             writes -- one with no path asks for one. `clausters.gui.edit`
             loads a file and passes it here.
     """
 
     def __init__(self, take=None, *, server=None, sample_rate: float = 0.0, title: str = "Audio",
-                 layers=MEASURES, history_bytes: "int | None" = None,
-                 resident_bytes: "int | None" = None,
-                 scratch: "str | None" = None, file=None,
+                 layers=MEASURES, workspace: "str | None" = None, file=None,
                  shared_history: bool = False, **options):
+        from ...soundfile import SoundFile
+        if isinstance(take, SoundFile):
+            # **A file is read where it is**; one a part cannot read (a
+            # compressed one) is decoded into a buffer first, which `edit`
+            # does, and the open writes it to the working folder.
+            if not reads_in_place(take):
+                raise ValueError(f"{take.path or 'a file not written yet'} is not read in place: "
+                                 "open it with `edit`, or pass a buffer of it with `file=`")
+            file = take
         #: The `clausters.SoundFile` the take was loaded from, when it was.
         self._file = file
         empty = take is None
@@ -284,6 +288,8 @@ class AudioEditor(Marking, Editor):
         domain.editor = self
         #: The server the take is on, and every take this editor makes.
         self._server = _resolve(server if server is not None else getattr(take, "server", None))
+        # A file a part reads in place is the take, whatever buffer came with it.
+        streamed = file is not None and reads_in_place(file)
         self._instance = _service_instance(self._server)
         #: The runner the steps are walked through.
         self._runner = _native.StepRunner()
@@ -292,32 +298,38 @@ class AudioEditor(Marking, Editor):
         # The context is the take's; switching files changes the structure,
         # so the window keeps the one it opened in.
         self._context = self._editing
+        #: The folder the renders are written into, and whether it is this
+        #: editor's to remove.
+        self._owns_workspace = workspace is None
+        if workspace is None:
+            import tempfile
+            workspace = tempfile.mkdtemp(prefix="clausters-audio-")
+        self._workspace = str(workspace)
         if empty:
             key = f"audio:{self._instance['connection']}:{self._instance['generation']}:empty:{self._display}"
             request = {"empty": True}
         else:
-            key = f"audio:{self._instance['connection']}:{self._instance['generation']}:{int(take.bufnum)}"
+            path = getattr(file, "path", None)
+            held = f"file:{path}" if streamed else int(take.bufnum)
+            key = f"audio:{self._instance['connection']}:{self._instance['generation']}:{held}"
             request = {"frames": int(getattr(take, "frames", 0) or 0),
-                       "take": int(take.bufnum),
-                       "path": getattr(take, "path", None),
-                       "untitled": self._file is not None and self._file.path is None,
+                       "channels": max(1, int(getattr(take, "channels", 1) or 1)),
+                       "rate": rate,
+                       "path": path,
+                       "untitled": self._file is not None and path is None,
                        "codec": getattr(file, "codec", None),
                        "sample_format": getattr(file, "sample_format", None)}
+            # A file read in place is the take; a buffer, or a file a part
+            # cannot read, is written to the working folder by the open.
+            if not streamed:
+                request["take"] = int(take.bufnum)
         self._member, self._structure_id = self._editing.open(
             "openAudio", key,
             {**self._facts(), **request, "display": self._display,
-             "server": self._instance,
+             "server": self._instance, "workspace": self._workspace,
              "sharedHistory": bool(shared_history),
              "layers": list(view.layers)}, self if empty else take, domain)
-        if history_bytes is not None:
-            self._editing.limit_bytes(history_bytes)
-        if resident_bytes is not None:
-            if scratch is None:
-                import tempfile
-                scratch = tempfile.mkdtemp(prefix="clausters-audio-")
-            self._call("sync", scratch=str(scratch))
-            self._editing.limit_resident(resident_bytes)
-        self._top_up()
+        self._sync_core()
         # Node ids come back on their `/node_end`, which only a registered
         # client hears.
         self._server._ensure_recycler()
@@ -325,9 +337,9 @@ class AudioEditor(Marking, Editor):
         self._playback = _AudioPlayback(self)
         #: What the `transport` plays through.
         self._driver = _AudioDriver(self)
-        # **A private copy of the take**, and the join over it: the buffer the
-        # editor was handed is written by a save and by nothing else. Then it
-        # sounds, on a transport of its own.
+        # **The join over the take**: what the editor was handed is written
+        # by a save and by nothing else. Then it sounds, on a transport of its
+        # own.
         opened = self._audio("open", chunk=int(self._server._bulk_chunk()),
                              rate=self._engine_rate(), empty=empty)
         self._transport_id = int(opened["transport"])
@@ -382,10 +394,9 @@ class AudioEditor(Marking, Editor):
     def _file_id(self) -> int:
         return int(self._call("binding")["id"])
 
-    def _clipboard(self, doc: str, buffer: int, *, ready: bool = False) -> None:
-        """**A copy made on the server**: the buffer it is in is the
-        clipboard's now, the one the previous copy was in goes, and the host's
-        clipboard names it."""
+    def _clipboard(self, doc: str, *, ready: bool = False) -> None:
+        """**A copy published**: the clipboard names the spans of files it is
+        of, and the host's clipboard holds the document."""
         self._check_server()
         if ready:
             bind_exchange(self._server, self._editing.core)
@@ -458,37 +469,36 @@ class AudioEditor(Marking, Editor):
         if kind == "rolling":
             transport = self._server.transport_at(int(wait["transport"]))
             return {"rolling": bool(transport.state()["playing"])}
-        if kind == "read":
-            return self._read(wait)
+        if kind == "shape":
+            return self._shape(wait)
         if kind == "batch":
             self._editing._run_batch(wait["member"], wait["server"], wait.get("steps") or [])
             return {}
         if kind == "stepped":
             return {"changed": bool(self.app.stepped(wait.get("stepped") or {}, self))}
         if kind == "clipboard":
-            self._clipboard(wait["document"], int(wait["buffer"]), ready=bool(wait.get("ready")))
-            return {}
-        if kind == "topUp":
-            self._sync_core()
+            self._clipboard(wait["document"], ready=bool(wait.get("ready")))
             return {}
         raise RuntimeError(f"the audio editor cannot wait on {kind!r}")
 
-    def _read(self, wait: dict) -> dict:
-        """**A file asked for in the window or by a script**, read into a
-        buffer, with a display and spare buffers of its own."""
+    def _shape(self, wait: dict) -> dict:
+        """**A file asked for in the window or by a script**: its header read,
+        and a display buffer for its join. A new file is its shape; a file a
+        part cannot read is decoded into a buffer the open writes out."""
         from ...soundfile import SoundFile
         if wait.get("shape") is not None:
             shape = wait["shape"]
             file = SoundFile.empty(int(shape["channels"]), int(shape["frames"]), float(shape["rate"]))
         else:
             file = SoundFile.open(wait["path"])
-        take = file.to_buffer(server=self._server)
-        return {"take": int(take.bufnum), "frames": int(take.frames),
-                "channels": int(take.channels), "rate": float(take.sample_rate),
-                "display": self._server.buffers.alloc(), "path": file.path,
-                "untitled": file.path is None, "codec": file.codec,
-                "sample_format": file.sample_format,
-                "buffers": [self._server.buffers.alloc() for _ in range(_SPARE)]}
+        answer = {"frames": int(file.frames), "channels": int(file.channels),
+                  "rate": float(file.sample_rate),
+                  "display": self._server.buffers.alloc(), "path": file.path,
+                  "untitled": file.path is None, "codec": file.codec,
+                  "sample_format": file.sample_format}
+        if file.path is not None and not reads_in_place(file):
+            answer["take"] = int(file.to_buffer(server=self._server).bufnum)
+        return answer
 
     def _effect(self, effect: dict, lease) -> None:
         """One effect of a run, carried out here."""
@@ -528,6 +538,8 @@ class AudioEditor(Marking, Editor):
             self.domain.free(self.structure, effect.get("buffers") or [])
         elif kind == "release":
             self._editing.release(effect.get("freed"), effect.get("stored"))
+        elif kind == "delete":
+            _delete(effect.get("files"))
         elif kind == "returned":
             self._editing._operation_returned(effect.get("returned"))
         elif kind == "operationEcho":
@@ -658,8 +670,18 @@ class AudioEditor(Marking, Editor):
         return False
 
     def close(self):
-        """Close the window, and free what sounded the take."""
+        """Close the window, and free what sounded the take. A working folder
+        the editor made goes with it, its renders deleted by the close -- all
+        but the ones the clipboard still names, which stay where they are."""
         self._audio("close")
+        if self._owns_workspace:
+            import os
+            import shutil
+            shutil.rmtree(os.path.join(self._workspace, "peaks"), ignore_errors=True)
+            try:
+                os.rmdir(self._workspace)
+            except OSError:
+                pass  # what the clipboard names, kept
         return self
 
     @property
@@ -703,16 +725,9 @@ class AudioEditor(Marking, Editor):
             raise RuntimeError("the audio service belongs to a previous server instance")
 
     def _sync_core(self) -> None:
-        """Hand the core the chrome, the window it is open in, and enough
-        buffers for the next turn."""
-        self._top_up()
-
-    def _top_up(self) -> None:
+        """Hand the core the chrome and the window it is open in."""
         facts = {k: v for k, v in self._facts().items() if v is not None}
-        spare = int(self._call("sync", **facts).get("spare", 0))
-        if spare < _SPARE:
-            more = [self._server.buffers.alloc() for _ in range(_SPARE - spare)]
-            self._call("sync", buffers=more)
+        self._call("sync", **facts)
 
     @property
     def buffer(self):
@@ -728,6 +743,12 @@ class AudioEditor(Marking, Editor):
     def mix(self) -> bool:
         """Paste onto what is there, mixed with it -- the window's ``mix`` (`verb`)."""
         return self.verb("mix")
+
+    def reverse(self) -> bool:
+        """Play the selection backwards, or the whole take with nothing
+        selected -- rendered into a file the list then names. The window's
+        ``reverse`` (`verb`)."""
+        return self.verb("reverse")
 
     def retry_pending(self) -> None:
         """Retry failed repairs for this editor's files without repeating edits.
@@ -796,9 +817,10 @@ class AudioEditor(Marking, Editor):
 
     @property
     def parts(self) -> list:
-        """What the take is made of now: one ``dict`` per span, in reading
-        order, each naming the buffer it reads and the frames of it."""
-        return list(self._call("parts").get("parts") or ())
+        """What the take is made of now: one ``dict`` per span of a file, in
+        reading order -- its ``path``, the ``start`` and the ``frames`` of it
+        read, and its fades and shape."""
+        return list(self._call("segments").get("parts") or ())
 
     # ---- the crate's turns ----
 
@@ -941,6 +963,13 @@ class AudioEditor(Marking, Editor):
         self._view_layers("view_both")
 
 
+def reads_in_place(file) -> bool:
+    """Whether the audio editor reads ``file``, a `clausters.SoundFile`,
+    where it is: a PCM file a part streams from. Any other is decoded into a
+    buffer first."""
+    return file.path is not None and file.codec in _STREAMED
+
+
 def is_take(structure) -> bool:
     """Whether `edit` should open this in the audio editor: anything with a
     buffer number and samples it can write, which is what a
@@ -948,4 +977,4 @@ def is_take(structure) -> bool:
     return hasattr(structure, "bufnum") and hasattr(structure, "set_samples")
 
 
-__all__ = ["AudioDomain", "AudioEditor", "is_take", "measures"]
+__all__ = ["AudioDomain", "AudioEditor", "is_take", "measures", "reads_in_place"]

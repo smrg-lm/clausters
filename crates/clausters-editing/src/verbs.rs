@@ -276,6 +276,7 @@ pub const AUDIO: &[Verb] = &[
     verb("free_preview", &[], "Free preview"),
     verb("apply", &[], "Apply effect"),
     verb("apply_envelope", &[], "Apply gain envelope"),
+    verb("reverse", &[], "Reverse"),
     choice("views", "view_spectrogram", &["S"], "Spectrogram"),
     choice("views", "view_both", &["B"], "Waveform and spectrogram"),
     toggle("toggle_files", &[], "Files"),

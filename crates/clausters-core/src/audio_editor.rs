@@ -152,16 +152,14 @@ fn in_out_controls(ins: usize, outs: usize) -> Vec<Value> {
 
 /// **One channel of the take**, following the transport.
 ///
-/// The multitrack's reader without what a take played whole does not use: no
-/// `at` (the take starts at the transport's zero), no `start`, no `loop` (the
-/// transport loops) and no `rate` beyond the buffer's own. The phase is the
-/// transport's position in engine samples scaled by `BufRateScale`, so a
-/// 44.1 kHz take in a 48 kHz session plays at its true pitch.
-///
-/// The read is a `TransportBufRd`, which works the phase out in `f64` from
-/// the transport's position itself: a phase passed as a signal is `f32`,
-/// which past about six minutes at 48 kHz repeats and drops frames, so a
-/// long take would distort more the further it played.
+/// The take is a list of segments over files, stitched into a join at the
+/// engine's rate -- so a part of a 44.1 kHz file in a 48 kHz session is read
+/// at the ratio and plays at its true pitch -- and read by a
+/// `TransportDiskIn`, which streams the join from its files ahead of the
+/// transport's position: frame `position` of the join at each sample, worked
+/// out in `f64`, a locate a refill, and a seam a read made before the
+/// playhead gets there. No `at` (the take starts at the transport's zero), no
+/// `start`, no `loop` (the transport loops).
 ///
 /// The gate is `0 <= position < span`, with no ramp: past the take's end the
 /// output is exactly zero, and neither the first nor the last sample is
@@ -181,13 +179,12 @@ pub fn reader_def() -> Value {
             {"kind": "BinaryOpUGen", "op": "ge", "inputs": [{"ugen": 0}, {"const": 0.0}]},
             {"kind": "BinaryOpUGen", "op": "lt", "inputs": [{"ugen": 0}, {"control": 3}]},
             {"kind": "Mul", "inputs": [{"ugen": 1}, {"ugen": 2}]},
-            {"kind": "BufRateScale", "inputs": [{"control": 1}]},
-            {"kind": "TransportBufRd", "inputs": [
-                {"control": 1}, {"control": 2}, {"const": 0.0}, {"ugen": 4},
-                {"const": 0.0}, {"const": 0.0}]},
-            {"kind": "Mul", "inputs": [{"ugen": 5}, {"ugen": 3}]},
+            {"kind": "TransportDiskIn", "inputs": [
+                {"control": 1}, {"control": 2}, {"const": 0.0}, {"const": 0.0},
+                {"const": 0.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 4}, {"ugen": 3}]},
             {"kind": "Add", "inputs": [{"control": 0}, {"control": 2}]},
-            {"kind": "Out", "inputs": [{"ugen": 7}, {"ugen": 6}]},
+            {"kind": "Out", "inputs": [{"ugen": 6}, {"ugen": 5}]},
         ],
     })
 }

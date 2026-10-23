@@ -153,15 +153,32 @@ why the curve row below names three unrelated types:
 
 **A roll can paint what is played**: `edit(sequence, { midiIn: true })` asks the host to open its MIDI input and write each incoming note into the roll — on the step cursor while the transport is stopped, at the play line while it plays, held as long as the key. Each is an edit of the sequence like a note a hand drew, so it is in the history and in every other window over it. A native host opens a port named `clausters-gui` to route a keyboard into; the host in a page listens to every MIDI input the browser has, and the browser asks the person's permission for that the first time a roll that listens is opened.
 
-**A `Buffer` opens in the audio editor**, `editing.AudioEditor`.
-It writes nothing it was handed while it edits. Its window draws a **join** the editor owns, and
-every edit -- a cut, a paste, a mix (Ctrl+Shift+V), a pencil stroke -- leaves a
-new list of spans over the take and over the takes the edits made: a stroke is a
-new take the size of the stroke, spliced over the frames it was drawn on. An undo
-is the list before, stitched again, so it costs the list and not the samples.
-The takes a history can still reach are kept, and freed when it cannot;
-`historyBytes` caps what only the history holds, and `residentBytes` how much of that stays in memory -- past it the oldest takes are written to the page's own storage (`scratch`) and read back when an undo reaches them. What it opens is a file or a server buffer, and it edits a private copy of it: `await editor.save()` writes the edited take over what it was opened from -- the file it was read from, or the buffer, rewritten whole at the take's length -- and Ctrl+S in the window does the same. `editor.save({ path })` writes it as another file and `editor.save({ buffer })` into another buffer (`buffer: true` for a new one), which a later save then writes over. **A `SoundFile` opens there too**: `await edit(await SoundFile.open(path))` loads the file into a buffer of the editor's own and saves back to the file, and `await edit(SoundFile.empty(channels, frames, rate))` is silence not written anywhere yet -- its first save needs a path, which Ctrl+S asks for in a **Save as...** form and `editor.save()` refuses without one. `editor.file` is the `SoundFile` the take is now. The window's File menu has **New file...** (a form for the channels, the length and the rate, which adds the new file to this editor), **Open file...** (the host's file chooser, with Ctrl/Shift to select several files) and **Save as...**. `editor.buffer` is the edited
-take, to play or read, and `editor.parts` what it is made of. **It plays what it edits** on a transport of its own (another window's play moves nothing in it), and `editor.transport` is that `Transport` in the take's seconds: the space bar over the window plays the marked range, or from the position cursor, and `L` loops it -- the same `await transport.play()`, `span` and `loop(start, end)` from a page, each side reading what the other set. **A range swept while it loops is the loop's new span**: the loop follows the hand as it draws, and the head goes to the start of the range when the sweep is let go. A pass that is not looping keeps the end it was played with, and the next play reads the range. What the hand marked is samples, and `await editor.selected()` answers them as a `Segment` over `editor.buffer` (its `start` a frame, its `duration` seconds); `await editor.select(segment)` marks one and `await editor.unselect()` marks nothing. In an audio editor the samples marked and the transport's `span` are one range, so setting either sets both.
+**A `SoundFile` or a `Buffer` opens in the audio editor**, `editing.AudioEditor`.
+It writes nothing it was handed while it edits. The take is **a list of spans of files**, and
+every edit leaves a new list: a cut takes a span out, a paste of a copy puts its spans in,
+and an edit that makes new samples -- a pencil stroke, a pasted block, a mix
+(Ctrl+Shift+V), a gain curve applied, Edit -> Reverse -- **renders** them offline into a
+file of the editor's working folder, which the list then names: a stroke is a file the
+size of the stroke, spliced over the frames it was drawn on. An undo is the list before,
+so it costs the list and not the samples, and a take of an hour cuts and pastes as fast as
+one of a second. The files a history or the clipboard can still reach are kept, and
+deleted when nothing can. The working folder is a temporary one -- in a tab, a folder of
+the page's own storage -- unless `workspace` names one, and goes with the editor. What it
+opens is a file -- read where it is -- or a server buffer, which the open writes to the
+working folder first. A compressed file (MP3, FLAC) is decoded into a buffer by `edit` and
+opened through it; `readsInPlace(file)` says which. `await editor.save()` renders the
+edited take over what it was opened from -- the file, moved aside first while the list
+reads it and the render moved where it was, or the buffer, read back whole at the take's
+length -- and Ctrl+S in the window does the same. `editor.save({ path })` renders it as
+another file and `editor.save({ buffer })` into another buffer (`buffer: true` for a new
+one), which a later save then writes over. `await edit(SoundFile.empty(channels, frames,
+rate))` is silence not written anywhere yet -- its first save needs a path, which Ctrl+S
+asks for in a **Save as...** form and `editor.save()` refuses without one. `editor.file` is
+the `SoundFile` the take is now. The window's File menu has **New file...** (a form for the
+channels, the length and the rate, which adds the new file to this editor), **Open
+file...** (the host's file chooser, with Ctrl/Shift to select several files) and **Save
+as...**. `editor.buffer` is the join the
+edited take sounds through, to play or read, and `editor.parts` the spans of files it is made of. **It plays what it edits** on a transport of its own (another window's play moves nothing in it), and `editor.transport` is that `Transport` in the take's seconds: the space bar over the window plays the marked range, or from the position cursor, and `L` loops it -- the same `await transport.play()`, `span` and `loop(start, end)` from a page, each side reading what the other set. **A range swept while it loops is the loop's new span**: the loop follows the hand as it draws, and the head goes to the start of the range when the sweep is let go. A pass that is not looping keeps the end it was played with, and the next play reads the range. What the hand marked is samples, and `await editor.selected()` answers them as a `Segment` over `editor.buffer` (its `start` a frame, its `duration` seconds); `await editor.select(segment)` marks one and `await editor.unselect()` marks nothing. In an audio editor the samples marked and the transport's `span` are one range, so setting either sets both.
 
 An editor holds several files, listed in an independent widget on the left.
 `editor.files` lists the open SoundFiles (`null` for a buffer-only entry),

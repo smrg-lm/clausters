@@ -202,15 +202,12 @@ code that keeps it lives.
 - **A block keeps its rate.** A block pasted from a file at another rate is
   a take at its own rate, read at the ratio; a mix needs one rate and is
   refused across two.
-- **Clipboard storage and undo storage have separate lifetimes.** The remote
-  publication holds one immutable buffer independently of the source document.
-  Pasted samples enter the destination's ordinary resource/history mechanism:
-  history-only samples still spill to float WAVs on disk or OPFS under the
-  existing resident limit, and restore before use. Replacing the clipboard
-  neither clears history nor forces spilled samples to stay resident. A
-  file-owned loaded buffer stays rooted until that file closes, including
-  while another file is focused; making a private copy cannot release the
-  loaded buffer early and then release it again on close.
+- **Clipboard storage and undo storage have separate lifetimes.** A copy names
+  the spans of files it is of, and a file it names -- a render included -- is
+  kept while the clipboard holds it, whatever the history let go of and after
+  the editor it came from closed. Pasting the copy keeps it; replacing it
+  neither clears history nor deletes a file a list still reads. A file the
+  editor opened is never deleted: only renders are.
 
 - **A choice in the file list is navigation.** It is never refused as stale,
   and the list keeps its widget across switches, so a hand clicking down it

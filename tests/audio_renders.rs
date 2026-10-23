@@ -253,3 +253,116 @@ fn a_block_a_stroke_and_silence_are_files_of_their_own() {
     assert!(samples.len() == 2_468 && samples.iter().all(|v| *v == 0.0));
     assert!(peaks_written(&out.peaks));
 }
+
+/// **An editor's gain apply, end to end**: a take opened from a file, a span
+/// cut out of it and the curve applied render a file of the list through
+/// the curve, the source file is never written, and an undo and a redo name
+/// the files again without rendering anything.
+#[test]
+fn an_editor_applies_a_curve_by_rendering_the_list_and_undo_names_the_take_again() {
+    use clausters_apps::audio::editor::{call_json, new_json};
+    use clausters_editing::apply::steps_from_json;
+    use serde_json::{Value, json};
+    const FRAMES: usize = 1_000;
+    let dir = scratch("editor-gain");
+    let take = file(&dir, "take.wav", FRAMES, 2, |f, c| {
+        (f as f32 + 1.0) * if c == 0 { 0.001 } else { -0.001 }
+    });
+    let original = std::fs::read(&take).unwrap();
+    let work = dir.join("work").to_string_lossy().into_owned();
+    std::fs::create_dir_all(&work).unwrap();
+    let mut editor = new_json(
+        &json!({"path": take, "workspace": work, "frames": FRAMES, "channels": 2,
+                "rate": RATE, "display": 8})
+        .to_string(),
+    )
+    .unwrap();
+    call_json(
+        &mut editor,
+        &json!({"verb": "sync", "rate": RATE}).to_string(),
+    );
+    // carries out the renders a batch holds; the stitch is the engine's
+    let walk = |steps: &Value| -> usize {
+        steps_from_json(steps)
+            .into_iter()
+            .filter(|step| matches!(step, Step::Render(_)))
+            .map(|step| {
+                run(step);
+            })
+            .count()
+    };
+    walk(&editor.open().unwrap());
+    let parts = |editor: &mut clausters_apps::audio::editor::AudioEditor| -> Vec<Value> {
+        let tree: Value =
+            serde_json::from_str(&call_json(editor, r#"{"verb":"window","widget":10}"#)).unwrap();
+        fn find(v: &Value) -> Option<Value> {
+            if let Some(list) = v.get("segments") {
+                return Some(list["parts"].clone());
+            }
+            match v {
+                Value::Array(a) => a.iter().find_map(find),
+                Value::Object(o) => o.values().find_map(find),
+                _ => None,
+            }
+        }
+        find(&tree).unwrap().as_array().unwrap().clone()
+    };
+    parts(&mut editor);
+    let cut = editor.event(
+        &clausters_apps::turn::Event {
+            addr: "/gui_event".into(),
+            args: vec![
+                json!(10),
+                json!(1),
+                json!(0),
+                json!("cut"),
+                json!(300),
+                json!(200),
+            ],
+        },
+        1,
+    );
+    assert_eq!(walk(&cut.steps.unwrap()), 0, "a cut renders nothing");
+    let points = json!([0.0, 0.0, 1.0, 0.0, 800.0 / RATE, 1.0, 1.0, 0.0]);
+    assert!(
+        editor
+            .act(&json!({"verb": "setautomation", "points": points}), 2)
+            .changed
+    );
+    let applied = editor.act(&json!({"verb": "apply_envelope"}), 3);
+    assert_eq!(walk(applied.steps.as_ref().unwrap()), 1, "one render");
+    let now = parts(&mut editor);
+    assert_eq!(now.len(), 1, "the list is the render");
+    let rendered = now[0]["path"].as_str().unwrap().to_string();
+    assert!(rendered.starts_with(&work));
+    let layout = clausters::dsp::pcm::Layout::open(&rendered).unwrap();
+    assert_eq!(layout.frames, 800);
+    let mut f = std::fs::File::open(&rendered).unwrap();
+    let (mut bytes, mut samples) = (Vec::new(), Vec::new());
+    clausters_core::pcm::read_frames(&mut f, &layout, 0, 800, &mut bytes, &mut samples).unwrap();
+    for frame in 0..800 {
+        // the list's frame, past the cut, under a ramp from 0 to 1
+        let source = if frame < 300 { frame } else { frame + 200 };
+        let expected = (source as f32 + 1.0) * 0.001 * frame as f32 / 800.0;
+        assert!(
+            (samples[2 * frame] - expected).abs() < 1e-4,
+            "frame {frame}: {} against {expected}",
+            samples[2 * frame]
+        );
+    }
+    assert_eq!(
+        std::fs::read(&take).unwrap(),
+        original,
+        "the source is never written"
+    );
+
+    let leg = &applied.record.unwrap().legs[0];
+    let back = editor.apply(&leg.backward).unwrap();
+    assert_eq!(walk(&back), 0, "an undo renders nothing");
+    let undone = parts(&mut editor);
+    assert_eq!(undone.len(), 2);
+    assert!(undone.iter().all(|p| p["path"] == take.as_str()));
+    let forward = editor.apply(&leg.forward["edit"]).unwrap();
+    assert_eq!(walk(&forward), 0, "a redo names the render again");
+    assert_eq!(parts(&mut editor)[0]["path"], rendered.as_str());
+}

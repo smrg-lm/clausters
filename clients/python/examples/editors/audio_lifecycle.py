@@ -36,7 +36,7 @@ any other program and press Ctrl+V over a take: text stays text, the paste is
 refused, and the window's status line says why.
 
 **Saves.** ``failed_save()`` saves ``d.wav`` into a directory that does not
-exist: the server refuses the write, the error is printed, and ``status()``
+exist: the render cannot write there, the error is printed, and ``status()``
 shows the file still dirty and still called ``d.wav``. ``save_then_edit()``
 saves it, then cuts it: dirty again, since the cut is newer than what was
 written; ``undo_in_second()`` brings back the written take, and it is clean.

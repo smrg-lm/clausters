@@ -46,7 +46,9 @@ pub struct Batch {
 pub enum Access {
     /// Content or storage changes remain exclusive until confirmation.
     Write,
-    /// After this batch, an immutable snapshot allows later content edits.
+    /// Once this many batches have landed, an immutable snapshot allows
+    /// later content edits: `Snapshot(0)` reads only what never changes, so
+    /// an edit may start at once.
     Snapshot(usize),
 }
 
@@ -248,7 +250,7 @@ impl<C> Operations<C> {
                 })
                 && match (operation.access, pending.operation.access) {
                     (Access::Snapshot(_), _) | (_, Access::Write) => true,
-                    (Access::Write, Access::Snapshot(batch)) => pending.next <= batch,
+                    (Access::Write, Access::Snapshot(batches)) => pending.next < batches,
                 }
         }) {
             return Err("the object has pending work");

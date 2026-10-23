@@ -77,6 +77,7 @@ The verdict is one of three:
 | `audio` | `free_preview` | `AudioEditor.free_preview` | `AudioEditor.freePreview` | **api** |
 | `audio` | `apply` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** — the one effect today is the gain envelope |
 | `audio` | `apply_envelope` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** |
+| `audio` | `reverse` | `AudioEditor.reverse` | `AudioEditor.reverse` | **api** |
 | `multitrack` | `pause` | `MultitrackEditor.pause` | `MultitrackEditor.pause` | **api** |
 | `multitrack` | `stop` | `MultitrackEditor.stop` | `MultitrackEditor.stop` | **api** |
 | `multitrack` | `stop_at_end` | `MultitrackEditor.stop_at_end` | `MultitrackEditor.stopAtEnd` | **api** |

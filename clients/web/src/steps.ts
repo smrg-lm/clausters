@@ -28,7 +28,8 @@ export type Step =
     | { send: { addr: string; args: StepArg[] } }
     | { await: { command: string; index: number | null } }
     | { sync: number }
-    | { render: RenderStep };
+    | { render: RenderStep }
+    | { move: { from: string; to: string } };
 
 /** **An offline render a step asks for**: the score, in hex, and the file it
  *  is rendered into. */
@@ -98,6 +99,25 @@ export function runSteps(
     return walk;
 }
 
+/**
+ * **What a step does on the disk**, by the verb: render a score into a file,
+ * move a file, remove one. A test replaces them to record what a run asked
+ * for rather than doing it.
+ *
+ * @internal
+ */
+export const disk = {
+    render: (render: RenderStep): Promise<void> => renderStep(render),
+    move: async (from: string, to: string): Promise<void> => {
+        const { moveFileAt } = await import("./base/files.ts");
+        await moveFileAt(from, to);
+    },
+    remove: async (path: string): Promise<void> => {
+        const { removeFileAt } = await import("./base/files.ts");
+        await removeFileAt(path);
+    },
+};
+
 async function walkSteps(
     server: Server,
     runner: StepRunner,
@@ -114,17 +134,35 @@ async function walkSteps(
         };
         const messages = ready.messages ?? [];
         const awaiting = ready.awaiting ?? null;
-        if (awaiting === null || "render" in awaiting.step) {
+        if (awaiting === null || "render" in awaiting.step || "move" in awaiting.step) {
             for (const message of messages) {
                 server.sendMsg(message.addr, ...message.args.map(stepArg));
             }
             if (awaiting === null) return;
+            if ("move" in awaiting.step) {
+                // **A file moved**, where this client's paths are: what a save
+                // over a file the take reads does with it.
+                const move = awaiting.step.move;
+                let failed: unknown = null;
+                try {
+                    await disk.move(move.from, move.to);
+                } catch (error) {
+                    failed = error;
+                }
+                call(failed === null
+                    ? { verb: "moved" }
+                    : { verb: "moved", error: String((failed as Error)?.message ?? failed) });
+                if (failed !== null) {
+                    throw new Error(`clausters: moving ${move.from} to ${move.to} failed: ${String((failed as Error)?.message ?? failed)}`);
+                }
+                continue;
+            }
             // **An offline render**: nothing is sent for it; this client
             // renders the score into its file and says how it went.
             const render = (awaiting.step as { render: RenderStep }).render;
             let failed: unknown = null;
             try {
-                await renderStep(render);
+                await disk.render(render);
             } catch (error) {
                 failed = error;
             }

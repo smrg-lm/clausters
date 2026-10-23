@@ -1,13 +1,13 @@
 //! Audio deltas over the common typed application lifecycle.
 //!
 //! A draft holds only the edited file's metadata while the existing edit
-//! vocabulary computes its new parts. Other files, histories and spilled
-//! payloads are never cloned, restored or rolled back.
+//! vocabulary computes its new parts. Other files and histories are never
+//! cloned, restored or rolled back.
 use super::*;
 use crate::application::{
     histories::Object,
     operations::{Access, Batch, Operation, Result as OperationResult, Target as OperationTarget},
-    resources::{ResourceId, Root, RootKind, ServerInstance, Source},
+    resources::{ResourceId, ServerInstance},
     services::{Application, Services},
 };
 
@@ -45,8 +45,6 @@ pub enum Command {
     },
     /// Put a recorded take back; the history cursor is confirmed by its owner.
     Restore(Opaque),
-    /// Write history-only samples to scratch storage.
-    Spill(i64),
 }
 
 /// Explicit routing supplied by the composition, never discovered from focus.
@@ -69,11 +67,11 @@ struct Contents {
     contents: parts::Take,
     revision: u64,
     next_revision: u64,
-    frames: BTreeMap<i64, u64>,
+    // The files the list may read after the change: the draft's table, with
+    // the renders the change wrote.
+    sources: super::Sources,
     rates: BTreeMap<SourceId, f64>,
-    spilled: BTreeSet<i64>,
-    take: i64,
-    copied: bool,
+    opened: Option<SourceId>,
     landing: Option<u64>,
 }
 
@@ -88,19 +86,22 @@ enum Change {
         frames: u64,
         channels: u32,
         rate: f64,
+        // A save over a file the list reads moved it: the list names it
+        // where it is now.
+        contents: Box<Contents>,
     },
-    Spill(i64),
 }
 
 /// Unpublished change for one file, with no previous composition snapshot.
 #[derive(Debug)]
 pub struct Commit {
     target: OperationTarget,
+    // The working folder an added file was opened with.
+    workspace: Option<String>,
     expected_revision: u64,
     binding: u64,
     change: Change,
     outcome: Outcome,
-    reserved: Vec<i64>,
     close_dialog: bool,
 }
 
@@ -147,23 +148,14 @@ impl AudioEditor {
                 event: event.clone(),
                 clipboard: None,
             }),
-            "draw" | "sample" | "cut" | "delete" | "copy" | "copy_cut" | "apply_envelope"
-            | "apply" | "points" => Some(Command::Edit(event.clone())),
+            "draw" | "sample" | "cut" | "delete" | "copy" | "copy_cut" | "reverse"
+            | "apply_envelope" | "apply" | "points" => Some(Command::Edit(event.clone())),
             _ => None,
         }
     }
 
     pub(crate) fn unused_buffers(&self) -> Vec<i64> {
-        std::iter::once(self.file.display)
-            .chain(self.file.spare.iter().copied())
-            .collect()
-    }
-
-    pub(crate) fn file_for_source(&self, buffer: i64) -> Option<i64> {
-        std::iter::once(&self.file)
-            .chain(self.open_files.parked.values())
-            .find(|file| file.frames.contains_key(&buffer))
-            .map(|file| file.id.0)
+        vec![self.file.display]
     }
 
     fn draft(&self) -> Self {
@@ -176,52 +168,19 @@ impl AudioEditor {
                 open: self.open_files.open,
                 next_id: self.open_files.next_id,
             },
-            planned_allocations: Some(Vec::new()),
         }
     }
 
+    /// **What the resource service holds for this editor**: nothing of its
+    /// takes. They are files, which no budget counts and which go when
+    /// nothing names them (`AudioEditor::release`); what is left is the
+    /// clipboard's buffers, which the service retains on its own.
     pub(crate) fn sync_resources(
         &self,
-        member: u32,
-        server: ServerInstance,
-        services: &mut Services,
+        _member: u32,
+        _server: ServerInstance,
+        _services: &mut Services,
     ) {
-        for (buffer, bytes, stored, owned) in self.resource_sources() {
-            services.resources.register(Source {
-                id: ResourceId { server, buffer },
-                member,
-                bytes,
-                stored,
-                owned,
-            });
-        }
-        self.retain_committed(member, server, services);
-    }
-
-    fn retain_committed(&self, member: u32, server: ServerInstance, services: &mut Services) {
-        let ids = |sources: Vec<SourceId>| {
-            sources
-                .into_iter()
-                .map(|source| ResourceId {
-                    server,
-                    buffer: source.0 as i64,
-                })
-                .collect::<Vec<_>>()
-        };
-        services.resources.retain(
-            Root {
-                kind: RootKind::Contents,
-                owner: u64::from(member),
-            },
-            ids(self.rooted()),
-        );
-        services.resources.retain(
-            Root {
-                kind: RootKind::History,
-                owner: u64::from(member),
-            },
-            ids(services.histories.sources_for(member)),
-        );
     }
 }
 
@@ -230,11 +189,20 @@ impl Application for AudioEditor {
     type Commit = Commit;
     type Outcome = Outcome;
 
+    // The services are every application's; the audio editor's takes are
+    // files, so it reserves nothing there and only hands them on.
+    #[allow(clippy::only_used_in_recursion)]
     fn prepare(&self, request: Request, services: &Services) -> Result<Operation<Commit>, String> {
         if let Command::AddFile(file) = &request.command {
             let mut next = file.draft();
             next.file.id = FileId(self.open_files.next_id);
-            next.window_state.scratch = self.window_state.scratch.clone();
+            // the editor's folder, or the one the file was opened with
+            if self.window_state.workspace.is_some() {
+                next.window_state.workspace = self.window_state.workspace.clone();
+            }
+            if self.window_state.engine_rate > 0.0 {
+                next.window_state.engine_rate = self.window_state.engine_rate;
+            }
             next.window_state.scratch_scope = self.window_state.scratch_scope.clone();
             let mut plan = next.prepare(
                 Request {
@@ -247,15 +215,12 @@ impl Application for AudioEditor {
                 unreachable!()
             };
             next.file.contents = contents.contents;
-            next.file.take = contents.take;
-            next.file.copied = contents.copied;
-            next.file.frames = contents.frames;
+            next.file.sources = contents.sources;
             next.file.rates = contents.rates;
-            next.file.spilled = contents.spilled;
-            next.file
-                .spare
-                .retain(|id| !plan.commit.reserved.contains(id));
+            next.file.opened = contents.opened;
+            next.file.written_from = None;
             plan.commit.binding = self.window_state.binding_generation;
+            plan.commit.workspace = next.window_state.workspace.clone();
             plan.commit.change = Change::AddFile(Box::new(next.file));
             return Ok(plan);
         }
@@ -298,12 +263,6 @@ impl Application for AudioEditor {
             _ => None,
         };
         let mut draft = self.draft();
-        draft.file.spare.retain(|buffer| {
-            services.resources.available(ResourceId {
-                server: request.server,
-                buffer: *buffer,
-            })
-        });
         let mut outcome = Outcome {
             turn: Kind::Route,
             version: request.version,
@@ -317,41 +276,26 @@ impl Application for AudioEditor {
                 format,
             } => {
                 if let Some(Target::Buffer(buffer)) = destination.as_ref()
-                    && (*buffer == self.file.display || self.file.frames.contains_key(buffer))
+                    && *buffer == self.file.display
                 {
-                    return Err("the save target is a buffer this editor reads".into());
+                    return Err("the save target is the buffer this editor plays".into());
                 }
-                let snapshot = draft.next_buffer()?;
-                let frames = self.length();
-                let mut copy = draft.allocate(snapshot, frames);
-                copy.push(send(
-                    "/buffer_gen",
-                    vec![
-                        OscType::Int(snapshot as i32),
-                        OscType::String("copy".into()),
-                        OscType::Int(0),
-                        OscType::Int(self.file.display as i32),
-                        OscType::Int(0),
-                        OscType::Int((frames * u64::from(self.file.channels)) as i32),
-                    ],
-                ));
-                copy.push(Step::AwaitDone {
-                    command: "/buffer_gen".into(),
-                    index: Some(snapshot as i32),
-                });
-                draft.file.display = snapshot;
-                let written = draft.save_steps(destination, &format)?;
+                let steps = draft.save_steps(destination, &format)?;
+                // The take is read from files that never change, so an
+                // edit need not wait for a save -- unless the save moves a
+                // file the list reads, and then the file is held until it
+                // lands, or a render started meanwhile would read a path
+                // that is gone.
+                access = if steps.iter().any(|step| matches!(step, Step::Move { .. })) {
+                    Access::Write
+                } else {
+                    Access::Snapshot(0)
+                };
                 batches.push(Batch {
                     member: request.member,
                     server: request.server,
-                    steps: copy,
+                    steps,
                 });
-                batches.push(Batch {
-                    member: request.member,
-                    server: request.server,
-                    steps: written,
-                });
-                access = Access::Snapshot(0);
                 Change::Save {
                     target: draft.file.target.clone(),
                     format,
@@ -359,51 +303,16 @@ impl Application for AudioEditor {
                     frames: self.length(),
                     channels: self.file.channels,
                     rate: self.file.rate,
+                    contents: Box::new(Contents {
+                        contents: draft.file.contents.clone(),
+                        revision: draft.file.revision,
+                        next_revision: draft.file.next_revision,
+                        sources: draft.file.sources.clone(),
+                        rates: draft.file.rates.clone(),
+                        opened: draft.file.opened,
+                        landing: None,
+                    }),
                 }
-            }
-            Command::Spill(buffer) => {
-                let path = self
-                    .path(buffer)
-                    .ok_or("the source has no scratch storage")?;
-                if !self.file.frames.contains_key(&buffer)
-                    || self.file.spilled.contains(&buffer)
-                    || self.file.take == buffer
-                    || parts::sources(&self.file.contents.parts).contains(&SourceId(buffer as u64))
-                {
-                    return Err("the source is not history-only resident samples".into());
-                }
-                // The write is a separate dependency. A failed write cannot free samples.
-                batches.push(Batch {
-                    member: request.member,
-                    server: request.server,
-                    steps: vec![
-                        send(
-                            "/buffer_write",
-                            vec![
-                                OscType::Int(buffer as i32),
-                                OscType::String(path),
-                                OscType::String("wav".into()),
-                                OscType::String("float".into()),
-                            ],
-                        ),
-                        Step::AwaitDone {
-                            command: "/buffer_write".into(),
-                            index: Some(buffer as i32),
-                        },
-                    ],
-                });
-                batches.push(Batch {
-                    member: request.member,
-                    server: request.server,
-                    steps: vec![
-                        send("/buffer_free", vec![OscType::Int(buffer as i32)]),
-                        Step::AwaitDone {
-                            command: "/buffer_free".into(),
-                            index: Some(buffer as i32),
-                        },
-                    ],
-                });
-                Change::Spill(buffer)
             }
             command => {
                 let steps = match command {
@@ -465,14 +374,10 @@ impl Application for AudioEditor {
                             .unwrap_or(self.file.next_revision + 1);
                         draft.file.next_revision =
                             draft.file.next_revision.max(draft.file.revision);
-                        let mut steps = draft.restored();
-                        steps.extend(draft.stitched());
                         outcome.changed = true;
-                        steps
+                        draft.stitched()
                     }
-                    Command::Save { .. } | Command::Spill(_) | Command::WindowSave(_) => {
-                        unreachable!()
-                    }
+                    Command::Save { .. } | Command::WindowSave(_) => unreachable!(),
                 };
                 if !steps.is_empty() {
                     batches.push(Batch {
@@ -485,63 +390,14 @@ impl Application for AudioEditor {
                     contents: draft.file.contents.clone(),
                     revision: draft.file.revision,
                     next_revision: draft.file.next_revision,
-                    frames: draft.file.frames.clone(),
+                    sources: draft.file.sources.clone(),
                     rates: draft.file.rates.clone(),
-                    spilled: draft.file.spilled.clone(),
-                    take: draft.file.take,
-                    copied: draft.file.copied,
+                    opened: draft.file.opened,
                     landing: outcome.cue,
                 })
             }
         };
-        let external_target = match &change {
-            Change::Save {
-                target: Target::Buffer(buffer),
-                ..
-            } => Some(*buffer),
-            _ => None,
-        };
-        let allocations = draft
-            .planned_allocations
-            .take()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|(buffer, _, _)| {
-                Some(*buffer) != external_target
-                    && services
-                        .resources
-                        .source(ResourceId {
-                            server: request.server,
-                            buffer: *buffer,
-                        })
-                        .is_none()
-            })
-            .map(|(buffer, frames, _)| Source {
-                id: ResourceId {
-                    server: request.server,
-                    buffer,
-                },
-                member: request.member,
-                bytes: frames * u64::from(self.file.channels) * 4,
-                owned: true,
-                stored: None,
-            })
-            .collect::<Vec<_>>();
-        let reserved = allocations.iter().map(|source| source.id.buffer).collect();
-        let mut read_sources = self.rooted();
-        if let Change::Contents(contents) = &change {
-            read_sources.extend(parts::sources(&contents.contents.parts));
-        }
-        if let Change::Spill(buffer) = change {
-            read_sources.push(SourceId(buffer as u64));
-        }
-        let mut reads: Vec<_> = read_sources
-            .into_iter()
-            .map(|source| ResourceId {
-                server: request.server,
-                buffer: source.0 as i64,
-            })
-            .collect();
+        let mut reads = Vec::new();
         if let Some(id) = clipboard_read {
             reads.push(id);
         }
@@ -555,11 +411,11 @@ impl Application for AudioEditor {
         outcome.planned_steps.clear();
         let commit = Commit {
             target,
+            workspace: self.window_state.workspace.clone(),
             expected_revision: self.file.revision,
             binding: self.window_state.binding_generation,
             change,
             outcome,
-            reserved,
             close_dialog: false,
         };
         Ok(Operation {
@@ -567,7 +423,7 @@ impl Application for AudioEditor {
             additional_targets: Vec::new(),
             access,
             batches,
-            allocations,
+            allocations: Vec::new(),
             reads,
             commit,
         })
@@ -583,12 +439,27 @@ impl Application for AudioEditor {
                     services,
                 );
             }
-            let Change::AddFile(file) = std::mem::replace(&mut delta.change, Change::Spill(-1))
-            else {
+            let Change::AddFile(file) = std::mem::replace(
+                &mut delta.change,
+                Change::Contents(Contents {
+                    contents: Default::default(),
+                    revision: 0,
+                    next_revision: 0,
+                    sources: Default::default(),
+                    rates: Default::default(),
+                    opened: None,
+                    landing: None,
+                }),
+            ) else {
                 unreachable!()
             };
             let focus =
                 self.window_state.active && self.window_state.binding_generation == delta.binding;
+            // an editor that opened with no file takes the folder the first
+            // one brings
+            if self.window_state.workspace.is_none() {
+                self.window_state.workspace = delta.workspace.clone();
+            }
             self.add_file_state(*file, focus);
             delta.outcome.changed = true;
             delta.outcome.prepared_complete = true;
@@ -601,7 +472,6 @@ impl Application for AudioEditor {
                 delta.outcome.playback_update =
                     Some(json!({"file":self.playback_file(),"publish":true}));
             }
-            self.retain_committed(delta.target.member, delta.target.server, services);
             return Completion {
                 committed: true,
                 outcome: delta.outcome,
@@ -630,10 +500,6 @@ impl Application for AudioEditor {
                 {
                     return false;
                 }
-                editor
-                    .file
-                    .spare
-                    .retain(|buffer| !delta.reserved.contains(buffer));
                 match delta.change {
                     Change::AddFile(_) => unreachable!(),
                     Change::Contents(mut contents) => {
@@ -641,19 +507,15 @@ impl Application for AudioEditor {
                         editor.file.contents = contents.contents;
                         editor.file.revision = contents.revision;
                         editor.file.next_revision = contents.next_revision;
-                        editor.file.frames = contents.frames;
-                        editor.file.rates = contents.rates;
-                        editor.file.spilled = contents.spilled;
-                        editor.file.take = contents.take;
-                        editor.file.copied = contents.copied;
+                        // the renders the change wrote join what was there
+                        editor.file.sources.extend(contents.sources);
+                        editor.file.rates.extend(contents.rates);
+                        editor.file.opened = contents.opened;
+                        editor.file.written_from = None;
                         if let Some(at) = contents.landing {
                             editor.file.presentation.cursor = Some(at);
                             editor.file.presentation.selection = None;
                         }
-                        editor
-                            .file
-                            .spare
-                            .retain(|buffer| !delta.reserved.contains(buffer));
                         if let Some(record) = &delta.outcome.record {
                             let structure = services.histories.structure_of(Object {
                                 member: delta.target.member,
@@ -671,7 +533,15 @@ impl Application for AudioEditor {
                         frames,
                         channels,
                         rate,
+                        contents,
                     } => {
+                        // A save over a file the list read moved it: the
+                        // table names it where it is now.
+                        for (id, moved) in contents.sources {
+                            if let Some(source) = editor.file.sources.get_mut(&id) {
+                                *source = moved;
+                            }
+                        }
                         let mut saved = match &target {
                             Target::File(path) => json!({"path":path}),
                             Target::Buffer(buffer) => json!({"buffer":buffer}),
@@ -683,9 +553,6 @@ impl Application for AudioEditor {
                         editor.file.target = target;
                         editor.file.written_format = Some(format);
                         editor.file.saved_revision = revision;
-                    }
-                    Change::Spill(buffer) => {
-                        editor.file.spilled.insert(buffer);
                     }
                 }
                 editor.file.dirty = editor.file.revision != editor.file.saved_revision;
@@ -775,7 +642,6 @@ impl Application for AudioEditor {
                 |editor| json!({"file":editor.playback_file(),"publish":current_view}),
             );
         }
-        self.retain_committed(delta.target.member, delta.target.server, services);
         Completion {
             committed: applied,
             outcome: delta.outcome,
@@ -788,15 +654,9 @@ impl Application for AudioEditor {
         &mut self,
         delta: Commit,
         result: OperationResult,
-        completed_batches: usize,
-        services: &mut Services,
+        _completed_batches: usize,
+        _services: &mut Services,
     ) -> Completion {
-        let _ = self.over_file(delta.target.object, |editor| {
-            editor
-                .file
-                .spare
-                .retain(|buffer| !delta.reserved.contains(buffer))
-        });
         let reason = match result {
             OperationResult::Failed(reason) => reason,
             OperationResult::Cancelled => "the operation was cancelled".into(),
@@ -812,28 +672,14 @@ impl Application for AudioEditor {
             };
             outcome.answer = Some(conversation::answer(seq, 0, Some(reason), self.reread()));
         }
-        if let Change::Spill(buffer) = &delta.change {
-            let buffer = *buffer;
-            if completed_batches > 0 {
-                self.over_file(delta.target.object, |editor| {
-                    editor.file.spilled.insert(buffer);
-                    services.resources.location(
-                        ResourceId {
-                            server: delta.target.server,
-                            buffer,
-                        },
-                        editor.path(buffer),
-                    );
-                });
-            }
-        }
         let returned = if let Change::AddFile(file) = &delta.change {
-            std::iter::once(file.display)
-                .chain(file.spare.iter().copied())
-                .collect()
+            vec![file.display]
         } else {
             Vec::new()
         };
+        // What the server holds is put back to what the list still is: the
+        // join of a file that never opened is freed, and one of an edit that
+        // did not land is stitched again over the list it kept.
         let recovery = match delta.change {
             Change::AddFile(file) => vec![
                 send("/buffer_free", vec![OscType::Int(file.display as i32)]),
@@ -842,45 +688,11 @@ impl Application for AudioEditor {
                     index: Some(file.display as i32),
                 },
             ],
-            Change::Save { .. } => Vec::new(),
-            Change::Spill(buffer) if completed_batches > 0 => vec![
-                send("/buffer_free", vec![OscType::Int(buffer as i32)]),
-                Step::AwaitDone {
-                    command: "/buffer_free".into(),
-                    index: Some(buffer as i32),
-                },
-            ],
-            Change::Spill(_) => Vec::new(),
-            Change::Contents(ref contents) => self
-                .over_file(delta.target.object, |editor| {
-                    let restored = editor
-                        .file
-                        .spilled
-                        .difference(&contents.spilled)
-                        .copied()
-                        .collect::<Vec<_>>();
-                    let mut steps = Vec::new();
-                    for buffer in restored {
-                        steps.push(send("/buffer_free", vec![OscType::Int(buffer as i32)]));
-                        steps.push(Step::AwaitDone {
-                            command: "/buffer_free".into(),
-                            index: Some(buffer as i32),
-                        });
-                    }
-                    if editor.file.copied {
-                        steps.extend(editor.stitched());
-                    } else {
-                        steps.push(send(
-                            "/buffer_free",
-                            vec![OscType::Int(editor.file.display as i32)],
-                        ));
-                        steps.push(Step::AwaitDone {
-                            command: "/buffer_free".into(),
-                            index: Some(editor.file.display as i32),
-                        });
-                    }
-                    steps
-                })
+            Change::Save { .. } => self
+                .over_file(delta.target.object, |editor| editor.stitched())
+                .unwrap_or_default(),
+            Change::Contents(_) => self
+                .over_file(delta.target.object, |editor| editor.stitched())
                 .unwrap_or_default(),
         };
         Completion {
@@ -952,7 +764,7 @@ mod tests {
         }
     }
     fn editor() -> AudioEditor {
-        let mut editor=super::super::new_json(r#"{"take":1,"frames":100,"channels":1,"rate":48000,"display":2,"buffers":[10,11,12,13,14,15,16],"scratch":"scratch"}"#).unwrap();
+        let mut editor=super::super::new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":100,"channels":1,"rate":48000,"display":2}"#).unwrap();
         editor.window(17, None);
         editor
     }
@@ -1003,10 +815,11 @@ mod tests {
             "take",
             "samples",
         );
+        let before = editor.file.contents.clone();
         let ticket = begin(&mut editor, &mut services, Command::Open);
-        assert!(
-            !editor.file.copied,
-            "preparation does not publish the private copy"
+        assert_eq!(
+            editor.file.contents, before,
+            "preparation publishes nothing"
         );
         assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
         (editor, services)
@@ -1085,10 +898,9 @@ mod tests {
         assert!(!failed.committed);
         assert_eq!(editor.file.contents, before);
         assert!(!services.shared.histories.can_undo());
-        assert_eq!(
-            services.shared.resources.collect().len(),
-            1,
-            "only the failed operation's reservation is released"
+        assert!(
+            services.shared.resources.collect().is_empty(),
+            "a render reserves no buffer, so a failed one releases none"
         );
         let ticket = begin(&mut editor, &mut services, stroke());
         assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
@@ -1097,11 +909,38 @@ mod tests {
     }
 
     #[test]
-    fn save_checkpoint_waits_for_io_and_an_edit_during_save_stays_dirty() {
+    fn a_save_over_the_read_file_holds_it_and_an_undo_to_a_save_is_clean() {
         let (mut editor, mut services) = opened();
         let edit = begin(&mut editor, &mut services, stroke());
         finish(&mut editor, &mut services, edit, OperationResult::Success);
         assert!(editor.file.dirty);
+        // a save over the file the list reads moves it, and holds the file
+        // until it lands: an edit waits for it
+        let over = begin(
+            &mut editor,
+            &mut services,
+            Command::Save {
+                target: None,
+                format: "float".into(),
+            },
+        );
+        let during = editor
+            .prepare(request(stroke()), &services.shared)
+            .map(|plan| {
+                services
+                    .operations
+                    .prepare(&mut services.shared.resources, plan)
+            });
+        assert!(
+            matches!(during, Ok(Err(_))),
+            "an edit during the save waits"
+        );
+        assert!(finish(&mut editor, &mut services, over, OperationResult::Success).committed);
+        assert_eq!(editor.target(), &Target::File("/in/take1.wav".into()));
+        let edit = begin(&mut editor, &mut services, stroke());
+        finish(&mut editor, &mut services, edit, OperationResult::Success);
+        // a save elsewhere reads only files that never change: an edit
+        // need not wait
         let ticket = begin(
             &mut editor,
             &mut services,
@@ -1110,24 +949,20 @@ mod tests {
                 format: "float".into(),
             },
         );
-        assert!(matches!(editor.target(), Target::Buffer(1)));
-        let (batch, _) = services.operations.next(ticket).unwrap();
-        assert!(
-            services
-                .operations
-                .complete(
-                    &services.shared.resources,
-                    ticket,
-                    batch,
-                    OperationResult::Success
-                )
-                .is_none()
-        );
-        let edit = begin(&mut editor, &mut services, stroke());
+        let during = editor
+            .prepare(request(stroke()), &services.shared)
+            .map(|plan| {
+                services
+                    .operations
+                    .prepare(&mut services.shared.resources, plan)
+            });
+        let Ok(Ok(edit)) = during else {
+            panic!("an edit during a save elsewhere starts");
+        };
         finish(&mut editor, &mut services, edit, OperationResult::Success);
         assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
         assert_eq!(editor.target(), &Target::File("saved.wav".into()));
-        assert!(editor.file.dirty);
+        assert!(editor.file.dirty, "the edit is newer than what was saved");
         let undo = services
             .shared
             .histories
@@ -1213,19 +1048,7 @@ mod tests {
                 format: "float".into(),
             },
         );
-        let (batch, _) = services.operations.next(ticket).unwrap();
-        assert!(
-            services
-                .operations
-                .complete(
-                    &services.shared.resources,
-                    ticket,
-                    batch,
-                    OperationResult::Success
-                )
-                .is_none()
-        );
-        editor.add_file(super::super::new_json(r#"{"take":50,"frames":200,"channels":2,"rate":44100,"display":51,"buffers":[52,53]}"#).unwrap());
+        editor.add_file(super::super::new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"channels":2,"rate":44100,"display":51}"#).unwrap());
         let focused = editor.focused_file();
         let completion = finish(&mut editor, &mut services, ticket, OperationResult::Success);
         assert!(completion.committed);
@@ -1234,7 +1057,7 @@ mod tests {
             json!({"buffer":99,"frames":100,"channels":1,"rate":48000.0})
         );
         assert_eq!(editor.focused_file(), focused);
-        assert_eq!(editor.target(), &Target::Buffer(50));
+        assert_eq!(editor.target(), &Target::File("/in/take50.wav".into()));
         editor.focus_file(original).unwrap();
         assert_eq!(editor.target(), &Target::Buffer(99));
     }
@@ -1245,8 +1068,10 @@ mod tests {
         let original = editor.focused_file();
         let ticket = begin(&mut editor, &mut services, stroke());
         editor.add_file(
-            super::super::new_json(r#"{"take":50,"frames":200,"display":51,"buffers":[52,53]}"#)
-                .unwrap(),
+            super::super::new_json(
+                r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"display":51}"#,
+            )
+            .unwrap(),
         );
         let focused = editor.focused_file();
         let completion = finish(&mut editor, &mut services, ticket, OperationResult::Success);

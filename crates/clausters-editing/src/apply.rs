@@ -67,6 +67,17 @@ pub enum Step {
     /// offline instance of its own (a `--nrt` process natively, a Worker in a
     /// page) and the queue is released when the file is written.
     Render(Render),
+    /// **Move a file, and wait for it**: what a save over a file a list
+    /// reads does to keep the list's frames, the file it replaces moved out
+    /// of the way and the new one moved where it was. The endpoint renames
+    /// it in its own filesystem (the disk natively, the page's storage in a
+    /// tab), replacing what is at `to`.
+    Move {
+        /// The file moved.
+        from: String,
+        /// Where it goes.
+        to: String,
+    },
 }
 
 /// **An offline render a step asks for**: the score, in the binary format
@@ -544,6 +555,7 @@ pub fn steps_json(steps: &[Step]) -> Value {
                     json!({"await": {"command": command, "index": index}})
                 }
                 Step::Sync(id) => json!({ "sync": id }),
+                Step::Move { from, to } => json!({"move": {"from": from, "to": to}}),
                 Step::Render(render) => json!({"render": {
                     "score": hex(&render.score),
                     "path": render.path,
@@ -601,6 +613,12 @@ pub fn steps_from_json(steps: &Value) -> Vec<Step> {
                 return Some(Step::AwaitDone {
                     command: wait.get("command")?.as_str()?.to_string(),
                     index: wait.get("index").and_then(Value::as_i64).map(|i| i as i32),
+                });
+            }
+            if let Some(moved) = step.get("move") {
+                return Some(Step::Move {
+                    from: moved.get("from")?.as_str()?.to_string(),
+                    to: moved.get("to")?.as_str()?.to_string(),
                 });
             }
             if let Some(render) = step.get("render") {
@@ -703,6 +721,7 @@ mod tests {
                 Step::AwaitDone { command, .. } => format!("await {command}"),
                 Step::Sync(_) => "sync".into(),
                 Step::Render(r) => format!("render {}", r.path),
+                Step::Move { to, .. } => format!("move {to}"),
             })
             .collect()
     }

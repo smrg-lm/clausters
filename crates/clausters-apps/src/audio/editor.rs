@@ -35,7 +35,6 @@
 //! traces in boxes over it included -- so long as one quantity claims the
 //! vertical.
 
-use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -43,24 +42,24 @@ use serde_json::{Value, json};
 
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::tempoclock::{samples_to_secs, secs_to_samples};
-use clausters_document::clipboard::{Clipboard, Content};
+use clausters_document::clipboard::{Clipboard, Content, SegmentPart};
 use clausters_document::parts::{self, PARTS};
-use clausters_document::session::{Location, Part, Source};
+use clausters_document::session::Part;
 use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::view::layers::Stack;
 use clausters_document::{Lifetime, Opaque, Range, SourceId, SourceRef};
 use clausters_editing::apply::{Step, steps_json};
 use clausters_editing::audio_playback::{Pass, space};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message};
-use clausters_editing::load::stitch_message;
 use clausters_editing::samples;
-use clausters_editing::sources::{Held, stitch};
 use clausters_editing::verbs::{self, ActionState, ActionTarget, PasteTarget};
 
 use crate::application::resources::ServerInstance;
 use crate::audio::dialogs;
+use crate::audio::renders;
 use crate::samples::{MEASURES, MeterAt, Window, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, number, text};
+use sources::{FileSource, Sources};
 
 /// **Which views of the take the window shows, and how they are placed**
 /// (the module's vocabulary): one of the two alternatives in the take's lane,
@@ -245,6 +244,8 @@ impl Converse for AudioEditor {
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
         if self.window_state.envelope_widget.map(i64::from) == Some(widget) {
             self.envelope_corrections()
+        } else if self.pictures().any(|w| i64::from(w) == widget) {
+            self.redrawn(widget)
         } else {
             resync(widget)
         }
@@ -351,6 +352,7 @@ impl Converse for AudioEditor {
                 | "preview_off"
                 | "free_preview"
                 | "apply"
+                | "reverse"
                 | "show_all_channels"
         ) {
             out.turn = Kind::Route;
@@ -470,16 +472,25 @@ const NO_FILE_OPEN: &str = "no file is open";
 
 /// What an audio editor is put back to when a step it took part in is
 /// refused elsewhere ([`AudioEditor::before_step`]).
-pub(crate) struct Kept(parts::Take, BTreeSet<i64>, u64);
+pub(crate) struct Kept(parts::Take, u64);
 
 /// **An audio editor**: the take it opened, the list of parts it is now, the
 /// join that list is drawn from, and one view's end of the conversation.
 #[derive(Clone, Debug)]
 pub struct AudioEditor {
-    planned_allocations: Option<Vec<(i64, u64, f64)>>,
     file: AudioFileState,
     window_state: AudioWindowState,
     open_files: AudioFiles,
+}
+
+/// **What a file the editor makes is written from** by the open.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Written {
+    /// A server buffer the editor was opened over, edited in the working
+    /// folder and written back by a save.
+    Buffer(i64),
+    /// Nothing: a new file is silence until something is put in it.
+    Silence,
 }
 
 /// An open object's identity, independent of its current server buffer.
@@ -494,15 +505,20 @@ struct FileId(i64);
 struct AudioFileState {
     id: FileId,
     presentation: AudioFileViewState,
-    take: i64,
     channels: u32,
     rate: f64,
-    // The stitched join, distinct from the object's identity.
+    // The join the server plays, distinct from the object's identity.
     display: i64,
     target: Target,
-    // The input buffer is only written by save. Edits use a private copy.
-    opened: i64,
-    copied: bool,
+    // The file the take was opened from, one of `sources`; none for a file
+    // not written yet.
+    opened: Option<SourceId>,
+    // The files the list reads, and their rates as the list counts them.
+    sources: Sources,
+    rates: BTreeMap<SourceId, f64>,
+    // What the open writes the file from, for a file the editor makes:
+    // a server buffer it was opened over, or silence for a new file.
+    written_from: Option<Written>,
     contents: parts::Take,
     dirty: bool,
     revision: u64,
@@ -511,12 +527,7 @@ struct AudioFileState {
     written_format: Option<String>,
     codec: Option<String>,
     sample_format: Option<String>,
-    owns_opened: bool,
     effect_installed: bool,
-    frames: BTreeMap<i64, u64>,
-    rates: BTreeMap<SourceId, f64>,
-    spare: Vec<i64>,
-    spilled: BTreeSet<i64>,
     name: Option<String>,
 }
 
@@ -545,7 +556,11 @@ struct AudioWindowState {
     binding_generation: u64,
     meter_widget: Option<i32>,
     envelope_widget: Option<i32>,
-    scratch: Option<String>,
+    // The working folder the editor's renders and the peaks of what it
+    // opened are written to; the client's, made when the editor opens.
+    workspace: Option<String>,
+    // The engine's rate, which the join it plays is stitched at.
+    engine_rate: f64,
     scratch_scope: crate::application::resources::ScratchScope,
     chunk: usize,
     lane: Option<i32>,
@@ -574,10 +589,10 @@ struct AudioFiles {
 }
 
 /// A part reading frames `start..end` of `buffer`.
-fn part(buffer: i64, start: u64, end: u64) -> Part {
+fn part(source: SourceId, start: u64, end: u64) -> Part {
     Part {
         source: SourceRef {
-            source: SourceId(buffer as u64),
+            source,
             lifetime: Lifetime::Temporary,
             generation: 0,
             range: Some(Range { start, end }),
@@ -596,6 +611,10 @@ fn send(addr: &str, args: Vec<OscType>) -> Step {
         args,
     })
 }
+
+/// What a paste or a mix carries in: the parts it puts in, and the steps
+/// that make the file they read when the clipboard held samples.
+type Carried = (Vec<Part>, Vec<Step>);
 
 impl AudioEditor {
     /// **The window's actions as they read now**, by verb: what each
@@ -709,12 +728,12 @@ impl AudioEditor {
 }
 
 impl AudioEditor {
-    /// An editor over the take in `take` -- `frames` long, `channels` wide,
-    /// at `rate` -- drawn through the join `display`, measured by `layers`,
-    /// whose history is at `version`; or the reason the stack is refused.
-    pub fn new(
-        take: i64,
-        frames: u64,
+    /// An editor over the file `opened` (none for a file not written yet),
+    /// `channels` wide at `rate`, played through the join `display`,
+    /// measured by `layers`, whose history is at `version`; or the reason
+    /// the stack is refused.
+    pub(crate) fn new(
+        opened: Option<FileSource>,
         channels: u32,
         rate: f64,
         display: i64,
@@ -722,7 +741,6 @@ impl AudioEditor {
         version: i64,
     ) -> Result<Self, String> {
         let mut editor = Self {
-            planned_allocations: None,
             file: AudioFileState {
                 id: FileId(1),
                 presentation: AudioFileViewState {
@@ -737,13 +755,14 @@ impl AudioEditor {
                     vertical: BTreeMap::new(),
                     folded: BTreeSet::new(),
                 },
-                take,
                 channels: channels.max(1),
                 rate: if rate > 0.0 { rate } else { 48_000.0 },
                 display,
-                target: Target::Buffer(take),
-                opened: take,
-                copied: false,
+                target: Target::File(String::new()),
+                opened: None,
+                sources: Sources::new(),
+                rates: BTreeMap::new(),
+                written_from: None,
                 contents: parts::Take::default(),
                 dirty: false,
                 revision: 1,
@@ -752,12 +771,7 @@ impl AudioEditor {
                 written_format: None,
                 codec: None,
                 sample_format: None,
-                owns_opened: false,
                 effect_installed: false,
-                frames: BTreeMap::new(),
-                rates: BTreeMap::new(),
-                spare: Vec::new(),
-                spilled: BTreeSet::new(),
                 name: None,
             },
             window_state: AudioWindowState {
@@ -765,7 +779,8 @@ impl AudioEditor {
                 binding_generation: 0,
                 meter_widget: None,
                 envelope_widget: None,
-                scratch: None,
+                workspace: None,
+                engine_rate: 0.0,
                 scratch_scope: Default::default(),
                 chunk: DEFAULT_CHUNK,
                 lane: None,
@@ -789,25 +804,126 @@ impl AudioEditor {
                 next_id: 2,
             },
         };
-        editor.reopen(take, frames);
+        if let Some(file) = opened {
+            editor.file.target = Target::File(if file.render {
+                String::new()
+            } else {
+                file.path.clone()
+            });
+            editor.reopen(file);
+        }
         editor.ensure_envelope();
         Ok(editor)
     }
 
-    /// Starts over on the take in `take`: the list is the whole of it.
-    fn reopen(&mut self, take: i64, frames: u64) {
-        self.file.take = take;
-        self.file.frames.insert(take, frames);
+    /// Starts over on `file`: the list is the whole of it.
+    fn reopen(&mut self, file: FileSource) {
+        let id = self.add_source(file);
+        let frames = self.file.sources[&id].frames;
+        self.file.opened = Some(id);
         self.file.contents.parts = if frames > 0 {
-            vec![part(take, 0, frames)]
+            vec![part(id, 0, frames)]
         } else {
             Vec::new()
         };
     }
 
+    /// **A file the list may read**, added to the table under its id: what
+    /// a render the editor wrote, a file it opened or a file a paste names
+    /// becomes. Answers the id.
+    pub(crate) fn add_source(&mut self, file: FileSource) -> SourceId {
+        let id = sources::id_of(&file.path);
+        if file.rate != self.file.rate {
+            self.file.rates.insert(id, file.rate);
+        }
+        self.file.sources.entry(id).or_insert(file);
+        id
+    }
+
+    /// **The working folder**, or why an edit that writes a file cannot.
+    fn workspace(&self) -> Result<&str, String> {
+        self.window_state
+            .workspace
+            .as_deref()
+            .ok_or_else(|| "the editor has no working folder to write a render into".into())
+    }
+
+    /// **A new file in the working folder**, for what this edit renders:
+    /// named after the file, its next revision and `what`, so two edits never
+    /// write one file.
+    fn render_output(&self, what: &str) -> Result<renders::Output, String> {
+        let path = format!(
+            "{}/{}-{}-{what}.w64",
+            self.workspace()?,
+            self.file.id.0,
+            self.file.next_revision + 1
+        );
+        Ok(renders::Output {
+            peaks: sources::peaks_beside(&path),
+            path,
+            format: "float".into(),
+        })
+    }
+
+    /// The list a render reads: the span `from..to` of the take, at its rate.
+    fn render_list(&self, from: u64, to: u64) -> Result<renders::List, String> {
+        let span = parts::span(&self.file.contents.parts, from, to, &self.rates_of())?;
+        Ok(sources::list(
+            &span,
+            &self.file.sources,
+            self.file.channels,
+            self.file.rate,
+        ))
+    }
+
+    /// **A render, as the source it makes**: the file `out` names, `frames`
+    /// long at `rate`, written by this editor.
+    fn rendered(&mut self, out: &renders::Output, frames: u64, rate: f64) -> SourceId {
+        self.add_source(FileSource {
+            path: out.path.clone(),
+            peaks: out.peaks.clone(),
+            frames,
+            channels: self.file.channels,
+            rate,
+            render: true,
+        })
+    }
+
     /// The list the take is now.
     pub fn list(&self) -> &[Part] {
         &self.file.contents.parts
+    }
+
+    /// **The file each part of the list reads**, by the stem of its path:
+    /// what a test reads of the list without knowing the ids.
+    #[cfg(test)]
+    pub(crate) fn part_files(&self) -> Vec<String> {
+        self.file
+            .contents
+            .parts
+            .iter()
+            .filter_map(|part| self.file.sources.get(&part.source.source))
+            .map(|source| {
+                std::path::Path::new(&source.path)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect()
+    }
+
+    /// **A request for a file to add, in this editor's folder**: a file
+    /// added writes its renders where the editor's do, at the engine's rate
+    /// it plays at, unless the request names its own.
+    pub(crate) fn with_folder(&self, request: &Value) -> Value {
+        let mut request = request.clone();
+        if request.get("workspace").is_none_or(Value::is_null) {
+            request["workspace"] = json!(self.window_state.workspace);
+        }
+        if request.get("engine_rate").is_none_or(Value::is_null) {
+            request["engine_rate"] = json!(self.window_state.engine_rate);
+        }
+        request
     }
 
     /// How many frames the take is now.
@@ -923,184 +1039,125 @@ impl AudioEditor {
         out
     }
 
-    /// Scope remote references and scratch names to this endpoint incarnation.
+    /// Scope remote references to this endpoint incarnation.
     pub(crate) fn set_server(&mut self, server: crate::application::resources::ServerInstance) {
         self.window_state.scratch_scope.server = server;
     }
 
-    pub(crate) fn storage_available(&self) -> bool {
-        self.window_state.scratch.is_some()
-    }
-
-    /// Source metadata for the resource service, across open files.
-    pub(crate) fn resource_sources(&self) -> Vec<(i64, u64, Option<String>, bool)> {
-        if !self.open_files.open {
+    /// **The files to delete now that nothing names `source`**: a render of
+    /// this editor's that no open file's list reads any more (the history
+    /// that let go of it said so), and its peaks. Nothing for a file the user
+    /// owns, or one a list still reads.
+    pub(crate) fn release(&mut self, source: SourceId) -> Vec<String> {
+        if self.rooted().contains(&source) {
             return Vec::new();
         }
-        std::iter::once(&self.file)
-            .chain(self.open_files.parked.values())
-            .flat_map(|file| {
-                file.frames.iter().map(|(&buffer, &frames)| {
-                    (
-                        buffer,
-                        frames * u64::from(file.channels) * 4,
-                        file.spilled
-                            .contains(&buffer)
-                            .then(|| self.path(buffer))
-                            .flatten(),
-                        buffer != file.opened || file.owns_opened,
-                    )
-                })
-            })
-            .collect()
-    }
-
-    /// How many bytes the take in `buffer` holds, or `None` for one this editor
-    /// never knew.
-    pub fn bytes(&self, buffer: i64) -> Option<u64> {
-        self.file
-            .frames
-            .get(&buffer)
-            .map(|frames| frames * u64::from(self.file.channels) * 4)
-            .or_else(|| {
-                self.open_files
-                    .parked
-                    .values()
-                    .find_map(|f| f.bytes(buffer))
-            })
-    }
-
-    /// Forgets a take the caller is about to free, so nothing here names it.
-    pub fn forget(&mut self, buffer: i64) {
+        let mut out = Vec::new();
         for file in std::iter::once(&mut self.file).chain(self.open_files.parked.values_mut()) {
-            if buffer != file.take {
-                file.frames.remove(&buffer);
-                file.spilled.remove(&buffer);
+            if let Some(gone) = file.sources.remove(&source) {
+                file.rates.remove(&source);
+                if gone.render && !out.contains(&gone.path) {
+                    out.push(gone.path);
+                    out.push(gone.peaks);
+                }
             }
         }
-    }
-
-    /// Whether a take is stored rather than resident, across all open files.
-    pub fn is_spilled(&self, buffer: i64) -> bool {
-        std::iter::once(&self.file)
-            .chain(self.open_files.parked.values())
-            .any(|file| file.spilled.contains(&buffer))
-    }
-
-    /// Where the take in `buffer` is written when it leaves memory.
-    fn path(&self, buffer: i64) -> Option<String> {
-        let scratch = self.window_state.scratch.as_deref()?;
-        Some(self.window_state.scratch_scope.path(scratch, buffer))
-    }
-
-    /// **Takes a take out of memory**: the steps that write it to the scratch
-    /// path and free its buffer, or `None` for one that cannot go -- no
-    /// scratch, the take this editor opened, one the list reads now, one
-    /// already on disk, or one it never made. Written as float, so what is
-    /// read back is what was written.
-    pub fn spill(&mut self, buffer: i64) -> Option<Value> {
-        let path = self.path(buffer)?;
-        let file = std::iter::once(&mut self.file)
-            .chain(self.open_files.parked.values_mut())
-            .find(|file| file.frames.contains_key(&buffer))?;
-        let reads = parts::sources(&file.contents.parts).contains(&SourceId(buffer as u64));
-        if buffer == file.take || reads || file.spilled.contains(&buffer) {
-            return None;
-        }
-        file.spilled.insert(buffer);
-        let index = buffer as i32;
-        Some(steps_json(&[
-            send(
-                "/buffer_write",
-                vec![
-                    OscType::Int(index),
-                    OscType::String(path),
-                    OscType::String("wav".into()),
-                    OscType::String("float".into()),
-                ],
-            ),
-            Step::AwaitDone {
-                command: "/buffer_write".into(),
-                index: Some(index),
-            },
-            send("/buffer_free", vec![OscType::Int(index)]),
-            Step::AwaitDone {
-                command: "/buffer_free".into(),
-                index: Some(index),
-            },
-        ]))
+        out
     }
 
     /// **Saving: the take as the edits have left it, written where it belongs.**
     ///
     /// With no `to` it is written **over what the take was opened from** --
-    /// the file it was read from, or the server buffer it was opened over. An
-    /// audio editor's save is the user's own act on the user's own file or
-    /// buffer, the one place the program writes one. With a `to` it is a
-    /// save-as: the edit goes to that file or that buffer, which becomes the
-    /// one a later save writes. The join is read through its parts, so what
-    /// lands is exactly what is heard.
+    /// the file, or the server buffer it was opened over. With a `to` it is a
+    /// save-as, which a later save then writes over. The list is rendered
+    /// into the file through its parts, so what lands is exactly what is
+    /// heard (`renders::consolidate`).
     ///
-    /// **A file** is written as a WAV in `format` (`"float"`, `"int24"` or
-    /// `"int16"`). **A buffer** is rewritten whole, at the take's length -- a
-    /// cut made it shorter, a paste longer -- so whatever reads it hears the
-    /// edit from then on; saving into a buffer that is sounding is heard as the
-    /// glitch it is, and it is the user's to avoid rather than the editor's to
-    /// refuse. A new buffer is the caller's to hand over, as every buffer
-    /// number here is.
+    /// **A file the list reads is never written while it is read**: the
+    /// take is rendered into the working folder, the file it replaces is
+    /// moved there and the list goes on naming it where it now is, and the
+    /// render is moved where the file was (two `Step::Move`s). So an undo
+    /// past the save still has the frames it reads. **A buffer** is filled
+    /// from the rendered file, at the take's length.
     ///
-    /// These are a save operation's steps, built over the operation's draft,
-    /// which they leave naming the destination. Nothing here is clean yet:
-    /// the saved revision, the target and the format are the editor's only
-    /// once the write has succeeded and the operation commits.
+    /// These are a save operation's steps, built over its draft, which they
+    /// leave naming the destination and any file moved.
     fn save_steps(&mut self, to: Option<Target>, format: &str) -> Result<Vec<Step>, String> {
         let to = self.save_target(to, format)?;
-        let display = self.file.display as i32;
-        let steps = match &to {
-            Target::File(path) => vec![
-                send(
-                    "/buffer_write",
-                    vec![
-                        OscType::Int(display),
-                        OscType::String(path.clone()),
-                        OscType::String("wav".into()),
-                        OscType::String(format.into()),
-                    ],
-                ),
-                Step::AwaitDone {
-                    command: "/buffer_write".into(),
-                    index: Some(display),
-                },
-            ],
+        let frames = self.length();
+        let list = self.render_list(0, frames)?;
+        let mut moves: Vec<Step> = Vec::new();
+        let mut steps = match &to {
+            Target::File(path) => {
+                let read = self.file.sources.values().any(|s| s.path == *path);
+                if read {
+                    let held = format!(
+                        "{}/{}-{}-replaced.w64",
+                        self.workspace()?,
+                        self.file.id.0,
+                        self.file.next_revision + 1
+                    );
+                    let fresh = format!("{held}.saving");
+                    let out = renders::Output {
+                        path: fresh.clone(),
+                        peaks: sources::peaks_beside(&fresh),
+                        format: format.into(),
+                    };
+                    moves.push(Step::Move {
+                        from: path.clone(),
+                        to: held.clone(),
+                    });
+                    moves.push(Step::Move {
+                        from: fresh,
+                        to: path.clone(),
+                    });
+                    // The list reads the file it replaces where it now is: the
+                    // source keeps its id, so every list the history holds
+                    // reads the moved file too, and it is a render of this
+                    // editor's from now on, which goes when nothing names it.
+                    for source in self.file.sources.values_mut() {
+                        if source.path == *path {
+                            source.path = held.clone();
+                            source.peaks = sources::peaks_beside(&held);
+                            source.render = true;
+                        }
+                    }
+                    let mut steps = vec![renders::consolidate(&list, &out)];
+                    steps.append(&mut moves);
+                    steps
+                } else {
+                    let out = renders::Output {
+                        path: path.clone(),
+                        peaks: String::new(),
+                        format: format.into(),
+                    };
+                    vec![renders::consolidate(&list, &out)]
+                }
+            }
             Target::Buffer(buffer) => {
-                let frames = self.length();
-                let width = u64::from(self.file.channels);
-                let mut steps = self.allocate(*buffer, frames);
-                steps.push(send(
-                    "/buffer_gen",
-                    vec![
-                        OscType::Int(*buffer as i32),
-                        OscType::String("copy".into()),
-                        OscType::Int(0),
-                        OscType::Int(display),
-                        OscType::Int(0),
-                        OscType::Int((frames * width) as i32),
-                    ],
-                ));
-                steps.push(Step::AwaitDone {
-                    command: "/buffer_gen".into(),
-                    index: Some(*buffer as i32),
-                });
-                steps
+                let out = self.render_output("saved")?;
+                vec![
+                    renders::consolidate(&list, &out),
+                    send(
+                        "/buffer_allocRead",
+                        vec![OscType::Int(*buffer as i32), OscType::String(out.path)],
+                    ),
+                    Step::AwaitDone {
+                        command: "/buffer_allocRead".into(),
+                        index: Some(*buffer as i32),
+                    },
+                ]
             }
         };
         self.file.target = to;
+        // The list names the moved file now, so the join is stitched again.
+        steps.extend(self.stitched());
         Ok(steps)
     }
 
     /// **Where a save writes**, `to` or what the take was opened from,
-    /// checked: a known format, a file with a path, a buffer the editor does
-    /// not read.
+    /// checked: a known format, a file with a path, a buffer that is not the
+    /// one the editor plays.
     pub(super) fn save_target(&self, to: Option<Target>, format: &str) -> Result<Target, String> {
         let to = to.unwrap_or_else(|| self.file.target.clone());
         if !matches!(format, "float" | "int24" | "int16") {
@@ -1110,13 +1167,9 @@ impl AudioEditor {
         }
         match &to {
             Target::File(path) if path.is_empty() => Err("a file is saved under a path".into()),
-            Target::Buffer(buffer)
-                if *buffer == self.file.display || self.file.frames.contains_key(buffer) =>
-            {
-                Err(format!(
-                    "buffer {buffer} is one this editor reads: save into another"
-                ))
-            }
+            Target::Buffer(buffer) if *buffer == self.file.display => Err(format!(
+                "buffer {buffer} is the one this editor plays: save into another"
+            )),
             _ => Ok(to),
         }
     }
@@ -1126,122 +1179,113 @@ impl AudioEditor {
         &self.file.target
     }
 
-    /// The steps that read back every take on disk the list now reads, before
-    /// the join over it is stitched.
-    fn restored(&mut self) -> Vec<Step> {
-        let wanted: Vec<i64> = parts::sources(&self.file.contents.parts)
-            .iter()
-            .map(|s| s.0 as i64)
-            .filter(|b| self.file.spilled.contains(b))
-            .collect();
-        let mut steps = Vec::new();
-        for buffer in wanted {
-            let Some(path) = self.path(buffer) else {
-                continue;
-            };
-            self.file.spilled.remove(&buffer);
-            steps.push(send(
-                "/buffer_allocRead",
-                vec![OscType::Int(buffer as i32), OscType::String(path)],
-            ));
-            steps.push(Step::AwaitDone {
-                command: "/buffer_allocRead".into(),
-                index: Some(buffer as i32),
-            });
-        }
-        steps
-    }
-
-    /// **Opening: a private copy of what the editor was opened over, and the
-    /// window's join stitched over it.**
+    /// **Opening: the file read for its peaks, and the join the server plays
+    /// stitched over it.**
     ///
-    /// The buffer the editor was handed is never named by the history, so a
-    /// save can rewrite it -- the user's buffer, or the one a file was read
-    /// into -- without taking the frames an undo needs away from under it.
-    /// The copy is a buffer the caller handed over, as every new take is;
-    /// with none, the editor cannot open.
+    /// Nothing of the file is read but its header (the client's, before the
+    /// editor exists) and, once, its samples into its peaks, which are kept in
+    /// the working folder: a render of the file into a `PeaksOut`. A server
+    /// buffer the editor was opened over is written into the working folder
+    /// first and edited there; the buffer is written again by a save and by
+    /// nothing else.
     pub fn open(&mut self) -> Result<Value, String> {
         self.open_steps().map(|steps| steps_json(&steps))
     }
 
     fn open_steps(&mut self) -> Result<Vec<Step>, String> {
         let mut steps = Vec::new();
-        if !self.file.copied {
-            let frames = self
-                .file
-                .frames
-                .get(&self.file.opened)
-                .copied()
-                .unwrap_or(0);
-            let copy = self.next_buffer()?;
-            steps.extend(self.allocate(copy, frames));
+        let opened = self
+            .file
+            .opened
+            .and_then(|id| self.file.sources.get(&id).cloned());
+        let written = self.file.written_from.take();
+        if let (Some(Written::Silence), Some(file)) = (written, opened.as_ref()) {
+            let out = renders::Output {
+                path: file.path.clone(),
+                peaks: file.peaks.clone(),
+                format: "float".into(),
+            };
+            steps.push(renders::silence(
+                file.frames,
+                file.channels,
+                file.rate,
+                &out,
+            ));
+            steps.extend(self.stitched());
+            return Ok(steps);
+        }
+        if let (Some(Written::Buffer(buffer)), Some(file)) = (written, opened.as_ref()) {
             steps.push(send(
-                "/buffer_gen",
+                "/buffer_write",
                 vec![
-                    OscType::Int(copy as i32),
-                    OscType::String("copy".into()),
-                    OscType::Int(0),
-                    OscType::Int(self.file.opened as i32),
-                    OscType::Int(0),
-                    OscType::Int((frames * u64::from(self.file.channels)) as i32),
+                    OscType::Int(buffer as i32),
+                    OscType::String(file.path.clone()),
+                    OscType::String("w64".into()),
+                    OscType::String("float".into()),
                 ],
             ));
             steps.push(Step::AwaitDone {
-                command: "/buffer_gen".into(),
-                index: Some(copy as i32),
+                command: "/buffer_write".into(),
+                index: Some(buffer as i32),
             });
-            if !self.file.owns_opened {
-                self.file.frames.remove(&self.file.opened);
-            }
-            self.reopen(copy, frames);
-            self.file.copied = true;
+        }
+        if let Some(file) = opened.filter(|f| f.frames > 0) {
+            let whole = SegmentPart {
+                path: file.path.clone(),
+                start: 0,
+                frames: file.frames,
+                fade_in: 0,
+                fade_out: 0,
+                fade_in_shape: Default::default(),
+                fade_out_shape: Default::default(),
+                channels: None,
+                source_channels: file.channels,
+                source_frames: file.frames,
+                source_rate: file.rate,
+            };
+            steps.push(renders::measure(&whole, &file.peaks));
         }
         steps.extend(self.stitched());
         Ok(steps)
     }
 
-    /// The list, stitched into the display buffer, and the `/done` awaited.
+    /// **The join the server plays**, stitched over the list's files at the
+    /// engine's rate -- so a file at another rate plays at its pitch -- and
+    /// the `/done` awaited. Nothing for an empty list.
     fn stitched(&self) -> Vec<Step> {
-        let held: HashMap<SourceId, Held> = self
-            .file
-            .frames
-            .iter()
-            .map(|(buffer, frames)| {
-                (
-                    SourceId(*buffer as u64),
-                    Held {
-                        buffer: *buffer as i32,
-                        channels: self.file.channels as usize,
-                        frames: *frames,
-                        rate: self
-                            .file
-                            .rates
-                            .get(&SourceId(*buffer as u64))
-                            .copied()
-                            .unwrap_or(self.file.rate),
-                    },
-                )
-            })
-            .collect();
-        let mut source = Source::volatile(Lifetime::Temporary).shaped(
+        let rate = if self.window_state.engine_rate > 0.0 {
+            self.window_state.engine_rate
+        } else {
+            self.file.rate
+        };
+        let list = sources::list(
+            &self.file.contents.parts,
+            &self.file.sources,
             self.file.channels,
-            self.length(),
-            self.file.rate,
+            rate,
         );
-        source.location = Location::Segments {
-            parts: self.file.contents.parts.clone(),
-        };
-        let Some(made) = stitch(&source, &held) else {
+        if list.parts.is_empty() {
             return Vec::new();
-        };
+        }
         let display = self.file.display as i32;
         vec![
-            Step::Send(stitch_message(display, &made)),
+            Step::Send(sources::stitch(display, &list)),
             Step::AwaitDone {
                 command: "/buffer_stitch".into(),
                 index: Some(display),
             },
         ]
+    }
+
+    /// **The list the window draws**: the parts by location, at the file's
+    /// rate, each with its file's peaks.
+    pub(crate) fn segments(&self) -> Value {
+        sources::wire_list(
+            &self.file.contents.parts,
+            &self.file.sources,
+            self.file.channels,
+            self.file.rate,
+        )
     }
 
     /// **The window**, numbered with the take widget's id, drawing the join.
@@ -1261,6 +1305,7 @@ impl AudioEditor {
         // only a meter the window draws is corrected afterwards
         self.window_state.meter_widget = meter.map(|m| m.widget);
         let label = self.pane_label();
+        let segments = self.segments();
         let mut tree = window(&Window {
             buffer: self.file.display,
             channels: self.file.channels,
@@ -1282,6 +1327,7 @@ impl AudioEditor {
                 .lane
                 .filter(|_| self.file.presentation.views == Views::Stacked),
             empty: !self.open_files.open,
+            segments: Some(&segments),
         });
         self.compose_envelope(&mut tree);
         self.refresh_files();
@@ -1343,18 +1389,13 @@ impl AudioEditor {
     /// **What a history step is put back to** when another structure of the
     /// same step refuses it: the list, and which takes are on disk.
     pub(crate) fn before_step(&self) -> Kept {
-        Kept(
-            self.file.contents.clone(),
-            self.file.spilled.clone(),
-            self.file.revision,
-        )
+        Kept(self.file.contents.clone(), self.file.revision)
     }
 
     /// Puts back what [`before_step`](Self::before_step) kept.
     pub(crate) fn put_back(&mut self, kept: Kept) {
         self.file.contents = kept.0;
-        self.file.spilled = kept.1;
-        self.file.revision = kept.2;
+        self.file.revision = kept.1;
         self.file.dirty = self.file.revision != self.file.saved_revision;
     }
 
@@ -1389,9 +1430,7 @@ impl AudioEditor {
         }
         self.file.dirty = self.file.revision != self.file.saved_revision;
         self.ensure_envelope();
-        let mut steps = self.restored();
-        steps.extend(self.stitched());
-        Some(steps_json(&steps))
+        Some(steps_json(&self.stitched()))
     }
 
     /// **One message from the host**, read and answered ([`turn::turn`]).
@@ -1415,7 +1454,19 @@ impl AudioEditor {
 
     /// **Every picture of the take, read again** ([`resync`]).
     pub(super) fn reread(&self) -> Vec<Correction> {
-        self.pictures().flat_map(|w| resync(i64::from(w))).collect()
+        self.pictures()
+            .flat_map(|w| self.redrawn(i64::from(w)))
+            .collect()
+    }
+
+    /// **A picture of the take, told the list it is now**: the host draws
+    /// the new list from its files, keeping what it drew until the new one
+    /// has come.
+    fn redrawn(&self, widget: i64) -> Vec<Correction> {
+        vec![Correction {
+            widget,
+            props: json!({"segments": self.segments()}),
+        }]
     }
 
     /// **Every widget of the window, corrected** -- what a history step leaves
@@ -1549,13 +1600,13 @@ impl AudioEditor {
             "cut" | "delete" => self.cut(tag, values),
             "paste" => self.paste(values),
             "mix" => self.mix(values),
+            "reverse" => self.reverse(values),
             _ => return (None, Vec::new()),
         };
         match edited {
             Ok(Some((label, list, mut steps))) => {
                 let before = self.file.contents.clone();
                 self.file.contents.parts = list;
-                steps.extend(self.restored());
                 steps.extend(self.stitched());
                 out.record = Some(self.record(&label, &before));
                 out.planned_steps = steps.clone();
@@ -1605,41 +1656,9 @@ impl AudioEditor {
         }
     }
 
-    /// A buffer for a new take, or the reason there is none.
-    fn next_buffer(&mut self) -> Result<i64, String> {
-        if self.file.spare.is_empty() {
-            return Err("no buffer was handed over for the take this edit writes".into());
-        }
-        Ok(self.file.spare.remove(0))
-    }
-
-    /// The steps that make `buffer` a take `frames` long at the editor's rate.
-    fn allocate(&mut self, buffer: i64, frames: u64) -> Vec<Step> {
-        self.allocate_at(buffer, frames, self.file.rate)
-    }
-
-    /// The steps that make `buffer` a take `frames` long at `rate`.
-    fn allocate_at(&mut self, buffer: i64, frames: u64, rate: f64) -> Vec<Step> {
-        if let Some(allocations) = &mut self.planned_allocations {
-            allocations.push((buffer, frames, rate));
-        }
-        vec![
-            send(
-                "/buffer_alloc",
-                vec![
-                    OscType::Int(buffer as i32),
-                    OscType::Int(frames as i32),
-                    OscType::Int(self.file.channels as i32),
-                    OscType::Float(rate as f32),
-                ],
-            ),
-            Step::Sync(buffer as i32),
-        ]
-    }
-
-    /// **A pencil stroke is a new take the size of the stroke**, made of the
-    /// frames it was drawn over with the drawn channel written in, and spliced
-    /// over those frames.
+    /// **A pencil stroke is a new take the size of the stroke**: a render of
+    /// the frames it was drawn over, the drawn channel written in and the
+    /// others what the list holds there, spliced over those frames.
     fn stroke(&mut self, tag: &str, values: &[Value]) -> Result<Edited, String> {
         let taken = samples::intake(tag, values);
         let Some(payload) = taken.payloads.first() else {
@@ -1650,10 +1669,10 @@ impl AudioEditor {
         };
         let start = number(payload.get("start").unwrap_or(&Value::Null)).max(0.0) as u64;
         let channel = number(payload.get("channel").unwrap_or(&Value::Null)).max(0.0) as u32;
-        let mut drawn: Vec<Value> = payload
+        let mut drawn: Vec<f32> = payload
             .get("values")
             .and_then(Value::as_array)
-            .cloned()
+            .map(|v| v.iter().map(|x| number(x) as f32).collect())
             .unwrap_or_default();
         let total = self.length();
         if start >= total || channel >= self.file.channels {
@@ -1661,97 +1680,45 @@ impl AudioEditor {
         }
         drawn.truncate((total - start) as usize);
         let frames = drawn.len() as u64;
-        let buffer = self.next_buffer()?;
-        let mut steps = self.allocate(buffer, frames);
-        if self.file.channels > 1 {
-            // The frames it was drawn over, every channel: the other channels
-            // keep what they held, and the server is what copies them.
-            let width = i64::from(self.file.channels);
-            steps.push(send(
-                "/buffer_gen",
-                vec![
-                    OscType::Int(buffer as i32),
-                    OscType::String("copy".into()),
-                    OscType::Int(0),
-                    OscType::Int(self.file.display as i32),
-                    OscType::Int((start as i64 * width) as i32),
-                    OscType::Int((frames as i64 * width) as i32),
-                ],
-            ));
-            steps.push(Step::AwaitDone {
-                command: "/buffer_gen".into(),
-                index: Some(buffer as i32),
-            });
+        if frames == 0 {
+            return Ok(None);
         }
-        steps.extend(samples::write_steps(
-            buffer as i32,
-            self.file.channels,
-            &json!({ "channel": channel, "start": 0, "values": drawn }),
-            self.window_state.chunk,
-        ));
-        self.file.frames.insert(buffer, frames);
+        let over = self.render_list(start, start + frames)?;
+        let out = self.render_output("stroke")?;
+        let step = renders::stroke(&over, channel, &drawn, &out);
+        let id = self.rendered(&out, frames, self.file.rate);
         let list = parts::replace(
             &self.file.contents.parts,
             start,
             start + frames,
-            &[part(buffer, 0, frames)],
+            &[part(id, 0, frames)],
             &self.rates_of(),
         )?;
-        Ok(Some((taken.label, list, steps)))
+        Ok(Some((taken.label, list, vec![step])))
     }
 
-    /// **A copy, made on the server**: frames `start`..`+len` of the join
-    /// copied into a buffer of their own (a buffer handed over for takes),
-    /// and named on the clipboard. The host draws a take of minutes from a
-    /// summary and holds none of its samples, and a copy that carried them
-    /// would cross the wire twice; this one moves nothing but its name.
+    /// **A copy is the span's parts, by location**: a clipboard of segments,
+    /// each naming its file, so a copy of an hour is a few parts and moves no
+    /// samples, into this window or any other.
     fn copy_span(&mut self, values: &[Value], out: &mut Outcome) -> Result<(), String> {
         let at = |i: usize| values.get(i).map_or(0.0, number).round().max(0.0) as u64;
         let (start, len) = (at(0), at(1).min(self.length().saturating_sub(at(0))));
         if len == 0 {
             return Ok(());
         }
-        let buffer = self.next_buffer()?;
-        let mut steps = self.allocate(buffer, len);
-        steps.extend(self.copied(buffer, self.file.display, start, len));
-        let clip = Clipboard {
-            content: Content::Buffer {
-                channels: self.file.channels,
-                frames: len,
-                sample_rate: self.file.rate,
-                buffer: buffer as i32,
-                location: None,
-            },
-            origin: None,
-        };
-        out.planned_steps = steps.clone();
-        out.steps = Some(steps_json(&steps));
+        let span = parts::span(
+            &self.file.contents.parts,
+            start,
+            start + len,
+            &self.rates_of(),
+        )?;
+        let clip = Clipboard::segments(
+            self.file.channels,
+            self.file.rate,
+            sources::segment_parts(&span, &self.file.sources),
+        );
         out.clipboard = Some(clip.to_json());
-        out.clipboard_buffer = Some(buffer);
         Ok(())
-    }
-
-    /// The steps that copy `frames` frames of `from`, from frame `start`,
-    /// into `into` from its first, and wait for it.
-    fn copied(&self, into: i64, from: i64, start: u64, frames: u64) -> Vec<Step> {
-        let width = u64::from(self.file.channels);
-        vec![
-            send(
-                "/buffer_gen",
-                vec![
-                    OscType::Int(into as i32),
-                    OscType::String("copy".into()),
-                    OscType::Int(0),
-                    OscType::Int(from as i32),
-                    OscType::Int((start * width) as i32),
-                    OscType::Int((frames * width) as i32),
-                ],
-            ),
-            Step::AwaitDone {
-                command: "/buffer_gen".into(),
-                index: Some(into as i32),
-            },
-        ]
     }
 
     /// **A cut takes the span out of the list**, and moves no samples. A
@@ -1776,223 +1743,232 @@ impl AudioEditor {
         Ok(Some((tag.into(), list, Vec::new())))
     }
 
-    /// **A paste is a new take holding the block**, put in at the position.
-    ///
-    /// The block travels with the gesture (the clipboard is the host's), so
-    /// its samples are written into a take of their own. A block at another
-    /// rate keeps it: the take is written at the block's rate and the list
-    /// reads it at the ratio, as every source at another rate is read, so
-    /// nothing is converted on the way in. A block of another width is
-    /// refused, since fitting it would be an edit nobody asked for.
+    /// **What a paste or a mix carries**, as parts of a list this editor can
+    /// read: a clipboard of segments by its files, which nothing has to read
+    /// to put in; a block the host carried, rendered into a file of its own;
+    /// a block a server holds, written into one. The steps make what has to
+    /// be made, and the frames are the block's at the take's rate.
+    fn carried(&mut self, values: &[Value]) -> Result<Option<Carried>, String> {
+        let doc = values.get(2).map(text).unwrap_or_default();
+        let Ok(clip) = serde_json::from_str::<Clipboard>(&doc) else {
+            return Err("the clipboard did not travel with the paste".into());
+        };
+        let fits = |channels: u32, ours: u32| {
+            if channels == ours {
+                Ok(())
+            } else {
+                Err(format!(
+                    "a block of {channels} channels does not paste into a take of {ours}"
+                ))
+            }
+        };
+        match clip.content {
+            Content::Segments {
+                channels, parts, ..
+            } => {
+                fits(channels, self.file.channels)?;
+                let mut list = Vec::with_capacity(parts.len());
+                for segment in parts {
+                    let peaks = self
+                        .file
+                        .sources
+                        .get(&sources::id_of(&segment.path))
+                        .map(|s| s.peaks.clone())
+                        .unwrap_or_else(|| sources::peaks_beside(&segment.path));
+                    let id = self.add_source(FileSource {
+                        path: segment.path.clone(),
+                        peaks,
+                        frames: segment.source_frames,
+                        channels: segment.source_channels,
+                        rate: segment.source_rate,
+                        // a file another editor wrote is that editor's to delete
+                        render: false,
+                    });
+                    let mut piece = part(id, segment.start, segment.start + segment.frames);
+                    piece.fade_in = segment.fade_in;
+                    piece.fade_out = segment.fade_out;
+                    piece.fade_in_shape = segment.fade_in_shape;
+                    piece.fade_out_shape = segment.fade_out_shape;
+                    piece.channels = segment.channels.clone();
+                    list.push(piece);
+                }
+                Ok((!list.is_empty()).then_some((list, Vec::new())))
+            }
+            Content::Buffer {
+                channels,
+                frames,
+                sample_rate,
+                buffer,
+                location,
+            } => {
+                self.check_location(location)?;
+                fits(channels, self.file.channels)?;
+                if frames == 0 {
+                    return Ok(None);
+                }
+                if !sample_rate.is_finite() || sample_rate <= 0.0 {
+                    return Err("the clipboard sample rate must be finite and positive".into());
+                }
+                let out = self.render_output("pasted")?;
+                let written = vec![
+                    send(
+                        "/buffer_write",
+                        vec![
+                            OscType::Int(buffer),
+                            OscType::String(out.path.clone()),
+                            OscType::String("w64".into()),
+                            OscType::String("float".into()),
+                        ],
+                    ),
+                    Step::AwaitDone {
+                        command: "/buffer_write".into(),
+                        index: Some(buffer),
+                    },
+                ];
+                let id = self.rendered(&out, frames, sample_rate);
+                let whole = SegmentPart {
+                    path: out.path.clone(),
+                    start: 0,
+                    frames,
+                    fade_in: 0,
+                    fade_out: 0,
+                    fade_in_shape: Default::default(),
+                    fade_out_shape: Default::default(),
+                    channels: None,
+                    source_channels: channels,
+                    source_frames: frames,
+                    source_rate: sample_rate,
+                };
+                let mut steps = written;
+                steps.push(renders::measure(&whole, &out.peaks));
+                Ok(Some((vec![part(id, 0, frames)], steps)))
+            }
+            Content::Samples { .. } => {
+                let (_, samples, rate) = self.block(values)?;
+                let frames = samples.len() as u64 / u64::from(self.file.channels);
+                if frames == 0 {
+                    return Ok(None);
+                }
+                let out = self.render_output("pasted")?;
+                let step = renders::block_file(&samples, self.file.channels, rate, &out);
+                let id = self.rendered(&out, frames, rate);
+                Ok(Some((vec![part(id, 0, frames)], vec![step])))
+            }
+            other => Err(format!(
+                "a take takes samples, and the clipboard holds {}",
+                other.kind()
+            )),
+        }
+    }
+
+    /// **A paste puts what the clipboard carries in at the position**: a
+    /// copy of segments as its parts, and a block as a file of its own, at
+    /// its own rate -- the list reads it at the ratio, so nothing is
+    /// converted on the way in.
     fn paste(&mut self, values: &[Value]) -> Result<Edited, String> {
-        if let Some(pasted) = self.held_block(values)? {
-            return Ok(Some(pasted));
-        }
-        let (position, samples, rate) = self.block(values)?;
-        let frames = samples.len() as u64 / u64::from(self.file.channels);
-        if frames == 0 {
+        let position = values.first().map_or(0.0, number).round().max(0.0) as u64;
+        let Some((carried, steps)) = self.carried(values)? else {
             return Ok(None);
-        }
-        let buffer = self.next_buffer()?;
-        let mut steps = self.allocate_at(buffer, frames, rate);
-        steps.extend(self.fill(buffer, &samples));
-        self.file.frames.insert(buffer, frames);
-        if rate != self.file.rate {
-            self.file.rates.insert(SourceId(buffer as u64), rate);
-        }
+        };
         let list = parts::insert(
             &self.file.contents.parts,
             position,
-            &[part(buffer, 0, frames)],
+            &carried,
             &self.rates_of(),
         )?;
         Ok(Some(("paste".into(), list, steps)))
     }
 
-    /// **A mix adds the block onto the frames it lands on**, and the result is
-    /// a new take over those frames.
-    ///
-    /// The frames under the block are copied out of the join into a take of
-    /// their own, the block is written into a scratch buffer, and the server
-    /// adds one into the other (`/buffer_mix`) -- the sum is an operation over
-    /// samples, so it is the server's. The scratch buffer is freed by the same
-    /// steps and goes back to the ones this editor holds. A block that runs
-    /// past the end of the take is mixed as far as the take goes.
+    /// **A mix adds what the clipboard carries onto the frames it lands
+    /// on**: a render of those frames plus it, as long as the frames under
+    /// it (a block that runs past the take is mixed as far as the take
+    /// goes), spliced over them. A sum is taken sample for sample, so the
+    /// block has to be at the take's rate.
     fn mix(&mut self, values: &[Value]) -> Result<Edited, String> {
-        let raw = values.get(2).map(text).unwrap_or_default();
-        if let Ok(Clipboard {
-            content:
-                Content::Buffer {
-                    channels,
-                    frames,
-                    sample_rate,
-                    buffer,
-                    location,
-                },
-            ..
-        }) = serde_json::from_str::<Clipboard>(&raw)
-        {
-            self.check_location(location)?;
-            if channels != self.file.channels || sample_rate != self.file.rate {
-                return Err("paste mixed requires matching channel count and sample rate".into());
-            }
-            let position = values.first().map_or(0.0, number).round().max(0.0) as u64;
-            if position >= self.length() {
-                return Err("the mix lands past the end of the take".into());
-            }
-            let frames = frames.min(self.length() - position);
-            if frames == 0 {
-                return Ok(None);
-            }
-            let take = self.next_buffer()?;
-            let mut steps = self.allocate(take, frames);
-            steps.extend(self.copied(take, self.file.display, position, frames));
-            steps.push(send(
-                "/buffer_mix",
-                vec![
-                    OscType::Int(take as i32),
-                    OscType::Int(0),
-                    OscType::Int(buffer),
-                    OscType::Int(0),
-                    OscType::Int(frames as i32),
-                    OscType::Float(1.0),
-                ],
-            ));
-            steps.push(Step::AwaitDone {
-                command: "/buffer_mix".into(),
-                index: Some(take as i32),
-            });
-            self.file.frames.insert(take, frames);
-            let list = parts::replace(
-                &self.file.contents.parts,
-                position,
-                position + frames,
-                &[part(take, 0, frames)],
-                &self.rates_of(),
-            )?;
-            return Ok(Some(("mix".into(), list, steps)));
+        let position = values.first().map_or(0.0, number).round().max(0.0) as u64;
+        let total = self.length();
+        if position >= total {
+            return Err("the mix lands past the end of the take".into());
         }
-        let (position, mut samples, rate) = self.block(values)?;
-        // A sum is taken sample for sample, so the two have to be one rate:
-        // fitting one to the other is a resampling nobody asked for.
-        if rate != self.file.rate {
+        let doc = values.get(2).map(text).unwrap_or_default();
+        let clip = serde_json::from_str::<Clipboard>(&doc)
+            .map_err(|_| "the clipboard did not travel with the mix".to_string())?;
+        if let Some(rate) = clip.sample_rate()
+            && rate != self.file.rate
+        {
             return Err(format!(
                 "a block at {rate} Hz does not mix into a take at {} Hz",
                 self.file.rate
             ));
         }
-        let width = u64::from(self.file.channels);
-        let total = self.length();
-        if position >= total {
-            return Err("the mix lands past the end of the take".into());
-        }
-        let frames = (samples.len() as u64 / width).min(total - position);
-        samples.truncate((frames * width) as usize);
-        if frames == 0 {
-            return Ok(None);
-        }
-        if self.file.spare.len() < 2 {
-            return Err("a mix needs two buffers handed over: the take and a scratch one".into());
-        }
-        let (take, scratch) = (self.file.spare.remove(0), self.file.spare.remove(0));
-        let mut steps = self.allocate(take, frames);
-        steps.push(send(
-            "/buffer_gen",
-            vec![
-                OscType::Int(take as i32),
-                OscType::String("copy".into()),
-                OscType::Int(0),
-                OscType::Int(self.file.display as i32),
-                OscType::Int((position * width) as i32),
-                OscType::Int((frames * width) as i32),
-            ],
-        ));
-        steps.push(Step::AwaitDone {
-            command: "/buffer_gen".into(),
-            index: Some(take as i32),
-        });
-        steps.extend(self.allocate(scratch, frames));
-        steps.extend(self.fill(scratch, &samples));
-        steps.push(send(
-            "/buffer_mix",
-            vec![
-                OscType::Int(take as i32),
-                OscType::Int(0),
-                OscType::Int(scratch as i32),
-                OscType::Int(0),
-                OscType::Int(frames as i32),
-                OscType::Float(1.0),
-            ],
-        ));
-        steps.push(Step::AwaitDone {
-            command: "/buffer_mix".into(),
-            index: Some(take as i32),
-        });
-        steps.push(send("/buffer_free", vec![OscType::Int(scratch as i32)]));
-        steps.push(Step::AwaitDone {
-            command: "/buffer_free".into(),
-            index: Some(scratch as i32),
-        });
-        self.file.spare.push(scratch);
-        self.file.frames.insert(take, frames);
+        let out = self.render_output("mixed")?;
+        let (frames, made) = if let Content::Samples { .. } = clip.content {
+            let (_, mut block, _) = self.block(values)?;
+            let width = u64::from(self.file.channels);
+            let frames = (block.len() as u64 / width).min(total - position);
+            block.truncate((frames * width) as usize);
+            if frames == 0 {
+                return Ok(None);
+            }
+            let onto = self.render_list(position, position + frames)?;
+            (frames, vec![renders::mix_block(&onto, &block, &out)])
+        } else {
+            let Some((carried, mut made)) = self.carried(values)? else {
+                return Ok(None);
+            };
+            let rates = self.rates_of();
+            let frames = parts::length(&carried, &rates)?.min(total - position);
+            if frames == 0 {
+                return Ok(None);
+            }
+            let added = sources::list(
+                &parts::span(&carried, 0, frames, &rates)?,
+                &self.file.sources,
+                self.file.channels,
+                self.file.rate,
+            );
+            let onto = self.render_list(position, position + frames)?;
+            // what the block needed made goes first
+            made.push(renders::mix_lists(&onto, &added, &out));
+            (frames, made)
+        };
+        let id = self.rendered(&out, frames, self.file.rate);
         let list = parts::replace(
             &self.file.contents.parts,
             position,
             position + frames,
-            &[part(take, 0, frames)],
+            &[part(id, 0, frames)],
             &self.rates_of(),
         )?;
-        Ok(Some(("mix".into(), list, steps)))
+        Ok(Some(("mix".into(), list, made)))
     }
 
-    /// **A paste of a block a server holds** (a copy made on the server):
-    /// copied again on the server into a take of this editor's own, at the
-    /// block's rate, and put in at the position. `None` for a clipboard of
-    /// another kind.
-    fn held_block(&mut self, values: &[Value]) -> Result<Edited, String> {
-        let position = values.first().map_or(0.0, number).round().max(0.0) as u64;
-        let doc = values.get(2).map(text).unwrap_or_default();
-        let Ok(clip) = serde_json::from_str::<Clipboard>(&doc) else {
-            return Ok(None);
+    /// **A span reversed**: a render of the frames played backwards, over
+    /// them.
+    fn reverse(&mut self, values: &[Value]) -> Result<Edited, String> {
+        let at = |i: usize| values.get(i).map_or(0.0, number).round().max(0.0) as u64;
+        // From the menu it names nothing, and is the selection's.
+        let (start, len) = match (values.is_empty(), self.file.presentation.selection) {
+            (true, Some((a, b))) => (a, b - a),
+            (true, None) => return Err("select the span to reverse".into()),
+            _ => (at(0), at(1)),
         };
-        let Content::Buffer {
-            channels,
-            frames,
-            sample_rate,
-            buffer: held,
-            location,
-        } = clip.content
-        else {
-            return Ok(None);
-        };
-        self.check_location(location)?;
-        if channels != self.file.channels {
-            return Err(format!(
-                "a block of {channels} channels does not paste into a take of {}",
-                self.file.channels
-            ));
-        }
-        if frames == 0 {
+        let len = len.min(self.length().saturating_sub(start));
+        if len == 0 {
             return Ok(None);
         }
-        if !sample_rate.is_finite() || sample_rate <= 0.0 {
-            return Err("the clipboard sample rate must be finite and positive".into());
-        }
-        let rate = sample_rate;
-        let buffer = self.next_buffer()?;
-        let mut steps = self.allocate_at(buffer, frames, rate);
-        steps.extend(self.copied(buffer, i64::from(held), 0, frames));
-        self.file.frames.insert(buffer, frames);
-        if rate != self.file.rate {
-            self.file.rates.insert(SourceId(buffer as u64), rate);
-        }
-        let list = parts::insert(
+        let span = self.render_list(start, start + len)?;
+        let out = self.render_output("reversed")?;
+        let step = renders::reverse(&span, &out);
+        let id = self.rendered(&out, len, self.file.rate);
+        let list = parts::replace(
             &self.file.contents.parts,
-            position,
-            &[part(buffer, 0, frames)],
+            start,
+            start + len,
+            &[part(id, 0, len)],
             &self.rates_of(),
         )?;
-        Ok(Some(("paste".into(), list, steps)))
+        Ok(Some(("reverse".into(), list, vec![step])))
     }
 
     /// **The block a paste or a mix carries**: where it goes, its samples
@@ -2059,31 +2035,6 @@ impl AudioEditor {
             return Err("the clipboard buffer has no owning exchange".into());
         }
         Ok(())
-    }
-
-    /// The steps that write `samples`, interleaved, into `buffer` from its
-    /// first frame, and wait for the last write.
-    fn fill(&self, buffer: i64, samples: &[f32]) -> Vec<Step> {
-        let chunk = self.window_state.chunk.max(1);
-        let mut steps: Vec<Step> = samples
-            .chunks(chunk)
-            .enumerate()
-            .map(|(i, run)| {
-                send(
-                    "/buffer_setRange",
-                    vec![
-                        OscType::Int(buffer as i32),
-                        OscType::Int((i * chunk) as i32),
-                        OscType::Blob(clausters_core::osc::sample_blob(run)),
-                    ],
-                )
-            })
-            .collect();
-        steps.push(Step::AwaitDone {
-            command: "/buffer_setRange".into(),
-            index: Some(buffer as i32),
-        });
-        steps
     }
 
     /// A tag that says what the view is looking at rather than what changed.
@@ -2160,20 +2111,23 @@ fn resync(widget: i64) -> Vec<Correction> {
 struct Facts {
     codec: Option<String>,
     sample_format: Option<String>,
+    /// A server buffer the editor is opened over, which it edits as a file
+    /// of its working folder.
     take: Option<i64>,
+    /// The opened file's shape, read from its header by the client.
     frames: Option<u64>,
     channels: Option<u32>,
     rate: Option<f64>,
     display: Option<i64>,
-    /// Buffers for new takes, appended to what the editor already holds.
-    buffers: Option<Vec<i64>>,
     chunk: Option<usize>,
-    /// The file the take was read from.
+    /// The file the take was opened from.
     path: Option<String>,
     /// **A file not written yet**: its first save asks for a path.
     untitled: Option<bool>,
-    /// The directory a take leaves memory for.
-    scratch: Option<String>,
+    /// The working folder the editor writes its renders into.
+    workspace: Option<String>,
+    /// The engine's rate, which the join it plays is stitched at.
+    engine_rate: Option<f64>,
     #[serde(deserialize_with = "present")]
     name: Option<Option<String>>,
     layers: Option<Value>,
@@ -2217,27 +2171,20 @@ impl AudioEditor {
         if let Some(rate) = facts.rate.filter(|r| *r > 0.0) {
             self.file.rate = rate;
         }
-        if let Some(take) = facts.take {
-            let frames = facts
-                .frames
-                .unwrap_or_else(|| self.file.frames.get(&take).copied().unwrap_or(0));
-            self.reopen(take, frames);
-        } else if let Some(frames) = facts.frames {
-            self.reopen(self.file.take, frames);
-        }
         if let Some(display) = facts.display {
             self.file.display = display;
         }
-        if let Some(buffers) = facts.buffers {
-            self.file.spare.extend(buffers);
+        if let Some(workspace) = facts.workspace.filter(|w| !w.is_empty()) {
+            self.window_state.workspace = Some(workspace);
         }
+        // where a save writes from now on, as a save-as left it
         if let Some(path) = facts.path.filter(|p| !p.is_empty()) {
             self.file.target = Target::File(path);
         } else if facts.untitled == Some(true) {
             self.file.target = Target::File(String::new());
         }
-        if let Some(scratch) = facts.scratch.filter(|s| !s.is_empty()) {
-            self.window_state.scratch = Some(scratch);
+        if let Some(rate) = facts.engine_rate.filter(|r| *r > 0.0) {
+            self.window_state.engine_rate = rate;
         }
         if let Some(chunk) = facts.chunk {
             self.window_state.chunk = chunk.max(1);
@@ -2266,39 +2213,119 @@ impl AudioEditor {
     }
 }
 
-/// **An editor built from a JSON request** -- `take`, `frames`, `channels`,
-/// `rate`, `display`, `buffers`, `chunk`, `path` (the file the take was read
-/// from, which a save writes over), `scratch` (the directory a take only
-/// the history holds is written to when it leaves memory), `name`, `layers`,
-/// `title`, `w`, `h`, `chrome` (`false` for a window with no menu bar and no
-/// tools) and `version` -- or the reason it cannot be. `"empty": true` opens
-/// the editor with no file, whose window offers adding one; `take` and
-/// `frames` are then ignored.
+/// **An editor built from a JSON request** -- the file it opens (`path`,
+/// and `frames`, `channels` and `rate` from its header), or a server buffer
+/// (`take`) it edits as a file of its own, or `untitled` for a new file of
+/// that shape; `workspace`, the working folder its renders are written into
+/// and the peaks of what it opened are kept in; `display`, the buffer of the
+/// join it plays; `engine_rate`, `chunk`, `name`, `layers`, `title`, `w`,
+/// `h`, `chrome` (`false` for a window with no menu bar and no tools) and
+/// `version` -- or the reason it cannot be. `"empty": true` opens the editor
+/// with no file, whose window offers adding one.
 pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     let facts: Facts =
         serde_json::from_str(request).map_err(|e| format!("not an audio editor request: {e}"))?;
     let layers = facts.layers.clone().unwrap_or_else(|| json!(MEASURES));
     let stack = Stack::checked(&layers)?;
     let names: Vec<String> = MEASURES.iter().map(|name| name.to_string()).collect();
+    let empty = facts.empty == Some(true);
+    let channels = facts.channels.unwrap_or(1).max(1);
+    let rate = facts.rate.filter(|r| *r > 0.0).unwrap_or(48_000.0);
+    let frames = facts.frames.unwrap_or(0);
+    let workspace = facts.workspace.clone().filter(|w| !w.is_empty());
+    let path = facts.path.clone().filter(|p| !p.is_empty());
+    let display = facts.display.unwrap_or(0);
+    // What the take is a file of: the user's, or one this editor makes in
+    // its working folder -- a buffer's, or silence.
+    let made = |what: &str| -> Result<String, String> {
+        let folder = workspace
+            .as_deref()
+            .ok_or("an editor that makes its file needs a working folder")?;
+        Ok(format!("{folder}/{display}-{what}.w64"))
+    };
+    let (opened, written) = if empty {
+        (None, None)
+    } else if let (Some(_), Some(buffer)) = (path.as_ref(), facts.take) {
+        // **A file a part cannot read** (a compressed one): the client
+        // decoded it into a buffer, which the editor writes to its folder,
+        // and a save still goes to the file.
+        let copy = made("opened")?;
+        let file = FileSource {
+            peaks: sources::peaks_beside(&copy),
+            path: copy,
+            frames,
+            channels,
+            rate,
+            render: true,
+        };
+        (Some(file), Some(Written::Buffer(buffer)))
+    } else if let Some(path) = path.as_ref() {
+        let peaks = match workspace.as_deref() {
+            Some(folder) => sources::peaks_for_opened(folder, path),
+            None => sources::peaks_beside(path),
+        };
+        let file = FileSource {
+            path: path.clone(),
+            peaks,
+            frames,
+            channels,
+            rate,
+            render: false,
+        };
+        (Some(file), None)
+    } else if let Some(buffer) = facts.take {
+        let path = made("opened")?;
+        let file = FileSource {
+            peaks: sources::peaks_beside(&path),
+            path,
+            frames,
+            channels,
+            rate,
+            render: true,
+        };
+        (Some(file), Some(Written::Buffer(buffer)))
+    } else if facts.untitled == Some(true) {
+        let path = made("new")?;
+        let file = FileSource {
+            peaks: sources::peaks_beside(&path),
+            path,
+            frames: frames.max(1),
+            channels,
+            rate,
+            render: true,
+        };
+        (Some(file), Some(Written::Silence))
+    } else {
+        // nothing named: an open editor over an empty take
+        (None, None)
+    };
     let mut editor = AudioEditor::new(
-        facts.take.unwrap_or(0),
-        facts.frames.unwrap_or(0),
-        facts.channels.unwrap_or(1),
-        facts.rate.unwrap_or(0.0),
-        facts.display.unwrap_or(0),
+        opened,
+        channels,
+        rate,
+        display,
         &names,
         facts.version.unwrap_or(0),
     )?;
+    editor.file.written_from = written;
+    if let Some(Written::Buffer(buffer)) = written {
+        // a decoded file saves to its path, a buffer of a file not written
+        // yet asks for one, and a buffer is saved over
+        editor.file.target = match path.as_ref() {
+            Some(path) => Target::File(path.clone()),
+            None if facts.untitled == Some(true) => Target::File(String::new()),
+            None => Target::Buffer(buffer),
+        };
+    }
     editor.file.presentation.layers = stack;
     editor.file.codec = facts.codec.clone();
     editor.file.sample_format = facts.sample_format.clone();
-    editor.file.owns_opened =
-        facts.path.as_ref().is_some_and(|p| !p.is_empty()) || facts.untitled == Some(true);
-    let empty = facts.empty == Some(true);
     editor.adopt(Facts {
         layers: None,
-        take: None,
-        frames: None,
+        channels: None,
+        rate: None,
+        path: None,
+        untitled: None,
         ..facts
     });
     if empty {
@@ -2310,11 +2337,8 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// **One verb of an editor, over JSON** -- the door both clients bind.
 ///
 /// - `sync` -- any of the facts [`new_json`] reads: handed over before the
-///   verbs that read them; `buffers` are added to the ones the editor holds,
-///   and `meters` (`{"bus", "channels"}` or `null`) says where the playback's
-///   meter writes.
-///   Answers `{"spare"}`, how many it holds now -- a turn takes one for a
-///   stroke or a paste and two for a mix, so a caller keeps it topped up.
+///   verbs that read them; `meters` (`{"bus", "channels"}` or `null`) says
+///   where the playback's meter writes. Answers `{}`.
 /// - `layers` -- `stack`, optional: a layer array or word list. Answers an
 ///   outcome with the canonical `layers` and a correction, or `{"error"}`.
 /// - `show_layer`, `hide_layer`, `solo_layer` -- `name`: change a layer;
@@ -2337,8 +2361,9 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   With no file open, `binding` and `file` answer `{"empty": true}`, and
 ///   every verb that acts on a file answers `{"error": "no file is open"}`.
 /// - `open_file` -- `paths`, a path or array: an outcome asking the client to
-///   load the files through SoundFile. `add_file` -- the loaded buffer facts,
-///   display and spare buffers: add it and return the server steps and binding.
+///   read the files' headers. `add_file` -- a file's shape, its path and its
+///   display buffer (a `take` for a file the client decoded): add it, in this
+///   editor's folder, and return the server steps and binding.
 /// - `focus_file`, `close_file` -- `index` (zero-based) or `file` (open-object id):
 ///   restore its state or free it. Closing without either names the focused file.
 ///   Closing the last one leaves the editor open with none (`"empty": true`,
@@ -2384,7 +2409,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                     ..facts
                 });
             }
-            json!({ "spare": editor.file.spare.len() }).to_string()
+            "{}".into()
         }
         verb @ ("layers" | "show_layer" | "hide_layer" | "solo_layer" | "layer_alpha"
         | "view_wave" | "view_spectrogram" | "view_both") => {
@@ -2457,7 +2482,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         // with no file open, a binding says so rather than naming one
         "binding" if !editor.open_files.open => json!({"empty": true}).to_string(),
         "binding" => editor.binding().to_string(),
-        "add_file" => match new_json(&request.to_string()).and_then(|mut file| {
+        "add_file" => match new_json(&editor.with_folder(&request).to_string())
+        .and_then(|mut file| {
             let steps = file.open()?;
             editor.add_file(file);
             Ok(steps)
@@ -2477,15 +2503,15 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             } else { request.get("file").and_then(Value::as_i64).unwrap_or(editor.file.id.0) };
             let before = editor.file.id.0;
             let result = if verb == "focus_file" {
-                editor.focus_file(file).map(|()| (json!([]), Vec::<i64>::new()))
-            } else { editor.close_file(file) };
+                editor.focus_file(file).map(|()| (json!([]), Vec::<i64>::new(), Vec::<String>::new()))
+            } else { editor.close_file(file).map(|closed| (closed.steps, closed.buffers, closed.files)) };
             match result {
                 // The last file closed leaves the editor open with none:
                 // `binding` is null and the window is drawn again empty.
-                Ok((steps, freed)) => {
+                Ok((steps, freed, files)) => {
                     let empty = !editor.open_files.open;
                     let moved = before != editor.file.id.0;
-                    json!({"turn": "route", "steps": steps, "freedBuffers": freed, "binding": editor.binding(), "focusChanged": moved || empty,
+                    json!({"turn": "route", "steps": steps, "freedBuffers": freed, "deleteFiles": files, "binding": editor.binding(), "focusChanged": moved || empty,
                     "restructure": true, "fileAction": {"verb": verb, "file": file}, "empty": empty,
                     "answer": moved.then(|| conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections()))}).to_string()
                 }
@@ -2538,6 +2564,8 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             .envelope_corrections()
             .first()
             .map_or_else(|| "{}".into(), |c| c.props.to_string()),
+        // the picture is told the list again: it draws it from its files
+        "props" if editor.open_files.open => json!({"segments": editor.segments()}).to_string(),
         "props" => Value::Object(props(widget)).to_string(),
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
@@ -2545,6 +2573,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         }
         "playback" => editor.playback_file().to_string(),
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
+        "segments" => editor.segments().to_string(),
         "span" => {
             let span = get("span")
                 .as_array()
@@ -2573,6 +2602,7 @@ mod envelope;
 mod files;
 /// Typed two-phase audio operations.
 pub mod operations;
+mod sources;
 
 #[cfg(test)]
 mod tests;
@@ -2587,7 +2617,8 @@ mod layer_tests {
 
     #[test]
     fn edit_body_calls_and_menu_verbs_correct_the_pane_without_editing_samples() {
-        let mut editor = new_json(r#"{"take":1,"frames":1000}"#).unwrap();
+        let mut editor =
+            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000}"#).unwrap();
         editor.window_state.bare = true;
         let tree = call(&mut editor, json!({"verb":"window","widget":17,"pane":18}));
         assert_eq!(tree["children"][0]["type"], "pane");
@@ -2617,7 +2648,8 @@ mod layer_tests {
 
     #[test]
     fn presets_correct_the_open_picture_without_editing_the_take() {
-        let mut editor = new_json(r#"{"take":1,"frames":1000}"#).unwrap();
+        let mut editor =
+            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000}"#).unwrap();
         editor.window(17, None);
         for verb in ["view_spectrogram", "view_both", "view_wave"] {
             let out = call(&mut editor, json!({"verb":verb,"version":8}));
@@ -2669,7 +2701,9 @@ mod layer_tests {
 
     #[test]
     fn menu_events_use_the_same_preset_and_keep_the_stamp() {
-        let mut editor = new_json(r#"{"take":1,"frames":1000,"window":90}"#).unwrap();
+        let mut editor =
+            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000,"window":90}"#)
+                .unwrap();
         editor.window(17, None);
         let event = Event {
             addr: "/gui_event".into(),
@@ -2690,7 +2724,8 @@ mod layer_tests {
     /// two redefines the window; between the alternatives, a prop does.
     #[test]
     fn the_views_are_alternatives_in_a_lane_or_stacked_lanes() {
-        let mut editor = new_json(r#"{"take":1,"frames":1000}"#).unwrap();
+        let mut editor =
+            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000}"#).unwrap();
         editor.window_state.bare = true;
         let window = |editor: &mut AudioEditor| {
             call(

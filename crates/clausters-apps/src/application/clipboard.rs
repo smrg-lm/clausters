@@ -32,6 +32,15 @@ impl Exchange {
         Root { kind, owner }
     }
 
+    /// **The files the published copy names**: a render one of them is
+    /// kept while the clipboard holds it.
+    pub fn files(&self) -> Vec<String> {
+        self.published
+            .as_ref()
+            .map(|doc| doc.files().into_iter().map(str::to_string).collect())
+            .unwrap_or_default()
+    }
+
     /// Publish immutable buffer contents after their producing work completes.
     pub fn publish(
         &mut self,
@@ -41,6 +50,17 @@ impl Exchange {
         member: u32,
     ) -> Result<String, String> {
         let mut doc = document;
+        // **A copy of segments names files**, not a buffer: nothing is held
+        // for it, and the files it names stay while it does
+        // ([`Exchange::files`]).
+        if let Content::Segments { parts, .. } = &doc.content {
+            if parts.is_empty() {
+                return Err("a copy of segments names no file".into());
+            }
+            let raw = doc.to_json();
+            self.published = Some(doc);
+            return Ok(raw);
+        }
         let Content::Buffer {
             channels,
             frames,
@@ -105,6 +125,14 @@ impl Exchange {
         doc: Clipboard,
         server: ServerInstance,
     ) -> Result<Option<u64>, String> {
+        // A copy of segments names files, which stay while the clipboard
+        // holds it: a reader needs no lease. Another one is a replacement.
+        if matches!(doc.content, Content::Segments { .. }) {
+            if self.published.as_ref() != Some(&doc) {
+                self.clear(resources);
+            }
+            return Ok(None);
+        }
         let Content::Buffer {
             buffer, location, ..
         } = &doc.content
@@ -162,6 +190,37 @@ mod tests {
             connection: 1,
             generation: 1,
         }
+    }
+
+    /// **A paste of the copy keeps it**: reading the published segments
+    /// takes no lease and leaves the files named, and another copy read in
+    /// replaces it.
+    #[test]
+    fn a_copy_of_segments_stays_named_while_it_is_pasted() {
+        let mut resources = Resources::default();
+        let mut exchange = Exchange::new(resources.new_owner());
+        let part = |path: &str| clausters_document::clipboard::SegmentPart {
+            path: path.into(),
+            start: 0,
+            frames: 4,
+            fade_in: 0,
+            fade_out: 0,
+            fade_in_shape: Default::default(),
+            fade_out_shape: Default::default(),
+            channels: None,
+            source_channels: 1,
+            source_frames: 4,
+            source_rate: 48_000.0,
+        };
+        let copy = Clipboard::segments(1, 48_000.0, vec![part("/work/1-2-stroke.w64")]);
+        exchange
+            .publish(&mut resources, copy.clone(), server(), 7)
+            .unwrap();
+        assert_eq!(exchange.acquire(&mut resources, copy, server()), Ok(None));
+        assert_eq!(exchange.files(), ["/work/1-2-stroke.w64"]);
+        let other = Clipboard::segments(1, 48_000.0, vec![part("/elsewhere/a.wav")]);
+        assert_eq!(exchange.acquire(&mut resources, other, server()), Ok(None));
+        assert!(exchange.files().is_empty(), "another copy replaced it");
     }
 
     #[test]

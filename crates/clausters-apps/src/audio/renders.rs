@@ -517,6 +517,32 @@ pub fn stroke(over: &List, drawn: u32, values: &[f32], out: &Output) -> Step {
     )
 }
 
+/// **A list written into a file as it plays**: a consolidation, what a save
+/// writes. Its peaks are written when `out` names where.
+pub fn consolidate(list: &List, out: &Output) -> Step {
+    let mut def = Def::new();
+    let channels: Vec<usize> = (0..list.channels)
+        .map(|c| def.list_channel(LIST, c))
+        .collect();
+    let def = if out.peaks.is_empty() {
+        let mut def = def;
+        for (bus, ugen) in channels.iter().enumerate() {
+            def.push(json!({"kind": "Out", "inputs": [{"const": bus as f64}, {"ugen": ugen}]}));
+        }
+        json!({"name": "ae.consolidate", "ugens": def.ugens})
+    } else {
+        def.finish("ae.consolidate", &channels, &out.peaks)
+    };
+    render(
+        vec![stitch(LIST, list)],
+        def,
+        list.frames(),
+        list.rate,
+        list.channels,
+        out,
+    )
+}
+
 /// **A file of silence**: what a new file is before anything is put in it.
 pub fn silence(frames: u64, channels: u32, rate: f64, out: &Output) -> Step {
     let zeros: Vec<Value> = (0..channels).map(|_| json!({"const": 0.0})).collect();

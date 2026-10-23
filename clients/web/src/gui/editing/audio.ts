@@ -1,23 +1,23 @@
 /**
- * Editing a take as **a list of parts over immutable takes**: the audio editor.
+ * Editing a take as **a list of parts over immutable files**: the audio editor.
  *
- * What it opens is **a file or a server buffer**, and it edits a private copy:
- * nothing it was handed is written until it is saved. The window draws a **join** -- a buffer
- * made of spans of other buffers (`Buffer.stitch`) -- and every edit leaves a
- * new list of those spans: a cut takes a span out, a paste puts a new take in,
- * a mix adds the block onto a new take over the frames it lands on, and a
- * pencil stroke writes **a new take the size of the stroke** and splices it over
- * the frames it was drawn on. Nothing a history entry names is ever written
- * again, so an undo is the list before, stitched: it costs the list and not the
- * samples.
+ * What it opens is **a file or a server buffer**, and nothing it was handed is
+ * written until it is saved. The take is a list of spans of files: a cut takes
+ * a span out, a paste of a copy puts its spans in, and an edit that makes new
+ * samples -- a pencil stroke, a pasted block, a mix, a gain curve applied, a
+ * reverse -- **renders** them offline into a file of the editor's working
+ * folder, which the list then names. Nothing a history entry names is ever
+ * written again, so an undo is the list before: it costs the list and not the
+ * samples. The window draws the list from its files, and the take sounds
+ * through a **join** -- a buffer made of the list's spans (`Buffer.stitch`),
+ * streamed from disk.
  *
  * **The editor is the shared crate's** (`EditingCore`, the `openAudio`
- * member): what each gesture does to the list, the steps that make a new take
- * and stitch the join again, and which takes the history can no longer reach.
- * What is here is what a language owns: the server the steps are walked
- * against, the buffer numbers the crate is handed for new takes (from this
- * page's allocator, topped up before every turn), and freeing the takes the
- * context hands back.
+ * member): what each gesture does to the list, the renders that make its new
+ * files, and which renders the history can no longer reach. What is here is
+ * what a language owns: the server the steps are walked against, the renders
+ * run on offline engines of their own, the working folder, and deleting the
+ * renders the context hands back.
  *
  * **What a gesture, a verb or the transport leads to is the shared crate's
  * coordinator's** (the context's `audio` door): every action runs there and
@@ -34,10 +34,11 @@
  * shows the level on a meter beside the take, and the space bar and `L` are the
  * editor's -- the window says so (`plays`), so the host's monitor stays out.
  *
- * **Memory is spent on what the history holds.** Every take a stroke or a
- * paste made is kept while an undo or a redo can still reach it, and freed
- * when neither can. `historyBytes` caps what only the history holds; past it
- * the oldest entries go first.
+ * **Disk is spent on what the history holds.** Every file a stroke or a paste
+ * rendered is kept while an undo or a redo, or the clipboard, can still reach
+ * it, and deleted when none can. The working folder is a temporary one unless
+ * one is given, and goes with the editor -- in a tab, a folder of the page's
+ * own storage.
  *
  * @module
  */
@@ -53,9 +54,9 @@ import type { Server } from "../../defs/server/index.ts";
 import type { Transport, TransportDriver } from "../../defs/server/transport.ts";
 import { Segment } from "../../segments.ts";
 import { resolveServer } from "../../defs/wire.ts";
-import { runSteps } from "../../steps.ts";
+import { disk, runSteps } from "../../steps.ts";
 import { executeSteps, releaseBuffer } from "./cleanup.ts";
-import { makeDirectoryAt } from "../../base/files.ts";
+import { makeDirectoryAt, removeDirectoryAt, temporaryFolder } from "../../base/files.ts";
 import { serviceInstance } from "./application.ts";
 import { exchange, bindExchange, type ExchangeLease } from "./clipboard.ts";
 import { Domain } from "./domain.ts";
@@ -66,10 +67,18 @@ import { MEASURES, SamplesView, plain } from "./samples.ts";
 import type { Measure } from "./samples.ts";
 
 /**
- * How many buffers the crate holds for new takes before a turn: a stroke or a
- * paste takes one, a mix two.
+ * The containers a part of a list reads in place; a file of any other codec is
+ * opened through a buffer of it.
  */
-const SPARE = 2;
+const STREAMED = ["wav", "w64", "rf64"];
+
+/**
+ * Whether the audio editor reads `file` where it is: a PCM file a part streams
+ * from. Any other is decoded into a buffer first.
+ */
+export function readsInPlace(file: SoundFile): boolean {
+    return file.path !== null && STREAMED.includes(String(file.codec));
+}
 
 /** Why a verb that acts on a file is refused by an editor with none open. */
 const NO_FILE = "no file is open";
@@ -261,11 +270,8 @@ export class AudioDomain extends Domain<Buffer | null> {
         this.#queue(async () => { await this.editor?.carry("syncSound", { file }); });
     }
 
-    /**
-     * Free takes the context handed back: nothing reaches them any more. A take
-     * on disk (`spilled`) has no buffer to free, only its number to give back.
-     */
-    free(_structure: unknown, buffers: number[], spilled: number[] = []): void {
+    /** Free buffers the context handed back: nothing reaches them any more. */
+    free(_structure: unknown, buffers: number[], _spilled: number[] = []): void {
         const editor = this.editor;
         if (editor === null || buffers.length === 0) return;
         this.#queue(() => this.cleanup(buffers));
@@ -279,21 +285,11 @@ export class AudioDomain extends Domain<Buffer | null> {
     }
 
     /**
-     * Write a take to disk and free its buffer: the spill `operation` the
-     * crate prepared, carried out. A write the server refuses -- the page's
-     * storage full -- fails the operation, and the take stays in memory.
+     * Delete renders the context handed back: no list, no entry and no
+     * clipboard names them any more.
      */
-    store(_structure: unknown, _buffer: number, operation: Record<string, unknown>): void {
-        const editor = this.editor;
-        if (editor === null) return;
-        this.#queue(async () => {
-            editor.checkServer();
-            try {
-                await editor.operation(null, operation);
-            } catch {
-                // the operation's own failure: the crate kept the take resident
-            }
-        });
+    deleteFiles(_structure: unknown, files: string[]): void {
+        this.#queue(() => removeFiles(files));
     }
 
     /**
@@ -359,6 +355,11 @@ export class AudioDomain extends Domain<Buffer | null> {
     }
 }
 
+/** Removes each of `files`; one that is not there is no error. */
+async function removeFiles(files: readonly string[] | undefined): Promise<void> {
+    for (const path of files ?? []) await disk.remove(path);
+}
+
 /** The marking surface, merged so `editor.selected()` types as its own. */
 export interface AudioEditor extends Marking<Segment<Buffer> | null, Segment<Buffer>> {}
 
@@ -417,70 +418,93 @@ export class AudioEditor extends Editor<Buffer | null> {
     /** The {@link SoundFile} the take was loaded from, when it was. */
     readonly #file: SoundFile | null;
 
+    /** The folder the renders are written into, and whether it is this
+     *  editor's to remove. */
+    readonly #workspace: string;
+    readonly #ownsWorkspace: boolean;
+
     constructor(
-        take: Buffer | null,
+        given: Buffer | SoundFile | null,
         options: Omit<AudioEditorOptions, "sampleRate"> & { sampleRate?: number } = {},
     ) {
+        // **A file is read where it is**; one a part cannot read (a compressed
+        // one) is decoded into a buffer first, which `edit` does, and the open
+        // writes it to the working folder.
+        let file = options.file ?? null;
+        let take: Buffer | null = null;
+        if (given instanceof SoundFile) {
+            if (!readsInPlace(given)) {
+                throw new RangeError(`${given.path ?? "a file not written yet"} is not read in place: ` +
+                    "open it with `edit`, or pass a buffer of it with `file`");
+            }
+            file = given;
+        } else {
+            take = given;
+        }
         const view = new SamplesView(options.layers ?? MEASURES);
         const domain = new AudioDomain();
         const { server, ...others } = options;
-        super(take, {
+        const empty = take === null && !(given instanceof SoundFile);
+        super(given as Buffer | null, {
             title: "Audio",
             ...others,
             // no data to reach a context through: the editor has its own
-            context: others.context ?? (take === null ? new Editing() : undefined),
-            sampleRate: Number(options.sampleRate || take?.sampleRate || 48_000),
+            context: others.context ?? (empty ? new Editing() : undefined),
+            sampleRate: Number(options.sampleRate || given?.sampleRate || 48_000),
             domain,
             view,
         });
         domain.editor = this;
-        this.#file = options.file ?? null;
+        this.#file = file;
         this.server = resolveServer(server ?? take?.server);
         this.instance = serviceInstance(this.server);
         this.display = this.server.buffers.alloc();
         // The context is the take's; switching files changes the structure,
         // so the window keeps the one it opened in.
         this.givenContext = this.editing;
+        this.#ownsWorkspace = options.workspace === undefined;
+        this.#workspace = options.workspace ?? temporaryFolder(`clausters-audio-${this.display}`);
+        // the default folder is the editor's to make, as a script's temporary
+        // one is; a folder handed over is the caller's
+        if (this.#ownsWorkspace) domain.after(() => makeDirectoryAt(this.#workspace));
         const prefix = `audio:${this.instance.connection}:${this.instance.generation}`;
+        // A file a part reads in place is the take, whatever buffer came with it.
+        const streamed = file !== null && readsInPlace(file);
+        const frames = Math.trunc((given?.frames ?? 0) || 0);
         const opened = this.editing.open(
             "openAudio",
-            take === null ? `${prefix}:empty:${this.display}` : `${prefix}:${Math.trunc(take.bufnum)}`,
+            empty ? `${prefix}:empty:${this.display}`
+                : `${prefix}:${streamed ? `file:${file!.path}` : Math.trunc(take!.bufnum)}`,
             {
                 ...this.facts(),
-                ...(take === null ? { empty: true } : {
-                    frames: Math.trunc(take.frames || 0),
-                    take: Math.trunc(take.bufnum),
-                    path: take.path ?? null,
-                    untitled: this.#file !== null && this.#file.path === null,
-                    codec: this.#file?.codec, sample_format: this.#file?.sampleFormat,
+                ...(empty ? { empty: true } : {
+                    frames,
+                    channels: Math.max(1, Math.trunc(given?.channels || 1)),
+                    rate: this.sampleRate,
+                    path: file?.path ?? null,
+                    untitled: file !== null && file.path === null,
+                    codec: file?.codec, sample_format: file?.sampleFormat,
+                    // a buffer, or a file a part cannot read, is written to
+                    // the working folder by the open
+                    ...(streamed ? {} : { take: Math.trunc(take!.bufnum) }),
                 }),
                 display: this.display,
                 server: this.instance,
+                workspace: this.#workspace,
                 sharedHistory: options.sharedHistory ?? false,
                 layers: view.layers,
             },
-            take ?? this,
+            given ?? this,
             domain,
         );
         this.member = opened.member;
         this.structureId = opened.identity;
-        if (options.historyBytes !== undefined && options.historyBytes !== null) {
-            this.editing.limitBytes(options.historyBytes);
-        }
-        if (options.residentBytes !== undefined && options.residentBytes !== null) {
-            const scratch = options.scratch ?? `clausters-audio/${this.display}`;
-            // the default directory is the editor's to make, as a script's
-            // temporary one is; a scratch handed over is the caller's
-            if (options.scratch === undefined) domain.after(() => makeDirectoryAt(scratch));
-            this.coreCall("sync", { scratch });
-            this.editing.limitResident(options.residentBytes);
-        }
-        this.topUp();
+        this.syncCore();
         this.playback = new AudioPlayback(this);
         this.#driver = new AudioDriver(this);
-        // **A private copy of the take**, and the join over it: the buffer the
-        // editor was handed is written by a save and by nothing else. Then it
-        // sounds, on a transport of its own.
+        // **The join over the take**: what the editor was handed is written
+        // by a save and by nothing else. Then it sounds, on a transport of its
+        // own.
         domain.after(async () => {
             // Node ids come back on their `/node_end`, which only a registered
             // client hears.
@@ -492,7 +516,7 @@ export class AudioEditor extends Editor<Buffer | null> {
                 rate = 0;
             }
             const opened = await this.carry("open", {
-                chunk: await this.server.bulkChunk(), rate, empty: take === null,
+                chunk: await this.server.bulkChunk(), rate, empty,
             });
             this.transportId = Number(opened.transport);
         });
@@ -644,11 +668,10 @@ export class AudioEditor extends Editor<Buffer | null> {
     }
 
     /**
-     * **A copy made on the server**: the buffer it is in is the clipboard's
-     * now, the one the previous copy was in goes, and the host's clipboard
-     * names it.
+     * **A copy published**: the clipboard names the spans of files it is of,
+     * and the host's clipboard holds the document.
      */
-    private clipboard(doc: string, buffer: number, ready = false): void {
+    private clipboard(doc: string, ready = false): void {
         this.checkServer();
         if (ready) bindExchange(this.server, this.editing.serviceCore);
         else doc = exchange(this.server, "publish", { document: doc }).document as string;
@@ -796,8 +819,8 @@ export class AudioEditor extends Editor<Buffer | null> {
             }
             case "rolling":
                 return { rolling: (await this.server.transportAt(Number(request.transport)).state()).playing };
-            case "read":
-                return this.read(request);
+            case "shape":
+                return this.shape(request);
             case "batch":
                 await this.editing.executeBatch(Number(request.member), request.server, request.steps ?? []);
                 return {};
@@ -807,10 +830,7 @@ export class AudioEditor extends Editor<Buffer | null> {
                         () => this.app.stepped(this.editing, request.stepped ?? {}, this)),
                 };
             case "clipboard":
-                this.clipboard(String(request.document), Number(request.buffer), request.ready === true);
-                return {};
-            case "topUp":
-                this.syncCore();
+                this.clipboard(String(request.document), request.ready === true);
                 return {};
             default:
                 throw new Error(`the audio editor cannot wait on ${String(request.kind)}`);
@@ -818,21 +838,24 @@ export class AudioEditor extends Editor<Buffer | null> {
     }
 
     /**
-     * **A file asked for in the window or by a page**, read into a buffer, with
-     * a display and spare buffers of its own.
+     * **A file asked for in the window or by a page**: its header read, and a
+     * display buffer for its join. A new file is its shape; a file a part
+     * cannot read is decoded into a buffer the open writes out.
      */
-    private async read(request: Record<string, any>): Promise<Record<string, unknown>> {
+    private async shape(request: Record<string, any>): Promise<Record<string, unknown>> {
         const shape = request.shape as { channels: number; frames: number; rate: number } | undefined;
         const file = shape !== undefined
             ? SoundFile.empty(shape.channels, shape.frames, shape.rate)
             : await SoundFile.open(String(request.path));
-        const take = await file.toBuffer({ server: this.server });
-        return {
-            take: take.bufnum, frames: take.frames, channels: take.channels, rate: take.sampleRate,
+        const answer: Record<string, unknown> = {
+            frames: file.frames, channels: file.channels, rate: file.sampleRate,
             display: this.server.buffers.alloc(), path: file.path, untitled: file.path === null,
             codec: file.codec, sample_format: file.sampleFormat,
-            buffers: Array.from({ length: SPARE }, () => this.server.buffers.alloc()),
         };
+        if (file.path !== null && !readsInPlace(file)) {
+            answer.take = (await file.toBuffer({ server: this.server })).bufnum;
+        }
+        return answer;
     }
 
     /** One effect of a run, carried out here. */
@@ -882,6 +905,9 @@ export class AudioEditor extends Editor<Buffer | null> {
             case "release":
                 await (this.domain as AudioDomain).inline(
                     () => this.editing.release(effect.freed as never, effect.stored as never));
+                break;
+            case "delete":
+                await removeFiles(effect.files as string[] | undefined);
                 break;
             case "returned":
                 this.editing.operationReturned(effect.returned as never);
@@ -944,9 +970,20 @@ export class AudioEditor extends Editor<Buffer | null> {
         return false;
     }
 
-    /** Close the window, and free what sounded the take. */
+    /**
+     * Close the window, and free what sounded the take. A working folder the
+     * editor made goes with it, its renders deleted by the close -- all but the
+     * ones the clipboard still names, which stay where they are.
+     */
     override close(): this {
         this.started("close");
+        if (this.#ownsWorkspace) {
+            const folder = this.#workspace;
+            (this.domain as AudioDomain).after(async () => {
+                await removeDirectoryAt(`${folder}/peaks`, { recursive: true });
+                await removeDirectoryAt(folder);
+            });
+        }
         return this;
     }
 
@@ -986,13 +1023,13 @@ export class AudioEditor extends Editor<Buffer | null> {
     }
 
     /**
-     * Hand the core the chrome, the window it is open in, and enough buffers
-     * for the next turn.
+     * Hand the core the chrome and the window it is open in.
      *
      * @internal
      */
     syncCore(): void {
-        this.topUp();
+        const facts = Object.fromEntries(Object.entries(this.facts()).filter(([, v]) => v !== null && v !== undefined));
+        this.coreCall("sync", facts);
     }
 
     /** Refuse stale resources before addressing the replacement server. @internal */
@@ -1001,15 +1038,6 @@ export class AudioEditor extends Editor<Buffer | null> {
         if (current.connection !== this.instance.connection || current.generation !== this.instance.generation) {
             this.editing.serviceCall("invalidate", { server: this.instance });
             throw new Error("the audio service belongs to a previous server instance");
-        }
-    }
-
-    private topUp(): void {
-        const spare = Number(this.coreCall("sync", this.facts()).spare ?? 0);
-        if (spare < SPARE) {
-            const more: number[] = [];
-            for (let i = spare; i < SPARE; i++) more.push(this.server.buffers.alloc());
-            this.coreCall("sync", { buffers: more });
         }
     }
 
@@ -1032,6 +1060,15 @@ export class AudioEditor extends Editor<Buffer | null> {
     /** Paste onto what is there, mixed with it -- the window's `mix` ({@link Editor.verb}). */
     mix(): boolean {
         return this.verb("mix");
+    }
+
+    /**
+     * Play the selection backwards, or the whole take with nothing selected
+     * -- rendered into a file the list then names. The window's `reverse`
+     * ({@link Editor.verb}).
+     */
+    reverse(): boolean {
+        return this.verb("reverse");
     }
 
     /** Execute resource cleanup against this composition's exact tickets. @internal */
@@ -1134,11 +1171,12 @@ export class AudioEditor extends Editor<Buffer | null> {
     }
 
     /**
-     * What the take is made of now: one object per span, in reading order, each
-     * naming the buffer it reads and the frames of it.
+     * What the take is made of now: one object per span of a file, in reading
+     * order -- its `path`, the `start` and the `frames` of it read, and its
+     * fades and shape.
      */
     get parts(): Record<string, unknown>[] {
-        return [...((this.coreCall("parts").parts as Record<string, unknown>[] | undefined) ?? [])];
+        return [...((this.coreCall("segments").parts as Record<string, unknown>[] | undefined) ?? [])];
     }
 
     // ---- the crate's turns ----
@@ -1295,7 +1333,7 @@ export class AudioEditor extends Editor<Buffer | null> {
 
 marking(AudioEditor);
 
-/** {@link AudioEditor}'s options: the generic ones, the measures and the limit. */
+/** {@link AudioEditor}'s options: the generic ones, the measures and the folder. */
 export interface AudioEditorOptions extends GenericEditorOptions<Buffer | null> {
     /**
      * The server an editor with no file opens on; the ambient one when absent.
@@ -1310,20 +1348,13 @@ export interface AudioEditorOptions extends GenericEditorOptions<Buffer | null> 
     sharedHistory?: boolean;
     /** What the picture measures. Defaults to {@link MEASURES}. */
     layers?: string | readonly Measure[];
-    /** The most bytes of takes only the history may hold; absent for no limit. */
-    historyBytes?: number | null;
     /**
-     * The most of those kept in memory; absent for all of them. Past it the
-     * oldest are written to `scratch` and read back when an undo or a redo
-     * needs them.
+     * The directory the editor renders its files into, on the server's
+     * filesystem -- the page's own storage, in a tab. A temporary one when not
+     * given, removed when the editor closes; one handed over is left where it
+     * is.
      */
-    residentBytes?: number | null;
-    /**
-     * The directory, on the server's filesystem -- the page's own storage, in a
-     * tab -- a take leaves memory for. One named after the editor's join when
-     * not given.
-     */
-    scratch?: string;
+    workspace?: string;
     /**
      * The {@link SoundFile} `take` was loaded from, which a save writes -- one
      * with no path asks for one. `edit` loads a file and passes it here.

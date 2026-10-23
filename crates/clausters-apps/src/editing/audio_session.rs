@@ -39,18 +39,22 @@
 //! window drawn again), `band` and `looping` (the selection band and the loop switch a script set),
 //! `bind` (the file in focus, or none), `layers`, `cursor` (the
 //! position a script placed), `locate` (the position a hand placed),
-//! `changed` (the data changed in this gesture), `free` (takes to free),
-//! `release` (freed and stored takes, as a turn hands them back), `returned`
+//! `changed` (the data changed in this gesture), `free` (buffers to free),
+//! `delete` (files to delete: a closed file's renders), `release` (freed
+//! buffers and, in each `freed` entry's `files`, renders nothing names any
+//! more, to delete, as a turn hands them back), `returned`
 //! (buffer numbers an operation gives back), `operationEcho`, `bufferFree`
 //! (a copy's buffer nobody holds), `lease` (the event's clipboard lease),
 //! `closeWindow` and `closedWindow`.
 //!
 //! Awaits, each `{"kind", ...}`: `steps` (`via` `join`, `plain` or
-//! `service`), `rolling`, `read` (a `path`, or a new file's `shape`),
-//! `batch` (an operation's batch on a member's server), `stepped`,
-//! `clipboard`, `topUp`. A result is `{}` on success, `{"failed": reason}`
-//! on failure, and carries what the await asked for: `rolling`, the read
-//! file's facts, `changed`.
+//! `service`), `rolling`, `shape` (a `path`, whose header the client reads,
+//! or a new file's `shape`), `batch` (an operation's batch on a member's
+//! server), `stepped`, `clipboard`. A result is `{}` on success,
+//! `{"failed": reason}` on failure, and carries what the await asked for:
+//! `rolling`, the file's facts (`frames`, `channels`, `rate`, `path`,
+//! `untitled`, `codec`, `sample_format` and the `display` buffer its join is
+//! stitched into), `changed`.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -149,8 +153,6 @@ enum Resume {
     Stepped,
     /// A clipboard document published.
     Clipboard,
-    /// The editor's buffers topped up.
-    TopUp,
 }
 
 /// What a rolling answer was asked for.
@@ -444,6 +446,14 @@ impl Session {
             "open" => {
                 if let Err(error) = self.playback.alloc_transport(ids) {
                     return finished(id, Raise::Runtime, &error.to_string());
+                }
+                // The join the editor plays is stitched at the engine's rate.
+                if self.rate > 0.0 {
+                    member_call(
+                        editing,
+                        member,
+                        json!({"verb": "sync", "engine_rate": self.rate}),
+                    );
                 }
                 let mut tasks = Vec::new();
                 if action["empty"] != true {
@@ -815,7 +825,7 @@ impl Session {
                     return answer;
                 }
             }
-            (Resume::Steps | Resume::TopUp, None) => {}
+            (Resume::Steps, None) => {}
             (Resume::Clipboard, None) => {
                 // the copy is on the clipboard: a failure from here frees nothing
                 if let Some(run) = self.runs.get_mut(&id)
@@ -1065,6 +1075,10 @@ impl Session {
                 if truthy(&outcome["freedBuffers"]) {
                     tasks.push(effect("free", json!({"buffers": outcome["freedBuffers"]})));
                 }
+                // a closed file's renders: its history went with it
+                if truthy(&outcome["deleteFiles"]) {
+                    tasks.push(effect("delete", json!({"files": outcome["deleteFiles"]})));
+                }
                 if close_file {
                     tasks.push(Task::RetainPlayback);
                 }
@@ -1138,7 +1152,7 @@ impl Session {
             ),
             Task::Cut(outcome) => {
                 self.push(id, vec![Task::CutAct(outcome)]);
-                Flow::Await(tagged("topUp", json!({})), Resume::TopUp)
+                Flow::Next
             }
             Task::CutAct(outcome) => {
                 let continued = door(
@@ -1175,7 +1189,7 @@ impl Session {
                     Some(shape) => json!({"shape": shape}),
                     None => json!({"path": file["path"]}),
                 };
-                Flow::Await(tagged("read", request), Resume::Read)
+                Flow::Await(tagged("shape", request), Resume::Read)
             }
             Task::AddFile(file) => {
                 let mut call = file;
@@ -1780,12 +1794,10 @@ mod tests {
             }
             match kind {
                 "rolling" => json!({"rolling": self.rolling}),
-                "read" => {
-                    let (take, display) = (self.buffer(), self.buffer());
-                    let buffers = [self.buffer(), self.buffer()];
-                    json!({"take": take, "frames": 200, "channels": 2, "rate": 48000.0,
-                        "display": display, "path": wait["path"], "untitled": false,
-                        "buffers": buffers})
+                "shape" => {
+                    let display = self.buffer();
+                    json!({"frames": 200, "channels": 2, "rate": 48000.0,
+                        "display": display, "path": wait["path"], "untitled": false})
                 }
                 "stepped" => {
                     let prepared = wait["stepped"]["operation"].clone();
@@ -1849,8 +1861,8 @@ mod tests {
         let request = if empty {
             json!({"verb": "openAudio", "key": "audio:empty", "empty": true, "display": 9})
         } else {
-            json!({"verb": "openAudio", "key": "take:3", "take": 3, "frames": 100,
-                "display": 9, "buffers": [20, 21, 22, 23]})
+            json!({"verb": "openAudio", "key": "take:3", "path":"/in/take3.wav","workspace":"/work", "frames": 100,
+                "display": 9})
         };
         let member = client.call(editing, request)["member"].as_u64().unwrap() as MemberId;
         client.call(
@@ -1885,7 +1897,7 @@ mod tests {
         let mut client = Client::new();
         opened(&mut client, &mut editing, false);
         let trace = &client.trace;
-        // the private copy is an operation's batch, and the sound follows it
+        // the join is an operation's batch, and the sound follows it
         assert!(
             position(trace, "await:batch") < position(trace, "await:steps"),
             "{trace:?}"
@@ -1926,7 +1938,7 @@ mod tests {
         let bind = position(trace, "bind");
         let rolling = position(trace, "await:rolling");
         let publish = position(trace, "publish");
-        assert!(position(trace, "await:read") < bind, "{trace:?}");
+        assert!(position(trace, "await:shape") < bind, "{trace:?}");
         assert!(bind < rolling && rolling < publish, "{trace:?}");
         // the meter is known when the window is drawn again
         let session = editing.sessions.get(&member).unwrap();
@@ -2097,7 +2109,7 @@ mod tests {
         let mut client = Client::new();
         let member = opened(&mut client, &mut editing, false);
         let first = client.begin(&mut editing, member, save("/takes/a.wav"));
-        let write = until(&mut client, &mut editing, member, first, "batch", 2);
+        let write = until(&mut client, &mut editing, member, first, "batch", 1);
         let action = cut(1, &editing);
 
         let edit = client.run(&mut editing, member, action);
@@ -2105,7 +2117,7 @@ mod tests {
             edit["error"].is_null(),
             "an edit is taken while the write is out: {edit}"
         );
-        assert_eq!(edit["result"], true, "the cut changed the take");
+        assert_eq!(edit["result"], true, "the cut changed the take: {edit}");
         let saved = client.finish(&mut editing, member, write);
         assert!(saved["error"].is_null(), "{saved}");
         assert_eq!(saved["result"]["destination"]["path"], "/takes/a.wav");
@@ -2141,7 +2153,7 @@ mod tests {
         client.run(&mut editing, member, action);
         let before = binding(&mut editing, member);
         let first = client.begin(&mut editing, member, save("/takes/refused.wav"));
-        let write = until(&mut client, &mut editing, member, first, "batch", 2);
+        let write = until(&mut client, &mut editing, member, first, "batch", 1);
         let failed = client.answer(
             &mut editing,
             member,
@@ -2178,7 +2190,7 @@ mod tests {
         client.run(&mut editing, member, action);
         let a = binding(&mut editing, member)["id"].clone();
         let first = client.begin(&mut editing, member, save("/takes/a.wav"));
-        let write_a = until(&mut client, &mut editing, member, first, "batch", 2);
+        let write_a = until(&mut client, &mut editing, member, first, "batch", 1);
         client.run(
             &mut editing,
             member,
@@ -2253,7 +2265,7 @@ mod tests {
 
         client.run(&mut editing, member, action);
         let first = client.begin(&mut editing, member, save("/takes/a.wav"));
-        let write = until(&mut client, &mut editing, member, first, "batch", 2);
+        let write = until(&mut client, &mut editing, member, first, "batch", 1);
         let closed = client.run(
             &mut editing,
             member,

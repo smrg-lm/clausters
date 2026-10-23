@@ -32,9 +32,6 @@ enum AudioCommand {
     Restore {
         payload: Value,
     },
-    Spill {
-        buffer: i64,
-    },
 }
 fn float_format() -> String {
     "float".into()
@@ -58,7 +55,6 @@ impl Editing {
         };
         let object = match &command {
             Command::FinishCut { file, .. } => Some(*file),
-            Command::Spill(buffer) => editor.file_for_source(*buffer),
             _ => None,
         };
         let request = Request {
@@ -68,20 +64,6 @@ impl Editing {
             version: self.version,
             seq,
         };
-        if let Command::AddFile(file) = &request.command {
-            for (buffer, bytes, stored, owned) in file.resource_sources() {
-                self.services.resources.register(Source {
-                    id: ResourceId {
-                        server: seat.server,
-                        buffer,
-                    },
-                    member,
-                    bytes,
-                    stored,
-                    owned,
-                });
-            }
-        }
         let operation = if let Some(object) = object {
             editor
                 .over_file(object, |editor| editor.prepare(request, &self.services))
@@ -98,6 +80,10 @@ impl Editing {
     }
 
     pub(super) fn prepare_add_file(&mut self, member: MemberId, request: &Value) -> Value {
+        let request = match self.member(member) {
+            Some(Member::Audio(editor)) => editor.with_folder(request),
+            _ => request.clone(),
+        };
         let file = match audio::new_json(&request.to_string()) {
             Ok(file) => file,
             Err(error) => return json!({"error":error}),
@@ -508,7 +494,6 @@ impl Editing {
                         None => return json!({"error":"the event is not a sample operation"}),
                     },
                     AudioCommand::Restore { payload } => Command::Restore(Opaque(payload)),
-                    AudioCommand::Spill { buffer } => Command::Spill(buffer),
                 };
                 match self.prepare_audio(member, command, 0) {
                     Ok(ticket) => self.audio_next(ticket),
@@ -566,8 +551,8 @@ mod tests {
         let opened = call_json(
             &mut editing,
             &json!({
-                "verb":"openAudio", "key":"take:3", "take":3, "frames":100,
-                "display":9, "buffers":[20,21,22,23]
+                "verb":"openAudio", "key":"take:3", "path":"/in/take3.wav",
+                "workspace":"/work", "frames":100, "display":9
             })
             .to_string(),
         );
