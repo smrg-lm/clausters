@@ -2992,7 +2992,8 @@ editors and should port this one.
   file the list reads, and the renders nothing names are deleted. Since
   done: a render's progress on the status bar, the changed-on-disk notice,
   a list replaced while it plays fading into the new one instead of a
-  silence, and the measurement of the edits (`tests/long_takes.rs`, in
+  silence (the reader's, for the multitrack; the audio editor edits no file
+  that plays, `docs/app-behavior.md`), and the measurement of the edits (`tests/long_takes.rs`, in
   release: ten pastes of an hour into two hours and into 4.8 GB, and their
   undo and redo, answer in 0.05 ms at the median and 0.3 ms at worst, as
   into two seconds, render nothing, and leave the editor's and the server's

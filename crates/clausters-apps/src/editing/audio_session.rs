@@ -336,7 +336,9 @@ pub(super) fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -
                 action["rate"].as_f64().unwrap_or(0.0),
             );
         }
+        editing.note_playing(member, session.playback.playing());
         let answer = session.start(editing, member, action, ids);
+        editing.note_playing(member, session.playback.playing());
         editing.sessions.insert(member, session);
         return answer;
     }
@@ -344,7 +346,9 @@ pub(super) fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -
         let Some(mut session) = editing.sessions.remove(&member) else {
             return json!({"error": "the audio editor has no session"});
         };
+        editing.note_playing(member, session.playback.playing());
         let answer = session.resume(editing, member, run, &request["result"], ids);
+        editing.note_playing(member, session.playback.playing());
         editing.sessions.insert(member, session);
         return answer;
     }
@@ -2375,6 +2379,58 @@ mod tests {
             last(trace, "await:batch") < last(trace, "echo"),
             "{trace:?}"
         );
+    }
+
+    /// **A file is not edited while it plays**: a cut and an undo over the
+    /// playing file are refused, the menu reads them refused for it, and once
+    /// it stops the cut goes through.
+    #[test]
+    fn a_file_is_not_edited_while_it_plays() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let cut = |client: &mut Client, editing: &mut Editing, seq: i64| {
+            client.trace.clear();
+            client.effects.clear();
+            let version = editing.version();
+            client.run(
+                editing,
+                member,
+                json!({"verb": "event", "addr": "/gui_event",
+                    "args": [12, seq, version, "cut", 10.0, 20.0], "window": true}),
+            );
+            client.trace.iter().any(|k| k == "await:batch")
+        };
+        client.rolling = true;
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "play", "window": true}),
+        );
+        let version = editing.version();
+        assert!(!cut(&mut client, &mut editing, 1), "nothing is carried out");
+        assert_eq!(editing.version(), version, "and nothing changed");
+        let said = client
+            .effects
+            .iter()
+            .any(|e| e.to_string().contains(crate::audio::editor::PLAYING));
+        assert!(said, "the window is told why: {:?}", client.effects);
+        let states = editing.action_states(member);
+        for verb in ["cut", "paste", "undo", "redo"] {
+            assert_eq!(states[verb]["enabled"], false, "{verb}: {states}");
+        }
+        assert_ne!(
+            states["copy"]["reason"],
+            json!(crate::audio::editor::PLAYING),
+            "a copy is no edit"
+        );
+        client.rolling = false;
+        client.run(
+            &mut editing,
+            member,
+            json!({"verb": "stop", "window": true}),
+        );
+        assert!(cut(&mut client, &mut editing, 2), "stopped, it is edited");
     }
 
     #[test]

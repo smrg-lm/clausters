@@ -350,6 +350,9 @@ pub struct Editing {
     bytes: Option<u64>,
     /// Each audio member's coordinator ([`audio_session`]).
     sessions: std::collections::BTreeMap<MemberId, audio_session::Session>,
+    /// The file each audio member plays, kept beside its session since a
+    /// run holds the session while it decides whether an edit may start.
+    audio_playing: std::collections::BTreeMap<MemberId, u64>,
 }
 
 impl Default for Editing {
@@ -374,6 +377,7 @@ impl Editing {
             seats: Vec::new(),
             bytes: None,
             sessions: Default::default(),
+            audio_playing: Default::default(),
         }
     }
 
@@ -534,6 +538,20 @@ impl Editing {
         true
     }
 
+    /// **Whether file `file` of audio member `member` is playing**: what an
+    /// edit of it is refused for.
+    pub(crate) fn audio_plays(&self, member: MemberId, file: i64) -> bool {
+        self.audio_playing.get(&member).copied() == u64::try_from(file).ok()
+    }
+
+    /// Says which file audio member `member` plays now, if one.
+    pub(super) fn note_playing(&mut self, member: MemberId, file: Option<u64>) {
+        match file {
+            Some(file) => self.audio_playing.insert(member, file),
+            None => self.audio_playing.remove(&member),
+        };
+    }
+
     /// **The actions `member` answers, as they read now**: the editor's own
     /// facts, the history of the object in focus and the work pending on it.
     /// Read on every call and kept nowhere, so a menu or a tool never holds a
@@ -556,7 +574,8 @@ impl Editing {
                             object: editor.focused_file(),
                             server: seat.server,
                         });
-                json!(editor.actions(member, seat.server, can_undo, can_redo, pending))
+                let playing = self.audio_plays(member, editor.focused_file());
+                json!(editor.actions(member, seat.server, can_undo, can_redo, pending, playing))
             }
             _ => json!({}),
         }

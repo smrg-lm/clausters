@@ -41,6 +41,13 @@ code that keeps it lives.
   locates the transport to the incoming file's cursor. Rebuilding the view
   (layers, file-list visibility, channel folding or edited contents) keeps
   this association: a hidden play cursor stays hidden on the inactive file.
+- **A file is not edited while it plays.** While a file of an editor plays,
+  every verb that changes what it holds is refused with the reason ("the file
+  is playing: stop it to edit") and reads refused in the menus and keys: cut,
+  paste, mix, delete, a stroke, the gain envelope and its Apply, reverse, and
+  an undo or a redo that would change that file. A copy, a selection, the
+  loop, the views and a save are not edits and go on. Another file of the
+  same editor, which is not the one playing, is edited as usual.
 - **The meter belongs to the viewed file.** Its channel count always matches
   that file. It shows live levels only while that file plays; stopped or while
   another file plays, all its channels show zero. Returning to the playing

@@ -57,6 +57,23 @@ impl Editing {
             Command::FinishCut { file, .. } => Some(*file),
             _ => None,
         };
+        // **A file is not edited while it plays.**
+        let edits = matches!(
+            command,
+            Command::Edit(_)
+                | Command::Paste { .. }
+                | Command::GainEnvelope(_)
+                | Command::ApplyGain
+                | Command::FinishCut { .. }
+        );
+        let file = object.unwrap_or_else(|| editor.focused_file());
+        if edits && self.audio_plays(member, file) {
+            return Err(crate::audio::editor::PLAYING.into());
+        }
+        let seat = &mut self.seats[member as usize];
+        let Member::Audio(editor) = &mut seat.member else {
+            unreachable!("checked above");
+        };
         let request = Request {
             member,
             server: seat.server,
@@ -323,6 +340,9 @@ impl Editing {
         let scope = self.services.histories.selected();
         let expected = self.services.histories.peek_walk(direction)?;
         self.sync_resources();
+        // An undo or a redo is refused when the file it would change is
+        // the one its editor is playing.
+        let playing = self.audio_playing.clone();
         let mut plans = Vec::new();
         let mut previews = Vec::new();
         for (structure, payloads) in &expected.legs {
@@ -339,6 +359,9 @@ impl Editing {
                 }
                 if let Member::Audio(editor) = &mut seat.member {
                     let object = object.unwrap_or(editor.focused_file());
+                    if playing.get(&member).copied() == u64::try_from(object).ok() {
+                        return Some(self.refused_audio_walk(crate::audio::editor::PLAYING));
+                    }
                     let request = Request {
                         member,
                         server: seat.server,

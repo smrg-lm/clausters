@@ -91,6 +91,29 @@ impl Views {
 /// The most values one write carries when the caller has not said.
 pub const DEFAULT_CHUNK: usize = 8192;
 
+/// **Why an edit is refused while its file plays**: a file is not edited
+/// while it is heard; stopping it is what makes it editable again.
+pub(crate) const PLAYING: &str = "the file is playing: stop it to edit";
+
+/// **Whether `verb` changes what a file holds**: the edits, and the walks
+/// through its history. A copy, a selection, a view and a save do not.
+pub(crate) fn edits_contents(verb: &str) -> bool {
+    matches!(
+        verb,
+        "undo"
+            | "redo"
+            | "cut"
+            | "paste"
+            | "mix"
+            | "delete"
+            | "draw"
+            | "points"
+            | "apply"
+            | "apply_envelope"
+            | "reverse"
+    )
+}
+
 /// **What one turn came to.**
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -661,6 +684,7 @@ impl AudioEditor {
         undo: bool,
         redo: bool,
         pending: bool,
+        playing: bool,
     ) -> BTreeMap<&'static str, ActionState> {
         let view = &self.file.presentation;
         let views = match view.views {
@@ -736,6 +760,10 @@ impl AudioEditor {
                     if pending {
                         state.refuse("the file has pending work");
                     }
+                }
+                // A file is not edited while it plays.
+                if playing && edits_contents(name) {
+                    state.refuse(PLAYING);
                 }
                 // Last: an empty selection is the one objection a host reads
                 // for itself, so it must not hide another.

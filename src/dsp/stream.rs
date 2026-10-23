@@ -20,12 +20,11 @@
 //!   **asks for a refill** from that frame and plays silence until it
 //!   arrives. It never plays what the ring held before: that was another
 //!   place in the list.
-//! - **A list replaced by an edit while it plays is not a silence.** The
-//!   ring still holds the old list ahead of the playhead, so that plays on
-//!   while the new one is read; once the refill lands, the old fades out and
-//!   the new fades in over [`CROSS`] frames each, from the frame the
-//!   transport has reached. An edit while a take loops is heard as the edit,
-//!   not as a hole.
+//! - **A list replaced while it plays is not a silence** -- a multitrack's
+//!   clip moved while it plays, say. The ring still holds the old list ahead
+//!   of the playhead, so that plays on while the new one is read; once the
+//!   refill lands, the old fades out and the new fades in over [`CROSS`]
+//!   frames each, from the frame the transport has reached.
 //! - The I/O thread renders frames of the list ahead of the transport,
 //!   part by part, through [`PartSpan::read_with`](clausters_core::segments::PartSpan::read_with) --
 //!   the read a pool buffer's part makes, over the span it just read from the

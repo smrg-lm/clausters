@@ -1214,7 +1214,7 @@ fn an_editor_opens_with_no_file_and_answers_only_the_window_s_verbs() {
     );
     assert_eq!(picked["openFile"], json!({"paths": ["/a.wav"]}));
 
-    let actions = editor.actions(1, ServerInstance::default(), false, false, false);
+    let actions = editor.actions(1, ServerInstance::default(), false, false, false, false);
     for verb in ["new_file", "open_file", "close", "keys", "toggle_files"] {
         assert!(actions[verb].enabled, "{verb}");
     }
