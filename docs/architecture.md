@@ -1067,8 +1067,8 @@ paste of a block, a mix, a pencil stroke, a gain apply and a reverse each are an
 **offline render** (`Step::Render`, scored by `audio::renders`) into a new file of
 the working folder, which reads the list with `TransportDiskIn` and writes with
 `DiskOut` beside a `PeaksOut`, so a file a history entry names is never written
-again. A file opened without peaks is measured once the same way, into
-`<workspace>/peaks/`. A turn answers the renders and the `/buffer_stitch` that
+again. A file opened without peaks is measured once the same way, into the
+working folder, and its peaks go with its renders when it closes. A turn answers the renders and the `/buffer_stitch` that
 puts the join -- the RT buffer the take plays through, its parts naming file
 spans -- over the new list, and the window draws the list itself, from its
 files (`segments`). The editing context gives back what nothing reaches: after

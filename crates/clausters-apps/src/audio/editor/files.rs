@@ -568,11 +568,16 @@ impl AudioFileState {
                 index: Some(display),
             },
         ]);
+        // its renders, and the peaks the editor measured of a file it opened
         let files = self
             .sources
             .values()
-            .filter(|s| s.render)
-            .flat_map(|s| [s.path.clone(), s.peaks.clone()])
+            .flat_map(|s| {
+                let measured = s.peaks != sources::peaks_beside(&s.path);
+                let path = s.render.then(|| s.path.clone());
+                let peaks = (s.render || measured).then(|| s.peaks.clone());
+                path.into_iter().chain(peaks)
+            })
             .collect();
         Closed {
             steps,

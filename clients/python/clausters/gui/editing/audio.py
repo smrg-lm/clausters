@@ -765,8 +765,6 @@ class AudioEditor(Marking, Editor):
         self._audio("close")
         if self._owns_workspace:
             import os
-            import shutil
-            shutil.rmtree(os.path.join(self._workspace, "peaks"), ignore_errors=True)
             try:
                 os.rmdir(self._workspace)
             except OSError:

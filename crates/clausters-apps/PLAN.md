@@ -3008,7 +3008,11 @@ editors and should port this one.
   reading files into pool buffers and stitching joins in memory: a track
   plays its regions through the RT list reader, and a bounce or a freeze is an
   NRT render into the session's folder. Its peaks are kept, beside the files or
-  in a tree of their own (the turn's fifth decision leaves the choice here). **Acceptance:** a session of several
+  in a tree of their own (the turn's fifth decision leaves the choice here).
+  *Noted by the user, 2026-10-23:* the peaks a measure writes say where
+  they go, as a property of the measure: temporary, in the working folder,
+  as the audio editor's are, or kept somewhere relative to the file or to
+  the multitrack's project, as a multitrack's may be. **Acceptance:** a session of several
   tracks of hour-long takes opens in the time it takes to read their peaks,
   plays from any position, and a comping pass of quarter-second parts plays
   without a click or an underrun; the server's memory does not grow with the

@@ -1083,10 +1083,7 @@ export class AudioEditor extends Editor<Buffer | null> {
         this.started("close");
         if (this.#ownsWorkspace) {
             const folder = this.#workspace;
-            (this.domain as AudioDomain).after(async () => {
-                await removeDirectoryAt(`${folder}/peaks`, { recursive: true });
-                await removeDirectoryAt(folder);
-            });
+            (this.domain as AudioDomain).after(() => removeDirectoryAt(folder));
         }
         return this;
     }

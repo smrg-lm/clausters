@@ -170,7 +170,7 @@ fn opening_measures_the_file_and_stitches_the_join_over_it() {
         list["parts"][0]["peaks"]
             .as_str()
             .unwrap()
-            .starts_with("/work/peaks/take3-"),
+            .starts_with("/work/take3-"),
         "the peaks are the working folder's"
     );
     assert!(def["children"][1].get("buffer").is_none());

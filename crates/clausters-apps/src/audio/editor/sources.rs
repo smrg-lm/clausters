@@ -58,12 +58,13 @@ pub(crate) fn id_of(path: &str) -> SourceId {
 /// **Where the peaks of a file the editor opened are kept**: in its working
 /// folder, named after the file and a hash of its path, so two files of one
 /// name do not share them and nothing is written beside the user's file.
+/// They go with the file's renders when it closes.
 pub(crate) fn peaks_for_opened(workspace: &str, path: &str) -> String {
     let name = std::path::Path::new(path)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("take");
-    format!("{workspace}/peaks/{name}-{:016x}.peaks", id_of(path).0)
+    format!("{workspace}/{name}-{:016x}.peaks", id_of(path).0)
 }
 
 /// Where the peaks of a render are: beside it.
@@ -182,7 +183,7 @@ mod tests {
         assert_ne!(id_of("/a/take.wav"), id_of("/b/take.wav"));
         assert!(id_of("x").0 >= 1 << 62);
         let peaks = peaks_for_opened("/work", "/music/take.wav");
-        assert!(peaks.starts_with("/work/peaks/take-") && peaks.ends_with(".peaks"));
+        assert!(peaks.starts_with("/work/take-") && peaks.ends_with(".peaks"));
         assert_eq!(peaks_beside("/work/r1.w64"), "/work/r1.peaks");
         assert_eq!(peaks_beside("/work.d/r1"), "/work.d/r1.peaks");
     }
