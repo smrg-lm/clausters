@@ -582,17 +582,41 @@ impl CmdTranslator {
             return Err("expected: name, id, addAction, targetID [, port, value ...]".into());
         };
         let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
-        if *id != -1 && *id <= 0 {
+        self.new_graph(
+            name,
+            *id,
+            action,
+            *target,
+            &Self::port_overrides(rest),
+            cmds,
+        )
+        .map(|_| ())
+    }
+
+    /// **Instantiates GraphDef `name` as group `id`** (`-1` for one of the
+    /// auto range), `action` relative to `target`, its surface ports set from
+    /// `ports` over the def's defaults: `/graph_new`, typed. Answers the
+    /// group's id.
+    pub fn new_graph(
+        &mut self,
+        name: &str,
+        id: i32,
+        action: AddAction,
+        target: i32,
+        ports: &[(String, f32)],
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<i32, String> {
+        if id != -1 && id <= 0 {
             return Err("group ID must be positive or -1".into());
         }
-        let plan = self.plan_instance(name, *id, None, &HashMap::new(), 0)?;
-        let group_id = self.build_plan(plan, *target, action, None, cmds);
+        let plan = self.plan_instance(name, id, None, &HashMap::new(), 0)?;
+        let group_id = self.build_plan(plan, target, action, None, cmds);
         // The def's own defaults were applied as it was built; these are the
         // caller's overrides on top of them.
-        for (port, value) in Self::port_overrides(rest) {
-            self.apply_surface(group_id, &port, value, cmds);
+        for (port, value) in ports {
+            self.apply_surface(group_id, port, *value, cmds);
         }
-        Ok(())
+        Ok(group_id)
     }
 
     /// **A node ended**: when it was a member marked `ends`, the group its graph
@@ -618,14 +642,17 @@ impl CmdTranslator {
     /// then orders it relative to the shared mixer by its bus usage); freeing it
     /// (`/node_free`) frees its members and anything nested in them. Same atomic
     /// shape as `/graph_new`.
-    pub(in crate::osc::translate) fn graph_add_slot(
+    /// **Adds slot `slot` to graph instance `instance`** as group `id` (`-1`
+    /// for one of the auto range), its surface ports set from `ports`:
+    /// `/graph_addSlot`, typed. Answers the slot's id.
+    pub fn add_slot(
         &mut self,
         instance: i32,
         slot: &str,
         id: i32,
-        rest: &[OscType],
+        ports: &[(String, f32)],
         cmds: &mut Vec<Cmd>,
-    ) -> Result<(), String> {
+    ) -> Result<i32, String> {
         let instance = self.slot_instance(instance)?;
         let Some(inst) = self.graph_instances.get(&instance) else {
             return Err(format!("GraphDef instance {instance} not found"));
@@ -652,14 +679,14 @@ impl CmdTranslator {
 
         // The slot's own defaults were applied as it was built; these are the
         // caller's overrides on top of them.
-        for (port, value) in Self::port_overrides(rest) {
-            self.apply_surface(slot_id, &port, value, cmds);
+        for (port, value) in ports {
+            self.apply_surface(slot_id, port, *value, cmds);
         }
-        Ok(())
+        Ok(slot_id)
     }
 
     /// `/graph_newVoice instanceID id [port value ...]`: the voice slot's own
-    /// spelling of [`CmdTranslator::graph_add_slot`], kept because a voice is
+    /// spelling of [`CmdTranslator::add_slot`], kept because a voice is
     /// what slots were before they had names, and because MIDI notes spawn one.
     pub(in crate::osc::translate) fn graph_voice(
         &mut self,
@@ -669,7 +696,14 @@ impl CmdTranslator {
         let [OscType::Int(instance), OscType::Int(id), rest @ ..] = msg.args.as_slice() else {
             return Err("expected: instanceID, voiceID [, port, value ...]".into());
         };
-        self.graph_add_slot(*instance, VOICE_SLOT, *id, rest, cmds)
+        self.add_slot(
+            *instance,
+            VOICE_SLOT,
+            *id,
+            &Self::port_overrides(rest),
+            cmds,
+        )
+        .map(|_| ())
     }
 
     /// The instance an id means when a slot is added to it.
@@ -911,7 +945,8 @@ impl CmdTranslator {
         else {
             return Err("expected: instanceID, slot, id [, port, value ...]".into());
         };
-        self.graph_add_slot(*instance, slot, *id, rest, cmds)
+        self.add_slot(*instance, slot, *id, &Self::port_overrides(rest), cmds)
+            .map(|_| ())
     }
 
     /// `/graph_map instanceID port bus [audio]`: **drive a port from a bus**
@@ -944,20 +979,34 @@ impl CmdTranslator {
             return Err("expected: instanceID, port, bus [, audio]".into());
         };
         let audio = matches!(rest.first(), Some(OscType::Int(1)));
+        self.map_port(*instance, port, *bus, audio, cmds)
+    }
+
+    /// **Drives port `port` of graph `instance` from bus `bus`** (an audio
+    /// bus when `audio`), or gives it back with a negative bus: `/graph_map`,
+    /// typed.
+    pub fn map_port(
+        &mut self,
+        instance: i32,
+        port: &str,
+        bus: i32,
+        audio: bool,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
         let targets = self
             .graph_instances
-            .get(instance)
-            .and_then(|inst| inst.surface.get(port.as_str()))
+            .get(&instance)
+            .and_then(|inst| inst.surface.get(port))
             .or_else(|| {
                 self.graph_voices
-                    .get(instance)
-                    .and_then(|v| v.surface.get(port.as_str()))
+                    .get(&instance)
+                    .and_then(|v| v.surface.get(port))
             });
         let Some(targets) = targets.cloned() else {
             return Err(format!("{instance} has no port '{port}'"));
         };
         for (node, index, _mul, _add) in targets {
-            if self.map_control(node, index, *bus, audio, cmds) {
+            if self.map_control(node, index, bus, audio, cmds) {
                 self.reanalyze_and_resort(node, cmds);
             }
         }
@@ -968,7 +1017,13 @@ impl CmdTranslator {
     /// target (`mul`*v + `add`), mirroring each write and re-sorting if a
     /// target turns out to be a bus-index control. `group` may be an instance
     /// (shared surface) or a voice sub-group (voice surface).
-    fn apply_surface(&mut self, group: i32, port: &str, value: f32, cmds: &mut Vec<Cmd>) {
+    pub(in crate::osc::translate) fn apply_surface(
+        &mut self,
+        group: i32,
+        port: &str,
+        value: f32,
+        cmds: &mut Vec<Cmd>,
+    ) {
         let targets = self
             .graph_instances
             .get(&group)
@@ -1009,30 +1064,6 @@ impl CmdTranslator {
         let (_, controls) = self.mirror.synth_info(node)?;
         let value = *controls.get(index as usize)?;
         Some(if mul == 0.0 { add } else { (value - add) / mul })
-    }
-
-    /// If `id` is a GraphDef instance or a voice sub-group, apply each
-    /// `(port, value)` pair against its named surface and return true. Names
-    /// absent from the surface are ignored -- the surface is the whole public
-    /// interface; the member node ids stay private. Anything else returns
-    /// false so `/node_set` falls back to the synth/group path.
-    pub(in crate::osc::translate) fn graph_set(
-        &mut self,
-        id: i32,
-        pairs: &[OscType],
-        cmds: &mut Vec<Cmd>,
-    ) -> bool {
-        if !self.graph_instances.contains_key(&id) && !self.graph_voices.contains_key(&id) {
-            return false;
-        }
-        for pair in pairs.chunks(2) {
-            if let (Some(OscType::String(port)), Some(value)) =
-                (pair.first(), pair.get(1).and_then(float_value))
-            {
-                self.apply_surface(id, port, value, cmds);
-            }
-        }
-        true
     }
 
     /// Drops the translator-side state of a freed GraphDef node: a slot

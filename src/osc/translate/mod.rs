@@ -59,6 +59,8 @@ use crate::osc::graph::faust_usage;
 mod buffers;
 mod events;
 mod graph;
+mod typed;
+pub use typed::Control;
 pub(crate) mod midi;
 #[cfg(all(
     any(feature = "plugin-clap", feature = "plugin-vst3"),
@@ -1328,6 +1330,13 @@ impl CmdTranslator {
         let bytes = crate::osc::args::json_payload(args)?;
         let spec: SynthDefSpec =
             serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
+        self.define_synth(spec)
+    }
+
+    /// **Compiles SynthDef `spec` into the def table**: `/def_send synth`,
+    /// typed. Answers the def's name.
+    #[cfg(feature = "synth")]
+    pub fn define_synth(&mut self, spec: SynthDefSpec) -> Result<String, String> {
         let def = compile(spec)?;
         // `compile` already enforced the hard ceiling; reject anything past the
         // stricter boot-time `--max-ugen-inputs` too (default: the ceiling).
@@ -1383,6 +1392,12 @@ impl CmdTranslator {
         let bytes = crate::osc::args::json_payload(args)?;
         let spec: GraphDefSpec =
             serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
+        self.define_graph(spec)
+    }
+
+    /// **Stores GraphDef `spec` under its name**, validated: `/def_send
+    /// graph`, typed. Answers the name.
+    pub fn define_graph(&mut self, spec: GraphDefSpec) -> Result<String, String> {
         spec.validate()?;
         let name = spec.name.clone();
         self.graph_defs.insert(name.clone(), Arc::new(spec));
@@ -1662,48 +1677,15 @@ impl CmdTranslator {
                 else {
                     return Err("expected: name, id, addAction, targetID".into());
                 };
-                let (mut synth, def) = self.make_synth(name)?;
                 let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
-                let id = if *id == -1 {
-                    self.alloc_auto_id()?
-                } else if *id > 0 {
-                    *id
-                } else {
-                    return Err("node ID must be positive or -1".into());
-                };
-                let mut controls = def.control_defaults();
-                for pair in rest.chunks(2) {
-                    if let (Some(index), Some(value)) = (
-                        control_key(&pair[0], &def),
-                        pair.get(1).and_then(float_value),
-                    ) {
-                        synth.set_control(index, value);
-                        if let Some(slot) = controls.get_mut(index as usize) {
-                            *slot = value;
-                        }
-                    }
-                }
-                let (usage, bus_controls) = def.usage(&controls);
-                let usage = usage.clamp_audio(self.audio_bus_count);
-                self.node_defs.insert(id, def);
-                cmds.push(Cmd::AddSynth {
-                    id,
-                    target: *target,
-                    action,
-                    synth,
-                    usage: crate::dsp::StageMask::of(&usage),
-                });
-                let body = MirrorBody::Synth {
-                    def_name: name.clone(),
-                    controls,
-                    usage,
-                    bus_controls,
-                    maps: Vec::new(),
-                };
-                if let Ok(parent) = self.mirror.insert(id, body, *target, action) {
-                    self.resort_from(Some(parent), cmds);
-                }
-                Ok(())
+                let controls: Vec<(Control, f32)> = rest
+                    .chunks(2)
+                    .filter_map(|pair| {
+                        Some((Control::of(&pair[0])?, pair.get(1).and_then(float_value)?))
+                    })
+                    .collect();
+                self.new_synth(name, *id, action, *target, &controls, cmds)
+                    .map(|_| ())
             }
             "/node_set" => {
                 let Some(OscType::Int(id)) = msg.args.first() else {
@@ -1712,22 +1694,13 @@ impl CmdTranslator {
                 // A GraphDef instance resolves names against its named surface
                 // (never the private member nodes); a plain group propagates
                 // to its subtree; a synth sets itself.
-                if self.graph_set(*id, &msg.args[1..], cmds) {
-                    return Ok(());
-                }
-                let pairs = &msg.args[1..];
-                self.for_each_target(*id, cmds, |t, node, def, cmds| {
-                    let mut hit = false;
-                    for pair in pairs.chunks(2) {
-                        if let (Some(index), Some(value)) = (
-                            control_key(&pair[0], def),
-                            pair.get(1).and_then(float_value),
-                        ) {
-                            hit |= t.write_control(node, index, value, cmds);
-                        }
-                    }
-                    Ok(hit)
-                })
+                let controls: Vec<(Control, f32)> = msg.args[1..]
+                    .chunks(2)
+                    .filter_map(|pair| {
+                        Some((Control::of(&pair[0])?, pair.get(1).and_then(float_value)?))
+                    })
+                    .collect();
+                self.set_node(*id, &controls, cmds)
             }
             "/node_map" => self.map_controls(msg, false, cmds),
             "/node_mapAudio" => self.map_controls(msg, true, cmds),
@@ -1755,13 +1728,7 @@ impl CmdTranslator {
                     let OscType::Int(id) = arg else {
                         return Err("expected int node IDs".into());
                     };
-                    cmds.push(Cmd::FreeNode { id: *id });
-                    // Removals keep any topological order valid: no re-sort.
-                    self.mirror.remove(*id);
-                    // Freeing a GraphDef voice or instance group drops its
-                    // translator state / reclaims private buses (a no-op for
-                    // ordinary nodes).
-                    self.free_graph_node(*id);
+                    self.free_node(*id, cmds);
                 }
                 Ok(())
             }
@@ -1772,13 +1739,7 @@ impl CmdTranslator {
                     let [OscType::Int(id), OscType::Int(flag)] = pair else {
                         return Err("expected int (nodeID, flag) pairs".into());
                     };
-                    if self.node_unknown(*id) {
-                        return Err(format!("node {id} not found"));
-                    }
-                    cmds.push(Cmd::RunNode {
-                        id: *id,
-                        run: *flag != 0,
-                    });
+                    self.run_node(*id, *flag != 0, cmds)?;
                 }
                 Ok(())
             }
@@ -1825,27 +1786,7 @@ impl CmdTranslator {
                         _ => None,
                     };
                     let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
-                    if *id <= 0 {
-                        return Err("group ID must be positive".into());
-                    }
-                    // The label is judged **before** the group exists: a
-                    // refused name refuses the creation, rather than leaving
-                    // the client with an anonymous group it never asked for.
-                    if let Some(name) = &name {
-                        self.mirror.check_new_name(*target, action, name)?;
-                    }
-                    cmds.push(Cmd::AddGroup {
-                        id: *id,
-                        target: *target,
-                        action,
-                        group: self.new_group(),
-                    });
-                    let body = MirrorBody::group(false);
-                    // An empty group has no bus usage: no re-sort needed.
-                    let _ = self.mirror.insert(*id, body, *target, action);
-                    if let Some(name) = name {
-                        self.mirror.set_name(*id, &name)?;
-                    }
+                    self.add_group(*id, action, *target, name.as_deref(), cmds)?;
                 }
                 Ok(())
             }
