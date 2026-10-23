@@ -10839,3 +10839,21 @@ What it costs is the view's width times the window, whatever the take's
 length: over an hour of stereo, 760 columns of 2048 frames read 37 MB in 87 ms
 natively. A stored analysis stays a Future direction of the GUI plan, to take
 only if a measurement asks for it.
+
+## A render's progress is a window prop, not a status line (2026-10-23)
+
+An edit that renders runs its offline render in the client, and a gain over
+an hour takes long enough that the window has to say it is working. The
+status bar is where a window says things, but by design nothing on the wire
+writes a line of it: the bar is the host's account of what the hand did and
+what came back, and making an owner re-send that would carry a fact back to
+the machine that produced it.
+
+**A render's progress is the one fact the host does not have**, so it crosses
+as the window's `progress` prop -- a fraction in `0..1`, with
+`progress_label` -- which the host draws at the right end of the status bar
+as a name and a bar, and a negative value takes away (OSC has no null). It is
+state rather than history: a second render replaces it, and the log keeps
+only what the host did. The client sets it from the progress the render
+reports, at most ten times a second, and takes it away when the render ends
+either way.

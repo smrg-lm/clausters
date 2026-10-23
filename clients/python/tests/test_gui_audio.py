@@ -259,6 +259,22 @@ def test_reverse_renders_the_selection_backwards(disk):
     assert len(stems(editor)) == 1
 
 
+def test_a_render_s_progress_is_on_the_window_while_it_runs(monkeypatch):
+    seen = []
+    editor, host, wid, _context = opened(FakeBuffer())
+    window = int(editor._window)
+
+    def render(render, progress=None):
+        progress(50, 100)
+        seen.append(dict(host.props[window]))
+
+    monkeypatch.setattr("clausters._steps.render_step", render)
+    editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 10, [0.5], [0.0]])
+    assert seen[0]["progress"] == 0.5
+    assert seen[0]["progress_label"] == "rendering 1-2-stroke.w64"
+    assert host.props[window]["progress"] == -1, "taken away once it has ended"
+
+
 def test_a_cut_copies_the_span_s_parts_and_renders_nothing(disk):
     take = FakeBuffer()
     editor, host, wid, _context = opened(take)

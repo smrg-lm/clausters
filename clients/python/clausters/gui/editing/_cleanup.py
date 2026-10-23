@@ -11,14 +11,15 @@ _EXECUTORS = weakref.WeakKeyDictionary()
 _EXECUTORS_LOCK = threading.RLock()
 
 
-def execute_steps(server, instance, steps):
-    """Serialize indistinguishable command waits on one endpoint."""
+def execute_steps(server, instance, steps, progress=None):
+    """Serialize indistinguishable command waits on one endpoint. ``progress``
+    is told how each offline render goes (`run_steps`)."""
     with _EXECUTORS_LOCK:
         lock = _EXECUTORS.setdefault(server, threading.RLock())
     with lock:
         if instance != _service_instance(server):
             raise RuntimeError("the batch belongs to another server instance")
-        run_steps(server, _native.StepRunner(), steps)
+        run_steps(server, _native.StepRunner(), steps, progress=progress)
 
 
 def release_buffer(server, core, resource):

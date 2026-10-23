@@ -1181,3 +1181,29 @@ fn a_window_brings_the_outlines_of_the_characters_its_text_uses() {
         "nor is it a layout's to set"
     );
 }
+
+/// **A window's work in progress is a prop**: built with a fraction and a
+/// label, moved by a set of either, clamped to `0..1`, and taken away by a
+/// negative value.
+#[test]
+fn a_window_carries_the_progress_its_owner_reports() {
+    let progress = |w: &Widget| match &w.kind {
+        WidgetKind::Window { progress, .. } => progress.clone(),
+        other => panic!("expected window, got {other:?}"),
+    };
+    let n = node(r#"{"type":"window","progress":0.25,"progress_label":"stroke"}"#);
+    let mut w = Widget::from_node(1, &n, &[]).unwrap();
+    assert_eq!(progress(&w), Some((0.25, "stroke".to_string())));
+    assert!(w.kind.apply("progress", &Value::from(1.5)));
+    assert_eq!(
+        progress(&w),
+        Some((1.0, "stroke".to_string())),
+        "clamped, the label kept"
+    );
+    assert!(w.kind.apply("progress_label", &Value::from("gain")));
+    assert_eq!(progress(&w), Some((1.0, "gain".to_string())));
+    assert!(w.kind.apply("progress", &Value::from(-1)));
+    assert_eq!(progress(&w), None, "a negative value takes it away");
+    let plain = Widget::from_node(1, &node(r#"{"type":"window"}"#), &[]).unwrap();
+    assert_eq!(progress(&plain), None, "none by default");
+}

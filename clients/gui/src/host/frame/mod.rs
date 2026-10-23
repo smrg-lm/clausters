@@ -1767,7 +1767,11 @@ fn picture(
     // Into the top batch after the tree, so the bar reads over whatever ran
     // up to its edge.
     if let Some(band) = bar {
-        draw_status(&mut top, band, inputs, theme);
+        let progress = match &tree.kind {
+            WidgetKind::Window { progress, .. } => progress.as_ref(),
+            _ => None,
+        };
+        draw_status(&mut top, band, inputs, progress, theme);
     }
     // **The popup layer, last of all**: a list covers what it opened over. It
     // is placed inside `area` -- the window minus the host's bands -- by the

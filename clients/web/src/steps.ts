@@ -31,6 +31,12 @@ export type Step =
     | { render: RenderStep }
     | { move: { from: string; to: string } };
 
+/**
+ * **How an offline render goes**, told by {@link runSteps}: the frames done and
+ * the frames it comes to as it runs, and `null` for both once it has ended.
+ */
+export type RenderProgress = (render: RenderStep, done: number | null, total: number | null) => void;
+
 /** **An offline render a step asks for**: the score, in hex, and the file it
  *  is rendered into. */
 export interface RenderStep {
@@ -77,7 +83,9 @@ const walking = new WeakMap<StepRunner, Promise<void>>();
  * back, which releases the rest. `to` is which server the runner addresses them
  * to, `"sound"` or `"samples"`; a client's is one server either way. Rejects
  * when the server refuses a step or answers one with something it does not
- * wait on.
+ * wait on. `progress` is told how each offline render goes -- `(render, done,
+ * total)` as it runs, in frames, and `(render, null, null)` once it has ended,
+ * either way.
  *
  * **One walk at a time per runner.** The runner holds one sequence, so a
  * second walk begun while the first waits on a reply would find the first's
@@ -91,7 +99,7 @@ export function runSteps(
     server: Server,
     runner: StepRunner,
     steps: unknown[],
-    options: { to?: "sound" | "samples"; timeout?: number } = {},
+    options: { to?: "sound" | "samples"; timeout?: number; progress?: RenderProgress } = {},
 ): Promise<void> {
     const before = walking.get(runner) ?? Promise.resolve();
     const walk = before.then(() => walkSteps(server, runner, steps, options));
@@ -107,7 +115,8 @@ export function runSteps(
  * @internal
  */
 export const disk = {
-    render: (render: RenderStep): Promise<void> => renderStep(render),
+    render: (render: RenderStep, onProgress?: (done: number, total: number) => void): Promise<void> =>
+        renderStep(render, onProgress),
     move: async (from: string, to: string): Promise<void> => {
         const { moveFileAt } = await import("./base/files.ts");
         await moveFileAt(from, to);
@@ -122,7 +131,7 @@ async function walkSteps(
     server: Server,
     runner: StepRunner,
     steps: unknown[],
-    { to = "sound", timeout }: { to?: "sound" | "samples"; timeout?: number },
+    { to = "sound", timeout, progress }: { to?: "sound" | "samples"; timeout?: number; progress?: RenderProgress },
 ): Promise<void> {
     const call = (request: object): Record<string, unknown> =>
         JSON.parse(runner.call(JSON.stringify(request))) as Record<string, unknown>;
@@ -162,9 +171,12 @@ async function walkSteps(
             const render = (awaiting.step as { render: RenderStep }).render;
             let failed: unknown = null;
             try {
-                await disk.render(render);
+                await disk.render(render, progress === undefined
+                    ? undefined : (done, total) => progress(render, done, total));
             } catch (error) {
                 failed = error;
+            } finally {
+                progress?.(render, null, null);
             }
             const answered = call(failed === null
                 ? { verb: "rendered" }

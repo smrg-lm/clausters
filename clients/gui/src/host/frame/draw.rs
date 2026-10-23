@@ -1334,19 +1334,48 @@ fn draw_list(
 /// seen without being looked for -- and a note about the host's own working
 /// (debug builds only) reads as the accent's quiet form, since it is the one
 /// kind of line that is not about the work.
-pub(crate) fn draw_status(over: &mut Mesh, band: Rect, inputs: &FrameInputs, theme: &Theme) {
+pub(crate) fn draw_status(
+    over: &mut Mesh,
+    band: Rect,
+    inputs: &FrameInputs,
+    progress: Option<&(f32, String)>,
+    theme: &Theme,
+) {
     let m = inputs.metrics;
     over.set_clip(Some(band));
     over.rect(band, theme.status_bar);
     // The edge that separates the bar from the work above it.
     over.rect(Rect::new(band.x, band.y, band.w, m.divider_w), theme.frame);
+    let size = m.caption_scale;
+    // **The owner's work in progress**, at the right end of the band's first
+    // line: its name, then a bar filled to the fraction done. What it takes
+    // the log's line gives up.
+    let mut right = band.x + band.w - m.pad;
+    if let Some((fraction, label)) = progress {
+        let line_h = m.status_h.max(1.0);
+        let y = band.y + band.h - line_h;
+        let bar_w = (band.w * 0.2).min(6.0 * m.control_h).max(0.0);
+        let bar_h = (line_h * 0.4).max(1.0);
+        let bar = Rect::new(right - bar_w, y + (line_h - bar_h) * 0.5, bar_w, bar_h);
+        over.rect(bar, theme.frame);
+        over.rect(
+            Rect::new(bar.x, bar.y, bar.w * fraction, bar.h),
+            theme.accent,
+        );
+        right = bar.x - m.pad;
+        if !label.is_empty() {
+            let w = font::width(label, size).min((right - band.x - m.pad).max(0.0));
+            let ty = (y + (line_h - font::height(size)) * 0.5).max(band.y);
+            font::text_ellipsis(over, label, right - w, ty, w, size, theme.text_dim);
+            right -= w + m.pad;
+        }
+    }
     let Some(status) = inputs.status else {
         over.set_clip(None);
         return;
     };
-    let size = m.caption_scale;
     let left = band.x + m.pad;
-    let avail = (band.w - 2.0 * m.pad).max(0.0);
+    let avail = (right - left).max(0.0);
     let color = |line: &crate::host::status::Line| match line.kind {
         crate::host::status::Kind::Refused => theme.warn,
         crate::host::status::Kind::Did => theme.text_dim,

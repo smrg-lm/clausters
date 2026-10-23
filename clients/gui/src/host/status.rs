@@ -42,6 +42,14 @@
 //! again closes it. A window that wants neither says `status: false`, and the
 //! band is not carved at all: the content gets the pixels back.
 //!
+//! # What the owner puts there
+//!
+//! One thing, and not as a line: the window's `progress` prop, work the owner
+//! is doing for it (an offline render an edit waits on), drawn at the band's
+//! right end as its name and a bar. The host cannot know how far a render in
+//! the owner has got, so that fact crosses as the prop it is; the log stays
+//! the host's own.
+//!
 //! It is per window and it does not travel. A status line is what this window
 //! just did, in the same sense a selection is what this window is holding, and
 //! the document is explicit that neither is part of what is edited.

@@ -55,6 +55,7 @@ import type { Transport, TransportDriver } from "../../defs/server/transport.ts"
 import { Segment } from "../../segments.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import { disk, runSteps } from "../../steps.ts";
+import type { RenderProgress } from "../../steps.ts";
 import { executeSteps, releaseBuffer } from "./cleanup.ts";
 import { makeDirectoryAt, removeDirectoryAt, temporaryFolder } from "../../base/files.ts";
 import { serviceInstance } from "./application.ts";
@@ -236,7 +237,7 @@ export class AudioDomain extends Domain<Buffer | null> {
         if (editor === null || steps.length === 0) return false;
         this.#queue(() => {
             editor.checkServer();
-            return runSteps(editor.server, editor.runner, steps as never);
+            return runSteps(editor.server, editor.runner, steps as never, { progress: editor.rendering });
         });
         return true;
     }
@@ -254,7 +255,7 @@ export class AudioDomain extends Domain<Buffer | null> {
         editor.checkServer();
         const instance = serviceInstance(editor.server);
         if (server.connection !== instance.connection || server.generation !== instance.generation) throw new Error("the batch belongs to another server instance");
-        await executeSteps(editor.server as unknown as Server, server, steps);
+        await executeSteps(editor.server as unknown as Server, server, steps, editor.rendering);
     }
 
     /** Keep a stepped object's playback current even when another file is viewed. */
@@ -810,10 +811,11 @@ export class AudioEditor extends Editor<Buffer | null> {
                 const steps = (request.steps ?? []) as unknown[];
                 if (request.via === "service") {
                     this.checkServer();
-                    await executeSteps(this.server as unknown as Server, this.instance, steps);
+                    await executeSteps(this.server as unknown as Server, this.instance, steps, this.rendering);
                 } else {
                     this.checkServer();
-                    await runSteps(this.server, request.via === "plain" ? new StepRunner() : this.runner, steps as never);
+                    await runSteps(this.server, request.via === "plain" ? new StepRunner() : this.runner, steps as never,
+                        { progress: this.rendering });
                 }
                 return {};
             }
@@ -836,6 +838,30 @@ export class AudioEditor extends Editor<Buffer | null> {
                 throw new Error(`the audio editor cannot wait on ${String(request.kind)}`);
         }
     }
+
+    /** When the window was last told a render's progress. */
+    #toldProgress = 0;
+
+    /**
+     * **A render's progress, on the window's status bar**: the file it writes
+     * and how far it has got, taken away when it ends. Told at most ten times
+     * a second, so a long render costs the window nothing.
+     *
+     * @internal
+     */
+    readonly rendering: RenderProgress = (render, done, total) => {
+        if (this.host === null || this.windowId === null) return;
+        if (done === null) {
+            void this.host.set(this.windowId, { progress: -1 });
+            this.#toldProgress = 0;
+            return;
+        }
+        const now = performance.now();
+        if (now - this.#toldProgress < 100 || !total) return;
+        this.#toldProgress = now;
+        const name = (render.path || "").split("/").pop() || "measuring";
+        void this.host.set(this.windowId, { progress: Math.min(1, done / total), progress_label: `rendering ${name}` });
+    };
 
     /**
      * **A file asked for in the window or by a page**: its header read, and a

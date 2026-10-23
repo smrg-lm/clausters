@@ -2,16 +2,22 @@
 import { EditingCore, StepRunner } from "../../core/clausters_core_web.js";
 import type { Server } from "../../defs/server/index.ts";
 import { runSteps } from "../../steps.ts";
+import type { RenderProgress } from "../../steps.ts";
 import { serviceInstance } from "./application.ts";
 
 const executors = new WeakMap<object, Promise<void>>();
 
 /** Serialize indistinguishable command waits on one endpoint. @internal */
-export function executeSteps(server: Server, instance: { connection: number; generation: number }, steps: unknown[]): Promise<void> {
+export function executeSteps(
+    server: Server,
+    instance: { connection: number; generation: number },
+    steps: unknown[],
+    progress?: RenderProgress,
+): Promise<void> {
     const work = (executors.get(server) ?? Promise.resolve()).catch(() => {}).then(async () => {
         const current = serviceInstance(server);
         if (current.connection !== instance.connection || current.generation !== instance.generation) throw new Error("the batch belongs to another server instance");
-        await runSteps(server, new StepRunner(), steps as never);
+        await runSteps(server, new StepRunner(), steps as never, { progress });
     });
     executors.set(server, work);
     void work.catch(() => {});

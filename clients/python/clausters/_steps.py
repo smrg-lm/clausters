@@ -14,7 +14,7 @@ from .errors import CommandError
 
 
 def run_steps(server, runner, steps: list, *, to: str = "sound",
-              timeout: "float | None" = None) -> None:
+              timeout: "float | None" = None, progress=None) -> None:
     """Carry ``steps`` out on ``server`` through ``runner``.
 
     What may go out is sent; where something is awaited, the runner puts the
@@ -29,6 +29,9 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         to: which server the runner addresses them to, ``"sound"`` or
             ``"samples"``; a client's is one server either way.
         timeout: how long each awaited reply may take.
+        progress: told how each offline render goes -- ``(render, done,
+            total)`` as it runs, in frames, and ``(render, None, None)`` once
+            it has ended, either way.
 
     Raises:
         CommandError: when the server refuses a step, or answers one with
@@ -60,11 +63,17 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
                 continue
             # **An offline render**: nothing is sent for it; this client
             # renders the score into its file and says how it went.
+            render = awaiting["step"]["render"]
+            told = None if progress is None else (
+                lambda done, total, render=render: progress(render, done, total))
             try:
-                render_step(awaiting["step"]["render"])
+                render_step(render, progress=told)
                 failed = None
             except Exception as error:  # noqa: BLE001 -- the runner is told, then it is raised
                 failed = error
+            finally:
+                if progress is not None:
+                    progress(render, None, None)
             answer = runner.call("rendered", **({} if failed is None else {"error": str(failed)}))
             if failed is not None:
                 raise CommandError(f"the render into {awaiting['step']['render']['path']} failed: {failed}")

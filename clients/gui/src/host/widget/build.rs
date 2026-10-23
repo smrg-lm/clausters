@@ -42,6 +42,7 @@ pub(super) fn build_kind(
             keys: props.get("keys").map(scopes).unwrap_or_default(),
             ask_close: props.get("ask_close").and_then(truthy).unwrap_or(false),
             main: main_of(props.get("main")),
+            progress: progress_of(props.get("progress"), props.get("progress_label")),
         },
         // A container with no axes. `stack` -- one child at a time, the one
         // `index` names -- is one of the arrangements rather than a type of its
@@ -340,4 +341,16 @@ pub(super) fn scopes(v: &Value) -> Vec<String> {
 pub(super) fn main_of(v: Option<&Value>) -> Option<i32> {
     v.and_then(Value::as_i64)
         .and_then(|id| i32::try_from(id).ok())
+}
+
+/// A window's `progress` and `progress_label`: a fraction in `0..1`, or none
+/// when the value is negative or not a number -- which is how a set takes it
+/// away, OSC having no null.
+pub(super) fn progress_of(value: Option<&Value>, label: Option<&Value>) -> Option<(f32, String)> {
+    let fraction = value.and_then(Value::as_f64).filter(|f| *f >= 0.0)?;
+    let label = label
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    Some((fraction.clamp(0.0, 1.0) as f32, label))
 }

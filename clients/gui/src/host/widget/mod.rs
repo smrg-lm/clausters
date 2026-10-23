@@ -123,6 +123,13 @@ pub enum WidgetKind {
         /// take) so that its menu acts on it before a hand has been in it.
         /// None by default.
         main: Option<i32>,
+        /// The `progress` prop, with `progress_label`: **work the owner is
+        /// doing for this window**, as a fraction in `0..1` and what it is
+        /// called -- an offline render an edit waits on. Drawn at the right
+        /// end of the status bar while it is set; a negative value takes it
+        /// away. A fact the owner has and the host has not, so it is a prop
+        /// like any other, never a line of the status log.
+        progress: Option<(f32, String)>,
     },
     /// A nestable container.
     Panel {

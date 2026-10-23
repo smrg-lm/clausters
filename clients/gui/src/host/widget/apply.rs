@@ -31,6 +31,17 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         WidgetKind::Window { ask_close, .. } if key == "ask_close" => {
             truthy(v).map(|b| *ask_close = b).is_some()
         }
+        WidgetKind::Window { progress, .. } if key == "progress" => {
+            let label = progress.take().map(|(_, label)| label);
+            *progress = super::build::progress_of(Some(v), label.map(Value::String).as_ref());
+            true
+        }
+        WidgetKind::Window { progress, .. } if key == "progress_label" => {
+            if let (Some((_, label)), Some(text)) = (progress.as_mut(), v.as_str()) {
+                *label = text.to_string();
+            }
+            true
+        }
         WidgetKind::Window { main, .. } if key == "main" => {
             *main = super::build::main_of(Some(v));
             true

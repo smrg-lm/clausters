@@ -287,6 +287,26 @@ test("reverse renders the selection backwards", async () => {
     assert.equal(stems(editor).length, 1);
 });
 
+test("a render's progress is on the window while it runs", async () => {
+    const seen: Record<string, unknown>[] = [];
+    const [editor, host, wid] = await opened(new FakeBuffer());
+    const window = Number((editor as unknown as { windowId: number }).windowId);
+    const recorded = endpoint.render;
+    endpoint.render = async (_render, onProgress) => {
+        onProgress?.(50, 100);
+        seen.push({ ...host.props.get(window) });
+    };
+    try {
+        editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 10, [0.5], [0.0]]);
+        await settle();
+    } finally {
+        endpoint.render = recorded;
+    }
+    assert.equal(seen[0]!.progress, 0.5);
+    assert.equal(seen[0]!.progress_label, "rendering 1-2-stroke.w64");
+    assert.equal(host.props.get(window)!.progress, -1, "taken away once it has ended");
+});
+
 test("a cut copies the span's parts and renders nothing", async () => {
     const take = new FakeBuffer();
     const [editor, host, wid] = await opened(take);

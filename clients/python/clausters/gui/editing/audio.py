@@ -163,7 +163,7 @@ class AudioDomain(Domain):
         if editor is None or not steps:
             return False
         editor._check_server()
-        run_steps(editor._server, editor._runner, steps)
+        run_steps(editor._server, editor._runner, steps, progress=editor._rendering)
         return True
 
     def execute_operation(self, structure, prepared):
@@ -178,7 +178,7 @@ class AudioDomain(Domain):
         editor._check_server()
         if server != editor._instance:
             raise RuntimeError("the batch belongs to another server instance")
-        execute_steps(editor._server, server, steps)
+        execute_steps(editor._server, server, steps, progress=editor._rendering)
 
     def operation_returned(self, structure, server, buffers):
         editor = self.editor
@@ -459,10 +459,10 @@ class AudioEditor(Marking, Editor):
         if kind == "steps":
             steps = wait.get("steps") or []
             if wait.get("via") == "service":
-                execute_steps(self._server, self._instance, steps)
+                execute_steps(self._server, self._instance, steps, progress=self._rendering)
             elif wait.get("via") == "plain":
                 self._check_server()
-                run_steps(self._server, _native.StepRunner(), steps)
+                run_steps(self._server, _native.StepRunner(), steps, progress=self._rendering)
             else:
                 self.domain.run(self.structure, steps)
             return {}
@@ -480,6 +480,26 @@ class AudioEditor(Marking, Editor):
             self._clipboard(wait["document"], ready=bool(wait.get("ready")))
             return {}
         raise RuntimeError(f"the audio editor cannot wait on {kind!r}")
+
+    def _rendering(self, render: dict, done, total) -> None:
+        """**A render's progress, on the window's status bar**: the file it
+        writes and how far it has got, taken away when it ends. Told at most
+        ten times a second, so a long render costs the window nothing."""
+        if self._host is None or self._window is None:
+            return
+        import os
+        import time
+        if done is None:
+            self._host.set(int(self._window), progress=-1)
+            self._told_progress = 0.0
+            return
+        now = time.monotonic()
+        if now - getattr(self, "_told_progress", 0.0) < 0.1 or not total:
+            return
+        self._told_progress = now
+        name = os.path.basename(render.get("path") or "") or "measuring"
+        self._host.set(int(self._window), progress=min(1.0, done / total),
+                       progress_label=f"rendering {name}")
 
     def _shape(self, wait: dict) -> dict:
         """**A file asked for in the window or by a script**: its header read,
