@@ -61,6 +61,29 @@ pub enum Step {
     /// the server gives only once every asynchronous command sent earlier has
     /// completed.
     Sync(i32),
+    /// **Render a score offline into a file, and wait for it**: what an
+    /// edit's processing is when its takes live on disk. Nothing is sent to
+    /// the server the other steps go to: the endpoint renders the score on an
+    /// offline instance of its own (a `--nrt` process natively, a Worker in a
+    /// page) and the queue is released when the file is written.
+    Render(Render),
+}
+
+/// **An offline render a step asks for**: the score, in the binary format
+/// `--nrt` reads, and the file it is rendered into.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Render {
+    /// The binary score.
+    pub score: Vec<u8>,
+    /// The file the render's output is written to; its extension names the
+    /// container (a WAV, a W64 or an RF64).
+    pub path: String,
+    /// The render's sample rate.
+    pub rate: f64,
+    /// Its output channels.
+    pub channels: usize,
+    /// The output's sample format (`int16`, `int24`, `float`).
+    pub format: String,
 }
 
 /// **What an endpoint arranges differently**: how many samples one fill may
@@ -519,9 +542,37 @@ pub fn steps_json(steps: &[Step]) -> Value {
                     json!({"await": {"command": command, "index": index}})
                 }
                 Step::Sync(id) => json!({ "sync": id }),
+                Step::Render(render) => json!({"render": {
+                    "score": hex(&render.score),
+                    "path": render.path,
+                    "rate": render.rate,
+                    "channels": render.channels,
+                    "format": render.format,
+                }}),
             })
             .collect(),
     )
+}
+
+/// Bytes as lowercase hex, the way a step's blob argument rides.
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
+/// Hex back to bytes, or `None` for text that is not.
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 /// **Steps read back** from [`steps_json`]'s own shape: what a client hands a
@@ -549,6 +600,19 @@ pub fn steps_from_json(steps: &Value) -> Vec<Step> {
                     command: wait.get("command")?.as_str()?.to_string(),
                     index: wait.get("index").and_then(Value::as_i64).map(|i| i as i32),
                 });
+            }
+            if let Some(render) = step.get("render") {
+                return Some(Step::Render(Render {
+                    score: unhex(render.get("score")?.as_str()?)?,
+                    path: render.get("path")?.as_str()?.to_string(),
+                    rate: render.get("rate")?.as_f64()?,
+                    channels: render.get("channels")?.as_u64()? as usize,
+                    format: render
+                        .get("format")
+                        .and_then(Value::as_str)
+                        .unwrap_or("float")
+                        .to_string(),
+                }));
             }
             step.get("sync")
                 .and_then(Value::as_i64)
@@ -636,6 +700,7 @@ mod tests {
                 Step::Send(m) => m.addr.clone(),
                 Step::AwaitDone { command, .. } => format!("await {command}"),
                 Step::Sync(_) => "sync".into(),
+                Step::Render(r) => format!("render {}", r.path),
             })
             .collect()
     }

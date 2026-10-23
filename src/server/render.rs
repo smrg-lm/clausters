@@ -550,10 +550,28 @@ pub fn render_to_wav(
     path: impl AsRef<Path>,
     sample_format: &str,
 ) -> Result<RenderStats, String> {
+    render_to_wav_with(score, cfg, path, sample_format, |_, _| {})
+}
+
+/// [`render_to_wav`], telling `progress` the frames done and the frames the
+/// render comes to after each second of the score.
+pub fn render_to_wav_with(
+    score: &OscScore,
+    cfg: &RenderConfig,
+    path: impl AsRef<Path>,
+    sample_format: &str,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<RenderStats, String> {
     let path = path.as_ref().to_string_lossy().into_owned();
     let mut writer =
         crate::dsp::pcm::Writer::create(&path, cfg.channels, cfg.sample_rate, sample_format)?;
-    let stats = render(score, cfg, |chunk| writer.write(chunk))?;
+    let mut render = OfflineRender::new(score, cfg)?;
+    let run = cfg.sample_rate.max(1.0) as u64;
+    while !render.step(run, &mut |chunk: &[f32]| writer.write(chunk))? {
+        progress(render.frames_done(), render.total_frames());
+    }
+    progress(render.total_frames(), render.total_frames());
+    let stats = render.finish()?;
     writer.finalize()?;
     Ok(stats)
 }

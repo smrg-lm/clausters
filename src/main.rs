@@ -1,4 +1,4 @@
-use clausters::server::render::{OscScore, RenderConfig, render_to_wav};
+use clausters::server::render::{OscScore, RenderConfig, render_to_wav_with};
 
 const USAGE: &str = "\
 usage:
@@ -85,6 +85,8 @@ usage:
                            here to replay that exact take)
       --stats              print the render's stats as one JSON line instead
                            of the human summary (for a client driving --nrt)
+      --progress           print `progress <done> <total>` frames to stderr
+                           after each second of the score
       --workers <n>        DSP threads for /group_parallel groups (default 0)
       --shm <path>         shared-memory segment for local clients (RT only;
                            put it on /dev/shm -- see docs/ipc.md). One that
@@ -237,6 +239,7 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
     let mut cfg = RenderConfig::default();
     let mut format = "float".to_string();
     let mut stats_json = false;
+    let mut progress = false;
     let mut paths = Vec::new();
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -249,6 +252,7 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
                 cfg.workers = parse_workers(flag_value("--workers", "a value", &mut it)?)?
             }
             "--stats" => stats_json = true,
+            "--progress" => progress = true,
             "--help" | "-h" => {
                 println!("{USAGE}");
                 return Ok(());
@@ -266,7 +270,11 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
     };
 
     let score = OscScore::load(score_path)?;
-    let stats = render_to_wav(&score, &cfg, out_path, &format)?;
+    let stats = render_to_wav_with(&score, &cfg, out_path, &format, |done, total| {
+        if progress {
+            eprintln!("progress {done} {total}");
+        }
+    })?;
     if stats_json {
         // One machine-readable line, for a client driving `--nrt` as a
         // subprocess: it gets the render's stats without reading the file it

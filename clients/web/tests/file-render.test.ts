@@ -26,6 +26,9 @@ import { out, peaksOut, sine, transportDiskIn } from "../src/defs/ugens/index.ts
 import { decodeSoundfile } from "../src/engine/codec.ts";
 import { loadRenderer } from "../src/engine/render.ts";
 import { renderScore } from "../src/render.ts";
+import { runSteps } from "../src/steps.ts";
+import { StepRunner } from "../src/core/clausters_core_web.js";
+import type { Server } from "../src/defs/server/index.ts";
 
 const here = new URL(".", import.meta.url);
 await loadCore();
@@ -111,6 +114,33 @@ test("a list of files is read from its first frame, and its peaks are written", 
         assert.ok(samples.slice(12_000).every((v) => v === -0.5), "then the second");
         const head = new TextDecoder().decode((await readFile(peaks)).subarray(0, 4));
         assert.equal(head, "CLPK");
+    } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
+test("a render step writes its file and releases what follows it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
+    try {
+        const nrt = new OscNrtInterface();
+        const def = new SynthDef("tone", out(0, sine(660).mul(0.5)));
+        nrt.addBundle(0, [
+            { addr: "/def_send", args: [s("synth"), s(def.dumpDef())] },
+            { addr: "/synth_new", args: [s("tone"), i(1000), i(0), i(0)] },
+        ]);
+        nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
+        const score = [...nrt.score.bytes()].map((b) => b.toString(16).padStart(2, "0")).join("");
+        const path = join(dir, "tone.w64");
+        const sent: string[] = [];
+        const server = { sendMsg: (addr: string) => sent.push(addr) } as unknown as Server;
+        await runSteps(server, new StepRunner(), [
+            { send: { addr: "/before", args: [] } },
+            { render: { score, path, rate: RATE, channels: 1, format: "float" } },
+            { send: { addr: "/after", args: [] } },
+        ]);
+        assert.deepEqual(sent, ["/before", "/after"]);
+        const back = await decodeSoundfile(await readFile(path), path, 0, -1);
+        assert.equal(back.frames, 24_000);
     } finally {
         await rm(dir, { recursive: true, force: true });
     }

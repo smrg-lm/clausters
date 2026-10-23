@@ -221,6 +221,7 @@ mod tests {
             Step::Send(m) => m.addr.clone(),
             Step::AwaitDone { command, .. } => format!("await {command}"),
             Step::Sync(_) => "sync".into(),
+            Step::Render(r) => format!("render {}", r.path),
         };
         let mono = write_steps(7, 1, &payload, 2);
         assert_eq!(

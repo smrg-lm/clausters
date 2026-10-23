@@ -939,8 +939,11 @@ difference between what a server holds and what the multitrack says), its applie
 `IdSpaces`) and its transport: the tempo a multitrack that states none is read at
 (`DEFAULT_BPM`), the sample a beat is when the transport is located, what play,
 pause, stop and cue send, and the zeroed meters of a paused multitrack. Every verb
-answers **steps** — a message, a `/done` the rest waits for, a barrier — and
-the endpoint sends them and waits where they say. A standalone GUI host holds it
+answers **steps** — a message, a `/done` the rest waits for, a barrier, or an
+offline render into a file (`Step::Render`, the score the endpoint renders on
+an offline instance of its own: a `--nrt` process from Python, a Worker of the
+render's own in a page, and refused by a standalone host for now) — and the
+endpoint sends them and waits where they say. A standalone GUI host holds it
 directly (`host/instance.rs`, draining the steps from its reply path); the
 clients hold it through `clausters_editing_playback_*` / `MultitrackPlayback`, behind
 their own `Playback`. So a session edited with no script behind it and a multitrack

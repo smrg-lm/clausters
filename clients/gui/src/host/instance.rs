@@ -310,16 +310,30 @@ impl Host {
     }
 
     /// Sends every step that may go out now, each to its server.
+    ///
+    /// **This host renders nothing offline yet**: an offline render a step
+    /// asks for (`Step::Render`) is refused, which releases what was held
+    /// behind it, rather than holding the queue for ever. A standalone host
+    /// that renders is the multitrack's turn to disk's.
     fn send_multitrack(&mut self) {
-        for (to, message) in self.instance.run.ready() {
-            match (to, self.server.as_ref()) {
-                (Server::Samples, Some(session)) => {
-                    if let Err(e) = session.send(message) {
-                        diag::warn!("cannot send to the server that holds the samples: {e}");
+        loop {
+            for (to, message) in self.instance.run.ready() {
+                match (to, self.server.as_ref()) {
+                    (Server::Samples, Some(session)) => {
+                        if let Err(e) = session.send(message) {
+                            diag::warn!("cannot send to the server that holds the samples: {e}");
+                        }
                     }
+                    _ => self.send_to_player(message),
                 }
-                _ => self.send_to_player(message),
             }
+            if !matches!(self.instance.run.awaiting(), Some((_, Step::Render(_)))) {
+                return;
+            }
+            diag::warn!("an offline render was asked of a host that renders none; refused");
+            self.instance
+                .run
+                .rendered(Some("this host renders nothing offline".into()));
         }
     }
 
@@ -997,6 +1011,9 @@ mod tests {
                         .collect(),
                 },
                 Some((_, Step::Send(_))) => unreachable!("a send never waits"),
+                Some((_, Step::Render(r))) => {
+                    panic!("a multitrack asks for no render ({})", r.path)
+                }
             };
             assert_eq!(
                 playing.run.reply(Server::Sound, &reply),

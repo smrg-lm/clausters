@@ -477,7 +477,8 @@ def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,
 
 
 def render_to_file(score: bytes, path, sample_rate: float, channels: int,
-                    workers: int, seed: int | None, sample_format: str):
+                    workers: int, seed: int | None, sample_format: str,
+                    progress=None):
     """Hand a binary score to the ``clausters --nrt`` renderer, which writes
     the file itself -- the one place in the client that turns a score into a
     soundfile.
@@ -508,15 +509,33 @@ def render_to_file(score: bytes, path, sample_rate: float, channels: int,
                 "--workers", str(int(workers)), "--stats"]
         if seed is not None:
             argv += ["--seed", str(int(seed))]
-        done = subprocess.run(argv, capture_output=True, text=True)
-        if done.returncode != 0:
-            raise RenderError(_ANSI.sub("", done.stderr or done.stdout).strip()
+        if progress is None:
+            done = subprocess.run(argv, capture_output=True, text=True)
+            returncode, stdout, stderr = done.returncode, done.stdout, done.stderr
+        else:
+            # The renderer says how far it has got on stderr, a line a second
+            # of the score, read as it comes; everything else there is its log.
+            argv.append("--progress")
+            child = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     text=True)
+            said = []
+            for line in child.stderr:
+                parts = line.split()
+                if len(parts) == 3 and parts[0] == "progress":
+                    progress(int(parts[1]), int(parts[2]))
+                else:
+                    said.append(line)
+            stdout = child.stdout.read()
+            returncode = child.wait()
+            stderr = "".join(said)
+        if returncode != 0:
+            raise RenderError(_ANSI.sub("", stderr or stdout).strip()
                               or "render failed")
         # A render that finished may still have said something -- a node the
         # score asked for and the engine rejected -- and the renderer's
         # stderr is where it said it.
-        _forward_log(done.stderr)
-        info = json.loads(done.stdout.strip().splitlines()[-1])
+        _forward_log(stderr)
+        info = json.loads(stdout.strip().splitlines()[-1])
     finally:
         os.unlink(score_path)
     return RenderStats(frames=info["frames"], channels=info["channels"],

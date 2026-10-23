@@ -27,7 +27,42 @@ export type StepArg =
 export type Step =
     | { send: { addr: string; args: StepArg[] } }
     | { await: { command: string; index: number | null } }
-    | { sync: number };
+    | { sync: number }
+    | { render: RenderStep };
+
+/** **An offline render a step asks for**: the score, in hex, and the file it
+ *  is rendered into. */
+export interface RenderStep {
+    score: string;
+    path: string;
+    rate: number;
+    channels: number;
+    format: string;
+}
+
+/**
+ * **A render step carried out**: the score rendered offline into its file, in
+ * a Worker of its own in a page and on this thread under node
+ * (`engine/file-render.ts`), so two renders run at once. `onProgress` is told
+ * the frames done and the frames the render comes to.
+ */
+export async function renderStep(
+    render: RenderStep,
+    onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+    const { renderFile } = await import("./engine/file-render.ts");
+    const { entropySeed } = await import("./engine/render.ts");
+    const score = new Uint8Array(render.score.length / 2);
+    for (let i = 0; i < score.length; i++) score[i] = parseInt(render.score.slice(2 * i, 2 * i + 2), 16);
+    await renderFile({
+        score,
+        sampleRate: render.rate,
+        channels: render.channels,
+        seed: entropySeed(),
+        path: render.path,
+        sampleFormat: render.format || "float",
+    }, onProgress);
+}
 
 /** The walk each runner is on, so the next one starts after it. */
 const walking = new WeakMap<StepRunner, Promise<void>>();
@@ -79,11 +114,30 @@ async function walkSteps(
         };
         const messages = ready.messages ?? [];
         const awaiting = ready.awaiting ?? null;
-        if (awaiting === null) {
+        if (awaiting === null || "render" in awaiting.step) {
             for (const message of messages) {
                 server.sendMsg(message.addr, ...message.args.map(stepArg));
             }
-            return;
+            if (awaiting === null) return;
+            // **An offline render**: nothing is sent for it; this client
+            // renders the score into its file and says how it went.
+            const render = (awaiting.step as { render: RenderStep }).render;
+            let failed: unknown = null;
+            try {
+                await renderStep(render);
+            } catch (error) {
+                failed = error;
+            }
+            const answered = call(failed === null
+                ? { verb: "rendered" }
+                : { verb: "rendered", error: String((failed as Error)?.message ?? failed) });
+            if (failed !== null) {
+                throw new Error(`clausters: the render into ${render.path} failed: ${String((failed as Error)?.message ?? failed)}`);
+            }
+            if (answered.reply !== "released") {
+                throw new Error("clausters: the runner did not wait on the render it asked for");
+            }
+            continue;
         }
         const last = messages.pop();
         if (last === undefined) throw new Error("clausters: the runner waits on a step nothing was sent for");

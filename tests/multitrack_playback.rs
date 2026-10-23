@@ -31,6 +31,7 @@ fn run(s: &mut NrtSession, steps: Vec<Step>) {
             Step::AwaitDone { .. } | Step::Sync(_) => {
                 s.settle_for(4);
             }
+            Step::Render(r) => panic!("a multitrack's playback asks for no render ({})", r.path),
         }
     }
     s.settle_for(4);

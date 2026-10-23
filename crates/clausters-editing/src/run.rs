@@ -91,7 +91,9 @@ impl Runner {
                     ));
                     self.awaiting = Some((to, Step::Sync(id)));
                 }
-                Some((to, wait @ Step::AwaitDone { .. })) => self.awaiting = Some((to, wait)),
+                Some((to, wait @ (Step::AwaitDone { .. } | Step::Render(_)))) => {
+                    self.awaiting = Some((to, wait))
+                }
             }
         }
         out
@@ -131,6 +133,20 @@ impl Runner {
         answer
     }
 
+    /// **The render the queue is held behind has finished**, with `failed`
+    /// saying why it did not: what was held behind it may go out, a failure
+    /// releasing it as a refusal does. `Unrelated` when no render is awaited.
+    pub fn rendered(&mut self, failed: Option<String>) -> Reply {
+        if !matches!(self.awaiting, Some((_, Step::Render(_)))) {
+            return Reply::Unrelated;
+        }
+        self.awaiting = None;
+        match failed {
+            None => Reply::Released,
+            Some(why) => Reply::Refused(vec![OscType::String(why)]),
+        }
+    }
+
     /// The step the queue is held behind, and the server it waits on.
     pub fn awaiting(&self) -> Option<(Server, &Step)> {
         self.awaiting.as_ref().map(|(to, step)| (*to, step))
@@ -165,6 +181,9 @@ fn server_name(server: Server) -> &'static str {
 ///   pairs a send with its reply send that one last.
 /// - `reply` -- `from`, `addr` and `args` (tagged): answers `{"reply":
 ///   "released"}`, `{"reply": "unrelated"}`, or `{"reply": "refused", "args"}`.
+/// - `rendered` -- `error` when the render the queue is held behind failed:
+///   answers as `reply` does. A render step is awaited with no message sent:
+///   the endpoint renders its score offline itself (`awaiting.step.render`).
 /// - `idle` -- answers `{"idle": bool}`.
 ///
 /// A verb it does not know answers `{"error": ...}`.
@@ -227,6 +246,20 @@ pub fn call_json(run: &mut Runner, request: &str) -> String {
                 }),
             }
         }
+        Some("rendered") => {
+            let failed = request
+                .get("error")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            match run.rendered(failed) {
+                Reply::Released => json!({ "reply": "released" }),
+                Reply::Unrelated => json!({ "reply": "unrelated" }),
+                Reply::Refused(args) => json!({
+                    "reply": "refused",
+                    "args": args.iter().map(arg_json).collect::<Vec<_>>(),
+                }),
+            }
+        }
         Some("idle") => json!({ "idle": run.is_idle() }),
         other => json!({ "error": format!("the runner has no verb {other:?}") }),
     };
@@ -236,6 +269,73 @@ pub fn call_json(run: &mut Runner, request: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A render step holds the queue with nothing sent for it**: it is
+    /// handed to the endpoint whole through the JSON door, round trip
+    /// included, and its end releases what was behind it -- a failure as a
+    /// refusal does.
+    #[test]
+    fn a_render_holds_the_queue_until_the_endpoint_has_rendered() {
+        let render = Step::Render(crate::apply::Render {
+            score: vec![0, 1, 254, 255],
+            path: "take.w64".into(),
+            rate: 48_000.0,
+            channels: 2,
+            format: "float".into(),
+        });
+        let json = crate::apply::steps_json(std::slice::from_ref(&render));
+        assert_eq!(json[0]["render"]["score"], "0001feff");
+        assert_eq!(crate::apply::steps_from_json(&json), vec![render.clone()]);
+        let mut run = Runner::new();
+        let steps = crate::apply::steps_json(&[send("/a", vec![]), render, send("/b", vec![])]);
+        call_json(
+            &mut run,
+            &serde_json::json!({"verb": "push", "steps": steps}).to_string(),
+        );
+        let ready: serde_json::Value =
+            serde_json::from_str(&call_json(&mut run, r#"{"verb":"ready"}"#)).unwrap();
+        assert_eq!(
+            ready["messages"].as_array().unwrap().len(),
+            1,
+            "only what is before it"
+        );
+        assert_eq!(ready["awaiting"]["step"]["render"]["path"], "take.w64");
+        let wrong = call_json(
+            &mut run,
+            r#"{"verb":"reply","from":"sound","addr":"/done","args":[{"s":"/a"}]}"#,
+        );
+        assert_eq!(
+            wrong, r#"{"reply":"unrelated"}"#,
+            "a reply does not end a render"
+        );
+        let done = call_json(&mut run, r#"{"verb":"rendered"}"#);
+        assert_eq!(done, r#"{"reply":"released"}"#);
+        let rest: serde_json::Value =
+            serde_json::from_str(&call_json(&mut run, r#"{"verb":"ready"}"#)).unwrap();
+        assert_eq!(rest["messages"][0]["addr"], "/b");
+        assert!(run.is_idle());
+        // A failure releases as a refusal, with why.
+        run.push(
+            Server::Sound,
+            [Step::Render(crate::apply::Render {
+                score: Vec::new(),
+                path: "x.wav".into(),
+                rate: 48_000.0,
+                channels: 1,
+                format: "float".into(),
+            })],
+        );
+        run.ready();
+        let failed = call_json(&mut run, r#"{"verb":"rendered","error":"no room"}"#);
+        assert!(
+            failed.contains("refused") && failed.contains("no room"),
+            "{failed}"
+        );
+        assert_eq!(
+            call_json(&mut run, r#"{"verb":"rendered"}"#),
+            r#"{"reply":"unrelated"}"#
+        );
+    }
 
     /// **The JSON door walks the same queue**: a playback's own steps pushed
     /// in, the barrier as the last message out, and its reply releasing the

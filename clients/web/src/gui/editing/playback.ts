@@ -45,7 +45,7 @@ import type { GuiHost } from "../host.ts";
 import { PlayheadSync } from "../playhead-sync.ts";
 import type { MultitrackEditor } from "./multitrack.ts";
 
-export type { Step, StepArg } from "../../steps.ts";
+export type { RenderStep, Step, StepArg } from "../../steps.ts";
 
 /**
  * **Where a pass ends**, on a multitrack's transport or a notes editor's:

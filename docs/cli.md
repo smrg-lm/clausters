@@ -131,6 +131,7 @@ streams wait for what they read, so a list is read from its first frame.
 | `--seed` | integer | a fresh one each run | Starting seed for the noise UGens. The seed used is reported, so passing it back replays that exact take. |
 | `--stats` | — | — | Print the render's statistics as one JSON line instead of the human summary — for a client driving `--nrt`. |
 | `--workers` | count | `0` | DSP threads for parallel groups. Bit-identical output, only faster. |
+| `--progress` | — | — | Print `progress <done> <total>` (frames) on stderr after each second of the score — for a client that shows how far a long render has got. |
 
 ## `clausters-gui` — the GUI host
 

@@ -39,10 +39,24 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         ready = runner.call("ready")
         messages = ready.get("messages", [])
         awaiting = ready.get("awaiting")
-        if awaiting is None:
+        if awaiting is None or "render" in awaiting["step"]:
             for message in messages:
                 server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
-            return
+            if awaiting is None:
+                return
+            # **An offline render**: nothing is sent for it; this client
+            # renders the score into its file and says how it went.
+            try:
+                render_step(awaiting["step"]["render"])
+                failed = None
+            except Exception as error:  # noqa: BLE001 -- the runner is told, then it is raised
+                failed = error
+            answer = runner.call("rendered", **({} if failed is None else {"error": str(failed)}))
+            if failed is not None:
+                raise CommandError(f"the render into {awaiting['step']['render']['path']} failed: {failed}")
+            if answer.get("reply") != "released":
+                raise CommandError("the runner did not wait on the render it asked for")
+            continue
         if not messages:
             raise CommandError("the runner waits on a step nothing was sent for")
         *first, last = messages
@@ -61,6 +75,18 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
             raise CommandError(
                 f"{last['addr']} was answered by {raddr} {rargs}, "
                 "which is not what it waits on")
+
+
+def render_step(render: dict, progress=None) -> None:
+    """**A render step carried out**: the score rendered offline into its file
+    by an offline server of its own (a ``--nrt`` process), so two renders run
+    at once on two of them. ``progress`` is told the frames done and the frames
+    the render comes to."""
+    from .render import render_to_file
+
+    render_to_file(bytes.fromhex(render["score"]), render["path"], float(render["rate"]),
+                   int(render["channels"]), 0, None, render.get("format", "float"),
+                   progress=progress)
 
 
 def step_arg(arg: dict):
