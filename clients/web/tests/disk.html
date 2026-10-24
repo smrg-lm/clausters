@@ -84,9 +84,12 @@
         for (let waited = 0; waited < 1200 && midData === 0; waited += 100) {
           await wait(100);
           if (!(await opfs.exists(PATH))) continue;
-          midSize = await opfs.sizeOf(PATH);
+          // the header first: it is written after the run it counts, so the
+          // size read after it covers it, while another run may land
+          // between a size read first and the header
           const head = await opfs.readRange(PATH, 0, 44);
           midData = head.byteLength === 44 ? new DataView(head.buffer).getUint32(40, true) : 0;
+          midSize = await opfs.sizeOf(PATH);
         }
         const midTake = await Buffer.read(PATH, { server });
         const midFrames = midTake.frames;

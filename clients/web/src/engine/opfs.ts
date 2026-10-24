@@ -232,9 +232,22 @@ export async function readRange(
     // A `File` slices without reading the whole of it, and takes no lock: a
     // sync access handle would hold the file for as long as it is open, and
     // an offline render reading the same take holds one for the whole render.
-    const file = await handle.getFile();
-    return new Uint8Array(await file.slice(at, at + length).arrayBuffer());
+    // A `File` is a snapshot, and a file written after it was taken (a take
+    // being recorded) is refused by a read of the old one: the read is made
+    // again from a fresh snapshot, which a writer between two runs leaves
+    // readable.
+    for (let attempt = 1; ; attempt += 1) {
+        const file = await handle.getFile();
+        try {
+            return new Uint8Array(await file.slice(at, at + length).arrayBuffer());
+        } catch (error) {
+            if ((error as { name?: string }).name !== "NotReadableError" || attempt >= STALE_READS) throw error;
+        }
+    }
 }
+
+/** How many times a read of a file written under it is made before it fails. */
+const STALE_READS = 8;
 
 /** How many bytes `path` holds. */
 export async function sizeOf(path: string): Promise<number> {
