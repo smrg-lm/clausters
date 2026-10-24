@@ -258,6 +258,16 @@ impl AudioApp {
     /// thread of their own, their progress and their end said back.
     fn hand_off(&self, member: MemberId, token: u64, run: Value, steps: Vec<Step>, lease: bool) {
         let tx = self.notes.0.clone();
+        // the window is told at once that a render runs, not a tenth of a
+        // second into it
+        if let Some(Step::Render(job)) = steps.iter().find(|s| matches!(s, Step::Render(_))) {
+            let _ = tx.send(Note::Progress {
+                member,
+                path: job.path.clone(),
+                done: Some(0),
+                total: 1,
+            });
+        }
         let spawned = std::thread::Builder::new()
             .name("audio-render".into())
             .spawn(move || {

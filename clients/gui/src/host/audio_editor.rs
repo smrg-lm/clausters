@@ -290,6 +290,7 @@ impl Host {
         let end = ran.end.clone();
         if let Some(Err(raised)) = &end {
             diag::warn!("audio: {}", raised.message);
+            self.say(def_id, status::Line::of_reason(None, &raised.message));
         }
         self.perform_audio(def_id, ran);
         end
@@ -311,8 +312,11 @@ impl Host {
                     .map(|(id, _)| *id)
             });
             if let Some(def_id) = def_id {
+                // **What failed is said in the window**, a render's above all,
+                // which ends where nobody is looking at a log
                 if let Some(Err(raised)) = &ran.end {
                     diag::warn!("audio: {}", raised.message);
+                    self.say(def_id, status::Line::of_reason(None, &raised.message));
                 }
                 self.perform_audio(def_id, ran);
             }

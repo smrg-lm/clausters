@@ -1379,6 +1379,76 @@ pub(crate) fn draw_status(
     over.set_clip(None);
 }
 
+/// **The owner's work in progress, over the window**: a panel at the
+/// centre of `area` with what the work is called, a bar filled to the
+/// fraction done and the percent, over the window's content dimmed -- so a
+/// long render (a reverse over hours) is seen to be running and how far it
+/// has got, not taken for a window that stopped. The status bar carries the
+/// same reading at its right end; this is what a reader looking at the work
+/// sees.
+pub(crate) fn draw_progress_overlay(
+    over: &mut Mesh,
+    area: Rect,
+    progress: &(f32, String),
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let m = inputs.metrics;
+    let (fraction, label) = progress;
+    let fraction = fraction.clamp(0.0, 1.0);
+    over.set_clip(Some(area));
+    over.rect(area, with_alpha(theme.background, 0.45));
+    let size = m.text_scale;
+    let line = font::height(size).max(1.0);
+    let w = (area.w * 0.5).min(16.0 * m.control_h).max(0.0);
+    let h = (line * 2.0 + m.control_h * 0.5 + m.pad * 4.0).min(area.h);
+    let panel = Rect::new(
+        area.x + (area.w - w) * 0.5,
+        area.y + (area.h - h) * 0.5,
+        w,
+        h,
+    );
+    over.rect(panel, theme.status_bar);
+    over.border(panel, m.divider_w, theme.frame);
+    let inner = panel.w - 2.0 * m.pad;
+    let name = if label.is_empty() {
+        "working"
+    } else {
+        label.as_str()
+    };
+    font::text_ellipsis(
+        over,
+        name,
+        panel.x + m.pad,
+        panel.y + m.pad,
+        inner.max(0.0),
+        size,
+        theme.text,
+    );
+    let bar = Rect::new(
+        panel.x + m.pad,
+        panel.y + m.pad * 2.0 + line,
+        inner.max(0.0),
+        (m.control_h * 0.5).max(1.0),
+    );
+    over.rect(bar, theme.frame);
+    over.rect(
+        Rect::new(bar.x, bar.y, bar.w * fraction, bar.h),
+        theme.accent,
+    );
+    let percent = format!("{:.0} %", fraction * 100.0);
+    let pw = font::width(&percent, m.caption_scale);
+    font::text(
+        over,
+        &percent,
+        panel.x + panel.w - m.pad - pw,
+        bar.y + bar.h + m.pad * 0.5,
+        m.caption_scale,
+        theme.text_dim,
+    );
+    over.set_clip(None);
+}
+
 #[cfg(test)]
 mod tests {
     /// A stacked take is one colour; overlaid channels are told apart.

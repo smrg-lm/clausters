@@ -126,8 +126,8 @@ pub enum WidgetKind {
         /// The `progress` prop, with `progress_label`: **work the owner is
         /// doing for this window**, as a fraction in `0..1` and what it is
         /// called -- an offline render an edit waits on. Drawn at the right
-        /// end of the status bar while it is set; a negative value takes it
-        /// away. A fact the owner has and the host has not, so it is a prop
+        /// end of the status bar, and as a panel over the window's content,
+        /// while it is set; a negative value takes it away. A fact the owner has and the host has not, so it is a prop
         /// like any other, never a line of the status log.
         progress: Option<(f32, String)>,
         /// The `activation` prop: **the owner is told when the window is

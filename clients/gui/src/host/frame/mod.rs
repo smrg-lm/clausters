@@ -1773,6 +1773,14 @@ fn picture(
         };
         draw_status(&mut top, band, inputs, progress, theme);
     }
+    // **Work in progress over the window**, while the owner says it runs.
+    if let WidgetKind::Window {
+        progress: Some(progress),
+        ..
+    } = &tree.kind
+    {
+        draw_progress_overlay(&mut top, area, progress, inputs, theme);
+    }
     // **The popup layer, last of all**: a list covers what it opened over. It
     // is placed inside `area` -- the window minus the host's bands -- by the
     // function the press hit-tests with, so it never runs under the bar and a
@@ -2549,6 +2557,47 @@ mod tests {
             drawn.y + drawn.h,
             bounds.y,
             bounds.y + bounds.h
+        );
+    }
+
+    /// **Work in progress is drawn over the window**: a window whose owner
+    /// says it is rendering draws a panel over its content -- the dimming,
+    /// the panel and its frame, the bar and its fill, the name and the
+    /// percent -- on the top layer, and one that is not draws none of it.
+    #[test]
+    fn work_in_progress_is_drawn_over_the_window() {
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+        let top = |progress: f64| {
+            let mut host = crate::host::Host::new();
+            let def = format!(
+                r#"{{"type":"window","status":false,"progress":{progress},
+                    "progress_label":"rendering reversed.w64",
+                    "children":[{{"id":2,"type":"label","text":"take","h":20}}]}}"#
+            );
+            host.handle_packet(
+                OscPacket::Message(OscMessage {
+                    addr: crate::host::GUI_DEF.into(),
+                    args: vec![OscType::Int(1), OscType::String(def)],
+                }),
+                crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                    std::net::Ipv4Addr::LOCALHOST,
+                    9000,
+                ))),
+            );
+            let tree = host.window_def(1).unwrap();
+            let none = (HashMap::new(), HashMap::new());
+            let inputs = FrameInputs {
+                metrics: host.metrics_for(1),
+                ..FrameInputs::default()
+            };
+            picture(tree, &inputs, &host.theme, &none.0, &none.1, (800, 600))
+                .top
+                .vertex_count()
+        };
+        let (idle, working) = (top(-1.0), top(0.5));
+        assert!(
+            working > idle + 4 * 6,
+            "a panel over the window: {idle} -> {working} vertices"
         );
     }
 
