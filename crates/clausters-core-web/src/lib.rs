@@ -1464,8 +1464,10 @@ pub fn node_editor(request: &str) -> String {
 #[wasm_bindgen]
 pub fn articulation(pitches: &[f64], joins: &[u32]) -> String {
     let pairs: Vec<(usize, usize)> = joins
-        .chunks_exact(2)
-        .map(|p| (p[0] as usize, p[1] as usize))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[from, to]| (*from as usize, *to as usize))
         .collect();
     let a = clausters_core::event::notation::articulation(pitches, &pairs);
     serde_json::json!({
