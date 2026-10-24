@@ -852,6 +852,12 @@ pub struct TransportCtx {
     /// there; nothing else needs it, since the engine cuts the block at the
     /// wrap.
     pub looping: Option<(u64, u64)>,
+    /// **A loop asked for and not yet in place**, `[start, end)` or `None`
+    /// to loop no more: a change of [`looping`](Self::looping) while the
+    /// transport rolls over disk readers is cued, and the engine puts it in
+    /// place once every reader holds the reading it asks for
+    /// ([`UGen::looped`]). `None` when nothing is waiting.
+    pub pending_looping: Option<Option<(u64, u64)>>,
 }
 
 /// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes --
@@ -1110,6 +1116,16 @@ pub trait UGen: Send {
     /// is every kind but `TransportDiskIn`. Read after a cue has run the
     /// synth standing, so its next play starts on frames already in the ring.
     fn cued(&self) -> Option<bool> {
+        None
+    }
+
+    /// **Whether a reader that streams from disk holds the reading a loop
+    /// change asks for** (`transport.pending_looping`), so the engine may put
+    /// the loop in place now: `None` for a UGen that streams nothing, which
+    /// is every kind but `TransportDiskIn`. Read at the start of a block,
+    /// after the block before ran, which is when the reader asked for it.
+    fn looped(&self, transport: &TransportCtx) -> Option<bool> {
+        let _ = transport;
         None
     }
 

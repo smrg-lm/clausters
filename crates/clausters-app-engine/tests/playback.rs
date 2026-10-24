@@ -690,8 +690,10 @@ fn a_loop_moved_while_it_plays_is_crossfaded() {
 /// switch turns every one to two bursts; every block the transport plays
 /// straight through is the take's frames at its position, sample for
 /// sample. A loop set, moved or cleared is the same reading up to where the
-/// two part, and the new one is spliced on there. Over the application's fed
-/// stream and over the reader's own thread alike.
+/// two part, and the new one is spliced on there; the change is cued, so one
+/// turned too near the loop's end for the new reading to be read in time
+/// takes effect a pass later. Over the application's fed stream and over the
+/// reader's own thread alike.
 #[test]
 fn the_loop_switch_turned_while_it_plays_is_not_heard() {
     use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
@@ -746,14 +748,6 @@ fn the_loop_switch_turned_while_it_plays_is_not_heard() {
         let (mut on, mut next, mut sounding) = (true, 40usize, false);
         let (mut checked, mut wrong) = (0, Vec::new());
         for b in 0..3000usize {
-            // Not within two bursts of the loop's end: there a reading the
-            // switch asks for cannot be read before the frames where the two
-            // part are played (the root plan's "A loop switched at its end").
-            let at = reading.transport_position(transport) as usize;
-            let near_end = (21_000 - 2 * 16 * BLOCK_SIZE..21_000).contains(&at);
-            if b == next && near_end {
-                next += 1;
-            }
             if b == next {
                 on = !on;
                 playback.set_pass(if on {

@@ -80,6 +80,7 @@ impl Job {
             fade: 0.0,
             fade_step: 0.0,
             looping: None,
+            pending_looping: None,
         },
     };
 }

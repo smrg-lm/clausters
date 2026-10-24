@@ -251,6 +251,17 @@ impl SynthNode for UGenSynth {
         Some(self.ugens.iter().all(|u| u.cued() != Some(false)))
     }
 
+    fn looped(&self, transport: &crate::dsp::TransportCtx) -> Option<bool> {
+        if !self.streams {
+            return None;
+        }
+        Some(
+            self.ugens
+                .iter()
+                .all(|u| u.looped(transport) != Some(false)),
+        )
+    }
+
     fn reset(&mut self) {
         for u in &mut self.ugens {
             u.reset();

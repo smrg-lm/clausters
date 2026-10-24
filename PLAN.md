@@ -4691,8 +4691,9 @@ should confirm before the fix.
   The recording side of the same timing is a Future direction ("Recording,
   monitoring and playback aligned as one model of the transport's
   latencies").
-- ⬜ **A loop switched at its end** *(found 2026-10-23, by ear on the audio
-  editor the GUI host owns; the rest of the case fixed the same day)*.
+- ✅ **A loop switched at its end** *(found 2026-10-23, by ear on the audio
+  editor the GUI host owns; the rest of the case fixed the same day, and
+  this the same day too, by cueing a loop change as the user decided)*.
   Turning the loop switch, or moving the loop, while a take plays is a
   reading replaced while it plays: the reader keeps the old reading's next
   frames aside up to where the two readings part, asks for the new one from
@@ -4703,5 +4704,7 @@ should confirm before the fix.
   a short silence. The field's answer would be to cue a loop change as a
   play is cued (`/transport_cue`): the transport keeps the loop it has
   until its readers hold the new reading, so a switch turned that late
-  takes effect one pass later instead of being heard. To decide with the
-  user.
+  takes effect one pass later instead of being heard. **Done so**: a
+  `/transport_loop` while the transport rolls over disk readers waits until
+  every reader holds the new reading (at most `CUE_WAIT_SECS`), and a
+  splice reached first plays the old reading on and reads it again.

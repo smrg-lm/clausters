@@ -143,10 +143,15 @@ struct Outgoing {
     /// The next sample of it to play, and the end of what was kept.
     next: usize,
     end: usize,
+    /// **Where the new reading is spliced on**, as a sample of the kept
+    /// frames: where the two readings part, or the end of what was kept.
+    at: usize,
     /// **Whether the new reading goes on from where this one ends**, rather
     /// than replacing it: a loop set, moved or cleared reads what the kept
     /// frames read up to where the two part, so the new reading is asked for
-    /// from the end of the kept frames and spliced on there, with no fade.
+    /// from there and spliced on, with no fade. A change the engine has not
+    /// put in place by then is not: the kept frames play on past it, and the
+    /// old reading is read again from their end.
     splice: bool,
     /// The loop the kept frames were read through.
     wrap: Option<ListWrap>,
@@ -224,6 +229,13 @@ pub struct TransportDiskIn {
     /// reader the transport froze ran no block in between, so continuity of
     /// the position is what tells the two apart.
     continues: Option<u64>,
+    /// The loop in force, in the list's frames, as the last block read it:
+    /// what decides at a splice whether the new reading or the old one goes
+    /// on. A loop asked for and not yet in place is not it.
+    applied: Option<ListWrap>,
+    /// The list frame its offset and start put at the transport's frame 0,
+    /// as the last block read it: what a loop asked for is read through.
+    delta: f64,
 }
 
 /// A fed stream a reader is playing: the requests' producer, what the halves
@@ -286,6 +298,8 @@ impl TransportDiskIn {
             fed: None,
             retired: None,
             continues: None,
+            applied: None,
+            delta: 0.0,
         }
     }
 
@@ -482,10 +496,24 @@ impl TransportDiskIn {
             return 0.0;
         };
         if outgoing.splice {
-            // The new reading begins where the kept frames end: they play to
-            // their end, and it goes on from the next frame as one reading --
-            // or, where it is not in yet, comes in from silence once it is.
-            if outgoing.next + channels > outgoing.end {
+            // **At the splice**: the new reading begins here, and goes on as
+            // one reading with the kept frames -- or, where it is not in yet,
+            // comes in from silence once it is. Where the loop it reads is
+            // not in place yet, the kept frames are still the take: they play
+            // on, and the old reading is read again from their end.
+            if outgoing.next + channels > outgoing.at {
+                let (end, wrap) = (outgoing.end, outgoing.wrap);
+                if self.applied != self.wrap
+                    && self.applied == wrap
+                    && outgoing.next + channels <= end
+                {
+                    outgoing.at = end;
+                    let left = ((end - outgoing.next) / channels) as u64;
+                    self.discard();
+                    self.wrap = wrap;
+                    self.refill(None, ListWrap::advance(wrap, frame, left));
+                    return self.take_outgoing(frame, channel);
+                }
                 self.outgoing = None;
                 let seamless = self.pending.is_none()
                     && self.head == Some(frame)
@@ -542,12 +570,10 @@ impl TransportDiskIn {
             self.skip(frame - head);
         }
         let channels = self.channels.max(1);
-        let alike = agree.map_or(usize::MAX, |f| f as usize * channels);
-        let n = self
-            .consumer
-            .slots()
-            .min(KEPT / channels * channels)
-            .min(alike);
+        // all it holds of the old reading, which plays on past where the two
+        // part if the loop is not in place by then
+        let n = self.consumer.slots().min(KEPT / channels * channels);
+        let at = agree.map_or(n, |f| (f as usize * channels).min(n));
         if n >= channels
             && let Ok(chunk) = self.consumer.read_chunk(n)
         {
@@ -560,6 +586,7 @@ impl TransportDiskIn {
                 channels,
                 next: 0,
                 end: n,
+                at,
                 splice: false,
                 wrap: self.wrap,
             });
@@ -645,6 +672,34 @@ impl UGen for TransportDiskIn {
         Some(self.standing.is_none_or(|f| self.holds(f)))
     }
 
+    fn looped(&self, transport: &crate::dsp::TransportCtx) -> Option<bool> {
+        // a list that loops on its own reads no transport loop
+        if self.looping {
+            return Some(true);
+        }
+        let asked = ListWrap::of(
+            transport.pending_looping.unwrap_or(transport.looping),
+            self.delta,
+            self.frames,
+        );
+        // the reading follows the loop asked for, and has landed
+        if asked != self.wrap || self.pending.is_some() || self.head.is_none() {
+            return Some(false);
+        }
+        // and holds the lead a replacing reading lands with -- or what is
+        // left of the list -- so it is not starved once it goes on; spliced
+        // on ahead, before the splice is reached
+        let ahead = match (self.wrap, self.head) {
+            (None, Some(head)) => self.frames.saturating_sub(head).min(LAND_LEAD as u64),
+            _ => LAND_LEAD as u64,
+        };
+        let holds = (self.consumer.slots() / self.channels) as u64 >= ahead.max(1);
+        Some(match &self.outgoing {
+            Some(o) if o.splice => o.next <= o.at && holds,
+            _ => holds,
+        })
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let next = ctx.transport.position + output.len() as u64;
         let rolling = ctx.transport.rolling;
@@ -671,10 +726,24 @@ impl TransportDiskIn {
         // next is in the ring before the position gets there. A list that
         // loops on its own wraps at its own end instead.
         let delta = at(inputs[3], 0) as f64 - at(inputs[2], 0) as f64;
+        // **A loop asked for is read before it is in place**: the reading
+        // follows it, and the engine puts it in place once this reader holds
+        // it (`UGen::looped`). The loop in force decides at a splice.
         let wrap = match looping {
+            true => None,
+            false => ListWrap::of(
+                ctx.transport
+                    .pending_looping
+                    .unwrap_or(ctx.transport.looping),
+                delta,
+                frames,
+            ),
+        };
+        self.applied = match looping {
             true => None,
             false => ListWrap::of(ctx.transport.looping, delta, frames),
         };
+        self.delta = delta;
         // Which list frame sample `i` plays: `None` outside the list, and the
         // frame to stand ready at besides.
         let place = |i: usize| -> (Option<u64>, Option<u64>) {
@@ -743,7 +812,7 @@ impl TransportDiskIn {
                 self.keep_outgoing(frame, agree);
                 if rewrapped && let Some(outgoing) = self.outgoing.as_mut() {
                     outgoing.splice = true;
-                    let kept = (outgoing.end / outgoing.channels) as u64;
+                    let kept = (outgoing.at / outgoing.channels) as u64;
                     from = Some(ListWrap::advance(wrap, frame, kept));
                 }
             } else if !self.offline && self.outgoing.is_some() {
@@ -760,7 +829,7 @@ impl TransportDiskIn {
                         if let Some(agree) = ListWrap::agree(outgoing.wrap, wrap, frame) {
                             left = left.min(agree as usize);
                         }
-                        outgoing.end = outgoing.next + left * channels;
+                        outgoing.at = outgoing.next + left * channels;
                         from = Some(ListWrap::advance(wrap, frame, left as u64));
                     } else {
                         outgoing.splice = false;

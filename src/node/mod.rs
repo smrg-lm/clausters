@@ -109,6 +109,17 @@ pub trait SynthNode: Send {
         None
     }
 
+    /// **Whether this synth's disk readers hold the reading a loop change
+    /// asks for** (`transport.pending_looping`): `None` for a synth that
+    /// streams nothing. Asks each reader ([`UGen::looped`]) and runs nothing.
+    /// RT-safe.
+    ///
+    /// [`UGen::looped`]: crate::dsp::UGen::looped
+    fn looped(&self, transport: &crate::dsp::TransportCtx) -> Option<bool> {
+        let _ = transport;
+        None
+    }
+
     /// **The synth starts again on its own memory** -- what a `Voices` node
     /// does to a voice it hands to a new note: every piece of signal state
     /// back to where a fresh instance's first block finds it (each UGen's
@@ -1114,6 +1125,46 @@ impl NodeTree {
             }
         }
         ready
+    }
+
+    /// **Whether every disk reader under group `group_id` holds the reading a
+    /// loop change asks for** (`transport.pending_looping`), each asked
+    /// without running it: `None` when nothing under it streams from disk,
+    /// which is a change nothing has to read ahead for. RT-safe: a walk of the
+    /// subtree on the tree's own stack.
+    pub fn looped_subtree(
+        &mut self,
+        group_id: i32,
+        transport: &crate::dsp::TransportCtx,
+    ) -> Option<bool> {
+        let idx = self.find(group_id)?;
+        self.group_of(idx)?;
+        let mut asked = None;
+        debug_assert!(self.dfs_stack.is_empty());
+        self.dfs_stack.clear();
+        self.dfs_stack.push(idx);
+        while let Some(gidx) = self.dfs_stack.pop() {
+            let mut i = 0;
+            while let Some(&child) = self.group_of(gidx).unwrap().children.get(i) {
+                i += 1;
+                match self.slot(child) {
+                    Some(NodeSlot {
+                        kind: NodeKind::Synth { node, .. },
+                        ..
+                    }) => {
+                        if let Some(ready) = node.looped(transport) {
+                            asked = Some(asked.unwrap_or(true) && ready);
+                        }
+                    }
+                    Some(NodeSlot {
+                        kind: NodeKind::Group(_),
+                        ..
+                    }) => self.dfs_stack.push(child),
+                    None => {}
+                }
+            }
+        }
+        asked
     }
 
     /// The node ID of the sibling `delta` positions from node `id` within its

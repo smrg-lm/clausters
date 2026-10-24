@@ -492,6 +492,13 @@ struct TransportState {
     ended: bool,
     /// A cue in progress (`/transport_cue`), and the blocks it has waited.
     cue: Option<u32>,
+    /// **A loop change waiting for its readers** (`/transport_loop` while it
+    /// rolls over disk readers): the span asked for, and the blocks it has
+    /// waited. The transport keeps the loop it has until every reader holds
+    /// the reading the new one asks for ([`Engine::land_loop_cues`]), so a
+    /// change is never heard -- one asked for too late takes effect a pass
+    /// later.
+    loop_cue: Option<(Option<Range<u64>>, u32)>,
 }
 
 /// **The declick level**, as a straight line over device samples: `from` at
@@ -605,6 +612,7 @@ impl TransportState {
             stopping: None,
             ended: false,
             cue: None,
+            loop_cue: None,
         }
     }
 
@@ -1347,6 +1355,7 @@ impl Engine {
         self.buses.events_mut().clear();
         let phase = stamp();
         self.drain_commands();
+        self.land_loop_cues();
         self.meters
             .add_phase(Phase::Commands, phase.elapsed_nanos());
         if let Some(plan) = self.tree.begin_compensation_block() {
@@ -1428,6 +1437,61 @@ impl Engine {
         self.apply_done_actions();
         self.drain_replies();
         self.meter_block(meter_start);
+    }
+
+    /// **A loop put in place** at device sample `here`, re-anchored there, so
+    /// turning a loop on does not move the transport: it keeps playing from
+    /// where it is and wraps when it first reaches the end.
+    fn put_loop(t: &mut TransportState, here: u64, span: Option<Range<u64>>) {
+        let now = t.at(here);
+        t.position = t.position.wrapped_to(t.position.at(now), now);
+        t.looping = span;
+    }
+
+    /// Transport `t`'s view at device sample `device`, as its readers read
+    /// it, with `pending` the loop asked for and not yet in place.
+    fn view_of(
+        t: &TransportState,
+        device: u64,
+        pending: Option<Option<Range<u64>>>,
+    ) -> TransportCtx {
+        TransportCtx {
+            position: t.position.at(t.at(device)).get(),
+            rolling: t.rolling,
+            fade: t.fade.at(device),
+            fade_step: t.fade.step(device),
+            looping: t.looping.as_ref().map(|span| (span.start, span.end)),
+            pending_looping: pending.map(|p| p.map(|span| (span.start, span.end))),
+        }
+    }
+
+    /// **Every loop change waiting for its readers, at the start of a
+    /// block**: put in place once every reader of the transport's governed
+    /// group holds the reading it asks for (each said so as it played the
+    /// block before, `UGen::looped`), once it has waited [`CUE_WAIT_SECS`],
+    /// or once the transport no longer rolls.
+    fn land_loop_cues(&mut self) {
+        let wait = (CUE_WAIT_SECS * self.sample_rate as f64 / BLOCK_SIZE as f64).ceil() as u32;
+        let here = self.now;
+        for k in 0..self.transports.len() {
+            let Some((span, waited)) = self.transports[k].loop_cue.clone() else {
+                continue;
+            };
+            let t = &self.transports[k];
+            let ready = !t.rolling
+                || waited >= wait
+                || t.group.is_none_or(|g| {
+                    let view = Self::view_of(t, here, Some(span.clone()));
+                    self.tree.looped_subtree(g, &view) != Some(false)
+                });
+            let t = &mut self.transports[k];
+            if ready {
+                t.loop_cue = None;
+                Self::put_loop(t, here, span);
+            } else {
+                t.loop_cue = Some((span, waited + 1));
+            }
+        }
     }
 
     /// **Every cue in progress, one block further**: a stopped transport's
@@ -1913,13 +1977,7 @@ impl Engine {
             self.tree.set_plugin_tempo(i, t.bpm);
             self.tree.set_transport_view(
                 i,
-                TransportCtx {
-                    position: t.position.at(t.at(device)).get(),
-                    rolling: t.rolling,
-                    fade: t.fade.at(device),
-                    fade_step: t.fade.step(device),
-                    looping: t.looping.as_ref().map(|span| (span.start, span.end)),
-                },
+                Self::view_of(t, device, t.loop_cue.as_ref().map(|(span, _)| span.clone())),
             );
         }
         let ctx = ProcessCtx {
@@ -2079,13 +2137,26 @@ impl Engine {
                     }
                 }
                 Cmd::TransportLoop { transport, span } => {
-                    // Re-anchored at this sample, so turning a loop on does
-                    // not move the transport: it keeps playing from where it is
-                    // and wraps when it first reaches the end.
+                    let span = span.filter(|s| s.start < s.end);
+                    // **A rolling transport over disk readers cues the change**:
+                    // its readers read the new loop's frames first, and it is
+                    // put in place once they hold them. Anything else takes it
+                    // at once.
+                    let cued = self.transports.get(transport).is_some_and(|t| {
+                        t.rolling
+                            && t.looping != span
+                            && t.group.is_some_and(|g| {
+                                let view = Self::view_of(t, here, Some(span.clone()));
+                                self.tree.looped_subtree(g, &view).is_some()
+                            })
+                    });
                     if let Some(t) = self.transports.get_mut(transport) {
-                        let now = t.at(here);
-                        t.position = t.position.wrapped_to(t.position.at(now), now);
-                        t.looping = span.filter(|s| s.start < s.end);
+                        if cued {
+                            t.loop_cue = Some((span, 0));
+                        } else {
+                            t.loop_cue = None;
+                            Self::put_loop(t, here, span);
+                        }
                     }
                 }
                 Cmd::TransportEnd { transport, mark } => {
