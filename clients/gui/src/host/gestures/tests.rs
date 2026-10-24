@@ -4444,7 +4444,7 @@ fn select_all_from_the_menu_sweeps_the_take_in_a_pane() {
     let out = g.command(&mut host, &ctx, "select_all");
     let state = host
         .timeline_key(11)
-        .and_then(|key| host.timelines().state(key).copied())
+        .and_then(|key| host.timelines().state(key))
         .unwrap();
     assert_eq!(state.selection(), Some((0.0, 4.0)), "{out:?}");
 }

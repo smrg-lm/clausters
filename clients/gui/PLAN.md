@@ -8819,13 +8819,17 @@ module of its own.
     differences in integers, and a pixel only as a difference from an
     origin over ticks per pixel. Rust only: the host is its first reader,
     and the bindings land with T3, where both clients first build a time.
-  - ⬜ **T2, the host's time axis.** A timeline group's window, selection,
-    cursor, playhead, sweep anchor and loop, the editor props and the head
-    clocks hold `Time`; the trace, the ruler, the hit tests and the fetch
-    convert at their edge (a pixel from the window's origin, a frame at the
-    take's rate). The wire is unchanged at this step and is converted where
-    it is read and written, with the group's rate.
-  - ⬜ **T3, the wire.** Every time the GUI protocol carries, events
+  - ✅ **T2, the host's time axis.** A timeline group's window, selection,
+    cursor, playhead, sweep anchor and loop are held as `Time`, at the rate
+    the group's members speak (a pane's or a roll's `sample_rate`, else a
+    take's own). A member reads them in frames of that rate, since what it
+    draws is samples, and a whole frame crosses in and out unchanged. The
+    wire is unchanged at this step and converts at the group's door with
+    the same rate.
+  - ⬜ **T3, the wire.** The editor props and the head clocks hold `Time`,
+    and the frames a member draws with are converted at its own rate, so a
+    take at another rate than the engine needs no scale. Every time the
+    GUI protocol carries, events
     (`"selection"`, `"view"`, `"locate"`, `"cut"` and the rest) and props
     (`sel_start`, `cursor`, `playhead`, `view_start` and the rest), becomes
     an `int64` of ticks; the type is bound through the C ABI, the wasm

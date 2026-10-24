@@ -100,10 +100,28 @@ impl Time {
     }
 
     /// **Its position in frames at `rate`, with the fraction**: where a frame
-    /// boundary falls between two pixels. Only a difference from an origin
-    /// is small enough to keep every fraction, so a caller drawing passes one.
+    /// boundary falls between two pixels. The tick a frame begins at reads as
+    /// that frame exactly, so a whole frame crosses into frames and back
+    /// unchanged; between two, the fraction is good to a few millionths.
     pub fn frames(self, rate: f64) -> f64 {
-        self.0 as f64 * rate / TICKS_PER_SECOND as f64
+        let frame = self.frame(rate);
+        if Time::of_frame(frame, rate) == self {
+            return frame as f64;
+        }
+        frame as f64
+            + (self - Time::of_frame(frame, rate)).0 as f64 * rate / TICKS_PER_SECOND as f64
+    }
+
+    /// **The time `frames` frames from the origin at `rate`**, a fraction
+    /// allowed: a whole frame where it begins ([`Time::of_frame`]), and
+    /// anything else to the nearest tick. [`Time::frames`] reads it back.
+    pub fn from_frames(frames: f64, rate: f64) -> Time {
+        if frames.fract() == 0.0 && frames.abs() < 9.0e15 {
+            return Time::of_frame(frames as i64, rate);
+        }
+        let whole = frames.floor();
+        Time::of_frame(whole as i64, rate)
+            + Time(((frames - whole) * TICKS_PER_SECOND as f64 / rate).round() as i64)
     }
 
     /// **The pixel it is drawn at**, `ticks_per_px` ticks to a pixel from
@@ -218,6 +236,28 @@ mod tests {
                     frame - 1,
                     "frame {frame} at {rate}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn frames_with_a_fraction_read_back() {
+        for rate in [44_100.0, 48_000.0, 22_050.5] {
+            for frames in [
+                0.0,
+                1.0,
+                12.5,
+                100.25,
+                4_147_200_000.0,
+                4_147_200_000.75,
+                -3.5,
+            ] {
+                let back = Time::from_frames(frames, rate).frames(rate);
+                if frames.fract() == 0.0 {
+                    assert_eq!(back, frames, "{frames} at {rate}");
+                } else {
+                    assert!((back - frames).abs() < 1e-4, "{frames} at {rate}: {back}");
+                }
             }
         }
     }

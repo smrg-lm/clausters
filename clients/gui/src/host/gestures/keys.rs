@@ -572,7 +572,7 @@ impl Gestures {
             }
             Some(tag) => {
                 let key = host.timeline_key(id)?;
-                let state = *host.timelines().state(key)?;
+                let state = host.timelines().state(key)?;
                 let (start, len) = state.selection()?;
                 if len <= 0.0 {
                     return None;
@@ -786,7 +786,7 @@ impl Gestures {
             None => host.selection_addressee(ctx.def_id)?,
         };
         let key = host.timeline_key(id)?;
-        let state = *host.timelines().state(key)?;
+        let state = host.timelines().state(key)?;
         let (start, len) = state.selection().unzip();
         // **Where a paste lands is the position cursor, span or no span**:
         // the line a click puts down, never the start of a selection swept
@@ -1035,8 +1035,7 @@ fn position_cursor(host: &Host, id: i32) -> Option<u64> {
 fn start_of(host: &Host, id: i32) -> (u64, Option<(u64, u64)>) {
     let state = host
         .timeline_key(id)
-        .and_then(|key| host.timelines().state(key))
-        .copied();
+        .and_then(|key| host.timelines().state(key));
     let span = state
         .and_then(|s| s.selection())
         .map(|(from, len)| (from.max(0.0) as u64, (from + len).max(0.0) as u64));

@@ -583,7 +583,7 @@ fn chrome_for(
     fallback: impl FnOnce() -> View,
 ) -> GroupState {
     match inputs.world.timelines.state(group_key(id, editor.link)) {
-        Some(state) => *state,
+        Some(state) => state,
         None => GroupState::seed(editor, fallback()),
     }
 }

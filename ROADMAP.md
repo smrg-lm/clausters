@@ -102,8 +102,9 @@ A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
 - ⬜ **Time is a type of its own, 64 bits wide** *(`clients/gui/PLAN.md`, Found
-  by use)*. Next: decided as NTP ticks, and the type is in the core; T2
-  to T4 in the entry, in order, each landing green.
+  by use)*. Next: decided as NTP ticks; the type is in the core and the
+  host's groups hold it. T3 and T4 in the entry, in order, each landing
+  green.
 - ⬜ **The `worklet` smoke timed out once in CI** *(`clients/web/PLAN.md`,
   Found by use)*. Intermittent, passes locally and on a rerun. The case now
   reports the step it stopped at and the page's console; what is open is the

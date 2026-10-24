@@ -59,7 +59,9 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::viewport::View;
+use clausters_core::time::Time;
+
+use crate::viewport::{TimeWindow, View};
 
 use super::layout::Rect;
 use super::metrics::Metrics;
@@ -249,6 +251,82 @@ impl GroupState {
     }
 }
 
+/// **A group's state as it is held**: times on the axis ([`Time`]), the
+/// group's rate beside them.
+///
+/// What every member reads is [`GroupState`], the same state in the frames of
+/// the group's rate ([`GroupTime::frames`]), since a member draws samples and
+/// samples are frames. The wire still speaks in those frames too, and the
+/// group converts at its door with the same rate, so a frame crosses in and
+/// out unchanged.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct GroupTime {
+    nav: TimeWindow,
+    sel_start: Time,
+    sel_len: Time,
+    playhead_at: Option<Time>,
+    playhead: Option<Time>,
+    cursor: Option<Time>,
+    loop_start: Time,
+    loop_len: Time,
+    total: Time,
+    /// The frames a second the group's members speak.
+    rate: f64,
+}
+
+impl GroupTime {
+    /// `state`, in frames at `rate`, as times.
+    fn of(state: &GroupState, rate: f64) -> Self {
+        let time = |frames: f64| Time::from_frames(frames, rate);
+        let placed = |frames: f64| (frames >= 0.0).then(|| time(frames));
+        Self {
+            nav: TimeWindow::of_frames(state.nav, rate),
+            sel_start: time(state.sel_start),
+            sel_len: time(state.sel_start + state.sel_len) - time(state.sel_start),
+            playhead_at: placed(state.playhead_at),
+            playhead: placed(state.playhead),
+            cursor: placed(state.cursor),
+            loop_start: time(state.playhead_loop_start),
+            loop_len: time(state.playhead_loop_start + state.playhead_loop_len)
+                - time(state.playhead_loop_start),
+            total: Time::of_frame(state.total as i64, rate),
+            rate,
+        }
+    }
+
+    /// **It in the frames of its rate**: what a member reads and draws with.
+    fn frames(&self) -> GroupState {
+        let rate = self.rate;
+        let frames = |t: Time| t.frames(rate);
+        let placed = |t: Option<Time>| t.map_or(-1.0, frames);
+        let span = |start: Time, len: Time| (frames(start), frames(start + len) - frames(start));
+        let (sel_start, sel_len) = span(self.sel_start, self.sel_len);
+        let (loop_start, loop_len) = span(self.loop_start, self.loop_len);
+        GroupState {
+            nav: self.nav.frames(rate),
+            sel_start,
+            sel_len,
+            playhead_at: placed(self.playhead_at),
+            playhead: placed(self.playhead),
+            cursor: placed(self.cursor),
+            playhead_loop_start: loop_start,
+            playhead_loop_len: loop_len,
+            total: self.total.frame(rate).max(0) as usize,
+        }
+    }
+
+    /// **Changes it through its frames**: `edit` reads and writes the state a
+    /// member sees, and the times are what it left. What the group does to
+    /// its window, its selection and its lines is written once, in the
+    /// frames the wire and the members speak.
+    fn edit<R>(&mut self, edit: impl FnOnce(&mut GroupState) -> R) -> R {
+        let mut frames = self.frames();
+        let out = edit(&mut frames);
+        *self = GroupTime::of(&frames, self.rate);
+        out
+    }
+}
+
 /// The x offset, inside a member's own rect, where the shared time axis begins
 /// -- and therefore where every member of the group draws its body.
 ///
@@ -335,7 +413,7 @@ pub(crate) fn gutter_band(rect: Rect, indent: f32) -> Rect {
 /// extents the group lengths aggregate over.
 #[derive(Default)]
 pub struct TimelineGroups {
-    states: HashMap<GroupKey, GroupState>,
+    states: HashMap<GroupKey, GroupTime>,
     /// Per-widget data extent in samples, registered by the fronts when a
     /// view's data loads; a group's timeline length is the max over members.
     totals: HashMap<i32, usize>,
@@ -347,14 +425,19 @@ pub struct TimelineGroups {
 }
 
 impl TimelineGroups {
-    /// The state of group `key`, if it exists.
-    pub fn state(&self, key: GroupKey) -> Option<&GroupState> {
-        self.states.get(&key)
+    /// The state of group `key`, if it exists, in the frames of its rate.
+    pub fn state(&self, key: GroupKey) -> Option<GroupState> {
+        self.states.get(&key).map(GroupTime::frames)
+    }
+
+    /// The frames a second group `key`'s members speak, if it exists.
+    pub fn rate(&self, key: GroupKey) -> Option<f64> {
+        self.states.get(&key).map(|s| s.rate)
     }
 
     /// The navigation window of group `key`, if it exists.
     pub fn nav(&self, key: GroupKey) -> Option<View> {
-        self.states.get(&key).map(|s| s.nav)
+        self.state(key).map(|s| s.nav)
     }
 
     /// The registered data extent of widget `id` (0 when none loaded yet).
@@ -568,6 +651,30 @@ impl Host {
         (rate * Self::EMPTY_BEATS / tempo).ceil() as usize
     }
 
+    /// **The frames a second group `key`'s members speak**: the rate the
+    /// first of them that says one says (a pane's or a roll's `sample_rate`,
+    /// else a take's own), and [`Self::ASSUMED_RATE`] where none does. The
+    /// group holds its times at it and converts at it, so a member's frames
+    /// cross in and out unchanged.
+    pub(crate) fn group_rate(&self, key: GroupKey) -> f64 {
+        self.window_defs
+            .values()
+            .find_map(|tree| {
+                tree.descendants().find_map(|w| {
+                    let editor = w.kind.editor()?;
+                    if group_key(w.id?, editor.link) != key {
+                        return None;
+                    }
+                    let own = w.kind.as_samples().and_then(|s| s.samples_rate());
+                    [Some(editor.sample_rate), own]
+                        .into_iter()
+                        .flatten()
+                        .find(|rate| *rate > 0.0)
+                })
+            })
+            .unwrap_or(Self::ASSUMED_RATE)
+    }
+
     /// The `(sample_rate, tempo)` grid of the first **authored** surface in
     /// group `key` -- one whose content it holds itself rather than loading,
     /// which is the surface whose axis exists before anything is on it.
@@ -738,26 +845,28 @@ impl Host {
     fn content_moved(&mut self, key: GroupKey, old_total: usize, refit: bool) {
         if !self.group_autofit(key) {
             let new_total = self.timeline_total(key);
-            if let Some(state) = self.timelines.states.get_mut(&key) {
-                state.total = new_total;
+            if let Some(time) = self.timelines.states.get_mut(&key) {
+                time.edit(|state| state.total = new_total);
             }
             return;
         }
         let new_total = self.timeline_total(key);
         let span = self.timeline_span(key);
-        if let Some(state) = self.timelines.states.get_mut(&key) {
-            if refit && Self::showing_everything(state.nav.len, old_total) {
-                // It was showing exactly the whole timeline: keep showing it all.
-                state.nav = View::full(new_total);
-            } else {
-                // Zoomed in *or* zoomed out into the empty headroom: keep the
-                // window, only re-clamp it (growing the content must not yank a
-                // deliberately zoomed-out view back onto the content).
-                state.nav.set_start(state.nav.start, span);
-            }
-            // What the window now stands against, so a redefine can still ask
-            // whether it was showing everything once the members are gone.
-            state.total = new_total;
+        if let Some(time) = self.timelines.states.get_mut(&key) {
+            time.edit(|state| {
+                if refit && Self::showing_everything(state.nav.len, old_total) {
+                    // It was showing exactly the whole timeline: keep showing it all.
+                    state.nav = View::full(new_total);
+                } else {
+                    // Zoomed in *or* zoomed out into the empty headroom: keep the
+                    // window, only re-clamp it (growing the content must not yank a
+                    // deliberately zoomed-out view back onto the content).
+                    state.nav.set_start(state.nav.start, span);
+                }
+                // What the window now stands against, so a redefine can still ask
+                // whether it was showing everything once the members are gone.
+                state.total = new_total;
+            });
         }
     }
 
@@ -817,10 +926,10 @@ impl Host {
             return Vec::new();
         };
         let total = self.timeline_span(key);
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        state.nav.zoom(factor, anchor, total);
+        time.edit(|state| state.nav.zoom(factor, anchor, total));
         self.timeline_roots(key)
     }
 
@@ -831,10 +940,10 @@ impl Host {
             return Vec::new();
         };
         let total = self.timeline_span(key);
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        state.nav.set_start(start, total);
+        time.edit(|state| state.nav.set_start(start, total));
         self.timeline_roots(key)
     }
 
@@ -847,20 +956,22 @@ impl Host {
         };
         let span = self.timeline_span(key);
         let total = self.timeline_total(key);
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        match len {
-            Some(len) if len <= 0.0 => {
-                // A reset shows the *content*, not the headroom.
-                state.nav = View::full(total);
-                return self.timeline_roots(key);
+        time.edit(|state| {
+            match len {
+                Some(len) if len <= 0.0 => {
+                    // A reset shows the *content*, not the headroom.
+                    state.nav = View::full(total);
+                    return;
+                }
+                Some(len) => state.nav.len = len.max(1.0),
+                None => {}
             }
-            Some(len) => state.nav.len = len.max(1.0),
-            None => {}
-        }
-        let start = start.unwrap_or(state.nav.start);
-        state.nav.set_start(start, span);
+            let start = start.unwrap_or(state.nav.start);
+            state.nav.set_start(start, span);
+        });
         self.timeline_roots(key)
     }
 
@@ -923,15 +1034,18 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        if let Some(start) = start {
-            state.sel_start = start.round();
-        }
-        if let Some(len) = len {
-            state.sel_len = len.round();
-        }
+        let state = time.edit(|state| {
+            if let Some(start) = start {
+                state.sel_start = start.round();
+            }
+            if let Some(len) = len {
+                state.sel_len = len.round();
+            }
+            *state
+        });
         // The one door every selection goes through -- a sweep, a `/gui_set`,
         // an edit-back -- so it is where "the last one made" is recorded. A
         // cleared selection gives the title up rather than keeping it.
@@ -1014,10 +1128,10 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        state.playhead_at = at;
+        time.edit(|state| state.playhead_at = at);
         self.timeline_roots(key)
     }
 
@@ -1027,10 +1141,10 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        state.playhead = pos;
+        time.edit(|state| state.playhead = pos);
         self.timeline_roots(key)
     }
 
@@ -1047,13 +1161,13 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
         // **On a whole sample**, as the selection is and as the transport the
         // cursor cues will be: a click lands between two samples, and a mark
         // drawn there stood beside the playhead that started from it.
-        state.cursor = if pos < 0.0 { pos } else { pos.round() };
+        time.edit(|state| state.cursor = if pos < 0.0 { pos } else { pos.round() });
         // A cursor put down is where a paste goes, so the view it was put on
         // is the one a paste with no pointer is addressed to
         // ([`Host::paste_addressee`]); a copy still asks for a selection.
@@ -1075,15 +1189,17 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
-        if let Some(start) = start {
-            state.playhead_loop_start = start;
-        }
-        if let Some(len) = len {
-            state.playhead_loop_len = len;
-        }
+        time.edit(|state| {
+            if let Some(start) = start {
+                state.playhead_loop_start = start;
+            }
+            if let Some(len) = len {
+                state.playhead_loop_len = len;
+            }
+        });
         self.timeline_roots(key)
     }
 
@@ -1130,17 +1246,23 @@ impl Host {
             }
         }
         let new_key = group_key(id, link);
+        let rate = self.group_rate(old_key);
         self.timelines.states.entry(new_key).or_insert_with(|| {
-            carried.unwrap_or(GroupState {
-                nav: View::full(1),
-                sel_start: 0.0,
-                sel_len: 0.0,
-                playhead_at: -1.0,
-                playhead: -1.0,
-                cursor: -1.0,
-                playhead_loop_start: 0.0,
-                playhead_loop_len: 0.0,
-                total: 1,
+            carried.unwrap_or_else(|| {
+                GroupTime::of(
+                    &GroupState {
+                        nav: View::full(1),
+                        sel_start: 0.0,
+                        sel_len: 0.0,
+                        playhead_at: -1.0,
+                        playhead: -1.0,
+                        cursor: -1.0,
+                        playhead_loop_start: 0.0,
+                        playhead_loop_len: 0.0,
+                        total: 1,
+                    },
+                    rate,
+                )
             })
         });
         // Joining a group changes what the window stands against, so it is a
@@ -1184,6 +1306,17 @@ impl Host {
         // window survived a redefine only while the content's length did
         // not change, which is exactly the case where nothing needed surviving.
         let mut carried: HashMap<GroupKey, (GroupState, usize)> = HashMap::new();
+        // **A group keeps the frames it showed when its rate moves**: a take
+        // that loads says its own rate, and the group's times are re-read at
+        // it, so a frame on screen stays the frame it was.
+        for m in &members {
+            let rate = self.group_rate(m.key);
+            if let Some(time) = self.timelines.states.get_mut(&m.key)
+                && time.rate != rate
+            {
+                *time = GroupTime::of(&time.frames(), rate);
+            }
+        }
         if let Some(def) = redefined {
             let spans_other: Vec<GroupKey> = members
                 .iter()
@@ -1192,7 +1325,7 @@ impl Host {
                 .collect();
             for m in members.iter().filter(|m| m.root == def) {
                 if !spans_other.contains(&m.key)
-                    && let Some(state) = self.timelines.states.get(&m.key).cloned()
+                    && let Some(state) = self.timelines.state(m.key)
                 {
                     // The total it was *showing* against, since that is what
                     // says whether the view was zoomed in or showing the whole
@@ -1274,7 +1407,10 @@ impl Host {
                         state.sel_start = old.sel_start;
                         state.sel_len = old.sel_len;
                     }
-                    self.timelines.states.insert(m.key, state);
+                    let rate = self.group_rate(m.key);
+                    self.timelines
+                        .states
+                        .insert(m.key, GroupTime::of(&state, rate));
                 }
             }
         }
@@ -1393,15 +1529,21 @@ impl Host {
         }
         let total = self.timeline_total(key) as f64;
         let span = self.timeline_span(key);
-        let Some(state) = self.timelines.states.get_mut(&key) else {
+        let Some(time) = self.timelines.states.get_mut(&key) else {
             return;
         };
-        let (start, len) = (state.nav.start, state.nav.len);
-        if len <= 0.0 || total <= start + len {
+        let paged = time.edit(|state| {
+            let (start, len) = (state.nav.start, state.nav.len);
+            if len <= 0.0 || total <= start + len {
+                return false;
+            }
+            let pages = ((total - start - len) / len).ceil();
+            state.nav.set_start(start + pages * len, span);
+            true
+        });
+        if !paged {
             return;
         }
-        let pages = ((total - start - len) / len).ceil();
-        state.nav.set_start(start + pages * len, span);
         for root in self.timeline_roots(key) {
             effects.push(HostEffect::Redraw(root));
         }
@@ -1510,8 +1652,7 @@ mod tests {
     /// the same lookup the frame path and the animation demand do, and the
     /// only place the selection and the playhead exist.
     fn chrome_of(host: &Host, id: i32) -> GroupState {
-        *host
-            .timelines()
+        host.timelines()
             .state(host.timeline_key(id).unwrap())
             .unwrap()
     }

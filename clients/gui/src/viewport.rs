@@ -79,6 +79,40 @@ impl View {
     }
 }
 
+/// **A window onto a time axis**, in [`Time`]: what a navigation group holds,
+/// where [`View`] is the same window in the frames of one rate, which is what
+/// a view of samples draws with.
+///
+/// [`Time`]: clausters_core::time::Time
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TimeWindow {
+    /// The time at its left edge.
+    pub start: clausters_core::time::Time,
+    /// How long it spans.
+    pub len: clausters_core::time::Time,
+}
+
+impl TimeWindow {
+    /// The window `view` is in frames at `rate`.
+    pub fn of_frames(view: View, rate: f64) -> Self {
+        use clausters_core::time::Time;
+        let start = Time::from_frames(view.start, rate);
+        Self {
+            start,
+            len: Time::from_frames(view.start + view.len, rate) - start,
+        }
+    }
+
+    /// It in frames at `rate`: [`TimeWindow::of_frames`] read back.
+    pub fn frames(self, rate: f64) -> View {
+        let start = self.start.frames(rate);
+        View {
+            start,
+            len: (self.start + self.len).frames(rate) - start,
+        }
+    }
+}
+
 /// The narrowest a normalized display-axis window may get -- the vertical-zoom
 /// floor of the editor views' y axes (amplitude, frequency), which navigate in
 /// display units `[0, 1]` rather than samples.
