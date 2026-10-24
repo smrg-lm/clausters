@@ -57,7 +57,8 @@ import { resolveServer } from "../../defs/wire.ts";
 import { disk, runSteps } from "../../steps.ts";
 import type { RenderProgress } from "../../steps.ts";
 import { executeSteps, releaseBuffer } from "./cleanup.ts";
-import { makeDirectoryAt, removeDirectoryAt, statAt, temporaryFolder } from "../../base/files.ts";
+import { statAt } from "../../base/files.ts";
+import { Workspace } from "../../base/workspace.ts";
 import { serviceInstance } from "./application.ts";
 import { exchange, bindExchange, type ExchangeLease } from "./clipboard.ts";
 import { Domain } from "./domain.ts";
@@ -458,10 +459,10 @@ export class AudioEditor extends Editor<Buffer | null> {
     /** The {@link SoundFile} the take was loaded from, when it was. */
     readonly #file: SoundFile | null;
 
-    /** The folder the renders are written into, and whether it is this
-     *  editor's to remove. */
+    /** The folder the renders are written into, and the hold on it where it
+     *  is this editor's to remove. */
     readonly #workspace: string;
-    readonly #ownsWorkspace: boolean;
+    #held: Workspace | null = null;
 
     constructor(
         given: Buffer | SoundFile | null,
@@ -502,11 +503,15 @@ export class AudioEditor extends Editor<Buffer | null> {
         // The context is the take's; switching files changes the structure,
         // so the window keeps the one it opened in.
         this.givenContext = this.editing;
-        this.#ownsWorkspace = options.workspace === undefined;
-        this.#workspace = options.workspace ?? temporaryFolder(`clausters-audio-${this.display}`);
-        // the default folder is the editor's to make, as a script's temporary
-        // one is; a folder handed over is the caller's
-        if (this.#ownsWorkspace) domain.after(() => makeDirectoryAt(this.#workspace));
+        // the default folder is the editor's, held while it lives: under the
+        // user's cache under node, in the origin's storage in a tab; a folder
+        // handed over is the caller's
+        if (options.workspace === undefined) {
+            const held = new Workspace("audio");
+            this.#held = held;
+            domain.after(() => held.ready);
+        }
+        this.#workspace = options.workspace ?? this.#held!.path;
         const prefix = `audio:${this.instance.connection}:${this.instance.generation}`;
         // A file a part reads in place is the take, whatever buffer came with it.
         const streamed = file !== null && readsInPlace(file);
@@ -1104,9 +1109,12 @@ export class AudioEditor extends Editor<Buffer | null> {
      */
     override close(): this {
         this.started("close");
-        if (this.#ownsWorkspace) {
-            const folder = this.#workspace;
-            (this.domain as AudioDomain).after(() => removeDirectoryAt(folder));
+        const held = this.#held;
+        if (held !== null) {
+            // what the clipboard names is kept, and held as long as the
+            // session lives; the next editor to open after it removes it
+            (this.domain as AudioDomain).after(async () => { await held.close(); });
+            this.#held = null;
         }
         return this;
     }
@@ -1465,9 +1473,10 @@ export interface AudioEditorOptions extends GenericEditorOptions<Buffer | null> 
     layers?: string | readonly Measure[];
     /**
      * The directory the editor renders its files into, on the server's
-     * filesystem -- the page's own storage, in a tab. A temporary one when not
-     * given, removed when the editor closes; one handed over is left where it
-     * is.
+     * filesystem -- the page's own storage, in a tab. When not given, a folder
+     * of the user's cache on disk under node, or of the page's storage in a
+     * tab, removed when the editor closes, or by the next editor to open where
+     * the process or the tab ended first; one handed over is left where it is.
      */
     workspace?: string;
     /**

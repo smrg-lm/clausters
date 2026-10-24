@@ -101,9 +101,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **An editor's working folder under node is in the temporary directory,
-  and nothing sweeps one a tab left** *(`clients/web/PLAN.md`, Found by use)*.
-  The native fix is in; the node client and a tab follow its shape.
 - ⬜ **The `worklet` smoke timed out once in CI** *(`clients/web/PLAN.md`,
   Found by use)*. Intermittent, passes locally and on a rerun. The case now
   reports the step it stopped at and the page's console; what is open is the

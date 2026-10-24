@@ -1122,7 +1122,11 @@ folder is the core's (`clausters_core::workspace`): under the user's cache, on
 disk, since a render of hours is tens of gigabytes and the temporary directory
 is memory on many machines; held by a lock file beside it while its session
 lives, removed when it ends, and swept by the next editor to open where the
-process was killed. A batch that fails deletes the renders it had written
+process was killed. The web client holds the same folder by what it has
+(`clients/web/src/base/workspace.ts`): under node, the same root and lock
+files, the lock naming its process and touched while it is held, since node
+has no file lock; in a tab, a folder of the origin's storage held by a Web
+Lock, swept when no tab holds it. A batch that fails deletes the renders it had written
 there (the editor's `scratch` verb names which are its own). A turn answers the renders and the `/buffer_stitch` that
 puts the join -- the RT buffer the take plays through, its parts naming file
 spans -- over the new list, and the window draws the list itself, from its
@@ -1519,7 +1523,7 @@ A step resolves each structure back to the object that was registered, including
 
 `Resources` records a `ResourceId` as a `ServerInstance` plus a local buffer number, its byte size, release endpoint and resident/stored location. `RootKind` separates contents, history, clipboard, playback and pending operations. For takes on disk the same three roots are the document's own (`clausters_document::workspace`): a render is a temporary source in a `Workspace` -- the audio editor's temporary folder, or a multitrack's session folder -- and `Session::release_renders` hands back the files no document node, no held history entry and no clipboard part names, while `Session::for_saving` writes a session that names no temporary file. Replacing one root does not drop another consumer's lease; invalid acquisitions leave the previous root intact. Collection reports each unreferenced owned source once, and never frees a borrowed source. History roots include inactive orders. The audio adapters retain playback roots after their graph updates and drop them after closing the graph, so trimming a history or closing a file cannot free a source playback still holds. Clipboard publications and paste readers use those resource leases through `application::clipboard::Exchange`; general operation commit integration remains pending.
 
-The byte limit applies independently to each undo order, with endpoint-aware accounting that excludes sources held by another service. An audio editor's takes are files and hold no buffer, so it bounds nothing of theirs: a render no entry names is deleted, and the history holds lists. The working folder is the client's: a temporary directory natively, a folder of the page's storage in a tab, made when the editor opens and removed when it closes but for what the clipboard still names.
+The byte limit applies independently to each undo order, with endpoint-aware accounting that excludes sources held by another service. An audio editor's takes are files and hold no buffer, so it bounds nothing of theirs: a render no entry names is deleted, and the history holds lists. The working folder is the client's: a folder of the user's cache on disk natively and under node, a folder of the page's storage in a tab, made when the editor opens and removed when it closes but for what the clipboard still names.
 
 Each adapter supplies a random connection identity and an allocator incarnation. Reattaching with reconciled allocators advances that incarnation; old editors and playback handles refuse work before addressing the replacement endpoint, and the resource service invalidates the old leases without sending frees to the replacement. This is conservative connection identity: two handles are not assumed to be the same endpoint merely because their addresses or local buffer ids match. A server restarted without reattaching has not established a new valid application connection. Operation admission, cancellation and cleanup validate that same incarnation.
 

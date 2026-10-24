@@ -108,17 +108,3 @@ export async function removeDirectoryAt(path: string, { recursive = false } = {}
     }
     await opfs.removeDirectory(path, recursive);
 }
-
-/**
- * **A folder for a client's temporary files, named `name`**: under the
- * system's temporary directory under node, at the root of the page's storage
- * in a tab. Not made: {@link makeDirectoryAt} makes it.
- */
-export function temporaryFolder(name: string): string {
-    if (underNode()) {
-        const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
-        const base = (env.TMPDIR || env.TEMP || env.TMP || "/tmp").replace(/\/+$/, "");
-        return `${base}/${name}-${Date.now().toString(36)}`;
-    }
-    return `${name}-${Date.now().toString(36)}`;
-}

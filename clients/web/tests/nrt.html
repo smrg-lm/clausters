@@ -257,6 +257,38 @@
         if (!(await opfs.exists(held))) throw new Error("a render the clipboard names was deleted with the editor");
         log("clipboard: a copy of segments pasted, a mix rendered, and a render it names outliving the editor");
 
+        // **An editor's own folder is held by a Web Lock**: one a closed tab
+        // left, which no tab holds, goes when the next editor opens. Its own
+        // goes with its close but for what a history still reaches -- here the
+        // buffer's context, which outlives the window -- and stays held while
+        // the tab lives.
+        const folders = async () => {
+          const names = [];
+          try {
+            let dir = await navigator.storage.getDirectory();
+            for (const part of ["clausters", "work"]) dir = await dir.getDirectoryHandle(part);
+            for await (const [name, handle] of dir.entries()) if (handle.kind === "directory") names.push(name);
+          } catch { /* not there yet */ }
+          return names;
+        };
+        const heldLocks = async () => (await navigator.locks.query()).held.map((lock) => lock.name);
+        await opfs.makeDirectory("clausters/work/audio-left");
+        await opfs.writeFile("clausters/work/audio-left/reversed.w64", new Uint8Array(8));
+        const own = new AudioEditor(buf);
+        await own.domain.settled();
+        const opened = await folders();
+        if (opened.includes("audio-left")) throw new Error("a folder no tab holds was not swept");
+        if (opened.length !== 1 || !opened[0].startsWith("audio-"))
+          throw new Error(`the editor's folder is not in the page's working root: ${opened}`);
+        if (!(await heldLocks()).includes(`clausters-work:${opened[0]}`))
+          throw new Error("the editor's folder is not held by a lock");
+        own.close();
+        await own.domain.settled();
+        const after = await folders();
+        if (after.length !== 0 && !(await heldLocks()).includes(`clausters-work:${after[0]}`))
+          throw new Error(`the editor's folder outlived its close unheld: ${after}`);
+        log("working folder: one a closed tab left swept by the next editor, the editor's own held by a lock");
+
         verdict(ok
           ? `PASS: Buffer.read pulled ${info.frames} frames of ${info.channels} ` +
             `channels out of OPFS through the NRT worker (worst sample delta ` +

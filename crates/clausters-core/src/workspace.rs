@@ -15,9 +15,14 @@
 //! [`Workspace`] removes its folder, and making one first removes every folder
 //! whose lock nobody holds ([`sweep`]): what a session killed outright left
 //! behind goes the next time any editor opens.
+//!
+//! The lock file also names its process, and the web client's editor under
+//! node shares the root and reads it: node has no file lock, so it judges a
+//! lock by whether that process is running, and keeps its own young by
+//! touching it, which a sweep here reads as a session starting and leaves.
 
 use std::fs::{self, File, OpenOptions};
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -96,6 +101,9 @@ impl Workspace {
                 Err(e) => return Err(e),
             };
             lock.try_lock().map_err(io::Error::other)?;
+            // **the lock names its process**, for a client that has no file
+            // lock to try and judges by whether that process is running
+            (&lock).write_all(format!("{pid}\n").as_bytes())?;
             match fs::create_dir(&path) {
                 Ok(()) => {
                     return Ok(Workspace {
@@ -204,6 +212,12 @@ mod tests {
         let path = ws.path().to_path_buf();
         fs::write(path.join("take.w64"), b"samples").unwrap();
         assert!(path.is_dir());
+        let named = fs::read_to_string(path.with_extension(LOCK)).unwrap();
+        assert_eq!(
+            named.trim(),
+            std::process::id().to_string(),
+            "the lock names its process"
+        );
         drop(ws);
         assert!(!path.exists());
         assert!(!path.with_extension(LOCK).exists(), "its lock goes too");

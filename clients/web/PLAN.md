@@ -5106,7 +5106,7 @@ sound.
   the worker. `PeaksOut` still holds its base buckets to the end, about
   2.3 % of the samples, as natively.
 
-- ⬜ **An editor's working folder under node is in the temporary directory,
+- ✅ **An editor's working folder under node is in the temporary directory,
   and nothing sweeps one a tab left** *(found 2026-10-24, with the native
   fix)*. A reverse of a day filled a machine's memory: the temporary
   directory was a memory filesystem, and folders left by sessions that did
@@ -5120,3 +5120,8 @@ sound.
   shape to follow is the core's: the same root and the same sweep, by
   whatever a page and node can hold a folder with. A render that fails
   already deletes what it wrote, in every client.
+  *Fixed 2026-10-24:* `src/base/workspace.ts` holds the folder. Under node
+  it is the core's root and lock file, the lock naming its process and
+  touched while held, so either client sweeps what the other left; in a tab
+  it is under `clausters/work` in the origin's storage, held by a Web Lock
+  and swept when no tab holds it.

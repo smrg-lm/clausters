@@ -11004,3 +11004,26 @@ know the rate of each take. What this closed is the narrowing itself: Python
 sent every float prop as a 32-bit float and refused an int past 2^31, and a
 page sent both narrowed the same way, so a cursor set near the end of a day
 long take landed up to 128 frames away.
+
+## The web client holds its working folder by what it has (2026-10-24)
+
+Context: an editor's working folder is the core's
+(`clausters_core::workspace`), held by a file lock the operating system lets
+go of however the process ends, and swept by the next editor when nobody holds
+it. The web client cannot bind that: wasm reaches no disk, and node has no file
+lock to hold one by.
+
+Decision: the web client holds the folder itself (`src/base/workspace.ts`), by
+the core's root and rule. Under node the lock file **names its process** and is
+**touched while it is held**; the core's lock names its process too. So the two
+clients sweep each other's leftovers in the one root: a native sweep reads a
+lock touched within the last minute as a session starting and leaves it, and a
+node sweep reads a lock whose process is not running as nobody's, leaving one
+that names no process to a native sweep, which can try it. In a tab the folder
+is in the origin's storage and held by a Web Lock, which the browser lets go of
+when the tab goes; the next editor in the origin removes every folder whose lock
+no tab holds or waits for.
+
+Rejected: a sweep by age alone, which would remove a live session's folder
+after an hour of editing; and keeping node in the temporary directory, which on
+many machines is memory, the reason the native folder moved.
