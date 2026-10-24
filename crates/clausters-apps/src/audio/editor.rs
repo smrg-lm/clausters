@@ -616,6 +616,9 @@ struct AudioWindowState {
     workspace: Option<String>,
     // The engine's rate, which the join it plays is stitched at.
     engine_rate: f64,
+    // Whether the engine is the application's own, which reads each file's
+    // list as it is and plays no join: nothing is stitched.
+    held: bool,
     /// The endpoint incarnation the editor's buffers are on.
     server: crate::application::resources::ServerInstance,
     chunk: usize,
@@ -837,6 +840,7 @@ impl AudioEditor {
                 envelope_widget: None,
                 workspace: None,
                 engine_rate: 0.0,
+                held: false,
                 server: Default::default(),
                 chunk: DEFAULT_CHUNK,
                 lane: None,
@@ -1382,6 +1386,10 @@ impl AudioEditor {
     /// engine's rate -- so a file at another rate plays at its pitch -- and
     /// the `/done` awaited. Nothing for an empty list.
     fn stitched(&self) -> Vec<Step> {
+        // an engine the application holds reads the list itself
+        if self.window_state.held {
+            return Vec::new();
+        }
         let rate = if self.window_state.engine_rate > 0.0 {
             self.window_state.engine_rate
         } else {
@@ -2254,6 +2262,9 @@ struct Facts {
     stamp: Option<sources::DiskStamp>,
     /// The engine's rate, which the join it plays is stitched at.
     engine_rate: Option<f64>,
+    /// Whether the engine is the application's own, which reads the lists
+    /// itself: nothing is stitched from then on.
+    held: Option<bool>,
     #[serde(deserialize_with = "present")]
     name: Option<Option<String>>,
     layers: Option<Value>,
@@ -2311,6 +2322,9 @@ impl AudioEditor {
         }
         if let Some(rate) = facts.engine_rate.filter(|r| *r > 0.0) {
             self.window_state.engine_rate = rate;
+        }
+        if let Some(held) = facts.held {
+            self.window_state.held = held;
         }
         if let Some(chunk) = facts.chunk {
             self.window_state.chunk = chunk.max(1);

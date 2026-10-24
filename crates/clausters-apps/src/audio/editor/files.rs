@@ -51,6 +51,40 @@ impl AudioEditor {
         Some(answer)
     }
 
+    /// **Each open file's take, as an engine the application holds reads
+    /// it**: its parts at `rate`, the engine's, and the revision they are of.
+    pub(crate) fn held_takes(&self, rate: f64) -> Vec<crate::editing::held::HeldTake> {
+        if !self.open_files.open {
+            return Vec::new();
+        }
+        std::iter::once(&self.file)
+            .chain(self.open_files.parked.values())
+            .map(|file| file.held_take(rate))
+            .collect()
+    }
+
+    /// The open file `file`, focused or parked.
+    fn open_file_state(&self, file: u64) -> Option<&AudioFileState> {
+        if !self.open_files.open {
+            return None;
+        }
+        let id = FileId(i64::try_from(file).ok()?);
+        if self.file.id == id {
+            return Some(&self.file);
+        }
+        self.open_files.parked.get(&id)
+    }
+
+    /// How many frames the open file `file` comes to, at its own rate.
+    pub(crate) fn file_length(&self, file: u64) -> Option<u64> {
+        self.open_file_state(file).map(AudioFileState::length)
+    }
+
+    /// The rate of the open file `file`.
+    pub(crate) fn file_rate(&self, file: u64) -> Option<f64> {
+        self.open_file_state(file).map(|f| f.rate)
+    }
+
     pub(crate) fn playback_file(&self) -> Value {
         // with no file open there is nothing to sound
         if !self.open_files.open {
@@ -616,6 +650,18 @@ impl AudioFileState {
     }
     pub fn untitled(&self) -> bool {
         matches!(&self.target, Target::File(path) if path.is_empty())
+    }
+    fn held_take(&self, rate: f64) -> crate::editing::held::HeldTake {
+        let rate = if rate > 0.0 { rate } else { self.rate };
+        let list = sources::list(&self.contents.parts, &self.sources, self.channels, rate);
+        crate::editing::held::HeldTake {
+            file: self.id.0 as u64,
+            revision: self.revision,
+            frames: list.parts.iter().map(|p| p.frames).sum(),
+            parts: list.parts,
+            channels: self.channels,
+            rate,
+        }
     }
     fn length(&self) -> u64 {
         parts::length(

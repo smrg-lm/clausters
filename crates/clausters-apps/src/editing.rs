@@ -55,6 +55,7 @@ use crate::turn::{Event, Kind, Record, int};
 mod audio_operations;
 mod audio_session;
 mod exchange;
+pub mod held;
 
 /// The version an unedited context is at. One rather than zero, because zero is
 /// what an edit means by *unstated* when it names the state it was made against.
@@ -353,6 +354,9 @@ pub struct Editing {
     /// The file each audio member plays, kept beside its session since a
     /// run holds the session while it decides whether an edit may start.
     audio_playing: std::collections::BTreeMap<MemberId, u64>,
+    /// The engine the application holds, when it holds one: an audio member
+    /// opened from then on plays on it, and is never stitched a join.
+    engine: Option<Box<dyn held::HeldEngine>>,
 }
 
 impl Default for Editing {
@@ -378,7 +382,16 @@ impl Editing {
             bytes: None,
             sessions: Default::default(),
             audio_playing: Default::default(),
+            engine: None,
         }
+    }
+
+    /// **Plays its audio members on `engine`**, an engine the application
+    /// holds: their playback's ops become the engine's commands, and each
+    /// file's list is handed to the engine to read rather than stitched into
+    /// a join on a server. Set before the first audio member opens.
+    pub fn hold_engine(&mut self, engine: Box<dyn held::HeldEngine>) {
+        self.engine = Some(engine);
     }
 
     /// **Limits the takes only the history holds to `bytes`**, or lifts the

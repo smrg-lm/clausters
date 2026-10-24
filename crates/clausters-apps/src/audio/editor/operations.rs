@@ -203,6 +203,7 @@ impl Application for AudioEditor {
             if self.window_state.engine_rate > 0.0 {
                 next.window_state.engine_rate = self.window_state.engine_rate;
             }
+            next.window_state.held = self.window_state.held;
             next.window_state.server = self.window_state.server;
             let mut plan = next.prepare(
                 Request {

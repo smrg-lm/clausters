@@ -1044,6 +1044,18 @@ of the application rendering the list into them as each reader asks, through
 in place and the readers fade into it. `AppEngine::install_take` puts the
 streams in the pool, and `AudioEditorPlayback::sync_streams` points each
 channel's reader at its own. No list, stitch or file is in the engine.
+**The audio editor's coordinator plays on it** (`held`): an editing context
+told `Editing::hold_engine` asks the engine it holds
+(`clausters_apps::editing::held::HeldEngine`, which `HeldAudio` answers) for
+its playback's medium, hands it each file's list as a `HeldTake` (its parts
+at the engine's rate and the revision they are of) and plays the buffers it
+answers, and asks it whether a transport rolls instead of awaiting a client.
+The editor stitches nothing then, and after each step of a run the files
+whose revision moved are handed over again. **A play waits for its cue**:
+`AppEngine::push` sends a transport's cue and holds what follows it, pushed
+with it or after it, until `pump` takes the cue's `Garbage::TransportCued`,
+as a client waits for the cue's `/done` before it rolls a server's
+transport; so the first frame a play sounds is the frame it starts on.
 
 `crates/clausters-apps` sits over the projections and holds the **applications**
 the project is built around — the multitrack editor today, the audio and score

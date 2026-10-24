@@ -131,6 +131,20 @@ pub trait Medium: std::fmt::Debug {
     fn node_count(&self) -> usize;
 }
 
+impl<M: Medium + ?Sized> Medium for Box<M> {
+    fn apply(&mut self, ops: Vec<Op>, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
+        (**self).apply(ops, ids)
+    }
+
+    fn bus(&self, handle: &str) -> Option<(i32, usize)> {
+        (**self).bus(handle)
+    }
+
+    fn node_count(&self) -> usize {
+        (**self).node_count()
+    }
+}
+
 impl Medium for Applier {
     fn apply(&mut self, ops: Vec<Op>, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         Applier::apply(self, ops, ids)

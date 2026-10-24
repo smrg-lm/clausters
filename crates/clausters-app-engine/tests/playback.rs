@@ -19,16 +19,20 @@ use clausters_editing::audio_playback::{AudioEditorPlayback, Pass};
 const SR: f64 = 48_000.0;
 const FRAMES: usize = 24_000;
 
-/// Where the output first sounds and its 5 ms ramp is over: from there the
-/// output is the take. The first refill lands when the reader's thread gets
-/// to it, which a loaded machine delays.
-fn settled(heard: &[f32]) -> usize {
+/// **Where the transport rolled**, and where the play's 5 ms ramp is over.
+/// A play waits for its cue, so the transport rolls once its readers hold
+/// the frame it starts on: the first block that sounds is the start of the
+/// pass, and from the end of the ramp on the output is the take. The cue
+/// is over when the reader's thread has filled, which a loaded machine
+/// delays.
+fn rolled(heard: &[f32]) -> (usize, usize) {
     let first = heard
         .iter()
         .position(|&s| s != 0.0)
         .expect("the take was heard");
-    assert!(first < 12_000, "the first refill took {first} samples");
-    first + 256
+    assert!(first < 12_000, "the cue took {first} samples");
+    let rolled = first / BLOCK_SIZE * BLOCK_SIZE;
+    (rolled, rolled + 256)
 }
 
 /// A mono float file whose every frame is told apart from every other.
@@ -117,10 +121,11 @@ fn the_audio_editor_plays_on_an_engine_it_holds() {
         }
         std::thread::sleep(Duration::from_micros(1_333));
     }
-    // Past the first refill and the play's ramp, the output is the file.
-    for i in settled(&left)..16_000 {
-        assert_eq!(left[i], values[i], "left, sample {i}");
-        assert_eq!(right[i], values[i], "right, sample {i}");
+    // From where it rolled, past the play's ramp, the output is the file.
+    let (at, from) = rolled(&left);
+    for i in from..16_000 {
+        assert_eq!(left[i], values[i - at], "left, sample {i}");
+        assert_eq!(right[i], values[i - at], "right, sample {i}");
     }
     let _ = std::fs::remove_file(&path);
 }
@@ -164,10 +169,11 @@ fn loops_stops_and_locates_on_an_engine_it_holds() {
     let (from, to) = (2_000u64, 6_000u64);
     playback.play(1, from, Pass::Loop { from, to });
     let heard = blocks(&mut engine, &app, 300);
-    // Past the first refill and the ramp, every sample is the loop's frame.
+    // Past the ramp, every sample is the loop's frame.
     let span = (to - from) as usize;
-    for (i, &s) in heard.iter().enumerate().skip(settled(&heard)) {
-        let frame = from as usize + i % span;
+    let (at, settled) = rolled(&heard);
+    for (i, &s) in heard.iter().enumerate().skip(settled) {
+        let frame = from as usize + (i - at) % span;
         assert_eq!(s, values[frame], "sample {i}, frame {frame}");
     }
     // A stop rolls out its ramp and is silent after it.
@@ -188,12 +194,14 @@ fn loops_stops_and_locates_on_an_engine_it_holds() {
         },
     );
     let heard = blocks(&mut engine, &app, 200);
-    for (i, &s) in heard.iter().enumerate().skip(settled(&heard)) {
+    let (start, settled) = rolled(&heard);
+    for (i, &s) in heard.iter().enumerate().skip(settled) {
+        let frame = at as usize + i - start;
         // The stop's ramp ends on the end mark, 5 ms before it.
-        if at as usize + i >= FRAMES - 512 {
+        if frame >= FRAMES - 512 {
             break;
         }
-        assert_eq!(s, values[at as usize + i], "sample {i} after the locate");
+        assert_eq!(s, values[frame], "sample {i} after the locate");
     }
     let _ = std::fs::remove_file(&path);
 }
@@ -299,17 +307,17 @@ fn the_application_reads_its_take_into_the_engine() {
         },
     );
     let (left, right) = both(&mut engine, &app, 120);
-    let from = settled(&left);
+    let (start, from) = rolled(&left);
     for i in from..left.len() {
-        assert_eq!(left[i], values[i][0], "left, sample {i}");
-        assert_eq!(right[i], values[i][1], "right, sample {i}");
+        assert_eq!(left[i], values[i - start][0], "left, sample {i}");
+        assert_eq!(right[i], values[i - start][1], "right, sample {i}");
     }
     // The edit: the second half first.
     let edited = vec![part_of(&path, half, half), part_of(&path, 0, half)];
     feed.set(Arc::new(
         ReadList::of(&edited, 2, SR, &mut headers).unwrap(),
     ));
-    let played = left.len();
+    let played = left.len() - start;
     let (left, right) = both(&mut engine, &app, 60);
     let mut zeros = 0;
     for (i, &s) in left.iter().enumerate() {
@@ -340,4 +348,156 @@ fn the_application_reads_its_take_into_the_engine() {
         );
     }
     let _ = std::fs::remove_file(&path);
+}
+
+/// The answer to an await of the coordinator, as an application that holds
+/// its engine gives it: nothing is left for it to carry out on a server, and
+/// a file is described from its header.
+fn reply(wait: &serde_json::Value) -> serde_json::Value {
+    assert!(
+        !wait.to_string().contains("/buffer_stitch"),
+        "nothing is stitched: {wait}"
+    );
+    match wait["kind"].as_str().unwrap_or_default() {
+        "shape" => {
+            let path = wait["path"].as_str().unwrap_or_default();
+            let layout = clausters_core::pcm::Layout::open(path).expect("the file reads");
+            serde_json::json!({"frames": layout.frames, "channels": layout.channels,
+                "rate": layout.sample_rate, "display": 0, "path": path, "untitled": false})
+        }
+        _ => serde_json::json!({}),
+    }
+}
+
+/// **One action of the audio editor's coordinator, carried to its end**,
+/// every await answered as [`reply`] says; the run's end.
+fn act(
+    editing: &mut clausters_apps::editing::Editing,
+    member: u64,
+    action: serde_json::Value,
+    ids: &mut IdSpaces,
+) -> serde_json::Value {
+    use clausters_apps::editing::call_json_ids;
+    use serde_json::json;
+
+    let call = |editing: &mut clausters_apps::editing::Editing,
+                request: serde_json::Value,
+                ids: &mut IdSpaces| {
+        serde_json::from_str::<serde_json::Value>(&call_json_ids(
+            editing,
+            &request.to_string(),
+            ids,
+        ))
+        .unwrap()
+    };
+    let mut answer = call(
+        editing,
+        json!({"verb": "audio", "member": member, "do": action}),
+        ids,
+    );
+    while answer["done"] != true {
+        let wait = &answer["await"];
+        assert_ne!(wait["kind"], "rolling", "the engine says whether it rolls");
+        let result = reply(wait);
+        answer = call(
+            editing,
+            json!({"verb": "audio", "member": member, "run": answer["run"], "result": result}),
+            ids,
+        );
+    }
+    assert!(answer["error"].is_null(), "{answer}");
+    answer
+}
+
+/// **The audio editor, played on an engine its application holds**: its
+/// coordinator opens a file, plays it from its first frame, and after a
+/// delete plays the take as edited -- the list read by the application into
+/// the engine's fed streams, nothing stitched and no OSC between them.
+#[test]
+fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
+    use clausters_app_engine::held::HeldAudio;
+    use clausters_apps::editing::{Editing, call_json_ids};
+    use serde_json::json;
+
+    let (path, values) = take("coordinator");
+    let workspace = std::env::temp_dir().join(format!("app-engine-ws-{}", std::process::id()));
+    std::fs::create_dir_all(&workspace).unwrap();
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut editing = Editing::new();
+    editing.hold_engine(Box::new(HeldAudio::new(Arc::clone(&app))));
+    let opened: serde_json::Value = serde_json::from_str(&call_json_ids(
+        &mut editing,
+        &json!({"verb": "openAudio", "key": "take", "path": path,
+            "workspace": workspace.to_string_lossy(), "frames": FRAMES,
+            "channels": 1, "rate": SR, "display": 0})
+        .to_string(),
+        &mut ids,
+    ))
+    .unwrap();
+    let member = opened["member"].as_u64().expect("an audio member");
+    for call in [
+        json!({"verb": "sync", "window": 900}),
+        json!({"verb": "window", "widget": 12}),
+    ] {
+        call_json_ids(
+            &mut editing,
+            &json!({"verb": "member", "member": member, "call": call}).to_string(),
+            &mut ids,
+        );
+    }
+    let opened = act(
+        &mut editing,
+        member,
+        json!({"verb": "open", "chunk": 1, "rate": SR, "empty": false}),
+        &mut ids,
+    );
+    assert!(opened["result"]["transport"].is_i64(), "{opened}");
+    act(
+        &mut editing,
+        member,
+        json!({"verb": "play", "at": 0.0}),
+        &mut ids,
+    );
+    let heard = blocks(&mut engine, &app, 150);
+    let (start, from) = rolled(&heard);
+    for (i, &s) in heard.iter().enumerate().skip(from) {
+        assert_eq!(s, values[i - start], "sample {i}");
+    }
+    // The first half deleted: the take is the second half from now on.
+    act(&mut editing, member, json!({"verb": "stop"}), &mut ids);
+    blocks(&mut engine, &app, 20);
+    let half = FRAMES / 2;
+    let version = serde_json::from_str::<serde_json::Value>(&call_json_ids(
+        &mut editing,
+        &json!({"verb": "state"}).to_string(),
+        &mut ids,
+    ))
+    .unwrap()["version"]
+        .clone();
+    act(
+        &mut editing,
+        member,
+        json!({"verb": "event", "addr": "/gui_event",
+            "args": [12, 1, version, "delete", 0.0, half as f64]}),
+        &mut ids,
+    );
+    act(
+        &mut editing,
+        member,
+        json!({"verb": "play", "at": 0.0}),
+        &mut ids,
+    );
+    let heard = blocks(&mut engine, &app, 150);
+    let (start, from) = rolled(&heard);
+    for (i, &s) in heard.iter().enumerate().skip(from) {
+        let frame = i - start;
+        if frame >= half - 512 {
+            break;
+        }
+        assert_eq!(s, values[half + frame], "sample {i} of the edited take");
+    }
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir_all(&workspace);
 }

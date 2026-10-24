@@ -27,6 +27,9 @@ clausters-document = { path = "../clausters-document" }
 # The ops a playback answers, and the medium trait they are carried out
 # through.
 clausters-editing = { path = "../clausters-editing" }
+# The applications whose engine this is: the audio editor's coordinator asks
+# an engine it holds for what `HeldEngine` names, and `held` answers it.
+clausters-apps = { path = "../clausters-apps" }
 serde_json = "1"
 tracing = "0.1"
 

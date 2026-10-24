@@ -22,9 +22,10 @@
 //! The engine knows no file, no segment and no peaks: what it is handed is
 //! nodes, buses, buffers and transport commands.
 
+pub mod held;
 pub mod take;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use clausters::dsp::buffer::Buffer;
@@ -45,6 +46,15 @@ pub struct AppEngine {
     translator: CmdTranslator,
     sample_rate: f32,
     channels: usize,
+    /// **What waits for a cue**: the commands pushed after a transport's cue,
+    /// held until the engine says the cue is over, so a play rolls once its
+    /// readers hold the frames it starts on -- as a client waits for the
+    /// cue's `/done` before it rolls a server's transport. The cued
+    /// transport, and the commands after it in the order they were pushed.
+    held: VecDeque<(usize, Vec<Cmd>)>,
+    /// Whether each transport was last told to roll, and has not stopped on
+    /// its end mark since.
+    rolling: HashMap<usize, bool>,
     /// The audio device the engine runs on; `None` for an engine driven by
     /// hand, block by block.
     #[cfg(feature = "realtime")]
@@ -77,6 +87,8 @@ impl AppEngine {
             translator,
             sample_rate,
             channels,
+            held: VecDeque::new(),
+            rolling: HashMap::new(),
             #[cfg(feature = "realtime")]
             _backend: None,
         }
@@ -127,7 +139,39 @@ impl AppEngine {
     /// **Pushes `cmds` to the engine**, after the latency plan they move.
     /// Answers whether the FIFO took them; a full one drops them, said in the
     /// log, as a full command ring is on a server.
-    pub fn push(&mut self, mut cmds: Vec<Cmd>) -> bool {
+    ///
+    /// Commands after a transport's cue wait for the cue to be over
+    /// ([`Self::pump`] sends them), and so does everything pushed meanwhile,
+    /// so the engine takes them in the order they were pushed.
+    pub fn push(&mut self, cmds: Vec<Cmd>) -> bool {
+        if cmds.is_empty() {
+            return true;
+        }
+        if let Some((_, waiting)) = self.held.back_mut() {
+            waiting.extend(cmds);
+            return true;
+        }
+        self.send(cmds)
+    }
+
+    /// Sends `cmds` up to and including the first cue, and holds the rest
+    /// under the transport it cues.
+    fn send(&mut self, mut cmds: Vec<Cmd>) -> bool {
+        let cue = cmds
+            .iter()
+            .position(|cmd| matches!(cmd, Cmd::TransportCue { .. }));
+        if let Some(at) = cue {
+            // what follows waits, pushed with the cue or after it
+            let rest = cmds.split_off(at + 1);
+            if let Some(Cmd::TransportCue { transport }) = cmds.last() {
+                self.held.push_back((*transport, rest));
+            }
+        }
+        for cmd in &cmds {
+            if let Cmd::TransportRun { transport, rolling } = cmd {
+                self.rolling.insert(*transport, *rolling);
+            }
+        }
         self.translator.prepare_compensation(&mut cmds, 0);
         if cmds.is_empty() {
             return true;
@@ -139,6 +183,22 @@ impl AppEngine {
                 false
             }
         }
+    }
+
+    /// **Whether transport `transport` rolls**, as the application last told
+    /// it -- a play waiting on its cue included -- unless it stopped on its
+    /// end mark since.
+    pub fn rolling(&self, transport: usize) -> bool {
+        let waiting = self.held.iter().rev().find_map(|(_, cmds)| {
+            cmds.iter().rev().find_map(|cmd| match cmd {
+                Cmd::TransportRun {
+                    transport: t,
+                    rolling,
+                } if *t == transport => Some(*rolling),
+                _ => None,
+            })
+        });
+        waiting.unwrap_or_else(|| self.rolling.get(&transport).copied().unwrap_or(false))
     }
 
     /// **Puts a take's fed streams in the pool**, one mono buffer per
@@ -187,6 +247,19 @@ impl AppEngine {
                 Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {
                     self.translator.release_node_id(id);
                     clausters::server::engine::report_rejected(id, why, "app engine");
+                }
+                Garbage::TransportEnded { transport } => {
+                    self.rolling.insert(transport, false);
+                }
+                // the cue is over: what waited for it goes
+                Garbage::TransportCued { transport, .. } => {
+                    if self.held.front().is_some_and(|(t, _)| *t == transport)
+                        && let Some((_, cmds)) = self.held.pop_front()
+                    {
+                        let later = std::mem::take(&mut self.held);
+                        self.send(cmds);
+                        self.held.extend(later);
+                    }
                 }
                 _ => {}
             }

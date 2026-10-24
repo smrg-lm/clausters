@@ -63,7 +63,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use clausters_core::ids::IdSpaces;
-use clausters_editing::apply::Endpoint;
+use clausters_editing::apply::{Applier, Endpoint, Medium};
 use clausters_editing::audio_playback::{self, AudioEditorPlayback};
 use serde_json::{Value, json};
 
@@ -78,7 +78,7 @@ const NO_FILE: &str = "no file is open";
 /// the editor and never kept here.
 #[derive(Debug)]
 pub(super) struct Session {
-    playback: AudioEditorPlayback,
+    playback: AudioEditorPlayback<Box<dyn Medium + Send>>,
     /// The engine's rate, handed over at open; 0 when it would not say.
     rate: f64,
     /// Whether a script paused the pass, which a play without a position
@@ -291,25 +291,89 @@ struct Run {
 impl Session {
     /// The endpoint and the engine's rate, as the open hands them over: a
     /// playback that has not taken its transport yet is made again for them.
-    fn reopen(&mut self, chunk: usize, rate: f64) {
+    fn reopen(&mut self, editing: &mut Editing, chunk: usize, rate: f64) {
         if self.playback.transport().is_none() {
-            self.playback = AudioEditorPlayback::new(Endpoint {
-                chunk: chunk.max(1),
-            });
+            self.playback = playback_in(editing, chunk);
         }
-        self.rate = rate;
+        // an engine the application holds says its own rate
+        self.rate = editing.engine.as_ref().map_or(rate, |engine| engine.rate());
     }
 
-    fn new(chunk: usize, rate: f64) -> Session {
+    fn new(editing: &mut Editing, chunk: usize, rate: f64) -> Session {
         Session {
-            playback: AudioEditorPlayback::new(Endpoint {
-                chunk: chunk.max(1),
-            }),
+            playback: playback_in(editing, chunk),
             rate,
             paused: false,
             runs: BTreeMap::new(),
             next: 1,
         }
+    }
+}
+
+/// **A playback in the medium the context plays on**: an engine the
+/// application holds, or an endpoint's steps for a client to carry out.
+fn playback_in(editing: &mut Editing, chunk: usize) -> AudioEditorPlayback<Box<dyn Medium + Send>> {
+    let medium: Box<dyn Medium + Send> = match editing.engine.as_mut() {
+        Some(engine) => engine.medium(),
+        None => Box::new(Applier::new(Endpoint {
+            chunk: chunk.max(1),
+        })),
+    };
+    AudioEditorPlayback::in_medium(medium)
+}
+
+/// **The takes an engine the application holds reads, brought up to date**:
+/// every file the engine reads whose list changed since is handed to it
+/// again, and its readers told its new length. Nothing over a server.
+fn retake(
+    editing: &mut Editing,
+    member: MemberId,
+    playback: &mut AudioEditorPlayback<Box<dyn Medium + Send>>,
+    rate: f64,
+    ids: &mut IdSpaces,
+) {
+    let Some(engine) = editing.engine.as_ref() else {
+        return;
+    };
+    let rate = if rate > 0.0 { rate } else { engine.rate() };
+    let takes = match editing.member(member) {
+        Some(Member::Audio(editor)) => editor.held_takes(rate),
+        _ => return,
+    };
+    for take in takes {
+        let Some(engine) = editing.engine.as_mut() else {
+            return;
+        };
+        if engine
+            .revision(take.file)
+            .is_none_or(|r| r == take.revision)
+        {
+            continue;
+        }
+        // A list the engine cannot read is the engine's to say (it plays the
+        // parts it can); the readers keep the length they had.
+        if let Ok(buffers) = engine.take(&take, ids) {
+            let frames = take_frames(editing, member, take.file);
+            let take_rate = take_rate(editing, member, take.file);
+            // the readers' span set again, or made again at another width
+            let _ = playback.sync_streams(take.file, buffers, frames, take_rate, rate, ids);
+        }
+    }
+}
+
+/// The length of `file` at its own rate, as the playback counts it.
+fn take_frames(editing: &Editing, member: MemberId, file: u64) -> u64 {
+    match editing.member(member) {
+        Some(Member::Audio(editor)) => editor.file_length(file).unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// The rate of `file`.
+fn take_rate(editing: &Editing, member: MemberId, file: u64) -> f64 {
+    match editing.member(member) {
+        Some(Member::Audio(editor)) => editor.file_rate(file).unwrap_or(0.0),
+        _ => 0.0,
     }
 }
 
@@ -329,9 +393,10 @@ pub(super) fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -
         let mut session = editing
             .sessions
             .remove(&member)
-            .unwrap_or_else(|| Session::new(1, 0.0));
+            .unwrap_or_else(|| Session::new(editing, 1, 0.0));
         if action["verb"] == "open" {
             session.reopen(
+                editing,
                 action["chunk"].as_u64().unwrap_or(1) as usize,
                 action["rate"].as_f64().unwrap_or(0.0),
             );
@@ -451,6 +516,10 @@ impl Session {
             "open" => {
                 if let Err(error) = self.playback.alloc_transport(ids) {
                     return finished(id, Raise::Runtime, &error.to_string());
+                }
+                // An engine the application holds reads the lists itself.
+                if editing.engine.is_some() {
+                    member_call(editing, member, json!({"verb": "sync", "held": true}));
                 }
                 // The join the editor plays is stitched at the engine's rate.
                 if self.rate > 0.0 {
@@ -880,6 +949,49 @@ impl Session {
     }
 
     /// What a rolling answer leads to.
+    /// **The file in focus sounds on an engine the application holds**: its
+    /// list handed to the engine, and the playback's readers set to the
+    /// buffers the engine answers, one per channel. `None` over a server.
+    fn sync_held(
+        &mut self,
+        editing: &mut Editing,
+        member: MemberId,
+        id: u64,
+        file: &Value,
+        ids: &mut IdSpaces,
+    ) -> Option<Flow> {
+        let rate = editing.engine.as_ref().map(|engine| {
+            if self.rate > 0.0 {
+                self.rate
+            } else {
+                engine.rate()
+            }
+        })?;
+        let wanted = file["id"].as_u64()?;
+        let take = match editing.member(member) {
+            Some(Member::Audio(editor)) => editor
+                .held_takes(rate)
+                .into_iter()
+                .find(|take| take.file == wanted)?,
+            _ => return None,
+        };
+        let engine = editing.engine.as_mut()?;
+        let buffers = match engine.take(&take, ids) {
+            Ok(buffers) => buffers,
+            Err(e) => return Some(Flow::Fail(Failure::Own(Raise::Runtime, e))),
+        };
+        let frames = file["frames"].as_u64().unwrap_or(0);
+        let take_rate = file["rate"].as_f64().unwrap_or(0.0);
+        if let Err(e) = self
+            .playback
+            .sync_streams(wanted, buffers, frames, take_rate, rate, ids)
+        {
+            return Some(Flow::Fail(Failure::Own(Raise::Runtime, e.to_string())));
+        }
+        self.push(id, vec![Task::RetainPlayback]);
+        Some(Flow::Next)
+    }
+
     fn rolled(
         &mut self,
         editing: &mut Editing,
@@ -953,12 +1065,14 @@ impl Session {
         let mut effects = Vec::new();
         loop {
             let Some(task) = self.runs.get_mut(&id).and_then(|run| run.tasks.pop_front()) else {
+                retake(editing, member, &mut self.playback, self.rate, ids);
                 let run = self.runs.remove(&id).unwrap_or_default();
                 return json!({"run": id, "done": true, "effects": effects, "result": run.result});
             };
             match self.step(editing, member, id, task, &mut effects, ids) {
                 Flow::Next => {}
                 Flow::Await(request, resume) => {
+                    retake(editing, member, &mut self.playback, self.rate, ids);
                     if let Some(run) = self.runs.get_mut(&id) {
                         run.waiting = Some(resume);
                     }
@@ -1348,6 +1462,9 @@ impl Session {
                 if file["active"] == false {
                     return Flow::Next;
                 }
+                if let Some(flow) = self.sync_held(editing, member, id, &file, ids) {
+                    return flow;
+                }
                 let args = json!({"file": file["id"], "buffer": file["display"],
                     "channels": file["channels"], "frames": file["frames"],
                     "takeRate": file["rate"], "rate": self.rate});
@@ -1380,11 +1497,30 @@ impl Session {
                 }
                 Flow::Next
             }
+            // an engine the application holds says whether it rolls
+            Task::Rolling(rolled) if editing.engine.is_some() => {
+                let rolling = self.playback.transport().is_some_and(|transport| {
+                    editing
+                        .engine
+                        .as_ref()
+                        .is_some_and(|engine| engine.rolling(transport))
+                });
+                self.playback.set_rolling(rolling);
+                let tasks = self.rolled(editing, member, rolled, rolling);
+                self.push(id, tasks);
+                Flow::Next
+            }
             Task::Rolling(rolled) => Flow::Await(
                 tagged("rolling", json!({"transport": self.playback.transport()})),
                 Resume::Rolling(rolled),
             ),
             Task::Playback { verb, args } => {
+                if verb == "closeFile"
+                    && let (Some(engine), Some(file)) =
+                        (editing.engine.as_mut(), args["file"].as_u64())
+                {
+                    engine.close(file, ids);
+                }
                 let mut request = args;
                 request["verb"] = json!(verb);
                 let answer: Value = serde_json::from_str(&audio_playback::call_json(

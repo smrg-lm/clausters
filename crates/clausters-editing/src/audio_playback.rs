@@ -907,7 +907,11 @@ fn out_ports(outs: usize) -> Ports {
 ///   `transport` `null` before it has one
 /// - `space` -- `looping`, `selection` (`[from, to]` or `null`), `cursor`,
 ///   `frames`: answers `{"start", "pass"}`
-pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut IdSpaces) -> String {
+pub fn call_json<M: Medium>(
+    playback: &mut AudioEditorPlayback<M>,
+    request: &str,
+    ids: &mut IdSpaces,
+) -> String {
     let Ok(request) = serde_json::from_str::<Value>(request) else {
         return json!({"error": "not a request"}).to_string();
     };
