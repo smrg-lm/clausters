@@ -8751,3 +8751,18 @@ module of its own.
   see it in a page, and if it is blank, give a buffer's spectrogram the
   columns a list's has, which needs the server to answer `/buffer_spectrum`,
   or read the span it shows back as samples and analyze it in the host.
+- ⬜ **The audio editor's view of a take glitches under zoom and pan**
+  *(found 2026-10-24, by eye on the audio editor the host owns,
+  `clausters-gui --audio`)*. Zooming in makes the picture flicker; at the
+  level of samples the sample circles are drawn or not depending on where
+  the zoom lands; panning draws what comes in at the edges erratically, as
+  if from frames further on. After a paste, an undo and another paste, zoom
+  and pan stopped answering: the view stayed one fixed length while the
+  take played on past it. Suspects to check first, before guessing (an A/B
+  build against the commits before them): the view a paste opens out
+  (`AudioEditor::show_span`, carried by the commit's `viewport`), the
+  extent every list now registers as it is named (`sync_lists` calling
+  `Host::set_take_total`), a view kept longer than a take an undo shortened,
+  and the `"view"` event carrying its start and length as `f32`. Whether the
+  flicker and the edges predate the host owning the editor is part of the
+  finding.
