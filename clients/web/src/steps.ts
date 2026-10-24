@@ -84,6 +84,10 @@ export interface StepOptions {
     progress?: RenderProgress;
     /** Runs each awaited request, alone on its server. */
     exclusive?: <T>(request: () => Promise<T>) => Promise<T>;
+    /** Calls the steps off once aborted: a render not begun yet is not
+     *  begun, which is what the window's work-in-progress panel asks of a
+     *  long reverse. */
+    signal?: AbortSignal;
 }
 
 /** The walk each runner is on, so the next one starts after it. */
@@ -148,7 +152,7 @@ async function walkSteps(
     server: Server,
     runner: StepRunner,
     steps: unknown[],
-    { to = "sound", timeout, progress, exclusive = (request) => request() }: StepOptions,
+    { to = "sound", timeout, progress, exclusive = (request) => request(), signal }: StepOptions,
 ): Promise<void> {
     const call = (request: object): Record<string, unknown> =>
         JSON.parse(runner.call(JSON.stringify(request))) as Record<string, unknown>;
@@ -186,6 +190,10 @@ async function walkSteps(
             // **An offline render**: nothing is sent for it; this client
             // renders the score into its file and says how it went.
             const render = (awaiting.step as { render: RenderStep }).render;
+            if (signal?.aborted) {
+                call({ verb: "rendered", error: "called off" });
+                throw new Error("clausters: called off");
+            }
             let failed: unknown = null;
             try {
                 await disk.render(render, progress === undefined

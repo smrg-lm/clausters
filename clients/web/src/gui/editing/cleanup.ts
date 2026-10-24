@@ -17,6 +17,7 @@ export async function executeSteps(
     instance: { connection: number; generation: number },
     steps: unknown[],
     progress?: RenderProgress,
+    signal?: AbortSignal,
 ): Promise<void> {
     const current = serviceInstance(server);
     if (current.connection !== instance.connection || current.generation !== instance.generation) throw new Error("the batch belongs to another server instance");
@@ -25,7 +26,7 @@ export async function executeSteps(
         executors.set(server, work.then(() => {}, () => {}));
         return work;
     };
-    await runSteps(server, new StepRunner(), steps as never, { progress, exclusive });
+    await runSteps(server, new StepRunner(), steps as never, { progress, exclusive, signal });
 }
 
 /** Return an id only after its exact cleanup ticket is confirmed. @internal */

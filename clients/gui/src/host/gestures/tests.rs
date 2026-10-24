@@ -4448,3 +4448,45 @@ fn select_all_from_the_menu_sweeps_the_take_in_a_pane() {
         .unwrap();
     assert_eq!(state.selection(), Some((0.0, 4.0)), "{out:?}");
 }
+
+/// **The work over a window is called off from it**: the work-in-progress
+/// panel's button, and Escape while the panel is up, report `"call_off"`
+/// from the window to its owner, whose work it is; with no work running,
+/// Escape is what it always was.
+#[test]
+fn the_work_over_a_window_is_called_off_by_its_button_and_escape() {
+    let mut host = host_from(
+        r#"{"type":"window","progress":0.4,"progress_label":"Reverse","children":[
+            {"id":10,"type":"knob"}]}"#,
+    );
+    let ctx = GestureCtx::new(1, 800, 400);
+    let mut g = Gestures::default();
+    let button = host
+        .progress_cancel_rect(1, ctx.fb_w, ctx.fb_h)
+        .expect("a button while work runs");
+    let (x, y) = (
+        f64::from(button.x + button.w * 0.5),
+        f64::from(button.y + button.h * 0.5),
+    );
+    let pressed = g.press(&mut host, &ctx, x, y);
+    assert!(has_emit_tag(&pressed, 1, super::CALL_OFF), "{pressed:?}");
+    g.release(&mut host, &ctx, x, y);
+    let escaped = key(&g, &mut host, &ctx, Key::Escape).unwrap_or_default();
+    assert!(has_emit_tag(&escaped, 1, super::CALL_OFF), "{escaped:?}");
+
+    // the work ended: no button, and Escape calls nothing off
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(1),
+                OscType::String("progress".into()),
+                OscType::Float(-1.0),
+            ],
+        }),
+        from(),
+    );
+    assert!(host.progress_cancel_rect(1, ctx.fb_w, ctx.fb_h).is_none());
+    let escaped = key(&g, &mut host, &ctx, Key::Escape).unwrap_or_default();
+    assert!(!has_emit_tag(&escaped, 1, super::CALL_OFF), "{escaped:?}");
+}

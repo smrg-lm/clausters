@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { IdSpaces } from "../src/core/clausters_core_web.js";
+import { IdSpaces, StepRunner } from "../src/core/clausters_core_web.js";
 import { AudioEditor, Editing, edit, measures } from "../src/gui/editing/index.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
@@ -21,7 +21,7 @@ import { Transport } from "../src/defs/server/transport.ts";
 import { GuiIdAllocator } from "../src/gui/ids.ts";
 import { SoundFile } from "../src/soundfile.ts";
 import { CommandError } from "../src/errors.ts";
-import { disk as endpoint } from "../src/steps.ts";
+import { disk as endpoint, runSteps } from "../src/steps.ts";
 import type { RenderStep } from "../src/steps.ts";
 
 /**
@@ -1562,4 +1562,32 @@ test("the shared fault trace is what the coordinator answers this page", async (
         SoundFile.prototype.toBuffer = originalRead;
         SoundFile.open = originalOpen;
     }
+});
+
+test("runSteps: renders called off are not begun", async () => {
+    // A batch called off renders nothing more: the window's work-in-progress
+    // panel calls a long reverse off, and the renders after the call are not
+    // begun; the runner hears it, and so does the caller.
+    const controller = new AbortController();
+    const steps = [0, 1].map((k) => ({
+        render: { score: "", path: `/work/piece-${k}.w64`, rate: 48_000, channels: 1, format: "float" },
+    }));
+    const server = { sendMsg: () => {} } as never;
+    // the call comes once the first piece is done
+    const progress = (_render: RenderStep, done: number | null) => {
+        if (done === null) controller.abort();
+    };
+    // a stub of its own: an earlier case leaves the shared one replaced
+    const rendered: string[] = [];
+    const was = endpoint.render;
+    endpoint.render = async (render) => { rendered.push(render.path); };
+    try {
+        await assert.rejects(
+            runSteps(server, new StepRunner(), steps as never, { progress, signal: controller.signal }),
+            /called off/,
+        );
+    } finally {
+        endpoint.render = was;
+    }
+    assert.deepEqual(rendered, ["/work/piece-0.w64"], "the next one is not begun");
 });

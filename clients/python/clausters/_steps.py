@@ -17,7 +17,8 @@ _UNLOCKED = nullcontext()
 
 
 def run_steps(server, runner, steps: list, *, to: str = "sound",
-              timeout: "float | None" = None, progress=None, lock=None) -> None:
+              timeout: "float | None" = None, progress=None, lock=None,
+              called_off=None) -> None:
     """Carry ``steps`` out on ``server`` through ``runner``.
 
     What may go out is sent; where something is awaited, the runner puts the
@@ -38,6 +39,9 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         lock: held around each awaited request and never across a render,
             so two batches on one server cannot take each other's ``/done``
             while their renders run at once.
+        called_off: a `threading.Event` that, once set, calls the steps
+            off: a render not begun yet is not begun, which is what the
+            window's work-in-progress panel asks of a long reverse.
 
     Raises:
         CommandError: when the server refuses a step, or answers one with
@@ -70,6 +74,9 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
             # **An offline render**: nothing is sent for it; this client
             # renders the score into its file and says how it went.
             render = awaiting["step"]["render"]
+            if called_off is not None and called_off.is_set():
+                runner.call("rendered", error="called off")
+                raise CommandError("called off")
             told = None if progress is None else (
                 lambda done, total, render=render: progress(render, done, total))
             try:

@@ -24,7 +24,7 @@
 //! [`draw`] is the *write* half: the three mesh passes over those snapshots,
 //! which by then hold no borrow of the host tree.
 
-mod draw;
+pub(crate) mod draw;
 mod items;
 
 use crate::host::diag;

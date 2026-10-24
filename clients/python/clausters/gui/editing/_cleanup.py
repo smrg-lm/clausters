@@ -11,16 +11,17 @@ _EXECUTORS = weakref.WeakKeyDictionary()
 _EXECUTORS_LOCK = threading.RLock()
 
 
-def execute_steps(server, instance, steps, progress=None):
+def execute_steps(server, instance, steps, progress=None, called_off=None):
     """Serialize indistinguishable command waits on one endpoint: each awaited
     request holds the endpoint's lock, and a render holds nothing, so batches
     of two files render at once. ``progress`` is told how each offline render
-    goes (`run_steps`)."""
+    goes and ``called_off`` calls the renders off (`run_steps`)."""
     with _EXECUTORS_LOCK:
         lock = _EXECUTORS.setdefault(server, threading.RLock())
     if instance != _service_instance(server):
         raise RuntimeError("the batch belongs to another server instance")
-    run_steps(server, _native.StepRunner(), steps, progress=progress, lock=lock)
+    run_steps(server, _native.StepRunner(), steps, progress=progress, lock=lock,
+              called_off=called_off)
 
 
 def release_buffer(server, core, resource):

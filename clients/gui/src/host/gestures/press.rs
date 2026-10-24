@@ -130,6 +130,21 @@ impl Gestures {
         if self.popup_press(host, ctx, cx, cy, &mut out) {
             return out;
         }
+        // **The work-in-progress panel's button calls the work off**: chrome
+        // like the status bar, over the tree, and the owner's to stop.
+        if host
+            .progress_cancel_rect(ctx.def_id, ctx.fb_w, ctx.fb_h)
+            .is_some_and(|button| button.contains(cx, cy))
+        {
+            super::effects::emit(
+                host,
+                &mut out,
+                ctx.def_id,
+                ctx.def_id,
+                vec![OscType::String(super::CALL_OFF.into())],
+            );
+            return out;
+        }
         // **The status bar**, which is chrome and not a widget: it is under no
         // part of the tree (the layout never got its pixels), so it is tested
         // here and it consumes the press. A click opens it into the window's

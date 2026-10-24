@@ -237,7 +237,8 @@ export class AudioDomain extends Domain<Buffer | null> {
         if (editor === null || steps.length === 0) return false;
         this.#queue(() => {
             editor.checkServer();
-            return runSteps(editor.server, editor.runner, steps as never, { progress: editor.rendering });
+            return editor.callingOff((signal) =>
+                runSteps(editor.server, editor.runner, steps as never, { progress: editor.rendering, signal }));
         });
         return true;
     }
@@ -255,7 +256,8 @@ export class AudioDomain extends Domain<Buffer | null> {
         editor.checkServer();
         const instance = serviceInstance(editor.server);
         if (server.connection !== instance.connection || server.generation !== instance.generation) throw new Error("the batch belongs to another server instance");
-        await executeSteps(editor.server as unknown as Server, server, steps, editor.rendering);
+        await editor.callingOff((signal) =>
+            executeSteps(editor.server as unknown as Server, server, steps, editor.rendering, signal));
     }
 
     /** Keep a stepped object's playback current even when another file is viewed. */
@@ -882,14 +884,11 @@ export class AudioEditor extends Editor<Buffer | null> {
         switch (request.kind) {
             case "steps": {
                 const steps = (request.steps ?? []) as unknown[];
-                if (request.via === "service") {
-                    this.checkServer();
-                    await executeSteps(this.server as unknown as Server, this.instance, steps, this.rendering);
-                } else {
-                    this.checkServer();
-                    await runSteps(this.server, request.via === "plain" ? new StepRunner() : this.runner, steps as never,
-                        { progress: this.rendering });
-                }
+                this.checkServer();
+                await this.callingOff((signal) => request.via === "service"
+                    ? executeSteps(this.server as unknown as Server, this.instance, steps, this.rendering, signal)
+                    : runSteps(this.server, request.via === "plain" ? new StepRunner() : this.runner, steps as never,
+                        { progress: this.rendering, signal }));
                 return {};
             }
             case "rolling":
@@ -919,6 +918,26 @@ export class AudioEditor extends Editor<Buffer | null> {
 
     /** When the window was last told a render's progress. */
     #toldProgress = 0;
+
+    /** The call-offs of the batches rendering now (`call_off`). */
+    readonly #renders = new Set<AbortController>();
+
+    /**
+     * **A batch's own call-off**: `work` runs with a signal the window's
+     * `call_off` aborts for as long as it runs, so its renders stop before
+     * their next.
+     *
+     * @internal
+     */
+    async callingOff<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+        const controller = new AbortController();
+        this.#renders.add(controller);
+        try {
+            return await work(controller.signal);
+        } finally {
+            this.#renders.delete(controller);
+        }
+    }
 
     /**
      * **A render's progress, on the window's status bar**: the operation it
@@ -1012,6 +1031,10 @@ export class AudioEditor extends Editor<Buffer | null> {
                 break;
             case "delete":
                 await removeFiles(effect.files as string[] | undefined);
+                break;
+            case "call_off":
+                // the window's work called off: each render stops before its next
+                for (const controller of this.#renders) controller.abort();
                 break;
             case "returned":
                 this.editing.operationReturned(effect.returned as never);

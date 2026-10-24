@@ -73,6 +73,10 @@ pub enum GestureEffect {
     FocusOut(i32),
 }
 
+/// **The window event that calls the owner's work off**: the button of the
+/// work-in-progress panel, or Escape while the panel is up.
+pub(crate) const CALL_OFF: &str = "call_off";
+
 /// The per-call context the front supplies: which window, its framebuffer size
 /// in device pixels, the modifier keys, and what the heavy views actually have
 /// on the card (which only the front's GPU slots know, so it is snapshotted

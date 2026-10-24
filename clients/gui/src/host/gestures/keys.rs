@@ -31,7 +31,7 @@ use super::super::status::Line;
 use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock, refusal};
 use super::effects::{emit, emit_view, redraw_all, tell};
 use super::nav::{cursor_of, freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
-use super::{GestureCtx, GestureEffect, Gestures, element, focus};
+use super::{CALL_OFF, GestureCtx, GestureEffect, Gestures, element, focus};
 
 impl Gestures {
     /// A key arriving at this window: Tab walks the focus ring, anything else
@@ -93,6 +93,23 @@ impl Gestures {
                     ctx.def_id,
                     dialog,
                     vec![OscType::String(super::chrome::CANCEL.into())],
+                );
+                return Some(out);
+            }
+            // **With work running over the window, Escape calls it off**, as
+            // the panel's button does: reported to the owner as `"call_off"`
+            // from the window, whose work it is.
+            if host
+                .progress_cancel_rect(ctx.def_id, ctx.fb_w, ctx.fb_h)
+                .is_some()
+            {
+                let mut out = Vec::new();
+                emit(
+                    host,
+                    &mut out,
+                    ctx.def_id,
+                    ctx.def_id,
+                    vec![OscType::String(CALL_OFF.into())],
                 );
                 return Some(out);
             }

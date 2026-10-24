@@ -564,6 +564,12 @@ impl Session {
                 ));
                 tasks
             }
+            // **The window's work called off** (its progress panel's button,
+            // or Escape): the client stops the renders under way, each before
+            // its next piece, and a batch that stops so deletes what it wrote.
+            "event" if action["args"][3] == "call_off" => {
+                vec![effect("call_off", json!({}))]
+            }
             "event" => {
                 let turned = door(
                     editing,
@@ -2404,6 +2410,28 @@ mod tests {
         let clean = binding(&mut editing, member);
         assert_eq!(clean["dirty"], false);
         assert_eq!(clean["file"]["path"], "/takes/refused.wav");
+    }
+
+    /// **The window's work called off**: its `"call_off"` is answered with
+    /// the effect that has the client stop its renders, and nothing of the
+    /// take moves.
+    #[test]
+    fn a_window_call_off_has_the_client_stop_its_renders() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let before = binding(&mut editing, member);
+        client.effects.clear();
+        let call_off = json!({"verb": "event", "addr": "/gui_event", "window": true,
+            "args": [900, 3, editing.version(), "call_off"]});
+        let answer = client.run(&mut editing, member, call_off);
+        assert!(answer["error"].is_null(), "{answer}");
+        assert!(
+            client.effects.iter().any(|e| e["kind"] == "call_off"),
+            "{:?}",
+            client.effects
+        );
+        assert_eq!(binding(&mut editing, member), before);
     }
 
     /// **A failed render leaves nothing in the working folder**: a reverse

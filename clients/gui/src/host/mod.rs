@@ -1650,6 +1650,29 @@ impl Host {
         )
     }
 
+    /// **Where window `def_id`'s work-in-progress panel has its button**, while
+    /// the owner says work runs (`progress`): the rect a press calls the work
+    /// off by, the one the frame drew it at.
+    pub(crate) fn progress_cancel_rect(
+        &self,
+        def_id: i32,
+        fb_w: u32,
+        fb_h: u32,
+    ) -> Option<layout::Rect> {
+        let tree = self.window_def(def_id)?;
+        let WidgetKind::Window {
+            progress: Some(_), ..
+        } = &tree.kind
+        else {
+            return None;
+        };
+        let m = self.metrics_for(def_id);
+        let window = layout::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+        let area = status::content(tree, self.status.borrow().get(&def_id), window, m);
+        let area = menubar::content(tree, area, m);
+        Some(frame::draw::progress_panel(area, m).cancel)
+    }
+
     /// **What the server records and streams for the open trees**, re-diffed:
     /// the bus taps the views read and the recordings they follow. Run
     /// wherever what is drawn can have changed.

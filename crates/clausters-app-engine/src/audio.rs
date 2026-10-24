@@ -351,6 +351,7 @@ impl AudioApp {
                 }
             }
             "delete" => delete(&effect["files"]),
+            "call_off" => self.call_off(ran.member),
             "operationEcho" => ran.effects.push(json!({"kind": "echo",
                 "answer": effect["echo"]["answer"]})),
             "lease" => {

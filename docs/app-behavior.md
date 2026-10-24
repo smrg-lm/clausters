@@ -212,6 +212,11 @@ code that keeps it lives.
   the window closes or the process ends, and by the next editor to open where
   the process was killed. A render that fails deletes what it had written
   there, so a disk filled by a long reverse is given back at once.
+- **Work over a window can be called off without closing it.** The progress
+  panel's Cancel button, or Escape while the panel is up, calls the owner's
+  work off (`"call_off"`): a render stops before its next piece, the edit it
+  was for does not happen, and its pieces are deleted. Closing the window
+  calls it off the same way.
 - **Each open audio file keeps its own state and history.** Switching files
   restores its cursor, selection, gain curve and view settings. Undo/redo
   steps only the focused file. The independent file list is on the left and

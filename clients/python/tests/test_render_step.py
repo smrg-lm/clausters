@@ -66,3 +66,33 @@ def test_a_render_with_no_path_keeps_no_output_and_does_its_work(tmp_path):
                  "channels": 1, "format": "float"})
     assert peaks.read_bytes()[:4] == b"CLPK"
     assert list(tmp_path.iterdir()) == [peaks]
+
+
+def test_renders_called_off_are_not_begun(tmp_path):
+    """**A batch called off renders nothing more**: the window's work-in-
+    progress panel calls a long reverse off, and the renders after the call
+    are not begun; the runner hears it, and so does the caller."""
+    import threading
+
+    import pytest
+
+    from clausters.errors import CommandError
+
+    first, second = tmp_path / "piece-0.w64", tmp_path / "piece-1.w64"
+    called_off = threading.Event()
+    steps = [
+        {"render": {"score": _score().hex(), "path": str(path), "rate": 48_000.0,
+                    "channels": 1, "format": "float"}}
+        for path in (first, second)
+    ]
+
+    def progress(render, done, total):
+        # the call comes while the first piece renders
+        if done is not None:
+            called_off.set()
+
+    with pytest.raises(CommandError, match="called off"):
+        run_steps(_Server(), _native.StepRunner(), steps, progress=progress,
+                  called_off=called_off)
+    assert first.exists(), "the piece under way is finished"
+    assert not second.exists(), "the next one is not begun"

@@ -39,6 +39,7 @@ it, and deleted when none can. The working folder is a temporary one unless
 one is given, and goes with the editor.
 """
 
+import contextlib
 import logging
 import threading
 
@@ -170,7 +171,9 @@ class AudioDomain(Domain):
         if editor is None or not steps:
             return False
         editor._check_server()
-        run_steps(editor._server, editor._runner, steps, progress=editor._rendering)
+        with editor._calling_off() as called_off:
+            run_steps(editor._server, editor._runner, steps, progress=editor._rendering,
+                      called_off=called_off)
         return True
 
     def execute_operation(self, structure, prepared):
@@ -185,7 +188,9 @@ class AudioDomain(Domain):
         editor._check_server()
         if server != editor._instance:
             raise RuntimeError("the batch belongs to another server instance")
-        execute_steps(editor._server, server, steps, progress=editor._rendering)
+        with editor._calling_off() as called_off:
+            execute_steps(editor._server, server, steps, progress=editor._rendering,
+                          called_off=called_off)
 
     def operation_returned(self, structure, server, buffers):
         editor = self.editor
@@ -321,6 +326,8 @@ class AudioEditor(Marking, Editor):
         #: The folder the renders are written into, and whether it is this
         #: editor's to remove.
         self._held = None
+        #: The call-offs of the batches rendering now (`call_off`).
+        self._renders = set()
         if workspace is None:
             # on disk under the user's cache, held while this editor lives
             self._held = _native.Workspace("audio")
@@ -532,13 +539,17 @@ class AudioEditor(Marking, Editor):
         kind = wait["kind"]
         if kind == "steps":
             steps = wait.get("steps") or []
-            if wait.get("via") == "service":
-                execute_steps(self._server, self._instance, steps, progress=self._rendering)
-            elif wait.get("via") == "plain":
-                self._check_server()
-                run_steps(self._server, _native.StepRunner(), steps, progress=self._rendering)
-            else:
+            if wait.get("via") not in ("service", "plain"):
                 self.domain.run(self.structure, steps)
+                return {}
+            with self._calling_off() as called_off:
+                if wait.get("via") == "service":
+                    execute_steps(self._server, self._instance, steps,
+                                  progress=self._rendering, called_off=called_off)
+                else:
+                    self._check_server()
+                    run_steps(self._server, _native.StepRunner(), steps,
+                              progress=self._rendering, called_off=called_off)
             return {}
         if kind == "rolling":
             transport = self._server.transport_at(int(wait["transport"]))
@@ -556,6 +567,17 @@ class AudioEditor(Marking, Editor):
             self._clipboard(wait["document"], ready=bool(wait.get("ready")))
             return {}
         raise RuntimeError(f"the audio editor cannot wait on {kind!r}")
+
+    @contextlib.contextmanager
+    def _calling_off(self):
+        """**A batch's own call-off**, an event the window's `call_off` sets
+        for as long as the batch runs: its renders stop before their next."""
+        called_off = threading.Event()
+        self._renders.add(called_off)
+        try:
+            yield called_off
+        finally:
+            self._renders.discard(called_off)
 
     def _rendering(self, render: dict, done, total) -> None:
         """**A render's progress, on the window's status bar**: the operation
@@ -635,6 +657,10 @@ class AudioEditor(Marking, Editor):
             self._editing.release(effect.get("freed"))
         elif kind == "delete":
             _delete(effect.get("files"))
+        elif kind == "call_off":
+            # the window's work called off: each render stops before its next
+            for called_off in list(self._renders):
+                called_off.set()
         elif kind == "returned":
             self._editing._operation_returned(effect.get("returned"))
         elif kind == "operationEcho":
