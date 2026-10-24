@@ -430,7 +430,8 @@ def test_a_takes_window_is_composed_by_the_crate():
     assert taken["segments"]["parts"][0]["path"].endswith("-opened.w64")
     assert taken["measure"] == "peak rms"
     assert taken["gestures"] == {"drag": "select", "alt": "draw", "ctrl": "sample"}
-    assert set(editor.view.props(editor, wid)) == {"segments"}
+    # the list, and the band a history step may have moved onto the take
+    assert set(editor.view.props(editor, wid)) == {"segments", "cursor", "sel_start", "sel_len"}
 
 
 def test_a_refused_measure_stack_keeps_the_one_the_picture_had():

@@ -158,6 +158,29 @@ impl<'a> Trace<'a> {
         }
     }
 
+    /// **Whether the samples themselves answer for frames `[a, b)`** --
+    /// not "are there samples" but "are they here": a source that holds a
+    /// run of them (the window a zoom fetched) answers inside the run and
+    /// nowhere else, and a sample read outside it is a zero the take does
+    /// not hold, drawn as a flat line where the music is.
+    pub fn reads(&self, a: usize, b: usize) -> bool {
+        match self {
+            Trace::Samples { samples, channels } => {
+                !samples.is_empty() && b <= samples.len() / channels
+            }
+            Trace::Data(data) => data.covers(a, b),
+            Trace::Loudness { .. } => true,
+        }
+    }
+
+    /// Whether the sample at `at`, and the one after it a reading between
+    /// the two interpolates, are here ([`Self::reads`]).
+    fn reads_at(&self, at: f64) -> bool {
+        let a = at.floor().max(0.0) as usize;
+        let b = (at.ceil().max(0.0) as usize + 1).min(self.frames());
+        b > a && self.reads(a, b)
+    }
+
     /// How many channels the source holds.
     pub fn channels(&self) -> usize {
         match self {
@@ -566,7 +589,15 @@ pub fn draw_channel(
     } else {
         drawn_per_px <= LINE_THRESHOLD
     };
-    let columns = !sample_zoom || !trace.has_raw();
+    // **Drawn one by one only where the samples are here**: a view that
+    // holds a run of them (the window a zoom fetched) and is looking past it
+    // draws its columns until the run under the eye has come, rather than
+    // the zeros outside the run.
+    let seen = (
+        src(rect.x).floor().max(0.0) as usize,
+        (src(rect.x + rect.w).ceil().max(0.0) as usize).min(frames),
+    );
+    let columns = !sample_zoom || seen.1 <= seen.0 || !trace.reads(seen.0, seen.1);
     // The reconstruction is a layer over **resolvable** samples. Zoomed out, a
     // picture of it would be the envelope of the reconstructed signal, which
     // needs that envelope stored beside the samples' own (the peak pyramid)
@@ -598,10 +629,16 @@ pub fn draw_channel(
             if style.written.is_some_and(|w| src(x) >= w) {
                 break;
             }
-            let (lo, hi) = if per_px <= LINE_THRESHOLD && trace.has_raw() {
-                line_column(trace, ch, src(x), src(x + cw), frames)
+            let (s0, s1) = (src(x), src(x + cw));
+            let line = per_px <= LINE_THRESHOLD
+                && trace.reads(
+                    s0.floor().max(0.0) as usize,
+                    (s1.ceil().max(0.0) as usize + 1).min(frames),
+                );
+            let (lo, hi) = if line {
+                line_column(trace, ch, s0, s1, frames)
             } else {
-                trace.column(ch, per_px, src(x), src(x + cw))
+                trace.column(ch, per_px, s0, s1)
             };
             if lo > hi {
                 prev = None;
@@ -678,6 +715,13 @@ pub fn draw_channel(
         let (from, to) = (src(rect.x), src(rect.x + rect.w));
         let mut prev: Option<[f32; 2]> = None;
         for at in samples_drawn(style.grid, first, last.max(first)) {
+            // The sample past an edge the line reaches for may be one the
+            // view does not hold yet: the line stops at the edge rather than
+            // dropping to a zero that is not there.
+            if !trace.reads_at(at) {
+                prev = None;
+                continue;
+            }
             // On the source's own samples this is the sample; on a resampled
             // placement's grid it is the reconstruction at that instant, which
             // is what the engine reads there.

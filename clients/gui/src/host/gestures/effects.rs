@@ -175,8 +175,11 @@ pub(super) fn emit_view(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, 
             id,
             vec![
                 OscType::String("view".into()),
-                OscType::Float(start as f32),
-                OscType::Float(len as f32),
+                // Doubles, as a selection's are: a float holds a whole frame
+                // only up to 2^24 of them, and a view of hours is placed by
+                // its frames.
+                OscType::Double(start),
+                OscType::Double(len),
             ],
         );
     }

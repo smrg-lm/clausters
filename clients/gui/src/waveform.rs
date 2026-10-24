@@ -264,10 +264,13 @@ impl Detail {
     /// Whether this grid answers for `[a, b)` at `samples_per_px` -- inside the
     /// span it covers, and no finer than its own bucket.
     fn answers(&self, a: usize, b: usize, samples_per_px: f64) -> bool {
-        b > a
-            && a >= self.start
-            && b <= self.start + self.pyramid.total_samples()
-            && samples_per_px >= self.pyramid.base_bucket() as f64
+        self.holds(a, b) && samples_per_px >= self.pyramid.base_bucket() as f64
+    }
+
+    /// Whether `[a, b)` is inside the span this grid covers, at whatever
+    /// zoom: the grid is then the finest summary there is for it.
+    fn holds(&self, a: usize, b: usize) -> bool {
+        b > a && a >= self.start && b <= self.start + self.pyramid.total_samples()
     }
 }
 
@@ -873,12 +876,24 @@ impl WaveformData {
         // has not fetched them. It is read exactly as the summary below is --
         // whole buckets folded, tiling the same way -- on its own axis, which
         // starts where the grid does.
+        //
+        // **It answers at every zoom inside its span**, finer than its bucket
+        // too: zoomed in past it, the grid's bucket under the column is still
+        // finer than the summary below, which is what drew instead -- the
+        // picture went coarse at each step of a zoom and fine again when the
+        // next grid came, which is a flicker. A finer grid is still owed
+        // ([`Self::detail_covers`]) and replaces this one when it comes.
         if samples_per_px < base as f64
             && let Some(detail) = &channel.detail
-            && detail.answers(a, b, samples_per_px)
-            && let Some(measured) = fold(&detail.pyramid, a - detail.start, b - detail.start)
+            && detail.holds(a, b)
         {
-            return Some(measured);
+            let (da, db) = (a - detail.start, b - detail.start);
+            if let Some(measured) = fold(&detail.pyramid, da, db) {
+                return Some(measured);
+            }
+            if let Some((lo, hi)) = detail.pyramid.column(0, da as f64, db as f64) {
+                return Some((lo, hi, detail.pyramid.column_ms(0, da as f64, db as f64)));
+            }
         }
         // **Which buckets belong to this column**, and it is a *tiling*: the
         // span is rounded down at both ends, so consecutive columns cover

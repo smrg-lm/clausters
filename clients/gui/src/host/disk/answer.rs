@@ -54,8 +54,13 @@ pub const HELD_BYTES: usize = 64 << 20;
 const HEAD_BYTES: usize = 1 << 16;
 const LARGE_HEAD_BYTES: usize = 1 << 20;
 
-/// Statistics one `/buffer_peaks.reply` carries at most, as the server's.
-const MAX_REPLY_BYTES: usize = 8 * 1024;
+/// Statistics one `/buffer_peaks.reply` carries at most. A server's reply
+/// is bounded by the carrier it crosses, 8 KiB; this answer crosses none --
+/// it is the host's own, handed to the view in the same process -- so it
+/// carries a whole grid a view asks for (two views of stereo at two buckets
+/// a column) in one reply, where 8 KiB took two dozen round trips, one a
+/// frame, and a pan outran them.
+const MAX_REPLY_BYTES: usize = 256 * 1024;
 
 /// Samples one answer reads at most to fold its fades and edges, as the
 /// server's, after which it answers how far it got; at least one bucket
@@ -593,7 +598,7 @@ impl Answerer {
             addr: "/buffer_getRange.reply".into(),
             args: vec![
                 OscType::Int(key),
-                OscType::Int(start as i32),
+                crate::host::fetch::index_arg(start),
                 OscType::Blob(clausters_core::osc::sample_blob(&values)),
             ],
         })

@@ -267,6 +267,32 @@ impl AudioEditor {
     /// **An edit landed at frame `at`**: nothing is selected, the position
     /// cursor stands there and the playback is cued to it. Answers the
     /// corrections that tell the window.
+    /// **What the hand placed stays on the take**: an undo that shortens the
+    /// take under the position cursor or a selection puts them at its end,
+    /// where a paste at a cursor left past it used to land at the end while
+    /// the view it opened was measured from past it.
+    pub(super) fn keep_on_take(&mut self) {
+        let length = self.length();
+        let presentation = &mut self.file.presentation;
+        presentation.cursor = presentation.cursor.map(|c| c.min(length));
+        presentation.selection = presentation
+            .selection
+            .map(|(a, b)| (a.min(length), b.min(length)))
+            .filter(|(a, b)| b > a);
+    }
+
+    /// The band props of take widget `widget`, if it is one a band is set
+    /// on: its cursor and its selection as the editor holds them.
+    pub(super) fn band_of(&self, widget: i32) -> Option<serde_json::Map<String, Value>> {
+        self.band_corrections()
+            .into_iter()
+            .find(|c| c.widget == i64::from(widget))
+            .and_then(|c| match c.props {
+                Value::Object(props) => Some(props),
+                _ => None,
+            })
+    }
+
     pub(super) fn land_at(&mut self, at: u64, out: &mut Outcome) -> Vec<Correction> {
         let at = at.min(self.length());
         self.file.presentation.selection = None;

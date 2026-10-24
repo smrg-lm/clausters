@@ -526,6 +526,7 @@ impl Application for AudioEditor {
                         if contents.viewport.is_some() {
                             editor.file.presentation.viewport = contents.viewport;
                         }
+                        editor.keep_on_take();
                         if let Some(record) = &delta.outcome.record {
                             let structure = services.histories.structure_of(Object {
                                 member: delta.target.member,
@@ -896,6 +897,26 @@ mod tests {
             assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
             assert_eq!(editor.file.contents.automation[0].visible, !visible);
         }
+    }
+
+    /// **A history step keeps what the hand placed on the take**: a restore
+    /// to a take shorter than where the cursor and a selection stood puts
+    /// them at its end, where a paste at the cursor used to land past it.
+    #[test]
+    fn a_restore_that_shortens_the_take_keeps_the_cursor_on_it() {
+        let (mut editor, mut services) = opened();
+        let length = editor.length();
+        assert!(length > 1, "{length}");
+        let previous = editor.file.contents.payload();
+        editor.file.presentation.cursor = Some(length + 1_000);
+        editor.file.presentation.selection = Some((length / 2, length + 500));
+        let ticket = begin(&mut editor, &mut services, Command::Restore(previous));
+        assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
+        assert_eq!(editor.file.presentation.cursor, Some(length));
+        assert_eq!(
+            editor.file.presentation.selection,
+            Some((length / 2, length))
+        );
     }
 
     #[test]

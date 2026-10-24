@@ -112,9 +112,15 @@ pub(crate) enum Owed {
     /// The run of samples to read back, `[a, b)` in frames.
     Samples { a: usize, b: usize },
     /// The span to summarize, `[a, b)` in frames, and the bucket to measure it
-    /// at -- finer than the view's own, and coarse enough that one reply holds
-    /// the whole span.
-    Summary { a: usize, b: usize, bucket: usize },
+    /// at -- finer than the view's own, and coarse enough that one grid holds
+    /// the whole span. `seen` is the part of it on screen: a grid already on
+    /// its way that covers it is let land rather than asked again.
+    Summary {
+        a: usize,
+        b: usize,
+        bucket: usize,
+        seen: (usize, usize),
+    },
     /// **A spectrogram's columns** over a span: `columns` analysis windows
     /// from frame `start`, one every `hop` -- what a texture of a span owes
     /// when the view moved past it or zoomed to another hop.
@@ -595,30 +601,16 @@ fn placed_nav(nav: &View, offset: f64) -> View {
     }
 }
 
-/// **The span a view was asked to draw and could not answer**, or `None` when
-/// it could -- the fetch this frame is owed.
-///
-/// A column finer than the summary's base bucket can only come from samples;
-/// a view holding none for that span draws the bucket, which is the honest
-/// picture and one the eye has stopped getting anything new from. So the
-/// answer is the visible span, clamped to the samples, and it is `None` in
-/// every other case: zoomed out (the summary *is* the answer), or covered
-/// already (mapped samples, a whole owned buffer, a window over this span).
-///
-/// The span is the window as drawn and not a margin around it: a window is
-/// fetched because somebody is looking at it, and guessing where they will
-/// look next is a cache policy this deliberately does not have.
-///
 /// **What the view could not draw, and in what shape** -- or `None` when it
 /// answered for everything it showed.
 ///
 /// A column finer than the summary's base bucket can only come from something
 /// finer than the summary: a view holding neither draws the bucket, which is
 /// the honest picture and one the eye has stopped getting anything new from.
-/// So the answer is the visible span, clamped to the samples, and it is `None`
-/// in every other case: zoomed out (the summary *is* the answer), or answered
-/// already (mapped samples, a whole owned buffer, a window over this span, a
-/// finer grid over this span).
+/// So something is owed only when the view is zoomed past its summary over a
+/// span nothing it holds answers for: not zoomed out (the summary *is* the
+/// answer), and not answered already (mapped samples, a whole owned buffer, a
+/// window over this span, a finer grid over this span).
 ///
 /// **Which shape is owed is a question about the zoom alone**, and it is
 /// [`Owed`]'s whole subject: zoomed out the picture is min/max columns, which a
@@ -628,12 +620,17 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// samples will do. [`detail_bucket`] draws the line and picks the grid: a
 /// column holds two buckets or more, so the position error of the fold stays
 /// under half a column, and the bucket is coarsened until the whole span fits
-/// one reply, because a second reply would replace the first rather than extend
+/// one grid, because a second grid would replace the first rather than extend
 /// it.
 ///
-/// The span is the window as drawn and not a margin around it: a window is
-/// fetched because somebody is looking at it, and guessing where they will
-/// look next is a cache policy this deliberately does not have.
+/// **The span asked reaches half a view past either edge** ([`OWED_REACH`]),
+/// and it is asked again once the view comes within a quarter of a view of
+/// the edge of what is held ([`OWED_NEAR`]). A pan reveals what is beside
+/// the view, and what is beside it was being drawn from the coarsest summary
+/// there is until a reply came -- over a long take a block of seconds,
+/// drawn where the music is, at every step of a pan. Held a little past the
+/// view, a pan at a hand's pace stays inside what is held while the next
+/// span comes, which is the same margin the columns of a spectrogram keep.
 ///
 /// **A take still being written is asked for what is behind the frontier, and
 /// never for what is past it** (`written`, the `fills` prop's frontier). Past
@@ -661,20 +658,30 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
     if per_px >= base as f64 {
         return None; // the summary answers at this zoom, exactly as it should
     }
-    let a = (nav.start.floor().max(0.0) as usize).min(total);
-    let b = (nav.start + nav.len).ceil().max(0.0) as usize;
-    let b = b.clamp(a, total);
+    // The view and `reach` frames past either edge, clamped to the samples.
     // The frontier is the ceiling, and it is the only thing `fills` does here.
     // No margin under it: the frames the report counts were written before it
     // was measured, so the last of them is as settled as the first. The margin
     // that would be needed is *above* -- which is not a margin but the clamp
     // itself, since what the report has not counted yet may not be there.
-    let b = written.map_or(b, |w| b.min(w as usize));
-    if b <= a || data.covers(a, b) {
+    let span = |reach: f64| {
+        let a = ((nav.start - reach).floor().max(0.0) as usize).min(total);
+        let b = ((nav.start + nav.len + reach).ceil().max(0.0) as usize).clamp(a, total);
+        (a, written.map_or(b, |w| b.min(w as usize)))
+    };
+    let seen = span(0.0);
+    if seen.1 <= seen.0 {
         return None;
     }
+    let near = span(nav.len * OWED_NEAR);
+    if data.covers(near.0, near.1) {
+        return None;
+    }
+    let (a, b) = span(nav.len * OWED_REACH);
     match detail_bucket(per_px, b - a, base) {
-        Some(bucket) if !data.detail_covers(a, b, per_px) => Some(Owed::Summary { a, b, bucket }),
+        Some(bucket) if !data.detail_covers(near.0, near.1, per_px) => {
+            Some(Owed::Summary { a, b, bucket, seen })
+        }
         Some(_) => None,
         None => Some(Owed::Samples { a, b }),
     }
@@ -734,12 +741,22 @@ pub(crate) fn columns_owed_of(stft: &Stft, stale: bool, nav: &View, width: f64) 
     }))
 }
 
+/// **How far past either edge of a view what it is owed reaches**, in views.
+const OWED_REACH: f64 = 0.5;
+
+/// **How close to the edge of what it holds a view may come** before the
+/// next span is asked, in views: under [`OWED_REACH`], so the next span is on
+/// its way while the one held still covers what is on screen.
+const OWED_NEAR: f64 = 0.25;
+
 /// **How many buckets one detail grid may hold**: what bounds the span one
 /// grid summarizes. A grid comes over as many replies as it needs (a reply is
 /// 8 KiB, `docs/schemas.md`) and is handed to the view whole, so this is a
-/// bound on the grid's cost -- a dozen replies of stereo at most -- and not on
-/// one reply.
-const DETAIL_GRID_BUCKETS: usize = 4096;
+/// bound on the grid's cost -- two dozen replies of stereo at most from a
+/// server, one from the host's own answer over a list -- and not on one
+/// reply. It holds a span two views wide ([`OWED_REACH`]) at two buckets a
+/// column on a window a few thousand pixels wide.
+const DETAIL_GRID_BUCKETS: usize = 8192;
 
 /// **The grid to ask for a span of `span` frames at `per_px` samples a pixel**,
 /// or `None` where no summary is worth asking for and the samples are the
@@ -3003,15 +3020,28 @@ mod tests {
         };
         assert_eq!(
             owed(&told, &close, 800.0, None),
-            Some(Owed::Samples { a: 1_000, b: 3_000 }),
-            "past the bucket over samples it cannot answer for"
+            Some(Owed::Samples { a: 0, b: 4_000 }),
+            "past the bucket over samples it cannot answer for: the view and \
+             half a view past either edge"
         );
 
-        // The same view once the run has arrived: nothing more is owed.
+        // A run over the view alone is asked again: a pan would leave it
+        // at once, so what is held reaches a quarter of a view past it.
         let mut data = WaveformData::with_multi_pyramid(
             clausters_core::peaks::MultiPyramid::empty(frames, 1, bucket),
         );
         assert!(data.set_window(1_000, 1, &vec![0.0; 2_000]));
+        let edge = WaveformView::new(data);
+        assert_eq!(
+            owed(&edge, &close, 800.0, None),
+            Some(Owed::Samples { a: 0, b: 4_000 })
+        );
+
+        // The same view once the run asked has arrived: nothing more is owed.
+        let mut data = WaveformData::with_multi_pyramid(
+            clausters_core::peaks::MultiPyramid::empty(frames, 1, bucket),
+        );
+        assert!(data.set_window(0, 1, &vec![0.0; 4_000]));
         let covered = WaveformView::new(data);
         assert_eq!(owed(&covered, &close, 800.0, None), None);
 
@@ -3041,12 +3071,12 @@ mod tests {
         };
         assert_eq!(
             owed(&told, &close, 800.0, Some(10_000)),
-            Some(Owed::Samples { a: 1_000, b: 3_000 }),
+            Some(Owed::Samples { a: 0, b: 4_000 }),
             "wholly behind the frontier: the same span a finished take asks for"
         );
         assert_eq!(
             owed(&told, &close, 800.0, Some(2_000)),
-            Some(Owed::Samples { a: 1_000, b: 2_000 }),
+            Some(Owed::Samples { a: 0, b: 2_000 }),
             "straddling it: only the settled half"
         );
         assert_eq!(
@@ -3097,8 +3127,9 @@ mod tests {
             owed(&told, &mid, 800.0, None),
             Some(Owed::Summary {
                 a: 0,
-                b: 51_200,
-                bucket: 32
+                b: 76_800,
+                bucket: 32,
+                seen: (0, 51_200),
             }),
             "two buckets a column, finer than the view's own"
         );
@@ -3112,7 +3143,7 @@ mod tests {
         };
         assert_eq!(
             owed(&told, &deep, 800.0, None),
-            Some(Owed::Samples { a: 0, b: 12_800 }),
+            Some(Owed::Samples { a: 0, b: 19_200 }),
         );
     }
 

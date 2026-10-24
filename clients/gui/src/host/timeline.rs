@@ -644,6 +644,14 @@ impl Host {
         }
     }
 
+    /// How many frames the list widget `id` draws is, when it draws one.
+    fn list_frames_of(&self, id: i32) -> Option<usize> {
+        self.window_defs.values().find_map(|tree| {
+            let list = tree.find(id)?.kind.as_samples()?.segments()?;
+            Some(list.frames)
+        })
+    }
+
     /// The distinct window roots showing any member of group `key` -- the
     /// windows a group mutation must repaint.
     fn timeline_roots(&self, key: GroupKey) -> Vec<i32> {
@@ -668,7 +676,13 @@ impl Host {
     /// changes length under a view already drawn -- an edit, a paste, an undo
     /// -- keeps the window's length, as a drag does: an edit is not a reason
     /// to zoom.
+    ///
+    /// **A list's length is the list's**, never its picture's: an edit keeps
+    /// the picture of the take before it on screen until the new one has
+    /// come, and registering that picture's length put the axis back to the
+    /// take before the edit -- for good, where the new picture never came.
     pub fn set_take_total(&mut self, id: i32, total: usize) {
+        let total = self.list_frames_of(id).unwrap_or(total);
         let drawn = self
             .timelines
             .totals

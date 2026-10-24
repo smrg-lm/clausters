@@ -141,11 +141,27 @@ code that keeps it lives.
   that changes length under a view already drawn (a paste, a cut, an undo)
   keeps the window's length, as a drag does, and only re-clamps it
   (`Host::set_take_total`). A list's length is registered as the list is set,
-  before its picture is read, so a view set in the same answer stands.
+  before its picture is read, so a view set in the same answer stands, and it
+  is the list's length that the axis keeps: the picture of the take before an
+  edit, drawn until the new one has come, never registers its own.
 - **A paste lands at its end and is shown whole.** The position cursor, and
   the play cursor with it, goes to the end of what a paste put in; where that
   runs past what the view shows, the view opens out until the pasted span is
-  inside, and a paste inside the view moves nothing of it.
+  inside, and a paste inside the view moves nothing of it. A paste asked past
+  the end goes in at the end, and the view is opened from there.
+- **A history step keeps the cursor on the take.** An undo or a redo that
+  shortens the take under the position cursor or a selection puts them at its
+  new end, and the window is told so with the restored list.
+- **A pan or a zoom draws from what is held, never from nothing.** A view
+  zoomed past its take's summary holds a finer summary, or the samples, over
+  what it shows and half a view past either edge, and asks for the next span
+  once it comes within a quarter of a view of what it holds; a grid on its way
+  that still covers the view is let land rather than asked again. Zoomed in
+  past the grid it holds, it draws from that grid until a finer one comes,
+  never from the coarser summary under it. Samples are drawn one by one only
+  where the run held covers the view; beyond a run there are no zeros to draw.
+  A take of hours is addressed by frames past what an `int32` counts, as longs
+  on the wire.
 - **An authoring surface has headroom.** A group with no take and a surface
   written into (a multitrack's lanes, a roll, a pane of curves alone)
   navigates past its content (`Host::NAV_HEADROOM`) and, empty, over a grid

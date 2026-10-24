@@ -8751,7 +8751,7 @@ module of its own.
   see it in a page, and if it is blank, give a buffer's spectrogram the
   columns a list's has, which needs the server to answer `/buffer_spectrum`,
   or read the span it shows back as samples and analyze it in the host.
-- ⬜ **The audio editor's view of a take glitches under zoom and pan**
+- ✅ **The audio editor's view of a take glitches under zoom and pan**
   *(found 2026-10-24, by eye on the audio editor the host owns,
   `clausters-gui --audio`)*. Zooming in makes the picture flicker; at the
   level of samples the sample circles are drawn or not depending on where
@@ -8765,4 +8765,14 @@ module of its own.
   `Host::set_take_total`), a view kept longer than a take an undo shortened,
   and the `"view"` event carrying its start and length as `f32`. Whether the
   flicker and the edges predate the host owning the editor is part of the
-  finding.
+  finding. *Fixed 2026-10-24, reproduced with captures over a minute pasted
+  to seventeen hours; none of it was new with the host owning the editor.*
+  The fetch machine asked a summary and a run of samples with frames cast to
+  `int32`, so past about twelve hours (six, a stereo take's flat index) the
+  summary walk wrapped and never finished; and the axis took the length of
+  the picture still drawn from before an edit, which then stayed when the
+  new picture never came. A pan revealed the take's coarsest summary at the
+  edges (a grid was asked for the view alone, and replaced on every frame the
+  hand moved), a zoom in fell back to it at every step, and samples were
+  drawn as zeros past the run held. Separately, an undo left the cursor past
+  the end of the shorter take, and the next paste opened the view from there.

@@ -542,7 +542,9 @@ impl Samples for SignalElement {
     fn sample_value(&self, channel: usize, frame: usize) -> Option<f32> {
         let data = self.source.data()?;
         let trace = data.trace();
-        trace.has_raw().then(|| trace.at(channel, frame as f64))
+        trace
+            .reads(frame, frame + 1)
+            .then(|| trace.at(channel, frame as f64))
     }
 
     /// **The samples this element was drawing, kept.** What travels is the

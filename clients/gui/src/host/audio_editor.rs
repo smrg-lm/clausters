@@ -595,18 +595,9 @@ mod tests {
             ),
             "its play cursor is drawn from the editor's transport"
         );
-        // the open's peaks render lands on a tick
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while host.audio.as_ref().is_some_and(|a| {
-            std::fs::read_dir(&a.windows[&def_id].workspace).map_or(0, |d| d.count()) == 0
-        }) {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the peaks never landed"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-            host.take_effects();
-        }
+        // the open's peaks render lands on a tick: a file in the working
+        // folder is a render under way, and an edit waits for it to end
+        settled(&mut host, def_id);
         let before = parts(&mut host, def_id);
         assert_eq!(before.len(), 1, "{before:?}");
         let widget = host.audio.as_ref().unwrap().windows[&def_id].ids["widget"]
@@ -732,8 +723,8 @@ mod tests {
             1,
             vec![
                 OscType::String("view".into()),
-                OscType::Float(nav.start as f32),
-                OscType::Float(nav.len as f32),
+                OscType::Double(nav.start),
+                OscType::Double(nav.len),
             ],
         );
         assert!(host.deliver(def_id, &view));

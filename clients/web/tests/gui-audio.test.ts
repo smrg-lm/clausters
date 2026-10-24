@@ -456,7 +456,13 @@ test("a take's window is composed by the crate", async () => {
     assert.ok(String(taken.segments.parts[0].path).endsWith("-opened.w64"));
     assert.equal(taken.measure, "peak rms");
     assert.deepEqual(taken.gestures, { drag: "select", alt: "draw", ctrl: "sample" });
-    assert.deepEqual(Object.keys(editor.view!.props(editor as never, wid)), ["segments"]);
+    // the list, and the band a history step may have moved onto the take
+    assert.deepEqual(Object.keys(editor.view!.props(editor as never, wid)).sort(), [
+        "cursor",
+        "segments",
+        "sel_len",
+        "sel_start",
+    ]);
 });
 
 test("a refused measure stack keeps the one the picture had", () => {

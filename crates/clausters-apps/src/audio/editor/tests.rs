@@ -340,13 +340,11 @@ fn a_cut_takes_the_span_out_and_writes_no_samples() {
     assert_eq!(out["cue"], 10);
     assert_eq!(call(&mut editor, json!({"verb": "parts"}))["frames"], 80);
 
+    // all of it: the take is left empty, a file that is a header
     let all = event(&mut editor, json!([12, 2, 1, "cut", 0.0, 80.0]));
-    assert!(
-        all["answer"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("nothing")
-    );
+    assert!(all["answer"]["reason"].is_null(), "{all}");
+    assert!(spans(&mut editor).is_empty());
+    assert_eq!(call(&mut editor, json!({"verb": "parts"}))["frames"], 0);
 }
 
 /// **A delete is a cut that copies nothing**: the span leaves the list, the
@@ -473,6 +471,20 @@ fn a_paste_lands_at_its_end_and_is_shown_whole() {
     );
     assert_eq!(call(&mut editor, json!({"verb": "binding"}))["cursor"], 15);
     assert_eq!(view(&out), None, "{out}");
+    // past the end of the 125 frames: it goes in at the end, and the view
+    // opened is measured from there, not from where the paste was asked
+    event(&mut editor, json!([12, 4, 0, "view", 0.0, 75.0]));
+    let doc = Clipboard::segments(1, 44_100.0, vec![part(20)]).to_json();
+    let out = event(
+        &mut editor,
+        json!([12, 5, 0, "paste", 1_000.0, "segments", doc]),
+    );
+    assert_eq!(call(&mut editor, json!({"verb": "binding"}))["cursor"], 145);
+    assert_eq!(
+        view(&out),
+        Some(json!({"view_start": 0.0, "view_len": 145.0})),
+        "{out}"
+    );
 }
 
 #[test]

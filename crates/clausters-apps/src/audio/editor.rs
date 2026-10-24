@@ -1760,6 +1760,8 @@ impl AudioEditor {
                     if tag == "paste" {
                         let was = parts::length(&before.parts, &self.rates_of()).unwrap_or(0);
                         let pasted = self.length().saturating_sub(was);
+                        // a paste past the end went in at the end
+                        let at = at.min(was);
                         corrections.extend(self.land_at(at + pasted, out));
                         corrections.extend(self.show_span(at, at + pasted, was));
                     } else {
@@ -2745,8 +2747,13 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             .envelope_corrections()
             .first()
             .map_or_else(|| "{}".into(), |c| c.props.to_string()),
-        // the picture is told the list again: it draws it from its files
-        "props" if editor.open_files.open => json!({"segments": editor.segments()}).to_string(),
+        // the picture is told the list again, which it draws from its files,
+        // and the band a history step may have moved onto the take
+        "props" if editor.open_files.open => {
+            let mut props = editor.band_of(widget).unwrap_or_default();
+            props.insert("segments".into(), editor.segments());
+            Value::Object(props).to_string()
+        }
         "props" => Value::Object(props(widget)).to_string(),
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();

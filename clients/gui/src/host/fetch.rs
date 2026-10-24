@@ -523,10 +523,12 @@ impl BufferFetches {
             let mut matched = 0usize;
             let mut short = false;
             for range in ranges.chunks(2) {
-                let [OscType::Int(start), OscType::Blob(bytes)] = range else {
+                let [start, OscType::Blob(bytes)] = range else {
                     continue;
                 };
-                let start = (*start).max(0) as usize;
+                let Some(start) = index_of(start) else {
+                    continue;
+                };
                 // The reply's `start` is the buffer's own flat index; a window
                 // stores it where the window begins. A range that falls outside
                 // this fetch's span belongs to **another conversation** -- an
@@ -724,14 +726,19 @@ impl BufferFetches {
     /// for the same view **replaces** the old one: what is wanted is where the
     /// eye is now, and a reply for a span nobody is looking at any more is
     /// ignored when it lands. It takes as many replies as the span needs.
+    ///
+    /// **Unless the grid on its way still covers what is on screen** (`seen`),
+    /// at the same bucket: a pan asks for a span a few frames further on every
+    /// frame it moves, and replacing the grid each time kept it from ever
+    /// landing while the hand moved.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn want_detail(
         &mut self,
         bufnum: i32,
         def_id: i32,
         widget_id: i32,
-        start: usize,
-        frames: usize,
+        (start, frames): (usize, usize),
+        seen: (usize, usize),
         bucket: usize,
         channels: usize,
     ) -> Option<OscMessage> {
@@ -743,11 +750,11 @@ impl BufferFetches {
         if let Some(old) = self.peaks.iter().position(|a| a.purpose == purpose) {
             let old = &self.peaks[old];
             if old.bufnum == bufnum
-                && old.start == start
-                && old.end == start + frames
                 && old.bucket == bucket
+                && ((old.start == start && old.end == start + frames)
+                    || (old.start <= seen.0 && old.end >= seen.1))
             {
-                return None; // the same grid is already on its way
+                return None; // a grid over what is on screen is on its way
             }
             self.peaks.retain(|a| a.purpose != purpose);
         }
@@ -1051,8 +1058,8 @@ fn detail_request(bufnum: i32, bucket: usize, start: usize, frames: usize) -> Os
         args: vec![
             OscType::Int(bufnum),
             OscType::Int(bucket as i32),
-            OscType::Int(start as i32),
-            OscType::Int(frames as i32),
+            index_arg(start),
+            index_arg(frames),
         ],
     }
 }
@@ -1062,11 +1069,29 @@ fn request_chunk(bufnum: i32, start: usize, total: usize) -> OscMessage {
     let count = BUFFER_CHUNK.min(total.saturating_sub(start));
     OscMessage {
         addr: "/buffer_getRange".into(),
-        args: vec![
-            OscType::Int(bufnum),
-            OscType::Int(start as i32),
-            OscType::Int(count as i32),
-        ],
+        args: vec![OscType::Int(bufnum), index_arg(start), index_arg(count)],
+    }
+}
+
+/// **A frame or a flat sample index as an OSC argument**: an `int32` while
+/// it fits, a long past it, as the server's longer replies are. A take of
+/// hours outgrows an `int32` -- a mono one at about twelve hours at 48 kHz,
+/// a stereo one's flat index at six -- and a count cast down wraps negative,
+/// which the answer reads as the start of the take.
+pub(crate) fn index_arg(n: usize) -> OscType {
+    match i32::try_from(n) {
+        Ok(n) => OscType::Int(n),
+        Err(_) => OscType::Long(n as i64),
+    }
+}
+
+/// An index read back in either spelling [`index_arg`] writes; a negative
+/// one reads as nothing.
+pub(crate) fn index_of(arg: &OscType) -> Option<usize> {
+    match arg {
+        OscType::Int(n) => usize::try_from(*n).ok(),
+        OscType::Long(n) => usize::try_from(*n).ok(),
+        _ => None,
     }
 }
 
@@ -1688,18 +1713,30 @@ mod tests {
     fn a_detail_grid_is_one_conversation_per_view() {
         let mut fetches = BufferFetches::default();
         let msg = fetches
-            .want_detail(7, 1, 100, 4_096, 8_192, 32, 2)
+            .want_detail(7, 1, 100, (4_096, 8_192), (4_096, 12_288), 32, 2)
             .expect("the grid asks");
         assert_eq!(msg.addr, "/buffer_peaks");
         assert_eq!(ints(&msg), vec![7, 32, 4_096, 8_192]);
         assert!(
             fetches
-                .want_detail(7, 1, 100, 4_096, 8_192, 32, 2)
+                .want_detail(7, 1, 100, (4_096, 8_192), (4_096, 12_288), 32, 2)
                 .is_none(),
             "the same grid is already on its way"
         );
+        // A pan asks a span a little further on: the grid on its way still
+        // covers what is on screen, so it is let land rather than replaced.
+        assert!(
+            fetches
+                .want_detail(7, 1, 100, (5_120, 8_192), (8_000, 10_000), 32, 2)
+                .is_none(),
+            "the grid on its way covers the view"
+        );
         // Another view of the same take, at its own zoom over its own span.
-        assert!(fetches.want_detail(7, 1, 200, 0, 8_192, 64, 2).is_some());
+        assert!(
+            fetches
+                .want_detail(7, 1, 200, (0, 8_192), (0, 8_192), 64, 2)
+                .is_some()
+        );
 
         // 256 buckets of 32 over the first view's span, in two replies.
         let (done, next) = fetches.on_peaks(7, 4_096, 32, &grid(100, 2));
@@ -1736,6 +1773,37 @@ mod tests {
         );
     }
 
+    /// **A take of hours is asked for by frames past an `int32`**: the
+    /// summary walk and the run of samples name them as longs, and the reply
+    /// is read back in either spelling, where a frame cast down wrapped
+    /// negative and the walk started over from the take's first frame.
+    #[test]
+    fn a_span_past_an_int32_is_asked_and_read_as_a_long() {
+        let far = 3_000_000_000usize;
+        let mut fetches = BufferFetches::default();
+        let msg = fetches
+            .want_detail(-2, 1, 10, (far, 8_192), (far, far + 8_192), 64, 1)
+            .expect("the grid asks");
+        assert_eq!(
+            msg.args[2..],
+            [OscType::Long(far as i64), OscType::Int(8_192)],
+            "{msg:?}"
+        );
+        let msg = fetches
+            .want_span(-2, far, 100, 1, window(1, 10))
+            .expect("the span asks");
+        assert_eq!(msg.args[1], OscType::Long(far as i64), "{msg:?}");
+        let step = fetches.on_data(&[
+            OscType::Int(-2),
+            OscType::Long(far as i64),
+            OscType::Blob(clausters_core::osc::sample_blob(&[0.5; 100])),
+        ]);
+        assert!(
+            matches!(step, FetchStep::Window { start_frame, .. } if start_frame == far),
+            "the run lands where it was asked"
+        );
+    }
+
     /// A span that does not start on a bucket boundary is widened to one: a
     /// bucket summarized from part of itself would report a peak the samples
     /// do not have, which is the rule the wire already states.
@@ -1743,11 +1811,19 @@ mod tests {
     fn a_detail_grid_is_asked_for_on_whole_buckets() {
         let mut fetches = BufferFetches::default();
         let msg = fetches
-            .want_detail(3, 1, 10, 1_000, 500, 64, 1)
+            .want_detail(3, 1, 10, (1_000, 500), (1_000, 1_500), 64, 1)
             .expect("the grid asks");
         assert_eq!(ints(&msg), vec![3, 64, 960, 576]);
         // Nothing to summarize: a span shorter than one bucket.
-        assert!(fetches.want_detail(3, 1, 10, 0, 32, 64, 1).is_none());
-        assert!(fetches.want_detail(3, 1, 10, 0, 640, 0, 1).is_none());
+        assert!(
+            fetches
+                .want_detail(3, 1, 10, (0, 32), (0, 32), 64, 1)
+                .is_none()
+        );
+        assert!(
+            fetches
+                .want_detail(3, 1, 10, (0, 640), (0, 640), 0, 1)
+                .is_none()
+        );
     }
 }

@@ -594,7 +594,12 @@ pub(super) fn osc_to_value(arg: &OscType) -> Option<Value> {
 pub(super) fn scalar_arg(v: &Value) -> Option<OscType> {
     match v {
         Value::Bool(b) => Some(OscType::Int(*b as i32)),
-        Value::Number(n) if n.is_i64() || n.is_u64() => Some(OscType::Int(n.as_i64()? as i32)),
+        // An integer past what an `int32` counts -- a frame of a take of
+        // hours -- goes as a long rather than wrapping negative.
+        Value::Number(n) if n.is_i64() || n.is_u64() => {
+            let n = n.as_i64()?;
+            Some(i32::try_from(n).map_or(OscType::Long(n), OscType::Int))
+        }
         Value::Number(n) => Some(OscType::Float(n.as_f64()? as f32)),
         Value::String(s) => Some(OscType::String(s.clone())),
         _ => None,

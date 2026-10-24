@@ -1000,12 +1000,12 @@ pub(crate) trait Front {
         }
         for (def_id, widget_id, bufnum, channels, owed) in asked {
             let msg = match owed {
-                Owed::Summary { a, b, bucket } => self.fetches().want_detail(
+                Owed::Summary { a, b, bucket, seen } => self.fetches().want_detail(
                     bufnum,
                     def_id,
                     widget_id,
-                    a,
-                    b - a,
+                    (a, b - a),
+                    seen,
                     bucket,
                     channels,
                 ),
