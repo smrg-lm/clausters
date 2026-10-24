@@ -36,15 +36,47 @@ class Int64:
         self.value = int(value)
 
 
+class Float64:
+    """Marker for an OSC float64 (`d`) argument: a number that must not be
+    narrowed to a float, such as a frame of a take of hours."""
+
+    def __init__(self, value: float):
+        self.value = float(value)
+
+    # it is the number it carries, to whoever reads the arguments back
+    def __eq__(self, other):
+        if isinstance(other, Float64):
+            return self.value == other.value
+        return self.value == other
+
+    def __hash__(self):
+        return hash(self.value)
+
+    def __float__(self):
+        return self.value
+
+    def __repr__(self):
+        return repr(self.value)
+
+
+_INT32 = range(-(1 << 31), 1 << 31)
+
+
 def message(addr: str, *args) -> bytes:
-    """Encodes one OSC message. Supports int (`i`), `Int64` (`h`), float
-    (`f`), str (`s`) and bytes (`b`) arguments."""
+    """Encodes one OSC message. Supports int (`i`, or `h` past what an int32
+    counts), `Int64` (`h`), float (`f`), `Float64` (`d`), str (`s`) and bytes
+    (`b`) arguments."""
     tags, data = ",", b""
     for a in args:
         if isinstance(a, bool):
             raise TypeError("OSC has no bool tag here; use int")
         if isinstance(a, Int64):
             tags, data = tags + "h", data + struct.pack(">q", a.value)
+        elif isinstance(a, Float64):
+            tags, data = tags + "d", data + struct.pack(">d", a.value)
+        elif isinstance(a, int) and a not in _INT32:
+            # never wrapped and never refused: a frame of a take of hours
+            tags, data = tags + "h", data + struct.pack(">q", a)
         elif isinstance(a, int):
             tags, data = tags + "i", data + struct.pack(">i", a)
         elif isinstance(a, float):

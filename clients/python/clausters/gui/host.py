@@ -50,12 +50,16 @@ def _prop_args(props) -> list:
     A ``bool`` rides as ``1``/``0``: OSC's own boolean tags carry no argument,
     so a flag has always been an int there. A structure rides as the JSON
     **string** every non-scalar prop already travels as (`points`, `notes`), a
-    tuple as the list it is.
+    tuple as the list it is. **A number is never narrowed**: a fraction rides
+    as a double, since a float holds a frame of a take of minutes only, and
+    an int past what an int32 counts as a long.
     """
     args = []
     for k, v in props.items():
         if isinstance(v, bool):
             v = int(v)
+        elif isinstance(v, float):
+            v = _osclib.Float64(v)
         elif isinstance(v, (dict, list, tuple)):
             v = json.dumps(list(v) if isinstance(v, tuple) else v)
         args += [k, v]
@@ -951,8 +955,9 @@ class GuiHost:
     def set(self, id: int, **props):
         """``/gui_set <id> <k> <v> ...`` -- update one live widget.
 
-        Property types are preserved: a Python ``int`` rides as an OSC int, a
-        ``float`` as an OSC float. A **structural** value -- an ``axes`` pair, a
+        Property types are preserved: a Python ``int`` rides as an OSC int (a
+        long past what an int32 counts), a ``float`` as an OSC double, so no
+        number is narrowed on the way, a frame of a take of hours included. A **structural** value -- an ``axes`` pair, a
         ``theme`` table, a list of ``points`` or ``notes`` -- has no OSC type at
         all, so it rides as its JSON string; pass the object and it is
         serialized here, or pass the string yourself and it goes through

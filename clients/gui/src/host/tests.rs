@@ -742,14 +742,14 @@ fn def_then_query_replies_with_gui_info() {
     assert_eq!(info.addr, GUI_INFO);
     assert_eq!(info.args[0], OscType::Int(10));
     assert_eq!(info.args[1], OscType::String("knob".into()));
-    // The reply carries the knob's props as k/v pairs, ints and floats kept
-    // apart; `value` is a float.
+    // The reply carries the knob's props as k/v pairs, ints and fractions
+    // kept apart; `value` is a fraction, and a double.
     let pos = info
         .args
         .iter()
         .position(|a| *a == OscType::String("value".into()))
         .expect("value key present");
-    assert_eq!(info.args[pos + 1], OscType::Float(800.0));
+    assert_eq!(info.args[pos + 1], OscType::Double(800.0));
 }
 
 /// **A query answers what the widget is, not what it was defined as.** A
@@ -783,7 +783,7 @@ fn a_query_reports_what_a_gesture_left_behind() {
             .position(|a| *a == OscType::String(key.into()))?;
         args.get(at + 1).cloned()
     };
-    assert_eq!(queried(&mut host, "value"), Some(OscType::Float(0.0)));
+    assert_eq!(queried(&mut host, "value"), Some(OscType::Double(0.0)));
 
     // Drag the slider to the right end of the groove it was actually
     // placed on, so the press lands where the renderer drew it.
@@ -803,7 +803,7 @@ fn a_query_reports_what_a_gesture_left_behind() {
     g.press(&mut host, &ctx, x, y);
     g.release(&mut host, &ctx, x, y);
     let dragged = match queried(&mut host, "value") {
-        Some(OscType::Float(v)) => v,
+        Some(OscType::Double(v)) => v,
         other => panic!("no float value: {other:?}"),
     };
     assert!(
@@ -823,7 +823,7 @@ fn a_query_reports_what_a_gesture_left_behind() {
         }),
         from(),
     );
-    assert_eq!(queried(&mut host, "value"), Some(OscType::Float(0.25)));
+    assert_eq!(queried(&mut host, "value"), Some(OscType::Double(0.25)));
 }
 
 #[test]

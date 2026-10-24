@@ -20,6 +20,7 @@
 
 use super::super::Host;
 use super::super::interact::Hit;
+use super::super::wire::frames_arg;
 use crate::host::diag;
 use clausters_core::osc::OscType;
 use clausters_editing::audio_playback::space;
@@ -584,8 +585,8 @@ impl Gestures {
                     id,
                     vec![
                         OscType::String(tag.into()),
-                        OscType::Double(start),
-                        OscType::Double(len),
+                        frames_arg(start),
+                        frames_arg(len),
                     ],
                 );
             }
@@ -816,8 +817,8 @@ impl Gestures {
                         id,
                         vec![
                             OscType::String("cut".into()),
-                            OscType::Double(start),
-                            OscType::Double(len),
+                            frames_arg(start),
+                            frames_arg(len),
                         ],
                     );
                     out.push(GestureEffect::Redraw(ctx.def_id));
@@ -834,8 +835,8 @@ impl Gestures {
                     id,
                     vec![
                         OscType::String("cut".into()),
-                        OscType::Double(start),
-                        OscType::Double(len),
+                        frames_arg(start),
+                        frames_arg(len),
                     ],
                 );
             }
@@ -953,8 +954,8 @@ fn copy_selection(
             id,
             vec![
                 OscType::String("copy".into()),
-                OscType::Double(start),
-                OscType::Double(len),
+                frames_arg(start),
+                frames_arg(len),
             ],
         );
         return Some(true);

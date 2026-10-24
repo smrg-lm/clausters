@@ -222,6 +222,25 @@ test("GuiHost: the window root is a widget, and freeing it is not closing it", (
     assert.deepEqual(sent, ["/gui_free"]);
 });
 
+test("GuiHost: a number is never narrowed on the way to the host", () => {
+    // A frame of a take of hours arrives whole: a fraction rides as a double
+    // and an integer past what an int32 counts as a long, where a float kept
+    // it to 256 frames and an int32 wrapped it.
+    const packets: Uint8Array[] = [];
+    const gui = new GuiHost({
+        connection: {
+            send: (packet: Uint8Array) => packets.push(packet),
+            addReply: () => {},
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+    const day = 24 * 3600 * 48_000;
+    gui.set(5, { cursor: day + 1, view_start: day + 0.5, flag: true });
+    const packet = packets.at(-1)!;
+    assert.ok(new TextDecoder().decode(packet).includes(",ishsdsi"), "the tags");
+    assert.deepEqual(decodePacket(packet)[0]!.args, [5, "cursor", day + 1, "view_start", day + 0.5, "flag", 1]);
+});
+
 test("GuiHost: a redraw keeps a named widget's handler", () => {
     // No live host: what is under test is this client's own bookkeeping. A
     // redefine takes fresh ids from the pool, so a callback kept under the old

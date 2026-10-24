@@ -136,8 +136,9 @@ export function encodeImmediateBundle(
 export type MsgArg = number | string | boolean | bigint | Uint8Array | OscArg;
 
 /**
- * One argument tagged **by inference**: an integral number rides as an int32,
- * a fractional one as a float32, a boolean as the 1/0 the wire carries (OSC
+ * One argument tagged **by inference**: an integral number rides as an int32
+ * (an int64 past what an int32 counts, never wrapped), a fractional one as a
+ * float32, a boolean as the 1/0 the wire carries (OSC
  * has no bool), a string as a string and bytes as a blob. A JS number is a
  * double with no int/float distinction, so this is a guess -- the clients tag
  * what they know by position instead, and pass an explicit `[tag, value]`
@@ -151,5 +152,8 @@ export function oscArg(value: MsgArg): OscArg {
     if (typeof value === "string") return ["s", value];
     if (typeof value === "boolean") return ["i", value ? 1 : 0];
     if (value instanceof Uint8Array) return ["b", value];
-    return Number.isInteger(value) ? ["i", value as number] : ["f", value as number];
+    if (!Number.isInteger(value)) return ["f", value as number];
+    // an integer past what an int32 counts is a long, never wrapped
+    const int = value as number;
+    return int >= -2147483648 && int <= 2147483647 ? ["i", int] : ["h", int];
 }

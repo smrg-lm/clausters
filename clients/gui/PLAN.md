@@ -8826,19 +8826,19 @@ module of its own.
     draws is samples, and a whole frame crosses in and out unchanged. The
     wire is unchanged at this step and converts at the group's door with
     the same rate.
-  - ⬜ **T3, the wire.** The editor props and the head clocks hold `Time`,
-    and the frames a member draws with are converted at its own rate, so a
-    take at another rate than the engine needs no scale. Every time the
-    GUI protocol carries, events
-    (`"selection"`, `"view"`, `"locate"`, `"cut"` and the rest) and props
-    (`sel_start`, `cursor`, `playhead`, `view_start` and the rest), becomes
-    an `int64` of ticks; the type is bound through the C ABI, the wasm
-    door, `ctypes` and TypeScript (`docs/bindings.md`); both clients'
-    builders and handlers, the
-    applications' presentations (cursor, selection and view of the audio
-    editor and the multitrack), `docs/gui-protocol.md` and the parity
-    vectors move with it.
-  - ⬜ **T4, what is left.** A roll's note times and the symbolic score's
-    playhead, the last two that cross as seconds or milliseconds.
-    `docs/app-behavior.md` gains the rule: a time is converted to a pixel
-    only as a difference from the view's origin.
+  - ✅ **T3, the wire.** Decided with the user the same day: the clients'
+    surface stays in frames, and a time crosses the wire in frames, **never
+    narrowed**: a whole frame as an `int64`, a fraction (a window's edge) as
+    a double. Ticks would have needed every view's rate on both sides, and a
+    client does not know a file's rate before the host reads it. The host
+    reports a selection, a cut, a copy and a locate as longs; both clients
+    send a fractional prop as a double and an integer past an `int32` as a
+    long, where Python sent a float as `f` and refused an int past 2^31 and
+    the page sent both narrowed; the host reads a long past an `int32` as
+    no `int32` instead of wrapping it, and answers a query's fractions as
+    doubles.
+  - ⬜ **T4, what is left.** An audit of the host and the applications for
+    a time cast narrower than 64 bits before it is a difference from an
+    origin, each fixed or named. `docs/app-behavior.md` gains the rule: a
+    time crosses the wire whole and becomes a pixel only as a difference
+    from the view's origin.

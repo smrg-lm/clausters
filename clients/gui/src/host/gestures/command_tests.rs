@@ -870,7 +870,7 @@ fn a_selection_set_on_a_pane_cuts_its_take_with_no_pointer() {
         assert!(
             emitted(&effects).iter().any(|(id, args)| *id == 50
                 && args.first() == Some(&OscType::String(verb.into()))
-                && args.get(1) == Some(&OscType::Double(100.0))),
+                && args.get(1) == Some(&OscType::Long(100))),
             "{verb}: {:?}",
             emitted(&effects)
         );

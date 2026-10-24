@@ -851,8 +851,8 @@ fn a_selection_far_into_a_take_is_reported_to_the_frame() {
         args,
         [
             OscType::String("selection".into()),
-            OscType::Double(start),
-            OscType::Double(len),
+            OscType::Long(start as i64),
+            OscType::Long(len as i64),
         ]
     );
 }

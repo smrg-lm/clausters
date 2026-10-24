@@ -723,3 +723,19 @@ def test_rows_of_data_and_a_file_chooser_ride_as_plain_props():
     chooser, field = box["children"][0], box["children"][1]
     assert (box["modal"], box["title"]) == (1, "Load")
     assert chooser["bind"] == ["widget", field["id"], "value"]
+
+
+def test_a_number_is_never_narrowed_on_the_way_to_the_host():
+    """A frame of a take of hours arrives whole: a fraction rides as a double
+    and an int past what an int32 counts as a long, where a float would have
+    kept it to 256 frames and an int32 refused it."""
+    from clausters.base import _osclib
+    from clausters.gui.host import _prop_args
+
+    day = 24 * 3600 * 48_000
+    addr, args = _osclib.decode(_osclib.message("/gui_set", 5, *_prop_args(
+        {"cursor": day + 1, "view_start": day + 0.5, "flag": True})))
+    assert addr == "/gui_set"
+    assert args == [5, "cursor", day + 1, "view_start", day + 0.5, "flag", 1]
+    raw = _osclib.message("/x", day + 1, _osclib.Float64(0.5), 7)
+    assert b",hdi" in raw

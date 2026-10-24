@@ -10993,3 +10993,14 @@ index is not a time and stays a whole frame, converted where samples are read
 with the rate of what is read. A beat is musical time and stays a beat until a
 tempo map turns it into a time. The pass is `clients/gui/PLAN.md`, "Time is a
 type of its own, 64 bits wide".
+
+**The wire stays in frames, and never narrows them.** Two more answers of the
+user the same day: the clients' surface keeps speaking frames, and so does the
+wire. Ticks on the wire would have needed the rate of every view on both sides
+to agree, and a client does not know the rate of a file the host has not read
+yet. So a whole frame crosses as an `int64` and a fraction of one, a window's
+edge, as a double; the ticks live inside the host and the applications, which
+know the rate of each take. What this closed is the narrowing itself: Python
+sent every float prop as a 32-bit float and refused an int past 2^31, and a
+page sent both narrowed the same way, so a cursor set near the end of a day
+long take landed up to 128 frames away.

@@ -1651,6 +1651,10 @@ function wireValue(value: PropValue): MsgArg {
     // still change what a live widget draws.
     if (value instanceof Uint8Array) return value;
     if (typeof value === "object" && value !== null) return JSON.stringify(value);
+    // **A number is never narrowed**: a fraction rides as a double, since a
+    // float holds a frame of a take of minutes only, and an integer past what
+    // an int32 counts as a long.
+    if (typeof value === "number" && !Number.isInteger(value)) return ["d", value];
     return value;
 }
 

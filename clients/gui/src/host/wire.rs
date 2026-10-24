@@ -487,12 +487,25 @@ pub(super) fn blob_args(args: &[OscType]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-/// The i-th argument as an `i32`, if present and integer-typed.
+/// The i-th argument as an `i32`, if present, integer-typed and within what
+/// an `i32` counts: a long past it is no `i32`, rather than one wrapped.
 pub(super) fn int_arg(args: &[OscType], i: usize) -> Option<i32> {
     match args.get(i) {
         Some(OscType::Int(n)) => Some(*n),
-        Some(OscType::Long(n)) => Some(*n as i32),
+        Some(OscType::Long(n)) => i32::try_from(*n).ok(),
         _ => None,
+    }
+}
+
+/// **A position or a span in frames, as it crosses the wire**: a whole frame
+/// as a long, and a fraction of one (a window's edge) as a double. Never
+/// narrower: a float holds a whole frame only up to 2^24 of them, under six
+/// minutes at 48 kHz, and an int only up to 2^31, under twelve hours.
+pub(super) fn frames_arg(frames: f64) -> OscType {
+    if frames.fract() == 0.0 && frames.abs() < 9.0e15 {
+        OscType::Long(frames as i64)
+    } else {
+        OscType::Double(frames)
     }
 }
 
@@ -590,7 +603,8 @@ pub(super) fn osc_to_value(arg: &OscType) -> Option<Value> {
 }
 
 /// One scalar JSON value as an OSC primitive for a `/gui_info` reply, keeping
-/// integers (`Int`) and floats (`Float`) apart; `None` for structural values.
+/// integers (`Int`, or `Long` past it) and fractions (`Double`) apart; `None`
+/// for structural values.
 pub(super) fn scalar_arg(v: &Value) -> Option<OscType> {
     match v {
         Value::Bool(b) => Some(OscType::Int(*b as i32)),
@@ -600,7 +614,9 @@ pub(super) fn scalar_arg(v: &Value) -> Option<OscType> {
             let n = n.as_i64()?;
             Some(i32::try_from(n).map_or(OscType::Long(n), OscType::Int))
         }
-        Value::Number(n) => Some(OscType::Float(n.as_f64()? as f32)),
+        // and a fraction as a double: a float holds a frame of a take of
+        // minutes only, and a reply is no place to lose one
+        Value::Number(n) => Some(OscType::Double(n.as_f64()?)),
         Value::String(s) => Some(OscType::String(s.clone())),
         _ => None,
     }

@@ -13,6 +13,7 @@ use super::super::interact::{self, Hit};
 use super::super::layout::Rect;
 use super::super::widget::element::{FreqAxis, ValueAxis};
 use super::super::widget::{ScrollView, Widget, WidgetKind};
+use super::super::wire::frames_arg;
 use super::effects::{emit, emit_view, redraw_all};
 use super::{GestureCtx, GestureEffect};
 
@@ -254,10 +255,9 @@ pub(super) fn set_selection(
     redraw_all(out, &roots);
     let mut args = vec![
         OscType::String("selection".into()),
-        // Doubles: a float holds a whole frame only up to 2^24 of them, under
-        // six minutes at 48 kHz, and a selection is a count of samples.
-        OscType::Double(start),
-        OscType::Double(len),
+        // A count of whole samples, as longs: see `frames_arg`.
+        frames_arg(start),
+        frames_arg(len),
     ];
     if let Some((min, max)) = value {
         args.push(OscType::Float(min as f32));
@@ -292,8 +292,8 @@ pub(super) fn let_go_selection(
     }
     let mut args = vec![
         OscType::String("selection".into()),
-        OscType::Double(start),
-        OscType::Double(len),
+        frames_arg(start),
+        frames_arg(len),
     ];
     if let Some(axis) = host
         .widget_kind(def_id, id)
@@ -452,7 +452,7 @@ pub(super) fn locate_at(
         out,
         ctx.def_id,
         id,
-        vec![OscType::String("locate".into()), OscType::Double(placed)],
+        vec![OscType::String("locate".into()), frames_arg(placed)],
     );
     // **The play cursor goes with it while nothing plays**: it is the
     // transport's position, so the monitor's transport is cued there. A window
