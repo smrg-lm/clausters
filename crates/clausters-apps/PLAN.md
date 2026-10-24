@@ -3243,9 +3243,14 @@ over the opened file) carries over.
       in its own process.
     - ✅ The GUI host owns the audio editor (`--audio`), its windows reading
       the application's engine.
-    - ⬜ The doors a client opens and calls the application through, and
-      both clients as the editor's handler: `edit(Buffer)` and the
-      client's coordinator go.
+    - ✅ The doors a client opens and calls the application through:
+      `/gui_app_open` answers the window an application opened in, and
+      `/gui_app_call` a member's verb, a query or an action, the action
+      answered when it ends; both answered by `/gui_app_reply`, and the
+      opener told `/gui_closed` (`docs/gui-protocol.md`). Both clients'
+      `GuiHost` call them (`open_app`/`call_app`).
+    - ⬜ Both clients as the editor's handler, over those doors:
+      `edit(Buffer)` and the client's coordinator go.
     - ⬜ The page: cross-origin isolation, shared memory, the engine in the
       worklet and the application in the host's wasm.
   **Acceptance:** the audio editor plays, loops, stops and

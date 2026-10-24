@@ -146,6 +146,7 @@ pub mod winit_keys;
 // protocol as it arrives, a definition and a free, a set, the answer to a
 // gesture, and the takes the pictures draw.
 mod answer;
+mod apps;
 #[cfg(not(target_arch = "wasm32"))]
 mod audio_editor;
 mod clocks;
@@ -728,6 +729,27 @@ pub const GUI_CAPTURED: &str = "/gui_captured";
 pub const GUI_INFO: &str = "/gui_info";
 pub const GUI_EVENT: &str = "/gui_event";
 pub const GUI_CLOSED: &str = "/gui_closed";
+/// `/gui_app_open <seq> <app> <json>`: **open an application this host
+/// owns**. `app` names which (`"audio"`, the audio editor) and `json` its
+/// options (`{"path", "title"}`). Answered by [`GUI_APP_REPLY`] with the
+/// window it opened in, `{"ok": {"window": id}}`, which is the handle every
+/// later call names. The window is the host's: its gestures are answered
+/// here and reach no client, and the client that opened it is told
+/// [`GUI_CLOSED`] when it goes.
+pub const GUI_APP_OPEN: &str = "/gui_app_open";
+/// `/gui_app_call <seq> <window> <json>`: **one call to the application
+/// open in `window`**, the door a client is the application's handler
+/// through: `{"member": {"verb", ...}}` asks its editor something or sets
+/// something on it and is answered at once; `{"do": {"verb", ...}}` is one
+/// of its actions (a save, a reverse), carried to its end and answered
+/// when it ends, renders and all; `{"query": name}` reads its state.
+/// Answered by [`GUI_APP_REPLY`].
+pub const GUI_APP_CALL: &str = "/gui_app_call";
+/// `/gui_app_reply <seq> <json>`: the answer to a [`GUI_APP_OPEN`] or a
+/// [`GUI_APP_CALL`] with the same `seq`: `{"ok": value}`, or
+/// `{"error": {"type", "message"}}` with the kind the application raised
+/// (`value`, `command`, `runtime`).
+pub const GUI_APP_REPLY: &str = "/gui_app_reply";
 
 /// What handling a packet asks the host's *front* to do, beyond mutating the
 /// host's own state. The protocol logic stays transport- and GPU-agnostic and
@@ -740,6 +762,10 @@ pub const GUI_CLOSED: &str = "/gui_closed";
 pub enum HostEffect {
     /// Send this message back to the requesting client.
     Reply(OscMessage),
+    /// Send this message to client `to`: an answer that comes later than the
+    /// packet that asked for it (an application's call answered when its
+    /// render lands), or a word to whoever opened a window the host owns.
+    Send { to: ClientId, msg: OscMessage },
     /// Open the window for the GuiDef rooted at this id -- **or bring the one it
     /// already has up to this tree**, which is what most of these are: a
     /// redefine is how a structural edit reaches a window, and destroying the

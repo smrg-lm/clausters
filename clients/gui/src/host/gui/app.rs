@@ -472,6 +472,7 @@ impl App {
         for effect in effects {
             match effect {
                 HostEffect::Reply(msg) => self.send(from, msg),
+                HostEffect::Send { to, msg } => self.send(to, msg),
                 HostEffect::OpenWindow(id) => {
                     if self.resumed {
                         self.open_window(lp, id, from);

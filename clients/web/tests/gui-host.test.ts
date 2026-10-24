@@ -123,6 +123,18 @@ test("GuiHost: a built panel defines, queries and frees on a native host", {
     });
 });
 
+test("GuiHost: the application door answers by seq, and says what it cannot do", {
+    skip: !hasHost,
+}, async () => {
+    await withHost(async (gui) => {
+        await assert.rejects(gui.openApp("nothing"), RangeError, "no such application");
+        const win = gui.open(controlPanel());
+        await assert.rejects(gui.callApp(win, { query: "transport" }, 5.0),
+            /holds no application/, "a window no application holds");
+        win.close();
+    });
+});
+
 test("GuiHost: activity answers what a window costs, and nothing for a closed one", {
     skip: !hasHost,
 }, async () => {

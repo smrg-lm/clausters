@@ -39,6 +39,12 @@ pub(crate) struct AudioHost {
     /// What the windows' meters and play cursors read: the engine's own.
     source: Arc<dyn BusSource>,
     next_structure: i64,
+    /// The actions a client asked for through the door that wait on a
+    /// render, by the token they were started with: who asked, and the seq
+    /// its answer carries.
+    asked: HashMap<u64, (ClientId, i32)>,
+    /// The token the next client action is started with; a gesture's is 0.
+    next_token: u64,
 }
 
 impl std::fmt::Debug for AudioHost {
@@ -66,6 +72,8 @@ struct AudioWindow {
     /// and removed when it goes, however the process ends
     /// (`clausters_core::workspace`).
     _workspace: clausters_core::workspace::Workspace,
+    /// The client that opened it through the door, told when it goes.
+    opener: Option<ClientId>,
     /// The actions last handed to the window, so an unchanged set is not
     /// sent again.
     actions: Option<Value>,
@@ -114,6 +122,8 @@ impl AudioHost {
             windows: HashMap::new(),
             source: Arc::new(EngineSource(reading)),
             next_structure: 0,
+            asked: HashMap::new(),
+            next_token: 1,
         }
     }
 
@@ -137,6 +147,17 @@ impl Host {
     /// at `path` or over none, and answers the window's id. The engine is
     /// opened on the machine's output the first time, unless one is held.
     pub fn open_audio(&mut self, path: Option<&str>, title: &str) -> Result<i32, String> {
+        self.open_audio_for(path, title, None)
+    }
+
+    /// [`Host::open_audio`] for the client `opener`, which is told
+    /// [`GUI_CLOSED`] when the window goes.
+    pub(super) fn open_audio_for(
+        &mut self,
+        path: Option<&str>,
+        title: &str,
+        opener: Option<ClientId>,
+    ) -> Result<i32, String> {
         if self.audio.is_none() {
             let engine = AppEngine::open()?;
             self.hold_audio_engine(Arc::new(Mutex::new(engine)));
@@ -220,6 +241,7 @@ impl Host {
                 widgets,
                 takes,
                 _workspace: workspace,
+                opener,
                 actions: None,
             },
         );
@@ -319,6 +341,22 @@ impl Host {
                     .find(|(_, w)| w.member == ran.member)
                     .map(|(id, _)| *id)
             });
+            // **A client's action answered as it ends**, to the client
+            let asked = match ran.end {
+                Some(_) => self
+                    .audio
+                    .as_mut()
+                    .and_then(|audio| audio.asked.remove(&ran.token)),
+                None => None,
+            };
+            if let (Some((to, seq)), Some(end)) = (asked, &ran.end) {
+                let msg = super::apps::app_reply(seq, ended(end));
+                self.pending_effects.push(HostEffect::Send { to, msg });
+                if let Some(def_id) = def_id {
+                    self.perform_audio(def_id, ran);
+                }
+                continue;
+            }
             if let Some(def_id) = def_id {
                 // **What failed is said in the window**, a render's above all,
                 // which ends where nobody is looking at a log
@@ -512,13 +550,93 @@ impl Host {
         self.window_sources.remove(&def_id);
         // its renders are called off, and its working folder goes with it,
         // dropped
+        let mut told = Vec::new();
         if let Some(audio) = self.audio.as_mut()
             && let Some(window) = audio.windows.remove(&def_id)
         {
             audio.app.call_off(window.member);
+            // what a client still waits on ends with the window
+            for (to, seq) in audio.asked.drain().map(|(_, asked)| asked) {
+                let gone = Err(("runtime".to_string(), "the window closed".to_string()));
+                told.push(HostEffect::Send {
+                    to,
+                    msg: super::apps::app_reply(seq, gone),
+                });
+            }
+            if let Some(to) = window.opener {
+                told.push(HostEffect::Send {
+                    to,
+                    msg: OscMessage {
+                        addr: GUI_CLOSED.into(),
+                        args: vec![OscType::Int(def_id)],
+                    },
+                });
+            }
             drop(window);
         }
+        self.pending_effects.extend(told);
     }
+
+    /// **One call of a client to window `def_id`'s editor**
+    /// ([`GUI_APP_CALL`]): a member's verb or a query answered at once, an
+    /// action carried as far as it goes and answered when it ends.
+    pub(super) fn call_app_audio(
+        &mut self,
+        seq: i32,
+        def_id: i32,
+        call: &Value,
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let reply = |answer| HostEffect::Reply(super::apps::app_reply(seq, answer));
+        let Some(audio) = self.audio.as_mut() else {
+            return;
+        };
+        let Some(member) = audio.windows.get(&def_id).map(|w| w.member) else {
+            return;
+        };
+        if let Some(request) = call.get("member") {
+            let answer = audio.member_call(member, request.clone());
+            effects.push(reply(Ok(answer)));
+            self.publish_audio_actions(def_id);
+        } else if let Some(query) = call["query"].as_str() {
+            let answer = audio.app.call(
+                &mut audio.editing,
+                &json!({"verb": "audio", "member": member, "query": query}),
+            );
+            effects.push(reply(Ok(answer)));
+        } else if let Some(Value::Object(action)) = call.get("do") {
+            let mut action = Value::Object(action.clone());
+            action["window"] = json!(true);
+            let token = audio.next_token;
+            audio.next_token += 1;
+            let ran = audio
+                .app
+                .act(&mut audio.editing, member, action, token, false);
+            match &ran.end {
+                Some(end) => effects.push(reply(ended(end))),
+                None => {
+                    if let Some(audio) = self.audio.as_mut() {
+                        audio.asked.insert(token, (from, seq));
+                    }
+                }
+            }
+            self.perform_audio(def_id, ran);
+        } else {
+            effects.push(reply(Err((
+                "value".into(),
+                "a call is a member's verb, a query or an action".into(),
+            ))));
+        }
+    }
+}
+
+/// An action's end as the door answers it.
+fn ended(
+    end: &Result<Value, clausters_app_engine::audio::Raised>,
+) -> Result<Value, (String, String)> {
+    end.clone()
+        .map_err(|raised| (raised.kind.clone(), raised.message.clone()))
 }
 
 #[cfg(test)]
@@ -726,6 +844,123 @@ mod tests {
         assert!(host.deliver(def_id, &undo));
         host.take_effects();
         assert_eq!(parts(&mut host, def_id).len(), 1, "undone");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&out);
+    }
+
+    /// The [`GUI_APP_REPLY`] for `seq` among `effects`, read as its JSON.
+    fn reply_of(effects: &[HostEffect], seq: i32) -> Option<Value> {
+        effects.iter().find_map(|effect| {
+            let (HostEffect::Reply(msg) | HostEffect::Send { msg, .. }) = effect else {
+                return None;
+            };
+            match (msg.addr.as_str(), msg.args.first(), msg.args.get(1)) {
+                (GUI_APP_REPLY, Some(OscType::Int(s)), Some(OscType::String(doc))) if *s == seq => {
+                    serde_json::from_str(doc).ok()
+                }
+                _ => None,
+            }
+        })
+    }
+
+    fn door(host: &mut Host, addr: &str, args: Vec<OscType>, from: ClientId) -> Vec<HostEffect> {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: addr.into(),
+                args,
+            }),
+            from,
+        )
+    }
+
+    /// **A client opens the audio editor through the door and is its
+    /// handler**: the open answers the window, a member's verb and a query
+    /// are answered at once, a save that renders is answered when it lands,
+    /// to the client that asked, and the client is told when the window goes.
+    #[test]
+    fn a_client_opens_and_calls_the_audio_editor_through_the_door() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let path = take("door", 24_000);
+        let out =
+            std::env::temp_dir().join(format!("host-audio-door-out-{}.wav", std::process::id()));
+        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
+        let mut host = Host::new();
+        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_999)));
+        let options = json!({"path": path, "title": "take"}).to_string();
+        let effects = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("audio".into()),
+                OscType::String(options),
+            ],
+            client,
+        );
+        let opened = reply_of(&effects, 1).expect("the open is answered");
+        let window = opened["ok"]["window"].as_i64().expect("a window") as i32;
+        assert!(host.owns_audio(window));
+        settled(&mut host, window);
+        let call = |host: &mut Host, seq: i32, call: Value| {
+            door(
+                host,
+                GUI_APP_CALL,
+                vec![
+                    OscType::Int(seq),
+                    OscType::Int(window),
+                    OscType::String(call.to_string()),
+                ],
+                client,
+            )
+        };
+        // a member's verb, answered at once
+        let file = reply_of(&call(&mut host, 2, json!({"member": {"verb": "file"}})), 2).unwrap();
+        assert_eq!(file["ok"]["path"], json!(path), "{file}");
+        assert_eq!(file["ok"]["frames"], 24_000, "{file}");
+        // a query of its state
+        let state = reply_of(&call(&mut host, 3, json!({"query": "transport"})), 3).unwrap();
+        assert!(state["ok"]["transport"].is_u64(), "{state}");
+        // an action that renders, answered when it lands, to the client
+        let save = json!({"do": {"verb": "save",
+            "request": {"path": out.to_string_lossy(), "format": "int16"}}});
+        let mut answer = reply_of(&call(&mut host, 4, save), 4);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while answer.is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the save was never answered"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            let effects = host.take_effects();
+            if let Some(HostEffect::Send { to, .. }) = effects
+                .iter()
+                .find(|e| matches!(e, HostEffect::Send { .. }))
+            {
+                assert_eq!(*to, client, "answered to the client that asked");
+            }
+            answer = reply_of(&effects, 4);
+        }
+        let answer = answer.unwrap();
+        assert_eq!(
+            answer["ok"]["destination"]["path"],
+            json!(out.to_string_lossy()),
+            "{answer}"
+        );
+        // what it cannot take is an error of its kind
+        let wrong = reply_of(&call(&mut host, 5, json!({"nothing": 1})), 5).unwrap();
+        assert_eq!(wrong["error"]["type"], "value", "{wrong}");
+        // and the client is told when the window goes
+        host.close_audio(window);
+        let closed = host.take_effects().into_iter().any(|e| {
+            matches!(&e, HostEffect::Send { to, msg }
+                if *to == client && msg.addr == GUI_CLOSED
+                    && msg.args.first() == Some(&OscType::Int(window)))
+        });
+        assert!(closed, "the opener heard the window close");
+        let gone = reply_of(&call(&mut host, 6, json!({"query": "transport"})), 6).unwrap();
+        assert_eq!(gone["error"]["type"], "runtime", "{gone}");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(&out);
     }

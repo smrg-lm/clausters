@@ -60,6 +60,8 @@ impl Host {
             GUI_CAPTURE => self.on_capture(&msg.args, from, effects),
             GUI_POINTER => self.on_pointer(&msg.args, from, effects),
             GUI_CLIPBOARD => self.on_clipboard(&msg.args, from),
+            GUI_APP_OPEN => self.on_app_open(&msg.args, from, effects),
+            GUI_APP_CALL => self.on_app_call(&msg.args, from, effects),
             GUI_ACTIVITY => match int_arg(&msg.args, 0) {
                 Some(window) => effects.push(HostEffect::Reply(self.activity_reply(window))),
                 None => diag::warn!("{from}: {GUI_ACTIVITY} needs a window id"),

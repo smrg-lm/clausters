@@ -400,7 +400,8 @@ impl WebApp {
     fn apply_effects(&mut self, event_loop: &ActiveEventLoop, effects: Vec<HostEffect>) {
         for effect in effects {
             match effect {
-                HostEffect::Reply(msg) => self.queue(msg),
+                // a page has the one client
+                HostEffect::Reply(msg) | HostEffect::Send { msg, .. } => self.queue(msg),
                 HostEffect::OpenWindow(id) => {
                     log(&format!("/gui_def {id}: opened from the page"));
                     // A page that fed a `/gui_def` without attaching a canvas

@@ -29,7 +29,7 @@ import { encodeImmediateBundle } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { WsConnection } from "../base/connection.ts";
 import { AppClock } from "../base/appclock.ts";
-import { CaptureError, ReplyTimeout } from "../errors.ts";
+import { CaptureError, CommandError, ReplyTimeout } from "../errors.ts";
 import { formatNumber } from "../defs/info.ts";
 import { formatFixed } from "../base/format.ts";
 import { toJson, view, View } from "./guidef.ts";
@@ -212,7 +212,7 @@ interface Pending {
     match: (msg: OscMessage) => boolean;
     resolve: (msg: OscMessage) => void;
     reject: (error: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
+    timer: ReturnType<typeof setTimeout> | undefined;
 }
 
 /**
@@ -345,6 +345,8 @@ export class GuiHost {
     private appClock: AppClock | null = null;
     private readonly handlers = new Set<(msg: OscMessage) => void>();
     private readonly pending = new Set<Pending>();
+    /** The seq the next application call is answered by. */
+    private appSeq = 0;
     private readonly listener: (packet: Uint8Array) => void;
     /**
      * The page surface this host draws on, when it is an in-page one -- where a
@@ -1036,6 +1038,67 @@ export class GuiHost {
      * scheduler.
      */
     /**
+     * `/gui_app_open`: **open an application this host owns**, and answer
+     * the window it opened in, the handle {@link GuiHost.callApp} names.
+     *
+     * `app` names which (`"audio"`, the audio editor) and `options` how it
+     * opens (`{ path, title }`). The window is the host's: its gestures are
+     * answered by the application, in the host's process, and reach no
+     * script; the script is told `/gui_closed` when it goes.
+     *
+     * Rejects with the error the host answered with (a `RangeError` for
+     * options it cannot take), and with `ReplyTimeout` past `timeout`.
+     */
+    async openApp(app: string, options: Record<string, unknown> = {}, timeout = 5.0): Promise<number> {
+        const answer = await this.app("/gui_app_open", [app, JSON.stringify(options)], timeout);
+        return Number((answer as { window: number }).window);
+    }
+
+    /**
+     * `/gui_app_call`: **one call to the application open in window `id`**
+     * (an id or a handle), and its answer.
+     *
+     * `{ member: { verb, ... } }` asks its editor something, or sets
+     * something on it; `{ do: { verb, ... } }` is one of its actions,
+     * answered when it ends, renders and all, so a save of hours waits for
+     * the file to be whole; `{ query: name }` reads its state.
+     *
+     * Rejects with what the application raised: a `RangeError` for a request
+     * it cannot take, a `CommandError` for an operation it refused, an
+     * `Error` for a state it is not in any more (its window closed).
+     * `timeout` bounds the wait, which has no limit by default, since an
+     * action's render takes as long as the take is.
+     */
+    async callApp(id: number | { id: number }, call: Record<string, unknown>,
+        timeout: number | null = null): Promise<unknown> {
+        const window = typeof id === "number" ? id : id.id;
+        return this.app("/gui_app_call", [["i", window], JSON.stringify(call)], timeout);
+    }
+
+    /** One request of the application door, and the value it answered. */
+    private async app(addr: string, args: MsgArg[], timeout: number | null): Promise<unknown> {
+        const seq = ++this.appSeq;
+        const reply = this.awaitReply(
+            (msg) => msg.addr === "/gui_app_reply" && Number(msg.args[0]) === seq,
+            timeout,
+            `/gui_app_reply ${seq}`,
+        );
+        this.send(addr, ["i", seq], ...args);
+        const answer = JSON.parse(String((await reply).args[1])) as {
+            ok?: unknown; error?: { type?: string; message?: string };
+        };
+        if (answer.error !== undefined) {
+            const message = String(answer.error.message ?? "");
+            switch (answer.error.type) {
+                case "value": throw new RangeError(message);
+                case "command": throw new CommandError(message);
+                default: throw new Error(message);
+            }
+        }
+        return answer.ok;
+    }
+
+    /**
      * `/gui_clipboard <json>` -- put a clipboard document on the host's
      * clipboard: what an owner copies when the host could not read the span
      * itself (a take drawn from a summary, named by the takes it is made of).
@@ -1504,7 +1567,7 @@ export class GuiHost {
      */
     private awaitReply(
         match: (msg: OscMessage) => boolean,
-        timeout: number,
+        timeout: number | null,
         what: string,
     ): Promise<OscMessage> {
         return new Promise((resolve, reject) => {
@@ -1512,7 +1575,7 @@ export class GuiHost {
                 match,
                 resolve,
                 reject,
-                timer: setTimeout(() => {
+                timer: timeout === null ? undefined : setTimeout(() => {
                     this.pending.delete(entry);
                     reject(new ReplyTimeout(`no ${what} within ${timeout}s`));
                 }, timeout * 1000),

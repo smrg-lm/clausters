@@ -13,6 +13,7 @@ import pytest
 
 from clausters.base import OscTcpInterface, OscUdpInterface
 from clausters.defs import control as _control
+from clausters.errors import CommandError
 from clausters.gui import GuiHost
 
 
@@ -393,6 +394,39 @@ def test_profile_is_what_moved_between_two_readings():
     report = format_window_profile(profile)
     assert "2 whole" in report and "build 1.00" in report
     assert "10 widgets placed per whole frame" in report
+
+
+def test_open_app_answers_the_window_and_call_app_its_answer():
+    """``/gui_app_open`` answers the window an application opened in, and a
+    ``/gui_app_call`` the value it answered, matched by seq: a stale answer
+    to an earlier seq and an event on the way are not taken for it."""
+    import json
+
+    host = GuiHost(interface=_Answering({
+        "/gui_app_open": [("/gui_app_reply", [1, json.dumps({"ok": {"window": 7}})])],
+        "/gui_app_call": [("/gui_event", [12, 3, 0, "value", 0.5]),
+                          ("/gui_app_reply", [1, json.dumps({"ok": "stale"})]),
+                          ("/gui_app_reply", [2, json.dumps({"ok": {"frames": 24000}})])],
+    }))
+    seen = []
+    host.subscribe(lambda addr, args: seen.append(addr))
+    assert host.open_app("audio", {"path": "take.wav"}) == 7
+    assert host._osc.sent[0] == ("/gui_app_open", 1, "audio", '{"path": "take.wav"}')
+    assert host.call_app(7, {"member": {"verb": "file"}}) == {"frames": 24000}
+    assert host._osc.sent[1] == ("/gui_app_call", 2, 7, '{"member": {"verb": "file"}}')
+    assert seen == ["/gui_event"]
+
+
+@pytest.mark.parametrize("kind, raised", [("value", ValueError),
+                                          ("command", CommandError),
+                                          ("runtime", RuntimeError)])
+def test_call_app_raises_what_the_application_raised(kind, raised):
+    import json
+
+    answer = json.dumps({"error": {"type": kind, "message": "no"}})
+    host = GuiHost(interface=_Answering({"/gui_app_call": [("/gui_app_reply", [1, answer])]}))
+    with pytest.raises(raised, match="no"):
+        host.call_app(7, {"query": "transport"})
 
 
 def test_capture_raises_the_reason_the_host_gives():

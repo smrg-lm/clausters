@@ -122,6 +122,7 @@ fn handle(
     for effect in host.handle_packet(packet, from) {
         match effect {
             HostEffect::Reply(msg) => send_reply(socket, tcp, ws, from, msg),
+            HostEffect::Send { to, msg } => send_reply(socket, tcp, ws, to, msg),
             HostEffect::OpenWindow(id) => {
                 diag::info!("gui_def {id}: window requested (headless front: not opening a window)")
             }

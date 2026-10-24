@@ -29,7 +29,7 @@ from ..log import log as _package_log
 from .guidef import to_json, view as _view
 from .handle import WindowHandle
 from .ids import GuiIdAllocator
-from ..errors import CaptureError, ReplyTimeout
+from ..errors import CaptureError, CommandError, ReplyTimeout
 
 #: What this client sent the GUI host and what came back (`clausters.log`).
 #: Silent unless asked.
@@ -176,6 +176,8 @@ class GuiHost:
         #: event: it belongs to whoever asked, and dispatching it would both
         #: lose it and hand a query's answer to a widget callback.
         self._replies: "queue.Queue" = queue.Queue()
+        #: The seq the next application call is answered by.
+        self._app_seq = 0
         #: id -> event handler (a `WidgetHandle.on_event`) and window id ->
         #: closed handler (a `WindowHandle.on_closed`), dispatched by `pump`.
         #: The stamp of the last ``/gui_event`` seen -- what `ack` answers. The
@@ -789,17 +791,17 @@ class GuiHost:
             return {}
         return _difference(first, second, time.monotonic() - started)
 
-    def _answer(self, want: str, timeout: float):
+    def _answer(self, want: str, timeout: "float | None"):
         """The next ``want`` reply as ``(addr, args)``, delivering every event
         that arrives before it; `clausters.errors.ReplyTimeout` past
-        ``timeout``.
+        ``timeout``, and no limit with ``None``.
 
         With the loop running the replies come through its slot and the events
         are already being delivered; without it the socket is read here, and
         the events met on the way are delivered as the loop would."""
-        deadline = time.monotonic() + timeout
+        deadline = None if timeout is None else time.monotonic() + timeout
         while True:
-            left = deadline - time.monotonic()
+            left = _WAIT_STEP if deadline is None else deadline - time.monotonic()
             if left <= 0:
                 raise ReplyTimeout(f"no {want} within {timeout}s")
             if self.looping:
@@ -816,6 +818,63 @@ class GuiHost:
                 return addr, args
             if addr not in _HostSource.REPLIES:
                 self.deliver(addr, args)
+
+    def open_app(self, app: str, options: "dict | None" = None,
+                 timeout: float = 5.0) -> int:
+        """``/gui_app_open``: **open an application this host owns**, and
+        answer the window it opened in, the handle `call_app` names.
+
+        ``app`` names which (``"audio"``, the audio editor) and ``options`` how
+        it opens (``{"path": ..., "title": ...}``). The window is the host's:
+        its gestures are answered by the application, in the host's process,
+        and reach no script; the script is told ``/gui_closed`` when it goes.
+
+        Raises the error the host answered with (`ValueError` for options it
+        cannot take), and `clausters.errors.ReplyTimeout` past ``timeout``.
+        """
+        answer = self._app_request("/gui_app_open", str(app), json.dumps(dict(options or {})),
+                           timeout=timeout)
+        return int(answer["window"])
+
+    def call_app(self, id, call: dict, timeout: "float | None" = None):
+        """``/gui_app_call``: **one call to the application open in window
+        ``id``** (an id or a handle), and its answer.
+
+        ``{"member": {"verb": ...}}`` asks its editor something, or sets
+        something on it; ``{"do": {"verb": ...}}`` is one of its actions,
+        answered when it ends, renders and all, so a save of hours waits for
+        the file to be whole; ``{"query": name}`` reads its state.
+
+        Raises what the application raised: `ValueError` for a request it
+        cannot take, `clausters.errors.CommandError` for an operation it
+        refused, `RuntimeError` for a state it is not in any more (its window
+        closed). ``timeout`` bounds the wait, which has no limit by default,
+        since an action's render takes as long as the take is.
+        """
+        return self._app_request("/gui_app_call", int(getattr(id, "id", id)), json.dumps(dict(call)),
+                         timeout=timeout)
+
+    def _app_request(self, addr: str, *args, timeout: "float | None"):
+        """One request of the application door, and the value it answered."""
+        if self._loop is not None and self._loop.is_current():
+            raise RuntimeError(
+                f"{addr} from the event loop's own thread would wait for what "
+                "this thread is the one to deliver; call it from the script")
+        self._app_seq += 1
+        seq = self._app_seq
+        self._send(addr, seq, *args)
+        while True:
+            _, reply = self._answer("/gui_app_reply", timeout)
+            # an answer to a request that timed out before it is nobody's
+            if int(reply[0]) == seq:
+                break
+        answer = json.loads(str(reply[1]))
+        error = answer.get("error")
+        if error is not None:
+            raised = {"value": ValueError, "command": CommandError}.get(
+                error.get("type"), RuntimeError)
+            raise raised(error.get("message"))
+        return answer.get("ok")
 
     def clipboard(self, doc: str):
         """``/gui_clipboard <json>`` -- put a clipboard document on the host's
@@ -1404,7 +1463,7 @@ class _HostSource:
 
     #: The addresses that answer a question somebody asked, rather than
     #: reporting something that happened.
-    REPLIES = ("/gui_info", "/gui_captured", "/gui_activity.reply")
+    REPLIES = ("/gui_info", "/gui_captured", "/gui_activity.reply", "/gui_app_reply")
 
     def __init__(self, host):
         self.host = host
