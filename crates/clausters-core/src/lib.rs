@@ -156,3 +156,6 @@ pub mod widgetids;
 pub mod window;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod workspace;
+#[cfg(target_arch = "wasm32")]
+#[path = "workspace_page.rs"]
+pub mod workspace;

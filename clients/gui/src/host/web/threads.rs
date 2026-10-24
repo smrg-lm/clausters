@@ -224,3 +224,83 @@ pub fn apps_files_failed() -> String {
         .map(|f| f.clone())
         .unwrap_or_default()
 }
+
+/// What the suite's check of a working folder did: 0 while it runs, 1 while
+/// it holds its folder, 3 once it let it go, 2 when a step failed.
+static FOLDER_CHECKED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+static FOLDER: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+thread_local! {
+    /// The thread the folder check spawned, to wake.
+    static FOLDER_CHECK: std::cell::RefCell<Option<clausters_core::threads::Spawned>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **The suite's check of a page's working folder**: a thread finds a folder
+/// left by no tab, makes a working folder (`clausters_core::workspace`),
+/// which sweeps the left one and holds its own by a Web Lock, and holds it
+/// until [`apps_folder_check_wake`] wakes it to let it go.
+#[wasm_bindgen]
+pub fn apps_folder_check() -> Result<(), JsError> {
+    use std::sync::atomic::Ordering;
+    FOLDER_CHECKED.store(0, Ordering::Release);
+    let spawned = clausters_core::threads::spawn("folder-check", || {
+        let held = (|| -> Result<clausters_core::workspace::Workspace, String> {
+            clausters_core::files::create_dir_all("clausters/work/check-left")
+                .map_err(|e| format!("a folder left behind: {e}"))?;
+            let held = clausters_core::workspace::Workspace::create("check")
+                .map_err(|e| format!("the working folder: {e}"))?;
+            if clausters_core::files::exists("clausters/work/check-left") {
+                return Err("the folder no tab holds was not swept".into());
+            }
+            Ok(held)
+        })();
+        match held {
+            Ok(held) => {
+                if let Ok(mut folder) = FOLDER.lock() {
+                    *folder = held.path().to_string_lossy().into_owned();
+                }
+                FOLDER_CHECKED.store(1, Ordering::Release);
+                while FOLDER_CHECKED.load(Ordering::Acquire) == 1 {
+                    std::thread::park();
+                }
+                drop(held);
+                FOLDER_CHECKED.store(3, Ordering::Release);
+            }
+            Err(why) => {
+                if let Ok(mut folder) = FOLDER.lock() {
+                    *folder = why;
+                }
+                FOLDER_CHECKED.store(2, Ordering::Release);
+            }
+        }
+    })
+    .map_err(|e| JsError::new(&e.to_string()))?;
+    FOLDER_CHECK.with(|c| *c.borrow_mut() = Some(spawned));
+    Ok(())
+}
+
+/// Wakes the folder check's thread to let its folder go.
+#[wasm_bindgen]
+pub fn apps_folder_check_wake() {
+    use std::sync::atomic::Ordering;
+    let _ = FOLDER_CHECKED.compare_exchange(1, 4, Ordering::AcqRel, Ordering::Acquire);
+    FOLDER_CHECK.with(|c| {
+        if let Some(spawned) = c.borrow().as_ref() {
+            spawned.unpark();
+        }
+    });
+}
+
+/// What the folder check did ([`apps_folder_check`]).
+#[wasm_bindgen]
+pub fn apps_folder_checked() -> u32 {
+    FOLDER_CHECKED.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// The folder the check holds, or why it failed.
+#[wasm_bindgen]
+pub fn apps_folder() -> String {
+    FOLDER.try_lock().map(|f| f.clone()).unwrap_or_default()
+}

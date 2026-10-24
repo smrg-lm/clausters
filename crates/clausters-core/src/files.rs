@@ -177,6 +177,13 @@ mod imp {
         CreateDirAll = 12,
         Metadata = 13,
         ReadDir = 14,
+        /// A new folder under `path` named after `path2`, held by a Web Lock
+        /// of the page's; its name comes back in `buf`.
+        HoldNew = 15,
+        /// The Web Lock on the folder at `path` let go of.
+        Release = 16,
+        /// The folders under `path` no tab holds removed; how many.
+        Sweep = 17,
     }
 
     /// **What carries a request to the page's storage and waits for its
@@ -343,6 +350,31 @@ mod imp {
         })
     }
 
+    /// **A new folder under `root`, named after `name`, made and held** by
+    /// a Web Lock of the page's, which the browser lets go of when the tab
+    /// goes however it goes. Answers the folder's path.
+    pub fn hold_new(root: &Path, name: &str) -> io::Result<String> {
+        let mut buf = vec![0u8; 512];
+        let answer = on_path(Op::HoldNew, root, |r| {
+            r.path2 = name.as_ptr() as u32;
+            r.path2_len = name.len() as u32;
+            r.buf = buf.as_mut_ptr() as u32;
+            r.len = buf.len() as u32;
+        })?;
+        let len = (answer.result as usize).min(buf.len());
+        Ok(String::from_utf8_lossy(&buf[..len]).into_owned())
+    }
+
+    /// Lets go of the Web Lock on the folder at `path`.
+    pub fn release(path: &Path) -> io::Result<()> {
+        on_path(Op::Release, path, |_| {}).map(drop)
+    }
+
+    /// Removes every folder under `root` no tab holds; answers how many.
+    pub fn sweep(root: &Path) -> io::Result<usize> {
+        Ok(on_path(Op::Sweep, root, |_| {})?.result as usize)
+    }
+
     /// The entries of a directory, which the file worker writes as lines,
     /// each a name after `d ` or `f `: asked again with room for all of them
     /// when they did not fit.
@@ -374,7 +406,7 @@ mod imp {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use imp::{Bridge, DONE, Op, PENDING, Request, set_bridge};
+pub use imp::{Bridge, DONE, Op, PENDING, Request, hold_new, release, set_bridge, sweep};
 
 /// **An open file**, read, written and sought as a `std::fs::File` is.
 #[derive(Debug)]

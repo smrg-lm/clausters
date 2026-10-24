@@ -57,9 +57,32 @@
         if (apps.apps_files_checked() !== 1) throw new Error(`files: ${apps.apps_files_failed()}`);
         log("files: written, sought, read, listed, moved and removed from a thread");
 
+        // **A working folder is held by a Web Lock**: one no tab holds is
+        // swept as the next is made, the new one is held while it lives, and
+        // it goes, with its lock, when it is let go.
+        apps.apps_folder_check();
+        await until(() => apps.apps_folder_checked() !== 0, "the working folder");
+        if (apps.apps_folder_checked() !== 1) throw new Error(`working folder: ${apps.apps_folder()}`);
+        const folder = apps.apps_folder();
+        const leaf = folder.split("/").at(-1);
+        const held = async () => (await navigator.locks.query()).held.map((l) => l.name);
+        if (!(await held()).includes(`clausters-work:${leaf}`)) throw new Error(`${folder} is not held`);
+        apps.apps_folder_check_wake();
+        await until(() => apps.apps_folder_checked() === 3, "the folder to be let go");
+        const gone = async () => {
+          try {
+            let dir = await navigator.storage.getDirectory();
+            for (const part of folder.split("/")) dir = await dir.getDirectoryHandle(part);
+            return false;
+          } catch { return true; }
+        };
+        if (!(await gone())) throw new Error(`${folder} outlived its workspace`);
+        if ((await held()).includes(`clausters-work:${leaf}`)) throw new Error(`${folder} is still held`);
+        log("working folder: one left behind swept, its own held by a Web Lock and gone with it");
+
         verdict("PASS: the applications' host loaded over shared memory, a thread of it " +
-          "ran in a worker, parked and was woken from the main thread, and a thread read and " +
-          "wrote the page's storage");
+          "ran in a worker, parked and was woken from the main thread, a thread read and " +
+          "wrote the page's storage, and a working folder was held by a Web Lock and swept");
         bridge.close?.();
       } catch (error) {
         verdict(`FAIL: ${error?.message ?? error}`);

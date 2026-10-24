@@ -3299,7 +3299,7 @@ over the opened file) carries over.
         with its renders, a header read, a folder made: none of it can wait
         on a page's main thread, and none of it waits on the window
         natively either. The door's open is answered once the file opened.
-      - ⬜ **The working folder in a page**: held by a Web Lock and swept
+      - ✅ **The working folder in a page**: held by a Web Lock and swept
         when no tab holds it, as `src/base/workspace.ts` does now, from the
         application's thread through the file layer.
       - ⬜ **The engine in the worklet**: `AppEngine::open` in a page makes

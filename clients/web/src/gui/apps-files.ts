@@ -39,7 +39,18 @@ const DONE = 1;
 const enumOp = {
     open: 1, create: 2, read: 3, write: 4, len: 5, close: 6, rename: 7, removeFile: 8,
     removeDir: 9, removeDirAll: 10, createDir: 11, createDirAll: 12, metadata: 13, readDir: 14,
+    holdNew: 15, release: 16, sweep: 17,
 } as const;
+
+/**
+ * The prefix of a working folder's Web Lock, before the folder's name: the
+ * one `src/base/workspace.ts` holds a page's folders by, so either sweeps
+ * what the other left.
+ */
+const TAB_LOCK = "clausters-work:";
+
+/** What lets go of each working folder's lock, by its path. */
+const releases = new Map<string, () => void>();
 
 /** The failures a request answers by number, as `files.rs` reads them. */
 const FAILED = -1;
@@ -272,6 +283,55 @@ async function carry(at: number): Promise<number> {
             const cap = view().getUint32(at + LEN, true);
             if (encoded.length <= cap) bytes(view().getUint32(at + BUF, true), encoded.length).set(encoded);
             return encoded.length;
+        }
+        case enumOp.holdNew: {
+            // a folder of this tab's, held by a lock the browser lets go of
+            // however the tab goes
+            const name = text(v.getUint32(at + PATH2, true), v.getUint32(at + PATH2_LEN, true));
+            const leaf = `${name}-${crypto.randomUUID().slice(0, 13)}`;
+            const folder = `${parts(path).join("/")}/${leaf}`;
+            await new Promise<void>((granted) => {
+                void navigator.locks.request(TAB_LOCK + leaf, () => {
+                    granted();
+                    return new Promise<void>((done) => releases.set(folder, done));
+                });
+            });
+            await directory(parts(folder), true);
+            const encoded = new TextEncoder().encode(folder);
+            const cap = view().getUint32(at + LEN, true);
+            bytes(view().getUint32(at + BUF, true), Math.min(encoded.length, cap))
+                .set(encoded.subarray(0, cap));
+            return encoded.length;
+        }
+        case enumOp.release: {
+            const folder = parts(path).join("/");
+            releases.get(folder)?.();
+            releases.delete(folder);
+            return 0;
+        }
+        case enumOp.sweep: {
+            // every folder no tab holds or waits for goes
+            const state = await navigator.locks.query();
+            const held = new Set([...(state.held ?? []), ...(state.pending ?? [])].map((l) => l.name));
+            let dir: FileSystemDirectoryHandle;
+            try {
+                dir = await directory(parts(path), false);
+            } catch {
+                return 0;
+            }
+            let gone = 0;
+            const listing = (dir as unknown as {
+                entries(): AsyncIterable<[string, FileSystemHandle]>;
+            }).entries();
+            const names: string[] = [];
+            for await (const [name, handle] of listing) {
+                if (handle.kind === "directory" && !held.has(TAB_LOCK + name)) names.push(name);
+            }
+            for (const name of names) {
+                await dir.removeEntry(name, { recursive: true });
+                gone += 1;
+            }
+            return gone;
         }
         default:
             throw new Refused(FAILED, `no file call ${op}`);
