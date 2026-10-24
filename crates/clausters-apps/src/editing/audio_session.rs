@@ -1024,6 +1024,24 @@ impl Session {
                 },
                 Task::ShowTransport,
             ],
+            // **A placed cursor moves the music where it plays**: the file in
+            // focus rolling goes on from the cursor, its pass ending as the
+            // switch says from there; stopped, the transport stands on it.
+            Rolled::Cue(frame) if rolling && self.focused(editing, member) => {
+                let play = member_call(editing, member, json!({"verb": "play"}));
+                let mut tasks = vec![Task::Playback {
+                    verb: "locate",
+                    args: json!({"frame": frame}),
+                }];
+                if play["pass"].is_object() {
+                    tasks.push(Task::Playback {
+                        verb: "pass",
+                        args: json!({"pass": play["pass"]}),
+                    });
+                }
+                tasks.push(Task::ShowTransport);
+                tasks
+            }
             Rolled::Cue(frame) => vec![
                 Task::Playback {
                     verb: "cue",

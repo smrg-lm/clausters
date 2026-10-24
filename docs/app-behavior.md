@@ -188,10 +188,14 @@ code that keeps it lives.
   steps only the focused file. The independent file list is on the left and
   can be hidden; hiding it changes neither focus nor playback.
 - **A paste lands at the position cursor, and a cut or a paste leaves
-  nothing selected.** The cursor is the line a click puts down; a selection
-  swept elsewhere does not move where a paste goes. After a cut or a paste
-  the frames a selection named have moved, so the selection is cleared and
-  the cursor stands where the edit landed.
+  nothing selected.** The cursor is the line a click puts down, or the start
+  of a selection once it is let go. After a cut or a paste the frames a
+  selection named have moved, so the selection is cleared and the cursor
+  stands where the edit landed.
+- **The cursor moves the music.** A click placing the position cursor, or a
+  selection let go (whose start the cursor goes to), moves the play cursor
+  there too: a stopped transport stands on it, and a file playing goes on
+  from it, its pass ending as the loop switch says from there.
 - **A copy of a take is made on the server.** Copy and cut in the audio
   editor copy the span into a server buffer the clipboard names, whatever
   its length; a paste copies it again on the server. No sample crosses the

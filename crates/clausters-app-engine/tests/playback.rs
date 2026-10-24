@@ -458,6 +458,29 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
     for (i, &s) in heard.iter().enumerate().skip(from) {
         assert_eq!(s, values[i - start], "sample {i}");
     }
+    // A cursor placed while it plays moves the music there.
+    let v = version(&mut app, &mut editing);
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "event", "addr": "/gui_event", "window": true,
+            "args": [12, 9, v, "locate", 18_000.0]}),
+    );
+    let reading = app_engine.lock().unwrap().reading();
+    let transport = app.call(
+        &mut editing,
+        &json!({"verb": "audio", "member": member, "query": "transport"}),
+    )["transport"]
+        .as_u64()
+        .unwrap() as usize;
+    blocks(&mut engine, &app_engine, 1);
+    let at = reading.transport_position(transport) as usize;
+    assert!(
+        (18_000..18_000 + 2 * BLOCK_SIZE).contains(&at),
+        "located while it plays: {at}"
+    );
     // The first half deleted: the take is the second half from now on.
     act(
         &mut app,

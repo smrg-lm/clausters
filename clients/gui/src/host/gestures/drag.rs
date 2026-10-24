@@ -545,8 +545,8 @@ impl Gestures {
                 // is [`Gestures::release`]'s: what this arm answers for is the
                 // *span*, which is the transport's loop and not its position.
                 transport_follows_selection(host, def_id, id, start, len, true);
-                // Selecting a span does not move the position cursor. A
-                // paste uses the last click, even after a sweep elsewhere.
+                // The owner hears the span let go (the trailing `true`): an
+                // audio editor puts its position cursor at the span's start.
                 if len > 0.0 {
                     let mut args = vec![
                         OscType::String("selection".into()),

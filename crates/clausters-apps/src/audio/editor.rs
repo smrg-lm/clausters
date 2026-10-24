@@ -2238,9 +2238,16 @@ impl AudioEditor {
                     (len > 0.0).then(|| (from.round() as u64, (from + len).round() as u64));
                 let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 out.selection = Some(json!({ "start": at(0), "len": at(1) }));
-                // The release confirms the loop span without moving the
-                // independent position cursor used by paste and stop.
-                out.follow = self.follow(values.last().and_then(Value::as_bool).unwrap_or(false));
+                let released = values.last().and_then(Value::as_bool).unwrap_or(false);
+                // **A selection let go puts the cursor at its start**, and the
+                // music with it, whether it plays or not; a loop in progress
+                // repeats over the new span.
+                if released && let Some((start, _)) = self.file.presentation.selection {
+                    self.file.presentation.cursor = Some(start);
+                    out.cue = Some(start);
+                    out.locate = Some(self.secs_at(start as f64));
+                }
+                out.follow = self.follow(released);
             }
             _ => {}
         }

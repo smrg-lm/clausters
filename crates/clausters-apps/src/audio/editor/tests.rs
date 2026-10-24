@@ -730,8 +730,8 @@ fn a_redrawn_selection_is_the_span_a_loop_in_progress_follows() {
     assert!(clicked.get("follow").is_none(), "a click places no head");
 }
 
-/// A release names the exact selected frames even far into a take, while
-/// preserving an independently placed position cursor.
+/// A release names the exact selected frames even far into a take, and puts
+/// the position cursor at the selection's first frame.
 #[test]
 fn a_selection_far_into_a_take_is_matched_to_the_frame() {
     // An hour at 48 kHz, and an odd frame in it.
@@ -748,7 +748,8 @@ fn a_selection_far_into_a_take_is_matched_to_the_frame() {
     assert!(beside.get("follow").is_none(), "a frame away is elsewhere");
     let let_go = event(&mut editor, json!([12, 3, 0, "selection", far, 20, true]));
     assert_eq!(let_go["follow"]["place"], json!(true));
-    assert_eq!(editor.file.presentation.cursor, Some(far + 1));
+    assert_eq!(editor.file.presentation.cursor, Some(far));
+    assert_eq!(let_go["cue"], json!(far), "the music goes there too");
 }
 
 /// **The level meter stands beside the take** once a playback says where it

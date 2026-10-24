@@ -529,7 +529,9 @@ test("placing the cursor cues a stopped transport there", async () => {
     take.server.playing = true;
     editor.apply("/gui_event", [wid, 2, 0, "locate", 60]);
     await settle();
-    assert.ok(!take.server.addrs().includes("/transport_locateSample"));
+    // rolling, the music goes on from the cursor
+    const moved = take.server.sent.filter(([addr]) => addr === "/transport_locateSample");
+    assert.deepEqual(moved[moved.length - 1][1].map(Number), [1, 60]);
 });
 
 test("a loop follows the selection redrawn while it plays", async () => {
@@ -554,14 +556,15 @@ test("a loop follows the selection redrawn while it plays", async () => {
     await settle();
     assert.deepEqual(sent("/transport_locateSample").at(-1), [1, 40], "let go: into the span");
 
-    // Not looping, the pass keeps the end it was played with.
+    // Not looping, a release moves the music to the span's start too.
     editor.apply("/gui_event", [window, 6, 0, "loop", 0]);
     await settle();
     server.sent = [];
     editor.apply("/gui_event", [wid, 7, 0, "selection", 5, 10]);
     editor.apply("/gui_event", [wid, 8, 0, "selection", 5, 10, true]);
     await settle();
-    assert.deepEqual(server.addrs().filter((addr) => addr.startsWith("/transport_")), []);
+    assert.deepEqual(sent("/transport_locateSample").at(-1), [1, 5], "let go: the music goes there");
+    assert.deepEqual(sent("/transport_loop").at(-1), [1], "and the pass loops no more than it did");
 });
 
 test("the take's transport plays its span and keeps the switch", async () => {

@@ -529,9 +529,11 @@ impl<M: Medium> AudioEditorPlayback<M> {
         self.focus.filter(|_| self.rolling)
     }
 
-    /// **The position cursor moved to `frame`**: a stopped transport is
-    /// located there, so the play cursor stands on it, and a rolling one is
-    /// left alone -- moving the mark mid-pass must not move the music.
+    /// **The position cursor moved to `frame`** in a file that is not the
+    /// one playing: a stopped transport is located there, so the play cursor
+    /// stands on it, and a rolling one is left alone, as it plays another
+    /// file. A cursor placed in the file that plays moves the music
+    /// ([`Self::locate`]), which the caller decides.
     pub fn cue(&mut self, frame: u64) -> Vec<Step> {
         if self.rolling {
             return Vec::new();
