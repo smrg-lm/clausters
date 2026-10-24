@@ -190,7 +190,8 @@ pub struct PartSpec {
     pub src_index: i32,
     pub src_start: usize,
     /// How many frames this part contributes **to the join** -- the source
-    /// span it reads is this times the ratio the rates make ([`Part::rate`]).
+    /// span it reads is this times the ratio the rates make (the span's
+    /// `PartSpan::rate`).
     pub frames: usize,
     pub fade_in: usize,
     pub fade_out: usize,
