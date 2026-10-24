@@ -536,6 +536,39 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
             "sample {i} of the reversed span"
         );
     }
+    // An undo puts the delete's list back with nothing to carry out, and
+    // the take plays from its first frame again.
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "stop"}),
+    );
+    blocks(&mut engine, &app_engine, 20);
+    for seq in [3, 4] {
+        let v = version(&mut app, &mut editing);
+        act(
+            &mut app,
+            &mut editing,
+            &mut engine,
+            member,
+            json!({"verb": "event", "addr": "/gui_event", "window": true,
+                "args": [900, seq, v, "undo"]}),
+        );
+    }
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "play", "at": 0.0}),
+    );
+    let heard = blocks(&mut engine, &app_engine, 150);
+    let (start, from) = rolled(&heard);
+    for (i, &s) in heard.iter().enumerate().skip(from) {
+        assert_eq!(s, values[i - start], "sample {i} after the undos");
+    }
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_dir_all(&workspace);
 }

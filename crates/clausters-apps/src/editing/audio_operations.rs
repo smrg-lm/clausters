@@ -405,11 +405,24 @@ impl Editing {
             Ok(ticket) => ticket,
             Err(reason) => return Some(self.refused_audio_walk(reason)),
         };
-        let (batch, work) = self
-            .audio_runtime
-            .operations
-            .next(ticket)
-            .expect("audio restore has a stitch batch");
+        // **A step with nothing to carry out lands at once**: over an engine
+        // the application holds, a list put back is read by the engine and
+        // stitched by nobody, so the walk has no batch to hand out.
+        let Some((batch, work)) = self.audio_runtime.operations.next(ticket) else {
+            let finished = self.audio_runtime.operations.finish_ready(ticket)?;
+            let walk = self.audio_runtime.take_walk(finished.ticket)?;
+            return Some(match self.settle_audio_walk(finished, walk) {
+                Ok((mut stepped, _, freed)) => {
+                    stepped.freed.extend(freed);
+                    stepped
+                }
+                Err(refused) => self.refused_audio_walk(
+                    refused["reason"]
+                        .as_str()
+                        .unwrap_or("the history step was refused"),
+                ),
+            });
+        };
         Some(Stepped {
             stepped: true,
             reason: None,
@@ -444,19 +457,35 @@ impl Editing {
         finished: crate::application::operations::Finished<audio::operations::Commit>,
         walk: PendingWalk<audio::operations::Commit>,
     ) -> Value {
+        match self.settle_audio_walk(finished, walk) {
+            Ok((stepped, echo, freed)) => {
+                json!({"complete":true,"committed":stepped.stepped,"stepped":stepped,"echo":echo,"recoveries":[],"freed":freed,"version":self.version})
+            }
+            Err(refused) => refused,
+        }
+    }
+
+    /// A walk whose batches have all landed, settled: what it stepped, the
+    /// answer to the gesture that asked, and what it let go of -- or the
+    /// refusal, as the client is answered it.
+    fn settle_audio_walk(
+        &mut self,
+        finished: crate::application::operations::Finished<audio::operations::Commit>,
+        walk: PendingWalk<audio::operations::Commit>,
+    ) -> Result<(Stepped, Value, Vec<Freed>), Value> {
         let decision = crate::application::walks::finish(self, finished, walk);
         let (ticket, receipt) = (decision.ticket, decision.receipt);
         let mut stepped = match decision.result {
             Ok(stepped) => stepped,
             Err(refused) => {
-                return self.audio_runtime.refuse_walk(
+                return Err(self.audio_runtime.refuse_walk(
                     ticket,
                     decision.additional_targets,
                     receipt,
                     refused,
                     &self.services.resources,
                     self.version,
-                );
+                ));
             }
         };
         for effect in &mut stepped.effects {
@@ -473,7 +502,7 @@ impl Editing {
         );
         let mut freed = std::mem::take(&mut stepped.freed);
         freed.extend(self.release());
-        json!({"complete":true,"committed":stepped.stepped,"stepped":stepped,"echo":echo,"recoveries":[],"freed":freed,"version":self.version})
+        Ok((stepped, json!(echo), freed))
     }
 
     pub(super) fn audio_operation_json(&mut self, request: &Value) -> Value {
