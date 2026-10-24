@@ -8799,3 +8799,42 @@ module of its own.
   time type in `clausters-core` that converts to a pixel only relative to
   a view's origin, and to the wire only as 64 bits, makes the mistake
   unwritable.
+
+  **Decided with the user (2026-10-24): the type counts NTP ticks.** A
+  `Time` is an `i64` of 2^-32 s, the fraction of an OSC timetag: 233 ps
+  and 68 years either way of an axis' origin. A time on an axis plus the
+  timetag of the origin is a timetag, with nothing lost, and takes at two
+  rates share one axis without a scale. Samples stay whole frames, a
+  sample index being a different quantity: a time becomes a frame only
+  where samples are read, with the rate of what is read. A beat axis is
+  musical time and stays `f64` beats until a tempo map turns it into
+  `Time`. The record is `docs/decisions.md`, "Time is NTP ticks on every
+  axis".
+
+  The pass, each step landing green and committed:
+
+  - ✅ **T1, the type.** `clausters_core::time::Time`: ticks, seconds,
+    frames at a rate (rounded, floored, ceiled, exact in integers for an
+    integral rate), a timetag since an origin and back, sums and
+    differences in integers, and a pixel only as a difference from an
+    origin over ticks per pixel. Rust only: the host is its first reader,
+    and the bindings land with T3, where both clients first build a time.
+  - ⬜ **T2, the host's time axis.** A timeline group's window, selection,
+    cursor, playhead, sweep anchor and loop, the editor props and the head
+    clocks hold `Time`; the trace, the ruler, the hit tests and the fetch
+    convert at their edge (a pixel from the window's origin, a frame at the
+    take's rate). The wire is unchanged at this step and is converted where
+    it is read and written, with the group's rate.
+  - ⬜ **T3, the wire.** Every time the GUI protocol carries, events
+    (`"selection"`, `"view"`, `"locate"`, `"cut"` and the rest) and props
+    (`sel_start`, `cursor`, `playhead`, `view_start` and the rest), becomes
+    an `int64` of ticks; the type is bound through the C ABI, the wasm
+    door, `ctypes` and TypeScript (`docs/bindings.md`); both clients'
+    builders and handlers, the
+    applications' presentations (cursor, selection and view of the audio
+    editor and the multitrack), `docs/gui-protocol.md` and the parity
+    vectors move with it.
+  - ⬜ **T4, what is left.** A roll's note times and the symbolic score's
+    playhead, the last two that cross as seconds or milliseconds.
+    `docs/app-behavior.md` gains the rule: a time is converted to a pixel
+    only as a difference from the view's origin.

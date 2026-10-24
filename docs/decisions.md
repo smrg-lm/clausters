@@ -10961,3 +10961,35 @@ edit costs the edit, nothing crosses a process boundary per edit or per
 block, and the server's surface stops growing with the applications' needs.
 The plan is `crates/clausters-apps/PLAN.md`, "The second turn: an editing
 application holds its engine".
+
+## Time is NTP ticks on every axis (2026-10-24)
+
+A take of hours showed three conversions to 32 bits in one day: a frame cast
+to `i32` on the fetch wire, the view event's numbers and the spacing of the
+sample dots in `f32`. Each one compiled, passed every test and was found only
+by eye, on a take long enough to need the bits. Times in the host and the
+applications were bare `f64`, `usize` and `u64`, so nothing told a reader
+which of them was a time, and nothing stopped a narrowing cast.
+
+So a time is a type, `clausters_core::time::Time`, and its unit was the
+user's choice: **an `i64` of 2^-32 seconds**, the fraction of an OSC timetag.
+The alternative was a frame count with a fixed-point fraction, which keeps the
+axis in samples and changes less. Ticks were preferred for what they relate:
+
+- **A time on an axis and a timetag are the same arithmetic.** The timetag of
+  an axis' origin plus a time is a timetag, exactly, which a time in `f64`
+  seconds is not: at the NTP era's four billion seconds an `f64` keeps half a
+  microsecond, and the timetag keeps 233 ps.
+- **Takes at two rates share one axis.** A position in ticks is the same
+  instant whatever the rate of what is drawn at it, where a sample axis needs
+  a scale for every take recorded at another rate.
+- **Integers add without drift.** A sum or a difference of times is exact,
+  and a pixel is computed only from a difference, the time less the view's
+  origin, which is small whatever the take's length.
+
+Signed, the range is 68 years either way of the axis' origin, which bounds a
+session and not an instant: a wall-clock instant stays a timetag. A sample
+index is not a time and stays a whole frame, converted where samples are read
+with the rate of what is read. A beat is musical time and stays a beat until a
+tempo map turns it into a time. The pass is `clients/gui/PLAN.md`, "Time is a
+type of its own, 64 bits wide".

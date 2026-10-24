@@ -31,6 +31,9 @@
 //!   editor query and a clock adopts as its single segment.
 //! - [`tempoclock`] -- beat/second/sample arithmetic, quantization and a
 //!   beat-ordered event queue: the timing math a `TempoClock` is built on.
+//! - [`time`] -- a time on an axis as a type: an `i64` of NTP ticks (2^-32
+//!   s), which becomes a pixel only as a difference from an origin, a frame
+//!   only at a rate and a timetag only from its origin's.
 //! - [`transport_pass`] -- the pass a transport is on (rolling, its loop, its
 //!   end mark), published beside its position, and where a position carried
 //!   on between two readings stands on it.
@@ -141,6 +144,7 @@ pub mod spectrum;
 pub mod stft;
 pub mod tempoclock;
 pub mod tempomap;
+pub mod time;
 pub mod transport_pass;
 pub mod warp;
 pub mod widgetids;
