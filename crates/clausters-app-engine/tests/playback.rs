@@ -351,8 +351,8 @@ fn the_application_reads_its_take_into_the_engine() {
 }
 
 /// The answer to an await of the coordinator, as an application that holds
-/// its engine gives it: nothing is left for it to carry out on a server, and
-/// a file is described from its header.
+/// its engine gives it: its renders and moves carried out in the process, and
+/// a file described from its header.
 fn reply(wait: &serde_json::Value) -> serde_json::Value {
     assert!(
         !wait.to_string().contains("/buffer_stitch"),
@@ -364,6 +364,13 @@ fn reply(wait: &serde_json::Value) -> serde_json::Value {
             let layout = clausters_core::pcm::Layout::open(path).expect("the file reads");
             serde_json::json!({"frames": layout.frames, "channels": layout.channels,
                 "rate": layout.sample_rate, "display": 0, "path": path, "untitled": false})
+        }
+        "steps" | "batch" => {
+            let steps = clausters_editing::apply::steps_from_json(&wait["steps"]);
+            match clausters_app_engine::steps::carry(&steps, |_, _, _| {}) {
+                Ok(()) => serde_json::json!({}),
+                Err(failed) => serde_json::json!({ "failed": failed }),
+            }
         }
         _ => serde_json::json!({}),
     }
@@ -454,6 +461,14 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
         &mut ids,
     );
     assert!(opened["result"]["transport"].is_i64(), "{opened}");
+    // the file opened with no peaks has them measured, by the application
+    let measured = std::fs::read_dir(&workspace)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "peaks"))
+        .filter_map(|e| e.metadata().ok())
+        .any(|m| m.len() > 0);
+    assert!(measured, "the peaks were measured into the working folder");
     act(
         &mut editing,
         member,
