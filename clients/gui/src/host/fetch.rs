@@ -696,13 +696,19 @@ impl BufferFetches {
         if bucket == 0 || frames == 0 {
             return None;
         }
-        if self
-            .peaks
-            .iter()
-            .any(|a| a.bufnum == bufnum && a.bucket == bucket && a.purpose == PeaksFor::Summary)
-        {
+        if self.peaks.iter().any(|a| {
+            a.bufnum == bufnum
+                && a.bucket == bucket
+                && a.end == frames
+                && a.purpose == PeaksFor::Summary
+        }) {
             return None; // that level of that take is already on its way
         }
+        // a walk over the take at another length is over the take before an
+        // edit, and would end at its length
+        self.peaks.retain(|a| {
+            !(a.bufnum == bufnum && a.bucket == bucket && a.purpose == PeaksFor::Summary)
+        });
         self.start_peaks(PeaksAsk {
             bufnum,
             bucket,
@@ -986,6 +992,17 @@ impl BufferFetches {
     /// does not try to fill it. An orphaned download still completes (and is
     /// discarded with an empty `wants`), which keeps the chunk conversation
     /// stateless for the server.
+    /// **Everything on its way about `bufnum`, dropped**: the samples it
+    /// changed under, which a view asks for again once it is told to read
+    /// them again. The views waiting for its shape keep waiting, for the
+    /// shape it has now.
+    pub(crate) fn forget(&mut self, bufnum: i32) {
+        self.fetches.remove(&bufnum);
+        self.queued.remove(&bufnum);
+        self.peaks.retain(|a| a.bufnum != bufnum);
+        self.columns.forget(bufnum);
+    }
+
     pub(crate) fn drop_def(&mut self, def_id: i32) {
         for wants in self.wants.values_mut() {
             wants.retain(|w| w.def_id != def_id);
@@ -1771,6 +1788,35 @@ mod tests {
             fetches.on_peaks(7, 0, 64, &grid(128, 2)).0.is_none(),
             "closed with its window"
         );
+    }
+
+    /// **A summary walk over a take an edit changed is not the take's**: the
+    /// walk at the old length is replaced by one at the new length rather
+    /// than standing in for it, and a list that changed drops what was on
+    /// its way about it -- where it walked on to the old length, the rest
+    /// of the take was drawn as silence.
+    #[test]
+    fn a_walk_over_the_take_before_an_edit_is_not_the_takes() {
+        let mut fetches = BufferFetches::default();
+        assert!(
+            fetches
+                .want_summary(-2, 1024, 1, 100_000, 48_000.0)
+                .is_some()
+        );
+        assert!(
+            fetches
+                .want_summary(-2, 1024, 1, 100_000, 48_000.0)
+                .is_none(),
+            "the same walk is on its way"
+        );
+        let longer = fetches
+            .want_summary(-2, 1024, 1, 150_000, 48_000.0)
+            .expect("the walk over the longer take asks");
+        assert_eq!(longer.args[2], OscType::Int(0), "from its start");
+        assert_eq!(fetches.peaks.len(), 1, "the old walk is gone");
+        assert_eq!(fetches.peaks[0].end, 150_000);
+        fetches.forget(-2);
+        assert!(fetches.peaks.is_empty(), "a list that changed drops it");
     }
 
     /// **A take of hours is asked for by frames past an `int32`**: the

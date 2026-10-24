@@ -95,6 +95,10 @@ pub const DEFAULT_CHUNK: usize = 8192;
 /// while it is heard; stopping it is what makes it editable again.
 pub(crate) const PLAYING: &str = "the file is playing: stop it to edit";
 
+/// **The frames one piece of a reverse reads**, 2^23: about three minutes
+/// at 48 kHz, 64 MiB of stereo float held while it renders.
+const REVERSE_PIECE: u64 = 1 << 23;
+
 /// **Whether `verb` changes what a file holds**: the edits, and the walks
 /// through its history. A copy, a selection, a view and a save do not.
 pub(crate) fn edits_contents(verb: &str) -> bool {
@@ -1705,6 +1709,13 @@ impl AudioEditor {
         }
         if NOT_AN_EDIT.contains(&tag) {
             self.observe(widget, tag, values, out);
+            // a selection let go moved the position cursor to its start, and
+            // the window draws it there with the play cursor
+            let released =
+                tag == "selection" && values.last().and_then(Value::as_bool) == Some(true);
+            if released && self.file.presentation.selection.is_some() {
+                return (None, self.band_corrections());
+            }
             return (None, Vec::new());
         }
         if matches!(tag, "copy" | "copy_cut") {
@@ -2098,18 +2109,30 @@ impl AudioEditor {
         if len == 0 {
             return Ok(None);
         }
-        let span = self.render_list(start, start + len)?;
-        let out = self.render_output("reversed")?;
-        let step = renders::reverse(&span, &out);
-        let id = self.rendered(&out, len, self.file.rate);
+        // **In pieces, from the end**: each piece of the span reversed into a
+        // file of its own, and the pieces in the reverse order of the span's.
+        // A render reads what it reverses into memory, so a piece is what is
+        // held at once, whatever the span's length -- the whole span of a take
+        // of hours was, and the machine ran out of memory.
+        let (mut steps, mut pieces) = (Vec::new(), Vec::new());
+        let mut end = start + len;
+        while end > start {
+            let from = end.saturating_sub(REVERSE_PIECE).max(start);
+            let span = self.render_list(from, end)?;
+            let out = self.render_output(&format!("reversed-{}", pieces.len()))?;
+            steps.push(renders::reverse(&span, &out));
+            let id = self.rendered(&out, end - from, self.file.rate);
+            pieces.push(part(id, 0, end - from));
+            end = from;
+        }
         let list = parts::replace(
             &self.file.contents.parts,
             start,
             start + len,
-            &[part(id, 0, len)],
+            &pieces,
             &self.rates_of(),
         )?;
-        Ok(Some(("reverse".into(), list, vec![step])))
+        Ok(Some(("reverse".into(), list, steps)))
     }
 
     /// **The block a paste or a mix carries**: where it goes, its samples

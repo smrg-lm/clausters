@@ -208,10 +208,17 @@ code that keeps it lives.
   of a selection once it is let go. After a cut or a paste the frames a
   selection named have moved, so the selection is cleared and the cursor
   stands where the edit landed.
+- **The ends are before the first frame and past the last.** Going to the
+  start puts the cursor before the first frame, which plays too; going to the
+  end puts it past the last, where the take has played out: a play from there
+  stops at once unless it loops, and a paste there goes after all of it.
 - **The cursor moves the music.** A click placing the position cursor, or a
   selection let go (whose start the cursor goes to), moves the play cursor
   there too: a stopped transport stands on it, and a file playing goes on
-  from it, its pass ending as the loop switch says from there.
+  from it, its pass ending as the loop switch says from there. The two
+  cursors move together everywhere but in play, where the position cursor
+  stays where the pass began: a selection made whole at once (select all) is
+  one let go, and the window is told the position cursor moved.
 - **A copy of a take is made on the server.** Copy and cut in the audio
   editor copy the span into a server buffer the clipboard names, whatever
   its length; a paste copies it again on the server. No sample crosses the

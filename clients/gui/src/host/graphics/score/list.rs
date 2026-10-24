@@ -56,7 +56,6 @@ impl ScoreData {
         data.playhead = props
             .get("playhead")
             .and_then(Value::as_f64)
-            .map(|f| f as f32)
             .unwrap_or(-1.0);
         data.playhead_at = props
             .get("playhead_at")
@@ -65,12 +64,10 @@ impl ScoreData {
         data.playhead_loop_start = props
             .get("playhead_loop_start")
             .and_then(Value::as_f64)
-            .map(|f| f as f32)
             .unwrap_or(0.0);
         data.playhead_loop_len = props
             .get("playhead_loop_len")
             .and_then(Value::as_f64)
-            .map(|f| f as f32)
             .unwrap_or(0.0);
         data.sample_rate = props
             .get("sample_rate")
@@ -169,7 +166,7 @@ fn parse_cursor(v: &Value) -> Option<Cursor> {
     let o = v.as_object()?;
     let f = |k: &str| o.get(k).and_then(Value::as_f64).map(|x| x as f32);
     Some(Cursor {
-        t: f("t")?,
+        t: o.get("t").and_then(Value::as_f64)?,
         x: f("x")?,
         y0: f("y0")?,
         y1: f("y1")?,

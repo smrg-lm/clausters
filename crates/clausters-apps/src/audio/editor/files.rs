@@ -241,7 +241,7 @@ impl AudioEditor {
 
     /// The cursor and the selection, as every view of the take is corrected
     /// with them.
-    fn band_corrections(&self) -> Vec<Correction> {
+    pub(super) fn band_corrections(&self) -> Vec<Correction> {
         let (start, end) = self.file.presentation.selection.unwrap_or((0, 0));
         let cursor = self.file.presentation.cursor.unwrap_or(0);
         [

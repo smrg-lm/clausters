@@ -51,7 +51,7 @@ impl ScoreData {
         mesh: &mut Mesh,
         rect: Rect,
         clip: Option<Rect>,
-        head: f32,
+        head: f64,
         colors: ScoreColors,
     ) {
         let color = colors.ink;
@@ -226,7 +226,7 @@ impl ScoreData {
         mesh: &mut Mesh,
         rect: Rect,
         clip: Option<Rect>,
-        head: f32,
+        head: f64,
         color: Color,
     ) {
         mesh.set_clip(Some(intersect(rect, clip)));
@@ -237,7 +237,7 @@ impl ScoreData {
     /// Draw the playback cursor at musical time `head` (ms): the vertical
     /// staff-spanning line of the latest cursor at or before it. A no-op when no
     /// playhead is set or no timemap was sent.
-    fn draw_playhead(&self, mesh: &mut Mesh, fit: Affine, head: f32, color: Color) {
+    fn draw_playhead(&self, mesh: &mut Mesh, fit: Affine, head: f64, color: Color) {
         if head < 0.0 || self.cursors.is_empty() {
             return;
         }

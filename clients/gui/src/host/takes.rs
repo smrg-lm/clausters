@@ -67,9 +67,13 @@ impl Host {
     /// and a stroke that reaches it would carry a frame the buffer does not
     /// have -- which the owner refuses, taking the whole stroke with it.
     pub(crate) fn buffer_frames(&self, def_id: i32, widget_id: i32) -> Option<u64> {
-        self.samples_of(def_id, widget_id)?
-            .sample_shape()
-            .map(|(_, frames)| frames)
+        let samples = self.samples_of(def_id, widget_id)?;
+        // a list is as long as the list, never as the picture of the take
+        // before an edit that is drawn until the new one has come
+        if let Some(list) = samples.segments() {
+            return Some(list.frames as u64);
+        }
+        samples.sample_shape().map(|(_, frames)| frames)
     }
 
     /// **The samples a widget draws**, when it draws any -- the element to ask

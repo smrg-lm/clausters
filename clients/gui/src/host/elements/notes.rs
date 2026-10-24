@@ -419,8 +419,9 @@ impl Notes {
                 // and a double names every integer up to there.
                 args.push(OscType::Double(id as f64));
             }
-            args.push(OscType::Float(n.start as f32));
-            args.push(OscType::Float(n.dur as f32));
+            // times as doubles: a float names a frame only up to 2^24
+            args.push(OscType::Double(n.start));
+            args.push(OscType::Double(n.dur));
             args.push(OscType::Float(self.value_of(n.pitch)));
             args.push(OscType::Int(n.velocity));
             args.push(OscType::Int(n.channel));

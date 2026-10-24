@@ -17,14 +17,30 @@ use clausters::server::render::{
 };
 use clausters_editing::apply::{Render, Step};
 
-/// **Carries `steps` out in order**, telling `progress` how each render goes:
-/// the render, the frames done and the frames it comes to. The first that
-/// fails stops the rest, and is what is answered.
+/// **Carries `steps` out in order**, telling `progress` how the renders go:
+/// the render under way, the frames done and the frames they come to, over
+/// all of them -- an edit rendered in pieces (a long reverse) is one bar
+/// filling once, not one per piece. The first that fails stops the rest,
+/// and is what is answered.
 pub fn carry(steps: &[Step], mut progress: impl FnMut(&Render, u64, u64)) -> Result<(), String> {
-    for step in steps {
+    let frames: Vec<u64> = steps
+        .iter()
+        .map(|step| match step {
+            Step::Render(job) => OscScore::from_bytes(&job.score).map_or(0, |score| {
+                (score.duration() * job.rate).round().max(0.0) as u64
+            }),
+            _ => 0,
+        })
+        .collect();
+    let total: u64 = frames.iter().sum();
+    let mut before = 0;
+    for (step, frames) in steps.iter().zip(&frames) {
         match step {
             Step::Render(job) => {
-                render(job, |done, total| progress(job, done, total))?;
+                render(job, |done, _| {
+                    progress(job, (before + done).min(total), total.max(1))
+                })?;
+                before += frames;
             }
             Step::Move { from, to } => std::fs::rename(from, to)
                 .map_err(|e| format!("moving {from} to {to} failed: {e}"))?,

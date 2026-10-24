@@ -566,7 +566,9 @@ impl Gestures {
         match tag {
             None => {
                 let frames = host.buffer_frames(ctx.def_id, id)?;
-                super::nav::set_selection(host, &mut out, ctx.def_id, id, 0.0, frames as f64, None)
+                super::nav::set_selection(host, &mut out, ctx.def_id, id, 0.0, frames as f64, None);
+                // a selection made whole at once, as one let go is
+                super::nav::let_go_selection(host, &mut out, ctx.def_id, id);
             }
             Some(tag) => {
                 let key = host.timeline_key(id)?;
@@ -717,8 +719,10 @@ impl Gestures {
         let (id, pos) = match take {
             Some(id) => {
                 let frames = host.buffer_frames(ctx.def_id, id)?;
-                // End is the take's last frame, the one a cursor can stand on.
-                let end = frames.saturating_sub(1) as f64;
+                // **The end is past the last frame**, where the take has
+                // played out -- as the start is before the first, which is
+                // played too -- so a paste there goes after all of it.
+                let end = frames as f64;
                 (id, if to_end { end } else { 0.0 })
             }
             // **A view with no samples of its own** -- a roll, a multitrack --

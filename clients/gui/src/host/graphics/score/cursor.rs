@@ -309,14 +309,14 @@ impl ScoreData {
     /// mapped through the `playhead_at` origin while a pass is playing, else the
     /// static `playhead`. `sample_clock` is the engine's sample count and
     /// `host_rate` the server's sample rate, used when the widget names none.
-    pub fn head_ms(&self, sample_clock: f64, host_rate: f64) -> f32 {
+    pub fn head_ms(&self, sample_clock: f64, host_rate: f64) -> f64 {
         let rate = if self.sample_rate > 0.0 {
             self.sample_rate
         } else {
             host_rate
         };
         if self.playhead_at >= 0.0 && sample_clock > 0.0 && rate > 0.0 {
-            let swept = (((sample_clock - self.playhead_at) / rate) * 1000.0) as f32;
+            let swept = ((sample_clock - self.playhead_at) / rate) * 1000.0;
             if self.playhead_loop_len > 0.0 {
                 // The same wrap the timeline views' chrome does, in ms: a
                 // repeated passage keeps the cursor inside it. `rem_euclid`

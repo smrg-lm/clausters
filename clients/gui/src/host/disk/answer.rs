@@ -214,6 +214,42 @@ struct Peaks {
     stat: Option<Result<Stat, String>>,
     head: Option<Result<PeaksHead, String>>,
     levels: HashMap<(usize, usize, usize), Held<LevelBlock>>,
+    /// The clock its size and age were last asked at.
+    checked: u64,
+}
+
+/// **How many turns of the clock a peaks file found unusable waits** before
+/// it is looked at again ([`usable`]).
+const RECHECK: u64 = 32;
+
+/// **Whether `peaks` describe `file`**, once both are known: there, whole
+/// (the size its header says), no older than the samples, and of the same
+/// shape. A file being written -- the measure an open starts, which a list
+/// names at once -- is none of those yet, and is looked at again, every
+/// [`RECHECK`] turns, rather than held unusable for the session: a take
+/// named before its peaks were whole was read from its samples for good,
+/// a reply a bucket long over a take of hours.
+fn usable(file: &File, peaks: &Peaks) -> Option<bool> {
+    let stat = match peaks.stat.as_ref()? {
+        Ok(stat) => stat,
+        Err(_) => return Some(false),
+    };
+    let head = match peaks.head.as_ref()? {
+        Ok(head) => head,
+        Err(_) => return Some(false),
+    };
+    let layout = file.layout.as_ref()?.as_ref().ok()?;
+    let sound = file.stat.as_ref()?.as_ref().ok()?;
+    let fresh = match (stat.modified, sound.modified) {
+        (Some(p), Some(f)) => p + PEAKS_AGE_SLACK >= f,
+        _ => true,
+    };
+    Some(
+        fresh
+            && head.frames as u64 == layout.frames
+            && head.channels == layout.channels
+            && head.size() == stat.len,
+    )
 }
 
 /// A sound file: its age, where its samples are, and the blocks read of them.
@@ -312,6 +348,7 @@ impl Answerer {
                 }
                 if let Some(peaks) = self.peaks.get_mut(path) {
                     peaks.stat = Some(stat);
+                    peaks.checked = self.clock;
                 }
             }
             Need::Read { path, what, .. } => {
@@ -480,7 +517,14 @@ impl Answerer {
             let Some(path) = file.peaks.clone() else {
                 continue;
             };
+            let clock = self.clock;
             let peaks = self.peaks.entry(Arc::clone(&path)).or_default();
+            if usable(file, peaks) == Some(false) && clock >= peaks.checked + RECHECK {
+                *peaks = Peaks {
+                    checked: clock,
+                    ..Peaks::default()
+                };
+            }
             match &peaks.stat {
                 None => needs.push(Need::Stat { path }),
                 Some(Err(_)) => {}
@@ -762,20 +806,13 @@ impl FileSamples<'_> {
     /// The peaks of `path`, when they are there and describe it.
     fn peaks_of(&self, path: &str) -> Option<(Arc<str>, PeaksHead)> {
         let file = self.answerer.files.get(path)?;
-        let layout = file.layout.as_ref()?.as_ref().ok()?;
         let name = file.peaks.clone()?;
         let peaks = self.answerer.peaks.get(&name)?;
+        if usable(file, peaks) != Some(true) {
+            return None;
+        }
         let head = peaks.head.as_ref()?.as_ref().ok()?;
-        let stat = peaks.stat.as_ref()?.as_ref().ok()?;
-        let fresh = match (stat.modified, file.stat.as_ref()?.as_ref().ok()?.modified) {
-            (Some(p), Some(f)) => p + PEAKS_AGE_SLACK >= f,
-            _ => true,
-        };
-        (fresh
-            && head.frames as u64 == layout.frames
-            && head.channels == layout.channels
-            && head.size() == stat.len)
-            .then(|| (name, head.clone()))
+        Some((name, head.clone()))
     }
 
     /// **One frame of `path` on channel `ch`**, out of a held block of its

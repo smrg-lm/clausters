@@ -8776,3 +8776,20 @@ module of its own.
   hand moved), a zoom in fell back to it at every step, and samples were
   drawn as zeros past the run held. Separately, an undo left the cursor past
   the end of the shorter take, and the next paste opened the view from there.
+- ⬜ **The play cursor overshoots a short loop on screen** *(found
+  2026-10-24, by eye on the audio editor the host owns)*. Looping a span as
+  short as one cycle, the drawn play cursor runs past the selection's end
+  before it wraps. The sound is right; the sweep is extrapolated from the
+  engine clock between readings and not wrapped at the loop's end in the
+  drawing. To check: the wrap the timeline chrome applies
+  (`playhead_loop_*`) against the engine's loop for a span shorter than a
+  frame of the screen.
+- ⬜ **Time is a type of its own, 64 bits wide** *(asked 2026-10-24 by the
+  user)*. Frames, positions and spans in the host and the applications are
+  bare `f64`/`usize`/`u64`, and a conversion to 32 bits slipped in three
+  times in one day (an `i32` frame on the fetch wire, the `"view"` event
+  and the sample dots' spacing in `f32`), each found only by eye on a take
+  of hours. As the server does for its clocks (`server::clock_axis`), a
+  time type in `clausters-core` that converts to a pixel only relative to
+  a view's origin, and to the wire only as 64 bits, makes the mistake
+  unwritable.

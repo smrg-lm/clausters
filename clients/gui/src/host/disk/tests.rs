@@ -334,6 +334,46 @@ fn no_peaks_or_stale_ones_fall_back_to_the_samples() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// **Peaks named before they were whole are looked at again**: a list named
+/// while the measure an open starts is still writing its peaks reads its
+/// samples, and once the peaks are whole it folds them -- where it held them
+/// unusable for the session, every reply over a take of hours read a bucket
+/// of samples and no more.
+#[test]
+fn peaks_named_before_they_are_whole_are_looked_at_again() {
+    let dir = scratch("late");
+    let frames = 1 << 20;
+    let data = noise(frames, 5);
+    let (path, peaks) = take(&dir, "a", &data, 1, false);
+    // half the peaks file, as a measure under way leaves it
+    MultiPyramid::build_interleaved(&data, 1, 256)
+        .write_cache(&peaks)
+        .unwrap();
+    let whole = std::fs::read(&peaks).unwrap();
+    std::fs::write(&peaks, &whole[..whole.len() / 2]).unwrap();
+    let l = list(1, vec![part(&path, Some(&peaks), 0, frames, (1, frames))]);
+    let mut answerer = Answerer::default();
+    let mut io = Disk::default();
+    answerer.define(-6, l);
+    let bucket = 1 << 14;
+    summary(&mut answerer, &mut io, -6, bucket, 1);
+    assert!(answerer.samples_read >= frames / 2, "read its samples");
+    std::fs::write(&peaks, &whole).unwrap();
+    for _ in 0..64 {
+        ask(
+            &mut answerer,
+            &mut io,
+            "/buffer_query",
+            vec![OscType::Int(-6)],
+        );
+    }
+    let before = answerer.samples_read;
+    let stats = summary(&mut answerer, &mut io, -6, bucket, 1);
+    assert_eq!(stats.len(), frames / bucket * 3);
+    assert_eq!(answerer.samples_read, before, "folded from its peaks");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A key nobody names is absent, as a freed buffer is.
 #[test]
 fn a_forgotten_list_is_absent() {

@@ -536,34 +536,7 @@ impl Gestures {
             return out;
         }
         if let Some(Drag::Select { id, .. }) = self.drag {
-            let selection = host
-                .timeline_key(id)
-                .and_then(|key| host.timelines().state(key))
-                .map(|state| (state.sel_start, state.sel_len));
-            if let Some((start, len)) = selection {
-                // A sweep that never moved is a click, and the cursor it places
-                // is [`Gestures::release`]'s: what this arm answers for is the
-                // *span*, which is the transport's loop and not its position.
-                transport_follows_selection(host, def_id, id, start, len, true);
-                // The owner hears the span let go (the trailing `true`): an
-                // audio editor puts its position cursor at the span's start.
-                if len > 0.0 {
-                    let mut args = vec![
-                        OscType::String("selection".into()),
-                        OscType::Double(start),
-                        OscType::Double(len),
-                    ];
-                    if let Some(axis) = host
-                        .widget_kind(def_id, id)
-                        .and_then(|kind| kind.editor())
-                        .filter(|axis| axis.sel_max > axis.sel_min)
-                    {
-                        args.extend([OscType::Double(axis.sel_min), OscType::Double(axis.sel_max)]);
-                    }
-                    args.push(OscType::Bool(true));
-                    emit(host, &mut out, def_id, id, args);
-                }
-            }
+            let_go_selection(host, &mut out, def_id, id);
         }
         if let Some(Drag::Element { at, .. }) = self.drag.take() {
             // **Was the pointer still on it?** The machine's own hit test, the

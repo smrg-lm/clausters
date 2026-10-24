@@ -446,7 +446,7 @@ fn with_no_pointer_the_keys_reach_the_windows_one_take() {
     let g = gestures::Gestures::default();
     assert!(g.ends_key(&mut host, &ctx, true, -1.0, -1.0).is_some());
     let key = host.timeline_key(50).unwrap();
-    assert_eq!(host.timelines().state(key).unwrap().cursor(), Some(15.0));
+    assert_eq!(host.timelines().state(key).unwrap().cursor(), Some(16.0));
     assert!(g.play_key(&mut host, &ctx, -1.0, -1.0).is_some());
     assert_eq!(host.playing_widget(), Some(50), "space plays it");
 }
@@ -491,7 +491,7 @@ fn home_and_end_reach_the_end_of_a_rolls_notes() {
 }
 
 /// **Home and End put the position cursor at the ends of the take** --
-/// frame 0 and the last frame, the one a cursor can stand on.
+/// before its first frame and past its last, where it has played out.
 #[test]
 fn home_and_end_put_the_position_cursor_at_the_ends() {
     let (mut host, _server) = take_host(1, 16);
@@ -502,7 +502,7 @@ fn home_and_end_put_the_position_cursor_at_the_ends() {
     let cursor = |host: &Host| host.timelines().state(key).unwrap().cursor();
 
     assert!(g.ends_key(&mut host, &ctx, true, cx, cy).is_some());
-    assert_eq!(cursor(&host), Some(15.0), "End: the take's last frame");
+    assert_eq!(cursor(&host), Some(16.0), "End: past the take's last frame");
     assert!(g.ends_key(&mut host, &ctx, false, cx, cy).is_some());
     assert_eq!(cursor(&host), Some(0.0), "Home: its start");
 }

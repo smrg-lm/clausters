@@ -3817,15 +3817,15 @@ fn the_rolls_paste_lands_on_the_windows_cursor() {
         .press_key(&mut host, &ctx, Key::Char('v'), Some((x, y)))
         .expect("the roll took the paste");
     let args = emitted_args(&effects, 90).expect("the paste reports the notes");
-    let starts: Vec<f32> = args[1..]
+    let starts: Vec<f64> = args[1..]
         .chunks(5)
         .filter_map(|c| match c.first() {
-            Some(OscType::Float(v)) => Some(*v),
+            Some(OscType::Double(v)) => Some(*v),
             _ => None,
         })
         .collect();
     assert!(
-        starts.iter().any(|s| (*s as f64 - cursor).abs() < 40.0),
+        starts.iter().any(|s| (*s - cursor).abs() < 40.0),
         "the pasted note starts at the cursor ({cursor}), not at 0: {starts:?}"
     );
 }

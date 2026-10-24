@@ -681,7 +681,12 @@ pub fn draw_channel(
         // is an interpolation the drawing invents, and a dot is what says which
         // points of it are data.
         let step_frames = style.grid.map_or(1.0, |(_, step)| step);
-        let spacing = (x_of(step_frames) - x_of(0.0)).abs();
+        // Measured where the samples are, never from the take's first frame:
+        // on a take of hours that one lies billions of pixels off screen,
+        // where a pixel coordinate keeps no fraction of a pixel and the
+        // difference of two of them is noise -- dots that came and went with
+        // where the zoom landed.
+        let spacing = (x_of(first as f64 + step_frames) - x_of(first as f64)).abs();
         let dots = dots_fit(spacing, style.dot_radius);
         // **Never finer than the screen**: the reconstruction is drawn where
         // there are pixels for a curve and nowhere else.

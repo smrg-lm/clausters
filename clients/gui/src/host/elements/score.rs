@@ -163,20 +163,14 @@ impl Element for Score {
                 None => false,
             },
             // Locate the static playback cursor; a negative time hides it.
-            "playhead" => v.as_f64().map(|t| data.playhead = t as f32).is_some(),
+            "playhead" => v.as_f64().map(|t| data.playhead = t).is_some(),
             // Anchor score time 0 to a sample-clock value: the cursor then
             // sweeps on its own, one message per pass instead of per frame.
             "playhead_at" => v.as_f64().map(|t| data.playhead_at = t).is_some(),
             // Wrap the sweep inside a repeated passage (ms; <= 0 length = the
             // straight pass).
-            "playhead_loop_start" => v
-                .as_f64()
-                .map(|t| data.playhead_loop_start = t as f32)
-                .is_some(),
-            "playhead_loop_len" => v
-                .as_f64()
-                .map(|t| data.playhead_loop_len = t as f32)
-                .is_some(),
+            "playhead_loop_start" => v.as_f64().map(|t| data.playhead_loop_start = t).is_some(),
+            "playhead_loop_len" => v.as_f64().map(|t| data.playhead_loop_len = t).is_some(),
             "sample_rate" => v.as_f64().map(|r| data.sample_rate = r).is_some(),
             // Select an element by its MEI id; the empty string clears it.
             "selected" => {

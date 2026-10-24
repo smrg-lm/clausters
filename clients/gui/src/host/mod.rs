@@ -865,6 +865,10 @@ pub struct Host {
     lists: HashMap<i32, Arc<disk::List>>,
     /// The next take key to give a list, counting down.
     next_list_key: i32,
+    /// **Take keys whose list changed** since a front last asked: what is on
+    /// its way about them was asked of the list before, and goes
+    /// ([`Host::take_relisted`]).
+    relisted: Vec<i32>,
     /// Where a list's questions go: the host's own answerer, behind the
     /// front's carrier. `None` until a front gives one.
     disk: Option<Box<dyn disk::DiskLink>>,
@@ -1096,6 +1100,7 @@ impl Host {
             shared_buffers: None,
             lists: HashMap::new(),
             next_list_key: disk::FIRST_LIST_KEY,
+            relisted: Vec::new(),
             disk: None,
             bindings: HashMap::new(),
             read_live: Default::default(),

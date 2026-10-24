@@ -164,12 +164,13 @@ pub(super) fn extend_stroke(
         held.previous.push(read(frame));
     }
     // The ramp itself, over the span this motion covered.
-    let span = to.0 as f32 - from.0 as f32;
+    // in frames, which a float cannot tell apart past 2^24 of them
+    let span = to.0 as f64 - from.0 as f64;
     for frame in lo..=hi {
         let t = if span == 0.0 {
             1.0
         } else {
-            (frame as f32 - from.0 as f32) / span
+            ((frame as f64 - from.0 as f64) / span) as f32
         };
         let v = from.1 + (to.1 - from.1) * t;
         if let Some(slot) = frame
@@ -262,6 +263,46 @@ pub(super) fn set_selection(
         args.push(OscType::Float(min as f32));
         args.push(OscType::Float(max as f32));
     }
+    emit(host, out, def_id, id, args);
+}
+
+/// **A selection let go**: the span is the transport's loop, and the owner
+/// hears it complete (the trailing `true`) -- an audio editor puts its
+/// position cursor at the span's start, and the music with it. What a sweep
+/// released and what `select_all` makes say the same.
+pub(super) fn let_go_selection(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+) {
+    let selection = host
+        .timeline_key(id)
+        .and_then(|key| host.timelines().state(key))
+        .map(|state| (state.sel_start, state.sel_len));
+    let Some((start, len)) = selection else {
+        return;
+    };
+    // A sweep that never moved is a click, and the cursor it places is
+    // [`Gestures::release`]'s: what this answers for is the *span*, which is
+    // the transport's loop and not its position.
+    transport_follows_selection(host, def_id, id, start, len, true);
+    if len <= 0.0 {
+        return;
+    }
+    let mut args = vec![
+        OscType::String("selection".into()),
+        OscType::Double(start),
+        OscType::Double(len),
+    ];
+    if let Some(axis) = host
+        .widget_kind(def_id, id)
+        .and_then(|kind| kind.editor())
+        .filter(|axis| axis.sel_max > axis.sel_min)
+    {
+        args.extend([OscType::Double(axis.sel_min), OscType::Double(axis.sel_max)]);
+    }
+    args.push(OscType::Bool(true));
     emit(host, out, def_id, id, args);
 }
 

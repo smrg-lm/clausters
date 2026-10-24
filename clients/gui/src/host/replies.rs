@@ -900,6 +900,9 @@ pub(crate) trait Front {
     /// summary that never came back is asked for again rather than leaving a
     /// hole in the picture.
     fn ask_owed_spans(&mut self, defs: &[i32]) {
+        for key in self.host_mut().take_relisted() {
+            self.fetches().forget(key);
+        }
         for msg in self.fetches().tick() {
             self.to_server(msg);
         }

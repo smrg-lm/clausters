@@ -233,6 +233,14 @@ impl crate::host::Host {
         self.disk = Some(link);
     }
 
+    /// **The take keys whose list changed** since the last call: a front
+    /// drops what it asked about them before (`BufferFetches::forget`), since
+    /// the answer is the new list's from wherever it had reached -- a summary
+    /// walked on to the old length, the rest of the take drawn as silence.
+    pub(crate) fn take_relisted(&mut self) -> Vec<i32> {
+        std::mem::take(&mut self.relisted)
+    }
+
     /// **Sends a fetch-machine message about a list to the answerer**, which
     /// answers it the way a server answers about a buffer.
     pub fn ask_disk(&self, msg: OscMessage) {
@@ -272,6 +280,11 @@ impl crate::host::Host {
             });
         }
         self.next_list_key = next;
+        for (key, list) in &named {
+            if self.lists.get(key).is_some_and(|was| **was != **list) {
+                self.relisted.push(*key);
+            }
+        }
         if let Some(disk) = &self.disk {
             for (key, list) in &named {
                 if self.lists.get(key).is_none_or(|was| **was != **list) {

@@ -734,6 +734,15 @@ fn a_redrawn_selection_is_the_span_a_loop_in_progress_follows() {
         let_go["follow"],
         json!({"from": 10, "to": 30, "place": true})
     );
+    // the window is told the position cursor went to the span's start, where
+    // the play cursor is cued: the two move together
+    assert_eq!(let_go["cue"], 10);
+    assert!(
+        let_go["answer"]["corrections"].as_array().is_some_and(|c| c
+            .iter()
+            .any(|c| c["widget"] == 12 && c["props"]["cursor"] == 10)),
+        "{let_go}"
+    );
     // A cursor placed anywhere else is a mark, and the loop is left alone.
     let marked = event(&mut editor, json!([12, 4, 0, "locate", 60]));
     assert!(marked.get("follow").is_none());
@@ -1487,4 +1496,34 @@ fn a_file_changed_on_disk_is_said_when_the_window_comes_back() {
             .is_none(),
         "a file gone is looked for no more"
     );
+}
+
+/// **A long span is reversed in pieces, from its end**: each piece of it
+/// reversed into a file of its own, the pieces in the reverse order of the
+/// span's, so what a render holds at once is a piece and never the span.
+#[test]
+fn a_long_span_is_reversed_in_pieces_from_its_end() {
+    let piece = super::REVERSE_PIECE;
+    let frames = 2 * piece + 1_000;
+    let mut editor = new_json(
+        &json!({"path":"/in/long.wav","workspace":"/work", "frames": frames, "channels": 1,
+                "rate": 48000, "display": 9})
+        .to_string(),
+    )
+    .unwrap();
+    call(&mut editor, json!({"verb": "window", "widget": 12}));
+    call(&mut editor, json!({"verb": "sync", "window": 900}));
+    let out = event(
+        &mut editor,
+        json!([12, 1, 0, "reverse", 0.0, frames as f64]),
+    );
+    assert!(out["answer"]["reason"].is_null(), "{out}");
+    let got = spans(&mut editor);
+    let stems: Vec<&str> = got.iter().map(|(s, _, _)| s.as_str()).collect();
+    assert_eq!(stems.len(), 3, "{got:?}");
+    for (k, stem) in stems.iter().enumerate() {
+        assert!(stem.ends_with(&format!("reversed-{k}")), "{got:?}");
+    }
+    let lens: Vec<u64> = got.iter().map(|(_, a, b)| b - a).collect();
+    assert_eq!(lens, [piece, piece, 1_000], "the end first");
 }

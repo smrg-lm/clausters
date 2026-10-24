@@ -204,6 +204,11 @@ impl ColumnAsks {
         self.asks.retain(|a| a.stalled < stalled_asks);
     }
 
+    /// Forgets the asks over take `key`, whose list changed.
+    pub(crate) fn forget(&mut self, key: i32) {
+        self.asks.retain(|a| a.key != key);
+    }
+
     /// Forgets the asks of a closed window.
     pub(crate) fn drop_def(&mut self, def_id: i32) {
         self.asks.retain(|a| a.def_id != def_id);

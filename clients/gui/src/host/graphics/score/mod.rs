@@ -303,7 +303,7 @@ pub struct TextEditing {
 /// to geometry (the id's placed x) -- precomputed on the client, sorted by `t`.
 #[derive(Clone, Copy, Debug)]
 pub struct Cursor {
-    pub t: f32,
+    pub t: f64,
     pub x: f32,
     pub y0: f32,
     pub y1: f32,
@@ -386,7 +386,7 @@ pub struct ScoreData {
     /// A **static** playback time in ms, set with `/gui_set playhead`; negative
     /// means none. It stands still -- a stopped transport located on a note keeps
     /// its cursor there, and it must not drift with the engine clock.
-    pub playhead: f32,
+    pub playhead: f64,
     /// The playhead origin: the engine sample-clock value at score time 0
     /// (negative = not playing, fall back to the static `playhead`). Set once at
     /// the start of a pass and the cursor then *sweeps* on its own -- the host
@@ -397,8 +397,8 @@ pub struct ScoreData {
     /// inside `[playhead_loop_start, + len)` instead of running off the page,
     /// so a repeated passage is followed on the same one anchor and still
     /// costs no message per frame. A non-positive length is the straight pass.
-    pub playhead_loop_start: f32,
-    pub playhead_loop_len: f32,
+    pub playhead_loop_start: f64,
+    pub playhead_loop_len: f64,
     /// The sample rate converting the clock to musical ms (0 = unknown, use the
     /// server's own rate).
     pub sample_rate: f64,
