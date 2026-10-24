@@ -73,6 +73,9 @@ struct Contents {
     rates: BTreeMap<SourceId, f64>,
     opened: Option<SourceId>,
     landing: Option<u64>,
+    // The view the change leaves, where it opened it out (a paste shown
+    // whole).
+    viewport: Option<(f64, f64)>,
 }
 
 #[derive(Debug)]
@@ -312,6 +315,7 @@ impl Application for AudioEditor {
                         rates: draft.file.rates.clone(),
                         opened: draft.file.opened,
                         landing: None,
+                        viewport: None,
                     }),
                 }
             }
@@ -395,6 +399,7 @@ impl Application for AudioEditor {
                     rates: draft.file.rates.clone(),
                     opened: draft.file.opened,
                     landing: outcome.cue,
+                    viewport: draft.file.presentation.viewport,
                 })
             }
         };
@@ -450,6 +455,7 @@ impl Application for AudioEditor {
                     rates: Default::default(),
                     opened: None,
                     landing: None,
+                    viewport: None,
                 }),
             ) else {
                 unreachable!()
@@ -516,6 +522,9 @@ impl Application for AudioEditor {
                         if let Some(at) = contents.landing {
                             editor.file.presentation.cursor = Some(at);
                             editor.file.presentation.selection = None;
+                        }
+                        if contents.viewport.is_some() {
+                            editor.file.presentation.viewport = contents.viewport;
                         }
                         if let Some(record) = &delta.outcome.record {
                             let structure = services.histories.structure_of(Object {

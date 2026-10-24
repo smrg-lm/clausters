@@ -538,6 +538,29 @@ mod tests {
         path
     }
 
+    /// **The open's work landed**: the peaks render it hands off has run,
+    /// taken on the host's ticks, and nothing is pending on the file.
+    fn settled(host: &mut Host, def_id: i32) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            host.take_effects();
+            let audio = host.audio.as_mut().unwrap();
+            let member = audio.windows[&def_id].member;
+            let actions = audio.app.call(
+                &mut audio.editing,
+                &json!({"verb": "actions", "member": member}),
+            );
+            if actions["save"]["pending"] != true {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the open never settled"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     /// The parts the take of window `def_id` is made of.
     fn parts(host: &mut Host, def_id: i32) -> Vec<Value> {
         let audio = host.audio.as_mut().unwrap();
@@ -602,6 +625,80 @@ mod tests {
         assert_eq!(after.len(), 1, "{after:?}");
         assert_eq!(after[0]["start"], 12_000, "{after:?}");
         assert_eq!(after[0]["frames"], 12_000, "{after:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// **A paste past what the view shows opens the view out to it**: the
+    /// view zoomed in by a hand, a paste landing past its right edge, and
+    /// the window's axis then holds the whole pasted span.
+    #[test]
+    fn a_paste_past_the_view_opens_it_out() {
+        let path = take("paste-view", 24_000);
+        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
+        let mut host = Host::new();
+        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
+        let def_id = host.open_audio(Some(&path), "take").expect("opened");
+        settled(&mut host, def_id);
+        let widget = host.audio.as_ref().unwrap().windows[&def_id].ids["widget"]
+            .as_i64()
+            .unwrap() as i32;
+        // a hand zooms in to the first quarter, and the window says so
+        host.zoom_timeline(widget, 0.25, 0.0);
+        let (nav, total) = host.timeline_nav(widget).expect("an axis");
+        assert_eq!(total, 24_000);
+        assert!(nav.len < 7_000.0, "zoomed in: {nav:?}");
+        let view = host.event_message(
+            widget,
+            1,
+            vec![
+                OscType::String("view".into()),
+                OscType::Float(nav.start as f32),
+                OscType::Float(nav.len as f32),
+            ],
+        );
+        assert!(host.deliver(def_id, &view));
+        // a copy of the file's second half, pasted after the view's end
+        let part = clausters_document::clipboard::SegmentPart {
+            path: path.clone(),
+            start: 12_000,
+            frames: 12_000,
+            fade_in: 0,
+            fade_out: 0,
+            fade_in_shape: Default::default(),
+            fade_out_shape: Default::default(),
+            channels: None,
+            source_channels: 1,
+            source_frames: 24_000,
+            source_rate: 48_000.0,
+        };
+        let doc =
+            clausters_document::clipboard::Clipboard::segments(1, 48_000.0, vec![part]).to_json();
+        let at = nav.start + nav.len + 1_000.0;
+        let paste = host.event_message(
+            widget,
+            2,
+            vec![
+                OscType::String("paste".into()),
+                OscType::Double(at),
+                OscType::String("segments".into()),
+                OscType::String(doc),
+            ],
+        );
+        assert!(host.deliver(def_id, &paste));
+        host.take_effects();
+        assert_eq!(
+            parts(&mut host, def_id).len(),
+            3,
+            "pasted: {:?}",
+            parts(&mut host, def_id)
+        );
+        let (nav, total) = host.timeline_nav(widget).expect("an axis");
+        assert_eq!(total, 36_000, "the take is the paste longer");
+        assert!(
+            nav.start <= at && nav.start + nav.len >= at + 12_000.0,
+            "the pasted span {at}..{} is in view: {nav:?}",
+            at + 12_000.0
+        );
         let _ = std::fs::remove_file(&path);
     }
 }

@@ -284,5 +284,23 @@ impl crate::host::Host {
             }
         }
         self.lists = named;
+        // **A list's length is known as it is named**, before its picture is
+        // read: its axis spans it from the start, and a view set in the same
+        // answer (a paste shown whole) stands against the take it is about.
+        fn lengths(w: &super::widget::Widget, out: &mut Vec<(i32, usize)>) {
+            if let (Some(id), Some(list)) = (w.id, w.kind.as_samples().and_then(|s| s.segments())) {
+                out.push((id, list.frames));
+            }
+            for c in &w.children {
+                lengths(c, out);
+            }
+        }
+        let mut found = Vec::new();
+        for tree in self.window_defs.values() {
+            lengths(tree, &mut found);
+        }
+        for (id, frames) in found {
+            self.set_take_total(id, frames);
+        }
     }
 }

@@ -227,20 +227,8 @@ impl Host {
         // A new list for a take is told to the answerer before the view asks
         // about it again.
         if keys.iter().any(|k| k.as_str() == "segments") {
+            // its length too, so a view set in the same answer stands
             self.sync_lists();
-            // **Its length is known now**, before its picture is read: what
-            // the same answer sets of the view (a paste shown whole) is
-            // clamped to the take it is about, not to the one before it.
-            let frames = self
-                .window_defs
-                .values()
-                .find_map(|tree| tree.find(id))
-                .and_then(|w| w.kind.as_samples())
-                .and_then(|samples| samples.segments())
-                .map(|list| list.frames);
-            if let Some(frames) = frames {
-                self.set_take_total(id, frames);
-            }
         }
         if is_timeline {
             self.set_timeline_props(id, &props, effects);
