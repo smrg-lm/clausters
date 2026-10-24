@@ -1149,13 +1149,14 @@ pub fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buff
         .and_then(|e| e.to_str())
         .unwrap_or("");
     if is_long_ext(ext) {
-        let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+        let mut file =
+            clausters_core::files::File::open(path).map_err(|e| format!("{path}: {e}"))?;
         return read_pcm(&mut file, path, file_start, num_frames);
     }
     if is_wav {
         // An RF64 is a WAV past 4 GB and is often named like one.
         read_wav(path, file_start, num_frames).or_else(|e| {
-            let mut file = std::fs::File::open(path).map_err(|_| e.clone())?;
+            let mut file = clausters_core::files::File::open(path).map_err(|_| e.clone())?;
             read_pcm(&mut file, path, file_start, num_frames).map_err(|_| e)
         })
     } else {
@@ -1299,19 +1300,20 @@ pub fn probe_audio(path: &str) -> Result<SoundInfo, String> {
         .and_then(|e| e.to_str())
         .unwrap_or("");
     if is_long_ext(ext) {
-        let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+        let mut file =
+            clausters_core::files::File::open(path).map_err(|e| format!("{path}: {e}"))?;
         return pcm_info(&mut file, path);
     }
     if is_wav_ext(ext) {
-        return match hound::WavReader::open(path) {
+        return match wav_reader(path) {
             Ok(reader) => Ok(wav_info(&reader)),
-            Err(e) => std::fs::File::open(path)
+            Err(e) => clausters_core::files::File::open(path)
                 .map_err(|e| e.to_string())
                 .and_then(|mut f| pcm_info(&mut f, path))
                 .map_err(|_| format!("{path}: {e}")),
         };
     }
-    let file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    let file = crate::dsp::pcm::Source::open(path).map_err(|e| format!("{path}: {e}"))?;
     let stream = symphonia::core::io::MediaSourceStream::new(Box::new(file), Default::default());
     probe_symphonia(stream, ext, path, || read_audio(path, 0, 0))
 }
@@ -1341,6 +1343,14 @@ pub fn probe_audio_bytes(bytes: Vec<u8>, ext: &str, label: &str) -> Result<Sound
 
 fn is_wav_ext(ext: &str) -> bool {
     ext.eq_ignore_ascii_case("wav") || ext.eq_ignore_ascii_case("wave")
+}
+
+/// A WAV file's reader, through the files the platform has.
+fn wav_reader(
+    path: &str,
+) -> Result<hound::WavReader<std::io::BufReader<clausters_core::files::File>>, hound::Error> {
+    let file = clausters_core::files::File::open(path)?;
+    hound::WavReader::new(std::io::BufReader::new(file))
 }
 
 fn wav_info<R: std::io::Read>(reader: &hound::WavReader<R>) -> SoundInfo {
@@ -1418,7 +1428,7 @@ fn probe_symphonia(
 /// this runs on the NRT thread, where allocation is fine.
 fn read_symphonia(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
     use symphonia::core::io::MediaSourceStream;
-    let file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    let file = crate::dsp::pcm::Source::open(path).map_err(|e| format!("{path}: {e}"))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let ext = std::path::Path::new(path)
         .extension()
@@ -1529,7 +1539,7 @@ fn read_symphonia_stream(
 /// to +/-1 by their bit depth; the buffer keeps the file's sample rate (the
 /// engine does not resample -- clients compensate via `PlayBuf`'s rate).
 fn read_wav(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
-    let reader = hound::WavReader::open(path).map_err(|e| format!("{path}: {e}"))?;
+    let reader = wav_reader(path).map_err(|e| format!("{path}: {e}"))?;
     read_wav_reader(reader, path, file_start, num_frames)
 }
 
@@ -1714,7 +1724,7 @@ pub fn write_audio(
     )
     .map_err(|e| format!("{path}: {e}"))?;
     bytes.extend_from_slice(&body);
-    std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))
+    clausters_core::files::write(path, bytes).map_err(|e| format!("{path}: {e}"))
 }
 
 fn write_wav(

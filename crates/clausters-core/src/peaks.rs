@@ -31,7 +31,6 @@
 //! path the GUI host uses to render a multi-megabyte buffer with no per-frame or
 //! over-the-wire re-send. The format is machine-local (native float byte order).
 
-use std::fs;
 use std::io;
 use std::path::Path;
 
@@ -864,13 +863,13 @@ impl Pyramid {
 
     /// Write the cache to `path` (e.g. a file beside the audio).
     pub fn write_cache(&self, path: impl AsRef<Path>) -> io::Result<()> {
-        fs::write(path, self.to_bytes())
+        crate::files::write(path, self.to_bytes())
     }
 
     /// Read a cache from `path`. Returns `Ok(None)` if the file is malformed
     /// (e.g. an older format), so the caller can recompute.
     pub fn read_cache(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
-        Ok(Self::from_bytes(&fs::read(path)?))
+        Ok(Self::from_bytes(&crate::files::read(path)?))
     }
 }
 
@@ -1124,13 +1123,13 @@ impl MultiPyramid {
 
     /// Write the cache to `path` (one file for all channels).
     pub fn write_cache(&self, path: impl AsRef<Path>) -> io::Result<()> {
-        fs::write(path, self.to_bytes())
+        crate::files::write(path, self.to_bytes())
     }
 
     /// Read a cache from `path`. `Ok(None)` if malformed, so the caller can
     /// recompute.
     pub fn read_cache(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
-        Ok(Self::from_bytes(&fs::read(path)?))
+        Ok(Self::from_bytes(&crate::files::read(path)?))
     }
 }
 

@@ -567,11 +567,11 @@ impl Stft {
     }
 
     pub fn write_cache(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
-        std::fs::write(path, self.to_bytes())
+        crate::files::write(path, self.to_bytes())
     }
 
     pub fn read_cache(path: impl AsRef<std::path::Path>) -> std::io::Result<Option<Self>> {
-        Ok(Self::from_bytes(&std::fs::read(path)?))
+        Ok(Self::from_bytes(&crate::files::read(path)?))
     }
 }
 

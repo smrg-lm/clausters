@@ -170,7 +170,8 @@ impl OscScore {
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, String> {
         let path = path.as_ref();
-        let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let bytes =
+            clausters_core::files::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         Self::from_bytes(&bytes).map_err(|e| format!("{}: {e}", path.display()))
     }
 

@@ -12,7 +12,8 @@
       isolated, so it loads the host's applications' build, one module over
       one shared memory, and what that build runs on is checked here as it
       lands: a thread of the application is a worker over that memory, which
-      parks and is woken from the main thread.
+      parks and is woken from the main thread, and reads and writes the
+      page's storage synchronously, as natively.
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
@@ -47,8 +48,18 @@
         await until(() => apps.apps_thread_checked() === 2, "the thread to be woken");
         log("a thread: a worker over the shared memory, parked and woken from the main thread");
 
-        verdict("PASS: the applications' host loaded over shared memory, and a thread of it " +
-          "ran in a worker, parked and was woken from the main thread");
+        // **A thread reads and writes the page's storage** as natively: a
+        // folder made, a file written, sought and read back, listed, moved
+        // and removed through `clausters_core::files`; the main thread is
+        // refused one, since it cannot wait.
+        apps.apps_files_check();
+        await until(() => apps.apps_files_checked() !== 0, "the files check");
+        if (apps.apps_files_checked() !== 1) throw new Error(`files: ${apps.apps_files_failed()}`);
+        log("files: written, sought, read, listed, moved and removed from a thread");
+
+        verdict("PASS: the applications' host loaded over shared memory, a thread of it " +
+          "ran in a worker, parked and was woken from the main thread, and a thread read and " +
+          "wrote the page's storage");
         bridge.close?.();
       } catch (error) {
         verdict(`FAIL: ${error?.message ?? error}`);

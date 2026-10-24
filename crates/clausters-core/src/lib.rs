@@ -119,6 +119,7 @@ pub mod event_bus;
 pub mod event_graph;
 pub mod event_lane;
 pub mod fft;
+pub mod files;
 pub mod ids;
 pub mod loudness;
 pub mod measure;

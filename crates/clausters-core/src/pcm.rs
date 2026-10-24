@@ -218,7 +218,7 @@ impl Layout {
 
     /// Reads the header of the file at `path`.
     pub fn open(path: &str) -> Result<Self, String> {
-        let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+        let mut file = crate::files::File::open(path).map_err(|e| format!("{path}: {e}"))?;
         Self::parse(&mut file, path)
     }
 
@@ -470,7 +470,7 @@ pub fn encode(samples: &[f32], encoding: Encoding, out: &mut Vec<u8>) {
 /// [`Writer::finalize`]. The container is the path's ([`Container::for_path`]).
 pub struct Writer {
     path: String,
-    file: std::io::BufWriter<std::fs::File>,
+    file: std::io::BufWriter<crate::files::File>,
     container: Container,
     channels: usize,
     sample_rate: f64,
@@ -509,7 +509,7 @@ impl Writer {
         let encoding = Encoding::named(sample_format)?;
         let head = header(container, channels, sample_rate, encoding, 0)
             .map_err(|e| format!("{path}: {e}"))?;
-        let file = std::fs::File::create(path).map_err(|e| format!("{path}: {e}"))?;
+        let file = crate::files::File::create(path).map_err(|e| format!("{path}: {e}"))?;
         let mut file = std::io::BufWriter::with_capacity(1 << 16, file);
         file.write_all(&head).map_err(|e| format!("{path}: {e}"))?;
         Ok(Self {
@@ -606,7 +606,7 @@ fn parse_fmt(fmt: &[u8]) -> Result<(Encoding, usize, f64), String> {
 /// An open PCM file, read by frame.
 pub struct Reader {
     layout: Layout,
-    file: std::fs::File,
+    file: crate::files::File,
     bytes: Vec<u8>,
 }
 
@@ -614,7 +614,7 @@ impl Reader {
     /// Opens the file `layout` describes.
     pub fn open(layout: &Layout) -> Result<Self, String> {
         let file =
-            std::fs::File::open(&layout.path).map_err(|e| format!("{}: {e}", layout.path))?;
+            crate::files::File::open(&layout.path).map_err(|e| format!("{}: {e}", layout.path))?;
         Ok(Self {
             layout: layout.clone(),
             file,

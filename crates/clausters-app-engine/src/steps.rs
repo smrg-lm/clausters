@@ -58,7 +58,7 @@ pub fn carry_while(
                 })?;
                 before += frames;
             }
-            Step::Move { from, to } => std::fs::rename(from, to)
+            Step::Move { from, to } => clausters_core::files::rename(from, to)
                 .map_err(|e| format!("moving {from} to {to} failed: {e}"))?,
             Step::Send(message) => {
                 tracing::warn!(

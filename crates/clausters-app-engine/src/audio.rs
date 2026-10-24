@@ -521,14 +521,9 @@ fn stat(wait: &Value) -> Value {
         let Some(path) = path.as_str() else {
             continue;
         };
-        let stamp = std::fs::metadata(path).ok().map(|m| {
-            let modified = m
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0.0, |d| d.as_secs_f64() * 1000.0);
-            json!({"modified": modified, "size": m.len()})
-        });
+        let stamp = clausters_core::files::metadata(path)
+            .ok()
+            .map(|m| json!({"modified": m.modified_ms.unwrap_or(0.0), "size": m.len}));
         stamps.insert(path.into(), stamp.unwrap_or(Value::Null));
     }
     json!({ "stamps": stamps })
@@ -538,7 +533,7 @@ fn stat(wait: &Value) -> Value {
 fn delete(files: &Value) {
     for path in files.as_array().into_iter().flatten() {
         if let Some(path) = path.as_str()
-            && let Err(e) = std::fs::remove_file(path)
+            && let Err(e) = clausters_core::files::remove_file(path)
             && e.kind() != std::io::ErrorKind::NotFound
         {
             tracing::warn!("the audio editor could not delete {path}: {e}");

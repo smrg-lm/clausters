@@ -18,6 +18,8 @@ interface ThreadStart {
     memory: WebAssembly.Memory;
     body: number;
     stack: number;
+    /** The thread's line to the page's file worker (`apps-files.ts`). */
+    files: MessagePort;
 }
 
 const scope = globalThis as unknown as {
@@ -26,7 +28,16 @@ const scope = globalThis as unknown as {
 };
 
 scope.onmessage = async (event) => {
-    const { glue, module, memory, body, stack } = event.data;
+    const { glue, module, memory, body, stack, files } = event.data;
+    // **A call into the page's storage waits here**: the request's address
+    // goes to the file worker, and this thread sleeps on its state until the
+    // worker answers, which a worker may do and the main thread may not.
+    (globalThis as { __claustersApps?: unknown }).__claustersApps = {
+        file(request: number): void {
+            files.postMessage(request);
+            Atomics.wait(new Int32Array(memory.buffer), request >> 2, 0);
+        },
+    };
     const host = await import(glue) as {
         initSync(options: { module: WebAssembly.Module; memory: WebAssembly.Memory; thread_stack_size: number }): {
             __wbindgen_thread_destroy?: () => void;

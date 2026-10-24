@@ -155,7 +155,7 @@ fn open_file(path: &str) -> Result<OpenFile, String> {
     use symphonia::core::meta::MetadataOptions;
 
     let err = |e: String| format!("{path}: {e}");
-    let file = std::fs::File::open(path).map_err(|e| err(e.to_string()))?;
+    let file = crate::dsp::pcm::Source::open(path).map_err(|e| err(e.to_string()))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = std::path::Path::new(path)

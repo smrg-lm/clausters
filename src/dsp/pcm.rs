@@ -5,6 +5,39 @@
 
 pub use clausters_core::pcm::*;
 
+/// **A file a decoder reads**, through the files the platform has
+/// (`clausters_core::files`): a symphonia source over it.
+pub struct Source(clausters_core::files::File);
+
+impl Source {
+    /// Opens the file at `path` to decode.
+    pub fn open(path: &str) -> std::io::Result<Source> {
+        clausters_core::files::File::open(path).map(Source)
+    }
+}
+
+impl std::io::Read for Source {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl std::io::Seek for Source {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.0.seek(pos)
+    }
+}
+
+impl symphonia::core::io::MediaSource for Source {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        self.0.len().ok()
+    }
+}
+
 /// **The layout of the file at `path`**, for a job that names it (a join's
 /// part over a file). Natively the file is opened. In a page the engine
 /// reaches no file of its own: an offline render's host hands over a reader

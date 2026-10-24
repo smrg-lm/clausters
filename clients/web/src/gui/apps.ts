@@ -26,6 +26,8 @@ export async function appsHost(): Promise<{ glue: HostGlue; init: () => Promise<
     const wasmUrl = new URL("../gui-host-apps/clausters_gui_bg.wasm", import.meta.url);
     const module = await WebAssembly.compileStreaming(fetch(wasmUrl));
     let memory: WebAssembly.Memory | null = null;
+    /** The worker that answers the threads' calls into the page's storage. */
+    let files: Worker | null = null;
     (globalThis as { __claustersApps?: unknown }).__claustersApps = {
         /** A worker named `name` that runs the body at `body`; whether it was made. */
         spawn(name: string, body: number): boolean {
@@ -36,7 +38,12 @@ export async function appsHost(): Promise<{ glue: HostGlue; init: () => Promise<
                     name,
                 });
                 worker.onerror = (event) => console.error(`clausters: thread ${name}: ${event.message}`);
-                worker.postMessage({ glue: glueUrl, module, memory, body, stack: THREAD_STACK });
+                // the thread's own line to the file worker
+                const line = new MessageChannel();
+                files ??= filesWorker(memory);
+                files.postMessage({ port: line.port1 }, [line.port1]);
+                worker.postMessage({ glue: glueUrl, module, memory, body, stack: THREAD_STACK, files: line.port2 },
+                    [line.port2]);
                 return true;
             } catch (error) {
                 console.error(`clausters: no worker for thread ${name}: ${String(error)}`);
@@ -52,4 +59,12 @@ export async function appsHost(): Promise<{ glue: HostGlue; init: () => Promise<
         return exports;
     };
     return { glue, init };
+}
+
+/** The page's file worker, over the shared memory (`apps-files.ts`). */
+function filesWorker(memory: WebAssembly.Memory): Worker {
+    const worker = new Worker(new URL("./apps-files.js", import.meta.url), { type: "module", name: "files" });
+    worker.onerror = (event) => console.error(`clausters: the files worker: ${event.message}`);
+    worker.postMessage({ memory });
+    return worker;
 }
