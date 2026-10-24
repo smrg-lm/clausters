@@ -3262,10 +3262,10 @@ over the opened file) carries over.
     - ⬜ The page: cross-origin isolation, shared memory, the engine in the
       worklet and the application in the host's wasm. **The design**
       *(opened 2026-10-24)*: one program in one wasm module over one
-      shared memory, instantiated three ways: the host and the application
-      on the page's main thread, the application's threads (renders, a
-      take's reader, every wait that touches a file) in workers, and the
-      engine's processing half in an AudioWorklet. Built commands cross
+      shared memory, instantiated three ways: the host on the page's main
+      thread, the application on a thread of its own with its threads
+      (renders, a take's reader) in workers, and the engine's processing
+      half in an AudioWorklet. Built commands cross
       the engine's lock-free FIFOs exactly as natively, since the FIFOs are
       in the one memory. A spike the same day compiled the host, the
       application and the engine to wasm with atomics and drew `gui.html`
@@ -3286,15 +3286,22 @@ over the opened file) carries over.
         The main thread never waits on a lock a worker holds, since a
         page's main thread cannot block: what it shares with a thread it
         reads with `try_` or through a channel it polls.
-      - ⬜ **A file layer**: the core's file calls (the PCM reader and
-        writer, the working folder, the peaks, the moves and removals,
-        the probe) go through one door, `std::fs` natively and in a page a
-        synchronous call into the origin's storage made from a worker,
-        which waits on the shared memory while a file worker does the
-        work with its sync access handles. The working folder in a page is
-        held by a Web Lock, as `src/base/workspace.ts` holds one now.
-        Every wait of the application that touches a file runs on one of
-        its threads, natively too, so the window never waits on a disk.
+      - ✅ **A file layer**: the core's file calls (the PCM reader and
+        writer, the peaks, the moves and removals, the probe, the server's
+        reads) go through one door, `clausters_core::files`: `std::fs`
+        natively, and in a page a synchronous call into the origin's
+        storage made from a worker, which waits on the shared memory while
+        the page's file worker does the work with its sync access handles.
+      - ✅ **The application on a thread of its own**, natively too: its
+        coordinator, editing context, engine and working folders are on a
+        thread the host asks with messages and that answers with what the
+        window draws (`host::audio_app`). A history step carried to its end
+        with its renders, a header read, a folder made: none of it can wait
+        on a page's main thread, and none of it waits on the window
+        natively either. The door's open is answered once the file opened.
+      - ⬜ **The working folder in a page**: held by a Web Lock and swept
+        when no tab holds it, as `src/base/workspace.ts` does now, from the
+        application's thread through the file layer.
       - ⬜ **The engine in the worklet**: `AppEngine::open` in a page makes
         the engine pair and hands the processing half to an
         `AudioWorkletNode` whose processor instantiates the module over

@@ -148,6 +148,8 @@ pub mod winit_keys;
 mod answer;
 mod apps;
 #[cfg(not(target_arch = "wasm32"))]
+mod audio_app;
+#[cfg(not(target_arch = "wasm32"))]
 mod audio_editor;
 mod clocks;
 mod define;

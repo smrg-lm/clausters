@@ -92,11 +92,14 @@ impl Host {
     ) {
         let path = options["path"].as_str();
         let title = options["title"].as_str().unwrap_or("Audio");
-        let answer = self
-            .open_audio_for(path, title, Some(from))
-            .map(|window| json!({"window": window}))
-            .map_err(|message| ("value".to_string(), message));
-        effects.push(HostEffect::Reply(app_reply(seq, answer)));
+        // answered once the application opened the file, or could not
+        let reply = super::audio_app::Reply::Client(from, seq);
+        if let Err(message) = self.open_audio_for(path, title, Some(reply)) {
+            effects.push(HostEffect::Reply(app_reply(
+                seq,
+                Err(("value".into(), message)),
+            )));
+        }
     }
 
     /// A page's host holds no application yet: its engine is in the

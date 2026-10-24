@@ -1,24 +1,25 @@
 //! **The audio editor this host owns**: the applications crate's audio
-//! editor opened here, over a file, on an engine this host holds, and every
-//! gesture on its window answered here.
+//! editor opened here, over a file, on an engine of its own, and every
+//! gesture on its window answered by it.
 //!
 //! The application is one program (`crates/clausters-apps/PLAN.md`, "The
 //! second turn"): the editor's coordinator, the take it reads and the engine
-//! it plays on are in this process, and the coordinator's runs are carried out
-//! by [`AudioApp`], once, in Rust. What is this module's is the window: the
-//! widget ids it is drawn with, the effects that are the window's (props set,
-//! the window drawn again, an answer, the clipboard), and the meters and the
-//! play cursor, which read the engine the application holds rather than a
-//! server's segment.
+//! it plays on are in this process, on a thread of their own
+//! (`super::audio_app`), so the window never waits on a disk or a render.
+//! What is this module's is the window: the widget ids it is drawn with,
+//! what a run left for it (props set, the window drawn again, an answer, the
+//! clipboard, its progress), applied on the host's tick, and the meters and
+//! the play cursor, which read the engine the application holds rather than
+//! a server's segment.
 
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
 use clausters_app_engine::AppEngine;
-use clausters_app_engine::audio::{AudioApp, Ran};
-use clausters_apps::editing::{Editing, MemberId};
 use clausters_editing::conversation::Answer;
 use serde_json::{Value, json};
 
+use super::audio_app::{FromApp, MakeEngine, Reply, ToApp};
 use super::*;
 
 /// The role an audio editor's widgets play, in the names the host's own
@@ -29,22 +30,23 @@ const AUDIO: &str = "audio";
 /// `window` verb names them with.
 const ROLES: &[&str] = &["widget", "meter", "pane", "envelope", "lane", "filesWidget"];
 
-/// **The audio editor's application in this host**: its engine and the
-/// carrier of its runs, the editing context its files' histories are in,
-/// and its windows.
+/// **The audio editor's application in this host**, as the host holds it:
+/// the line to its thread, and its windows.
 pub(crate) struct AudioHost {
-    app: AudioApp,
-    editing: Editing,
+    /// What makes the engine, until the thread starts and takes it.
+    make: Option<MakeEngine>,
+    /// What the host asks of the application, once its thread runs.
+    to_app: Option<Sender<ToApp>>,
+    /// What the application says back, read on the host's tick.
+    from_app: Receiver<FromApp>,
+    /// Its other end, for the thread.
+    out: Sender<FromApp>,
+    thread: Option<clausters_core::threads::Spawned>,
     windows: HashMap<i32, AudioWindow>,
-    /// What the windows' meters and play cursors read: the engine's own.
-    source: Arc<dyn BusSource>,
+    /// What the windows' meters and play cursors read: the engine's own,
+    /// once it is open.
+    source: Option<Arc<dyn BusSource>>,
     next_structure: i64,
-    /// The actions a client asked for through the door that wait on a
-    /// render, by the token they were started with: who asked, and the seq
-    /// its answer carries.
-    asked: HashMap<u64, (ClientId, i32)>,
-    /// The token the next client action is started with; a gesture's is 0.
-    next_token: u64,
 }
 
 impl std::fmt::Debug for AudioHost {
@@ -55,28 +57,28 @@ impl std::fmt::Debug for AudioHost {
     }
 }
 
-/// One audio editor's window.
+impl Drop for AudioHost {
+    fn drop(&mut self) {
+        // the thread ends as its line does, and natively it is waited for,
+        // so the working folders it holds are gone when the host is
+        self.to_app = None;
+        if let Some(thread) = self.thread.take() {
+            thread.join();
+        }
+    }
+}
+
+/// One audio editor's window, as the host holds it.
 #[derive(Debug)]
 struct AudioWindow {
-    member: MemberId,
     /// The structure its own widget ids are named under.
     structure: i64,
-    /// The ids its `window` verb is drawn with.
-    ids: Value,
-    /// Every widget it numbered, which a history step draws again.
-    widgets: Vec<i32>,
+    title: String,
     /// The widgets that draw the take, which a band and the loop switch are
-    /// set on.
+    /// set on, once the window is bound.
     takes: Vec<i32>,
-    /// The folder its renders are written to, held while the window lives
-    /// and removed when it goes, however the process ends
-    /// (`clausters_core::workspace`).
-    _workspace: clausters_core::workspace::Workspace,
     /// The client that opened it through the door, told when it goes.
     opener: Option<ClientId>,
-    /// The actions last handed to the window, so an unchanged set is not
-    /// sent again.
-    actions: Option<Value>,
 }
 
 /// **What an engine publishes, as the bus source a window reads**: the
@@ -110,28 +112,35 @@ impl BusSource for EngineSource {
 }
 
 impl AudioHost {
-    /// The application over `engine`, holding no window yet.
-    pub(crate) fn new(engine: Arc<Mutex<AppEngine>>) -> AudioHost {
-        let reading = engine.lock().unwrap_or_else(|e| e.into_inner()).reading();
-        let app = AudioApp::new(engine);
-        let mut editing = Editing::new();
-        app.hold(&mut editing);
+    /// The application, its engine made by `make` when its first window
+    /// opens.
+    fn new(make: MakeEngine) -> AudioHost {
+        let (out, from_app) = channel();
         AudioHost {
-            app,
-            editing,
+            make: Some(make),
+            to_app: None,
+            from_app,
+            out,
+            thread: None,
             windows: HashMap::new(),
-            source: Arc::new(EngineSource(reading)),
+            source: None,
             next_structure: 0,
-            asked: HashMap::new(),
-            next_token: 1,
         }
     }
 
-    fn member_call(&mut self, member: MemberId, call: Value) -> Value {
-        self.app.call(
-            &mut self.editing,
-            &json!({"verb": "member", "member": member, "call": call}),
-        )
+    /// **Asks the application**, its thread started on the first ask.
+    fn ask(&mut self, ask: ToApp) -> Result<(), String> {
+        if self.to_app.is_none() {
+            let make = self.make.take().ok_or("the audio editor's thread ended")?;
+            let (tx, thread) = super::audio_app::start(make, self.out.clone())
+                .map_err(|e| format!("no thread for the audio editor: {e}"))?;
+            self.to_app = Some(tx);
+            self.thread = Some(thread);
+        }
+        self.to_app
+            .as_ref()
+            .and_then(|tx| tx.send(ask).ok())
+            .ok_or_else(|| "the audio editor's thread ended".to_string())
     }
 }
 
@@ -140,135 +149,88 @@ impl Host {
     /// own (a test driving it block by block); [`Host::open_audio`] opens one
     /// on the machine's output otherwise.
     pub fn hold_audio_engine(&mut self, engine: Arc<Mutex<AppEngine>>) {
-        self.audio = Some(AudioHost::new(engine));
+        self.audio = Some(AudioHost::new(Box::new(move || Ok(engine))));
+    }
+
+    /// The audio editor's application, made on the first open.
+    fn audio_host(&mut self) -> &mut AudioHost {
+        self.audio.get_or_insert_with(|| {
+            AudioHost::new(Box::new(|| {
+                AppEngine::open().map(|engine| Arc::new(Mutex::new(engine)))
+            }))
+        })
     }
 
     /// **Opens the audio editor** in a window of its own, over the sound file
     /// at `path` or over none, and answers the window's id. The engine is
     /// opened on the machine's output the first time, unless one is held.
+    /// The window is drawn once the application has opened the file, on a
+    /// later tick; a file it cannot open is said then.
     pub fn open_audio(&mut self, path: Option<&str>, title: &str) -> Result<i32, String> {
         self.open_audio_for(path, title, None)
     }
 
-    /// [`Host::open_audio`] for the client `opener`, which is told
-    /// [`GUI_CLOSED`] when the window goes.
+    /// [`Host::open_audio`] answered to `reply` once it opened, or failed: a
+    /// client of the door is answered with the window, and told
+    /// [`GUI_CLOSED`] when it goes.
     pub(super) fn open_audio_for(
         &mut self,
         path: Option<&str>,
         title: &str,
-        opener: Option<ClientId>,
+        reply: Option<Reply>,
     ) -> Result<i32, String> {
-        if self.audio.is_none() {
-            let engine = AppEngine::open()?;
-            self.hold_audio_engine(Arc::new(Mutex::new(engine)));
-        }
-        let structure = self.audio.as_mut().map(|audio| {
+        let structure = {
+            let audio = self.audio_host();
             audio.next_structure += 1;
             audio.next_structure
-        });
-        let structure = structure.ok_or("the audio editor has no engine")?;
-        let own = |host: &mut Host, key: &str| {
-            host.own_widget(structure, AUDIO, key)
-                .ok_or_else(|| "out of widget ids for the audio editor".to_string())
         };
-        let def_id = own(self, "window")?;
-        let mut ids = serde_json::Map::new();
-        let mut widgets = Vec::new();
-        for role in ROLES {
-            let id = own(self, role)?;
-            ids.insert((*role).into(), json!(id));
-            widgets.push(id);
-        }
-        // On disk under the user's cache, never the temporary directory: a
-        // reverse of a day writes tens of gigabytes, and the temporary
-        // directory is memory on many machines.
-        let workspace = clausters_core::workspace::Workspace::create("audio")
-            .map_err(|e| format!("the working folder: {e}"))?;
-        let mut request = json!({"verb": "openAudio", "key": format!("audio:{structure}"),
-            "workspace": workspace.path().to_string_lossy(), "title": title, "display": 0});
-        match path {
-            Some(path) => {
-                let info = clausters_app_engine::probe_audio(path)?;
-                request["path"] = json!(path);
-                request["frames"] = json!(info.frames);
-                request["channels"] = json!(info.channels);
-                request["rate"] = json!(info.sample_rate);
-                request["codec"] = json!(info.codec);
-                request["sample_format"] = json!(info.sample_format);
-            }
-            None => request["empty"] = json!(true),
-        }
-        let Some(audio) = self.audio.as_mut() else {
-            return Err("the audio editor has no engine".into());
+        let def_id = self
+            .own_widget(structure, AUDIO, "window")
+            .ok_or("out of widget ids for the audio editor")?;
+        let opener = match &reply {
+            Some(Reply::Client(to, _)) => Some(*to),
+            _ => None,
         };
-        let opened = audio.app.call(&mut audio.editing, &request);
-        let member = opened["member"]
-            .as_u64()
-            .and_then(|m| MemberId::try_from(m).ok())
-            .ok_or_else(|| opened["error"].as_str().unwrap_or("not opened").to_string())?;
-        let dialogs = audio.member_call(member, json!({"verb": "dialogs"}));
-        let names: Vec<String> = dialogs["dialogs"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|n| n.as_str().map(str::to_string))
-            .collect();
-        let mut dialog_ids = serde_json::Map::new();
-        for name in names {
-            let id = own(self, &format!("dialog:{name}"))?;
-            dialog_ids.insert(name, json!(id));
-            widgets.push(id);
-        }
-        ids.insert("dialogs".into(), Value::Object(dialog_ids));
-        let takes = vec![
-            ids["widget"].as_i64().unwrap_or(0) as i32,
-            ids["lane"].as_i64().unwrap_or(0) as i32,
-        ];
-        let Some(audio) = self.audio.as_mut() else {
-            return Err("the audio editor has no engine".into());
-        };
-        audio.member_call(
-            member,
-            json!({"verb": "sync", "window": def_id, "title": title}),
-        );
-        audio.member_call(member, json!({"verb": "attach_view"}));
+        let audio = self.audio_host();
         audio.windows.insert(
             def_id,
             AudioWindow {
-                member,
                 structure,
-                ids: Value::Object(ids),
-                widgets,
-                takes,
-                _workspace: workspace,
+                title: title.to_string(),
+                takes: Vec::new(),
                 opener,
-                actions: None,
             },
         );
-        let source = Arc::clone(&audio.source);
-        self.window_sources.insert(def_id, source);
-        self.publish_audio(def_id);
-        let rate = self.audio.as_ref().map_or(0.0, |a| a.source.sample_rate());
-        self.act_audio(
+        let asked = audio.ask(ToApp::Open {
             def_id,
-            json!({"verb": "open", "chunk": 1, "rate": rate, "empty": path.is_none(),
-                "window": true}),
-            false,
-        );
-        // **The play cursor is the editor's transport's position**: taken as
-        // the open starts, which a render of the file's peaks may outlast.
-        let transport = self.audio.as_mut().and_then(|audio| {
-            audio.app.call(
-                &mut audio.editing,
-                &json!({"verb": "audio", "member": member, "query": "transport"}),
-            )["transport"]
-                .as_u64()
+            key: format!("audio:{structure}"),
+            title: title.to_string(),
+            path: path.map(str::to_string),
+            reply,
         });
-        if let Some(transport) = transport {
-            self.set_head_clock_of(def_id, clocks::HeadClock::Transport(transport as usize));
+        if let Err(e) = asked {
+            audio.windows.remove(&def_id);
+            return Err(e);
         }
-        diag::info!("audio: opened {}", path.unwrap_or("an empty editor"));
         Ok(def_id)
+    }
+
+    /// **Asks window `def_id`'s editor `call`** from this process, answered
+    /// on the channel this returns: a member's verb, a query or an action, as
+    /// the door's [`GUI_APP_CALL`] takes them.
+    #[cfg(test)]
+    pub(crate) fn ask_audio(
+        &mut self,
+        def_id: i32,
+        call: Value,
+    ) -> Receiver<Result<Value, (String, String)>> {
+        let (tx, rx) = channel();
+        let _ = self.audio_host().ask(ToApp::Call {
+            def_id,
+            call,
+            reply: Reply::Local(tx),
+        });
+        rx
     }
 
     /// Whether window `def_id` is an audio editor this host owns.
@@ -278,101 +240,174 @@ impl Host {
             .is_some_and(|audio| audio.windows.contains_key(&def_id))
     }
 
-    /// **A gesture on an audio editor's window**, answered by its coordinator:
-    /// a paste or a mix takes its clipboard lease first, as a client's does.
+    /// **A gesture on an audio editor's window**, handed to its application.
     pub(super) fn answer_audio(&mut self, def_id: i32, message: &OscMessage) -> bool {
-        let Some(audio) = self.audio.as_mut() else {
-            return false;
-        };
-        let Some(member) = audio.windows.get(&def_id).map(|w| w.member) else {
-            return false;
-        };
         let args: Vec<Value> = message
             .args
             .iter()
             .map(document::multitrack::atom)
             .collect();
-        let prepared = audio.app.call(
-            &mut audio.editing,
-            &json!({"verb": "exchange", "action": "event", "member": member, "args": args}),
-        );
-        let lease = prepared.get("lease").is_some_and(|l| !l.is_null());
-        let mut action = json!({"verb": "event", "addr": message.addr, "window": true,
-            "args": prepared["args"]});
-        if lease {
-            action["lease"] = json!(true);
-        }
-        self.act_audio(def_id, action, lease);
-        true
+        let addr = message.addr.clone();
+        self.audio_host()
+            .ask(ToApp::Event { def_id, addr, args })
+            .is_ok()
     }
 
-    /// Starts `action` on window `def_id`'s editor and carries out what is the
-    /// window's; its end, when it did not stop on a render.
-    fn act_audio(
+    /// **One call of a client to window `def_id`'s editor**
+    /// ([`GUI_APP_CALL`]), answered when the application has done it.
+    pub(super) fn call_app_audio(
         &mut self,
+        seq: i32,
         def_id: i32,
-        action: Value,
-        lease: bool,
-    ) -> Option<Result<Value, clausters_app_engine::audio::Raised>> {
-        let audio = self.audio.as_mut()?;
-        let member = audio.windows.get(&def_id)?.member;
-        let ran = audio.app.act(&mut audio.editing, member, action, 0, lease);
-        let end = ran.end.clone();
-        if let Some(Err(raised)) = &end {
-            diag::warn!("audio: {}", raised.message);
-            self.say(def_id, status::Line::of_reason(None, &raised.message));
+        call: &Value,
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let asked = self.audio_host().ask(ToApp::Call {
+            def_id,
+            call: call.clone(),
+            reply: Reply::Client(from, seq),
+        });
+        if let Err(e) = asked {
+            effects.push(HostEffect::Reply(super::apps::app_reply(
+                seq,
+                Err(("runtime".into(), e)),
+            )));
         }
-        self.perform_audio(def_id, ran);
-        end
     }
 
-    /// **The audio editor's turn on this host's tick**: what its engine handed
-    /// back taken, and every run whose render landed carried on.
+    /// **The audio editor's turn on this host's tick**: everything its
+    /// application said since the last one, carried out.
     pub fn tick_audio(&mut self) {
         let Some(audio) = self.audio.as_mut() else {
             return;
         };
-        let landed = audio.app.landed(&mut audio.editing);
-        for ran in landed {
-            let def_id = self.audio.as_ref().and_then(|audio| {
-                audio
-                    .windows
-                    .iter()
-                    .find(|(_, w)| w.member == ran.member)
-                    .map(|(id, _)| *id)
-            });
-            // **A client's action answered as it ends**, to the client
-            let asked = match ran.end {
-                Some(_) => self
-                    .audio
-                    .as_mut()
-                    .and_then(|audio| audio.asked.remove(&ran.token)),
-                None => None,
-            };
-            if let (Some((to, seq)), Some(end)) = (asked, &ran.end) {
-                let msg = super::apps::app_reply(seq, ended(end));
-                self.pending_effects.push(HostEffect::Send { to, msg });
-                if let Some(def_id) = def_id {
-                    self.perform_audio(def_id, ran);
+        let said: Vec<FromApp> = audio.from_app.try_iter().collect();
+        for one in said {
+            match one {
+                FromApp::Engine(reading) => {
+                    if let Some(audio) = self.audio.as_mut() {
+                        audio.source = Some(Arc::new(EngineSource(reading)));
+                    }
                 }
-                continue;
-            }
-            if let Some(def_id) = def_id {
-                // **What failed is said in the window**, a render's above all,
-                // which ends where nobody is looking at a log
-                if let Some(Err(raised)) = &ran.end {
-                    diag::warn!("audio: {}", raised.message);
-                    self.say(def_id, status::Line::of_reason(None, &raised.message));
+                FromApp::Opened {
+                    def_id,
+                    outcome,
+                    reply,
+                } => self.opened_audio(def_id, outcome, reply),
+                FromApp::Ran {
+                    def_id,
+                    effects,
+                    actions,
+                    end,
+                    say,
+                } => {
+                    if !self.owns_audio(def_id) {
+                        continue;
+                    }
+                    // **What failed is said in the window**, a render's above
+                    // all, which ends where nobody is looking at a log
+                    if say && let Some(Err(raised)) = &end {
+                        diag::warn!("audio: {}", raised.message);
+                        self.say(def_id, status::Line::of_reason(None, &raised.message));
+                    }
+                    self.perform_audio(def_id, effects, actions);
                 }
-                self.perform_audio(def_id, ran);
+                FromApp::Reply { to, seq, answer } => {
+                    let msg = super::apps::app_reply(seq, answer);
+                    self.pending_effects.push(HostEffect::Send { to, msg });
+                }
             }
         }
     }
 
+    /// **Window `def_id`'s editor opened**, or did not: its widgets
+    /// numbered and handed over, its meters and its play cursor set to read
+    /// the engine, and whoever opened it answered.
+    fn opened_audio(
+        &mut self,
+        def_id: i32,
+        outcome: Result<Vec<String>, String>,
+        reply: Option<Reply>,
+    ) {
+        let answer = |host: &mut Host, answer: Result<Value, (String, String)>| match reply {
+            Some(Reply::Client(to, seq)) => {
+                let msg = super::apps::app_reply(seq, answer);
+                host.pending_effects.push(HostEffect::Send { to, msg });
+            }
+            #[cfg(test)]
+            Some(Reply::Local(tx)) => {
+                let _ = tx.send(answer);
+            }
+            None => {
+                if let Err((_, why)) = answer {
+                    diag::warn!("audio: {why}");
+                }
+            }
+        };
+        let dialogs = match outcome {
+            Ok(opened) => opened,
+            Err(why) => {
+                if let Some(audio) = self.audio.as_mut() {
+                    audio.windows.remove(&def_id);
+                }
+                return answer(self, Err(("value".into(), why)));
+            }
+        };
+        let Some((structure, title)) = self
+            .audio
+            .as_ref()
+            .and_then(|a| a.windows.get(&def_id))
+            .map(|w| (w.structure, w.title.clone()))
+        else {
+            return;
+        };
+        let mut ids = serde_json::Map::new();
+        let mut widgets = Vec::new();
+        for role in ROLES.iter().map(|r| (*r).to_string()) {
+            let Some(id) = self.own_widget(structure, AUDIO, &role) else {
+                return answer(self, Err(("runtime".into(), "out of widget ids".into())));
+            };
+            ids.insert(role, json!(id));
+            widgets.push(id);
+        }
+        let mut dialog_ids = serde_json::Map::new();
+        for name in dialogs {
+            let Some(id) = self.own_widget(structure, AUDIO, &format!("dialog:{name}")) else {
+                return answer(self, Err(("runtime".into(), "out of widget ids".into())));
+            };
+            dialog_ids.insert(name, json!(id));
+            widgets.push(id);
+        }
+        ids.insert("dialogs".into(), Value::Object(dialog_ids));
+        let takes = vec![
+            ids["widget"].as_i64().unwrap_or(0) as i32,
+            ids["lane"].as_i64().unwrap_or(0) as i32,
+        ];
+        let Some(audio) = self.audio.as_mut() else {
+            return;
+        };
+        if let Some(window) = audio.windows.get_mut(&def_id) {
+            window.takes = takes;
+        }
+        let source = audio.source.clone();
+        let _ = audio.ask(ToApp::Bind {
+            def_id,
+            ids: Value::Object(ids),
+            widgets,
+            title,
+        });
+        if let Some(source) = source {
+            self.window_sources.insert(def_id, source);
+        }
+        diag::info!("audio: opened window {def_id}");
+        answer(self, Ok(json!({"window": def_id})));
+    }
+
     /// **What a run left the window**, carried out on it.
-    fn perform_audio(&mut self, def_id: i32, ran: Ran) {
+    fn perform_audio(&mut self, def_id: i32, effects: Vec<Value>, actions: Option<Value>) {
         let mut fx = Vec::new();
-        for effect in ran.effects {
+        for effect in effects {
             match effect["kind"].as_str().unwrap_or_default() {
                 "echo" => {
                     if let Ok(answer) = serde_json::from_value::<Answer>(effect["answer"].clone()) {
@@ -386,7 +421,14 @@ impl Host {
                         self.set_props(widget as i32, props.into_iter().collect(), &mut fx);
                     }
                 }
-                "publish" => self.publish_audio(def_id),
+                "publish" => self.publish_audio(def_id, effect["def"].clone()),
+                // **the play cursor is the editor's transport's position**
+                "transport" => {
+                    if let Some(transport) = effect["transport"].as_u64() {
+                        let clock = clocks::HeadClock::Transport(transport as usize);
+                        self.set_head_clock_of(def_id, clock);
+                    }
+                }
                 "band" => {
                     for widget in self.audio_takes(def_id) {
                         let props = vec![
@@ -402,7 +444,18 @@ impl Host {
                         self.set_props(*widget, vec![("looping".into(), json!(on))], &mut fx);
                     }
                 }
-                "resync" => self.resync_audio(def_id, &mut fx),
+                // every widget drawn again from the editor, after a history
+                // step
+                "resync" => {
+                    for pair in effect["props"].as_array().into_iter().flatten() {
+                        if let (Some(widget), Value::Object(props)) = (pair[0].as_i64(), &pair[1])
+                            && !props.is_empty()
+                        {
+                            let props = props.clone().into_iter().collect();
+                            self.set_props(widget as i32, props, &mut fx);
+                        }
+                    }
+                }
                 "clipboard" => {
                     let doc = effect["document"].as_str().unwrap_or_default();
                     match serde_json::from_str(doc) {
@@ -433,13 +486,22 @@ impl Host {
                     self.pending_effects.extend(fx);
                     return;
                 }
-                "closedWindow" => self.forget_audio(def_id),
+                "closedWindow" => {
+                    self.forget_audio(def_id);
+                    if let Some(audio) = self.audio.as_mut() {
+                        let _ = audio.ask(ToApp::Forget { def_id });
+                    }
+                }
                 // what a client kept of the file in focus, the cursor and the
                 // layers is the editor's own here
                 _ => {}
             }
         }
-        self.publish_audio_actions(def_id);
+        if let Some(actions) = actions
+            && self.owns_audio(def_id)
+        {
+            self.set_props(def_id, vec![("actions".into(), actions)], &mut fx);
+        }
         self.pending_effects.extend(fx);
     }
 
@@ -452,24 +514,23 @@ impl Host {
             .unwrap_or_default()
     }
 
-    /// **The window drawn again** with the ids it was numbered with.
-    fn publish_audio(&mut self, def_id: i32) {
+    /// **The window drawn again**, from the tree its application drew with
+    /// the ids it was numbered with.
+    fn publish_audio(&mut self, def_id: i32, mut def: Value) {
         use std::net::{Ipv4Addr, SocketAddr};
 
-        let Some(audio) = self.audio.as_mut() else {
-            return;
-        };
-        let Some((member, mut ids)) = audio
-            .windows
-            .get(&def_id)
-            .map(|w| (w.member, w.ids.clone()))
+        let Some(structure) = self
+            .audio
+            .as_ref()
+            .and_then(|a| a.windows.get(&def_id))
+            .map(|w| w.structure)
         else {
             return;
         };
-        ids["verb"] = json!("window");
-        let mut def = audio.member_call(member, ids);
+        if !def.is_object() {
+            return;
+        }
         def["id"] = json!(def_id);
-        let structure = audio.windows.get(&def_id).map_or(0, |w| w.structure);
         self.number_own(&mut def, structure, AUDIO);
         let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
         let effects = self.handle_packet(
@@ -482,165 +543,36 @@ impl Host {
         self.pending_effects.extend(effects);
     }
 
-    /// **Every widget drawn again** from the editor, after a history step.
-    fn resync_audio(&mut self, def_id: i32, fx: &mut Vec<HostEffect>) {
-        let Some(audio) = self.audio.as_mut() else {
-            return;
-        };
-        let Some((member, widgets)) = audio
-            .windows
-            .get(&def_id)
-            .map(|w| (w.member, w.widgets.clone()))
-        else {
-            return;
-        };
-        let props: Vec<(i32, Value)> = widgets
-            .into_iter()
-            .map(|widget| {
-                (
-                    widget,
-                    audio.member_call(member, json!({"verb": "props", "widget": widget})),
-                )
-            })
-            .collect();
-        for (widget, props) in props {
-            if let Value::Object(props) = props
-                && !props.is_empty()
-            {
-                self.set_props(widget, props.into_iter().collect(), fx);
-            }
-        }
-    }
-
-    /// The window's actions handed over when they moved.
-    fn publish_audio_actions(&mut self, def_id: i32) {
-        let Some(audio) = self.audio.as_mut() else {
-            return;
-        };
-        let Some(member) = audio.windows.get(&def_id).map(|w| w.member) else {
-            return;
-        };
-        let actions = audio.app.call(
-            &mut audio.editing,
-            &json!({"verb": "actions", "member": member}),
-        );
-        let Some(window) = audio.windows.get_mut(&def_id) else {
-            return;
-        };
-        if window.actions.as_ref() == Some(&actions) || !actions.is_object() {
-            return;
-        }
-        window.actions = Some(actions.clone());
-        let mut fx = Vec::new();
-        self.set_props(def_id, vec![("actions".into(), actions)], &mut fx);
-        self.pending_effects.extend(fx);
-    }
-
     /// **Closes the audio editor's window `def_id`**, as its editor asked once
-    /// nothing was left to lose: what sounded it freed, the window freed, and
-    /// its working folder removed with the renders it holds.
+    /// nothing was left to lose: the window freed here, and what sounded it
+    /// freed, its renders called off and its working folder removed by its
+    /// application.
     fn close_audio(&mut self, def_id: i32) {
-        self.act_audio(def_id, json!({"verb": "closed"}), false);
         self.free_own_window(def_id);
         self.forget_audio(def_id);
+        if let Some(audio) = self.audio.as_mut() {
+            let _ = audio.ask(ToApp::Close { def_id });
+        }
     }
 
-    /// The window is this host's no longer.
+    /// The window is this host's no longer, and whoever opened it is told.
     fn forget_audio(&mut self, def_id: i32) {
         self.window_sources.remove(&def_id);
-        // its renders are called off, and its working folder goes with it,
-        // dropped
-        let mut told = Vec::new();
-        if let Some(audio) = self.audio.as_mut()
-            && let Some(window) = audio.windows.remove(&def_id)
-        {
-            audio.app.call_off(window.member);
-            // what a client still waits on ends with the window
-            for (to, seq) in audio.asked.drain().map(|(_, asked)| asked) {
-                let gone = Err(("runtime".to_string(), "the window closed".to_string()));
-                told.push(HostEffect::Send {
-                    to,
-                    msg: super::apps::app_reply(seq, gone),
-                });
-            }
-            if let Some(to) = window.opener {
-                told.push(HostEffect::Send {
-                    to,
-                    msg: OscMessage {
-                        addr: GUI_CLOSED.into(),
-                        args: vec![OscType::Int(def_id)],
-                    },
-                });
-            }
-            drop(window);
-        }
-        self.pending_effects.extend(told);
-    }
-
-    /// **One call of a client to window `def_id`'s editor**
-    /// ([`GUI_APP_CALL`]): a member's verb or a query answered at once, an
-    /// action carried as far as it goes and answered when it ends.
-    pub(super) fn call_app_audio(
-        &mut self,
-        seq: i32,
-        def_id: i32,
-        call: &Value,
-        from: ClientId,
-        effects: &mut Vec<HostEffect>,
-    ) {
-        let reply = |answer| HostEffect::Reply(super::apps::app_reply(seq, answer));
-        let Some(audio) = self.audio.as_mut() else {
-            return;
-        };
-        let Some(member) = audio.windows.get(&def_id).map(|w| w.member) else {
-            return;
-        };
-        if let Some(request) = call.get("member") {
-            let answer = audio.member_call(member, request.clone());
-            effects.push(reply(Ok(answer)));
-            self.publish_audio_actions(def_id);
-        } else if let Some(query) = call["query"].as_str() {
-            // what the window reads of the editor: its transport, its
-            // actions, the history of the file in focus
-            let request = match query {
-                "actions" => json!({"verb": "actions", "member": member}),
-                "history" => json!({"verb": "state", "member": member}),
-                _ => json!({"verb": "audio", "member": member, "query": query}),
-            };
-            let answer = audio.app.call(&mut audio.editing, &request);
-            effects.push(reply(Ok(answer)));
-        } else if let Some(Value::Object(action)) = call.get("do") {
-            let mut action = Value::Object(action.clone());
-            action["window"] = json!(true);
-            let token = audio.next_token;
-            audio.next_token += 1;
-            let ran = audio
-                .app
-                .act(&mut audio.editing, member, action, token, false);
-            match &ran.end {
-                Some(end) => effects.push(reply(ended(end))),
-                None => {
-                    if let Some(audio) = self.audio.as_mut() {
-                        audio.asked.insert(token, (from, seq));
-                    }
-                }
-            }
-            self.perform_audio(def_id, ran);
-        } else {
-            effects.push(reply(Err((
-                "value".into(),
-                "a call is a member's verb, a query or an action".into(),
-            ))));
+        let opener = self
+            .audio
+            .as_mut()
+            .and_then(|audio| audio.windows.remove(&def_id))
+            .and_then(|window| window.opener);
+        if let Some(to) = opener {
+            self.pending_effects.push(HostEffect::Send {
+                to,
+                msg: OscMessage {
+                    addr: GUI_CLOSED.into(),
+                    args: vec![OscType::Int(def_id)],
+                },
+            });
         }
     }
-}
-
-/// An action's end as the door answers it.
-fn ended(
-    end: &Result<Value, clausters_app_engine::audio::Raised>,
-) -> Result<Value, (String, String)> {
-    end.clone()
-        .map_err(|raised| (raised.kind.clone(), raised.message.clone()))
 }
 
 #[cfg(test)]
@@ -661,21 +593,47 @@ mod tests {
         path
     }
 
-    /// **The open's work landed**: the peaks render it hands off has run,
-    /// taken on the host's ticks, and nothing is pending on the file.
-    fn settled(host: &mut Host, def_id: i32) {
+    /// The host's ticks turned until `done`, or a failure past 20 s.
+    fn until(host: &mut Host, what: &str, mut done: impl FnMut(&mut Host) -> bool) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         loop {
             host.take_effects();
-            let audio = host.audio.as_mut().unwrap();
-            let member = audio.windows[&def_id].member;
-            let actions = audio.app.call(
-                &mut audio.editing,
-                &json!({"verb": "actions", "member": member}),
-            );
-            if actions["save"]["pending"] != true {
+            if done(host) {
                 return;
             }
+            assert!(std::time::Instant::now() < deadline, "{what}");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    /// **Window `def_id`'s editor asked `call`**, its answer waited for.
+    fn ask(host: &mut Host, def_id: i32, call: Value) -> Value {
+        let rx = host.ask_audio(def_id, call);
+        let mut answer = None;
+        until(host, "the editor never answered", |_| {
+            answer = rx.try_recv().ok();
+            answer.is_some()
+        });
+        answer
+            .unwrap()
+            .unwrap_or_else(|(kind, why)| json!({"raised": kind, "why": why}))
+    }
+
+    /// **A window opened over `path` and settled**: drawn, and the peaks
+    /// render the open hands off landed.
+    fn opened(host: &mut Host, path: &str) -> i32 {
+        let def_id = host.open_audio(Some(path), "take").expect("opened");
+        until(host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        settled(host, def_id);
+        def_id
+    }
+
+    /// **The open's work landed**: nothing is pending on the file.
+    fn settled(host: &mut Host, def_id: i32) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while ask(host, def_id, json!({"query": "actions"}))["save"]["pending"] == true {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the open never settled"
@@ -686,12 +644,24 @@ mod tests {
 
     /// The parts the take of window `def_id` is made of.
     fn parts(host: &mut Host, def_id: i32) -> Vec<Value> {
-        let audio = host.audio.as_mut().unwrap();
-        let member = audio.windows[&def_id].member;
-        audio.member_call(member, json!({"verb": "segments"}))["parts"]
+        ask(host, def_id, json!({"member": {"verb": "segments"}}))["parts"]
             .as_array()
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// A host over a detached engine of its own.
+    fn host() -> Host {
+        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
+        let mut host = Host::new();
+        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
+        host
+    }
+
+    /// The `widget` id of window `def_id`, as its tree names it.
+    fn widget_of(host: &Host, def_id: i32) -> i32 {
+        let audio = host.audio.as_ref().unwrap();
+        audio.windows[&def_id].takes[0]
     }
 
     /// **The host opens the audio editor over a file and answers its
@@ -701,10 +671,8 @@ mod tests {
     #[test]
     fn the_host_owns_an_audio_editor_and_answers_its_window() {
         let path = take("owns", 24_000);
-        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
-        let mut host = Host::new();
-        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
-        let def_id = host.open_audio(Some(&path), "take").expect("opened");
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
         assert!(host.window_def(def_id).is_some(), "the window is drawn");
         assert!(host.source_of(def_id).is_some(), "it reads the engine");
         assert!(
@@ -714,14 +682,9 @@ mod tests {
             ),
             "its play cursor is drawn from the editor's transport"
         );
-        // the open's peaks render lands on a tick: a file in the working
-        // folder is a render under way, and an edit waits for it to end
-        settled(&mut host, def_id);
         let before = parts(&mut host, def_id);
         assert_eq!(before.len(), 1, "{before:?}");
-        let widget = host.audio.as_ref().unwrap().windows[&def_id].ids["widget"]
-            .as_i64()
-            .unwrap() as i32;
+        let widget = widget_of(&host, def_id);
         let delete = host.event_message(
             widget,
             1,
@@ -748,29 +711,29 @@ mod tests {
     #[test]
     fn a_working_folder_is_on_disk_and_goes_with_its_window() {
         let path = take("folder", 4_800);
-        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
-        let mut host = Host::new();
-        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
-        let folder = |host: &Host, def_id: i32| {
-            host.audio.as_ref().unwrap().windows[&def_id]
-                ._workspace
-                .path()
-                .to_path_buf()
+        let mut host = host();
+        // the folder the open's peaks were written into
+        let folder = |host: &mut Host, def_id: i32| {
+            let peaks = parts(host, def_id)[0]["peaks"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            std::path::Path::new(&peaks).parent().unwrap().to_path_buf()
         };
-        let def_id = host.open_audio(Some(&path), "take").expect("opened");
-        let closed = folder(&host, def_id);
+        let def_id = opened(&mut host, &path);
+        let closed = folder(&mut host, def_id);
         assert!(
             closed.starts_with(clausters_core::workspace::root()),
             "{}",
             closed.display()
         );
-        settled(&mut host, def_id);
         assert!(closed.is_dir());
         host.close_audio(def_id);
-        assert!(!closed.exists(), "closing the window removed it");
-        let def_id = host.open_audio(Some(&path), "take").expect("opened");
-        let ended = folder(&host, def_id);
-        settled(&mut host, def_id);
+        until(&mut host, "closing the window removed it", |_| {
+            !closed.exists()
+        });
+        let def_id = opened(&mut host, &path);
+        let ended = folder(&mut host, def_id);
         drop(host);
         assert!(!ended.exists(), "the host ending removed it");
         let _ = std::fs::remove_file(&path);
@@ -784,14 +747,9 @@ mod tests {
         let path = take("empty", 24_000);
         let out =
             std::env::temp_dir().join(format!("host-audio-empty-out-{}.wav", std::process::id()));
-        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
-        let mut host = Host::new();
-        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
-        let def_id = host.open_audio(Some(&path), "take").expect("opened");
-        settled(&mut host, def_id);
-        let widget = host.audio.as_ref().unwrap().windows[&def_id].ids["widget"]
-            .as_i64()
-            .unwrap() as i32;
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        let widget = widget_of(&host, def_id);
         let delete = host.event_message(
             widget,
             1,
@@ -802,37 +760,20 @@ mod tests {
             ],
         );
         assert!(host.deliver(def_id, &delete));
-        host.take_effects();
         assert!(parts(&mut host, def_id).is_empty(), "nothing is left");
         assert!(host.window_def(def_id).is_some(), "the window still draws");
         // saved, it is a header and no frames
-        let audio = host.audio.as_mut().unwrap();
-        let member = audio.windows[&def_id].member;
-        let mut ran = audio.app.act(
-            &mut audio.editing,
-            member,
-            json!({"verb": "save", "request": {"path": out.to_string_lossy(), "format": "int16"}}),
-            3,
-            false,
+        let saved = ask(
+            &mut host,
+            def_id,
+            json!({"do": {"verb": "save",
+                "request": {"path": out.to_string_lossy(), "format": "int16"}}}),
         );
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while ran.end.is_none() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the save never landed"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-            let audio = host.audio.as_mut().unwrap();
-            if let Some(landed) = audio
-                .app
-                .landed(&mut audio.editing)
-                .into_iter()
-                .find(|r| r.end.is_some())
-            {
-                ran = landed;
-            }
-        }
-        assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+        assert_eq!(
+            saved["destination"]["path"],
+            json!(out.to_string_lossy()),
+            "{saved}"
+        );
         let layout =
             clausters_core::pcm::Layout::open(&out.to_string_lossy()).expect("a sound file");
         assert_eq!(layout.frames, 0);
@@ -842,11 +783,8 @@ mod tests {
             "a WAV header and nothing else"
         );
         // and an undo puts the take back
-        let window = host.audio.as_ref().unwrap().windows[&def_id].member;
-        let _ = window;
         let undo = host.event_message(def_id, 2, vec![OscType::String("undo".into())]);
         assert!(host.deliver(def_id, &undo));
-        host.take_effects();
         assert_eq!(parts(&mut host, def_id).len(), 1, "undone");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(&out);
@@ -877,10 +815,29 @@ mod tests {
         )
     }
 
+    /// The door's answer for `seq`, the host's ticks turned until it came.
+    fn answered(host: &mut Host, first: Vec<HostEffect>, seq: i32) -> Value {
+        if let Some(answer) = reply_of(&first, seq) {
+            return answer;
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            if let Some(answer) = reply_of(&host.take_effects(), seq) {
+                return answer;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the door never answered"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     /// **A client opens the audio editor through the door and is its
-    /// handler**: the open answers the window, a member's verb and a query
-    /// are answered at once, a save that renders is answered when it lands,
-    /// to the client that asked, and the client is told when the window goes.
+    /// handler**: the open answers the window once it opened, a member's
+    /// verb and a query are answered, a save that renders is answered when
+    /// it lands, to the client that asked, and the client is told when the
+    /// window goes.
     #[test]
     fn a_client_opens_and_calls_the_audio_editor_through_the_door() {
         use std::net::{Ipv4Addr, SocketAddr};
@@ -888,12 +845,10 @@ mod tests {
         let path = take("door", 24_000);
         let out =
             std::env::temp_dir().join(format!("host-audio-door-out-{}.wav", std::process::id()));
-        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
-        let mut host = Host::new();
-        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
+        let mut host = host();
         let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_999)));
         let options = json!({"path": path, "title": "take"}).to_string();
-        let effects = door(
+        let first = door(
             &mut host,
             GUI_APP_OPEN,
             vec![
@@ -903,12 +858,15 @@ mod tests {
             ],
             client,
         );
-        let opened = reply_of(&effects, 1).expect("the open is answered");
+        let opened = answered(&mut host, first, 1);
         let window = opened["ok"]["window"].as_i64().expect("a window") as i32;
         assert!(host.owns_audio(window));
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
         settled(&mut host, window);
         let call = |host: &mut Host, seq: i32, call: Value| {
-            door(
+            let first = door(
                 host,
                 GUI_APP_CALL,
                 vec![
@@ -917,49 +875,31 @@ mod tests {
                     OscType::String(call.to_string()),
                 ],
                 client,
-            )
+            );
+            answered(host, first, seq)
         };
-        // a member's verb, answered at once
-        let file = reply_of(&call(&mut host, 2, json!({"member": {"verb": "file"}})), 2).unwrap();
+        // a member's verb
+        let file = call(&mut host, 2, json!({"member": {"verb": "file"}}));
         assert_eq!(file["ok"]["path"], json!(path), "{file}");
         assert_eq!(file["ok"]["frames"], 24_000, "{file}");
         // a query of its state
-        let state = reply_of(&call(&mut host, 3, json!({"query": "transport"})), 3).unwrap();
+        let state = call(&mut host, 3, json!({"query": "transport"}));
         assert!(state["ok"]["transport"].is_u64(), "{state}");
-        let history = reply_of(&call(&mut host, 30, json!({"query": "history"})), 30).unwrap();
+        let history = call(&mut host, 30, json!({"query": "history"}));
         assert_eq!(history["ok"]["canUndo"], false, "{history}");
-        let actions = reply_of(&call(&mut host, 31, json!({"query": "actions"})), 31).unwrap();
+        let actions = call(&mut host, 31, json!({"query": "actions"}));
         assert!(actions["ok"].is_object(), "{actions}");
         // an action that renders, answered when it lands, to the client
         let save = json!({"do": {"verb": "save",
             "request": {"path": out.to_string_lossy(), "format": "int16"}}});
-        let mut answer = reply_of(&call(&mut host, 4, save), 4);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while answer.is_none() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the save was never answered"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-            let effects = host.take_effects();
-            if let Some(HostEffect::Send { to, .. }) = effects
-                .iter()
-                .find(|e| matches!(e, HostEffect::Send { .. }))
-            {
-                assert_eq!(*to, client, "answered to the client that asked");
-            }
-            answer = reply_of(&effects, 4);
-        }
-        let answer = answer.unwrap();
+        let answer = call(&mut host, 4, save);
         assert_eq!(
             answer["ok"]["destination"]["path"],
             json!(out.to_string_lossy()),
             "{answer}"
         );
         // an edit undone through the door, as the handler's undo does
-        let widget = host.audio.as_ref().unwrap().windows[&window].ids["widget"]
-            .as_i64()
-            .unwrap() as i32;
+        let widget = widget_of(&host, window);
         let delete = host.event_message(
             widget,
             7,
@@ -970,19 +910,17 @@ mod tests {
             ],
         );
         assert!(host.deliver(window, &delete));
-        host.take_effects();
         assert_eq!(parts(&mut host, window)[0]["frames"], 12_000);
-        let history = reply_of(&call(&mut host, 40, json!({"query": "history"})), 40).unwrap();
+        let history = call(&mut host, 40, json!({"query": "history"}));
         assert_eq!(history["ok"]["canUndo"], true, "{history}");
         let version = history["ok"]["version"].clone();
         let undo = json!({"do": {"verb": "event", "addr": "/gui_event",
             "args": [window, 0, version, "undo"]}});
-        let undone = reply_of(&call(&mut host, 41, undo), 41).unwrap();
+        let undone = call(&mut host, 41, undo);
         assert!(undone["error"].is_null(), "{undone}");
-        host.take_effects();
         assert_eq!(parts(&mut host, window)[0]["frames"], 24_000, "undone");
         // what it cannot take is an error of its kind
-        let wrong = reply_of(&call(&mut host, 5, json!({"nothing": 1})), 5).unwrap();
+        let wrong = call(&mut host, 5, json!({"nothing": 1}));
         assert_eq!(wrong["error"]["type"], "value", "{wrong}");
         // and the client is told when the window goes
         host.close_audio(window);
@@ -992,10 +930,34 @@ mod tests {
                     && msg.args.first() == Some(&OscType::Int(window)))
         });
         assert!(closed, "the opener heard the window close");
-        let gone = reply_of(&call(&mut host, 6, json!({"query": "transport"})), 6).unwrap();
+        let gone = call(&mut host, 6, json!({"query": "transport"}));
         assert_eq!(gone["error"]["type"], "runtime", "{gone}");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(&out);
+    }
+
+    /// **A file the editor cannot open is said to whoever asked**, and no
+    /// window is left of it.
+    #[test]
+    fn a_file_that_does_not_open_is_answered() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_998)));
+        let options = json!({"path": "/nowhere/at/all.wav"}).to_string();
+        let first = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("audio".into()),
+                OscType::String(options),
+            ],
+            client,
+        );
+        let answer = answered(&mut host, first, 1);
+        assert_eq!(answer["error"]["type"], "value", "{answer}");
+        assert!(host.audio.as_ref().unwrap().windows.is_empty());
     }
 
     /// **A paste past what the view shows opens the view out to it**: the
@@ -1004,14 +966,9 @@ mod tests {
     #[test]
     fn a_paste_past_the_view_opens_it_out() {
         let path = take("paste-view", 24_000);
-        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
-        let mut host = Host::new();
-        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
-        let def_id = host.open_audio(Some(&path), "take").expect("opened");
-        settled(&mut host, def_id);
-        let widget = host.audio.as_ref().unwrap().windows[&def_id].ids["widget"]
-            .as_i64()
-            .unwrap() as i32;
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        let widget = widget_of(&host, def_id);
         // a hand zooms in to the first quarter, and the window says so
         host.zoom_timeline(widget, 0.25, 0.0);
         let (nav, total) = host.timeline_nav(widget).expect("an axis");
@@ -1055,20 +1012,18 @@ mod tests {
             ],
         );
         assert!(host.deliver(def_id, &paste));
-        host.take_effects();
         assert_eq!(
             parts(&mut host, def_id).len(),
             3,
             "pasted: {:?}",
             parts(&mut host, def_id)
         );
-        let (nav, total) = host.timeline_nav(widget).expect("an axis");
-        assert_eq!(total, 36_000, "the take is the paste longer");
-        assert!(
-            nav.start <= at && nav.start + nav.len >= at + 12_000.0,
-            "the pasted span {at}..{} is in view: {nav:?}",
-            at + 12_000.0
-        );
+        // the window applies what the paste left on the next tick
+        until(&mut host, "the view never opened out", |h| {
+            h.timeline_nav(widget).is_some_and(|(nav, total)| {
+                total == 36_000 && nav.start <= at && nav.start + nav.len >= at + 12_000.0
+            })
+        });
         let _ = std::fs::remove_file(&path);
     }
 }
