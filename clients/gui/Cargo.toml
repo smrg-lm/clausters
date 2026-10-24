@@ -77,6 +77,12 @@ patcher = []
 # it draws the bitmap face, which stays the floor under every build: what a
 # host with no face loaded draws with.
 font-atlas = ["dep:fontdue"]
+# **The editing applications in a page**: the host the web package builds a
+# second time, with these compiled in, over shared memory, with the nightly
+# pinned in `wasm-apps-toolchain` (`clients/web/build.sh`). A page that is
+# cross-origin isolated loads that build. Natively the applications are
+# always in, and the feature changes nothing there.
+apps = []
 
 [dependencies]
 # `Instant` that works on both targets. std's panics outright in wasm ("time not

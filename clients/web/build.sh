@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the clausters web package: compile the three wasm crates (the engine,
-# the GUI host, the shared core's OSC codec), stage their wasm-bindgen bundles
+# the GUI host, twice, and the shared core's OSC codec), stage their wasm-bindgen bundles
 # into dist/, and emit the TypeScript sources next to them -- dist/ is the
 # complete, servable package (src/ -> dist/ 1:1; the staged bundles are the
 # browser's _bin/_libs).
@@ -9,8 +9,10 @@
 # src/gui-host/, the engine .d.ts) so type-checking and node-from-source
 # resolve the same specifiers the emitted modules use.
 #
-# One-time setup: rustup target add wasm32-unknown-unknown, and
-# cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen version.
+# One-time setup: rustup target add wasm32-unknown-unknown, the nightly the
+# applications' host is built with (clients/gui/wasm-apps-toolchain, with
+# rust-src), and cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen
+# version.
 #
 # From clients/web/:  ./build.sh   (release; pass `debug` for faster builds).
 # Serve and open the demo:  python3 -m http.server  -> /examples/components/demo.html
@@ -66,6 +68,34 @@ fi
 (cd ../gui && cargo build --lib $flag --target wasm32-unknown-unknown \
     --features font-atlas)
 
+# **The applications' build of the same host**: the editing applications
+# compiled in, over one shared memory, which a page uses when it is
+# cross-origin isolated (src/gui/page.ts). Shared memory in wasm needs the
+# standard library rebuilt with atomics (`-Z build-std`), which only a nightly
+# does, so this one build is made with the dated nightly pinned in
+# clients/gui/wasm-apps-toolchain, into a target directory of its own; every
+# other build stays on stable. The link arguments make the memory shared and
+# imported, and export what wasm-bindgen sets each thread's stack and storage
+# up with.
+apps_toolchain=$(tr -d '[:space:]' < ../gui/wasm-apps-toolchain)
+if ! rustup run "$apps_toolchain" rustc --version >/dev/null 2>&1 \
+    || ! rustup component list --toolchain "$apps_toolchain" --installed 2>/dev/null \
+        | grep -q '^rust-src'; then
+    echo "the applications' host needs $apps_toolchain with rust-src; install it with:" >&2
+    echo "  rustup toolchain install $apps_toolchain --profile minimal -c rust-src -t wasm32-unknown-unknown" >&2
+    exit 1
+fi
+apps_flags="-C target-feature=+atomics,+bulk-memory,+mutable-globals"
+for arg in --shared-memory --max-memory=4294967296 --import-memory \
+    --export=__wasm_init_tls --export=__tls_size --export=__tls_align \
+    --export=__tls_base --export=__heap_base; do
+    apps_flags="$apps_flags -C link-arg=$arg"
+done
+# shellcheck disable=SC2086
+(cd ../gui && RUSTFLAGS="$apps_flags" cargo +"$apps_toolchain" build --lib $flag \
+    --target wasm32-unknown-unknown -Z build-std=std,panic_abort \
+    --target-dir target/wasm-apps --features font-atlas,apps)
+
 # `--keep-lld-exports` on the engine alone: wasm-bindgen drops the exports the
 # linker synthesized, and one of them is `__indirect_function_table` -- the
 # table a Faust module's `compute` is appended to, without which a def compiles
@@ -75,6 +105,8 @@ wasm-bindgen --target web --keep-lld-exports --out-dir dist/engine \
     "../../target/wasm32-unknown-unknown/$profile/clausters_web.wasm"
 wasm-bindgen --target web --out-dir dist/gui-host \
     "../gui/target/wasm32-unknown-unknown/$profile/clausters_gui.wasm"
+wasm-bindgen --target web --out-dir dist/gui-host-apps \
+    "../gui/target/wasm-apps/wasm32-unknown-unknown/$profile/clausters_gui.wasm"
 wasm-bindgen --target web --out-dir dist/core \
     "../../target/wasm32-unknown-unknown/$profile/clausters_core_web.wasm"
 wasm-bindgen --target web --out-dir dist/nrt \
@@ -146,5 +178,5 @@ else
     echo "note: node_modules missing -- run 'npm install' then 'npm run build'" >&2
 fi
 
-echo "package staged: dist/ (modules + engine/ gui-host/ core/ wasm bundles + vendor/verovio)"
-echo "demo:  python3 -m http.server  then open http://localhost:8000/examples/components/demo.html"
+echo "package staged: dist/ (modules + engine/ gui-host/ gui-host-apps/ core/ wasm bundles + vendor/verovio)"
+echo "demo:  python3 tools/serve.py  then open http://localhost:8000/examples/components/demo.html"

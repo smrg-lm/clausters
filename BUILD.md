@@ -96,6 +96,18 @@ cargo build --release --features embed,realtime
 cargo check --lib --target wasm32-unknown-unknown --no-default-features --features synth,embed
 ```
 
+The web package builds the GUI host twice (`clients/web/build.sh`): the
+ordinary build, on stable, and **the applications' build**, which compiles the
+editing applications in over one shared memory for a page that is cross-origin
+isolated. Shared memory in wasm needs the standard library rebuilt with atomics
+(`-Z build-std`), which only a nightly does, so that one build uses the dated
+nightly pinned in `clients/gui/wasm-apps-toolchain`; nothing else does:
+
+```sh
+rustup toolchain install "$(cat clients/gui/wasm-apps-toolchain)" \
+    --profile minimal -c rust-src -t wasm32-unknown-unknown
+```
+
 ### The `faust` feature (default)
 
 The FaustDef family needs **libfaust built with the LLVM backend**. Since the

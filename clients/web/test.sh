@@ -59,7 +59,7 @@ npm run --silent check
 npm test
 
 LOG=$(mktemp)
-python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>"$LOG" &
+python3 tools/serve.py "$PORT" 127.0.0.1 >/dev/null 2>"$LOG" &
 SERVER=$!
 BROWSER_PID=""
 BROWSER_PGID=""
@@ -157,7 +157,7 @@ run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
         --renderer-process-limit=2 \
         --js-flags=--max-old-space-size=512 \
         --user-data-dir="$profile" \
-        "http://127.0.0.1:$PORT/tests/$page?smoke=1" >/dev/null 2>&1 &
+        "http://127.0.0.1:$PORT/tests/$page$(query "$page")smoke=1" >/dev/null 2>&1 &
     BROWSER_PID=$!
     fi
     # The group to reap: `setsid` makes the browser its own leader, and its
@@ -209,6 +209,10 @@ run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
     case "$decoded" in PASS*) ;; *) echo "$page$(where) FAILED" >&2; exit 1;; esac
 }
 
+# What joins `smoke=1` to a page's own query, when it has one
+# (`gui.html?isolated`).
+query() { case "$1" in *\?*) printf '&' ;; *) printf '?' ;; esac; }
+
 # A fresh profile directory for one page, for whichever browser. It lives in
 # the package (`browser-profiles/`, git-ignored) rather than in the system temp
 # directory: a confined browser -- a snap, a flatpak -- has a /tmp of its own,
@@ -241,7 +245,7 @@ user_pref("browser.startup.homepage_override.mstone", "ignore");
 PREFS
     $LEAD "$FIREFOX" --headless --no-remote --profile "$3" \
         --window-size "$2" \
-        "http://127.0.0.1:$PORT/tests/$1?smoke=1" >/dev/null 2>&1 &
+        "http://127.0.0.1:$PORT/tests/$1$(query "$1")smoke=1" >/dev/null 2>&1 &
     BROWSER_PID=$!
 }
 
@@ -268,7 +272,7 @@ fetched() {   # $1 = path fragment, $2 = what it is
 
 not_fetched() {   # $1 = path fragment, $2 = what it is
     if printf '%s' "$PAGE_LOG" | grep -q "$1"; then
-        echo "$PAGE$(where) FAILED: it fetched $2 ($1), which it has no def to compile with" >&2
+        echo "$PAGE$(where) FAILED: it fetched $2 ($1), ${3:-which it has no def to compile with}" >&2
         exit 1
     fi
     echo "$PAGE$(where): fetched no $2"
@@ -284,6 +288,11 @@ run_pages() {
     run_page client.html   # the carrier seam itself
     run_page defs.html     # the def model + Server over that carrier
     run_page gui.html      # the GuiDef builders + GuiHost, gestures and all
+    not_fetched gui-host-apps/ "applications' build of the host" "since it is not cross-origin isolated"
+    # the same page isolated: the applications' build of the host, over
+    # shared memory, draws and answers the same
+    run_page "gui.html?isolated"
+    fetched gui-host-apps/clausters_gui_bg.wasm "applications' build of the host"
     run_page node-editor.html # a node's generic editor: generated, bound, read back
     run_page seq.html      # the clock and the patterns on the engine's own clock
     run_page data.html     # the data paths: buses, taps and bulk, drawn by the script

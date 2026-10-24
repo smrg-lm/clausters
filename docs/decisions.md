@@ -11027,3 +11027,34 @@ no tab holds or waits for.
 Rejected: a sweep by age alone, which would remove a live session's folder
 after an hour of editing; and keeping node in the temporary directory, which on
 many machines is memory, the reason the native folder moved.
+
+## The applications in a page are a second build of the host, on a pinned nightly (2026-10-24)
+
+Context: an editing application in a page runs as one program over one
+shared memory: the host and the application on the main thread, the
+application's threads in workers, the engine's processing half in an
+AudioWorklet, with built commands crossing the engine's lock-free FIFOs as
+they do natively. Shared memory in Rust's wasm needs the standard library
+compiled with atomics, and the prebuilt one is not, so the build has to
+rebuild it (`-Z build-std`), which only a nightly does; a spike compiled
+the host, the application and the engine that way and drew the GUI suite's
+page whole on it in an isolated page.
+
+Decision *(the toolchain the user's, 2026-10-24)*: the web package builds
+the GUI host twice. The ordinary build stays on stable, without shared
+memory, and stays the one a component embeds with in a page whose headers
+nobody controls. The **applications' build** compiles the applications in,
+with atomics and a shared, imported memory, using the dated nightly pinned
+in `clients/gui/wasm-apps-toolchain` and a target directory of its own; no
+other build uses that toolchain. A page loads the applications' build when
+it is cross-origin isolated (`crossOriginIsolated`), and the ordinary one
+otherwise: the same host compiled twice, with one surface.
+`clients/web/tools/serve.py` serves the package with the embedder policy on
+every response and the opener policy on a document that asks for it
+(`?isolated`), which is how the suite runs a page both ways.
+
+Rejected: serializing the commands between an application in a worker and
+the engine in the worklet, which would put a wire back where the second
+turn removed one; and moving every build to nightly, which would put the
+whole project on a toolchain only one artifact needs. The pin is moved by
+hand, when a nightly is needed or a bug asks for it.

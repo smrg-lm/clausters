@@ -15,8 +15,8 @@
 #     scripts/smoke-web.sh --list          what the cases are
 #
 # Prerequisites: Chrome/Chromium, the wasm toolchain clients/web/build.sh needs
-# (rustup's wasm32-unknown-unknown and the pinned wasm-bindgen CLI -- see
-# BUILD.md), and, for the two authored-bundle cases, the Python client
+# (rustup's wasm32-unknown-unknown, the nightly the applications' host is
+# built with and the pinned wasm-bindgen CLI -- see BUILD.md), and, for the two authored-bundle cases, the Python client
 # importable (the repo's .venv, or PYTHON=... pointing at an interpreter that
 # can import `clausters.bundle`) -- the core's C ABI it validates through is
 # built here if the checkout has none.

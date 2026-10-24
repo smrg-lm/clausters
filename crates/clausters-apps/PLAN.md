@@ -3260,7 +3260,50 @@ over the opened file) carries over.
       window's event through `do`; the door gained the `actions` and
       `history` queries. A page's editor rejects until the next item.
     - ⬜ The page: cross-origin isolation, shared memory, the engine in the
-      worklet and the application in the host's wasm.
+      worklet and the application in the host's wasm. **The design**
+      *(opened 2026-10-24)*: one program in one wasm module over one
+      shared memory, instantiated three ways: the host and the application
+      on the page's main thread, the application's threads (renders, a
+      take's reader, every wait that touches a file) in workers, and the
+      engine's processing half in an AudioWorklet. Built commands cross
+      the engine's lock-free FIFOs exactly as natively, since the FIFOs are
+      in the one memory. A spike the same day compiled the host, the
+      application and the engine to wasm with atomics and drew `gui.html`
+      whole on that build in an isolated page, so WebGL takes the shared
+      memory. The parts, in order:
+      - ✅ **The applications' build of the host** *(the toolchain decided
+        by the user, 2026-10-24)*: a second wasm build of the same host,
+        with the applications compiled in and shared memory, made with a
+        dated nightly pinned for that build alone (`-Z build-std` with
+        `+atomics`, and the shared-memory link arguments); the ordinary
+        build stays on stable and stays the one a component embeds with.
+        A page loads the applications' build when it is cross-origin
+        isolated (`crossOriginIsolated`), and the suite serves its
+        application pages with COOP/COEP.
+      - ⬜ **Threads in a page**: the application's two spawns (a render,
+        a take's reader) go through one door that is `std::thread`
+        natively and a worker over the module and its memory in a page.
+        The main thread never waits on a lock a worker holds, since a
+        page's main thread cannot block: what it shares with a thread it
+        reads with `try_` or through a channel it polls.
+      - ⬜ **A file layer**: the core's file calls (the PCM reader and
+        writer, the working folder, the peaks, the moves and removals,
+        the probe) go through one door, `std::fs` natively and in a page a
+        synchronous call into the origin's storage made from a worker,
+        which waits on the shared memory while a file worker does the
+        work with its sync access handles. The working folder in a page is
+        held by a Web Lock, as `src/base/workspace.ts` holds one now.
+        Every wait of the application that touches a file runs on one of
+        its threads, natively too, so the window never waits on a disk.
+      - ⬜ **The engine in the worklet**: `AppEngine::open` in a page makes
+        the engine pair and hands the processing half to an
+        `AudioWorkletNode` whose processor instantiates the module over
+        the memory and processes it each quantum, beside the page's own
+        engine for the client's server.
+      - ⬜ **The audio editor in a page**: the host's audio window and the
+        door built on wasm, `edit(file)` opening in a tab, the page
+        examples and an acceptance page in the suite, in Chrome and
+        Firefox.
   **Acceptance:** the audio editor plays, loops, stops and
   locates with no OSC between application and engine, natively and in a
   page; a client's verbs and the application's answers are unchanged in both

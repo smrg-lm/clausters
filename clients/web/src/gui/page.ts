@@ -271,12 +271,28 @@ export async function newGuiHost(
     return boot(options.engine ?? await engineInstance(), options.idShare);
 }
 
+/**
+ * **The host's glue, of the build this page can run**: the applications'
+ * build when the page is cross-origin isolated (`crossOriginIsolated`), since
+ * the editing applications run over memory shared with workers and the
+ * worklet, which only such a page is granted; the ordinary build otherwise,
+ * the one a component embeds with. The two are the same host compiled twice,
+ * with the same surface.
+ */
+async function hostGlue(): Promise<typeof import("../gui-host/clausters_gui.js")> {
+    if ((globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) {
+        const apps = new URL("../gui-host-apps/clausters_gui.js", import.meta.url).href;
+        return await import(apps) as typeof import("../gui-host/clausters_gui.js");
+    }
+    return await import("../gui-host/clausters_gui.js");
+}
+
 async function boot(
     audio?: ClaustersServer,
     idShare?: IdShare,
     url?: string,
 ): Promise<ClaustersGui> {
-    const { default: init, start } = await import("../gui-host/clausters_gui.js");
+    const { default: init, start } = await hostGlue();
     const engine = url !== undefined ? null : (audio ?? await server());
     await init();
     const bridge = start();
