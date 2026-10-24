@@ -343,6 +343,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "clausters-app-engine"
+version = "0.11.0"
+dependencies = [
+ "clausters",
+ "clausters-apps",
+ "clausters-core",
+ "clausters-document",
+ "clausters-editing",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "clausters-apps"
 version = "0.11.0"
 dependencies = [
@@ -393,6 +406,7 @@ dependencies = [
  "arboard",
  "bytemuck",
  "clausters",
+ "clausters-app-engine",
  "clausters-apps",
  "clausters-core",
  "clausters-document",

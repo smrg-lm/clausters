@@ -2472,6 +2472,42 @@ fn apply_to_tree(
     None
 }
 
+/// **What an engine publishes, read without its handle**
+/// ([`EngineHandle::reading`]): shared atomics, so a read never waits and
+/// never reaches the audio thread.
+#[derive(Clone)]
+pub struct EngineReading {
+    control_buses: ControlBuses,
+    sample_clock: Arc<AtomicU64>,
+    transport_clocks: Arc<[TransportClocks]>,
+    sample_rate: f32,
+}
+
+impl EngineReading {
+    /// Control bus `index`'s value, `0.0` past the table.
+    pub fn control(&self, index: usize) -> f32 {
+        self.control_buses.get(index)
+    }
+
+    /// Samples processed so far, as of the last completed block.
+    pub fn current_samples(&self) -> u64 {
+        self.sample_clock.load(Ordering::Relaxed)
+    }
+
+    /// Where transport `transport` stands, as of the last completed block;
+    /// 0 past the table.
+    pub fn transport_position(&self, transport: usize) -> u64 {
+        self.transport_clocks
+            .get(transport)
+            .map_or(0, |c| c.position.load(Ordering::Relaxed))
+    }
+
+    /// The engine's rate.
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+}
+
 impl EngineHandle {
     /// Enqueues a command. Returns it back if the FIFO is full so the caller
     /// can retry or report failure.
@@ -2529,6 +2565,19 @@ impl EngineHandle {
     /// here on the network thread, no command round-trip.
     pub fn control_buses(&self) -> &ControlBuses {
         &self.control_buses
+    }
+
+    /// **What the engine publishes, readable from any thread** without this
+    /// handle: its control buses, its sample clock and each transport's
+    /// position. What a window drawing the engine's meters and playheads
+    /// holds, where the handle itself is its owner's.
+    pub fn reading(&self) -> EngineReading {
+        EngineReading {
+            control_buses: self.control_buses.clone(),
+            sample_clock: Arc::clone(&self.sample_clock),
+            transport_clocks: Arc::clone(&self.transport_clocks),
+            sample_rate: self.sample_rate,
+        }
     }
 
     /// The IPC segment when one exists. The audio taps are read from here

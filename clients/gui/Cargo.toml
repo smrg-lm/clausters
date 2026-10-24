@@ -151,6 +151,11 @@ libc = "0.2"
 # safe Rust face. Only the port is target-gated off wasm -- the crate itself is
 # a dependency of every target, above, and a page's device is Web MIDI.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# **The engine an editing application holds** (`host::audio_editor`): the
+# audio editor this host owns plays on an engine in this process, on the
+# machine's output, spoken to with built commands. A page's is in its
+# worklet, over shared memory.
+clausters-app-engine = { path = "../../crates/clausters-app-engine", features = ["realtime"] }
 clausters-midi = { path = "../../crates/clausters-midi", features = ["live"], optional = true }
 # The stream legs of the script front -- TCP, and WebSocket (`--ws`), the
 # browser's carrier into a native host -- and the hub the headless loop

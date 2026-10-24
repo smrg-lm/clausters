@@ -50,7 +50,7 @@ usage:
                 [--ws [[addr:]port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
                 [--session <file> [--save-to <file>]]
-                [--score <file> [--save-to <file>]]
+                [--score <file> [--save-to <file>]] [--audio [file]]
                 [--theme <path>] [--keys <path>] [--font <path>] [--msaa <n>]
                 [--follow-block <seconds>] [--id-share <i/of>]
       --port <n>            port for the GUI host's server front
@@ -116,6 +116,10 @@ usage:
                             which links the engraver (libverovio); with
                             `standalone` too it plays, through a player as
                             --session does, on the server's default def
+      --audio [file]        open the audio editor, over a sound file (a WAV,
+                            W64 or RF64) or over none, with this host as its
+                            owner: edited, played and saved here, on an engine
+                            this host opens on the machine's output
       --save-to <file>      where Ctrl+S writes the session (or the score), and
                             the close form's Save: a window with changes not
                             saved asks before it closes. Without it nothing is
@@ -272,6 +276,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut standalone_flag = false;
     let mut cli_standalone_name: Option<String> = None;
     let mut session_path: Option<String> = None;
+    let mut audio: Option<Option<String>> = None;
     let mut score_path: Option<String> = None;
     let mut save_to: Option<String> = None;
     let mut config_path: Option<String> = None;
@@ -404,6 +409,15 @@ fn run(args: &[String]) -> Result<(), String> {
                         .clone(),
                 );
             }
+            "--audio" => {
+                // the file is optional: an editor with none is the application
+                // on its own, whose File menu opens the first
+                let file = it.peek().filter(|next| !next.starts_with("--")).cloned();
+                if file.is_some() {
+                    it.next();
+                }
+                audio = Some(file.cloned());
+            }
             "--score" => {
                 score_path = Some(
                     it.next()
@@ -528,6 +542,11 @@ fn run(args: &[String]) -> Result<(), String> {
         })
         .or_else(|| cfg.gui.data_dir.clone());
     let resolved_dir = store::resolve_data_dir(data_dir.as_deref());
+
+    // The audio editor: the host opens it, owns it and holds its engine.
+    if let Some(path) = audio {
+        return run_audio(path.as_deref(), udp_bind, look);
+    }
 
     // A score: the host opens it in the score editor and owns it. Only a build
     // with the engraver can read the file.
@@ -739,6 +758,28 @@ fn open_store(dir: &Path) -> Option<GuiStore> {
             None
         }
     }
+}
+
+/// Opens the audio editor, with this host as its **owner**: the editor's
+/// coordinator, the take it reads and the engine it plays on are in this
+/// process, on the machine's output, and the window is answered here. Saving
+/// is the editor's own (File -> Save, over the file it opened).
+fn run_audio(path: Option<&str>, udp_bind: SocketAddr, look: Look) -> Result<(), String> {
+    let mut host = Host::new();
+    look.apply(&mut host);
+    let title = path.map_or_else(
+        || "Audio".to_string(),
+        |p| {
+            Path::new(p)
+                .file_name()
+                .map_or_else(|| p.to_string(), |n| n.to_string_lossy().into_owned())
+        },
+    );
+    host.open_audio(path, &title)
+        .map_err(|e| format!("--audio: {e}"))?;
+    let socket =
+        UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
+    gui::run(host, Arc::new(socket), None, None, None)
 }
 
 /// Opens a score in the score editor, with this host as its **owner**: the

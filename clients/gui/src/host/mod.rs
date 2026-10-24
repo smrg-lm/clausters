@@ -146,6 +146,8 @@ pub mod winit_keys;
 // protocol as it arrives, a definition and a free, a set, the answer to a
 // gesture, and the takes the pictures draw.
 mod answer;
+#[cfg(not(target_arch = "wasm32"))]
+mod audio_editor;
 mod clocks;
 mod define;
 #[cfg(feature = "notation")]
@@ -964,6 +966,14 @@ pub struct Host {
     /// editor, which has no script to wait for and must apply its own intents
     /// (`document::Owner`).
     pub owner: Option<document::Owner>,
+    /// **The audio editor this host owns**, with the engine it plays on:
+    /// opened by [`Host::open_audio`], its windows answered here.
+    #[cfg(not(target_arch = "wasm32"))]
+    audio: Option<audio_editor::AudioHost>,
+    /// **What a window's meters and play cursors read** where it is not the
+    /// segment of the server this host is attached to: an application's
+    /// window reads the engine the application holds.
+    window_sources: HashMap<i32, Arc<dyn BusSource>>,
     /// What the clock of a multitrack this host edits alone last read, so an
     /// unchanged reading is not set again every frame.
     pub(crate) clock_shown: Option<String>,
@@ -1045,7 +1055,9 @@ pub struct Host {
     /// rolling one is carried between the blocks that publish it
     /// ([`clocks::Glide`]). Interior, because a reading is taken through
     /// `&self` by every front and by the tick alike.
-    glides: std::cell::RefCell<HashMap<HeadClock, clocks::Glide>>,
+    /// Keyed by the source read and the counter, since two engines number
+    /// their transports each from its own.
+    glides: std::cell::RefCell<HashMap<(usize, HeadClock), clocks::Glide>>,
     /// **What this host did on its own and a front still has to carry out**:
     /// a window it opened in answer to a gesture -- the roll a double click on
     /// a box of notes asks for. Drained by the front ([`Host::take_effects`]),
@@ -1111,6 +1123,9 @@ impl Host {
             close_asked: Default::default(),
             dependents: HashMap::new(),
             owner: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            audio: None,
+            window_sources: HashMap::new(),
             clock_shown: None,
             #[cfg(test)]
             exchange: instance::Exchange::default(),
@@ -1129,9 +1144,20 @@ impl Host {
 
     /// **The effects this host produced on its own** since the last call -- a
     /// window opened in answer to a gesture -- for the front to carry out as
-    /// it carries out those of a packet.
+    /// it carries out those of a packet. The applications this host owns take
+    /// their turn first ([`Host::tick_audio`]): a run whose render landed is
+    /// carried on, and what it left the window is among the effects.
     pub fn take_effects(&mut self) -> Vec<HostEffect> {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.tick_audio();
         std::mem::take(&mut self.pending_effects)
+    }
+
+    /// **The bus source window `def_id` reads**, where it is not the
+    /// segment of the server this host is attached to: an application's
+    /// window reads the engine the application holds.
+    pub fn source_of(&self, def_id: i32) -> Option<Arc<dyn BusSource>> {
+        self.window_sources.get(&def_id).cloned()
     }
 
     /// Whether [`Self::take_effects`] has anything to hand over.

@@ -344,19 +344,23 @@ impl App {
     /// whose tick moved something they show.
     fn advance_live(&mut self, shown: &[i32]) -> Vec<i32> {
         let mut moved = Vec::new();
-        let Some(shm) = self.shm.clone() else {
-            // **No segment still ticks what moves on its own.** Nothing can be
+        let dt = self.tick_clock.delta();
+        for (def_id, ws) in &mut self.windows {
+            if !shown.contains(def_id) {
+                continue;
+            }
+            // **A window reads its own source** where it has one -- an
+            // application's, whose engine is the application's -- and the
+            // segment otherwise.
+            let source = self.host.source_of(*def_id).or_else(|| self.shm.clone());
+            let Some(tree) = self.host.window_def_mut(*def_id) else {
+                continue;
+            };
+            // **No source still ticks what moves on its own.** Nothing can be
             // read off a bus, but an element that animates by itself -- an
             // indeterminate progress bar -- asked for the tick and has to get
             // it; it used to stand still in a window with no server behind it.
-            let dt = self.tick_clock.delta();
-            for (def_id, ws) in &mut self.windows {
-                if !shown.contains(def_id) {
-                    continue;
-                }
-                let Some(tree) = self.host.window_def_mut(*def_id) else {
-                    continue;
-                };
+            let Some(shm) = source else {
                 if live::tick_tree(
                     tree,
                     &Live {
@@ -368,20 +372,10 @@ impl App {
                 ) {
                     moved.push(*def_id);
                 }
-            }
-            self.refresh_slots();
-            return moved;
-        };
-        let sample_rate = shm.sample_rate();
-        let dt = self.tick_clock.delta();
-        let window = live::retention_window(sample_rate, shm.window_limit());
-        for (def_id, ws) in &mut self.windows {
-            if !shown.contains(def_id) {
-                continue;
-            }
-            let Some(tree) = self.host.window_def_mut(*def_id) else {
                 continue;
             };
+            let sample_rate = shm.sample_rate();
+            let window = live::retention_window(sample_rate, shm.window_limit());
             live::update_retention(
                 tree,
                 sample_rate,
@@ -466,7 +460,8 @@ impl App {
     /// ([`Host::tree_demand`]) and what this front holds for it -- a clip
     /// held against an edge, a gesture timer.
     fn tick_demand(&self, def_id: i32) -> Vec<Reason> {
-        let mut out = self.host.tree_demand(def_id, self.shm.is_some());
+        let read = self.shm.is_some() || self.host.source_of(def_id).is_some();
+        let mut out = self.host.tree_demand(def_id, read);
         if self.window_is_edge_scrolling(def_id) {
             out.push(Reason::EdgeScroll);
         }
@@ -624,6 +619,10 @@ impl App {
             self.refresh_slots_for(def_id);
         }
         let server_attached = self.host.server().is_some();
+        // A window reads its own source where it has one (an application's
+        // engine), the segment otherwise.
+        let own = self.host.source_of(def_id);
+        let source = own.as_deref().or(self.shm.as_deref());
         // Disjoint field borrows: the tree (host), the bus (shm), the node trees,
         // and the window's GPU resources are separate fields of `self`.
         let tree = self.host.window_def(def_id)?;
@@ -636,10 +635,10 @@ impl App {
             selected: self.host.window_selected(def_id),
             metrics: self.host.metrics_for(def_id),
             world: World {
-                bus: self.shm.as_deref(),
+                bus: source,
                 node_trees: &self.node_trees,
                 server_attached,
-                sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
+                sample_rate: source.map_or(0.0, |s| s.sample_rate()),
                 clocks: {
                     let clocks = self.host.head_clocks(def_id, self.shm.as_deref());
                     let now = clocks.window;

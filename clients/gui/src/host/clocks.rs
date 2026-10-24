@@ -145,17 +145,30 @@ impl Host {
     /// **The one place the choice is resolved.** Below here a playhead reads
     /// "its clock" by widget and never asks which counter it is, which is what
     /// keeps the two fronts from each answering it their own way.
+    ///
+    /// A window with a source of its own ([`Host::source_of`]) reads that one
+    /// instead of `bus`: an application's window, whose engine is the
+    /// application's.
     pub fn head_clocks(&self, def_id: i32, bus: Option<&dyn BusSource>) -> HeadClocks {
-        let Some(bus) = bus else {
+        let own = self.window_sources.get(&def_id);
+        let Some(bus) = own.map(|s| s.as_ref()).or(bus) else {
             return HeadClocks::default();
         };
         let now = web_time::Instant::now();
+        // the source's rate, which an application's engine says itself
+        let engine = match bus.sample_rate() {
+            rate if rate > 0.0 => rate,
+            _ => self.server_rate,
+        };
+        // each source's counters glide apart: two engines number their
+        // transports each from its own
+        let source = (bus as *const dyn BusSource).cast::<()>() as usize;
         let read = |head: HeadClock| {
             let value = match head {
                 HeadClock::Device => bus.sample_clock(),
                 HeadClock::Transport(transport) => bus.transport_position(transport),
             };
-            self.glided(head, value, now)
+            self.glided((source, head), value, now, engine)
         };
         let window = self.window_head_clock(def_id);
         let mut clocks = HeadClocks {
@@ -174,7 +187,6 @@ impl Host {
         // anchor, in the engine's samples.
         // A pane owns its members' time axis and draws their play cursor, so
         // it reads the transport at its axis' rate, which is its take's.
-        let engine = self.server_rate;
         let rate_of = |w: &Widget| match &w.kind {
             WidgetKind::Pane { editor, .. } => {
                 (editor.sample_rate > 0.0).then_some(editor.sample_rate)
@@ -234,11 +246,17 @@ impl Host {
 
     /// **Counter `head` read as `value` at `now`, carried on between blocks**:
     /// see [`Glide`].
-    fn glided(&self, head: HeadClock, value: f64, now: web_time::Instant) -> f64 {
+    fn glided(
+        &self,
+        head: (usize, HeadClock),
+        value: f64,
+        now: web_time::Instant,
+        rate: f64,
+    ) -> f64 {
         let mut glides = self.glides.borrow_mut();
         let glide = glides.entry(head).or_insert_with(|| Glide::new(value, now));
-        glide.seen(value, now, self.server_rate);
-        glide.at(now, self.server_rate)
+        glide.seen(value, now, rate);
+        glide.at(now, rate)
     }
 
     /// `/gui_headClock <id> <which> [<int32 transport>]` -- draw the playheads

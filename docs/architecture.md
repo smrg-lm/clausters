@@ -1056,6 +1056,22 @@ whose revision moved are handed over again. **A play waits for its cue**:
 with it or after it, until `pump` takes the cue's `Garbage::TransportCued`,
 as a client waits for the cue's `/done` before it rolls a server's
 transport; so the first frame a play sounds is the frame it starts on.
+**The runs are carried in the application** (`audio::AudioApp`): each
+action of the coordinator is driven to its end there, renders and moves
+included (`steps::carry`, the core's offline render in a thread of the
+application's, resumed by `AudioApp::landed` in whichever order they land),
+a file's header probed, a history step carried and a copy published through
+the context's clipboard exchange, and only the window's effects come back.
+**The GUI host owns the audio editor** (`host::audio_editor`, native for
+now): `Host::open_audio` opens an `AppEngine` on the machine's output the
+first time, numbers the editor's window with ids of its own, and answers its
+gestures through `Host::deliver` as it answers a score editor's; the
+application's turn is taken in `Host::take_effects`. The window's meters and
+play cursor read the engine the application holds, not a server's segment:
+a window may have a bus source of its own (`Host::source_of`, an
+`EngineReading` the engine's handle hands out), which the front ticks it
+from and `Host::head_clocks` reads, with each source's counters glided
+apart. `clausters-gui --audio [file]` opens it with nobody behind it.
 
 `crates/clausters-apps` sits over the projections and holds the **applications**
 the project is built around — the multitrack editor today, the audio and score

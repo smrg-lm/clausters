@@ -23,6 +23,10 @@
 //! nodes, buses, buffers and transport commands.
 
 pub mod audio;
+/// What an engine publishes, read without its handle ([`AppEngine::reading`]).
+pub use clausters::server::engine::EngineReading;
+/// A sound file's header, through the decoder the clients read it with.
+pub use clausters::server::nrt::{SoundInfo, probe_audio};
 pub mod held;
 pub mod steps;
 pub mod take;
@@ -96,6 +100,17 @@ impl AppEngine {
         }
     }
 
+    /// **An engine with no device**, at `sample_rate` and `channels` wide,
+    /// and the engine's half that processes it, for whoever drives it block
+    /// by block (a test).
+    pub fn detached(
+        sample_rate: f32,
+        channels: usize,
+    ) -> (AppEngine, clausters::server::engine::Engine) {
+        let (engine, handle) = clausters::server::engine::engine_pair(sample_rate, channels);
+        (AppEngine::over(handle), engine)
+    }
+
     /// **An engine on the machine's default output device**, at the device's
     /// own rate.
     #[cfg(feature = "realtime")]
@@ -131,6 +146,12 @@ impl AppEngine {
     /// positions, the meters.
     pub fn handle(&self) -> &EngineHandle {
         &self.handle
+    }
+
+    /// **What the engine publishes**, for a window that draws its meters and
+    /// playheads from another thread.
+    pub fn reading(&self) -> clausters::server::engine::EngineReading {
+        self.handle.reading()
     }
 
     /// The translator, for a command the typed doors build that no op names.

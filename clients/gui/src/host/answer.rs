@@ -114,6 +114,10 @@ impl Host {
             "deliver: widget={widget_id} seq={seq} owner={} args={args:?}",
             self.owner.is_some()
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.owns_audio(def_id) {
+            return self.answer_audio(def_id, message);
+        }
         // **The editor reads every message addressed to its window**: its
         // gestures, its transport row and the space bar, and the window's undo
         // and redo, which are a step of the history it answers once the host has
