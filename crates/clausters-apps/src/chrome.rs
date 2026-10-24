@@ -24,7 +24,8 @@
 //! | `close` | the window, asked first where something would be lost |
 //! | `keys` | the window's keys |
 //!
-//! **What each adds**: the audio editor `save` and `mix` (a paste that adds);
+//! **What each adds**: the audio editor `save`, `mix` (a paste that adds)
+//! and its processes (`reverse`), under a Process menu of its own;
 //! the multitrack and the roll `split`, `join` and `quantize`; the multitrack
 //! the rows' own commands (`add_track`, `reset_heights`, `compact_tracks`), a
 //! transport that pauses (`pause`, `stop`), how its boxes of notes are drawn
@@ -37,7 +38,7 @@
 //! element's own context menu, not the bar's.
 //!
 //! The menus follow the order audio programs keep: File, Edit, View,
-//! Transport, the application's own (Track), Help.
+//! Transport, the application's own (Process, Track), Help.
 
 use serde_json::{Value, json};
 
@@ -216,6 +217,10 @@ pub fn menu(app: App, saves: bool) -> Value {
         sub("View", view),
         sub("Transport", transport),
     ];
+    if app == App::Audio {
+        // what renders the selection into new samples
+        bar.push(sub("Process", vec![entry(app, "reverse")]));
+    }
     if app == App::Multitrack {
         bar.push(sub("Track", vec![entry(app, "add_track")]));
     }
@@ -352,7 +357,7 @@ mod tests {
     fn the_menus_keep_the_field_s_order() {
         assert_eq!(
             titles(&menu(App::Audio, true)),
-            ["File", "Edit", "View", "Transport", "Help"]
+            ["File", "Edit", "View", "Transport", "Process", "Help"]
         );
         assert_eq!(
             titles(&menu(App::Multitrack, false)),
@@ -388,6 +393,16 @@ mod tests {
         }
         let audio = verbs(&menu(App::Audio, true));
         assert!(audio.contains(&"save".into()) && audio.contains(&"mix".into()));
+        // the processes, in a menu of the audio editor's own
+        assert!(audio.contains(&"reverse".into()));
+        let bar = menu(App::Audio, true);
+        let process = bar
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["label"] == "Process")
+            .expect("a Process menu");
+        assert_eq!(process["menu"][0]["verb"], "reverse");
         assert!(!audio.contains(&"split".into()));
         let notes = verbs(&menu(App::Notes, false));
         assert!(!notes.contains(&"save".into()) && notes.contains(&"quantize".into()));
