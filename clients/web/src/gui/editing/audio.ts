@@ -1473,7 +1473,7 @@ export interface AudioEditorOptions extends GenericEditorOptions<Buffer | null> 
     layers?: string | readonly Measure[];
     /**
      * The directory the editor renders its files into, on the server's
-     * filesystem -- the page's own storage, in a tab. When not given, a folder
+     * filesystem, which in a tab is the page's own storage. When not given, a folder
      * of the user's cache on disk under node, or of the page's storage in a
      * tab, removed when the editor closes, or by the next editor to open where
      * the process or the tab ended first; one handed over is left where it is.

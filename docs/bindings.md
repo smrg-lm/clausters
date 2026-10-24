@@ -666,7 +666,7 @@ every bulk path already has, recorded in `docs/ipc.md`.
 | `clausters_ws_recv` | — | `n/a` — as above |
 | `clausters_ws_close` | — | `n/a` — as above |
 | `clausters_ws_last_error` | — | `n/a` — as above |
-| `clausters_core_workspace_create` | — | `n/a` — wasm has no filesystem of its own: a page's working folder is a folder of its origin's storage, held by a Web Lock, and under node the module cannot reach the disk's locks either. So the web client holds its folder in `src/base/workspace.ts`, by the core's root and rule, with a lock that names its process (the core's lock names it too) where node has no file lock -- a second implementation of one rule, which the root, the lock files and the sweep keep the same as the core's |
+| `clausters_core_workspace_create` | — | `n/a` — wasm has no filesystem of its own: a page's working folder is a folder of its origin's storage, held by a Web Lock, and under node the module cannot reach the disk's locks either. So the web client holds its folder in `src/base/workspace.ts`, by the core's root and rule, with a lock that names its process (the core's lock names it too) where node has no file lock. That is a second implementation of one rule, which the root, the lock files and the sweep keep the same as the core's |
 | `clausters_core_workspace_path` | — | `n/a` — as above |
 | `clausters_core_workspace_free` | — | `n/a` — as above |
 | `clausters_core_abi_version` | — | `n/a` — the cdylib is loaded by a client built separately, so it answers a version handshake (`CORE_ABI_VERSION`); the wasm module ships inside the npm package and is rebuilt with it, so there are never two versions to reconcile |

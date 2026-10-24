@@ -1,6 +1,6 @@
 // An editor's working folder: where its renders are written, and gone when
-// the session that made it is -- the core's `clausters_core::workspace`, by
-// whatever this client can hold a folder with.
+// the session that made it is. It is the core's `clausters_core::workspace`,
+// held by whatever this client can hold a folder with.
 //
 // A take of a day reversed writes tens of gigabytes, so a folder left behind
 // by a session that did not close through its window is no small leftover.
@@ -157,7 +157,7 @@ let next = 0;
 /**
  * **A working folder, held**: made under the working root by {@link ready},
  * after a sweep of the folders nobody holds any longer, and removed by
- * {@link close} -- or, when this session ends without one, by the next sweep.
+ * {@link close}, or, when this session ends without one, by the next sweep.
  */
 export class Workspace {
     /** The folder: a path on the disk under node, in the origin's storage in a tab. */
@@ -221,7 +221,7 @@ export class Workspace {
 
     /**
      * **Removes the folder when it is empty, and lets go of it then.** A folder
-     * that still holds something -- the renders a clipboard names -- stays
+     * that still holds something (the renders a clipboard names) stays
      * held as long as this session lives, and the next sweep after it takes
      * it. Answers whether it went.
      */
@@ -249,9 +249,9 @@ export class Workspace {
 
 /**
  * **Where working folders are made under node**, by the core's rule:
- * `$CLAUSTERS_CACHE_DIR` where it is set, else the platform's cache folder --
- * `%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME`
- * or `~/.cache` elsewhere -- under `clausters/work`, and the system's
+ * `$CLAUSTERS_CACHE_DIR` where it is set, else the platform's cache folder
+ * (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME`
+ * or `~/.cache` elsewhere) under `clausters/work`, and the system's
  * temporary directory only where none of those can be found.
  */
 export function nodeRoot(): string {

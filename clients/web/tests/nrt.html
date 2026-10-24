@@ -259,8 +259,8 @@
 
         // **An editor's own folder is held by a Web Lock**: one a closed tab
         // left, which no tab holds, goes when the next editor opens. Its own
-        // goes with its close but for what a history still reaches -- here the
-        // buffer's context, which outlives the window -- and stays held while
+        // goes with its close but for what a history still reaches (here the
+        // buffer's context, which outlives the window), and stays held while
         // the tab lives.
         const folders = async () => {
           const names = [];

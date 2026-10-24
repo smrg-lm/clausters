@@ -1,6 +1,6 @@
 // An editor's working folder under node: made under the user's cache, held
 // by a lock file naming its process, removed by its close, and swept by the
-// next one where its process ended -- the same rules as the core's
+// next one where its process ended: the same rules as the core's
 // `clausters_core::workspace`, whose root and lock files it shares.
 
 import assert from "node:assert/strict";
