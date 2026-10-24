@@ -921,9 +921,9 @@ export class AudioEditor extends Editor<Buffer | null> {
     #toldProgress = 0;
 
     /**
-     * **A render's progress, on the window's status bar**: the file it writes
-     * and how far it has got, taken away when it ends. Told at most ten times
-     * a second, so a long render costs the window nothing.
+     * **A render's progress, on the window's status bar**: the operation it
+     * is for and how far it has got, taken away when it ends. Told at most
+     * ten times a second, so a long render costs the window nothing.
      *
      * @internal
      */
@@ -937,8 +937,8 @@ export class AudioEditor extends Editor<Buffer | null> {
         const now = performance.now();
         if (now - this.#toldProgress < 100 || !total) return;
         this.#toldProgress = now;
-        const name = (render.path || "").split("/").pop() || "measuring";
-        void this.host.set(this.windowId, { progress: Math.min(1, done / total), progress_label: `rendering ${name}` });
+        // the operation the render is for, in its verb's words
+        void this.host.set(this.windowId, { progress: Math.min(1, done / total), progress_label: render.label ?? "" });
     };
 
     /**

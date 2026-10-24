@@ -280,7 +280,7 @@ test("reverse renders the selection backwards", async () => {
     // and the window's event comes back
     editor.apply("/gui_event", [Number((editor as unknown as { windowId: number }).windowId), 2, 0, "reverse"]);
     await settle();
-    assert.ok(disk.renders.at(-1)!.path.endsWith("-reversed.w64"));
+    assert.ok(disk.renders.at(-1)!.path.endsWith("-reversed-0.w64"));
     assert.deepEqual(stems(editor).map(([, , frames]) => frames), [10, 20, 70]);
     assert.equal(editor.undo(), true);
     await settle();
@@ -303,7 +303,7 @@ test("a render's progress is on the window while it runs", async () => {
         endpoint.render = recorded;
     }
     assert.equal(seen[0]!.progress, 0.5);
-    assert.equal(seen[0]!.progress_label, "rendering 1-2-stroke.w64");
+    assert.equal(seen[0]!.progress_label, "Draw");
     assert.equal(host.props.get(window)!.progress, -1, "taken away once it has ended");
 });
 

@@ -253,7 +253,7 @@ def test_reverse_renders_the_selection_backwards(disk):
     assert _host.verbs == ["reverse"], "the host performs the window's verb"
     # and the window's event comes back
     editor.apply("/gui_event", [int(editor._window), 2, 0, "reverse"])
-    assert disk.renders[-1]["path"].endswith("-reversed.w64")
+    assert disk.renders[-1]["path"].endswith("-reversed-0.w64")
     assert [frames for _, _, frames in stems(editor)] == [10, 20, 70]
     assert editor.undo() is True
     assert len(stems(editor)) == 1
@@ -271,7 +271,7 @@ def test_a_render_s_progress_is_on_the_window_while_it_runs(monkeypatch):
     monkeypatch.setattr("clausters._steps.render_step", render)
     editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 10, [0.5], [0.0]])
     assert seen[0]["progress"] == 0.5
-    assert seen[0]["progress_label"] == "rendering 1-2-stroke.w64"
+    assert seen[0]["progress_label"] == "Draw"
     assert host.props[window]["progress"] == -1, "taken away once it has ended"
 
 

@@ -551,12 +551,11 @@ class AudioEditor(Marking, Editor):
         raise RuntimeError(f"the audio editor cannot wait on {kind!r}")
 
     def _rendering(self, render: dict, done, total) -> None:
-        """**A render's progress, on the window's status bar**: the file it
-        writes and how far it has got, taken away when it ends. Told at most
-        ten times a second, so a long render costs the window nothing."""
+        """**A render's progress, on the window's status bar**: the operation
+        it is for and how far it has got, taken away when it ends. Told at
+        most ten times a second, so a long render costs the window nothing."""
         if self._host is None or self._window is None:
             return
-        import os
         import time
         if done is None:
             self._host.set(int(self._window), progress=-1)
@@ -566,9 +565,9 @@ class AudioEditor(Marking, Editor):
         if now - getattr(self, "_told_progress", 0.0) < 0.1 or not total:
             return
         self._told_progress = now
-        name = os.path.basename(render.get("path") or "") or "measuring"
+        # the operation the render is for, in its verb's words
         self._host.set(int(self._window), progress=min(1.0, done / total),
-                       progress_label=f"rendering {name}")
+                       progress_label=render.get("label") or "")
 
     def _shape(self, wait: dict) -> dict:
         """**A file asked for in the window or by a script**: its header read,

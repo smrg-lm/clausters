@@ -916,7 +916,7 @@ impl AudioEditor {
     /// **A new file in the working folder**, for what this edit renders:
     /// named after the file, its next revision and `what`, so two edits never
     /// write one file.
-    fn render_output(&self, what: &str) -> Result<renders::Output, String> {
+    fn render_output(&self, what: &str, verb: &str) -> Result<renders::Output, String> {
         let path = format!(
             "{}/{}-{}-{what}.w64",
             self.workspace()?,
@@ -927,6 +927,7 @@ impl AudioEditor {
             peaks: sources::peaks_beside(&path),
             path,
             format: "float".into(),
+            label: renders::operation(verb),
         })
     }
 
@@ -1240,6 +1241,7 @@ impl AudioEditor {
                         path: fresh.clone(),
                         peaks: sources::peaks_beside(&fresh),
                         format: format.into(),
+                        label: renders::operation("save"),
                     };
                     moves.push(Step::Move {
                         from: path.clone(),
@@ -1268,12 +1270,13 @@ impl AudioEditor {
                         path: path.clone(),
                         peaks: String::new(),
                         format: format.into(),
+                        label: renders::operation("save"),
                     };
                     vec![renders::consolidate(&list, &out)]
                 }
             }
             Target::Buffer(buffer) => {
-                let out = self.render_output("saved")?;
+                let out = self.render_output("saved", "save")?;
                 vec![
                     renders::consolidate(&list, &out),
                     send(
@@ -1342,6 +1345,7 @@ impl AudioEditor {
                 path: file.path.clone(),
                 peaks: file.peaks.clone(),
                 format: "float".into(),
+                label: renders::operation("new_file"),
             };
             steps.push(renders::silence(
                 file.frames,
@@ -1381,7 +1385,11 @@ impl AudioEditor {
                 source_frames: file.frames,
                 source_rate: file.rate,
             };
-            steps.push(renders::measure(&whole, &file.peaks));
+            steps.push(renders::measure(
+                &whole,
+                &file.peaks,
+                &renders::operation("open_file"),
+            ));
         }
         steps.extend(self.stitched());
         Ok(steps)
@@ -1838,7 +1846,7 @@ impl AudioEditor {
             return Ok(None);
         }
         let over = self.render_list(start, start + frames)?;
-        let out = self.render_output("stroke")?;
+        let out = self.render_output("stroke", "draw")?;
         let step = renders::stroke(&over, channel, &drawn, &out);
         let id = self.rendered(&out, frames, self.file.rate);
         let list = parts::replace(
@@ -1961,7 +1969,7 @@ impl AudioEditor {
                 if !sample_rate.is_finite() || sample_rate <= 0.0 {
                     return Err("the clipboard sample rate must be finite and positive".into());
                 }
-                let out = self.render_output("pasted")?;
+                let out = self.render_output("pasted", "paste")?;
                 let written = vec![
                     send(
                         "/buffer_write",
@@ -1992,7 +2000,7 @@ impl AudioEditor {
                     source_rate: sample_rate,
                 };
                 let mut steps = written;
-                steps.push(renders::measure(&whole, &out.peaks));
+                steps.push(renders::measure(&whole, &out.peaks, &out.label));
                 Ok(Some((vec![part(id, 0, frames)], steps)))
             }
             Content::Samples { .. } => {
@@ -2001,7 +2009,7 @@ impl AudioEditor {
                 if frames == 0 {
                     return Ok(None);
                 }
-                let out = self.render_output("pasted")?;
+                let out = self.render_output("pasted", "paste")?;
                 let step = renders::block_file(&samples, self.file.channels, rate, &out);
                 let id = self.rendered(&out, frames, rate);
                 Ok(Some((vec![part(id, 0, frames)], vec![step])))
@@ -2053,7 +2061,7 @@ impl AudioEditor {
                 self.file.rate
             ));
         }
-        let out = self.render_output("mixed")?;
+        let out = self.render_output("mixed", "mix")?;
         let (frames, made) = if let Content::Samples { .. } = clip.content {
             let (_, mut block, _) = self.block(values)?;
             let width = u64::from(self.file.channels);
@@ -2119,7 +2127,7 @@ impl AudioEditor {
         while end > start {
             let from = end.saturating_sub(REVERSE_PIECE).max(start);
             let span = self.render_list(from, end)?;
-            let out = self.render_output(&format!("reversed-{}", pieces.len()))?;
+            let out = self.render_output(&format!("reversed-{}", pieces.len()), "reverse")?;
             steps.push(renders::reverse(&span, &out));
             let id = self.rendered(&out, end - from, self.file.rate);
             pieces.push(part(id, 0, end - from));

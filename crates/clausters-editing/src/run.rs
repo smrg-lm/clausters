@@ -289,6 +289,7 @@ mod tests {
             rate: 48_000.0,
             channels: 2,
             format: "float".into(),
+            label: "Reverse".into(),
         });
         let json = crate::apply::steps_json(std::slice::from_ref(&render));
         assert_eq!(json[0]["render"]["score"], "0001feff");
@@ -330,6 +331,7 @@ mod tests {
                 rate: 48_000.0,
                 channels: 1,
                 format: "float".into(),
+                label: String::new(),
             })],
         );
         run.ready();

@@ -2588,7 +2588,7 @@ mod tests {
             let mut host = crate::host::Host::new();
             let def = format!(
                 r#"{{"type":"window","status":false,"progress":{progress},
-                    "progress_label":"rendering reversed.w64",
+                    "progress_label":"Reverse",
                     "children":[{{"id":2,"type":"label","text":"take","h":20}}]}}"#
             );
             host.handle_packet(

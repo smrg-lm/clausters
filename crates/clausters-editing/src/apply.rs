@@ -97,6 +97,9 @@ pub struct Render {
     pub channels: usize,
     /// The output's sample format (`int16`, `int24`, `float`).
     pub format: String,
+    /// **What the render is for**, as its progress is shown: the words of the
+    /// verb that asked for it ("Reverse"). Empty where none did.
+    pub label: String,
 }
 
 /// **What an endpoint arranges differently**: how many samples one fill may
@@ -639,6 +642,7 @@ pub fn steps_json(steps: &[Step]) -> Value {
                     "rate": render.rate,
                     "channels": render.channels,
                     "format": render.format,
+                    "label": render.label,
                 }}),
             })
             .collect(),
@@ -708,6 +712,11 @@ pub fn steps_from_json(steps: &Value) -> Vec<Step> {
                         .get("format")
                         .and_then(Value::as_str)
                         .unwrap_or("float")
+                        .to_string(),
+                    label: render
+                        .get("label")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
                         .to_string(),
                 }));
             }

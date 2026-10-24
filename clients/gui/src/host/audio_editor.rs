@@ -375,21 +375,14 @@ impl Host {
                     let props = match effect["done"].as_u64() {
                         Some(done) => {
                             let total = effect["total"].as_u64().unwrap_or(0).max(1);
-                            let name = Path::new(effect["path"].as_str().unwrap_or_default())
-                                .file_name()
-                                .map_or_else(
-                                    || "measuring".to_string(),
-                                    |n| n.to_string_lossy().into_owned(),
-                                );
+                            // the operation the render is for, in its verb's words
+                            let label = effect["label"].as_str().unwrap_or_default();
                             vec![
                                 (
                                     "progress".to_string(),
                                     json!((done as f64 / total as f64).min(1.0)),
                                 ),
-                                (
-                                    "progress_label".to_string(),
-                                    json!(format!("rendering {name}")),
-                                ),
+                                ("progress_label".to_string(), json!(label)),
                             ]
                         }
                         None => vec![("progress".to_string(), json!(-1))],

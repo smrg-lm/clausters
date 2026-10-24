@@ -63,7 +63,8 @@ enum Note {
     /// How far a render has got.
     Progress {
         member: MemberId,
-        path: String,
+        /// What the render is for, in its verb's words.
+        label: String,
         done: Option<u64>,
         total: u64,
     },
@@ -154,13 +155,13 @@ impl AudioApp {
             match note {
                 Note::Progress {
                     member,
-                    path,
+                    label,
                     done,
                     total,
                 } => out.push(Ran {
                     member,
                     token: 0,
-                    effects: vec![json!({"kind": "progress", "path": path,
+                    effects: vec![json!({"kind": "progress", "label": label,
                         "done": done, "total": total})],
                     end: None,
                 }),
@@ -263,7 +264,7 @@ impl AudioApp {
         if let Some(Step::Render(job)) = steps.iter().find(|s| matches!(s, Step::Render(_))) {
             let _ = tx.send(Note::Progress {
                 member,
-                path: job.path.clone(),
+                label: job.label.clone(),
                 done: Some(0),
                 total: 1,
             });
@@ -279,7 +280,7 @@ impl AudioApp {
                         last = std::time::Instant::now();
                         let _ = tx.send(Note::Progress {
                             member,
-                            path: job.path.clone(),
+                            label: job.label.clone(),
                             done: Some(done),
                             total,
                         });
@@ -288,7 +289,7 @@ impl AudioApp {
                 let result = carried(crate::steps::carry(&steps, &mut told));
                 let _ = tx.send(Note::Progress {
                     member,
-                    path: String::new(),
+                    label: String::new(),
                     done: None,
                     total: 0,
                 });

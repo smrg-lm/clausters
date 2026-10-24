@@ -156,6 +156,10 @@ fn opening_measures_the_file_and_stitches_the_join_over_it() {
     );
     let measured = &renders(&steps)[0];
     assert_eq!(measured["path"], "", "the measure keeps no output");
+    assert_eq!(
+        measured["label"], "Open file",
+        "shown as the open's progress"
+    );
     let stitched = args(&steps, "/buffer_stitch");
     assert_eq!(stitched[0], json!({"i": 9}), "the display buffer");
     assert_eq!(stitched[3], json!({"s": "/in/take3.wav"}), "reads the file");
@@ -262,6 +266,7 @@ fn a_stroke_is_a_new_take_the_size_of_the_stroke_spliced_over_its_frames() {
         "a file of the working folder"
     );
     assert_eq!(render["rate"], 44100.0, "at the take's rate");
+    assert_eq!(render["label"], "Draw", "its progress named by its verb");
     assert_eq!(
         spans(&mut editor),
         [
@@ -1526,4 +1531,10 @@ fn a_long_span_is_reversed_in_pieces_from_its_end() {
     }
     let lens: Vec<u64> = got.iter().map(|(_, a, b)| b - a).collect();
     assert_eq!(lens, [piece, piece, 1_000], "the end first");
+    // every piece's progress is the operation's, not a file's
+    let labels: Vec<Value> = renders(&out["steps"])
+        .iter()
+        .map(|r| r["label"].clone())
+        .collect();
+    assert_eq!(labels, vec![json!("Reverse"); 3]);
 }

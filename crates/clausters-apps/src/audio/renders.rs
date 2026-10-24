@@ -61,6 +61,15 @@ pub struct Output {
     pub path: String,
     pub peaks: String,
     pub format: String,
+    /// What the render is for, as its progress is shown ([`operation`]).
+    pub label: String,
+}
+
+/// **The words a render's progress is shown with**: those of the verb that
+/// asked for it, without the ellipsis of a verb that opens a dialog first.
+pub fn operation(verb: &str) -> String {
+    let words = clausters_editing::verbs::label(clausters_editing::verbs::AUDIO, verb);
+    words.trim_end_matches("...").to_string()
 }
 
 /// One segment of a gain curve: its start in seconds from the list's origin,
@@ -269,12 +278,14 @@ fn render(
         rate,
         channels: channels as usize,
         format: out.format.clone(),
+        label: out.label.clone(),
     })
 }
 
 /// **The peaks of a file opened without them**: the file read whole into a
-/// `PeaksOut`, the render's own output kept nowhere.
-pub fn measure(file: &SegmentPart, peaks: &str) -> Step {
+/// `PeaksOut`, the render's own output kept nowhere; its progress shown as
+/// `label`'s.
+pub fn measure(file: &SegmentPart, peaks: &str, label: &str) -> Step {
     let list = List {
         parts: vec![SegmentPart {
             start: 0,
@@ -298,6 +309,7 @@ pub fn measure(file: &SegmentPart, peaks: &str) -> Step {
         path: String::new(),
         peaks: peaks.into(),
         format: "float".into(),
+        label: label.into(),
     };
     render(
         vec![stitch(LIST, &list)],

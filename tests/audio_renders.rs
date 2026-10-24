@@ -65,6 +65,7 @@ fn output(dir: &std::path::Path, name: &str) -> Output {
             .to_string_lossy()
             .into_owned(),
         format: "float".into(),
+        label: String::new(),
     }
 }
 
@@ -76,6 +77,7 @@ fn run(step: Step) -> Vec<f32> {
         rate,
         channels,
         format,
+        ..
     }) = step
     else {
         panic!("not a render");
@@ -117,7 +119,7 @@ fn a_file_opened_without_peaks_is_measured_and_nothing_else_is_written() {
         (f as f32 / 30_000.0) * if c == 0 { 1.0 } else { -1.0 }
     });
     let peaks = dir.join("take.peaks").to_string_lossy().into_owned();
-    assert!(run(renders::measure(&whole(&take, 30_000, 2), &peaks)).is_empty());
+    assert!(run(renders::measure(&whole(&take, 30_000, 2), &peaks, "")).is_empty());
     let pyramid = clausters_core::peaks::MultiPyramid::read_cache(&peaks)
         .unwrap()
         .expect("a peaks file");

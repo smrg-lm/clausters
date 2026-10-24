@@ -45,6 +45,9 @@ export interface RenderStep {
     rate: number;
     channels: number;
     format: string;
+    /** What the render is for, as its progress is shown: the words of the
+     *  verb that asked for it. Empty where none did. */
+    label?: string;
 }
 
 /**

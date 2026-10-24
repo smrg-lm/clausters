@@ -281,7 +281,7 @@ impl AudioEditor {
         // take's origin, so a fade shortened by one keeps its shape.
         let (list, output) = match self
             .render_list(0, frames)
-            .and_then(|list| Ok((list, self.render_output("gain")?)))
+            .and_then(|list| Ok((list, self.render_output("gain", "apply_envelope")?)))
         {
             Ok(made) => made,
             Err(why) => return (Some(why), Vec::new()),
