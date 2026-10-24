@@ -931,6 +931,9 @@ struct Kept {
     at: usize,
     splice: bool,
     wrap: Option<ListWrap>,
+    /// The list frame the next kept sample is, as natively: the kept frames
+    /// go where the transport plays something else before the splice.
+    frame: u64,
 }
 
 /// **How many samples of the old list a replacement keeps** to play while
@@ -1020,6 +1023,7 @@ impl TransportDiskIn {
             at,
             splice: false,
             wrap: self.wrap,
+            frame,
         });
     }
 
@@ -1035,10 +1039,20 @@ impl TransportDiskIn {
             at,
             splice,
             wrap,
+            frame: kept_frame,
         }) = self.outgoing
         else {
             return 0.0;
         };
+        // the kept frames are the take only where the transport plays them,
+        // as natively: apart before the splice, they go
+        if kept_frame != frame && next + channels <= at {
+            self.outgoing = None;
+            self.faded = [0.0; CROSS];
+            self.fade_in = CROSS;
+            return 0.0;
+        }
+        let step = |f: u64| ListWrap::advance(wrap, f, 1);
         if splice {
             // at the splice the new reading goes on, as natively: in from
             // silence where it is not in yet -- or, where the loop it reads is
@@ -1063,6 +1077,7 @@ impl TransportDiskIn {
             let value = self.kept[next + channel.min(channels - 1)];
             if let Some(kept) = self.outgoing.as_mut() {
                 kept.next += channels;
+                kept.frame = step(kept.frame);
             }
             return value;
         }
@@ -1100,6 +1115,7 @@ impl TransportDiskIn {
         let value = self.kept[next + channel.min(channels - 1)];
         if let Some(kept) = self.outgoing.as_mut() {
             kept.next = next + channels;
+            kept.frame = step(kept.frame);
         }
         value
     }

@@ -710,7 +710,10 @@ fn a_loop_moved_while_it_plays_is_crossfaded() {
 /// each turn is a reading replaced while it plays, and a reading that
 /// agrees with the one before it is crossfaded into itself. The engine runs
 /// in bursts of sixteen blocks, as a device's callback runs it, and the
-/// switch turns every one to two bursts; every block the transport plays
+/// switch turns at a hand's pace, and once a pass just before the loop's
+/// end, apart from the turn before it (two turns that close with the second
+/// at the end are the root plan's "Two loop switches close together at its
+/// end"); every block the transport plays
 /// straight through is the take's frames at its position, sample for
 /// sample. A loop set, moved or cleared is the same reading up to where the
 /// two part, and the new one is spliced on there; the change is cued, so one
@@ -769,9 +772,23 @@ fn the_loop_switch_turned_while_it_plays_is_not_heard() {
         playback.play(1, 1000, looped);
         let mut out = vec![0.0f32; BLOCK_SIZE * 2];
         let (mut on, mut next, mut sounding) = (true, 40usize, false);
+        // the pass the last switch near the loop's end was turned in
+        let mut near = None;
+        // when the switch was last turned
+        let mut last = 0;
         let (mut checked, mut wrong) = (0, Vec::new());
         for b in 0..3000usize {
+            // Once a pass, the switch is turned just before the loop's end --
+            // where the new reading cannot be read before the frames where the
+            // two part are played, and the change is cued to the next pass.
+            let at = reading.transport_position(transport) as usize;
+            let pass = b / 300;
+            if (20_700..21_000).contains(&at) && near != Some(pass) && b >= last + 96 {
+                near = Some(pass);
+                next = b;
+            }
             if b == next {
+                last = b;
                 on = !on;
                 playback.set_pass(if on {
                     looped
@@ -781,7 +798,8 @@ fn the_loop_switch_turned_while_it_plays_is_not_heard() {
                         back: 1000,
                     }
                 });
-                next = b + 16 + (b * 7919) % 17;
+                // at a hand's pace: every six to twelve bursts
+                next = b + 96 + (b * 7919) % 97;
             }
             let before = reading.transport_position(transport) as usize;
             engine.process_block(&mut out);

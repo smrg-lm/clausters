@@ -4708,3 +4708,18 @@ should confirm before the fix.
   `/transport_loop` while the transport rolls over disk readers waits until
   every reader holds the new reading (at most `CUE_WAIT_SECS`), and a
   splice reached first plays the old reading on and reads it again.
+- ⬜ **Two loop switches close together at its end** *(found 2026-10-24,
+  measuring the cued loop change)*. A loop change cued while the frames
+  kept from the change before it still play keeps reading the loop asked
+  for, not the one in force: where the second switch is turned just before
+  the loop's end, the engine may put it in place after that end has passed,
+  and the reader then holds no reading of the loop that was in force past
+  it, so the take comes in again from a short silence. One switch at the
+  end is not heard (the change lands a pass later), nor are switches at a
+  hand's pace. The design that closes it: the ring always follows the loop
+  in force, and a second, small ring of each reader is read ahead with the
+  continuation of the loop asked for from where the two part; the engine
+  puts the change in place only while that continuation is held before the
+  parting point, and a reader switches rings there. Natively, through the
+  fed stream's protocol (`dsp::fed`, `TakeFeed`) and in the page's reader
+  and the host that serves its spans.

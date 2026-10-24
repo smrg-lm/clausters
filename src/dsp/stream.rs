@@ -155,6 +155,11 @@ struct Outgoing {
     splice: bool,
     /// The loop the kept frames were read through.
     wrap: Option<ListWrap>,
+    /// **The list frame the next kept sample is**: what the transport has to
+    /// be playing for the kept frames to be the take. A loop the engine put
+    /// in place for a reader that was not ready leaves the two apart, and the
+    /// kept frames go.
+    frame: u64,
 }
 
 /// What the two threads share besides the rings.
@@ -485,6 +490,15 @@ impl TransportDiskIn {
         let Some(outgoing) = self.outgoing.as_ref() else {
             return 0.0;
         };
+        // The kept frames are the take only where the transport plays them:
+        // apart before the splice (where the two readings part, as they
+        // should), they go, and the reading comes in from silence.
+        if outgoing.frame != frame && outgoing.next + outgoing.channels <= outgoing.at {
+            self.outgoing = None;
+            self.faded = [0.0; CROSS];
+            self.fade_in = CROSS;
+            return 0.0;
+        }
         let channels = outgoing.channels;
         // the old reading's frames left, which the new one may wait on
         let left = (outgoing.end - outgoing.next) / channels;
@@ -528,6 +542,11 @@ impl TransportDiskIn {
         }
         let value = self.kept[outgoing.next + channel.min(channels - 1)];
         outgoing.next += channels;
+        outgoing.frame = if self.looping && self.frames > 0 {
+            (outgoing.frame + 1) % self.frames
+        } else {
+            ListWrap::advance(outgoing.wrap, outgoing.frame, 1)
+        };
         value
     }
 
@@ -589,6 +608,7 @@ impl TransportDiskIn {
                 at,
                 splice: false,
                 wrap: self.wrap,
+                frame,
             });
         }
         self.discard();
