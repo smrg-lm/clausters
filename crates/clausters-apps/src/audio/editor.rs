@@ -1878,9 +1878,7 @@ impl AudioEditor {
             start + len,
             &self.rates_of(),
         )?;
-        if list.is_empty() {
-            return Err("a take cannot be cut down to nothing".into());
-        }
+        // a take may be cut down to nothing: an empty file is a header
         Ok(Some((tag.into(), list, Vec::new())))
     }
 

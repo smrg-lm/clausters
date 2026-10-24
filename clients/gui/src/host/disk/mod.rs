@@ -117,9 +117,10 @@ impl PartialEq for List {
 }
 
 impl List {
-    /// Reads a `segments` prop, refusing what cannot be drawn: no parts, a
-    /// part of no frames, a rate that is not a positive number, a map of the
-    /// wrong width, or a span past the end of its file.
+    /// Reads a `segments` prop, refusing what cannot be drawn: a part of no
+    /// frames, a rate that is not a positive number, a map of the wrong
+    /// width, or a span past the end of its file. A list of no parts is an
+    /// empty take, drawn as one.
     ///
     /// A def carries the list as JSON; a `/gui_set` carries it as its JSON
     /// text, since an OSC key/value is a scalar.
@@ -137,9 +138,7 @@ impl List {
         if channels == 0 {
             return Err("segments: a list has at least one channel".into());
         }
-        if wire.parts.is_empty() {
-            return Err("segments: a list has at least one part".into());
-        }
+        // a list of no parts is an empty take: a file that is a header
         let mut cuts = Vec::with_capacity(wire.parts.len());
         for (n, w) in wire.parts.iter().enumerate() {
             let p = &w.part;

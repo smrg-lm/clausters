@@ -520,6 +520,16 @@ pub fn stroke(over: &List, drawn: u32, values: &[f32], out: &Output) -> Step {
 /// **A list written into a file as it plays**: a consolidation, what a save
 /// writes. Its peaks are written when `out` names where.
 pub fn consolidate(list: &List, out: &Output) -> Step {
+    // **An empty list is a file of no frames**: a header, and nothing read.
+    if list.parts.is_empty() {
+        let zeros: Vec<Value> = (0..list.channels).map(|_| json!({"const": 0.0})).collect();
+        let mut ugens = Vec::new();
+        if !out.peaks.is_empty() {
+            ugens.push(json!({"kind": "PeaksOut", "inputs": zeros, "path": out.peaks}));
+        }
+        let def = json!({"name": "ae.consolidate", "ugens": ugens});
+        return render(Vec::new(), def, 0, list.rate, list.channels, out);
+    }
     let mut def = Def::new();
     let channels: Vec<usize> = (0..list.channels)
         .map(|c| def.list_channel(LIST, c))

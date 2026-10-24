@@ -42,13 +42,32 @@ pub fn carry(steps: &[Step], mut progress: impl FnMut(&Render, u64, u64)) -> Res
 
 /// **One render**: the score rendered into its file, or into nothing for one
 /// whose work is what its synths write (a `PeaksOut` measuring a file).
-pub fn render(job: &Render, progress: impl FnMut(u64, u64)) -> Result<RenderStats, String> {
+pub fn render(job: &Render, mut progress: impl FnMut(u64, u64)) -> Result<RenderStats, String> {
     let score = OscScore::from_bytes(&job.score)?;
     let cfg = RenderConfig {
         sample_rate: job.rate,
         channels: job.channels.max(1),
         ..RenderConfig::default()
     };
+    // **A render of no frames is a file of no frames**: an empty take saved
+    // is its header, which the offline render, which refuses a score that
+    // ends where it starts, does not write.
+    if score.duration() <= 0.0 {
+        if !job.path.is_empty() {
+            clausters::dsp::pcm::Writer::create(&job.path, cfg.channels, job.rate, &job.format)
+                .and_then(|w| w.finalize())
+                .map_err(|e| format!("the render into {} failed: {e}", job.path))?;
+        }
+        progress(0, 0);
+        return Ok(RenderStats {
+            frames: 0,
+            events: 0,
+            peak: vec![0.0; cfg.channels],
+            rms: vec![0.0; cfg.channels],
+            seed: 0,
+            log: Vec::new(),
+        });
+    }
     if job.path.is_empty() {
         render_discarding(&score, &cfg, progress)
     } else {

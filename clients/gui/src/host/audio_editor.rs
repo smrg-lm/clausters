@@ -628,6 +628,82 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// **A take may be cut down to nothing**: a delete of all of it leaves
+    /// an empty take, which the window draws on an axis of its own, a save
+    /// writes as a file that is a header, and an undo puts back.
+    #[test]
+    fn a_take_cut_down_to_nothing_saves_as_a_header() {
+        let path = take("empty", 24_000);
+        let out =
+            std::env::temp_dir().join(format!("host-audio-empty-out-{}.wav", std::process::id()));
+        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
+        let mut host = Host::new();
+        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
+        let def_id = host.open_audio(Some(&path), "take").expect("opened");
+        settled(&mut host, def_id);
+        let widget = host.audio.as_ref().unwrap().windows[&def_id].ids["widget"]
+            .as_i64()
+            .unwrap() as i32;
+        let delete = host.event_message(
+            widget,
+            1,
+            vec![
+                OscType::String("delete".into()),
+                OscType::Float(0.0),
+                OscType::Float(24_000.0),
+            ],
+        );
+        assert!(host.deliver(def_id, &delete));
+        host.take_effects();
+        assert!(parts(&mut host, def_id).is_empty(), "nothing is left");
+        assert!(host.window_def(def_id).is_some(), "the window still draws");
+        // saved, it is a header and no frames
+        let audio = host.audio.as_mut().unwrap();
+        let member = audio.windows[&def_id].member;
+        let mut ran = audio.app.act(
+            &mut audio.editing,
+            member,
+            json!({"verb": "save", "request": {"path": out.to_string_lossy(), "format": "int16"}}),
+            3,
+            false,
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while ran.end.is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the save never landed"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            let audio = host.audio.as_mut().unwrap();
+            if let Some(landed) = audio
+                .app
+                .landed(&mut audio.editing)
+                .into_iter()
+                .find(|r| r.end.is_some())
+            {
+                ran = landed;
+            }
+        }
+        assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+        let layout =
+            clausters_core::pcm::Layout::open(&out.to_string_lossy()).expect("a sound file");
+        assert_eq!(layout.frames, 0);
+        assert_eq!(
+            std::fs::metadata(&out).unwrap().len(),
+            44,
+            "a WAV header and nothing else"
+        );
+        // and an undo puts the take back
+        let window = host.audio.as_ref().unwrap().windows[&def_id].member;
+        let _ = window;
+        let undo = host.event_message(def_id, 2, vec![OscType::String("undo".into())]);
+        assert!(host.deliver(def_id, &undo));
+        host.take_effects();
+        assert_eq!(parts(&mut host, def_id).len(), 1, "undone");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&out);
+    }
+
     /// **A paste past what the view shows opens the view out to it**: the
     /// view zoomed in by a hand, a paste landing past its right edge, and
     /// the window's axis then holds the whole pasted span.
