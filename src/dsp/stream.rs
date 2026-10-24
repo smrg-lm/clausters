@@ -129,15 +129,14 @@ struct Request {
 }
 
 /// **The list a replacement took over from**, still in the ring ahead of the
-/// new one: it plays on until the refill lands, then fades out.
+/// new one: it plays on until the refill lands, and the new one is then
+/// crossfaded in over it.
 struct Outgoing {
     /// Its channels, which the ring's frames are interleaved by.
     channels: usize,
     /// Its samples left in the ring, once the refill has landed and the
     /// boundary is known; unknown before.
     left: Option<usize>,
-    /// How far into its fade-out, once it has begun.
-    fading: usize,
 }
 
 /// What the two threads share besides the rings.
@@ -188,6 +187,11 @@ pub struct TransportDiskIn {
     outgoing: Option<Outgoing>,
     /// Frames of fade-in left for the list that replaced it.
     fade_in: usize,
+    /// **What the list it replaced plays over the fade-in**, this reader's
+    /// channel of it: the replaced list's next frames, taken out of the ring
+    /// as the new one lands, so the two are mixed rather than one faded out
+    /// before the other comes in. Silence where the replaced list ran out.
+    faded: [f32; CROSS],
     /// **The stream its owner feeds**, while the buffer it plays is one
     /// (`dsp::fed`): its rings are in use, and this reader's own are kept
     /// aside.
@@ -259,6 +263,7 @@ impl TransportDiskIn {
             offline: ctx.offline,
             outgoing: None,
             fade_in: 0,
+            faded: [0.0; CROSS],
             fed: None,
             retired: None,
             continues: None,
@@ -454,20 +459,19 @@ impl TransportDiskIn {
             return 0.0;
         };
         let channels = outgoing.channels;
-        // and once it has, the fade runs to its end
-        let landed = outgoing.fading > 0
-            || outgoing
-                .left
-                .is_some_and(|left| slots.saturating_sub(left) / self.channels >= behind + CROSS);
+        let landed = outgoing
+            .left
+            .is_some_and(|left| slots.saturating_sub(left) / self.channels >= behind + CROSS);
         // Until the boundary is known, never read so near the ring's end that
         // what is read could be the new list's first frames.
         let readable = match outgoing.left {
             Some(left) => left,
             None => self.consumer.slots().saturating_sub(CROSS * channels),
         };
-        let done = landed && outgoing.fading >= CROSS;
-        if done || readable < channels {
-            self.end_outgoing();
+        // Landed, the new list takes over from this frame, crossfaded over
+        // what the old one plays next.
+        if landed || readable < channels {
+            self.end_outgoing(channel);
             return 0.0;
         }
         let mut value = 0.0;
@@ -478,24 +482,37 @@ impl TransportDiskIn {
             }
         }
         self.popped += channels as u64;
-        let outgoing = self.outgoing.as_mut().expect("still outgoing");
-        if let Some(left) = outgoing.left.as_mut() {
+        if let Some(left) = self.outgoing.as_mut().and_then(|o| o.left.as_mut()) {
             *left -= channels;
-        }
-        if landed {
-            value *= 1.0 - outgoing.fading as f32 / CROSS as f32;
-            outgoing.fading += 1;
         }
         value
     }
 
-    /// The outgoing list is done: what is left of it goes, and the list that
-    /// replaced it fades in from here.
-    fn end_outgoing(&mut self) {
+    /// **The outgoing list is done**: the frames of it the fade-in plays over
+    /// are kept (`channel`'s, as many as are left, up to the fade's length),
+    /// what is left of it goes, and the list that replaced it is crossfaded
+    /// in from here.
+    fn end_outgoing(&mut self, channel: usize) {
+        self.faded = [0.0; CROSS];
         if let Some(Outgoing {
-            left: Some(left), ..
+            channels,
+            left: Some(mut left),
         }) = self.outgoing.take()
         {
+            let pick = channel.min(channels - 1);
+            for slot in self.faded.iter_mut() {
+                if left < channels {
+                    break;
+                }
+                for c in 0..channels {
+                    let v = self.consumer.pop().unwrap_or(0.0);
+                    if c == pick {
+                        *slot = v;
+                    }
+                }
+                left -= channels;
+                self.popped += channels as u64;
+            }
             if let Ok(chunk) = self.consumer.read_chunk(left.min(self.consumer.slots())) {
                 chunk.commit_all();
             }
@@ -557,7 +574,9 @@ impl TransportDiskIn {
         self.popped += self.channels as u64;
         self.head = Some(self.advance(frame, 1));
         if self.fade_in > 0 {
-            value *= 1.0 - self.fade_in as f32 / CROSS as f32;
+            let k = CROSS - self.fade_in;
+            let t = k as f32 / CROSS as f32;
+            value = value * t + self.faded[k] * (1.0 - t);
             self.fade_in -= 1;
         }
         value
@@ -674,7 +693,6 @@ impl TransportDiskIn {
                     self.outgoing = Some(Outgoing {
                         channels: was,
                         left: None,
-                        fading: 0,
                     });
                 }
             } else {
@@ -691,7 +709,7 @@ impl TransportDiskIn {
             // Standing: silent, and ready at the frame it stands on. A list
             // that was playing out is done with.
             if self.outgoing.is_some() {
-                self.end_outgoing();
+                self.end_outgoing(channel);
                 self.fade_in = 0;
             }
             output.fill(0.0);

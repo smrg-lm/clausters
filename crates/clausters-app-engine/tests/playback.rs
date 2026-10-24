@@ -572,3 +572,112 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_dir_all(&workspace);
 }
+
+/// **A loop moved while it plays, as a selection dragged over a looping
+/// take moves it, and the loop switch turned off**: each change is a
+/// reading of the take replaced while it plays, which is crossfaded, so the
+/// output never steps -- but where the loop itself comes round. Over the
+/// application's fed stream (`fed`) and over the reader's own thread alike.
+fn moved_loop_steps(fed: bool) -> (Vec<usize>, Vec<(usize, u64, u64)>) {
+    use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
+    let (path, _) = take(if fed { "moved-fed" } else { "moved-own" });
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let reading = app.lock().unwrap().reading();
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
+    let feed = TakeFeed::start(1);
+    if fed {
+        let part = clausters_document::clipboard::SegmentPart {
+            path: path.clone(),
+            start: 0,
+            frames: FRAMES as u64,
+            fade_in: 0,
+            fade_out: 0,
+            fade_in_shape: Default::default(),
+            fade_out_shape: Default::default(),
+            channels: None,
+            source_channels: 1,
+            source_frames: FRAMES as u64,
+            source_rate: SR,
+        };
+        let list = ReadList::of(&[part], 1, SR, &mut Headers::default()).unwrap();
+        feed.set(Arc::new(list));
+        let buffers = AppEngine::alloc_take(1, &mut ids).unwrap();
+        app.lock()
+            .unwrap()
+            .install_take(&feed, FRAMES as u64, &buffers);
+        playback
+            .sync_streams(1, buffers, FRAMES as u64, SR, SR, &mut ids)
+            .unwrap();
+    } else {
+        let bufnum = ids.alloc(Space::Buffers, 1).unwrap() as i32;
+        app.lock().unwrap().push(vec![Cmd::SetBuffer {
+            index: bufnum as usize,
+            buffer: Some(join(&path)),
+        }]);
+        playback
+            .sync(1, bufnum, 1, FRAMES as u64, SR, SR, &mut ids)
+            .unwrap();
+    }
+    let transport = playback.transport().unwrap_or(0) as usize;
+    playback.play(
+        1,
+        2000,
+        Pass::Loop {
+            from: 2000,
+            to: 14000,
+        },
+    );
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let (mut heard, mut at) = (Vec::new(), Vec::new());
+    for b in 0..450 {
+        // the drag: the loop's end moves every four blocks
+        if (100..300).contains(&b) && b % 4 == 0 {
+            playback.follow(1, 2000, 14_000 + (b - 100) as u64 * 20, false);
+        }
+        if b == 400 {
+            playback.set_pass(Pass::Until {
+                end: FRAMES as u64,
+                back: 2000,
+            });
+        }
+        engine.process_block(&mut out);
+        app.lock().unwrap().pump();
+        heard.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
+        at.push(reading.transport_position(transport));
+        std::thread::sleep(Duration::from_micros(1_333));
+    }
+    // The take is a ramp that rises 2^-20 a frame: past the play's 5 ms
+    // ramp, a step is a discontinuity.
+    let steps = (600..heard.len())
+        .filter(|&i| (heard[i] - heard[i - 1]).abs() > 0.005)
+        .collect();
+    let jumps = (1..at.len())
+        .filter(|&b| at[b] != at[b - 1] + BLOCK_SIZE as u64)
+        .map(|b| (b, at[b - 1], at[b]))
+        .collect();
+    let _ = std::fs::remove_file(&path);
+    (steps, jumps)
+}
+
+#[test]
+fn a_loop_moved_while_it_plays_is_crossfaded() {
+    for fed in [true, false] {
+        let (steps, jumps) = moved_loop_steps(fed);
+        // the position never moves but where the loop comes round, once
+        assert_eq!(jumps.len(), 2, "fed {fed}: {jumps:?}");
+        let wrap = jumps[1].0;
+        assert!(
+            jumps[1].2 < jumps[1].1,
+            "fed {fed}: the loop came round: {jumps:?}"
+        );
+        // and the output steps only there
+        assert!(
+            steps
+                .iter()
+                .all(|&i| i / BLOCK_SIZE + 1 == wrap || i / BLOCK_SIZE == wrap),
+            "fed {fed}: steps at {steps:?}, the loop came round in block {wrap}"
+        );
+    }
+}

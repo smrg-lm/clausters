@@ -900,11 +900,15 @@ pub struct TransportDiskIn {
     /// The old list's next frames, kept when a replacement threw the ring
     /// away while it played: allocated once, with the reader.
     kept: Vec<f32>,
-    /// What of `kept` plays out: its channels, the next sample, the end, and
-    /// how far into the fade-out -- `None` when nothing is playing out.
-    outgoing: Option<(usize, usize, usize, usize)>,
+    /// What of `kept` plays out: its channels, the next sample and the end
+    /// -- `None` when nothing is playing out.
+    outgoing: Option<(usize, usize, usize)>,
     /// Frames of fade-in left for the list that replaced it.
     fade_in: usize,
+    /// What the list it replaced plays over the fade-in, this reader's
+    /// channel of it, as natively: the two are mixed. Silence where the
+    /// replaced list ran out.
+    faded: [f32; crate::dsp::stream::CROSS],
     /// Where the transport stands in the block after the last one it
     /// played, as natively: only a list replaced while it plays on fades.
     continues: Option<u64>,
@@ -954,6 +958,7 @@ impl TransportDiskIn {
             kept: vec![0.0; KEPT],
             outgoing: None,
             fade_in: 0,
+            faded: [0.0; crate::dsp::stream::CROSS],
             continues: None,
         }
     }
@@ -971,35 +976,43 @@ impl TransportDiskIn {
             self.kept[..a.len()].copy_from_slice(a);
             self.kept[a.len()..a.len() + b.len()].copy_from_slice(b);
         }
-        self.outgoing = Some((channels, 0, n, 0));
+        self.outgoing = Some((channels, 0, n));
     }
 
     /// The next sample of the list a replacement took over from: it plays
-    /// while the new one is read and fades out once its frames have come;
-    /// then the new one fades in.
+    /// while the new one is read, and once the new one has come it is
+    /// crossfaded in over the old one's next frames.
     fn take_outgoing(&mut self, frame: u64, channel: usize) -> f32 {
-        let Some((channels, next, end, fading)) = self.outgoing else {
+        use crate::dsp::stream::CROSS;
+        let Some((channels, mut next, end)) = self.outgoing else {
             return 0.0;
         };
         // The new list has landed once it holds the frame the transport is at
         // and the fade's length past it: what played meanwhile is skipped.
         let behind = self.head.map_or(0, |h| frame.saturating_sub(h)) as usize;
-        // and once it has, the fade runs to its end
-        let landed = fading > 0
-            || self.consumer.slots() / self.channels >= behind + crate::dsp::stream::CROSS;
-        if next + channels > end || fading >= crate::dsp::stream::CROSS {
+        let landed = self.consumer.slots() / self.channels >= behind + CROSS;
+        if landed {
+            let pick = channel.min(channels - 1);
+            self.faded = [0.0; CROSS];
+            for slot in self.faded.iter_mut() {
+                if next + channels > end {
+                    break;
+                }
+                *slot = self.kept[next + pick];
+                next += channels;
+            }
             self.outgoing = None;
-            self.fade_in = if landed { crate::dsp::stream::CROSS } else { 0 };
+            self.fade_in = CROSS;
             return 0.0;
         }
-        let mut value = self.kept[next + channel.min(channels - 1)];
-        let fading = if landed {
-            value *= 1.0 - fading as f32 / crate::dsp::stream::CROSS as f32;
-            fading + 1
-        } else {
-            fading
-        };
-        self.outgoing = Some((channels, next + channels, end, fading));
+        if next + channels > end {
+            // the new list never came while the old one played: a silence
+            self.outgoing = None;
+            self.fade_in = 0;
+            return 0.0;
+        }
+        let value = self.kept[next + channel.min(channels - 1)];
+        self.outgoing = Some((channels, next + channels, end));
         value
     }
 
@@ -1115,7 +1128,10 @@ impl TransportDiskIn {
         }
         self.head = Some(self.advance(frame, 1));
         if self.fade_in > 0 {
-            value *= 1.0 - self.fade_in as f32 / crate::dsp::stream::CROSS as f32;
+            let cross = crate::dsp::stream::CROSS;
+            let k = cross - self.fade_in;
+            let t = k as f32 / cross as f32;
+            value = value * t + self.faded[k] * (1.0 - t);
             self.fade_in -= 1;
         }
         value
