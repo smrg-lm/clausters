@@ -65,6 +65,8 @@ mod input;
 #[cfg(feature = "midi")]
 mod midi;
 mod serverleg;
+#[cfg(feature = "apps")]
+mod threads;
 
 pub use bridge::{GuiBridge, bundle_boot_packets, start};
 use canvas::{CanvasSlot, WindowRender};

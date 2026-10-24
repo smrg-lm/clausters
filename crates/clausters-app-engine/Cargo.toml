@@ -32,6 +32,9 @@ clausters-editing = { path = "../clausters-editing" }
 clausters-apps = { path = "../clausters-apps" }
 serde_json = "1"
 tracing = "0.1"
+# The time a render's progress is paced by: `std::time::Instant` panics on
+# wasm32, where the application's threads are a page's workers.
+web-time = "1.1"
 
 [dev-dependencies]
 hound = "3"

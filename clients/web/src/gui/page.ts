@@ -279,12 +279,13 @@ export async function newGuiHost(
  * the one a component embeds with. The two are the same host compiled twice,
  * with the same surface.
  */
-async function hostGlue(): Promise<typeof import("../gui-host/clausters_gui.js")> {
+async function hostGlue(): Promise<{ init: () => Promise<unknown>; start: typeof import("../gui-host/clausters_gui.js").start }> {
     if ((globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) {
-        const apps = new URL("../gui-host-apps/clausters_gui.js", import.meta.url).href;
-        return await import(apps) as typeof import("../gui-host/clausters_gui.js");
+        const { glue, init } = await (await import("./apps.ts")).appsHost();
+        return { init, start: glue.start };
     }
-    return await import("../gui-host/clausters_gui.js");
+    const glue = await import("../gui-host/clausters_gui.js");
+    return { init: () => glue.default(), start: glue.start };
 }
 
 async function boot(
@@ -292,7 +293,7 @@ async function boot(
     idShare?: IdShare,
     url?: string,
 ): Promise<ClaustersGui> {
-    const { default: init, start } = await hostGlue();
+    const { init, start } = await hostGlue();
     const engine = url !== undefined ? null : (audio ?? await server());
     await init();
     const bridge = start();

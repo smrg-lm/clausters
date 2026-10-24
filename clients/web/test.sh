@@ -293,6 +293,7 @@ run_pages() {
     # shared memory, draws and answers the same
     run_page "gui.html?isolated"
     fetched gui-host-apps/clausters_gui_bg.wasm "applications' build of the host"
+    run_page "apps.html?isolated" # the editing applications in a page, over shared memory
     run_page node-editor.html # a node's generic editor: generated, bound, read back
     run_page seq.html      # the clock and the patterns on the engine's own clock
     run_page data.html     # the data paths: buses, taps and bulk, drawn by the script

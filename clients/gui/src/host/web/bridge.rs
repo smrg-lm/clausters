@@ -238,6 +238,9 @@ pub fn bundle_boot_packets(
 #[wasm_bindgen]
 pub fn start() -> GuiBridge {
     console_error_panic_hook::set_once();
+    // the applications' threads are the page's workers
+    #[cfg(feature = "apps")]
+    super::threads::register();
     let id = HostId(NEXT_HOST.with(|n| {
         let id = n.get();
         n.set(id + 1);

@@ -18,10 +18,11 @@
 //! in place after an edit, and every reader fades into it from where it is.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::time::Duration;
+
+use clausters_core::threads::Spawned;
 
 use clausters::dsp::ListWrap;
 use clausters::dsp::fed::{Fed, Feeder, feed};
@@ -205,14 +206,46 @@ struct Served {
     first: bool,
 }
 
+/// **The list a reading thread takes next**, handed over with no lock: the
+/// application's turn may be a page's main thread, which cannot wait on one
+/// the reader holds. The newest list placed wins; the reader takes it once.
+#[derive(Debug, Default)]
+struct Placed(AtomicPtr<ReadList>);
+
+impl Placed {
+    /// Places `list`, dropping one the reader had not taken yet.
+    fn put(&self, list: Arc<ReadList>) {
+        let old = self
+            .0
+            .swap(Arc::into_raw(list).cast_mut(), Ordering::AcqRel);
+        if !old.is_null() {
+            // SAFETY: every pointer in the slot came from `Arc::into_raw`, and
+            // the swap gave this one to no one else.
+            drop(unsafe { Arc::from_raw(old) });
+        }
+    }
+
+    /// The list placed since the last take, if one was.
+    fn take(&self) -> Option<Arc<ReadList>> {
+        let new = self.0.swap(std::ptr::null_mut(), Ordering::AcqRel);
+        // SAFETY: as in `put`: the swap made this pointer ours alone.
+        (!new.is_null()).then(|| unsafe { Arc::from_raw(new) })
+    }
+}
+
+impl Drop for Placed {
+    fn drop(&mut self) {
+        drop(self.take());
+    }
+}
+
 /// **One take's reading**: a mono fed stream per channel, and the thread of
 /// the application that renders the take into them.
 pub struct TakeFeed {
     streams: Vec<Arc<Fed>>,
-    placed: Arc<Mutex<Option<Arc<ReadList>>>>,
+    placed: Arc<Placed>,
     stop: Arc<AtomicBool>,
-    thread: std::thread::Thread,
-    handle: Option<JoinHandle<()>>,
+    reader: Option<Spawned>,
     shared: Vec<Arc<clausters::dsp::fed::FeedShared>>,
 }
 
@@ -227,21 +260,18 @@ impl TakeFeed {
             })
             .unzip();
         let shared = feeders.iter().map(|f| Arc::clone(f.shared())).collect();
-        let placed = Arc::new(Mutex::new(None));
+        let placed = Arc::new(Placed::default());
         let stop = Arc::new(AtomicBool::new(false));
-        let handle = {
+        let reader = {
             let (placed, stop) = (Arc::clone(&placed), Arc::clone(&stop));
-            std::thread::Builder::new()
-                .name("take-reader".into())
-                .spawn(move || serve(feeders, placed, stop))
+            clausters_core::threads::spawn("take-reader", move || serve(feeders, placed, stop))
                 .expect("failed to spawn a take's reader")
         };
         TakeFeed {
             streams,
             placed,
             stop,
-            thread: handle.thread().clone(),
-            handle: Some(handle),
+            reader: Some(reader),
             shared,
         }
     }
@@ -259,33 +289,30 @@ impl TakeFeed {
     /// **Reads `list` from now on**: every channel's reader fades from what
     /// its ring holds into a refill of it, from where it is.
     pub fn set(&self, list: Arc<ReadList>) {
-        if let Ok(mut placed) = self.placed.lock() {
-            *placed = Some(list);
-        }
+        self.placed.put(list);
         for shared in &self.shared {
             shared.generation.fetch_add(1, Ordering::AcqRel);
         }
-        self.thread.unpark();
+        if let Some(reader) = &self.reader {
+            reader.unpark();
+        }
     }
 }
 
 impl Drop for TakeFeed {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        self.thread.unpark();
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+        if let Some(reader) = self.reader.take() {
+            reader.unpark();
+            // waited for natively; in a page it ends on its own
+            reader.join();
         }
     }
 }
 
 /// The reading thread: each turn, every channel's latest request taken and a
 /// chunk rendered from where it left off, until nothing is left to do.
-fn serve(
-    mut feeders: Vec<Feeder>,
-    placed: Arc<Mutex<Option<Arc<ReadList>>>>,
-    stop: Arc<AtomicBool>,
-) {
+fn serve(mut feeders: Vec<Feeder>, placed: Arc<Placed>, stop: Arc<AtomicBool>) {
     for feeder in &feeders {
         feeder.wake_me();
     }
@@ -297,7 +324,7 @@ fn serve(
     };
     let mut frames = Vec::new();
     while !stop.load(Ordering::Acquire) {
-        if let Some(new) = placed.lock().ok().and_then(|mut p| p.take()) {
+        if let Some(new) = placed.take() {
             list = Some(new);
         }
         let mut worked = false;

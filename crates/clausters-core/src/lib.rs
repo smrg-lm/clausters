@@ -147,6 +147,7 @@ pub mod spectrum;
 pub mod stft;
 pub mod tempoclock;
 pub mod tempomap;
+pub mod threads;
 pub mod time;
 pub mod transport_pass;
 pub mod warp;

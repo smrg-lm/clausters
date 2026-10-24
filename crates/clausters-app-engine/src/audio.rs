@@ -294,39 +294,37 @@ impl AudioApp {
                 total: 1,
             });
         }
-        let spawned = std::thread::Builder::new()
-            .name("audio-render".into())
-            .spawn(move || {
-                let mut last = std::time::Instant::now();
-                let mut told = |job: &clausters_editing::apply::Render, done, total| {
-                    // at most ten times a second, so a long render costs the
-                    // window nothing
-                    if last.elapsed().as_millis() >= 100 {
-                        last = std::time::Instant::now();
-                        let _ = tx.send(Note::Progress {
-                            member,
-                            label: job.label.clone(),
-                            done: Some(done),
-                            total,
-                        });
-                    }
-                };
-                let result = carried(crate::steps::carry_while(&steps, &live, &mut told));
-                drop(live);
-                let _ = tx.send(Note::Progress {
-                    member,
-                    label: String::new(),
-                    done: None,
-                    total: 0,
-                });
-                let _ = tx.send(Note::Landed {
-                    member,
-                    token,
-                    run,
-                    result,
-                    lease,
-                });
+        let spawned = clausters_core::threads::spawn("audio-render", move || {
+            let mut last = web_time::Instant::now();
+            let mut told = |job: &clausters_editing::apply::Render, done, total| {
+                // at most ten times a second, so a long render costs the
+                // window nothing
+                if last.elapsed().as_millis() >= 100 {
+                    last = web_time::Instant::now();
+                    let _ = tx.send(Note::Progress {
+                        member,
+                        label: job.label.clone(),
+                        done: Some(done),
+                        total,
+                    });
+                }
+            };
+            let result = carried(crate::steps::carry_while(&steps, &live, &mut told));
+            drop(live);
+            let _ = tx.send(Note::Progress {
+                member,
+                label: String::new(),
+                done: None,
+                total: 0,
             });
+            let _ = tx.send(Note::Landed {
+                member,
+                token,
+                run,
+                result,
+                lease,
+            });
+        });
         if let Err(e) = spawned {
             let _ = self.notes.0.send(Note::Landed {
                 member,

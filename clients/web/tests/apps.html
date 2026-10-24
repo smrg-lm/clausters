@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>clausters: the applications in a page</title>
+  </head>
+  <body>
+    <pre id="log"></pre>
+    <!--
+      The editing applications in a page (clients/web/test.sh, headless,
+      served isolated: `apps.html?isolated`). The page is cross-origin
+      isolated, so it loads the host's applications' build, one module over
+      one shared memory, and what that build runs on is checked here as it
+      lands: a thread of the application is a worker over that memory, which
+      parks and is woken from the main thread.
+      Verdict beaconed as a fetch, read from the access log.
+    -->
+    <script type="module">
+      import { loadCore, newGuiHost } from "../dist/index.js";
+
+      const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`).catch(() => {});
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const until = async (test, what, ms = 10_000) => {
+        const end = performance.now() + ms;
+        while (!test()) {
+          if (performance.now() > end) throw new Error(`timeout: ${what}`);
+          await sleep(10);
+        }
+      };
+
+      try {
+        if (!crossOriginIsolated) throw new Error("the page is not cross-origin isolated");
+        await loadCore();
+        const bridge = await newGuiHost();
+        const apps = await import("../dist/gui-host-apps/clausters_gui.js");
+
+        // **A thread is a worker over the shared memory**: it runs, parks,
+        // and a wake from the main thread reaches it.
+        apps.apps_thread_check();
+        await until(() => apps.apps_thread_checked() === 1, "the thread to run");
+        apps.apps_thread_check_wake();
+        await until(() => apps.apps_thread_checked() === 2, "the thread to be woken");
+        log("a thread: a worker over the shared memory, parked and woken from the main thread");
+
+        verdict("PASS: the applications' host loaded over shared memory, and a thread of it " +
+          "ran in a worker, parked and was woken from the main thread");
+        bridge.close?.();
+      } catch (error) {
+        verdict(`FAIL: ${error?.message ?? error}`);
+      }
+    </script>
+  </body>
+</html>

@@ -3280,7 +3280,7 @@ over the opened file) carries over.
         A page loads the applications' build when it is cross-origin
         isolated (`crossOriginIsolated`), and the suite serves its
         application pages with COOP/COEP.
-      - ⬜ **Threads in a page**: the application's two spawns (a render,
+      - ✅ **Threads in a page**: the application's two spawns (a render,
         a take's reader) go through one door that is `std::thread`
         natively and a worker over the module and its memory in a page.
         The main thread never waits on a lock a worker holds, since a
@@ -5211,3 +5211,14 @@ wrong.
   the folder is now the native host's. The page half of that module is
   what the page step can hold the application's folder with, so the sweep
   waits for it and closes `X30`.
+
+- ⬜ **Two playback tests of the application's engine fail now and then under
+  a parallel run** *(found 2026-10-24, moving the application's threads
+  onto one door)*. `a_loop_moved_while_it_plays_is_crossfaded` and
+  `two_loop_switches_close_together_at_its_end_are_not_heard`
+  (`crates/clausters-app-engine/tests/playback.rs`) failed once each in a
+  few runs of the crate's suite, before the change and after it, and pass
+  alone: they drive the engine block by block against a take's reader on a
+  thread of its own, so a loaded machine changes what the reader has filled
+  by a given block. They should wait for the reader as the engine's cue does
+  rather than for time.

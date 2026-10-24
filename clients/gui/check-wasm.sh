@@ -20,4 +20,8 @@ if ! rustup target list --installed | grep -q '^wasm32-unknown-unknown$'; then
     exit 1
 fi
 
-exec cargo build --lib --target wasm32-unknown-unknown "$@"
+cargo build --lib --target wasm32-unknown-unknown "$@"
+# and with the editing applications compiled in, as the page's applications'
+# build has them (`apps`; that build itself, with shared memory, is
+# clients/web/build.sh's, on the pinned nightly)
+exec cargo build --lib --target wasm32-unknown-unknown --features apps "$@"
