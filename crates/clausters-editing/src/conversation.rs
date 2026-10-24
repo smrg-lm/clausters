@@ -299,7 +299,9 @@ pub fn answer(
     reason: Option<String>,
     corrections: Vec<Correction>,
 ) -> Answer {
-    if seq == 0 && corrections.is_empty() {
+    // a refusal has something to say even when nothing asked with a stamp:
+    // a script's call has none, and is answered why all the same
+    if seq == 0 && corrections.is_empty() && reason.is_none() {
         return Answer::Silent;
     }
     if corrections.is_empty() {
@@ -491,10 +493,20 @@ mod tests {
     }
 
     /// **An unasked push with nothing to say is one message the wire does not
-    /// carry**, and everything else is one message whatever happened.
+    /// carry**, and everything else -- a refusal included -- is one message
+    /// whatever happened.
     #[test]
     fn an_answer_is_one_message_whatever_happened() {
         assert_eq!(answer(0, 3, None, Vec::new()), Answer::Silent);
+        // a refusal is said even with no stamp to retire
+        assert_eq!(
+            answer(0, 3, Some("no".into()), Vec::new()),
+            Answer::Ack {
+                seq: 0,
+                doc_version: 3,
+                reason: Some("no".into())
+            }
+        );
         assert_eq!(
             answer(2, 3, None, Vec::new()),
             Answer::Ack {
