@@ -1080,7 +1080,7 @@ pub(crate) trait Front {
     /// rate takes the samples' so its ruler can label real time.
     fn finish_placement(&mut self, want: WaveWant, frames: usize, sample_rate: f64) {
         let host = self.host_mut();
-        host.set_timeline_total(want.widget_id, frames);
+        host.set_take_total(want.widget_id, frames);
         // The samples just arrived, so whether this view can follow its own
         // recording is only answerable now: a mapped body reads the frontier,
         // an owned one has to be told.

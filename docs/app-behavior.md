@@ -137,6 +137,10 @@ code that keeps it lives.
   lengthens it. A curve over the take (the gain envelope), a
   marker list are read *on* that axis. A shortened take shortens the axis
   even where a curve's points still reach past it.
+- **An edit does not zoom.** A take's first picture fits its view; a take
+  that changes length under a view already drawn (a paste, a cut, an undo)
+  keeps the window's length, as a drag does, and only re-clamps it
+  (`Host::set_take_total`).
 - **An authoring surface has headroom.** A group with no take and a surface
   written into (a multitrack's lanes, a roll, a pane of curves alone)
   navigates past its content (`Host::NAV_HEADROOM`) and, empty, over a grid

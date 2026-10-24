@@ -638,7 +638,7 @@ impl Host {
     pub(crate) fn apply_extents(&mut self, extents: Vec<(i32, super::frame::Extent)>) {
         for (id, extent) in extents {
             match extent {
-                super::frame::Extent::Stored(total) => self.set_timeline_total(id, total),
+                super::frame::Extent::Stored(total) => self.set_take_total(id, total),
                 super::frame::Extent::Rolling(total) => self.set_live_timeline_total(id, total),
             }
         }
@@ -661,6 +661,24 @@ impl Host {
     /// all of it as the timeline grows; a zoomed one just re-clamps.
     pub fn set_timeline_total(&mut self, id: i32, total: usize) {
         self.set_timeline_total_inner(id, total, true);
+    }
+
+    /// **Registers a take's extent as its picture arrives**: the first one
+    /// fits the view as [`Host::set_timeline_total`] does, and a take that
+    /// changes length under a view already drawn -- an edit, a paste, an undo
+    /// -- keeps the window's length, as a drag does: an edit is not a reason
+    /// to zoom.
+    pub fn set_take_total(&mut self, id: i32, total: usize) {
+        let drawn = self
+            .timelines
+            .totals
+            .get(&id)
+            .is_some_and(|&t| t > 0 && t != total);
+        if drawn {
+            self.set_timeline_total_keeping_view(id, total);
+        } else {
+            self.set_timeline_total(id, total);
+        }
     }
 
     /// Registers an extent **without refitting** a window that happens to be
@@ -1723,6 +1741,24 @@ mod tests {
         // selection the host could not have swept.
         host.set_timeline_selection(10, Some(0.4), Some(1.7));
         assert_eq!(chrome_of(&host, 11).selection(), Some((0.0, 2.0)));
+    }
+
+    /// **An edit does not zoom.** A take's first picture fits the view; a
+    /// take that grows under a view showing all of it (a paste) keeps the
+    /// window's length, and the new frames are past its end.
+    #[test]
+    fn a_take_that_grows_under_its_view_keeps_the_zoom() {
+        // three takes of four samples, their first pictures fitted
+        let mut host = linked_host();
+        let (nav, total) = host.timeline_nav(10).unwrap();
+        assert_eq!((nav.len, total), (4.0, 4), "the first picture fits");
+        host.set_take_total(10, 8);
+        let (nav, total) = host.timeline_nav(10).unwrap();
+        assert_eq!(
+            (nav.start, nav.len, total),
+            (0.0, 4.0, 8),
+            "a paste keeps it"
+        );
     }
 
     #[test]

@@ -312,13 +312,12 @@ impl App {
         // the view rather than the axis.
         for ((wid, key), slot) in &waveforms {
             if *key == SlotKey::SELF {
-                self.host
-                    .set_timeline_total(*wid, slot.view.total_samples());
+                self.host.set_take_total(*wid, slot.view.total_samples());
             }
         }
         for ((wid, key), slot) in &spectrograms {
             if *key == SlotKey::SELF {
-                self.host.set_timeline_total(*wid, slot.total_samples());
+                self.host.set_take_total(*wid, slot.total_samples());
             }
         }
         (waveforms, spectrograms, canvases, buffer_refs)
@@ -366,14 +365,13 @@ impl App {
         if let Some(ws) = self.windows.get_mut(&def_id) {
             for (at, slot) in waveforms {
                 if at.1 == SlotKey::SELF {
-                    self.host
-                        .set_timeline_total(at.0, slot.view.total_samples());
+                    self.host.set_take_total(at.0, slot.view.total_samples());
                 }
                 ws.waveforms.insert(at, slot);
             }
             for (at, slot) in spectrograms {
                 if at.1 == SlotKey::SELF {
-                    self.host.set_timeline_total(at.0, slot.total_samples());
+                    self.host.set_take_total(at.0, slot.total_samples());
                 }
                 ws.spectrograms.insert(at, slot);
             }

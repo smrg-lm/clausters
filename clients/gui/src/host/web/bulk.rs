@@ -270,7 +270,7 @@ impl WebApp {
         );
         // The loaded extent joins the widget's navigation group.
         if let Some(total) = total {
-            self.host.set_timeline_total(widget_id, total);
+            self.host.set_take_total(widget_id, total);
         }
     }
 
