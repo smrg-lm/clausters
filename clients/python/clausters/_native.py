@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 92
+CORE_ABI_VERSION = 93
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -998,6 +998,14 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_ws_close.argtypes = [ctypes.c_void_p]
     lib.clausters_ws_last_error.restype = ctypes.c_char_p
     lib.clausters_ws_last_error.argtypes = []
+    # An editor's working folder (ABI v93): an opaque handle that holds the
+    # folder's lock, and removes the folder when it is freed.
+    lib.clausters_core_workspace_create.restype = ctypes.c_void_p
+    lib.clausters_core_workspace_create.argtypes = [ctypes.c_char_p]
+    lib.clausters_core_workspace_path.restype = ctypes.c_char_p
+    lib.clausters_core_workspace_path.argtypes = [ctypes.c_void_p]
+    lib.clausters_core_workspace_free.restype = None
+    lib.clausters_core_workspace_free.argtypes = [ctypes.c_void_p]
     _configure_notation(lib)
     return lib
 
@@ -3467,6 +3475,26 @@ def unix_to_ntp(unix_secs: float) -> int:
     """A Unix timestamp packed into the 64 NTP timetag bits (adds the
     1900->1970 offset, then packs like `ntp_timetag`)."""
     return lib().clausters_core_unix_to_ntp(float(unix_secs))
+
+
+class Workspace:
+    """**An editor's working folder**, the core's (`clausters_core::workspace`):
+    a folder under the user's cache, on disk -- never the temporary directory,
+    which is memory on many machines -- held by a lock while this is open and
+    removed by `close`. A process that ends without closing it lets go of the
+    lock however it ends, and the next editor to open removes the folder."""
+
+    def __init__(self, name: str):
+        self._handle = lib().clausters_core_workspace_create(name.encode())
+        if not self._handle:
+            raise OSError(f"no working folder for {name!r} could be made")
+        self.path = lib().clausters_core_workspace_path(self._handle).decode()
+
+    def close(self) -> None:
+        """Removes the folder and lets go of its lock; closing twice is nothing."""
+        if self._handle:
+            lib().clausters_core_workspace_free(self._handle)
+            self._handle = None
 
 
 def degree_to_midinote(degree: float, alter: float, octave: float, root: float,

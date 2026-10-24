@@ -52,6 +52,7 @@ pub mod shm;
 mod tempomap;
 mod time;
 mod widgetids;
+mod workspace;
 pub mod ws;
 
 // Every module's `extern "C"` items are re-exported here. The C symbols do not
@@ -76,7 +77,7 @@ pub use time::*;
 /// The C ABI version of this surface. Bump on any incompatible change; what
 /// each version changed is recorded in `docs/bindings.md` ("What each core
 /// ABI version changed").
-pub const CORE_ABI_VERSION: u32 = 92;
+pub const CORE_ABI_VERSION: u32 = 93;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

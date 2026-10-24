@@ -62,8 +62,10 @@ struct AudioWindow {
     /// The widgets that draw the take, which a band and the loop switch are
     /// set on.
     takes: Vec<i32>,
-    /// The folder its renders are written to, removed when it closes.
-    workspace: std::path::PathBuf,
+    /// The folder its renders are written to, held while the window lives
+    /// and removed when it goes, however the process ends
+    /// (`clausters_core::workspace`).
+    _workspace: clausters_core::workspace::Workspace,
     /// The actions last handed to the window, so an unchanged set is not
     /// sent again.
     actions: Option<Value>,
@@ -156,14 +158,13 @@ impl Host {
             ids.insert((*role).into(), json!(id));
             widgets.push(id);
         }
-        let workspace = std::env::temp_dir().join(format!(
-            "clausters-audio-{}-{structure}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&workspace)
-            .map_err(|e| format!("the working folder {}: {e}", workspace.display()))?;
+        // On disk under the user's cache, never the temporary directory: a
+        // reverse of a day writes tens of gigabytes, and the temporary
+        // directory is memory on many machines.
+        let workspace = clausters_core::workspace::Workspace::create("audio")
+            .map_err(|e| format!("the working folder: {e}"))?;
         let mut request = json!({"verb": "openAudio", "key": format!("audio:{structure}"),
-            "workspace": workspace.to_string_lossy(), "title": title, "display": 0});
+            "workspace": workspace.path().to_string_lossy(), "title": title, "display": 0});
         match path {
             Some(path) => {
                 let info = clausters_app_engine::probe_audio(path)?;
@@ -218,7 +219,7 @@ impl Host {
                 ids: Value::Object(ids),
                 widgets,
                 takes,
-                workspace,
+                _workspace: workspace,
                 actions: None,
             },
         );
@@ -509,17 +510,9 @@ impl Host {
     /// The window is this host's no longer.
     fn forget_audio(&mut self, def_id: i32) {
         self.window_sources.remove(&def_id);
-        let Some(window) = self
-            .audio
-            .as_mut()
-            .and_then(|audio| audio.windows.remove(&def_id))
-        else {
-            return;
-        };
-        if let Err(e) = std::fs::remove_dir_all(&window.workspace)
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
-            diag::warn!("audio: {}: {e}", window.workspace.display());
+        // its working folder goes with it, dropped
+        if let Some(audio) = self.audio.as_mut() {
+            audio.windows.remove(&def_id);
         }
     }
 }
@@ -620,6 +613,40 @@ mod tests {
         assert_eq!(after.len(), 1, "{after:?}");
         assert_eq!(after[0]["start"], 12_000, "{after:?}");
         assert_eq!(after[0]["frames"], 12_000, "{after:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// **The working folder is on disk, and goes with its window**: under the
+    /// user's cache rather than the temporary directory, which is memory on
+    /// many machines, and removed when the window closes or the host ends.
+    #[test]
+    fn a_working_folder_is_on_disk_and_goes_with_its_window() {
+        let path = take("folder", 4_800);
+        let (engine, _processed) = AppEngine::detached(48_000.0, 2);
+        let mut host = Host::new();
+        host.hold_audio_engine(Arc::new(Mutex::new(engine)));
+        let folder = |host: &Host, def_id: i32| {
+            host.audio.as_ref().unwrap().windows[&def_id]
+                ._workspace
+                .path()
+                .to_path_buf()
+        };
+        let def_id = host.open_audio(Some(&path), "take").expect("opened");
+        let closed = folder(&host, def_id);
+        assert!(
+            closed.starts_with(clausters_core::workspace::root()),
+            "{}",
+            closed.display()
+        );
+        settled(&mut host, def_id);
+        assert!(closed.is_dir());
+        host.close_audio(def_id);
+        assert!(!closed.exists(), "closing the window removed it");
+        let def_id = host.open_audio(Some(&path), "take").expect("opened");
+        let ended = folder(&host, def_id);
+        settled(&mut host, def_id);
+        drop(host);
+        assert!(!ended.exists(), "the host ending removed it");
         let _ = std::fs::remove_file(&path);
     }
 

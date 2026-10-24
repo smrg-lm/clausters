@@ -2793,6 +2793,17 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "playback" => editor.playback_file().to_string(),
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
         "segments" => editor.segments().to_string(),
+        // **What of `files` is this editor's scratch**: the ones in its
+        // working folder, which a failed render may take away; nothing else,
+        // a file the user named least of all.
+        "scratch" => {
+            let folder = editor.window_state.workspace.as_deref().map(|w| format!("{}/", w.trim_end_matches('/')));
+            let files: Vec<&str> = request["files"].as_array().into_iter().flatten()
+                .filter_map(Value::as_str)
+                .filter(|f| folder.as_deref().is_some_and(|w| f.starts_with(w) && !f[w.len()..].contains("..")))
+                .collect();
+            json!({"files": files}).to_string()
+        }
         "on_disk" => {
             let reason = editor.on_disk(&request["stamps"]);
             let seq = request["seq"].as_i64().unwrap_or(0);
@@ -2829,6 +2840,7 @@ mod files;
 /// Typed two-phase audio operations.
 pub mod operations;
 mod sources;
+pub(crate) use sources::peaks_beside;
 
 #[cfg(test)]
 mod tests;

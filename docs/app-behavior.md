@@ -206,6 +206,12 @@ code that keeps it lives.
 
 ## State, history and verbs
 
+- **Renders live on disk and go with their session.** An editor's working
+  folder is under the user's cache (`clausters_core::workspace`), never the
+  temporary directory, which is memory on many machines; it is removed when
+  the window closes or the process ends, and by the next editor to open where
+  the process was killed. A render that fails deletes what it had written
+  there, so a disk filled by a long reverse is given back at once.
 - **Each open audio file keeps its own state and history.** Switching files
   restores its cursor, selection, gain curve and view settings. Undo/redo
   steps only the focused file. The independent file list is on the left and

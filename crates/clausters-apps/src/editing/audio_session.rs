@@ -144,11 +144,14 @@ enum Resume {
     /// The open files looked at on disk, the window having come back: the
     /// stamps go to the editor, which answers the window's `seq`.
     Stat { seq: Value },
-    /// An operation's batch carried out: complete it.
+    /// An operation's batch carried out: complete it. The files its renders
+    /// write go if it fails, where they are the editor's scratch.
     Batch {
         ticket: Value,
         batch: Value,
         repairing: bool,
+        member: Option<MemberId>,
+        rendered: Vec<String>,
     },
     /// A repair's recovery batch carried out.
     Recovery {
@@ -437,6 +440,24 @@ fn file_id(editing: &Editing, member: MemberId) -> Option<i64> {
         Some(Member::Audio(editor)) if editor.has_file() => Some(editor.focused_file()),
         _ => None,
     }
+}
+
+/// **The files a batch's renders write**: each render's output and the peaks
+/// beside it, as the editor names them.
+fn rendered_files(steps: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    for render in steps
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s.get("render"))
+    {
+        if let Some(path) = render["path"].as_str().filter(|p| !p.is_empty()) {
+            out.push(path.to_string());
+            out.push(crate::audio::editor::peaks_beside(path));
+        }
+    }
+    out
 }
 
 /// One verb of the member's own door, as a client calls it.
@@ -834,9 +855,27 @@ impl Session {
                     ticket,
                     batch,
                     repairing,
+                    member,
+                    rendered,
                 },
                 failed,
             ) => {
+                // **A failed batch leaves nothing on disk.** Its renders up to
+                // the failure wrote files no list will name -- the pieces of a
+                // reverse of a day before the disk filled -- and they would sit
+                // in the working folder until the editor closed.
+                if failed.is_some()
+                    && let Some(member) = member.filter(|_| !rendered.is_empty())
+                {
+                    let scratch = member_call(
+                        editing,
+                        member,
+                        json!({"verb": "scratch", "files": rendered}),
+                    );
+                    if truthy(&scratch["files"]) {
+                        effects.push(json!({"kind": "delete", "files": scratch["files"]}));
+                    }
+                }
                 let status = match failed {
                     Some(reason) => json!({"status": "failed", "reason": reason}),
                     None => json!({"status": "success"}),
@@ -1405,6 +1444,10 @@ impl Session {
                             ticket: answer["ticket"].clone(),
                             batch: answer["batch"].clone(),
                             repairing,
+                            member: answer["member"]
+                                .as_u64()
+                                .and_then(|m| MemberId::try_from(m).ok()),
+                            rendered: rendered_files(&answer["steps"]),
                         },
                     );
                 }
@@ -2361,6 +2404,55 @@ mod tests {
         let clean = binding(&mut editing, member);
         assert_eq!(clean["dirty"], false);
         assert_eq!(clean["file"]["path"], "/takes/refused.wav");
+    }
+
+    /// **A failed render leaves nothing in the working folder**: a reverse
+    /// whose render the disk refuses deletes what it wrote there, its peaks
+    /// with it, and a save that fails deletes nothing the user named.
+    #[test]
+    fn a_failed_render_deletes_its_scratch_and_nothing_else() {
+        let mut editing = Editing::new();
+        let mut client = Client::new();
+        let member = opened(&mut client, &mut editing, false);
+        let reverse = json!({"verb": "event", "addr": "/gui_event", "window": true,
+            "args": [12, 1, editing.version(), "reverse", 10.0, 20.0]});
+        let first = client.begin(&mut editing, member, reverse);
+        let render = until(&mut client, &mut editing, member, first, "batch", 1);
+        let failed = client.answer(
+            &mut editing,
+            member,
+            &render,
+            json!({"failed": "Disk quota exceeded"}),
+        );
+        let deleted = |answer: &Value| -> Vec<String> {
+            answer["effects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|e| e["kind"] == "delete")
+                .flat_map(|e| e["files"].as_array().cloned().unwrap_or_default())
+                .filter_map(|f| f.as_str().map(str::to_string))
+                .collect()
+        };
+        let files = deleted(&failed);
+        assert!(!files.is_empty(), "{failed}");
+        assert!(files.iter().all(|f| f.starts_with("/work/")), "{files:?}");
+        assert!(files.iter().any(|f| f.ends_with(".w64")), "{files:?}");
+        assert!(files.iter().any(|f| f.ends_with(".peaks")), "{files:?}");
+        client.finish(&mut editing, member, failed);
+
+        let first = client.begin(&mut editing, member, save("/takes/refused.wav"));
+        let write = until(&mut client, &mut editing, member, first, "batch", 1);
+        let failed = client.answer(
+            &mut editing,
+            member,
+            &write,
+            json!({"failed": "quota exceeded"}),
+        );
+        assert!(
+            deleted(&failed).iter().all(|f| !f.starts_with("/takes/")),
+            "{failed}"
+        );
     }
 
     /// **Completions out of order, each to its own file**: a save of A is

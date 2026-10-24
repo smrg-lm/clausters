@@ -54,6 +54,10 @@ from .editor import Editor
 from .marking import Marking
 from .samples import MEASURES, SamplesView, _plain, measures
 
+#: The working folders closed editors left renders in that the clipboard
+#: still names, held for as long as the process lives.
+_KEPT: list = []
+
 #: The containers a part of a list reads in place; a file of any other codec
 #: is opened through a buffer of it.
 _STREAMED = ("wav", "w64", "rf64")
@@ -268,8 +272,10 @@ class AudioEditor(Marking, Editor):
             too. By default each file the editor holds has an order of its own,
             whatever was opened before it.
         workspace: the directory the editor renders its files into, on the
-            server's filesystem. A temporary one when not given, removed when
-            the editor closes; one handed over is left where it is.
+            server's filesystem. When not given, a folder of the user's cache
+            on disk (`clausters._native.Workspace`), removed when the editor
+            closes, or by the next editor to open where the process ended
+            first; one handed over is left where it is.
         file: the `clausters.SoundFile` `take` was loaded from, which a save
             writes -- one with no path asks for one. `clausters.gui.edit`
             loads a file and passes it here.
@@ -314,10 +320,11 @@ class AudioEditor(Marking, Editor):
         self._context = self._editing
         #: The folder the renders are written into, and whether it is this
         #: editor's to remove.
-        self._owns_workspace = workspace is None
+        self._held = None
         if workspace is None:
-            import tempfile
-            workspace = tempfile.mkdtemp(prefix="clausters-audio-")
+            # on disk under the user's cache, held while this editor lives
+            self._held = _native.Workspace("audio")
+            workspace = self._held.path
         self._workspace = str(workspace)
         if empty:
             key = f"audio:{self._instance['connection']}:{self._instance['generation']}:empty:{self._display}"
@@ -762,12 +769,17 @@ class AudioEditor(Marking, Editor):
         the editor made goes with it, its renders deleted by the close -- all
         but the ones the clipboard still names, which stay where they are."""
         self._audio("close")
-        if self._owns_workspace:
+        if self._held is not None:
             import os
             try:
                 os.rmdir(self._workspace)
             except OSError:
-                pass  # what the clipboard names, kept
+                # what the clipboard names is kept, and held as long as the
+                # process lives; the next editor to open after it removes it
+                _KEPT.append(self._held)
+            else:
+                self._held.close()
+            self._held = None
         return self
 
     @property

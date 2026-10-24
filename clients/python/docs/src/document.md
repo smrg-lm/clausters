@@ -76,8 +76,8 @@ file of the editor's working folder, which the list then names: a stroke is a fi
 size of the stroke, spliced over the frames it was drawn on. An undo is the list before,
 so it costs the list and not the samples, and a take of an hour cuts and pastes as fast as
 one of a second. The files a history or the clipboard can still reach are kept, and
-deleted when nothing can. **A file changed on disk is said**: when the window comes back, the files the take reads are looked at, and one another program changed -- or removed -- since the editor read it is said on the window's status bar; the editor's own save is no change. The working folder is a temporary directory unless
-`workspace=` names one, and goes with the editor. What it opens is a file -- read where it
+deleted when nothing can. **A file changed on disk is said**: when the window comes back, the files the take reads are looked at, and one another program changed -- or removed -- since the editor read it is said on the window's status bar; the editor's own save is no change. The working folder is a folder of the user's cache, on disk -- `clausters/work` under the platform's cache folder, or `$CLAUSTERS_CACHE_DIR` -- unless
+`workspace=` names one, and goes with the editor; one an editor left when its process was killed goes the next time any editor opens. A render that fails takes away what it had written there. What it opens is a file -- read where it
 is -- or a server buffer, which the open writes to the working folder first. A compressed
 file (MP3, FLAC) is decoded into a buffer by `edit` and opened through it;
 `reads_in_place(file)` says which. `editor.save()` renders the edited take over what it was

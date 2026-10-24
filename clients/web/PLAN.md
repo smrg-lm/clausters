@@ -5105,3 +5105,18 @@ sound.
   reads as no sound file. One path's reads and writes are serialized in
   the worker. `PeaksOut` still holds its base buckets to the end, about
   2.3 % of the samples, as natively.
+
+- ⬜ **An editor's working folder under node is in the temporary directory,
+  and nothing sweeps one a tab left** *(found 2026-10-24, with the native
+  fix)*. A reverse of a day filled a machine's memory: the temporary
+  directory was a memory filesystem, and folders left by sessions that did
+  not close through their window held it after every process had gone.
+  Natively the folder is now the core's (`clausters_core::workspace`):
+  under the user's cache, held by a lock file beside it, removed when the
+  session ends and swept by the next editor when it was killed. The node
+  client's `temporaryFolder` still names the temporary directory, and node
+  has no file lock to hold one by; a tab's folders in its origin's storage
+  are removed by the editor's close and by nothing when the tab dies. The
+  shape to follow is the core's: the same root and the same sweep, by
+  whatever a page and node can hold a folder with. A render that fails
+  already deletes what it wrote, in every client.

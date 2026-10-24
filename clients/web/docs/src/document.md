@@ -163,7 +163,7 @@ size of the stroke, spliced over the frames it was drawn on. An undo is the list
 so it costs the list and not the samples, and a take of an hour cuts and pastes as fast as
 one of a second. The files a history or the clipboard can still reach are kept, and
 deleted when nothing can. **A file changed on disk is said**: when the window comes back, the files the take reads are looked at, and one another program changed -- or removed -- since the editor read it is said on the window's status bar; the editor's own save is no change. The working folder is a temporary one -- in a tab, a folder of
-the page's own storage -- unless `workspace` names one, and goes with the editor. What it
+the page's own storage -- unless `workspace` names one, and goes with the editor. A render that fails takes away what it had written there. What it
 opens is a file -- read where it is -- or a server buffer, which the open writes to the
 working folder first. A compressed file (MP3, FLAC) is decoded into a buffer by `edit` and
 opened through it; `readsInPlace(file)` says which. `await editor.save()` renders the

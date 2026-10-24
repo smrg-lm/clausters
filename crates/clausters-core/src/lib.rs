@@ -92,6 +92,9 @@
 //!   inlets/outlets, cords) compiled to a GraphDef's bus wiring (one bus per
 //!   connected net, its writers summing), shared so every client that draws a
 //!   patch translates it identically.
+//! - `workspace` (native only) -- an editor's working folder under the user's
+//!   cache, on disk, held by a lock while its session lives and removed when
+//!   it ends, or by the next editor to open when it ended abruptly.
 //! - [`widgetids`] -- the GUI widget namespace: the anonymous lease a hand-built
 //!   tree takes and the **named** id a view asks for by saying what it draws, so
 //!   a widget keeps its number across a redraw and nothing in flight lands on
@@ -149,3 +152,5 @@ pub mod transport_pass;
 pub mod warp;
 pub mod widgetids;
 pub mod window;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod workspace;

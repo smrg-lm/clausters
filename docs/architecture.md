@@ -1117,7 +1117,13 @@ paste of a block, a mix, a pencil stroke, a gain apply and a reverse each are an
 the working folder, which reads the list with `TransportDiskIn` and writes with
 `DiskOut` beside a `PeaksOut`, so a file a history entry names is never written
 again. A file opened without peaks is measured once the same way, into the
-working folder, and its peaks go with its renders when it closes. A turn answers the renders and the `/buffer_stitch` that
+working folder, and its peaks go with its renders when it closes. The working
+folder is the core's (`clausters_core::workspace`): under the user's cache, on
+disk, since a render of hours is tens of gigabytes and the temporary directory
+is memory on many machines; held by a lock file beside it while its session
+lives, removed when it ends, and swept by the next editor to open where the
+process was killed. A batch that fails deletes the renders it had written
+there (the editor's `scratch` verb names which are its own). A turn answers the renders and the `/buffer_stitch` that
 puts the join -- the RT buffer the take plays through, its parts naming file
 spans -- over the new list, and the window draws the list itself, from its
 files (`segments`). The editing context gives back what nothing reaches: after

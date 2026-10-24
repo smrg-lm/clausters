@@ -666,6 +666,9 @@ every bulk path already has, recorded in `docs/ipc.md`.
 | `clausters_ws_recv` | — | `n/a` — as above |
 | `clausters_ws_close` | — | `n/a` — as above |
 | `clausters_ws_last_error` | — | `n/a` — as above |
+| `clausters_core_workspace_create` | — | `n/a` — wasm has no filesystem of its own: a page's working folder is a folder of its origin's storage, made through the page's file door. The node client's is a gap, filed in `clients/web/PLAN.md` |
+| `clausters_core_workspace_path` | — | `n/a` — as above |
+| `clausters_core_workspace_free` | — | `n/a` — as above |
 | `clausters_core_abi_version` | — | `n/a` — the cdylib is loaded by a client built separately, so it answers a version handshake (`CORE_ABI_VERSION`); the wasm module ships inside the npm package and is rebuilt with it, so there are never two versions to reconcile |
 
 
@@ -1225,6 +1228,11 @@ bindings' half. Breaking: one parameter added.
 **v92 a node's generic editor.** `clausters_core_node_editor`: the GuiDef of
 a node's controls, generated from their description as `/def_query`
 reports it, searched and paged. Additive.
+
+**v93 an editor's working folder.** `clausters_core_workspace_create`,
+`_path` and `_free`: a folder under the user's cache, on disk, held by a lock
+while the handle lives and removed when it is freed, or by the next editor to
+open when its process ended without freeing it. Additive.
 
 
 ## The client surface: one capability, two shapes
