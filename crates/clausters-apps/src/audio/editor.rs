@@ -1752,10 +1752,19 @@ impl AudioEditor {
                 let mut corrections = self.reread();
                 // **A cut or a paste leaves nothing selected**: the frames a
                 // selection named have moved, so it would stand over other
-                // samples. The position cursor stays where the edit landed.
+                // samples. The position cursor stays where a cut landed, and
+                // goes to the end of what a paste put in -- shown whole, the
+                // view opened out to it where it ran past what is seen.
                 if matches!(tag, "cut" | "delete" | "paste") {
                     let at = values.first().map_or(0.0, number).round().max(0.0) as u64;
-                    corrections.extend(self.land_at(at, out));
+                    if tag == "paste" {
+                        let was = parts::length(&before.parts, &self.rates_of()).unwrap_or(0);
+                        let pasted = self.length().saturating_sub(was);
+                        corrections.extend(self.land_at(at + pasted, out));
+                        corrections.extend(self.show_span(at, at + pasted, was));
+                    } else {
+                        corrections.extend(self.land_at(at, out));
+                    }
                 }
                 (None, corrections)
             }
@@ -2167,6 +2176,31 @@ impl AudioEditor {
             return Err("the clipboard buffer has no owning exchange".into());
         }
         Ok(())
+    }
+
+    /// **Frames `from..to` shown whole**: where they run past what the view
+    /// shows (the take's `was` frames when it has said nothing of its view),
+    /// it opens out until they are inside; a span already seen moves nothing.
+    fn show_span(&mut self, from: u64, to: u64, was: u64) -> Vec<Correction> {
+        let Some(widget) = self.window_state.widget else {
+            return Vec::new();
+        };
+        let (start, len) = self
+            .file
+            .presentation
+            .viewport
+            .unwrap_or((0.0, was.max(1) as f64));
+        let (from, to) = (from as f64, to as f64);
+        if from >= start && to <= start + len {
+            return Vec::new();
+        }
+        let begin = start.min(from);
+        let len = (start + len).max(to) - begin;
+        self.file.presentation.viewport = Some((begin, len));
+        vec![Correction {
+            widget: i64::from(widget),
+            props: json!({"view_start": begin, "view_len": len}),
+        }]
     }
 
     /// A tag that says what the view is looking at rather than what changed.

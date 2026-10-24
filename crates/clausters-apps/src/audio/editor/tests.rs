@@ -426,6 +426,55 @@ fn a_paste_of_segments_names_their_files_and_makes_nothing() {
     );
 }
 
+/// **A paste lands at its end and is shown whole**: the position cursor
+/// goes to the end of what it put in, and where that ran past the view the
+/// view opens out to it; a paste inside the view moves nothing of it.
+#[test]
+fn a_paste_lands_at_its_end_and_is_shown_whole() {
+    let mut editor = opened(1);
+    let part = |frames| SegmentPart {
+        path: "/elsewhere/other.wav".into(),
+        start: 0,
+        frames,
+        fade_in: 0,
+        fade_out: 0,
+        fade_in_shape: Default::default(),
+        fade_out_shape: Default::default(),
+        channels: None,
+        source_channels: 1,
+        source_frames: 48_000,
+        source_rate: 44_100.0,
+    };
+    let view = |out: &Value| -> Option<Value> {
+        out["answer"]["corrections"]
+            .as_array()?
+            .iter()
+            .find(|c| c["widget"] == 12 && c["props"].get("view_len").is_some())
+            .map(|c| c["props"].clone())
+    };
+    // the view shows frames 0..60
+    event(&mut editor, json!([12, 1, 0, "view", 0.0, 60.0]));
+    let doc = Clipboard::segments(1, 44_100.0, vec![part(20)]).to_json();
+    let out = event(
+        &mut editor,
+        json!([12, 2, 0, "paste", 50.0, "segments", doc]),
+    );
+    assert_eq!(call(&mut editor, json!({"verb": "binding"}))["cursor"], 70);
+    assert_eq!(
+        view(&out),
+        Some(json!({"view_start": 0.0, "view_len": 70.0})),
+        "{out}"
+    );
+    // inside the view: the cursor goes on, the view stays
+    let doc = Clipboard::segments(1, 44_100.0, vec![part(5)]).to_json();
+    let out = event(
+        &mut editor,
+        json!([12, 3, 0, "paste", 10.0, "segments", doc]),
+    );
+    assert_eq!(call(&mut editor, json!({"verb": "binding"}))["cursor"], 15);
+    assert_eq!(view(&out), None, "{out}");
+}
+
 #[test]
 fn a_block_of_another_width_or_rate_is_refused() {
     let mut editor = opened(1);

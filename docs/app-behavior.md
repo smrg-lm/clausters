@@ -140,7 +140,12 @@ code that keeps it lives.
 - **An edit does not zoom.** A take's first picture fits its view; a take
   that changes length under a view already drawn (a paste, a cut, an undo)
   keeps the window's length, as a drag does, and only re-clamps it
-  (`Host::set_take_total`).
+  (`Host::set_take_total`). A list's length is registered as the list is set,
+  before its picture is read, so a view set in the same answer stands.
+- **A paste lands at its end and is shown whole.** The position cursor, and
+  the play cursor with it, goes to the end of what a paste put in; where that
+  runs past what the view shows, the view opens out until the pasted span is
+  inside, and a paste inside the view moves nothing of it.
 - **An authoring surface has headroom.** A group with no take and a surface
   written into (a multitrack's lanes, a roll, a pane of curves alone)
   navigates past its content (`Host::NAV_HEADROOM`) and, empty, over a grid
