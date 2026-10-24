@@ -350,117 +350,93 @@ fn the_application_reads_its_take_into_the_engine() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// The answer to an await of the coordinator, as an application that holds
-/// its engine gives it: its renders and moves carried out in the process, and
-/// a file described from its header.
-fn reply(wait: &serde_json::Value) -> serde_json::Value {
-    assert!(
-        !wait.to_string().contains("/buffer_stitch"),
-        "nothing is stitched: {wait}"
-    );
-    match wait["kind"].as_str().unwrap_or_default() {
-        "shape" => {
-            let path = wait["path"].as_str().unwrap_or_default();
-            let layout = clausters_core::pcm::Layout::open(path).expect("the file reads");
-            serde_json::json!({"frames": layout.frames, "channels": layout.channels,
-                "rate": layout.sample_rate, "display": 0, "path": path, "untitled": false})
-        }
-        "steps" | "batch" => {
-            let steps = clausters_editing::apply::steps_from_json(&wait["steps"]);
-            match clausters_app_engine::steps::carry(&steps, |_, _, _| {}) {
-                Ok(()) => serde_json::json!({}),
-                Err(failed) => serde_json::json!({ "failed": failed }),
+/// **An action of the audio editor carried to its end** by the application
+/// that holds the engine: a render it handed off is waited for, the engine
+/// processed meanwhile as its device would.
+fn act(
+    app: &mut clausters_app_engine::audio::AudioApp,
+    editing: &mut clausters_apps::editing::Editing,
+    engine: &mut clausters::server::engine::Engine,
+    member: u32,
+    action: serde_json::Value,
+) -> clausters_app_engine::audio::Ran {
+    let mut ran = app.act(editing, member, action, 7, false);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut effects = std::mem::take(&mut ran.effects);
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while ran.end.is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the render never landed"
+        );
+        engine.process_block(&mut out);
+        std::thread::sleep(Duration::from_millis(1));
+        for mut landed in app.landed(editing) {
+            effects.append(&mut landed.effects);
+            if landed.end.is_some() {
+                assert_eq!(landed.token, 7, "the end comes back with its token");
+                ran = landed;
             }
         }
-        _ => serde_json::json!({}),
     }
+    ran.effects = effects;
+    let end = ran.end.as_ref().unwrap();
+    assert!(end.is_ok(), "{end:?}");
+    ran
 }
 
-/// **One action of the audio editor's coordinator, carried to its end**,
-/// every await answered as [`reply`] says; the run's end.
-fn act(
+/// The editing context's version, which an event is made against.
+fn version(
+    app: &mut clausters_app_engine::audio::AudioApp,
     editing: &mut clausters_apps::editing::Editing,
-    member: u64,
-    action: serde_json::Value,
-    ids: &mut IdSpaces,
 ) -> serde_json::Value {
-    use clausters_apps::editing::call_json_ids;
-    use serde_json::json;
-
-    let call = |editing: &mut clausters_apps::editing::Editing,
-                request: serde_json::Value,
-                ids: &mut IdSpaces| {
-        serde_json::from_str::<serde_json::Value>(&call_json_ids(
-            editing,
-            &request.to_string(),
-            ids,
-        ))
-        .unwrap()
-    };
-    let mut answer = call(
-        editing,
-        json!({"verb": "audio", "member": member, "do": action}),
-        ids,
-    );
-    while answer["done"] != true {
-        let wait = &answer["await"];
-        assert_ne!(wait["kind"], "rolling", "the engine says whether it rolls");
-        let result = reply(wait);
-        answer = call(
-            editing,
-            json!({"verb": "audio", "member": member, "run": answer["run"], "result": result}),
-            ids,
-        );
-    }
-    assert!(answer["error"].is_null(), "{answer}");
-    answer
+    app.call(editing, &serde_json::json!({"verb": "state"}))["version"].clone()
 }
 
 /// **The audio editor, played on an engine its application holds**: its
-/// coordinator opens a file, plays it from its first frame, and after a
-/// delete plays the take as edited -- the list read by the application into
-/// the engine's fed streams, nothing stitched and no OSC between them.
+/// coordinator opens a file, measures its peaks, plays it from its first
+/// frame, and after a delete and a reverse plays the take as edited -- the
+/// list read by the application into the engine's fed streams, the renders
+/// run in the application's threads, nothing stitched and no OSC between
+/// them.
 #[test]
 fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
-    use clausters_app_engine::held::HeldAudio;
-    use clausters_apps::editing::{Editing, call_json_ids};
+    use clausters_app_engine::audio::AudioApp;
+    use clausters_apps::editing::Editing;
     use serde_json::json;
 
     let (path, values) = take("coordinator");
     let workspace = std::env::temp_dir().join(format!("app-engine-ws-{}", std::process::id()));
     std::fs::create_dir_all(&workspace).unwrap();
     let (mut engine, handle) = engine_pair(SR as f32, 2);
-    let app = Arc::new(Mutex::new(AppEngine::over(handle)));
-    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut app = AudioApp::new(Arc::new(Mutex::new(AppEngine::over(handle))));
     let mut editing = Editing::new();
-    editing.hold_engine(Box::new(HeldAudio::new(Arc::clone(&app))));
-    let opened: serde_json::Value = serde_json::from_str(&call_json_ids(
+    app.hold(&mut editing);
+    let opened = app.call(
         &mut editing,
         &json!({"verb": "openAudio", "key": "take", "path": path,
             "workspace": workspace.to_string_lossy(), "frames": FRAMES,
-            "channels": 1, "rate": SR, "display": 0})
-        .to_string(),
-        &mut ids,
-    ))
-    .unwrap();
-    let member = opened["member"].as_u64().expect("an audio member");
+            "channels": 1, "rate": SR, "display": 0}),
+    );
+    let member = opened["member"].as_u64().expect("an audio member") as u32;
     for call in [
         json!({"verb": "sync", "window": 900}),
         json!({"verb": "window", "widget": 12}),
     ] {
-        call_json_ids(
+        app.call(
             &mut editing,
-            &json!({"verb": "member", "member": member, "call": call}).to_string(),
-            &mut ids,
+            &json!({"verb": "member", "member": member, "call": call}),
         );
     }
     let opened = act(
+        &mut app,
         &mut editing,
+        &mut engine,
         member,
         json!({"verb": "open", "chunk": 1, "rate": SR, "empty": false}),
-        &mut ids,
     );
-    assert!(opened["result"]["transport"].is_i64(), "{opened}");
+    let result = opened.end.unwrap().unwrap();
+    assert!(result["transport"].is_i64(), "{result}");
     // the file opened with no peaks has them measured, by the application
     let measured = std::fs::read_dir(&workspace)
         .unwrap()
@@ -469,42 +445,46 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
         .filter_map(|e| e.metadata().ok())
         .any(|m| m.len() > 0);
     assert!(measured, "the peaks were measured into the working folder");
+    let app_engine = Arc::clone(app.engine());
     act(
+        &mut app,
         &mut editing,
+        &mut engine,
         member,
         json!({"verb": "play", "at": 0.0}),
-        &mut ids,
     );
-    let heard = blocks(&mut engine, &app, 150);
+    let heard = blocks(&mut engine, &app_engine, 150);
     let (start, from) = rolled(&heard);
     for (i, &s) in heard.iter().enumerate().skip(from) {
         assert_eq!(s, values[i - start], "sample {i}");
     }
     // The first half deleted: the take is the second half from now on.
-    act(&mut editing, member, json!({"verb": "stop"}), &mut ids);
-    blocks(&mut engine, &app, 20);
-    let half = FRAMES / 2;
-    let version = serde_json::from_str::<serde_json::Value>(&call_json_ids(
-        &mut editing,
-        &json!({"verb": "state"}).to_string(),
-        &mut ids,
-    ))
-    .unwrap()["version"]
-        .clone();
     act(
+        &mut app,
         &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "stop"}),
+    );
+    blocks(&mut engine, &app_engine, 20);
+    let half = FRAMES / 2;
+    let v = version(&mut app, &mut editing);
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
         member,
         json!({"verb": "event", "addr": "/gui_event",
-            "args": [12, 1, version, "delete", 0.0, half as f64]}),
-        &mut ids,
+            "args": [12, 1, v, "delete", 0.0, half as f64]}),
     );
     act(
+        &mut app,
         &mut editing,
+        &mut engine,
         member,
         json!({"verb": "play", "at": 0.0}),
-        &mut ids,
     );
-    let heard = blocks(&mut engine, &app, 150);
+    let heard = blocks(&mut engine, &app_engine, 150);
     let (start, from) = rolled(&heard);
     for (i, &s) in heard.iter().enumerate().skip(from) {
         let frame = i - start;
@@ -512,6 +492,49 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
             break;
         }
         assert_eq!(s, values[half + frame], "sample {i} of the edited take");
+    }
+    // A reverse of the first 4000 frames is a render the list then names.
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "stop"}),
+    );
+    blocks(&mut engine, &app_engine, 20);
+    let v = version(&mut app, &mut editing);
+    let reversed = act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "event", "addr": "/gui_event", "window": true,
+            "args": [12, 2, v, "reverse", 0.0, 4000.0]}),
+    );
+    assert!(
+        reversed.effects.iter().any(|e| e["kind"] == "progress"),
+        "the render's progress is said: {:?}",
+        reversed.effects
+    );
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "play", "at": 0.0}),
+    );
+    let heard = blocks(&mut engine, &app_engine, 150);
+    let (start, from) = rolled(&heard);
+    for (i, &s) in heard.iter().enumerate().skip(from) {
+        let frame = i - start;
+        if frame >= 4000 {
+            break;
+        }
+        assert_eq!(
+            s,
+            values[half + 3999 - frame],
+            "sample {i} of the reversed span"
+        );
     }
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_dir_all(&workspace);

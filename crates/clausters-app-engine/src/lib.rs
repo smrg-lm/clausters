@@ -22,6 +22,7 @@
 //! The engine knows no file, no segment and no peaks: what it is handed is
 //! nodes, buses, buffers and transport commands.
 
+pub mod audio;
 pub mod held;
 pub mod steps;
 pub mod take;
