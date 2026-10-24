@@ -3219,6 +3219,35 @@ over the opened file) carries over.
   - **Beside a client's server**: the application's device stream and a
     live server a client boots are two engines on one machine, as the user
     accepted.
+  - **What the handler keeps** *(decided by the user, 2026-10-23)*. The
+    audio editor's history is the host's: `shared_history=`, `context=` and
+    `app=` leave the audio editor in both clients, and its undo order is
+    shared only with the applications the host owns. `editor.transport` is
+    the editor's own handle, with the verbs (`play`, `pause`, `stop`,
+    `locate`, `loop`, `wait`) and the span a server's transport has, going
+    through the handler to the application. `on_change` and `on_locate`
+    leave the audio editor: a client asks the editor for its state when it
+    needs it.
+  - **The order of the work** *(2026-10-23)*. The reader the application
+    reads its takes with, which `X32` names, came forward into this
+    milestone, since typing the join's stitch for the engine would have been
+    work `X32` throws away.
+    - ✅ The audio editor's transport speaks typed ops.
+    - ✅ The command translator has typed doors for nodes and defs.
+    - ✅ The engine an application holds, and a playback's medium over it.
+    - ✅ A stream reader plays frames its owner feeds; the application reads
+      its take into those streams.
+    - ✅ The coordinator plays on an engine its application holds; a play
+      waits for its cue there too.
+    - ✅ The application carries the coordinator's runs, renders and moves
+      in its own process.
+    - ✅ The GUI host owns the audio editor (`--audio`), its windows reading
+      the application's engine.
+    - ⬜ The doors a client opens and calls the application through, and
+      both clients as the editor's handler: `edit(Buffer)` and the
+      client's coordinator go.
+    - ⬜ The page: cross-origin isolation, shared memory, the engine in the
+      worklet and the application in the host's wasm.
   **Acceptance:** the audio editor plays, loops, stops and
   locates with no OSC between application and engine, natively and in a
   page; a client's verbs and the application's answers are unchanged in both
