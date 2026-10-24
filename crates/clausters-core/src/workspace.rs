@@ -121,34 +121,43 @@ impl Workspace {
 impl Drop for Workspace {
     fn drop(&mut self) {
         // nothing to report to: what could not go is swept later
-        let _ = fs::remove_dir_all(&self.path);
+        let gone = fs::remove_dir_all(&self.path).is_ok() || !self.path.exists();
         // closed before it is removed, which some platforms require
         drop(self.lock.take());
-        let _ = fs::remove_file(self.path.with_extension(LOCK));
+        // **The lock goes only with its folder.** A render still writing
+        // into it can put a file back between the listing and the removal,
+        // and a folder left with no lock beside it would read as somebody
+        // else's; left with an unheld one, the next sweep takes it.
+        if gone {
+            let _ = fs::remove_file(self.path.with_extension(LOCK));
+        }
     }
 }
 
 /// **Removes every working folder under `root` no session holds**: one whose
 /// lock file is there, settled, and can be locked, its process having ended,
-/// which lets go of a lock however it ends. A folder with no lock file beside
-/// it is not a working folder and is left alone. Answers how many went.
+/// which lets go of a lock however it ends -- and a settled folder with no
+/// lock beside it at all, since a session makes its lock before its folder
+/// and removes it after, so a folder without one is nobody's. Answers how
+/// many went.
 pub fn sweep(root: &Path) -> usize {
     let Ok(entries) = fs::read_dir(root) else {
         return 0;
     };
     let mut gone = 0;
     for entry in entries.flatten() {
-        let lock_path = entry.path();
-        if lock_path.extension().is_none_or(|e| e != LOCK) {
+        let path = entry.path();
+        if !settled(&entry) {
             continue;
         }
-        let settled = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|at| at.elapsed().ok())
-            .is_some_and(|age| age >= SETTLED);
-        if !settled {
+        if path.is_dir() {
+            if !path.with_extension(LOCK).exists() && fs::remove_dir_all(&path).is_ok() {
+                gone += 1;
+            }
+            continue;
+        }
+        let lock_path = path;
+        if lock_path.extension().is_none_or(|e| e != LOCK) {
             continue;
         }
         let Ok(lock) = OpenOptions::new().write(true).open(&lock_path) else {
@@ -165,6 +174,17 @@ pub fn sweep(root: &Path) -> usize {
         }
     }
     gone
+}
+
+/// Whether `entry` was last changed long enough ago to be judged
+/// ([`SETTLED`]).
+fn settled(entry: &fs::DirEntry) -> bool {
+    entry
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|at| at.elapsed().ok())
+        .is_some_and(|age| age >= SETTLED)
 }
 
 #[cfg(test)]
@@ -190,6 +210,12 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// `path` as old as a sweep needs.
+    fn aged(path: &Path) {
+        let old = std::time::SystemTime::now() - SETTLED * 2;
+        File::open(path).unwrap().set_modified(old).unwrap();
+    }
+
     /// A lock file left by a session that ended, as old as a sweep needs.
     fn left_behind(root: &Path, name: &str) -> PathBuf {
         let dead = root.join(name);
@@ -210,15 +236,22 @@ mod tests {
         let young = root.join("audio-2-0");
         fs::create_dir_all(&young).unwrap();
         File::create(young.with_extension(LOCK)).unwrap();
-        // and something that is not a working folder
-        let other = root.join("notes");
+        // a folder whose lock went before it did, a render having written
+        // into it as it was removed: nobody's
+        let orphan = root.join("audio-4-0");
+        fs::create_dir_all(&orphan).unwrap();
+        fs::write(orphan.join("reversed-277.w64"), b"samples").unwrap();
+        aged(&orphan);
+        // and a folder just made
+        let other = root.join("audio-5-0");
         fs::create_dir_all(&other).unwrap();
-        assert_eq!(sweep(&root), 1);
+        assert_eq!(sweep(&root), 2);
+        assert!(!orphan.exists(), "a settled folder with no lock went");
         assert!(!dead.exists(), "the dead session's folder went");
         assert!(!dead.with_extension(LOCK).exists(), "and its lock");
         assert!(held.path().is_dir(), "the live one stayed");
         assert!(young.is_dir(), "a lock too young to judge stayed");
-        assert!(other.is_dir(), "a folder with no lock is not a workspace");
+        assert!(other.is_dir(), "a folder too young to judge stayed");
         // a new workspace sweeps on its way in
         let dead = left_behind(&root, "audio-3-0");
         let second = Workspace::create_in(&root, "audio").unwrap();

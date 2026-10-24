@@ -17,6 +17,8 @@
 //! place, renders included, since what it undoes is waited for by the step
 //! that asked.
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
@@ -85,6 +87,8 @@ pub struct AudioApp {
     engine: Arc<Mutex<AppEngine>>,
     ids: IdSpaces,
     notes: (Sender<Note>, Receiver<Note>),
+    /// Each member's renders under way, which [`AudioApp::call_off`] lets go.
+    live: HashMap<MemberId, Vec<Arc<AtomicBool>>>,
 }
 
 impl std::fmt::Debug for AudioApp {
@@ -100,6 +104,16 @@ impl AudioApp {
             engine,
             ids: IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE),
             notes: channel(),
+            live: HashMap::new(),
+        }
+    }
+
+    /// **Calls off member `member`'s renders**: each stops before its next
+    /// step, where its window closed in the middle of one -- a reverse of a
+    /// day goes on writing its pieces otherwise, for a folder that is gone.
+    pub fn call_off(&mut self, member: MemberId) {
+        for live in self.live.remove(&member).unwrap_or_default() {
+            live.store(false, Ordering::Release);
         }
     }
 
@@ -257,8 +271,19 @@ impl AudioApp {
 
     /// **A render carried out off the application's turn**: the steps on a
     /// thread of their own, their progress and their end said back.
-    fn hand_off(&self, member: MemberId, token: u64, run: Value, steps: Vec<Step>, lease: bool) {
+    fn hand_off(
+        &mut self,
+        member: MemberId,
+        token: u64,
+        run: Value,
+        steps: Vec<Step>,
+        lease: bool,
+    ) {
         let tx = self.notes.0.clone();
+        let live = Arc::new(AtomicBool::new(true));
+        let renders = self.live.entry(member).or_default();
+        renders.retain(|r| r.load(Ordering::Acquire) && Arc::strong_count(r) > 1);
+        renders.push(Arc::clone(&live));
         // the window is told at once that a render runs, not a tenth of a
         // second into it
         if let Some(Step::Render(job)) = steps.iter().find(|s| matches!(s, Step::Render(_))) {
@@ -286,7 +311,8 @@ impl AudioApp {
                         });
                     }
                 };
-                let result = carried(crate::steps::carry(&steps, &mut told));
+                let result = carried(crate::steps::carry_while(&steps, &live, &mut told));
+                drop(live);
                 let _ = tx.send(Note::Progress {
                     member,
                     label: String::new(),

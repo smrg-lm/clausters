@@ -510,9 +510,13 @@ impl Host {
     /// The window is this host's no longer.
     fn forget_audio(&mut self, def_id: i32) {
         self.window_sources.remove(&def_id);
-        // its working folder goes with it, dropped
-        if let Some(audio) = self.audio.as_mut() {
-            audio.windows.remove(&def_id);
+        // its renders are called off, and its working folder goes with it,
+        // dropped
+        if let Some(audio) = self.audio.as_mut()
+            && let Some(window) = audio.windows.remove(&def_id)
+        {
+            audio.app.call_off(window.member);
+            drop(window);
         }
     }
 }

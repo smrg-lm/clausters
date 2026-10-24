@@ -16,13 +16,26 @@ use clausters::server::render::{
     OscScore, RenderConfig, RenderStats, render_discarding, render_to_wav_with,
 };
 use clausters_editing::apply::{Render, Step};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// **Carries `steps` out in order**, telling `progress` how the renders go:
 /// the render under way, the frames done and the frames they come to, over
 /// all of them -- an edit rendered in pieces (a long reverse) is one bar
 /// filling once, not one per piece. The first that fails stops the rest,
 /// and is what is answered.
-pub fn carry(steps: &[Step], mut progress: impl FnMut(&Render, u64, u64)) -> Result<(), String> {
+pub fn carry(steps: &[Step], progress: impl FnMut(&Render, u64, u64)) -> Result<(), String> {
+    carry_while(steps, &AtomicBool::new(true), progress)
+}
+
+/// [`carry`], **while `live` holds**: a step not begun once it is let go is
+/// not begun, and what is answered is that the steps were called off. What
+/// an editor closed in the middle of a long render asks, so its pieces stop
+/// being written for nobody.
+pub fn carry_while(
+    steps: &[Step],
+    live: &AtomicBool,
+    mut progress: impl FnMut(&Render, u64, u64),
+) -> Result<(), String> {
     let frames: Vec<u64> = steps
         .iter()
         .map(|step| match step {
@@ -35,6 +48,9 @@ pub fn carry(steps: &[Step], mut progress: impl FnMut(&Render, u64, u64)) -> Res
     let total: u64 = frames.iter().sum();
     let mut before = 0;
     for (step, frames) in steps.iter().zip(&frames) {
+        if !live.load(Ordering::Acquire) {
+            return Err("called off".into());
+        }
         match step {
             Step::Render(job) => {
                 render(job, |done, _| {
@@ -90,4 +106,32 @@ pub fn render(job: &Render, mut progress: impl FnMut(u64, u64)) -> Result<Render
         render_to_wav_with(&score, &cfg, &job.path, &job.format, progress)
     }
     .map_err(|e| format!("the render into {} failed: {e}", job.path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **Steps called off are not begun**: a move after the call is not made,
+    /// and the answer says the steps were called off.
+    #[test]
+    fn steps_called_off_are_not_begun() {
+        let dir = std::env::temp_dir().join(format!("clausters-carry-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (from, to) = (dir.join("a"), dir.join("b"));
+        std::fs::write(&from, b"x").unwrap();
+        let steps = [Step::Move {
+            from: from.to_string_lossy().into_owned(),
+            to: to.to_string_lossy().into_owned(),
+        }];
+        let off = AtomicBool::new(false);
+        assert_eq!(
+            carry_while(&steps, &off, |_, _, _| {}),
+            Err("called off".into())
+        );
+        assert!(from.exists() && !to.exists(), "nothing was moved");
+        assert_eq!(carry(&steps, |_, _, _| {}), Ok(()));
+        assert!(to.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
