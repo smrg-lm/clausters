@@ -31,6 +31,9 @@
 //!   editor query and a clock adopts as its single segment.
 //! - [`tempoclock`] -- beat/second/sample arithmetic, quantization and a
 //!   beat-ordered event queue: the timing math a `TempoClock` is built on.
+//! - [`transport_pass`] -- the pass a transport is on (rolling, its loop, its
+//!   end mark), published beside its position, and where a position carried
+//!   on between two readings stands on it.
 //! - [`clocksync`] -- the least-squares sample-clock tracking model
 //!   (`sample = a + b*t` over a sliding anchor window) behind locking a client
 //!   clock to a server over a network transport.
@@ -138,6 +141,7 @@ pub mod spectrum;
 pub mod stft;
 pub mod tempoclock;
 pub mod tempomap;
+pub mod transport_pass;
 pub mod warp;
 pub mod widgetids;
 pub mod window;

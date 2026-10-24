@@ -279,8 +279,12 @@ impl WebApp {
                 if let (Some(OscType::Long(samples)), Some(OscType::Int(transport))) =
                     (msg.args.get(7), msg.args.get(12))
                 {
-                    self.buses
-                        .set_position((*transport).max(0) as usize, *samples as f64);
+                    let transport = (*transport).max(0) as usize;
+                    match crate::host::live::transport_reading(&msg.args) {
+                        // the clock and the pass the position is carried on by
+                        Some(reading) => self.buses.set_reading(transport, reading),
+                        None => self.buses.set_position(transport, *samples as f64),
+                    }
                 }
                 // A push may be a transport starting to roll, or one that
                 // stands moved: the tick comes back for it

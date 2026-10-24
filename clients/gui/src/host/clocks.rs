@@ -163,12 +163,26 @@ impl Host {
         // each source's counters glide apart: two engines number their
         // transports each from its own
         let source = (bus as *const dyn BusSource).cast::<()>() as usize;
-        let read = |head: HeadClock| {
-            let value = match head {
-                HeadClock::Device => bus.sample_clock(),
-                HeadClock::Transport(transport) => bus.transport_position(transport),
-            };
-            self.glided((source, head), value, now, engine)
+        let read = |head: HeadClock| match head {
+            HeadClock::Device => self.glided((source, head), bus.sample_clock(), now, engine),
+            // A transport is carried on by its clock, which only advances, and
+            // its position placed by it on the pass it is on: a position
+            // carried alone ran past a loop's end, and a loop a block long
+            // read the same sample every block and was drawn stopped.
+            HeadClock::Transport(transport) => match bus.transport_reading(transport) {
+                Some(reading) => reading.position_at(self.glided(
+                    (source, head),
+                    reading.clock as f64,
+                    now,
+                    engine,
+                )),
+                None => self.glided(
+                    (source, head),
+                    bus.transport_position(transport),
+                    now,
+                    engine,
+                ),
+            },
         };
         let window = self.window_head_clock(def_id);
         let mut clocks = HeadClocks {
@@ -412,6 +426,7 @@ impl Glide {
 #[cfg(test)]
 mod glide_tests {
     use super::Glide;
+    use clausters_core::transport_pass::{TransportPass, TransportReading};
     use web_time::{Duration, Instant};
 
     const RATE: f64 = 48_000.0;
@@ -497,5 +512,63 @@ mod glide_tests {
             at > 1_000.0 && at < 1_000.0 + BLOCK,
             "rolls on from the wrap: {at}"
         );
+    }
+
+    /// **A loop shorter than a block is drawn inside it**: the clock is
+    /// carried and the position placed on the pass, so the line never runs
+    /// past the loop's end -- a single cycle, and a loop that divides the
+    /// block, which reads the same sample every block and still moves.
+    #[test]
+    fn a_short_loop_is_carried_inside_it() {
+        for (start, len) in [(1_000u64, 109u64), (2_000, 512)] {
+            let t0 = Instant::now();
+            let mut g = Glide::new(0.0, t0);
+            let period = BLOCK / RATE * 1000.0;
+            let pass = TransportPass {
+                rolling: true,
+                looping: Some((start, start + len)),
+                end: None,
+            };
+            let at_clock = |clock: f64| start as f64 + clock.rem_euclid(len as f64);
+            let mut moved = 0;
+            let mut last = -1.0;
+            for frame in 1..60 {
+                let now = t0 + ms(f64::from(frame) * 16.7);
+                let blocks = (now.duration_since(t0).as_secs_f64() * 1000.0 / period).floor();
+                let clock = blocks * BLOCK;
+                let reading = TransportReading {
+                    clock: clock as u64,
+                    position: at_clock(clock) as u64,
+                    pass,
+                };
+                g.seen(clock, now, RATE);
+                let drawn = reading.position_at(g.at(now, RATE));
+                assert!(
+                    (start as f64..(start + len) as f64).contains(&drawn),
+                    "{drawn} outside the loop at {start}+{len}"
+                );
+                if drawn != last {
+                    moved += 1;
+                }
+                last = drawn;
+            }
+            // A frame that sees a new block draws it as read, and a loop that
+            // divides the block reads the same sample every block: it moves
+            // on the frames between, where a position carried alone was drawn
+            // stopped.
+            assert!(moved >= 20, "moved on {moved} of 59 frames over {len}");
+        }
+    }
+
+    /// Stopped, the reading is drawn as it is, whatever the clock was
+    /// carried to.
+    #[test]
+    fn a_stopped_pass_is_not_carried() {
+        let reading = TransportReading {
+            clock: 4096,
+            position: 300,
+            pass: TransportPass::default(),
+        };
+        assert_eq!(reading.position_at(5000.0), 300.0);
     }
 }

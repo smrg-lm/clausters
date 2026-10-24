@@ -1743,6 +1743,88 @@ fn the_segment_publishes_each_transport() {
     );
 }
 
+/// **Each transport publishes the pass it is on** beside its position, in the
+/// segment and in the engine's own reading alike: whether it rolls, the loop
+/// in force and the end mark. A play cursor carried on between blocks is
+/// bounded by it.
+#[test]
+fn each_transport_publishes_the_pass_it_is_on() {
+    use clausters::clausters_core::transport_pass::{TransportPass, TransportReading};
+    use clausters::server::engine::EndMark;
+    let segment = Segment::in_memory();
+    let limits = Limits {
+        transports: 3,
+        ..Limits::default()
+    };
+    let (mut engine, mut handle) = engine_pair_full(
+        48_000.0,
+        2,
+        0,
+        Some(SegArc::clone(&segment)),
+        NUM_AUDIO_BUSES,
+        NUM_CONTROL_BUSES,
+        limits,
+    );
+    for cmd in [
+        Cmd::TransportLoop {
+            transport: 1,
+            span: Some(10..110),
+        },
+        Cmd::TransportEnd {
+            transport: 1,
+            mark: Some(EndMark {
+                end: 500,
+                back: None,
+            }),
+        },
+        Cmd::TransportLocate {
+            transport: 1,
+            position: 10,
+        },
+        Cmd::TransportEnd {
+            transport: 2,
+            mark: Some(EndMark {
+                end: 900,
+                back: Some(0),
+            }),
+        },
+    ] {
+        handle.send(cmd).ok().unwrap();
+    }
+    run(&mut handle, 1, true);
+    run_blocks(&mut engine, 4);
+    let reading = handle.reading();
+    let published = |i: usize| {
+        let own = reading.transport_reading(i).unwrap();
+        assert_eq!(segment.transport_reading(i), Some(own), "transport {i}");
+        own
+    };
+    assert_eq!(published(0), TransportReading::default());
+    let samples = (BLOCK_SIZE * 4) as u64;
+    assert_eq!(
+        published(1),
+        TransportReading {
+            clock: samples,
+            position: 10 + samples % 100,
+            pass: TransportPass {
+                rolling: true,
+                looping: Some((10, 110)),
+                end: Some(500),
+            },
+        }
+    );
+    assert_eq!(
+        published(2).pass,
+        TransportPass {
+            rolling: false,
+            looping: None,
+            end: Some(900),
+        },
+        "stopped, with its mark"
+    );
+    assert!(reading.transport_reading(3).is_none(), "past the table");
+}
+
 /// A synth writing its transport's position to `bus`: what shows which
 /// transport a node reads.
 #[cfg(feature = "synth")]

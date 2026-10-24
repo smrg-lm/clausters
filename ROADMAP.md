@@ -101,10 +101,9 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The play cursor overshoots a short loop on screen** *(`clients/gui/PLAN.md`,
-  Found by use)*. First: it is what the user sees in every loop of a cycle.
 - ⬜ **Time is a type of its own, 64 bits wide** *(`clients/gui/PLAN.md`, Found
-  by use)*. After the overshoot: a mechanical pass the suites cover.
+  by use)*. Next: a pass the suites cover, with the time of a timetag as
+  its model.
 - ⬜ **The `worklet` smoke timed out once in CI** *(`clients/web/PLAN.md`,
   Found by use)*. Intermittent, passes locally and on a rerun. The case now
   reports the step it stopped at and the page's console; what is open is the

@@ -90,6 +90,13 @@ impl BusSource for EngineSource {
     fn transport_position(&self, transport: usize) -> f64 {
         self.0.transport_position(transport) as f64
     }
+
+    fn transport_reading(
+        &self,
+        transport: usize,
+    ) -> Option<clausters_core::transport_pass::TransportReading> {
+        self.0.transport_reading(transport)
+    }
 }
 
 impl AudioHost {

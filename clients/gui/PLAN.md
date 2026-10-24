@@ -8776,7 +8776,7 @@ module of its own.
   hand moved), a zoom in fell back to it at every step, and samples were
   drawn as zeros past the run held. Separately, an undo left the cursor past
   the end of the shorter take, and the next paste opened the view from there.
-- ⬜ **The play cursor overshoots a short loop on screen** *(found
+- ✅ **The play cursor overshoots a short loop on screen** *(found
   2026-10-24, by eye on the audio editor the host owns)*. Looping a span as
   short as one cycle, the drawn play cursor runs past the selection's end
   before it wraps. The sound is right; the sweep is extrapolated from the
@@ -8784,6 +8784,12 @@ module of its own.
   drawing. To check: the wrap the timeline chrome applies
   (`playhead_loop_*`) against the engine's loop for a span shorter than a
   frame of the screen.
+
+  **Fixed (2026-10-24).** The host carried a transport's position on by up
+  to a block between readings and knew nothing of its loop. Each transport
+  now publishes the pass it is on beside its position (rolling, the loop,
+  the end mark), the host carries its clock, which only advances, and
+  places the position on the pass.
 - ⬜ **Time is a type of its own, 64 bits wide** *(asked 2026-10-24 by the
   user)*. Frames, positions and spans in the host and the applications are
   bare `f64`/`usize`/`u64`, and a conversion to 32 bits slipped in three

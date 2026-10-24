@@ -44,6 +44,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use clausters_core::shm::{self, View};
+use clausters_core::transport_pass::{TransportPass, TransportReading};
 
 use crate::dsp::{BLOCK_SIZE, ControlBuses, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES};
 
@@ -475,6 +476,18 @@ impl Segment {
     /// past the table.
     pub fn transport_position(&self, transport: usize) -> Option<&AtomicU64> {
         self.view.transport_position(transport)
+    }
+
+    /// Transport `transport`'s clock, position and pass as of the last block,
+    /// read together. `None` past the table.
+    pub fn transport_reading(&self, transport: usize) -> Option<TransportReading> {
+        self.view.transport_reading(transport)
+    }
+
+    /// Publishes the pass transport `transport` is on; the engine's, every
+    /// block.
+    pub fn set_transport_pass(&self, transport: usize, pass: TransportPass) {
+        self.view.set_transport_pass(transport, pass);
     }
 
     /// The segment's base address and its **logical** size in bytes -- what an

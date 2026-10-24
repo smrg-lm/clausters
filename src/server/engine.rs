@@ -17,6 +17,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
+use clausters_core::transport_pass::{TransportPass, TransportReading};
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 pub use crate::dsp::BLOCK_SIZE;
@@ -616,6 +617,17 @@ impl TransportState {
         }
     }
 
+    /// The pass it is on, as a reader carrying its position on wants it:
+    /// rolling, the loop in force (not one waiting for its readers) and the
+    /// end mark.
+    fn pass(&self) -> TransportPass {
+        TransportPass {
+            rolling: self.rolling,
+            looping: self.looping.as_ref().map(|span| (span.start, span.end)),
+            end: self.end.map(|mark| mark.end),
+        }
+    }
+
     /// Its clock at device sample `device`.
     fn at(&self, device: u64) -> TransportSample {
         DeviceSample::new(device).to_transport(self.frozen_total)
@@ -716,6 +728,9 @@ struct TransportClocks {
     /// Where it stands. Not a clock: it jumps and it wraps (see
     /// `server::clock_axis`).
     position: AtomicU64,
+    /// The pass it is on, as [`TransportPass::to_words`]: what a play cursor
+    /// carried on between two blocks is bounded by.
+    pass: [AtomicU64; 4],
 }
 
 /// The node a command acts on, if it acts on one. For a node being created it
@@ -1832,6 +1847,9 @@ impl Engine {
             clocks
                 .position
                 .store(t.position.at(now).get(), Ordering::Relaxed);
+            for (word, value) in clocks.pass.iter().zip(t.pass().to_words()) {
+                word.store(value, Ordering::Relaxed);
+            }
         }
         self.sample_clock.store(block_end, Ordering::Relaxed);
         if let Some(segment) = self.ipc.as_ref().filter(|_| self.publishes_time) {
@@ -1873,6 +1891,7 @@ impl Engine {
                 if let Some(cell) = segment.transport_position(i) {
                     cell.store(t.position.at(now).get(), Ordering::Relaxed);
                 }
+                segment.set_transport_pass(i, t.pass());
             }
             segment.clock().store(block_end, Ordering::Release);
         }
@@ -2571,6 +2590,18 @@ impl EngineReading {
         self.transport_clocks
             .get(transport)
             .map_or(0, |c| c.position.load(Ordering::Relaxed))
+    }
+
+    /// Transport `transport`'s clock, position and pass as of the last
+    /// completed block, read together: what a play cursor carried on between
+    /// blocks is placed by. `None` past the table.
+    pub fn transport_reading(&self, transport: usize) -> Option<TransportReading> {
+        let c = self.transport_clocks.get(transport)?;
+        Some(TransportReading {
+            clock: c.clock.load(Ordering::Relaxed),
+            position: c.position.load(Ordering::Relaxed),
+            pass: TransportPass::from_words(c.pass.each_ref().map(|w| w.load(Ordering::Relaxed))),
+        })
     }
 
     /// The engine's rate.

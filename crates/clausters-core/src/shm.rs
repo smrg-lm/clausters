@@ -44,6 +44,8 @@
 
 use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering};
 
+use crate::transport_pass::{TransportPass, TransportReading};
+
 /// "CLAU" little-endian.
 pub const MAGIC: u32 = 0x5541_4C43;
 
@@ -51,7 +53,7 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// versioned and refused on mismatch (the scsynth plugin-ABI lesson); what each
 /// version changed is recorded in `docs/ipc.md`, not here -- a changelog in a
 /// constant is a changelog nobody updates.
-pub const ABI_VERSION: u32 = 13;
+pub const ABI_VERSION: u32 = 14;
 
 /// The peer tag an embedder gets when it never asks for one: the single client
 /// a segment has always had.
@@ -136,7 +138,7 @@ struct Header {
 // transport words left when they moved into the table.
 const _: () = assert!(size_of::<Header>() == 64);
 
-/// One transport's two numbers, published by the engine every block.
+/// One transport's numbers, published by the engine every block.
 #[repr(C)]
 struct TransportRow {
     /// Samples elapsed *under this transport*, frozen while it is stopped. The
@@ -150,6 +152,10 @@ struct TransportRow {
     /// locate and wraps at a loop's end. A playhead wants this one; a
     /// scheduled bundle wants the clock above.
     position: AtomicU64,
+    /// The pass the position is on, as the four words of
+    /// [`TransportPass::to_words`]: what a reader carrying the position on
+    /// between two blocks bounds it by.
+    pass: [AtomicU64; 4],
 }
 
 #[repr(C)]
@@ -537,6 +543,30 @@ impl View {
             .transports
             .get(transport)
             .map(|row| &row.position)
+    }
+
+    /// Transport `transport`'s clock, position and pass as of the last block,
+    /// read together: what a play cursor carried on between blocks is placed
+    /// by. `None` past the table. The words are loaded one by one, so a
+    /// reading may straddle a block; a cursor drawn from it is off for one
+    /// frame at most.
+    pub fn transport_reading(&self, transport: usize) -> Option<TransportReading> {
+        let row = self.layout().transports.get(transport)?;
+        Some(TransportReading {
+            clock: row.clock.load(Ordering::Relaxed),
+            position: row.position.load(Ordering::Relaxed),
+            pass: TransportPass::from_words(row.pass.each_ref().map(|w| w.load(Ordering::Relaxed))),
+        })
+    }
+
+    /// Publishes the pass transport `transport` is on; for the engine, every
+    /// block.
+    pub fn set_transport_pass(&self, transport: usize, pass: TransportPass) {
+        if let Some(row) = self.layout().transports.get(transport) {
+            for (word, value) in row.pass.iter().zip(pass.to_words()) {
+                word.store(value, Ordering::Relaxed);
+            }
+        }
     }
 
     // ---- the control plane's owner ----

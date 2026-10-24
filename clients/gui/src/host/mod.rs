@@ -567,6 +567,22 @@ pub trait BusSource: Send + Sync {
         let _ = transport;
         0.0
     }
+
+    /// Transport `transport`'s clock, position and pass, read together, when
+    /// this source publishes them (`None` otherwise: the default).
+    ///
+    /// What a play cursor is carried on by between readings
+    /// ([`Host::head_clocks`]): the clock, which only ever advances, and the
+    /// pass, which says where the position wraps and stops. A source that has
+    /// only the position carries that, and draws a loop shorter than its
+    /// readings running past its end.
+    fn transport_reading(
+        &self,
+        transport: usize,
+    ) -> Option<clausters_core::transport_pass::TransportReading> {
+        let _ = transport;
+        None
+    }
 }
 
 // The `/gui_*` vocabulary (canonical tables in clients/gui/PLAN.md).

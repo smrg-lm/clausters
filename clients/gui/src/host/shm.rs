@@ -289,4 +289,11 @@ impl super::BusSource for SharedSegment {
     fn transport_position(&self, transport: usize) -> f64 {
         SharedSegment::transport_position(self, transport) as f64
     }
+
+    fn transport_reading(
+        &self,
+        transport: usize,
+    ) -> Option<clausters_core::transport_pass::TransportReading> {
+        self.view.transport_reading(transport)
+    }
 }

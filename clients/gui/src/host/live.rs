@@ -12,6 +12,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use clausters_core::transport_pass::{TransportPass, TransportReading};
+
 use super::BusSource;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::Widget;
@@ -524,6 +526,8 @@ pub struct StreamedBuses {
     /// [`BusSource::sample_clock`]/[`BusSource::transport_position`] the way
     /// the segment does, and the choice between them is made once, on the host.
     clocks: Mutex<(f64, HashMap<usize, f64>)>,
+    /// Each transport's whole reading, from the same replies.
+    readings: Mutex<HashMap<usize, TransportReading>>,
 }
 
 impl StreamedBuses {
@@ -542,6 +546,41 @@ impl StreamedBuses {
     pub fn set_position(&self, transport: usize, samples: f64) {
         self.clocks.lock().unwrap().1.insert(transport, samples);
     }
+
+    /// Stores transport `transport`'s newest whole reading -- its clock, its
+    /// position and its pass, from one `/transport_query.reply` -- and its
+    /// position with it.
+    pub fn set_reading(&self, transport: usize, reading: TransportReading) {
+        self.set_position(transport, reading.position as f64);
+        self.readings.lock().unwrap().insert(transport, reading);
+    }
+}
+
+/// **A transport's whole reading out of a `/transport_query.reply`**: its
+/// clock (`transportSample`), its position (`positionSample`) and its pass
+/// (`playing`, `loopStart`/`loopEnd`, `endSample`). `None` for a reply that
+/// does not carry them all.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
+pub(crate) fn transport_reading(args: &[clausters_core::osc::OscType]) -> Option<TransportReading> {
+    use clausters_core::osc::OscType::{Int, Long};
+    let long = |i: usize| match args.get(i) {
+        Some(Long(v)) => Some(*v),
+        _ => None,
+    };
+    let Some(Int(playing)) = args.get(3) else {
+        return None;
+    };
+    let (clock, position) = (long(6)?, long(7)?);
+    let (loop_start, loop_end, end) = (long(8)?, long(9)?, long(10)?);
+    Some(TransportReading {
+        clock: clock.max(0) as u64,
+        position: position.max(0) as u64,
+        pass: TransportPass {
+            rolling: *playing != 0,
+            looping: (loop_end > loop_start).then_some((loop_start.max(0) as u64, loop_end as u64)),
+            end: (end >= 0).then_some(end as u64),
+        },
+    })
 }
 
 impl BusSource for StreamedBuses {
@@ -566,6 +605,10 @@ impl BusSource for StreamedBuses {
             .get(&transport)
             .copied()
             .unwrap_or(0.0)
+    }
+
+    fn transport_reading(&self, transport: usize) -> Option<TransportReading> {
+        self.readings.lock().unwrap().get(&transport).copied()
     }
 }
 
@@ -637,6 +680,10 @@ impl BusSource for StreamedSource {
         self.buses.transport_position(transport)
     }
 
+    fn transport_reading(&self, transport: usize) -> Option<TransportReading> {
+        self.buses.transport_reading(transport)
+    }
+
     fn read_bus(&self, bus: i32, out: &mut [f32]) -> bool {
         self.taps.read_raw(bus, out)
     }
@@ -704,6 +751,47 @@ pub(crate) fn refused_stream_cap(reason: &str) -> Option<usize> {
 mod tests {
     use super::super::guidef::GuiNode;
     use super::*;
+
+    /// A page reads a transport's clock, position and pass out of one
+    /// `/transport_query.reply`, the way the segment publishes them.
+    #[test]
+    fn a_transport_reply_is_a_whole_reading() {
+        use clausters_core::osc::OscType::{Double, Int, Long};
+        let reply = |playing: i32, loop_span: (i64, i64), end: i64| {
+            vec![
+                Long(0),
+                Double(120.0),
+                Int(1),
+                Int(playing),
+                Double(0.5),
+                Int(-1),
+                Long(4096),
+                Long(150),
+                Long(loop_span.0),
+                Long(loop_span.1),
+                Long(end),
+                Long(-1),
+                Int(2),
+                Int(-1),
+                Long(0),
+            ]
+        };
+        assert_eq!(
+            transport_reading(&reply(1, (100, 209), 900)),
+            Some(TransportReading {
+                clock: 4096,
+                position: 150,
+                pass: TransportPass {
+                    rolling: true,
+                    looping: Some((100, 209)),
+                    end: Some(900),
+                },
+            })
+        );
+        let stopped = transport_reading(&reply(0, (0, 0), -1)).unwrap();
+        assert_eq!(stopped.pass, TransportPass::default(), "nothing set");
+        assert_eq!(transport_reading(&reply(1, (0, 0), -1)[..7]), None);
+    }
 
     /// Whether anything in the tree moves on a tick of its own accord or
     /// because a value fed it.
