@@ -174,13 +174,18 @@ impl Host {
     /// clients and neither knows the other's.
     #[cfg(unix)]
     pub(super) fn announce_write(&self, bufnum: i32, channel: usize, start: u64, frames: usize) {
+        // the command counts in an int32: a span past it is not announced
+        // rather than announced somewhere else
+        let (Ok(start), Ok(frames)) = (i32::try_from(start), i32::try_from(frames)) else {
+            return diag::warn!("buffer {bufnum}: a write past 2^31 frames is not announced");
+        };
         let msg = OscMessage {
             addr: "/buffer_touch".into(),
             args: vec![
                 OscType::Int(bufnum),
                 OscType::Int(channel as i32),
-                OscType::Int(start as i32),
-                OscType::Int(frames as i32),
+                OscType::Int(start),
+                OscType::Int(frames),
             ],
         };
         for link in [self.server.as_ref(), self.player.as_ref()]

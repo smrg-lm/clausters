@@ -8790,7 +8790,7 @@ module of its own.
   now publishes the pass it is on beside its position (rolling, the loop,
   the end mark), the host carries its clock, which only advances, and
   places the position on the pass.
-- ⬜ **Time is a type of its own, 64 bits wide** *(asked 2026-10-24 by the
+- ✅ **Time is a type of its own, 64 bits wide** *(asked 2026-10-24 by the
   user)*. Frames, positions and spans in the host and the applications are
   bare `f64`/`usize`/`u64`, and a conversion to 32 bits slipped in three
   times in one day (an `i32` frame on the fetch wire, the `"view"` event
@@ -8837,8 +8837,20 @@ module of its own.
     the page sent both narrowed; the host reads a long past an `int32` as
     no `int32` instead of wrapping it, and answers a query's fractions as
     doubles.
-  - ⬜ **T4, what is left.** An audit of the host and the applications for
+  - ✅ **T4, what is left.** An audit of the host and the applications for
     a time cast narrower than 64 bits before it is a difference from an
     origin, each fixed or named. `docs/app-behavior.md` gains the rule: a
     time crosses the wire whole and becomes a pixel only as a difference
     from the view's origin.
+
+    **Done (2026-10-24).** The pixel maps already took the difference in
+    `f64` before narrowing. What the audit found was on the wire: a
+    breakpoint's time went as a float, a stitch of buffer parts sent its
+    start and length as `int32`s, which wrap at twelve hours, and
+    `/buffer_touch` and `/buffer_setRangeChannel`, whose server side counts
+    in `int32`, were sent a span past it wrapped; the time is a double now,
+    a stitch's counts go as longs past an `int32` through one helper
+    (`clausters_editing::apply::count_arg`, which had been written three
+    times), and a span past an `int32` is refused with a warning instead of
+    landing elsewhere. A sample rate as a float, a fade's length and a
+    tap's frame count are not times of a take and stay as they are.

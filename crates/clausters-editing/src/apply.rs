@@ -622,6 +622,16 @@ pub(crate) fn transport_command(transport: i32, addr: &str, args: Vec<OscType>) 
 /// `{"b": [x, ...]}` for a blob of little-endian `f32`, which the client
 /// packs, and `{"x": "hex"}` for a blob of any other bytes; `{"await": {"command",
 /// "index"}}`; `{"sync": id}`.
+/// **A count or an index of frames, as it crosses the wire**: an `int32`
+/// where it fits and an `int64` past it, which the server reads for a span's
+/// start and length -- never one wrapped negative at twelve hours of audio.
+pub fn count_arg(n: u64) -> OscType {
+    match i32::try_from(n) {
+        Ok(n) => OscType::Int(n),
+        Err(_) => OscType::Long(i64::try_from(n).unwrap_or(i64::MAX)),
+    }
+}
+
 pub fn steps_json(steps: &[Step]) -> Value {
     Value::Array(
         steps

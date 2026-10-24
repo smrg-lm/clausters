@@ -233,12 +233,13 @@ pub fn bend_curve(points: &mut [BpfPoint], i: usize, dy_frac: f64, from: f32) {
 }
 
 /// The breakpoint list as the flat OSC argument tail of the edit-back event
-/// and the bound forward: `t v shape curve` per point, times/values/curves as
-/// floats and shapes as ints.
+/// and the bound forward: `t v shape curve` per point, times as doubles (a
+/// float holds a time of a take of hours to a few hundred frames),
+/// values and curves as floats and shapes as ints.
 pub fn points_args(points: &[BpfPoint]) -> Vec<OscType> {
     let mut out = Vec::with_capacity(points.len() * 4);
     for p in points {
-        out.push(OscType::Float(p.time as f32));
+        out.push(OscType::Double(p.time));
         out.push(OscType::Float(p.value));
         out.push(OscType::Int(p.shape));
         out.push(OscType::Float(p.curve));
@@ -436,6 +437,10 @@ mod tests {
         assert_eq!(args.len(), 12);
         assert_eq!(args[2], OscType::Int(1), "shape rides as an int");
         assert_eq!(args[1], OscType::Float(0.0));
+        assert!(
+            matches!(args[0], OscType::Double(_)),
+            "a time is not narrowed"
+        );
         // The JSON mirror parses back to the same points.
         let back = parse_points(&points_json(&p), 0.0, 1.0).unwrap();
         assert_eq!(back, p);

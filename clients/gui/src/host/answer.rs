@@ -848,6 +848,11 @@ impl Host {
             }
             return;
         }
+        // the command counts in an int32: a write past it is refused rather
+        // than landed somewhere else
+        let Ok(first) = i32::try_from(start) else {
+            return diag::warn!("buffer {bufnum}: a write past 2^31 frames is refused");
+        };
         let blob = clausters_core::osc::sample_blob(values);
         if let Some(server) = self.server.as_ref()
             && let Err(e) = server.send(OscMessage {
@@ -855,7 +860,7 @@ impl Host {
                 args: vec![
                     OscType::Int(bufnum),
                     OscType::Int(channel as i32),
-                    OscType::Int(start as i32),
+                    OscType::Int(first),
                     OscType::Blob(blob),
                 ],
             })

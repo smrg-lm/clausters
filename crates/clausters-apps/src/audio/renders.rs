@@ -20,7 +20,7 @@
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType, bundle, encode, pack_timetag};
 use clausters_document::clipboard::SegmentPart;
-use clausters_editing::apply::{Render, Step};
+use clausters_editing::apply::{Render, Step, count_arg};
 use serde_json::{Value, json};
 
 /// The buffer a score stitches the list it reads into.
@@ -114,14 +114,6 @@ fn msg(addr: &str, args: Vec<OscType>) -> OscMessage {
     }
 }
 
-/// A frame count as the wire takes it: an `int32`, or a long past one.
-fn frames_arg(n: u64) -> OscType {
-    match i32::try_from(n) {
-        Ok(n) => OscType::Int(n),
-        Err(_) => OscType::Long(n as i64),
-    }
-}
-
 /// `/buffer_stitch` of `list` into buffer `index`, each part a span of its
 /// file with its fades and its whole channel map.
 fn stitch(index: i32, list: &List) -> OscMessage {
@@ -132,8 +124,8 @@ fn stitch(index: i32, list: &List) -> OscMessage {
     ];
     for part in &list.parts {
         args.push(OscType::String(part.path.clone()));
-        args.push(frames_arg(part.start));
-        args.push(frames_arg(part.frames));
+        args.push(count_arg(part.start));
+        args.push(count_arg(part.frames));
         args.push(OscType::Int(part.fade_in as i32));
         args.push(OscType::Int(part.fade_out as i32));
         args.push(OscType::Int(part.fade_in_shape.shape));
@@ -175,7 +167,7 @@ fn block(index: i32, channels: u32, samples: &[f32]) -> Vec<OscMessage> {
         "/buffer_alloc",
         vec![
             OscType::Int(index),
-            frames_arg(frames as u64),
+            count_arg(frames as u64),
             OscType::Int(channels as i32),
         ],
     )];
@@ -403,8 +395,8 @@ pub fn reverse(list: &List, out: &Output) -> Step {
             vec![
                 OscType::Int(index),
                 OscType::String(part.path.clone()),
-                frames_arg(part.start),
-                frames_arg(read.min(part.source_frames.saturating_sub(part.start))),
+                count_arg(part.start),
+                count_arg(read.min(part.source_frames.saturating_sub(part.start))),
             ],
         ));
         pool.push((index, part));
@@ -418,7 +410,7 @@ pub fn reverse(list: &List, out: &Output) -> Step {
     for (index, part) in &pool {
         args.push(OscType::Int(*index));
         args.push(OscType::Int(0));
-        args.push(frames_arg(part.frames));
+        args.push(count_arg(part.frames));
         args.push(OscType::Int(part.fade_in as i32));
         args.push(OscType::Int(part.fade_out as i32));
         args.push(OscType::Int(part.fade_in_shape.shape));

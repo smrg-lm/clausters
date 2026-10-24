@@ -140,10 +140,7 @@ pub(crate) fn wire_list(parts: &[Part], sources: &Sources, channels: u32, rate: 
 /// `display`, at `rate`, each part over its file. Played by
 /// `TransportDiskIn`, which reads it from the files ahead of the playhead.
 pub(crate) fn stitch(display: i32, list: &renders::List) -> OscMessage {
-    let frames = |n: u64| match i32::try_from(n) {
-        Ok(n) => OscType::Int(n),
-        Err(_) => OscType::Long(n as i64),
-    };
+    let frames = clausters_editing::apply::count_arg;
     let mut args = vec![
         OscType::Int(display),
         OscType::Int(list.channels as i32),

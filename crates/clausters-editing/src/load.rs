@@ -354,6 +354,7 @@ pub fn held_takes(takes: &Takes) -> HashMap<SourceId, Held> {
 /// The one place a resolved join becomes the wire, so a load and an edit that
 /// mints one send the same message.
 pub fn stitch_message(bufnum: i32, made: &Stitch) -> OscMessage {
+    use crate::apply::count_arg;
     let mut args = vec![
         OscType::Int(bufnum),
         OscType::Int(made.channels as i32),
@@ -361,8 +362,8 @@ pub fn stitch_message(bufnum: i32, made: &Stitch) -> OscMessage {
     ];
     for part in &made.parts {
         args.push(OscType::Int(part.buffer));
-        args.push(OscType::Int(part.start as i32));
-        args.push(OscType::Int(part.frames as i32));
+        args.push(count_arg(part.start));
+        args.push(count_arg(part.frames));
         args.push(OscType::Int(part.fade_in as i32));
         args.push(OscType::Int(part.fade_out as i32));
         args.push(OscType::Int(part.fade_in_shape));

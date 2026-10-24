@@ -162,6 +162,13 @@ code that keeps it lives.
   where the run held covers the view; beyond a run there are no zeros to draw.
   A take of hours is addressed by frames past what an `int32` counts, as longs
   on the wire.
+- **A time is never narrowed.** A group holds its times as NTP ticks
+  (`clausters_core::time::Time`, an `i64` of 2^-32 s) at the rate its
+  members speak; on the wire a whole frame crosses as an `int64` and a
+  window's edge as a double, never as a float or an `int32`; and a time
+  becomes a pixel only as a difference from the view's left edge, taken
+  before anything is narrowed to the `f32` the GPU draws with. A float
+  holds a whole frame only up to 2^24 of them, under six minutes at 48 kHz.
 - **An authoring surface has headroom.** A group with no take and a surface
   written into (a multitrack's lanes, a roll, a pane of curves alone)
   navigates past its content (`Host::NAV_HEADROOM`) and, empty, over a grid

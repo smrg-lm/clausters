@@ -101,9 +101,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **Time is a type of its own, 64 bits wide** *(`clients/gui/PLAN.md`, Found
-  by use)*. Next: the type is in the core, the host's groups hold it and
-  the wire carries frames whole; T4, the audit, is left.
 - ⬜ **The `worklet` smoke timed out once in CI** *(`clients/web/PLAN.md`,
   Found by use)*. Intermittent, passes locally and on a rerun. The case now
   reports the step it stopped at and the page's console; what is open is the
