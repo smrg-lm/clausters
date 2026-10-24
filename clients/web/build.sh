@@ -128,9 +128,10 @@ node tools/gen-faust-env.mjs
 # need no build step to reach them. The GUI host needs no .js here: its glue is
 # imported dynamically, inside a boot that only ever runs in a browser, and
 # there it resolves against dist/.
-mkdir -p src/core src/gui-host
+mkdir -p src/core src/gui-host src/gui-host-apps
 cp dist/core/clausters_core_web.js dist/core/clausters_core_web.d.ts src/core/
 cp dist/gui-host/clausters_gui.d.ts src/gui-host/
+cp dist/gui-host-apps/clausters_gui.d.ts src/gui-host-apps/
 cp dist/engine/clausters_web.js dist/engine/clausters_web.d.ts src/engine/
 # The NRT worker's decoder: only the .d.ts, since the glue is imported
 # dynamically inside a Worker that only exists in a browser, where it

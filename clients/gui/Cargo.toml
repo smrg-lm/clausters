@@ -82,7 +82,7 @@ font-atlas = ["dep:fontdue"]
 # pinned in `wasm-apps-toolchain` (`clients/web/build.sh`). A page that is
 # cross-origin isolated loads that build. Natively the applications are
 # always in, and the feature changes nothing there.
-apps = []
+apps = ["dep:clausters-app-engine"]
 
 [dependencies]
 # `Instant` that works on both targets. std's panics outright in wasm ("time not
@@ -179,6 +179,10 @@ arboard = { version = "3.6", default-features = false, features = ["wayland-data
 # browser console, and `web-sys`/`js-sys` for the console logs and the native
 # `WebSocket` carrying the audio-server leg (G13). Native builds pull none.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# **The engine an editing application holds**, in the applications' build
+# (`apps`): the same crate as natively, without the audio device, its
+# processing half run by the page's AudioWorklet over the shared memory.
+clausters-app-engine = { path = "../../crates/clausters-app-engine", optional = true }
 # Same wgpu as native, but with the WebGL2 backend compiled in alongside the
 # default WebGPU one (cargo unifies features, so the wasm build gets webgpu +
 # webgl while native stays webgpu/native-only). This is what lets `gpu.rs` fall

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>clausters: the audio editor in a page</title>
+  </head>
+  <body>
+    <div id="stage" style="width: 720px; height: 420px"></div>
+    <pre id="log"></pre>
+    <!--
+      The audio editor in a page (clients/web/test.sh, headless, served
+      isolated: `audio-editor.html?isolated`). The page is cross-origin
+      isolated, so its host is the applications' build and holds the audio
+      editor as the native host does: the application on a thread of its
+      own, its engine in an AudioWorklet over the same memory, its renders on
+      threads that read and write the page's storage. The calls are the
+      example's (examples/editors/edit-audio.html): a take written, `edit`,
+      an edit that renders, a save, and the history walked back.
+      Verdict beaconed as a fetch, read from the access log.
+    -->
+    <script type="module">
+      import { Session, SoundFile, gui, opfs, segments } from "../dist/index.js";
+      const { Segment } = segments;
+
+      const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`).catch(() => {});
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const until = async (test, what, ms = 20_000) => {
+        const end = performance.now() + ms;
+        for (;;) {
+          if (await test()) return;
+          if (performance.now() > end) {
+            throw new Error(`timeout: ${typeof what === "function" ? await what() : what}`);
+          }
+          await sleep(20);
+        }
+      };
+
+      try {
+        if (!crossOriginIsolated) throw new Error("the page is not cross-origin isolated");
+        const session = (await Session.embed({ channels: 2 })).activate();
+        const rate = (await session.server.queryInfo()).nominalSampleRate;
+
+        // A take: one second of a falling ramp, so any span of it says where
+        // it came from.
+        const frames = Math.trunc(rate);
+        const samples = new Float32Array(frames);
+        for (let i = 0; i < frames; i += 1) samples[i] = 0.5 - 0.5 * i / frames;
+        await opfs.makeDirectory("out");
+        const take = await SoundFile.write("out/audio_editor_page.wav", samples, 1, rate, {
+          sampleFormat: "float",
+        });
+
+        await session.gui();
+        const editor = await gui.edit(take, { title: "take", stage: document.getElementById("stage") });
+
+        // **Opened where it is**: the take is one part, the whole file.
+        const opened = await editor.parts();
+        if (opened.length !== 1 || opened[0].path !== take.path || opened[0].frames !== frames) {
+          throw new Error(`opened as ${JSON.stringify(opened)}`);
+        }
+        const file = await editor.file();
+        if (file.frames !== frames || file.channels !== 1) {
+          throw new Error(`the file reads as ${file.frames} frames of ${file.channels}`);
+        }
+        log("opened: the take is one part, the whole file, read where it is");
+
+        // **An edit that renders**: the first half reversed is a file of the
+        // editor's working folder, rendered on a thread of the application,
+        // which the list then names.
+        const half = Math.trunc(frames / 2);
+        // The open's own work (the take's peaks) lands first: until it
+        // does the file has pending work, and an edit is refused, as a
+        // hand's is.
+        await until(async () => (await editor.actions()).reverse.pending === false,
+          async () => `the open's work to land: ${JSON.stringify((await editor.actions()).reverse)}`);
+        await editor.select(new Segment(file, 0, half / rate));
+        editor.reverse();
+        await until(async () => (await editor.parts()).length === 2,
+          async () => `the reverse to land: ${JSON.stringify(await editor.parts())}`);
+        const reversed = await editor.parts();
+        if (reversed[0].path === take.path || reversed[1].path !== take.path) {
+          throw new Error(`reversed as ${JSON.stringify(reversed)}`);
+        }
+        if (!(await editor.dirty())) throw new Error("an edit left the take clean");
+        log(`reversed: the first half rendered into ${reversed[0].path}`);
+
+        // **Saved elsewhere**: the take as the edits left it, written by a
+        // render on a thread, and read back.
+        const saved = await editor.save({ path: "out/audio_editor_page_saved.wav" });
+        const back = await (await SoundFile.open(saved)).read();
+        if (back.length !== frames) throw new Error(`saved ${back.length} frames, not ${frames}`);
+        const near = (a, b) => Math.abs(a - b) < 1e-6;
+        if (!near(back[0], samples[half - 1]) || !near(back[half - 1], samples[0]) ||
+            !near(back[half], samples[half]) || !near(back[frames - 1], samples[frames - 1])) {
+          throw new Error(`saved: ${back[0]} ${back[half - 1]} ${back[half]} ${back[frames - 1]}`);
+        }
+        log(`saved: ${saved}, the first half backwards and the rest as it was`);
+
+        // **The history**: an undo is the list before.
+        if (!(await editor.undo())) throw new Error("nothing was undone");
+        const undone = await editor.parts();
+        if (undone.length !== 1 || undone[0].path !== take.path) {
+          throw new Error(`undone as ${JSON.stringify(undone)}`);
+        }
+        log("undone: the take is one part again");
+
+        // **The editor's own engine plays**: in a page, in an AudioWorklet
+        // over the shared memory. The pass from the last tenth of a second
+        // ends only if the engine's blocks run.
+        await editor.transport.play(0.9);
+        await until(() => editor.transport.playing(), "the transport to play");
+        if (!(await editor.transport.wait(5))) throw new Error("the pass never ended: no engine ran it");
+        log("played: the editor's transport, on its engine in the page's audio");
+
+        verdict("PASS: the audio editor opened a take in a page, rendered an edit on a " +
+          "thread into its working folder, saved it into the page's storage, walked its " +
+          "history back and played on an engine of its own");
+        await editor.close();
+      } catch (error) {
+        verdict(`FAIL: ${error?.message ?? error}`);
+      }
+    </script>
+  </body>
+</html>

@@ -159,10 +159,15 @@ render and undo runs in the host's process. What `edit` answers is its **handler
 `editing.AudioEditor`: each of its members is a call to the application (`host.openApp`,
 `host.callApp`), so what it reads is a promise, asked again each time, where the Python
 client's is a property. A server buffer is not edited, since it is loaded on a server the
-application does not reach: `buffer.write(path)` and edit the file. **In a page the host
-holds no audio editor yet**: its engine in the worklet and the application in the host's wasm
-are the next step, and until then `edit(file)` in a tab rejects saying so; under node, with a
-native host, it opens. It writes nothing it was handed while it edits. The take is **a list
+application does not reach: `buffer.write(path)` and edit the file. **In a page the
+application runs over memory shared with its threads**: its own, its renders' and its
+engine's, which plays in an AudioWorklet beside the page's own engine. A browser grants
+shared memory only to a page that is **cross-origin isolated** (served with
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`;
+`tools/serve.py --isolated` serves the package so). There the host is the build that holds
+the application, its files are the page's storage, and `edit(file)` opens as it does under
+node with a native host; in a page that is not isolated it rejects saying the host holds no
+audio editor. It writes nothing it was handed while it edits. The take is **a list
 of spans of files**, and every edit leaves a new list: a cut takes a span out, a paste of a
 copy puts its spans in, and an edit that makes new samples (a pencil stroke, a pasted block,
 a mix with Ctrl+Shift+V, a gain curve applied, Edit -> Reverse) **renders** them offline into

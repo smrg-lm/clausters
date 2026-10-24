@@ -93,6 +93,9 @@ pub enum UserEvent {
         leg: crate::host::instance::Leg,
         bytes: Vec<u8>,
     },
+    /// An application's thread has said something: the loop's next turn
+    /// takes the host's effects (`Host::take_effects`).
+    AppSaid,
 }
 
 /// **Where the windows live**: winit's loop, which opens them on the screen,
@@ -162,6 +165,7 @@ pub fn run(
     let proxy = Proxy::Winit(event_loop.create_proxy());
     let mut host = host;
     spawn_disk(&mut host, &proxy)?;
+    set_app_wake(&mut host, &proxy);
     let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
     let mut app = App::new(host, socket, bus, inflight, false);
     event_loop.run_app(&mut app).map_err(|e| e.to_string())
@@ -186,9 +190,11 @@ pub fn run_headless(
     let proxy = Proxy::Channel(sender);
     let mut host = host;
     spawn_disk(&mut host, &proxy)?;
+    set_app_wake(&mut host, &proxy);
     let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
-    // The threads hold the senders; this one would keep the channel open
-    // after they are gone.
+    // The threads hold the senders, and the host one more for its
+    // applications' wake; this one would keep the channel open after the
+    // threads are gone.
     drop(proxy);
     let mut app = App::new(host, socket, bus, inflight, true);
     let exit = std::cell::Cell::new(false);
@@ -215,6 +221,17 @@ pub fn run_headless(
             app.on_event(Loop::Headless(&exit), event);
         }
     }
+}
+
+/// **An application's thread wakes the loop** when it has said something,
+/// so an answer is read on the next turn rather than at the next input.
+fn set_app_wake(host: &mut Host, proxy: &Proxy) {
+    let proxy = std::sync::Mutex::new(proxy.clone());
+    host.set_app_wake(Arc::new(move || {
+        if let Ok(proxy) = proxy.lock() {
+            let _ = proxy.send_event(UserEvent::AppSaid);
+        }
+    }));
 }
 
 /// Whether this machine can draw a window offscreen: an adapter answers, a

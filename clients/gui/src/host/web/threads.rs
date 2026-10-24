@@ -30,6 +30,15 @@ extern "C" {
     fn page_file(request: u32);
 }
 
+#[wasm_bindgen]
+extern "C" {
+    /// The page's door to its loop, from a thread: an application of host
+    /// `host` has said something, which the page hands the loop
+    /// ([`apps_said`](super::apps_said)).
+    #[wasm_bindgen(js_namespace = __claustersApps, js_name = said)]
+    fn page_said(host: u32);
+}
+
 thread_local! {
     /// Whether this thread is one of the page's workers, which may wait: the
     /// main thread may not, and touches no file.
@@ -43,6 +52,13 @@ thread_local! {
 pub(super) fn register() {
     clausters_core::threads::set_spawner(spawn);
     clausters_core::files::set_bridge(file);
+}
+
+/// **What wakes host `host`'s loop** when one of its applications has said
+/// something, from the application's thread: the page posts it to the main
+/// thread, where the loop takes the host's effects.
+pub(super) fn wake(host: u32) -> std::sync::Arc<dyn Fn() + Send + Sync> {
+    std::sync::Arc::new(move || page_said(host))
 }
 
 /// One call into the page's storage, made from a worker.

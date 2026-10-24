@@ -1062,11 +1062,17 @@ included (`steps::carry`, the core's offline render in a thread of the
 application's, resumed by `AudioApp::landed` in whichever order they land),
 a file's header probed, a history step carried and a copy published through
 the context's clipboard exchange, and only the window's effects come back.
-**The GUI host owns the audio editor** (`host::audio_editor`, native for
-now): `Host::open_audio` opens an `AppEngine` on the machine's output the
-first time, numbers the editor's window with ids of its own, and answers its
-gestures through `Host::deliver` as it answers a score editor's; the
-application's turn is taken in `Host::take_effects`. The window's meters and
+**The GUI host owns the audio editor** (`host::audio_editor`, natively and
+in a cross-origin isolated page): `Host::open_audio` starts the application
+on a thread of its own (`host::audio_app`), which makes its `AppEngine` the
+first time, on the machine's output or, in a page, with its processing half
+in an AudioWorklet over the memory the page shares (`host::web::apps_engine`).
+The host numbers the editor's window with ids of its own and hands its
+gestures to that thread, which answers with what the window draws; the
+thread wakes the front's loop when it has said something (`Host::set_app_wake`),
+and the answers are applied in `Host::take_effects`. Its renders run on
+threads of their own, which in a page serve their file streams through
+`clausters_core::files` (`server::render`). The window's meters and
 play cursor read the engine the application holds, not a server's segment:
 a window may have a bus source of its own (`Host::source_of`, an
 `EngineReading` the engine's handle hands out), which the front ticks it

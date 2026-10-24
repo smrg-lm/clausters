@@ -54,6 +54,8 @@ use super::widget::Widget;
 use super::widget::element::{Live, Loaded, SlotKind};
 use super::{BusSource, ClientId, Host, HostEffect, ServerLink};
 
+#[cfg(feature = "apps")]
+pub(crate) mod apps_engine;
 mod bridge;
 mod bulk;
 mod canvas;
@@ -339,6 +341,9 @@ impl WebApp {
         host.load_default_face();
         // A list of segments over files is read from the page's storage.
         host.set_disk_link(Box::new(disk::WebDisk::new(id)));
+        // An application's thread wakes the loop when it has said something.
+        #[cfg(feature = "apps")]
+        host.set_app_wake(threads::wake(id.0));
         Self {
             id,
             host,
@@ -1235,6 +1240,17 @@ thread_local! {
     static WEB_PROXY: RefCell<Option<EventLoopProxy<HostEvent>>> = const { RefCell::new(None) };
     /// The source of instance ids, page-wide.
     static NEXT_HOST: Cell<u32> = const { Cell::new(0) };
+}
+
+/// **An application of host `host` has said something**: the page's call,
+/// from the message the application's thread posted it
+/// (`threads::wake`), and the host's effects taken on the loop.
+#[cfg(feature = "apps")]
+#[wasm_bindgen]
+pub fn apps_said(host: u32) {
+    if let Some(proxy) = web_proxy() {
+        let _ = proxy.send_event(HostEvent::To(HostId(host), WebEvent::HostEffects));
+    }
 }
 
 /// The proxy every instance-side closure reaches the loop through.

@@ -19,6 +19,8 @@ node_modules/
 !/src/core/clausters_core_web.d.ts
 /src/gui-host/*
 !/src/gui-host/clausters_gui.d.ts
+/src/gui-host-apps/*
+!/src/gui-host-apps/clausters_gui.d.ts
 /src/engine/clausters_web.js
 
 # What the examples' generators write: the bundles the make_bundle.mjs scripts

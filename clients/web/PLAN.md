@@ -5125,3 +5125,16 @@ sound.
   touched while held, so either client sweeps what the other left; in a tab
   it is under `clausters/work` in the origin's storage, held by a Web Lock
   and swept when no tab holds it.
+
+- ⬜ **A render's file streams are drained twice, in script and in Rust**
+  *(found 2026-10-24, the audio editor in a page)*. The page's render
+  worker serves an offline render's streams in script
+  (`src/engine/file-render.ts`: the inputs read through two functions it
+  defines, each `DiskOut` written a run at a time, each `PeaksOut`'s
+  buckets kept and its file written once its synth is gone). An
+  application's render in the applications' build does the same in Rust,
+  through `clausters_core::files` (`server::render`, `page_streams`),
+  since its threads reach the page's storage synchronously. Two
+  implementations of one rule: the render worker should serve its
+  render through the Rust one, with a file layer of its own over the sync
+  access handles it already opens.

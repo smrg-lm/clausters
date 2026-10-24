@@ -16,7 +16,7 @@
 //! application anything synchronously.
 
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -28,7 +28,9 @@ use serde_json::{Value, json};
 use super::ClientId;
 
 /// How long the application's thread sleeps with nothing asked of it, when
-/// a render may land meanwhile.
+/// a render may land meanwhile; an ask wakes it sooner. Parked rather than
+/// waiting on its channel with a timeout, which reads a clock a page's
+/// threads do not have.
 const IDLE: Duration = Duration::from_millis(5);
 
 /// What makes the application's engine, on its thread: the machine's output
@@ -147,28 +149,56 @@ struct App {
     /// A door's actions waiting on a render, by the token they started with.
     asked: HashMap<u64, Reply>,
     next_token: u64,
-    out: Sender<FromApp>,
+    out: Said,
+}
+
+/// **What wakes the host's loop** when the application has said something:
+/// the front's, set on the host ([`Host::set_app_wake`](super::Host::set_app_wake)).
+/// A loop that sleeps until its next input would otherwise read an answer
+/// only when the pointer happens to move.
+pub type Wake = Arc<dyn Fn() + Send + Sync>;
+
+/// **Where the application's answers go**: the host's channel, and its loop
+/// woken to read them.
+#[derive(Clone)]
+pub(super) struct Said {
+    tx: Sender<FromApp>,
+    wake: Option<Wake>,
+}
+
+impl Said {
+    pub(super) fn new(tx: Sender<FromApp>, wake: Option<Wake>) -> Said {
+        Said { tx, wake }
+    }
+
+    fn send(&self, said: FromApp) {
+        if self.tx.send(said).is_ok()
+            && let Some(wake) = &self.wake
+        {
+            wake();
+        }
+    }
 }
 
 /// **Starts the application's thread**: its engine made there, and its
 /// answers sent on `out`. Answers the channel it is asked on.
 pub(super) fn start(
     make: MakeEngine,
-    out: Sender<FromApp>,
+    out: Said,
 ) -> std::io::Result<(Sender<ToApp>, clausters_core::threads::Spawned)> {
     let (tx, rx) = std::sync::mpsc::channel();
     let spawned = clausters_core::threads::spawn("audio-editor", move || run(make, rx, out))?;
     Ok((tx, spawned))
 }
 
-fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Sender<FromApp>) {
+fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
     let engine = match make() {
         Ok(engine) => engine,
         Err(e) => {
             // every open asked of an editor with no engine says why
             while let Ok(ask) = rx.recv() {
                 if let ToApp::Open { def_id, reply, .. } = ask {
-                    let _ = out.send(FromApp::Opened {
+                    out.send(FromApp::Opened {
                         def_id,
                         outcome: Err(format!("the audio editor has no engine: {e}")),
                         reply,
@@ -179,7 +209,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Sender<FromApp>) {
         }
     };
     let reading = engine.lock().unwrap_or_else(|e| e.into_inner()).reading();
-    let _ = out.send(FromApp::Engine(reading));
+    out.send(FromApp::Engine(reading));
     let app = AudioApp::new(engine);
     let mut editing = Editing::new();
     app.hold(&mut editing);
@@ -192,15 +222,21 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Sender<FromApp>) {
         out,
     };
     loop {
-        match rx.recv_timeout(IDLE) {
-            Ok(ask) => state.handle(ask),
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => return,
-        }
-        while let Ok(ask) = rx.try_recv() {
-            state.handle(ask);
+        let mut asked = false;
+        loop {
+            match rx.try_recv() {
+                Ok(ask) => {
+                    state.handle(ask);
+                    asked = true;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return,
+            }
         }
         state.landed();
+        if !asked {
+            std::thread::park_timeout(IDLE);
+        }
     }
 }
 
@@ -222,7 +258,7 @@ impl App {
                 reply,
             } => {
                 let outcome = self.open(def_id, &key, &title, path.as_deref());
-                let _ = self.out.send(FromApp::Opened {
+                self.out.send(FromApp::Opened {
                     def_id,
                     outcome,
                     reply,
@@ -390,8 +426,8 @@ impl App {
         };
         if let Some(request) = call.get("member") {
             let answer = self.member_call(member, request.clone());
-            self.answer(reply, Ok(answer));
             self.say_actions(def_id);
+            self.answer(reply, Ok(answer));
         } else if let Some(query) = call["query"].as_str() {
             // what the window reads of the editor: its transport, its
             // actions, the history of the file in focus
@@ -410,13 +446,21 @@ impl App {
             let ran = self
                 .app
                 .act(&mut self.editing, member, action, token, false);
-            match &ran.end {
-                Some(end) => self.answer(reply, ended(end)),
+            let answered = match ran.end.as_ref().map(ended) {
+                Some(answer) => Some((reply, answer)),
                 None => {
                     self.asked.insert(token, reply);
+                    None
                 }
-            }
+            };
+            // **The window is told before the client is answered**: a
+            // client acts on the answer at once (a verb after a selection),
+            // and the host must already hold what the run left, the actions'
+            // readings with it, or it answers the next ask from before.
             self.said(def_id, ran, false);
+            if let Some((reply, answer)) = answered {
+                self.answer(reply, answer);
+            }
         } else {
             self.answer(
                 reply,
@@ -445,11 +489,15 @@ impl App {
                 None => None,
             };
             let say = asked.is_none();
-            if let (Some(reply), Some(end)) = (asked, &ran.end) {
-                let answer = ended(end);
+            let answered = match (asked, &ran.end) {
+                (Some(reply), Some(end)) => Some((reply, ended(end))),
+                _ => None,
+            };
+            // the window first: a client answered acts on what it drew
+            self.said(def_id, ran, say);
+            if let Some((reply, answer)) = answered {
                 self.answer(reply, answer);
             }
-            self.said(def_id, ran, say);
         }
     }
 
@@ -467,7 +515,7 @@ impl App {
             effects.push(effect);
         }
         let actions = self.actions(def_id);
-        let _ = self.out.send(FromApp::Ran {
+        self.out.send(FromApp::Ran {
             def_id,
             effects,
             actions,
@@ -526,7 +574,7 @@ impl App {
     /// The actions said on their own, after a call that may have moved them.
     fn say_actions(&mut self, def_id: i32) {
         if let Some(actions) = self.actions(def_id) {
-            let _ = self.out.send(FromApp::Ran {
+            self.out.send(FromApp::Ran {
                 def_id,
                 effects: Vec::new(),
                 actions: Some(actions),
@@ -543,7 +591,7 @@ impl App {
                 let _ = tx.send(answer);
             }
             Reply::Client(to, seq) => {
-                let _ = self.out.send(FromApp::Reply { to, seq, answer });
+                self.out.send(FromApp::Reply { to, seq, answer });
             }
         }
     }

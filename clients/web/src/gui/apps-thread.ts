@@ -27,6 +27,10 @@ const scope = globalThis as unknown as {
     close(): void;
 };
 
+/** A message to the page, which makes threads and holds the loop and the audio. */
+const post = (message: unknown): void =>
+    (globalThis as unknown as { postMessage(message: unknown): void }).postMessage(message);
+
 scope.onmessage = async (event) => {
     const { glue, module, memory, body, stack, files } = event.data;
     // **A call into the page's storage waits here**: the request's address
@@ -36,6 +40,20 @@ scope.onmessage = async (event) => {
         file(request: number): void {
             files.postMessage(request);
             Atomics.wait(new Int32Array(memory.buffer), request >> 2, 0);
+        },
+        /** A thread of its own, which only the page makes: answered as made. */
+        spawn(name: string, body: number): boolean {
+            post({ spawn: { name, body } });
+            return true;
+        },
+        /** An application of host `host` has said something: the page wakes its loop. */
+        said(host: number): void {
+            post({ said: host });
+        },
+        /** The engine's processing half, handed to the page for its worklet. */
+        engine(engine: number, rate: number, channels: number): boolean {
+            post({ engine, rate, channels });
+            return true;
         },
     };
     const host = await import(glue) as {

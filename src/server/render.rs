@@ -559,15 +559,9 @@ pub fn render_to_wav(
 pub fn render_discarding(
     score: &OscScore,
     cfg: &RenderConfig,
-    mut progress: impl FnMut(u64, u64),
+    progress: impl FnMut(u64, u64),
 ) -> Result<RenderStats, String> {
-    let mut render = OfflineRender::new(score, cfg)?;
-    let run = cfg.sample_rate.max(1.0) as u64;
-    while !render.step(run, &mut |_: &[f32]| Ok(()))? {
-        progress(render.frames_done(), render.total_frames());
-    }
-    progress(render.total_frames(), render.total_frames());
-    render.finish()
+    drive(score, cfg, |_: &[f32]| Ok(()), progress)
 }
 
 /// [`render_to_wav`], telling `progress` the frames done and the frames the
@@ -577,20 +571,246 @@ pub fn render_to_wav_with(
     cfg: &RenderConfig,
     path: impl AsRef<Path>,
     sample_format: &str,
-    mut progress: impl FnMut(u64, u64),
+    progress: impl FnMut(u64, u64),
 ) -> Result<RenderStats, String> {
     let path = path.as_ref().to_string_lossy().into_owned();
     let mut writer =
         crate::dsp::pcm::Writer::create(&path, cfg.channels, cfg.sample_rate, sample_format)?;
+    let stats = drive(score, cfg, |chunk: &[f32]| writer.write(chunk), progress)?;
+    writer.finalize()?;
+    Ok(stats)
+}
+
+/// **A render driven to its end** by the helpers above: a second of the
+/// score a run, `progress` told after each. In a page the render's file
+/// streams are served between two runs ([`page_streams`]), where natively
+/// each has a thread of its own.
+fn drive(
+    score: &OscScore,
+    cfg: &RenderConfig,
+    mut sink: impl FnMut(&[f32]) -> Result<(), String>,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<RenderStats, String> {
+    #[cfg(all(target_arch = "wasm32", feature = "synth"))]
+    let mut served = page_streams::Served::install(cfg.sample_rate);
     let mut render = OfflineRender::new(score, cfg)?;
     let run = cfg.sample_rate.max(1.0) as u64;
-    while !render.step(run, &mut |chunk: &[f32]| writer.write(chunk))? {
+    // under what an output stream's ring holds between two drains
+    #[cfg(all(target_arch = "wasm32", feature = "synth"))]
+    let run = run.min(page_streams::RUN_FRAMES);
+    while !render.step(run, &mut sink)? {
+        #[cfg(all(target_arch = "wasm32", feature = "synth"))]
+        served.drain();
         progress(render.frames_done(), render.total_frames());
     }
     progress(render.total_frames(), render.total_frames());
-    let stats = render.finish()?;
-    writer.finalize()?;
-    Ok(stats)
+    let stats = render.finish();
+    // what the synths that just went left behind
+    #[cfg(all(target_arch = "wasm32", feature = "synth"))]
+    served.close();
+    stats
+}
+
+/// **A render's file streams in a page, served through the files layer.**
+///
+/// A page's engine reaches no file from inside a block (`dsp::disk_web`): its
+/// input streams read through the files installed for a render, and its
+/// outputs (`DiskOut`, `PeaksOut`) wait in their rings for whoever drains
+/// them. Natively a thread per stream does both. Here the thread a render
+/// runs on reaches the page's files synchronously (`clausters_core::files`),
+/// so the render serves its own streams: the inputs read through that layer
+/// the moment they need to, and between two runs the outputs are drained
+/// into the files a native render would write, in the same formats.
+#[cfg(all(target_arch = "wasm32", feature = "synth"))]
+mod page_streams {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::io::{Read, Seek, SeekFrom};
+    use std::rc::Rc;
+
+    use clausters_core::files::File;
+    use clausters_core::peaks::MultiPyramid;
+
+    use crate::dsp::disk::{self, Direction, PageFiles};
+    use crate::dsp::pcm::Writer;
+    use crate::dsp::summary::SUMMARY_BUCKET;
+
+    /// Frames per run: a `DiskOut`'s ring holds more than this many samples
+    /// between two drains.
+    pub(super) const RUN_FRAMES: u64 = 16384;
+
+    /// The files the render reads, each opened once.
+    #[derive(Default)]
+    struct LayerFiles {
+        open: RefCell<HashMap<String, File>>,
+    }
+
+    impl LayerFiles {
+        fn with<T>(
+            &self,
+            path: &str,
+            f: impl FnOnce(&mut File) -> std::io::Result<T>,
+        ) -> Result<T, String> {
+            let mut open = self.open.borrow_mut();
+            if !open.contains_key(path) {
+                let file = File::open(path).map_err(|e| format!("{path}: {e}"))?;
+                open.insert(path.to_string(), file);
+            }
+            let file = open.get_mut(path).expect("opened above");
+            f(file).map_err(|e| format!("{path}: {e}"))
+        }
+    }
+
+    impl PageFiles for LayerFiles {
+        fn size(&self, path: &str) -> Result<u64, String> {
+            self.with(path, |file| file.len())
+        }
+
+        fn read(&self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>, String> {
+            self.with(path, |file| {
+                file.seek(SeekFrom::Start(offset))?;
+                let mut out = vec![0u8; len];
+                let mut got = 0;
+                while got < len {
+                    match file.read(&mut out[got..])? {
+                        0 => break,
+                        n => got += n,
+                    }
+                }
+                out.truncate(got);
+                Ok(out)
+            })
+        }
+    }
+
+    /// The render's outputs being drained: each `DiskOut` into its file,
+    /// each `PeaksOut`'s base buckets kept until its synth is gone.
+    pub(super) struct Served {
+        rate: f64,
+        recordings: HashMap<u32, Option<Writer>>,
+        summaries: HashMap<u32, Vec<f32>>,
+        scratch: Vec<f32>,
+    }
+
+    impl Served {
+        /// The render's files installed for its input streams, which read
+        /// through them from the moment the render is built.
+        pub(super) fn install(rate: f64) -> Served {
+            disk::install_files(Some(Rc::new(LayerFiles::default())));
+            Served {
+                rate,
+                recordings: HashMap::new(),
+                summaries: HashMap::new(),
+                scratch: Vec::new(),
+            }
+        }
+
+        /// Empties the outputs into their files, and writes the files of the
+        /// streams whose synths are gone.
+        pub(super) fn drain(&mut self) {
+            for row in disk::poll() {
+                match row.direction {
+                    Direction::Out => self.record(&row),
+                    Direction::Peaks => self.summarize(&row),
+                    Direction::In | Direction::List => {}
+                }
+            }
+        }
+
+        fn pull(&mut self, id: u32, samples: usize) -> &[f32] {
+            self.scratch.resize(samples, 0.0);
+            let got = disk::pull(id, &mut self.scratch);
+            &self.scratch[..got]
+        }
+
+        fn record(&mut self, row: &disk::StreamRequest) {
+            if !self.recordings.contains_key(&row.id) {
+                let format = if row.format.is_empty() {
+                    "int16"
+                } else {
+                    &row.format
+                };
+                // a file that cannot be made is told once, and the stream is
+                // drained into nothing, as a native `DiskOut`'s thread ends
+                let writer = Writer::create(&row.path, 1, self.rate, format)
+                    .inspect_err(|e| tracing::warn!("DiskOut: {e}"))
+                    .ok();
+                self.recordings.insert(row.id, writer);
+            }
+            if row.samples > 0 {
+                let run = self.pull(row.id, row.samples).to_vec();
+                if let Some(Some(writer)) = self.recordings.get_mut(&row.id)
+                    && let Err(e) = writer.write(&run)
+                {
+                    tracing::warn!("DiskOut: {e}");
+                    self.recordings.insert(row.id, None);
+                }
+            }
+            // `looping` says the synth is gone
+            if row.looping {
+                disk::release(row.id);
+                if let Some(Some(writer)) = self.recordings.remove(&row.id)
+                    && let Err(e) = writer.finalize()
+                {
+                    tracing::warn!("DiskOut: {e}");
+                }
+            }
+        }
+
+        fn summarize(&mut self, row: &disk::StreamRequest) {
+            if row.samples > 0 {
+                let run = self.pull(row.id, row.samples).to_vec();
+                self.summaries.entry(row.id).or_default().extend(run);
+            }
+            if !row.looping {
+                self.summaries.entry(row.id).or_default();
+                return;
+            }
+            disk::release(row.id);
+            let stats = self.summaries.remove(&row.id).unwrap_or_default();
+            if row.format == "lost" {
+                tracing::warn!(
+                    "PeaksOut: {}: buckets were lost while writing, so no peaks file is \
+                     written rather than one that draws what is not there",
+                    row.path
+                );
+                return;
+            }
+            if row.start == 0 || row.channels == 0 {
+                return;
+            }
+            let mut pyramid = MultiPyramid::empty(row.start as usize, row.channels, SUMMARY_BUCKET);
+            if !pyramid.write_buckets(0, SUMMARY_BUCKET, &stats) {
+                tracing::warn!(
+                    "PeaksOut: {}: the buckets do not cover the frames summarized",
+                    row.path
+                );
+                return;
+            }
+            if let Err(e) = pyramid.write_cache(&row.path) {
+                tracing::warn!("PeaksOut: {}: {e}", row.path);
+            }
+        }
+
+        /// The last drain, once the render's synths are gone, and the files
+        /// taken back.
+        pub(super) fn close(mut self) {
+            self.drain();
+            for (_, writer) in self.recordings.drain() {
+                if let Some(writer) = writer
+                    && let Err(e) = writer.finalize()
+                {
+                    tracing::warn!("DiskOut: {e}");
+                }
+            }
+        }
+    }
+
+    impl Drop for Served {
+        fn drop(&mut self) {
+            disk::install_files(None);
+        }
+    }
 }
 
 /// The offline counterpart of the server: owns both engine halves and drives

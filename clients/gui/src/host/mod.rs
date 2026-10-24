@@ -147,9 +147,9 @@ pub mod winit_keys;
 // gesture, and the takes the pictures draw.
 mod answer;
 mod apps;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
 mod audio_app;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
 mod audio_editor;
 mod clocks;
 mod define;
@@ -1018,8 +1018,12 @@ pub struct Host {
     pub owner: Option<document::Owner>,
     /// **The audio editor this host owns**, with the engine it plays on:
     /// opened by [`Host::open_audio`], its windows answered here.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     audio: Option<audio_editor::AudioHost>,
+    /// What wakes the front's loop when an application's thread has said
+    /// something ([`Host::set_app_wake`]).
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+    app_wake: Option<audio_app::Wake>,
     /// **What a window's meters and play cursors read** where it is not the
     /// segment of the server this host is attached to: an application's
     /// window reads the engine the application holds.
@@ -1174,8 +1178,10 @@ impl Host {
             close_asked: Default::default(),
             dependents: HashMap::new(),
             owner: None,
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             audio: None,
+            #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+            app_wake: None,
             window_sources: HashMap::new(),
             clock_shown: None,
             #[cfg(test)]
@@ -1199,7 +1205,7 @@ impl Host {
     /// their turn first ([`Host::tick_audio`]): a run whose render landed is
     /// carried on, and what it left the window is among the effects.
     pub fn take_effects(&mut self) -> Vec<HostEffect> {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
         self.tick_audio();
         std::mem::take(&mut self.pending_effects)
     }

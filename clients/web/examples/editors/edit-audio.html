@@ -131,16 +131,19 @@ behind the dialog; in its name field it undoes the typing.
       `edit`, the same play through the editor's transport, and the same list
       of parts read back. The file is in the page's own storage (`opfs`).
 
-      Until the page's host holds the audio editor (the step after the native
-      host's, `crates/clausters-apps/PLAN.md`), opening the take here says the
-      host holds no audio editor in a page; the calls below are the ones that
-      will run then.
+      The editor runs over memory the page shares with its threads -- the
+      application's own, its renders' and its engine's AudioWorklet -- which a
+      browser grants only to a page that is cross-origin isolated, so this one
+      is served with the headers that isolate it. Served without them, the
+      page is an ordinary one, and opening the take says its host holds no
+      audio editor.
 
       The platform's differences are the usual two: the host is the wasm one in
       this tab and draws into an element, and nothing is pumped.
 
-      Serve clients/web (the package root) and open
-      /examples/editors/edit-audio.html. Build it first: ./build.sh
+      Build first (./build.sh), serve clients/web (the package root) with
+      `python3 tools/serve.py 8000 --isolated`, and open
+      http://localhost:8000/examples/editors/edit-audio.html
     -->
     <script type="module">
       import { Session, SoundFile, gui, opfs } from "../../dist/index.js";

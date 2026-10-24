@@ -19,7 +19,7 @@ use clausters_app_engine::AppEngine;
 use clausters_editing::conversation::Answer;
 use serde_json::{Value, json};
 
-use super::audio_app::{FromApp, MakeEngine, Reply, ToApp};
+use super::audio_app::{FromApp, MakeEngine, Reply, Said, ToApp, Wake};
 use super::*;
 
 /// The role an audio editor's widgets play, in the names the host's own
@@ -40,7 +40,7 @@ pub(crate) struct AudioHost {
     /// What the application says back, read on the host's tick.
     from_app: Receiver<FromApp>,
     /// Its other end, for the thread.
-    out: Sender<FromApp>,
+    out: Said,
     thread: Option<clausters_core::threads::Spawned>,
     windows: HashMap<i32, AudioWindow>,
     /// What the windows' meters and play cursors read: the engine's own,
@@ -63,6 +63,7 @@ impl Drop for AudioHost {
         // so the working folders it holds are gone when the host is
         self.to_app = None;
         if let Some(thread) = self.thread.take() {
+            thread.unpark();
             thread.join();
         }
     }
@@ -114,8 +115,9 @@ impl BusSource for EngineSource {
 impl AudioHost {
     /// The application, its engine made by `make` when its first window
     /// opens.
-    fn new(make: MakeEngine) -> AudioHost {
+    fn new(make: MakeEngine, wake: Option<Wake>) -> AudioHost {
         let (out, from_app) = channel();
+        let out = Said::new(out, wake);
         AudioHost {
             make: Some(make),
             to_app: None,
@@ -140,24 +142,47 @@ impl AudioHost {
         self.to_app
             .as_ref()
             .and_then(|tx| tx.send(ask).ok())
-            .ok_or_else(|| "the audio editor's thread ended".to_string())
+            .ok_or_else(|| "the audio editor's thread ended".to_string())?;
+        // the thread sleeps between asks: this one wakes it
+        if let Some(thread) = &self.thread {
+            thread.unpark();
+        }
+        Ok(())
     }
 }
 
 impl Host {
+    /// **What wakes this host's loop when an application it holds has said
+    /// something**: the front's, set before the first application opens.
+    pub fn set_app_wake(&mut self, wake: Wake) {
+        self.app_wake = Some(wake);
+    }
+
     /// **Holds `engine` as the audio editor's**, for a caller that brings its
     /// own (a test driving it block by block); [`Host::open_audio`] opens one
     /// on the machine's output otherwise.
     pub fn hold_audio_engine(&mut self, engine: Arc<Mutex<AppEngine>>) {
-        self.audio = Some(AudioHost::new(Box::new(move || Ok(engine))));
+        self.audio = Some(AudioHost::new(
+            Box::new(move || Ok(engine)),
+            self.app_wake.clone(),
+        ));
     }
 
-    /// The audio editor's application, made on the first open.
+    /// The audio editor's application, made on the first open: its engine
+    /// on the machine's output, or in a page on the page's.
     fn audio_host(&mut self) -> &mut AudioHost {
+        let wake = self.app_wake.clone();
         self.audio.get_or_insert_with(|| {
-            AudioHost::new(Box::new(|| {
-                AppEngine::open().map(|engine| Arc::new(Mutex::new(engine)))
-            }))
+            AudioHost::new(
+                Box::new(|| {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let engine = AppEngine::open();
+                    #[cfg(target_arch = "wasm32")]
+                    let engine = super::web::apps_engine::open();
+                    engine.map(|engine| Arc::new(Mutex::new(engine)))
+                }),
+                wake,
+            )
         })
     }
 
@@ -736,6 +761,42 @@ mod tests {
         let ended = folder(&mut host, def_id);
         drop(host);
         assert!(!ended.exists(), "the host ending removed it");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// **A call the application refuses says why**: a gain curve applied
+    /// while the take plays is refused, and the door's answer carries the
+    /// reason a script raises, not a bare "nothing changed".
+    #[test]
+    fn a_refused_call_says_why() {
+        let path = take("refused", 48_000);
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        let act = |verb: &str, points: Option<Value>| {
+            let mut call = json!({"verb": verb});
+            if let Some(points) = points {
+                call["points"] = points;
+            }
+            json!({"do": {"verb": "act", "call": call}})
+        };
+        let set = ask(
+            &mut host,
+            def_id,
+            act("setautomation", Some(json!([0, 0, 3, 0, 1.0, 0.25, 1, 0]))),
+        );
+        assert_eq!(set["changed"], true, "{set}");
+        ask(
+            &mut host,
+            def_id,
+            json!({"do": {"verb": "play", "at": 0.0}}),
+        );
+        let applied = ask(&mut host, def_id, act("apply_envelope", None));
+        assert_eq!(applied["changed"], false, "{applied}");
+        assert_eq!(
+            applied["reason"], "the file is playing: stop it to edit",
+            "{applied}"
+        );
+        assert_eq!(parts(&mut host, def_id)[0]["path"], json!(path));
         let _ = std::fs::remove_file(&path);
     }
 

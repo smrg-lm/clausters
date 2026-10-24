@@ -25,6 +25,9 @@
 pub mod audio;
 /// What an engine publishes, read without its handle ([`AppEngine::reading`]).
 pub use clausters::server::engine::EngineReading;
+/// The engine's processing half, and the frames it processes a block at a
+/// time: what a page's AudioWorklet runs ([`AppEngine::detached`]).
+pub use clausters::server::engine::{BLOCK_SIZE, Engine};
 /// A sound file's header, through the decoder the clients read it with.
 pub use clausters::server::nrt::{SoundInfo, probe_audio};
 pub mod held;

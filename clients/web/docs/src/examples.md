@@ -10,6 +10,15 @@ npm install && ./build.sh
 python3 -m http.server        # then open http://localhost:8000/examples/…
 ```
 
+A page that opens an editing application (the audio editor) runs it over
+memory shared with its threads, which a browser grants only to a page that is
+**cross-origin isolated**. Serve those with the package's own server, which
+sends the headers that isolate a page:
+
+```sh
+python3 tools/serve.py 8000 --isolated
+```
+
 Unless a page says otherwise it runs on the **in-page engine** — no server
 process, no socket — and the line that would point it at a `clausters --ws`
 server instead is marked in its source.

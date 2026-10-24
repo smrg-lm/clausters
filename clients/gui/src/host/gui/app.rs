@@ -809,6 +809,8 @@ impl App {
                 Ok(packet) => self.handle_server_packet(packet, leg),
                 Err(e) => warn!("malformed OSC reply from the audio server: {e}"),
             },
+            // the turn after this event takes what the application said
+            UserEvent::AppSaid => {}
         }
     }
 

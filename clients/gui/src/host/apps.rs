@@ -67,7 +67,7 @@ impl Host {
             Some(Ok(call @ Value::Object(_))) => call,
             _ => return effects.push(refused(seq, "the call is not a JSON object")),
         };
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
         if self.owns_audio(window) {
             return self.call_app_audio(seq, window, &call, from, effects);
         }
@@ -82,7 +82,7 @@ impl Host {
     }
 
     /// The audio editor opened for a client, or why not.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     fn open_app_audio(
         &mut self,
         seq: i32,
@@ -102,9 +102,9 @@ impl Host {
         }
     }
 
-    /// A page's host holds no application yet: its engine is in the
-    /// worklet, and the application's half is still the client's.
-    #[cfg(target_arch = "wasm32")]
+    /// The ordinary build of a page's host holds no application: the
+    /// applications' build does, in a page that is cross-origin isolated.
+    #[cfg(all(target_arch = "wasm32", not(feature = "apps")))]
     fn open_app_audio(
         &mut self,
         seq: i32,
@@ -116,7 +116,7 @@ impl Host {
             seq,
             Err((
                 "runtime".into(),
-                "this host holds no audio editor in a page".into(),
+                "this page is not cross-origin isolated: its host holds no audio editor".into(),
             )),
         )));
     }

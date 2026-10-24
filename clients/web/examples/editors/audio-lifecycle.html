@@ -98,18 +98,19 @@ for nothing.</div>
     <!--
       The web sibling of clients/python/examples/editors/audio_lifecycle.py,
       call for call: the same four takes written as the same files, the same
-      two editors, and the same steps. Until the page's host holds the audio
-      editor (the step after the native host's, crates/clausters-apps/PLAN.md),
-      opening the windows here says the host holds no audio editor in a page. The files are
-      in the page's own storage (`opfs`), and the save into a directory that
-      does not exist is refused by it as the disk refuses the script's.
+      two editors, and the same steps. The files are in the page's own
+      storage (`opfs`), and the save into a directory that does not exist is
+      refused by it as the disk refuses the script's.
 
       The platform's differences are the usual ones: the host is the wasm one
       in this tab and draws each window into an element, a step is a button
       rather than a call at a prompt, and what a script calls a page awaits.
 
-      Serve clients/web (the package root) and open
-      /examples/editors/audio-lifecycle.html. Build it first: ./build.sh
+      The audio editor runs over memory the page shares with its threads,
+      which a browser grants only to a page that is cross-origin isolated.
+      Build first (./build.sh), serve clients/web (the package root) with
+      `python3 tools/serve.py 8000 --isolated`, and open
+      http://localhost:8000/examples/editors/audio-lifecycle.html
     -->
     <script type="module">
       import { Session, SoundFile, errors, gui, opfs, segments } from "../../dist/index.js";

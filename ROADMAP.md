@@ -126,6 +126,15 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
+- ⬜ **A render's file streams are drained twice, in script and in Rust**
+  *(`clients/web/PLAN.md`, Found by use)*. The page's render worker should
+  serve its render through the Rust one the applications' build uses.
+
+- ⬜ **A peaks read lands after its working folder is gone**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A warning when an
+  editor closes while its picture is still being read; nothing is drawn
+  wrong.
+
 - ⬜ **The other applications that open files open without one and outlive
   their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
   editor keeps the rule; the score editor and the multitrack with a session
@@ -309,7 +318,8 @@ its plan; the plan is where its acceptance is read.
   multitrack on the same modules; and the server's cleaning last, once
   nothing calls what it removes. Before `X25`, which should port this
   lifecycle. `X30` closes with the apps plan's "What the clients' audio
-  coordinator leaves behind" (Found by use), swept after its page step.
+  coordinator leaves behind" (Found by use), the sweep that is next now
+  that its page step is done.
   **Related:** found moving the editor onto files, and taken
   after `X32`: the apps plan's "A compressed file opens through a buffer of
   all of it" (Found by use); to look at in a page before the audio editor's

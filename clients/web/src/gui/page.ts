@@ -271,6 +271,19 @@ export async function newGuiHost(
     return boot(options.engine ?? await engineInstance(), options.idShare);
 }
 
+/** The page's own audio, made for the applications when no engine of the page's has one. */
+let ownContext: AudioContext | null = null;
+
+/**
+ * **Where an editing application's engine plays**: the AudioContext of the
+ * page's engine, when the host has one, or one of the applications' own.
+ */
+async function audioContext(engine: ClaustersServer | null): Promise<AudioContext> {
+    if (engine !== null) return engine.context;
+    ownContext ??= new AudioContext({ sampleRate: 48_000 });
+    return ownContext;
+}
+
 /**
  * **The host's glue, of the build this page can run**: the applications'
  * build when the page is cross-origin isolated (`crossOriginIsolated`), since
@@ -279,9 +292,10 @@ export async function newGuiHost(
  * the one a component embeds with. The two are the same host compiled twice,
  * with the same surface.
  */
-async function hostGlue(): Promise<{ init: () => Promise<unknown>; start: typeof import("../gui-host/clausters_gui.js").start }> {
+async function hostGlue(contextOf: () => Promise<AudioContext>): Promise<{ init: () => Promise<unknown>; start: typeof import("../gui-host/clausters_gui.js").start }> {
     if ((globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) {
-        const { glue, init } = await (await import("./apps.ts")).appsHost();
+        // the applications' engine plays where the page's own audio does
+        const { glue, init } = await (await import("./apps.ts")).appsHost(contextOf);
         return { init, start: glue.start };
     }
     const glue = await import("../gui-host/clausters_gui.js");
@@ -293,8 +307,8 @@ async function boot(
     idShare?: IdShare,
     url?: string,
 ): Promise<ClaustersGui> {
-    const { init, start } = await hostGlue();
     const engine = url !== undefined ? null : (audio ?? await server());
+    const { init, start } = await hostGlue(() => audioContext(engine));
     await init();
     const bridge = start();
     // The share of the engine's node ids, buses and buffers this host

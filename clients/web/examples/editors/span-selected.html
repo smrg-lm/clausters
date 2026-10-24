@@ -65,8 +65,11 @@ editors. Press the buttons in order; each step says what to look at.</div>
       page, a setter that reaches the engine is a method (`setSpan`), and what
       reads the host is awaited (a roll's and a multitrack's `selected()`).
 
-      Serve clients/web (the package root) and open
-      /examples/editors/span-selected.html. Build it first: ./build.sh
+      The audio editor runs over memory the page shares with its threads,
+      which a browser grants only to a page that is cross-origin isolated.
+      Build first (./build.sh), serve clients/web (the package root) with
+      `python3 tools/serve.py 8000 --isolated`, and open
+      http://localhost:8000/examples/editors/span-selected.html
     -->
     <script type="module">
       import { Session, SoundFile, gui, loadCore, opfs } from "../../dist/index.js";

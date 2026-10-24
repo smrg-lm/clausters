@@ -3302,15 +3302,24 @@ over the opened file) carries over.
       - ✅ **The working folder in a page**: held by a Web Lock and swept
         when no tab holds it, as `src/base/workspace.ts` does now, from the
         application's thread through the file layer.
-      - ⬜ **The engine in the worklet**: `AppEngine::open` in a page makes
+      - ✅ **The engine in the worklet**: `AppEngine::open` in a page makes
         the engine pair and hands the processing half to an
         `AudioWorkletNode` whose processor instantiates the module over
         the memory and processes it each quantum, beside the page's own
-        engine for the client's server.
-      - ⬜ **The audio editor in a page**: the host's audio window and the
+        engine for the client's server (`host/web/apps_engine.rs`,
+        `apps-worklet.ts`), at the page's audio's rate.
+      - ✅ **The audio editor in a page**: the host's audio window and the
         door built on wasm, `edit(file)` opening in a tab, the page
-        examples and an acceptance page in the suite, in Chrome and
-        Firefox.
+        examples served isolated (`tools/serve.py --isolated`) and an
+        acceptance page in the suite (`audio-editor.html?isolated`: open,
+        an edit rendered on a thread, a save, an undo, a pass played to
+        its end), in Chrome and Firefox. What it took beyond the parts
+        above: an offline render in a page serves its own file streams
+        through the file layer (`server::render`), as the page's render
+        worker does in script; an application's thread wakes the host's
+        loop when it has said something, natively too (the loop read an
+        answer only at its next input); and a thread spawns another
+        through the page, since only the page makes workers.
   **Acceptance:** the audio editor plays, loops, stops and
   locates with no OSC between application and engine, natively and in a
   page; a client's verbs and the application's answers are unchanged in both
@@ -5229,3 +5238,11 @@ wrong.
   thread of its own, so a loaded machine changes what the reader has filled
   by a given block. They should wait for the reader as the engine's cue does
   rather than for time.
+
+- ⬜ **A peaks read lands after its working folder is gone** *(found
+  2026-10-24, the audio editor's acceptance page)*. Closing an editor
+  removes its working folder while a level of a peaks file in it is still
+  being read for the window, and the host warns `peaks <path>: ...
+  NotFoundError` as the read lands. The window is gone, so nothing is
+  drawn wrong; the host should forget a file's pending reads with the last
+  window reading it rather than warn about them.

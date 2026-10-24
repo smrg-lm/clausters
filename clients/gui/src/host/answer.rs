@@ -114,7 +114,7 @@ impl Host {
             "deliver: widget={widget_id} seq={seq} owner={} args={args:?}",
             self.owner.is_some()
         );
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
         if self.owns_audio(def_id) {
             return self.answer_audio(def_id, message);
         }
