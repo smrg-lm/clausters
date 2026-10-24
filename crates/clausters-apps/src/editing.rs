@@ -2915,6 +2915,9 @@ mod tests {
             state["copy"]["unselected"], true,
             "the host reads its own selection"
         );
+        // a process renders the selection: nothing selected, nothing to do
+        assert_eq!(state["reverse"]["enabled"], false);
+        assert_eq!(state["reverse"]["unselected"], true);
         assert_eq!(state["view_wave"]["checked"], true);
         call(
             &mut editing,

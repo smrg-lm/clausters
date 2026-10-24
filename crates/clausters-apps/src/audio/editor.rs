@@ -758,6 +758,7 @@ impl AudioEditor {
                         | "close_file"
                         | "apply"
                         | "apply_envelope"
+                        | "reverse"
                 ) {
                     state.pending = pending;
                     if pending {
@@ -770,7 +771,7 @@ impl AudioEditor {
                 }
                 // Last: an empty selection is the one objection a host reads
                 // for itself, so it must not hide another.
-                if matches!(name, "cut" | "copy" | "delete") && !selected {
+                if matches!(name, "cut" | "copy" | "delete" | "reverse") && !selected {
                     state.refuse_unselected();
                 }
                 if matches!(name, "paste" | "mix") {
