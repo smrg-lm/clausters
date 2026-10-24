@@ -702,22 +702,37 @@ impl UGen for TransportDiskIn {
             self.delta,
             self.frames,
         );
-        // the reading follows the loop asked for, and has landed
-        if asked != self.wrap || self.pending.is_some() || self.head.is_none() {
-            return Some(false);
+        // the reading follows the loop asked for -- or the frames kept from
+        // a change before it read it already: a second switch turned on the
+        // first one's heels, just before the loop's end, puts back the loop
+        // those frames were read through, and they are ready the moment it is
+        // asked, before this reader has played a block of it
+        if asked != self.wrap {
+            return Some(self.kept_reads(asked) >= LAND_LEAD as u64);
         }
-        // and holds the lead a replacing reading lands with -- or what is
-        // left of the list -- so it is not starved once it goes on; spliced
-        // on ahead, before the splice is reached
+        // **What it holds of that reading**: the ring once its refill has
+        // landed, and, spliced on ahead and before the splice is reached,
+        // the kept frames up to it, which read the loop asked for as far as
+        // there and play first. A second change turned while the first one's
+        // kept frames still play is ready on them alone: waiting on the ring
+        // kept the loop in force in place past where the two part, and the
+        // transport went its way while the reader read the one asked.
+        let kept = match &self.outgoing {
+            Some(o) if o.splice && o.next > o.at => return Some(false),
+            Some(o) if o.splice => ((o.at - o.next) / o.channels) as u64,
+            _ => 0,
+        };
+        let ring = match (self.pending, self.head) {
+            (None, Some(_)) => (self.consumer.slots() / self.channels) as u64,
+            _ => 0,
+        };
+        // as much as the lead a replacing reading lands with -- or what is
+        // left of the list -- so it is not starved once it goes on
         let ahead = match (self.wrap, self.head) {
             (None, Some(head)) => self.frames.saturating_sub(head).min(LAND_LEAD as u64),
             _ => LAND_LEAD as u64,
         };
-        let holds = (self.consumer.slots() / self.channels) as u64 >= ahead.max(1);
-        Some(match &self.outgoing {
-            Some(o) if o.splice => o.next <= o.at && holds,
-            _ => holds,
-        })
+        Some(ring + kept >= ahead.max(1))
     }
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
@@ -729,6 +744,71 @@ impl UGen for TransportDiskIn {
 }
 
 impl TransportDiskIn {
+    /// **How many of the frames kept from a change read the loop `asked`**:
+    /// the kept frames of a loop change (spliced, the same list read another
+    /// way) from where they stand to where their reading and that one part,
+    /// or to their end. A change of the list keeps frames of another take,
+    /// and none of them count.
+    fn kept_reads(&self, asked: Option<ListWrap>) -> u64 {
+        let Some(o) = self.outgoing.as_ref().filter(|o| o.splice) else {
+            return 0;
+        };
+        let left = ((o.end - o.next) / o.channels) as u64;
+        ListWrap::agree(o.wrap, asked, o.frame).map_or(left, |n| n.min(left))
+    }
+
+    /// **What the loop in force plays from `frame`, kept**: on a loop change
+    /// turned while the kept frames of the change before it still play, and
+    /// that one put in place, what plays from here is the kept frames to
+    /// their splice and what the ring has read of the loop in force after
+    /// it. Those become the kept frames, read through the loop in force, so
+    /// the new change is spliced on where that loop and the new one part --
+    /// and, where it is not in place by then, they play on past it and the
+    /// loop in force is read again from their end. Kept frames of another
+    /// loop than the one in force, read on past where the two part, were
+    /// the take only until the transport went the other way there.
+    fn keep_in_force(&mut self, frame: u64) {
+        let Some(o) = self.outgoing.as_ref() else {
+            return;
+        };
+        let channels = o.channels;
+        let (from, to) = (o.next, o.at);
+        let spliced = ListWrap::advance(self.wrap, frame, ((to - from) / channels) as u64);
+        if !o.splice
+            || from > to
+            || o.frame != frame
+            || channels != self.channels
+            || self.applied != self.wrap
+            || self.pending.is_some()
+            || self.head != Some(spliced)
+        {
+            return;
+        }
+        self.kept.copy_within(from..to, 0);
+        let prefix = to - from;
+        let room = (KEPT / channels * channels).saturating_sub(prefix);
+        let n = self.consumer.slots().min(room) / channels * channels;
+        if n > 0
+            && let Ok(chunk) = self.consumer.read_chunk(n)
+        {
+            let (a, b) = chunk.as_slices();
+            self.kept[prefix..prefix + a.len()].copy_from_slice(a);
+            self.kept[prefix + a.len()..prefix + a.len() + b.len()].copy_from_slice(b);
+            chunk.commit_all();
+            self.popped += n as u64;
+            self.head = Some(self.advance(spliced, (n / channels) as u64));
+        }
+        self.outgoing = Some(Outgoing {
+            channels,
+            next: 0,
+            end: prefix + n,
+            at: prefix + n,
+            splice: true,
+            wrap: self.wrap,
+            frame,
+        });
+    }
+
     /// One block of [`UGen::process`].
     fn play(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         self.collect();
@@ -839,9 +919,14 @@ impl TransportDiskIn {
                 // A change before the last one landed: the kept frames play
                 // on, and what the ring holds of the reading that did not land
                 // goes. Spliced, they are the take as far as they agree with
-                // this reading too, which goes on from there.
-                self.discard();
+                // this reading too, which goes on from there -- unless they
+                // read another loop than this one and the one before was put
+                // in place: then what plays is that one's, kept first.
                 let frame = place(0).0.unwrap_or(0);
+                if rewrapped && self.kept_reads(wrap) < LAND_LEAD as u64 {
+                    self.keep_in_force(frame);
+                }
+                self.discard();
                 if let Some(outgoing) = self.outgoing.as_mut() {
                     if rewrapped && outgoing.splice {
                         let channels = outgoing.channels;

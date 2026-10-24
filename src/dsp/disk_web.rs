@@ -1263,19 +1263,26 @@ impl UGen for TransportDiskIn {
             self.delta,
             self.frames,
         );
-        if asked != self.wrap || self.head.is_none() {
-            return Some(false);
+        // as natively: frames kept from a change before read it already
+        if asked != self.wrap {
+            return Some(self.kept_reads(asked) >= crate::dsp::stream::LAND_LEAD as u64);
         }
+        // the kept frames before a splice count, as natively
+        let kept = match &self.outgoing {
+            Some(o) if o.splice && o.next > o.at => return Some(false),
+            Some(o) if o.splice => ((o.at - o.next) / o.channels) as u64,
+            _ => 0,
+        };
+        let ring = match self.head {
+            Some(_) => (self.consumer.slots() / self.channels) as u64,
+            None => 0,
+        };
         let lead = crate::dsp::stream::LAND_LEAD as u64;
         let ahead = match (self.wrap, self.head) {
             (None, Some(head)) => self.frames.saturating_sub(head).min(lead),
             _ => lead,
         };
-        let holds = (self.consumer.slots() / self.channels) as u64 >= ahead.max(1);
-        Some(match &self.outgoing {
-            Some(o) if o.splice => o.next <= o.at && holds,
-            _ => holds,
-        })
+        Some(ring + kept >= ahead.max(1))
     }
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
@@ -1287,6 +1294,62 @@ impl UGen for TransportDiskIn {
 }
 
 impl TransportDiskIn {
+    /// **How many of the frames kept from a change read the loop `asked`**:
+    /// the kept frames of a loop change (spliced, the same list read another
+    /// way) from where they stand to where their reading and that one part,
+    /// or to their end. A change of the list keeps frames of another take,
+    /// and none of them count.
+    fn kept_reads(&self, asked: Option<ListWrap>) -> u64 {
+        let Some(o) = self.outgoing.as_ref().filter(|o| o.splice) else {
+            return 0;
+        };
+        let left = ((o.end - o.next) / o.channels) as u64;
+        ListWrap::agree(o.wrap, asked, o.frame).map_or(left, |n| n.min(left))
+    }
+
+    /// **What the loop in force plays from `frame`, kept**, as natively
+    /// (`stream::TransportDiskIn::keep_in_force`): the kept frames to their
+    /// splice and what the ring holds of the loop in force after it.
+    fn keep_in_force(&mut self, frame: u64) {
+        let Some(o) = self.outgoing.as_ref() else {
+            return;
+        };
+        let channels = o.channels;
+        let (from, to) = (o.next, o.at);
+        let spliced = ListWrap::advance(self.wrap, frame, ((to - from) / channels) as u64);
+        if !o.splice
+            || from > to
+            || o.frame != frame
+            || channels != self.channels
+            || self.applied != self.wrap
+            || self.head != Some(spliced)
+        {
+            return;
+        }
+        self.kept.copy_within(from..to, 0);
+        let prefix = to - from;
+        let room = (KEPT / channels * channels).saturating_sub(prefix);
+        let n = self.consumer.slots().min(room) / channels * channels;
+        if n > 0
+            && let Ok(chunk) = self.consumer.read_chunk(n)
+        {
+            let (a, b) = chunk.as_slices();
+            self.kept[prefix..prefix + a.len()].copy_from_slice(a);
+            self.kept[prefix + a.len()..prefix + a.len() + b.len()].copy_from_slice(b);
+            chunk.commit_all();
+            self.head = Some(self.advance(spliced, (n / channels) as u64));
+        }
+        self.outgoing = Some(Kept {
+            channels,
+            next: 0,
+            end: prefix + n,
+            at: prefix + n,
+            splice: true,
+            wrap: self.wrap,
+            frame,
+        });
+    }
+
     /// One block of [`UGen::process`].
     fn play(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
@@ -1358,8 +1421,16 @@ impl TransportDiskIn {
                     let frames = (kept.at / kept.channels) as u64;
                     from = Some(ListWrap::advance(wrap, frame0, frames));
                 }
-            } else if let Some(kept) = self.outgoing.as_mut() {
-                // a change before the last one came, as natively
+            } else if self.outgoing.is_some() {
+                // a change before the last one came, as natively: what the
+                // loop in force plays is kept first where the kept frames
+                // read another loop than this one
+                if rewrapped && self.kept_reads(wrap) < crate::dsp::stream::LAND_LEAD as u64 {
+                    self.keep_in_force(frame0);
+                }
+                let Some(kept) = self.outgoing.as_mut() else {
+                    unreachable!("kept just above")
+                };
                 if rewrapped && kept.splice {
                     let mut left = (kept.end - kept.next) / kept.channels;
                     if let Some(agree) = ListWrap::agree(kept.wrap, wrap, frame0) {
