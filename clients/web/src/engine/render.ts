@@ -54,23 +54,21 @@ export type EngineModule = {
     linkFaust: (name: string, compute: number, init: number, json: string) => void;
     /** The files a score reads, as a JSON array of paths. */
     scoreFiles: (score: Uint8Array) => string;
-    /** An offline render a run of frames at a time (`./file-render.ts`). */
-    OfflineRender: new (
+    /** The files a score's synths write, as a JSON array of paths. */
+    scoreOutputs: (score: Uint8Array) => string;
+    /**
+     * A render into a file, reading and writing through the calling
+     * Worker's files (`./file-render.ts`); its numbers, as JSON.
+     */
+    renderFile: (
         score: Uint8Array,
         sampleRate: number,
         channels: number,
-        seed?: bigint | null,
-    ) => {
-        step(frames: number): Float32Array;
-        done(): boolean;
-        framesDone(): number;
-        totalFrames(): number;
-        finish(): string;
-        diskPoll(): string;
-        diskPull(id: number, max: number): Float32Array;
-        diskRelease(id: number): void;
-        free(): void;
-    };
+        seed: bigint | null | undefined,
+        path: string,
+        sampleFormat: string,
+        progress: (done: number, total: number) => void,
+    ) => string;
 };
 
 let loaded: Promise<EngineModule> | null = null;
@@ -94,6 +92,12 @@ export function loadRenderer(source?: BufferSource): Promise<EngineModule> {
         return glue;
     })();
     return loaded;
+}
+
+/** The renderer's memory, once `loadRenderer` has loaded it. */
+export function rendererMemory(): WebAssembly.Memory {
+    if (exports === null) throw new Error("the renderer is not loaded");
+    return exports.memory;
 }
 
 /**

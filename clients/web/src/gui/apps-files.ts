@@ -10,37 +10,13 @@
  * handle, shared by every thread that has it open, since the storage gives a
  * file one at a time; each thread keeps its own position on its side.
  *
- * The request's layout is `clausters_core::files::Request`, `repr(C)` on
- * wasm32: the offsets below are its fields'.
+ * The request's layout is `clausters_core::files::Request`
+ * (`../base/file-requests.ts`).
  *
  * @module
  */
 
-const STATE = 0;
-const OP = 4;
-const HANDLE = 8;
-const LEN = 12;
-const BUF = 16;
-const PATH = 20;
-const PATH_LEN = 24;
-const PATH2 = 28;
-const PATH2_LEN = 32;
-const AT = 40;
-const RESULT = 48;
-const MODIFIED = 56;
-const IS_DIR = 64;
-const ERROR = 68;
-const ERROR_CAP = 72;
-const ERROR_LEN = 76;
-
-const DONE = 1;
-
-/** What a request asks, as `clausters_core::files::Op` numbers it. */
-const enumOp = {
-    open: 1, create: 2, read: 3, write: 4, len: 5, close: 6, rename: 7, removeFile: 8,
-    removeDir: 9, removeDirAll: 10, createDir: 11, createDirAll: 12, metadata: 13, readDir: 14,
-    holdNew: 15, release: 16, sweep: 17,
-} as const;
+import { EXISTS, FAILED, FileRequest, Refused, field, fileOp as enumOp } from "../base/file-requests.ts";
 
 /**
  * The prefix of a working folder's Web Lock, before the folder's name: the
@@ -51,22 +27,6 @@ const TAB_LOCK = "clausters-work:";
 
 /** What lets go of each working folder's lock, by its path. */
 const releases = new Map<string, () => void>();
-
-/** The failures a request answers by number, as `files.rs` reads them. */
-const FAILED = -1;
-const NOT_FOUND = -2;
-const EXISTS = -3;
-const NOT_EMPTY = -4;
-
-/** A failure answered with its number and its reason. */
-class Refused extends Error {
-    readonly code: number;
-
-    constructor(code: number, message: string) {
-        super(message);
-        this.code = code;
-    }
-}
 
 let memory: WebAssembly.Memory | null = null;
 
@@ -80,11 +40,6 @@ interface Open {
 const byPath = new Map<string, Open>();
 const byHandle = new Map<number, Open>();
 let nextHandle = 1;
-
-/** The request's view onto the memory as it is now (it may have grown). */
-const view = () => new DataView((memory as WebAssembly.Memory).buffer);
-const bytes = (at: number, len: number) => new Uint8Array((memory as WebAssembly.Memory).buffer, at, len);
-const text = (at: number, len: number) => new TextDecoder().decode(bytes(at, len).slice());
 
 /** The `/`-separated path's parts, refusing a climb out of the root. */
 function parts(path: string): string[] {
@@ -106,16 +61,6 @@ async function parent(path: string): Promise<[FileSystemDirectoryHandle, string]
     const name = names.pop();
     if (name === undefined) throw new Refused(FAILED, "an empty path names nothing");
     return [await directory(names, false), name];
-}
-
-/** The storage's failures, in the numbers a request answers with. */
-function refusal(error: unknown, path: string): Refused {
-    if (error instanceof Refused) return error;
-    const name = (error as { name?: string })?.name;
-    const message = `${path}: ${(error as Error)?.message ?? String(error)}`;
-    if (name === "NotFoundError" || name === "TypeMismatchError") return new Refused(NOT_FOUND, message);
-    if (name === "InvalidModificationError") return new Refused(NOT_EMPTY, message);
-    return new Refused(FAILED, message);
 }
 
 /** A sync handle on `path`, shared when it is open already. */
@@ -152,29 +97,25 @@ function letGo(path: string): Open | undefined {
 }
 
 /** One request carried out: what goes in `result`, and the rest written. */
-async function carry(at: number): Promise<number> {
-    const v = view();
-    const op = v.getUint32(at + OP, true);
-    const path = text(v.getUint32(at + PATH, true), v.getUint32(at + PATH_LEN, true));
+async function carry(request: FileRequest): Promise<number> {
+    const { op, path } = request;
     switch (op) {
         case enumOp.open:
             return openShared(path, false);
         case enumOp.create:
             return openShared(path, true);
         case enumOp.read: {
-            const open = held(v.getUint32(at + HANDLE, true));
-            const into = bytes(v.getUint32(at + BUF, true), v.getUint32(at + LEN, true));
-            return open.sync.read(into, { at: v.getFloat64(at + AT, true) });
+            const open = held(request.u32(field.handle));
+            return open.sync.read(request.buffer, { at: request.f64(field.at) });
         }
         case enumOp.write: {
-            const open = held(v.getUint32(at + HANDLE, true));
-            const from = bytes(v.getUint32(at + BUF, true), v.getUint32(at + LEN, true));
-            return open.sync.write(from, { at: v.getFloat64(at + AT, true) });
+            const open = held(request.u32(field.handle));
+            return open.sync.write(request.buffer, { at: request.f64(field.at) });
         }
         case enumOp.len:
-            return held(v.getUint32(at + HANDLE, true)).sync.getSize();
+            return held(request.u32(field.handle)).sync.getSize();
         case enumOp.close: {
-            const handle = v.getUint32(at + HANDLE, true);
+            const handle = request.u32(field.handle);
             const open = byHandle.get(handle);
             byHandle.delete(handle);
             if (open !== undefined && --open.refs === 0 && byPath.get(open.path) === open) {
@@ -183,7 +124,7 @@ async function carry(at: number): Promise<number> {
             return 0;
         }
         case enumOp.rename: {
-            const target = text(v.getUint32(at + PATH2, true), v.getUint32(at + PATH2_LEN, true));
+            const target = request.path2;
             // a file open is moved closed, and opened again where it went
             const open = letGo(path);
             letGo(target);
@@ -255,18 +196,18 @@ async function carry(at: number): Promise<number> {
         case enumOp.metadata: {
             const open = byPath.get(path);
             if (open !== undefined) {
-                v.setFloat64(at + MODIFIED, Date.now(), true);
+                request.setF64(field.modified, Date.now());
                 return open.sync.getSize();
             }
             const [dir, name] = await parent(path);
             try {
                 const file = await (await dir.getFileHandle(name)).getFile();
-                v.setFloat64(at + MODIFIED, file.lastModified, true);
+                request.setF64(field.modified, file.lastModified);
                 return file.size;
             } catch (error) {
                 if ((error as { name?: string })?.name !== "TypeMismatchError") throw error;
                 await dir.getDirectoryHandle(name);
-                view().setUint32(at + IS_DIR, 1, true);
+                request.setU32(field.isDir, 1);
                 return 0;
             }
         }
@@ -280,14 +221,13 @@ async function carry(at: number): Promise<number> {
                 lines += `${handle.kind === "directory" ? "d" : "f"} ${name}\n`;
             }
             const encoded = new TextEncoder().encode(lines);
-            const cap = view().getUint32(at + LEN, true);
-            if (encoded.length <= cap) bytes(view().getUint32(at + BUF, true), encoded.length).set(encoded);
+            if (encoded.length <= request.u32(field.len)) request.buffer.set(encoded);
             return encoded.length;
         }
         case enumOp.holdNew: {
             // a folder of this tab's, held by a lock the browser lets go of
             // however the tab goes
-            const name = text(v.getUint32(at + PATH2, true), v.getUint32(at + PATH2_LEN, true));
+            const name = request.path2;
             const leaf = `${name}-${crypto.randomUUID().slice(0, 13)}`;
             const folder = `${parts(path).join("/")}/${leaf}`;
             await new Promise<void>((granted) => {
@@ -298,9 +238,8 @@ async function carry(at: number): Promise<number> {
             });
             await directory(parts(folder), true);
             const encoded = new TextEncoder().encode(folder);
-            const cap = view().getUint32(at + LEN, true);
-            bytes(view().getUint32(at + BUF, true), Math.min(encoded.length, cap))
-                .set(encoded.subarray(0, cap));
+            const room = request.buffer;
+            room.set(encoded.subarray(0, room.length));
             return encoded.length;
         }
         case enumOp.release: {
@@ -340,23 +279,12 @@ async function carry(at: number): Promise<number> {
 
 /** **Answers the request at `at`**, and wakes the thread waiting on it. */
 async function answer(at: number): Promise<void> {
-    let result: number;
+    const request = new FileRequest(memory as WebAssembly.Memory, at);
     try {
-        result = await carry(at);
+        request.answer(await carry(request));
     } catch (error) {
-        const path = text(view().getUint32(at + PATH, true), view().getUint32(at + PATH_LEN, true));
-        const refused = refusal(error, path);
-        result = refused.code;
-        const reason = new TextEncoder().encode(refused.message);
-        const cap = view().getUint32(at + ERROR_CAP, true);
-        const len = Math.min(reason.length, cap);
-        bytes(view().getUint32(at + ERROR, true), len).set(reason.subarray(0, len));
-        view().setUint32(at + ERROR_LEN, len, true);
+        request.answer({ error });
     }
-    view().setFloat64(at + RESULT, result, true);
-    const state = new Int32Array((memory as WebAssembly.Memory).buffer);
-    Atomics.store(state, (at + STATE) >> 2, DONE);
-    Atomics.notify(state, (at + STATE) >> 2);
 }
 
 /**

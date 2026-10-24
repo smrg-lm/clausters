@@ -5126,7 +5126,7 @@ sound.
   it is under `clausters/work` in the origin's storage, held by a Web Lock
   and swept when no tab holds it.
 
-- ⬜ **A render's file streams are drained twice, in script and in Rust**
+- ✅ **A render's file streams are drained twice, in script and in Rust**
   *(found 2026-10-24, the audio editor in a page)*. The page's render
   worker serves an offline render's streams in script
   (`src/engine/file-render.ts`: the inputs read through two functions it
@@ -5138,3 +5138,11 @@ sound.
   implementations of one rule: the render worker should serve its
   render through the Rust one, with a file layer of its own over the sync
   access handles it already opens.
+  *Fixed 2026-10-24:* the render worker calls one Rust render
+  (`renderFile`, the native `render_to_wav_with`), which serves its streams
+  and writes its output through `clausters_core::files`; the worker opens
+  the files the score reads and writes first (`scoreFiles`,
+  `scoreOutputs`) and answers each file call on them synchronously. The
+  stepwise `OfflineRender` binding and the script's drain are gone, and the
+  request's layout is one module for both of its readers
+  (`src/base/file-requests.ts`).

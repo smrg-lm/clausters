@@ -96,46 +96,35 @@ impl OscScore {
     /// first named: the string sources of its `/buffer_stitch` parts and the
     /// paths of its synth defs' `DiskIn`s.
     ///
-    /// What it is for is a page, whose engine reaches no file: an offline
-    /// render's host opens each of these before the render starts, and the
-    /// render reads them through it (`dsp::disk::PageFiles`), as a page
-    /// compiles a score's Faust defs first.
+    /// What it is for is a page, whose render opens a file only before it
+    /// starts: an offline render's host opens each of these first, and the
+    /// render reads them through `clausters_core::files`, as a page compiles
+    /// a score's Faust defs first.
     pub fn files(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
-        let mut add = |path: &str| {
-            if !out.iter().any(|p| p == path) {
-                out.push(path.to_string());
-            }
-        };
         for msg in self.events.iter().flat_map(|ev| &ev.messages) {
-            match msg.addr.as_str() {
-                "/buffer_stitch" => {
-                    for arg in msg.args.iter().skip(3) {
-                        if let OscType::String(path) = arg {
-                            add(path);
-                        }
+            if msg.addr == "/buffer_stitch" {
+                for arg in msg.args.iter().skip(3) {
+                    if let OscType::String(path) = arg {
+                        add_once(&mut out, path);
                     }
                 }
-                // A synth def's `DiskIn`s, by the path each is given.
-                "/def_send" if matches!(msg.args.first(), Some(OscType::String(f)) if f == "synth") => {
-                    for arg in &msg.args[1..] {
-                        let OscType::String(text) = arg else {
-                            continue;
-                        };
-                        let Ok(def) = serde_json::from_str::<serde_json::Value>(text) else {
-                            continue;
-                        };
-                        let ugens = def["ugens"].as_array().cloned().unwrap_or_default();
-                        for ugen in ugens {
-                            if ugen["kind"] == "DiskIn"
-                                && let Some(path) = ugen["path"].as_str()
-                            {
-                                add(path);
-                            }
-                        }
-                    }
-                }
-                _ => {}
+            }
+            for path in def_paths(msg, &["DiskIn"]) {
+                add_once(&mut out, &path);
+            }
+        }
+        out
+    }
+
+    /// **Every file the score's synths write**, once each: the paths of its
+    /// synth defs' `DiskOut`s and `PeaksOut`s, which a page's render creates
+    /// before it starts, as it opens [`files`](Self::files).
+    pub fn outputs(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for msg in self.events.iter().flat_map(|ev| &ev.messages) {
+            for path in def_paths(msg, &["DiskOut", "PeaksOut"]) {
+                add_once(&mut out, &path);
             }
         }
         out
@@ -528,6 +517,40 @@ impl OfflineRender {
     }
 }
 
+/// The paths a `/def_send synth` message's defs give the UGens of `kinds`,
+/// in order; none for another message.
+fn def_paths(msg: &OscMessage, kinds: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    if msg.addr != "/def_send"
+        || !matches!(msg.args.first(), Some(OscType::String(f)) if f == "synth")
+    {
+        return out;
+    }
+    for arg in &msg.args[1..] {
+        let OscType::String(text) = arg else {
+            continue;
+        };
+        let Ok(def) = serde_json::from_str::<serde_json::Value>(text) else {
+            continue;
+        };
+        for ugen in def["ugens"].as_array().into_iter().flatten() {
+            if kinds.iter().any(|kind| ugen["kind"] == *kind)
+                && let Some(path) = ugen["path"].as_str()
+            {
+                out.push(path.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Pushes `path` onto `out` unless it is there.
+fn add_once(out: &mut Vec<String>, path: &str) {
+    if !out.iter().any(|p| p == path) {
+        out.push(path.to_string());
+    }
+}
+
 /// Renders a score into an interleaved in-memory signal (tests, asserts).
 pub fn render_to_vec(
     score: &OscScore,
@@ -617,8 +640,9 @@ fn drive(
 /// input streams read through the files installed for a render, and its
 /// outputs (`DiskOut`, `PeaksOut`) wait in their rings for whoever drains
 /// them. Natively a thread per stream does both. Here the thread a render
-/// runs on reaches the page's files synchronously (`clausters_core::files`),
-/// so the render serves its own streams: the inputs read through that layer
+/// runs on reaches the page's files synchronously (`clausters_core::files`:
+/// an application's thread through the page's file worker, the page's render
+/// Worker through the files it opened), so the render serves its own streams: the inputs read through that layer
 /// the moment they need to, and between two runs the outputs are drained
 /// into the files a native render would write, in the same formats.
 #[cfg(all(target_arch = "wasm32", feature = "synth"))]

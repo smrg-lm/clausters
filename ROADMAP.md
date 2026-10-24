@@ -126,10 +126,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
-- ⬜ **A render's file streams are drained twice, in script and in Rust**
-  *(`clients/web/PLAN.md`, Found by use)*. The page's render worker should
-  serve its render through the Rust one the applications' build uses.
-
 - ⬜ **A peaks read lands after its working folder is gone**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. A warning when an
   editor closes while its picture is still being read; nothing is drawn

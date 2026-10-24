@@ -2,83 +2,6 @@
 /* eslint-disable */
 
 /**
- * **An offline render a run of frames at a time**, for a page that serves
- * the render's file streams between two runs (the JS face of
- * `server::render::OfflineRender`).
- *
- * [`render`] is one synchronous call that hands back every sample: right
- * for a short score, and wrong for one that reads a list of files or writes
- * one -- in a page the host is the reader of a stream (`dsp::disk_web`), and
- * nothing serves it while one call runs, and a take of an hour would be an
- * hour in memory. Driven from a Worker instead, which can read the page's
- * files synchronously: it opens the files the score reads ([`score_files`])
- * and defines the two functions they are read through
- * (`globalThis.claustersRenderFileSize`, `claustersRenderFileRead`), so the
- * render's input streams read the moment they need to, as a native render's
- * wait for their threads. [`step`](Self::step) renders a run and hands it
- * back to be written, the outputs (`DiskOut`, `PeaksOut`) are drained with
- * the calls the live engine's are, and so on until [`done`](Self::done).
- * Then [`finish`](Self::finish), and a last drain.
- */
-export class OfflineRender {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * As [`WebServer::disk_list_push`].
-     */
-    diskListPush(id: number, generation: number, at: number, list_frames: number, samples: Float32Array): boolean;
-    /**
-     * The render's disk streams, as [`WebServer::disk_poll`] gives them.
-     */
-    diskPoll(): string;
-    /**
-     * As [`WebServer::disk_pull`].
-     */
-    diskPull(id: number, max: number): Float32Array;
-    /**
-     * As [`WebServer::disk_push`].
-     */
-    diskPush(id: number, samples: Float32Array): number;
-    /**
-     * As [`WebServer::disk_release`].
-     */
-    diskRelease(id: number): void;
-    /**
-     * As [`WebServer::disk_shape`].
-     */
-    diskShape(id: number, channels: number): void;
-    /**
-     * Whether the last run reached the score's end.
-     */
-    done(): boolean;
-    /**
-     * The render's numbers, as JSON: `{frames, events, seed, peak, rms,
-     * log}`, `seed` as a decimal string (it is a 64-bit word) and `log` the
-     * lines as [`last_render_log`] gives them.
-     */
-    finish(): string;
-    /**
-     * The frames rendered so far, for a progress.
-     */
-    framesDone(): number;
-    /**
-     * Builds the render of `score` (the `--nrt` binary format) at
-     * `sample_rate` with `channels` output channels. `seed` as [`render`].
-     */
-    constructor(score: Uint8Array, sample_rate: number, channels: number, seed?: bigint | null);
-    /**
-     * **Renders about `frames` more frames** and hands them back,
-     * interleaved: whole blocks, so the run may end a block past it, and
-     * the last one is cut at the score's end.
-     */
-    step(frames: number): Float32Array;
-    /**
-     * The frames the render comes to.
-     */
-    totalFrames(): number;
-}
-
-/**
  * The live engine in pulled mode: a 1:1 JS face over
  * `clausters::embed::ClaustersHeadless` (which owns all the logic and is
  * exercised by the native `tests/headless.rs` suite). The AudioWorklet
@@ -388,37 +311,51 @@ export function linkFaust(name: string, compute: number, init: number, json: str
 export function render(score: Uint8Array, sample_rate: number, channels: number, seed?: bigint | null): Float32Array;
 
 /**
+ * **Renders `score` into the file at `path`**, or keeps nothing of its
+ * output when `path` is empty (its work is what its synths write), and
+ * answers the render's numbers as JSON: `{frames, events, seed, peak, rms,
+ * log}`, `seed` a decimal string and `log` the lines as
+ * [`last_render_log`] gives them. `progress` is told the frames done and
+ * the frames the render comes to after each run.
+ *
+ * It is the native render (`server::render::render_to_wav_with`), and like
+ * it the render reads and writes its files through `clausters_core::files`:
+ * its streams served between two runs, its output written as it goes. The
+ * Worker that calls it answers each file call synchronously, through
+ * `globalThis.claustersRenderFileCall` over the files it opened before the
+ * call ([`score_files`], [`score_outputs`] and `path`), which is what a
+ * Worker's sync access handles allow.
+ */
+export function renderFile(score: Uint8Array, sample_rate: number, channels: number, seed: bigint | null | undefined, path: string, sample_format: string, progress: Function): string;
+
+/**
  * **The files a score reads**, as a JSON array of paths: the ones its joins
- * name and the ones its `DiskIn`s stream, which a page opens before an
- * [`OfflineRender`] of it starts.
+ * name and the ones its `DiskIn`s stream, which a page opens before a
+ * [`render_file`] of it starts.
  */
 export function scoreFiles(score: Uint8Array): string;
+
+/**
+ * **The files a score's synths write**, as a JSON array of paths: its
+ * `DiskOut`s' and `PeaksOut`s', which a page creates before a
+ * [`render_file`] of it starts.
+ */
+export function scoreOutputs(score: Uint8Array): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __indirect_function_table: WebAssembly.Table;
     readonly clausters_abi_version: () => number;
-    readonly __wbg_offlinerender_free: (a: number, b: number) => void;
     readonly __wbg_webserver_free: (a: number, b: number) => void;
+    readonly __indirect_function_table: WebAssembly.Table;
     readonly faustJobs: (a: number, b: number) => [number, number, number, number];
     readonly last_render_log: () => [number, number];
     readonly linkFaust: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly offlinerender_diskListPush: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
-    readonly offlinerender_diskPoll: (a: number) => [number, number];
-    readonly offlinerender_diskPull: (a: number, b: number, c: number) => [number, number];
-    readonly offlinerender_diskPush: (a: number, b: number, c: number, d: number) => number;
-    readonly offlinerender_diskRelease: (a: number, b: number) => void;
-    readonly offlinerender_diskShape: (a: number, b: number, c: number) => void;
-    readonly offlinerender_done: (a: number) => number;
-    readonly offlinerender_finish: (a: number) => [number, number, number, number];
-    readonly offlinerender_framesDone: (a: number) => number;
-    readonly offlinerender_new: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number];
-    readonly offlinerender_step: (a: number, b: number) => [number, number, number, number];
-    readonly offlinerender_totalFrames: (a: number) => number;
     readonly render: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
+    readonly renderFile: (a: number, b: number, c: number, d: number, e: number, f: bigint, g: number, h: number, i: number, j: number, k: any) => [number, number, number, number];
     readonly scoreFiles: (a: number, b: number) => [number, number, number, number];
+    readonly scoreOutputs: (a: number, b: number) => [number, number, number, number];
     readonly webserver_block_frames: (a: number) => number;
     readonly webserver_bufferLoadBegin: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly webserver_bufferLoadCancel: (a: number, b: number) => void;

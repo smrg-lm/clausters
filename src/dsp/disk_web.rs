@@ -137,13 +137,15 @@ thread_local! {
 ///
 /// Natively an offline render's streams wait for their threads: a frame not
 /// read yet is waited for, never played as silence (`dsp::disk::wait_for`).
-/// A page's engine cannot wait inside a block, but the Worker an offline
-/// render runs in can read a file synchronously (a sync access handle), so
-/// its host hands one of these over for the render ([`install_files`]) and
-/// the input streams read through it the moment they need to: a list stream
-/// its next span, a `DiskIn` its next run. What is rendered is then what a
-/// native render renders. The outputs (`DiskOut`, `PeaksOut`) need nothing of
-/// it: the host drains them between two runs, as it does live.
+/// A page's engine cannot wait inside a block, but the thread an offline
+/// render runs on can read a file synchronously (a Worker's sync access
+/// handle, through `clausters_core::files`), so the render hands one of
+/// these over for its length ([`install_files`], `server::render`'s
+/// `page_streams`) and the input streams read through it the moment they
+/// need to: a list stream its next span, a `DiskIn` its next run. What is
+/// rendered is then what a native render renders. The outputs (`DiskOut`,
+/// `PeaksOut`) need nothing of it: the render drains them between two runs,
+/// as the host does live.
 pub trait PageFiles {
     /// The length of the file at `path`, in bytes.
     fn size(&self, path: &str) -> Result<u64, String>;

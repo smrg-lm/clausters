@@ -700,257 +700,116 @@ impl WebServer {
     }
 }
 
-/// **An offline render a run of frames at a time**, for a page that serves
-/// the render's file streams between two runs (the JS face of
-/// `server::render::OfflineRender`).
-///
-/// [`render`] is one synchronous call that hands back every sample: right
-/// for a short score, and wrong for one that reads a list of files or writes
-/// one -- in a page the host is the reader of a stream (`dsp::disk_web`), and
-/// nothing serves it while one call runs, and a take of an hour would be an
-/// hour in memory. Driven from a Worker instead, which can read the page's
-/// files synchronously: it opens the files the score reads ([`score_files`])
-/// and defines the two functions they are read through
-/// (`globalThis.claustersRenderFileSize`, `claustersRenderFileRead`), so the
-/// render's input streams read the moment they need to, as a native render's
-/// wait for their threads. [`step`](Self::step) renders a run and hands it
-/// back to be written, the outputs (`DiskOut`, `PeaksOut`) are drained with
-/// the calls the live engine's are, and so on until [`done`](Self::done).
-/// Then [`finish`](Self::finish), and a last drain.
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-pub struct OfflineRender {
-    inner: Option<clausters::server::render::OfflineRender>,
-    done: bool,
-}
-
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-impl OfflineRender {
-    /// Builds the render of `score` (the `--nrt` binary format) at
-    /// `sample_rate` with `channels` output channels. `seed` as [`render`].
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
-    pub fn new(
-        score: &[u8],
-        sample_rate: f64,
-        channels: u32,
-        seed: Option<u64>,
-    ) -> Result<OfflineRender, JsErrorish> {
-        use clausters::server::render::{OscScore, RenderConfig};
-        let score = OscScore::from_bytes(score).map_err(err)?;
-        let cfg = RenderConfig {
-            sample_rate,
-            channels: channels as usize,
-            workers: 0,
-            seed,
-            ..RenderConfig::default()
-        };
-        // The render's input streams read through the Worker's files, the
-        // moment they need to (see `dsp::disk::PageFiles`).
-        #[cfg(target_arch = "wasm32")]
-        clausters::dsp::disk::install_files(Some(std::rc::Rc::new(WorkerFiles)));
-        let inner = clausters::server::render::OfflineRender::new(&score, &cfg).map_err(err)?;
-        Ok(OfflineRender {
-            inner: Some(inner),
-            done: false,
-        })
-    }
-
-    /// **Renders about `frames` more frames** and hands them back,
-    /// interleaved: whole blocks, so the run may end a block past it, and
-    /// the last one is cut at the score's end.
-    pub fn step(&mut self, frames: f64) -> Result<Vec<f32>, JsErrorish> {
-        let Some(inner) = self.inner.as_mut() else {
-            return Err(err("the render has finished".into()));
-        };
-        let mut out = Vec::new();
-        self.done = inner
-            .step(frames.max(1.0) as u64, &mut |chunk: &[f32]| {
-                out.extend_from_slice(chunk);
-                Ok(())
-            })
-            .map_err(err)?;
-        Ok(out)
-    }
-
-    /// Whether the last run reached the score's end.
-    pub fn done(&self) -> bool {
-        self.done
-    }
-
-    /// The frames rendered so far, for a progress.
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = framesDone))]
-    pub fn frames_done(&self) -> f64 {
-        self.inner.as_ref().map_or(0.0, |r| r.frames_done() as f64)
-    }
-
-    /// The frames the render comes to.
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = totalFrames))]
-    pub fn total_frames(&self) -> f64 {
-        self.inner.as_ref().map_or(0.0, |r| r.total_frames() as f64)
-    }
-
-    /// The render's numbers, as JSON: `{frames, events, seed, peak, rms,
-    /// log}`, `seed` as a decimal string (it is a 64-bit word) and `log` the
-    /// lines as [`last_render_log`] gives them.
-    pub fn finish(&mut self) -> Result<String, JsErrorish> {
-        let Some(inner) = self.inner.take() else {
-            return Err(err("the render has finished".into()));
-        };
-        let stats = inner.finish();
-        #[cfg(target_arch = "wasm32")]
-        clausters::dsp::disk::install_files(None);
-        let stats = stats.map_err(err)?;
-        let list = |v: &[f32]| {
-            v.iter()
-                .map(|x| format!("{x}"))
-                .collect::<Vec<_>>()
-                .join(",")
-        };
-        Ok(format!(
-            r#"{{"frames":{},"events":{},"seed":"{}","peak":[{}],"rms":[{}],"log":{}}}"#,
-            stats.frames,
-            stats.events,
-            stats.seed,
-            list(&stats.peak),
-            list(&stats.rms),
-            json_string(&clausters::server::render_log::encode(&stats.log)),
-        ))
-    }
-
-    /// The render's disk streams, as [`WebServer::disk_poll`] gives them.
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskPoll))]
-    pub fn disk_poll(&mut self) -> String {
-        disk_poll_json()
-    }
-
-    /// As [`WebServer::disk_shape`].
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskShape))]
-    pub fn disk_shape(&mut self, id: u32, channels: u32) {
-        #[cfg(target_arch = "wasm32")]
-        clausters::dsp::disk::set_shape(id, channels as usize);
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = (id, channels);
-    }
-
-    /// As [`WebServer::disk_push`].
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskPush))]
-    pub fn disk_push(&mut self, id: u32, samples: &[f32]) -> u32 {
-        #[cfg(target_arch = "wasm32")]
-        {
-            clausters::dsp::disk::push(id, samples) as u32
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = (id, samples);
-            0
-        }
-    }
-
-    /// As [`WebServer::disk_list_push`].
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskListPush))]
-    pub fn disk_list_push(
-        &mut self,
-        id: u32,
-        generation: u32,
-        at: f64,
-        list_frames: u32,
-        samples: &[f32],
-    ) -> bool {
-        #[cfg(target_arch = "wasm32")]
-        {
-            clausters::dsp::disk::list_push(
-                id,
-                generation,
-                at as u64,
-                list_frames as usize,
-                samples,
-            )
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = (id, generation, at, list_frames, samples);
-            false
-        }
-    }
-
-    /// As [`WebServer::disk_pull`].
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskPull))]
-    pub fn disk_pull(&mut self, id: u32, max: u32) -> Vec<f32> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let mut out = vec![0.0f32; max as usize];
-            let got = clausters::dsp::disk::pull(id, &mut out);
-            out.truncate(got);
-            out
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = (id, max);
-            Vec::new()
-        }
-    }
-
-    /// As [`WebServer::disk_release`].
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskRelease))]
-    pub fn disk_release(&mut self, id: u32) {
-        #[cfg(target_arch = "wasm32")]
-        clausters::dsp::disk::release(id);
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = id;
-    }
-}
-
 /// **The files a score reads**, as a JSON array of paths: the ones its joins
-/// name and the ones its `DiskIn`s stream, which a page opens before an
-/// [`OfflineRender`] of it starts.
+/// name and the ones its `DiskIn`s stream, which a page opens before a
+/// [`render_file`] of it starts.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = scoreFiles))]
 pub fn score_files(score: &[u8]) -> Result<String, JsErrorish> {
     let score = clausters::server::render::OscScore::from_bytes(score).map_err(err)?;
-    let paths: Vec<String> = score.files().iter().map(|p| json_string(p)).collect();
-    Ok(format!("[{}]", paths.join(",")))
+    Ok(json_paths(&score.files()))
+}
+
+/// **The files a score's synths write**, as a JSON array of paths: its
+/// `DiskOut`s' and `PeaksOut`s', which a page creates before a
+/// [`render_file`] of it starts.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = scoreOutputs))]
+pub fn score_outputs(score: &[u8]) -> Result<String, JsErrorish> {
+    let score = clausters::server::render::OscScore::from_bytes(score).map_err(err)?;
+    Ok(json_paths(&score.outputs()))
+}
+
+fn json_paths(paths: &[String]) -> String {
+    let paths: Vec<String> = paths.iter().map(|p| json_string(p)).collect();
+    format!("[{}]", paths.join(","))
+}
+
+/// **Renders `score` into the file at `path`**, or keeps nothing of its
+/// output when `path` is empty (its work is what its synths write), and
+/// answers the render's numbers as JSON: `{frames, events, seed, peak, rms,
+/// log}`, `seed` a decimal string and `log` the lines as
+/// [`last_render_log`] gives them. `progress` is told the frames done and
+/// the frames the render comes to after each run.
+///
+/// It is the native render (`server::render::render_to_wav_with`), and like
+/// it the render reads and writes its files through `clausters_core::files`:
+/// its streams served between two runs, its output written as it goes. The
+/// Worker that calls it answers each file call synchronously, through
+/// `globalThis.claustersRenderFileCall` over the files it opened before the
+/// call ([`score_files`], [`score_outputs`] and `path`), which is what a
+/// Worker's sync access handles allow.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = renderFile)]
+#[allow(clippy::too_many_arguments)] // the JS face takes them flat
+pub fn render_file(
+    score: &[u8],
+    sample_rate: f64,
+    channels: u32,
+    seed: Option<u64>,
+    path: &str,
+    sample_format: &str,
+    progress: &js_sys::Function,
+) -> Result<String, JsErrorish> {
+    use clausters::server::render::{OscScore, RenderConfig};
+    clausters::clausters_core::files::set_bridge(worker_file);
+    let score = OscScore::from_bytes(score).map_err(err)?;
+    let cfg = RenderConfig {
+        sample_rate,
+        channels: channels as usize,
+        workers: 0,
+        seed,
+        ..RenderConfig::default()
+    };
+    let told = |done: u64, total: u64| {
+        let _ = progress.call2(
+            &JsValue::NULL,
+            &JsValue::from_f64(done as f64),
+            &JsValue::from_f64(total as f64),
+        );
+    };
+    let stats = if path.is_empty() {
+        clausters::server::render::render_discarding(&score, &cfg, told)
+    } else {
+        clausters::server::render::render_to_wav_with(&score, &cfg, path, sample_format, told)
+    }
+    .map_err(err)?;
+    let list = |v: &[f32]| {
+        v.iter()
+            .map(|x| format!("{x}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    Ok(format!(
+        r#"{{"frames":{},"events":{},"seed":"{}","peak":[{}],"rms":[{}],"log":{}}}"#,
+        stats.frames,
+        stats.events,
+        stats.seed,
+        list(&stats.peak),
+        list(&stats.rms),
+        json_string(&clausters::server::render_log::encode(&stats.log)),
+    ))
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 extern "C" {
-    /// The length of a file an offline render reads, from the Worker that
-    /// runs it (defined there as `globalThis.claustersRenderFileSize`).
-    #[wasm_bindgen(js_namespace = globalThis, js_name = claustersRenderFileSize, catch)]
-    fn render_file_size(path: &str) -> Result<f64, JsValue>;
-    /// `len` bytes of that file from `offset`, read synchronously
-    /// (`globalThis.claustersRenderFileRead`).
-    #[wasm_bindgen(js_namespace = globalThis, js_name = claustersRenderFileRead, catch)]
-    fn render_file_read(path: &str, offset: f64, len: u32) -> Result<Vec<u8>, JsValue>;
+    /// The Worker's answer to one file call of a render
+    /// (`globalThis.claustersRenderFileCall`): it reads the request at
+    /// `request`, carries it out on the files it opened, and writes the
+    /// answer back, before it returns.
+    #[wasm_bindgen(js_namespace = globalThis, js_name = claustersRenderFileCall, catch)]
+    fn render_file_call(request: u32) -> Result<(), JsValue>;
 }
 
-/// **The files of an offline render, read by the Worker it runs in**: the
-/// engine's [`PageFiles`](clausters::dsp::disk::PageFiles) over the two
-/// functions that Worker defines.
+/// **A render's file call, carried to the Worker it runs in**: the request
+/// answered synchronously, since the Worker holds the files open.
 #[cfg(target_arch = "wasm32")]
-struct WorkerFiles;
-
-#[cfg(target_arch = "wasm32")]
-impl clausters::dsp::disk::PageFiles for WorkerFiles {
-    fn size(&self, path: &str) -> Result<u64, String> {
-        render_file_size(path)
-            .map(|n| n as u64)
-            .map_err(|e| format!("{path}: {}", js_message(&e)))
-    }
-
-    fn read(&self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>, String> {
-        render_file_read(path, offset as f64, len as u32)
-            .map_err(|e| format!("{path}: {}", js_message(&e)))
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn js_message(e: &JsValue) -> String {
-    e.as_string()
-        .or_else(|| {
-            js_sys::Reflect::get(e, &JsValue::from_str("message"))
-                .ok()
-                .and_then(|m| m.as_string())
-        })
-        .unwrap_or_else(|| "the file could not be read".into())
+fn worker_file(request: &clausters::clausters_core::files::Request) -> std::io::Result<()> {
+    render_file_call(request as *const _ as u32).map_err(|e| {
+        std::io::Error::other(
+            e.as_string()
+                .unwrap_or_else(|| "the render's Worker did not answer a file call".into()),
+        )
+    })
 }
 
 /// What every open disk stream wants, as the JSON [`WebServer::disk_poll`]
