@@ -902,7 +902,7 @@ pub struct TransportDiskIn {
     kept: Vec<f32>,
     /// What of `kept` plays out: its channels, the next sample and the end
     /// -- `None` when nothing is playing out.
-    outgoing: Option<(usize, usize, usize)>,
+    outgoing: Option<Kept>,
     /// Frames of fade-in left for the list that replaced it.
     fade_in: usize,
     /// What the list it replaced plays over the fade-in, this reader's
@@ -914,10 +914,23 @@ pub struct TransportDiskIn {
     continues: Option<u64>,
 }
 
+/// **What of `kept` plays out**, as natively: its channels, the next sample
+/// and the end, whether the new reading is spliced on at its end (a loop
+/// set, moved or cleared) rather than crossfaded in, and the loop it was
+/// read through.
+#[derive(Clone, Copy)]
+struct Kept {
+    channels: usize,
+    next: usize,
+    end: usize,
+    splice: bool,
+    wrap: Option<ListWrap>,
+}
+
 /// **How many samples of the old list a replacement keeps** to play while
-/// the new one is read: 85 ms of stereo at 48 kHz, which a page's round
-/// trip to its files is well inside.
-pub const KEPT: usize = 8192;
+/// the new one is read: the native reader's count, 85 ms of stereo at
+/// 48 kHz, which a page's round trip to its files is well inside.
+pub const KEPT: usize = crate::dsp::stream::KEPT;
 
 impl TransportDiskIn {
     pub fn open(ctx: &BuildCtx) -> Self {
@@ -964,10 +977,28 @@ impl TransportDiskIn {
     }
 
     /// **Keeps the old list's next frames aside** before a replacement throws
-    /// the ring away, to play while the new one is read.
-    fn keep_outgoing(&mut self) {
+    /// the ring away, to play while the new one is read: no more than
+    /// `agree`, the frames the new reading reads alike where they are
+    /// bounded.
+    fn keep_outgoing(&mut self, frame: u64, agree: Option<u64>) {
+        // from the frame the transport plays now
+        if let Some(head) = self.head
+            && head < frame
+        {
+            let have = (self.consumer.slots() / self.channels) as u64;
+            let n = (frame - head).min(have);
+            if let Ok(chunk) = self.consumer.read_chunk(n as usize * self.channels) {
+                chunk.commit_all();
+            }
+            self.head = Some(self.advance(head, n));
+        }
         let channels = self.channels;
-        let n = self.consumer.slots().min(KEPT / channels * channels);
+        let alike = agree.map_or(usize::MAX, |f| f as usize * channels);
+        let n = self
+            .consumer
+            .slots()
+            .min(KEPT / channels * channels)
+            .min(alike);
         if n < channels {
             return;
         }
@@ -976,7 +1007,13 @@ impl TransportDiskIn {
             self.kept[..a.len()].copy_from_slice(a);
             self.kept[a.len()..a.len() + b.len()].copy_from_slice(b);
         }
-        self.outgoing = Some((channels, 0, n));
+        self.outgoing = Some(Kept {
+            channels,
+            next: 0,
+            end: n,
+            splice: false,
+            wrap: self.wrap,
+        });
     }
 
     /// The next sample of the list a replacement took over from: it plays
@@ -984,13 +1021,41 @@ impl TransportDiskIn {
     /// crossfaded in over the old one's next frames.
     fn take_outgoing(&mut self, frame: u64, channel: usize) -> f32 {
         use crate::dsp::stream::CROSS;
-        let Some((channels, mut next, end)) = self.outgoing else {
+        let Some(Kept {
+            channels,
+            mut next,
+            end,
+            splice,
+            ..
+        }) = self.outgoing
+        else {
             return 0.0;
         };
+        if splice {
+            // the new reading goes on from where the kept frames end, as
+            // natively: in from silence where it is not in yet
+            if next + channels > end {
+                self.outgoing = None;
+                let seamless = self.head == Some(frame) && self.consumer.slots() >= self.channels;
+                self.faded = [0.0; CROSS];
+                self.fade_in = if seamless { 0 } else { CROSS };
+                return 0.0;
+            }
+            let value = self.kept[next + channel.min(channels - 1)];
+            if let Some(kept) = self.outgoing.as_mut() {
+                kept.next += channels;
+            }
+            return value;
+        }
         // The new list has landed once it holds the frame the transport is at
         // and the fade's length past it: what played meanwhile is skipped.
         let behind = self.head.map_or(0, |h| frame.saturating_sub(h)) as usize;
-        let landed = self.consumer.slots() / self.channels >= behind + CROSS;
+        // the old list's frames left, which the new one may wait on, and the
+        // lead it lands with, as natively
+        let left = (end - next) / channels;
+        let holds = self.consumer.slots() / self.channels;
+        let lead = crate::dsp::stream::LAND_LEAD;
+        let landed = holds >= behind + CROSS + lead || (holds >= behind + CROSS && left <= CROSS);
         if landed {
             let pick = channel.min(channels - 1);
             self.faded = [0.0; CROSS];
@@ -1006,13 +1071,17 @@ impl TransportDiskIn {
             return 0.0;
         }
         if next + channels > end {
-            // the new list never came while the old one played: a silence
+            // the new list did not come while the old one played: a silence,
+            // and the new one fades in from it, as natively
             self.outgoing = None;
-            self.fade_in = 0;
+            self.faded = [0.0; CROSS];
+            self.fade_in = CROSS;
             return 0.0;
         }
         let value = self.kept[next + channel.min(channels - 1)];
-        self.outgoing = Some((channels, next + channels, end));
+        if let Some(kept) = self.outgoing.as_mut() {
+            kept.next = next + channels;
+        }
         value
     }
 
@@ -1194,6 +1263,11 @@ impl TransportDiskIn {
         self.standing = if rolling { None } else { place(0).1 };
         let address = Arc::as_ptr(buf) as usize;
         if address != self.sent || looping != self.looping || wrap != self.wrap {
+            // **Only the loop changed**: the same list read another way, which
+            // is spliced on where the kept frames end, as natively.
+            let rewrapped = address == self.sent && looping == self.looping;
+            let frame0 = place(0).0.unwrap_or(0);
+            let mut from = None;
             // A list that was playing plays on, out of what is kept of it,
             // while the new one is read.
             if rolling
@@ -1202,14 +1276,35 @@ impl TransportDiskIn {
                 && !self.fresh
                 && self.outgoing.is_none()
             {
-                self.keep_outgoing();
+                // the old reading is right only as far as the new one reads
+                // the same frames, as natively
+                let agree = ListWrap::agree(self.wrap, wrap, frame0);
+                self.keep_outgoing(frame0, agree);
+                if rewrapped && let Some(kept) = self.outgoing.as_mut() {
+                    kept.splice = true;
+                    let frames = (kept.end / kept.channels) as u64;
+                    from = Some(ListWrap::advance(wrap, frame0, frames));
+                }
+            } else if let Some(kept) = self.outgoing.as_mut() {
+                // a change before the last one came, as natively
+                if rewrapped && kept.splice {
+                    let mut left = (kept.end - kept.next) / kept.channels;
+                    if let Some(agree) = ListWrap::agree(kept.wrap, wrap, frame0) {
+                        left = left.min(agree as usize);
+                    }
+                    kept.end = kept.next + left * kept.channels;
+                    from = Some(ListWrap::advance(wrap, frame0, left as u64));
+                } else {
+                    kept.splice = false;
+                }
             }
             self.looping = looping;
             self.wrap = wrap;
             self.sent = address;
             self.channels = buf.channels().max(1);
             self.frames = frames;
-            self.refill(Some(Arc::clone(buf)), place(0).1.unwrap_or(0));
+            let at = from.unwrap_or_else(|| place(0).1.unwrap_or(0));
+            self.refill(Some(Arc::clone(buf)), at);
             if !self.serve && self.outgoing.is_none() {
                 output.fill(0.0);
                 return;

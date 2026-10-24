@@ -128,15 +128,28 @@ struct Request {
     wrap: Option<ListWrap>,
 }
 
-/// **The list a replacement took over from**, still in the ring ahead of the
-/// new one: it plays on until the refill lands, and the new one is then
-/// crossfaded in over it.
+/// How many samples of the old reading a replacement keeps.
+pub const KEPT: usize = crate::dsp::LIST_KEPT;
+
+/// How far ahead a replacing reading holds before it takes over.
+pub const LAND_LEAD: usize = crate::dsp::LIST_LAND_LEAD;
+
+/// **The reading a replacement took over from**, its next frames kept aside
+/// (`TransportDiskIn::kept`): it plays on from there until the new reading
+/// lands, which is then crossfaded in over it.
 struct Outgoing {
-    /// Its channels, which the ring's frames are interleaved by.
+    /// Its channels, which the kept frames are interleaved by.
     channels: usize,
-    /// Its samples left in the ring, once the refill has landed and the
-    /// boundary is known; unknown before.
-    left: Option<usize>,
+    /// The next sample of it to play, and the end of what was kept.
+    next: usize,
+    end: usize,
+    /// **Whether the new reading goes on from where this one ends**, rather
+    /// than replacing it: a loop set, moved or cleared reads what the kept
+    /// frames read up to where the two part, so the new reading is asked for
+    /// from the end of the kept frames and spliced on there, with no fade.
+    splice: bool,
+    /// The loop the kept frames were read through.
+    wrap: Option<ListWrap>,
 }
 
 /// What the two threads share besides the rings.
@@ -185,6 +198,11 @@ pub struct TransportDiskIn {
     offline: bool,
     /// The list a replacement while playing took over from, playing out.
     outgoing: Option<Outgoing>,
+    /// **The old reading's next frames**, kept when a replacement threw the
+    /// ring away while it played: allocated once, with the reader. The ring
+    /// then holds one reading only, so a second change before the first one
+    /// lands never plays what the first one had begun to read.
+    kept: Vec<f32>,
     /// Frames of fade-in left for the list that replaced it.
     fade_in: usize,
     /// **What the list it replaced plays over the fade-in**, this reader's
@@ -262,6 +280,7 @@ impl TransportDiskIn {
             frames: 0,
             offline: ctx.offline,
             outgoing: None,
+            kept: vec![0.0; KEPT],
             fade_in: 0,
             faded: [0.0; CROSS],
             fed: None,
@@ -392,15 +411,10 @@ impl TransportDiskIn {
         // Everything before the boundary was pushed before it was published,
         // so it is all in the ring.
         let stale = stale.min(self.consumer.slots());
-        if let Some(outgoing) = self.outgoing.as_mut() {
-            // The list it replaced fades out of what is left of it first.
-            outgoing.left = Some(stale);
-        } else {
-            if let Ok(chunk) = self.consumer.read_chunk(stale) {
-                chunk.commit_all();
-            }
-            self.popped += stale as u64;
+        if let Ok(chunk) = self.consumer.read_chunk(stale) {
+            chunk.commit_all();
         }
+        self.popped += stale as u64;
         self.pending = None;
         self.head = Some(frame);
         // The thread may be parked on a ring that was full of what was just
@@ -446,82 +460,120 @@ impl TransportDiskIn {
             && (self.consumer.slots() / self.channels) as u64 >= ahead.min(ring)
     }
 
-    /// **The next sample of the list a replacement took over from**: it
-    /// plays on while the new one is read, and fades out once the new one has
-    /// landed; what is left of it then goes, and the new one fades in.
+    /// **The next sample of the reading a replacement took over from**: it
+    /// plays on from what was kept while the new one is read, and once the
+    /// new one has landed -- its refill in, holding the frame the transport is
+    /// at, the fade's length and [`LAND_LEAD`] past it, or what it can when
+    /// the kept frames are running out -- the new one is crossfaded in over
+    /// it. What played meanwhile is skipped in the new one.
     fn take_outgoing(&mut self, frame: u64, channel: usize) -> f32 {
-        // The new list has landed once its refill is in and it holds the
-        // frame the transport is at and the fade's length past it: what
-        // played meanwhile is skipped.
         let behind = self.head.map_or(0, |h| frame.saturating_sub(h)) as usize;
-        let slots = self.consumer.slots();
-        let Some(outgoing) = self.outgoing.as_mut() else {
+        let Some(outgoing) = self.outgoing.as_ref() else {
             return 0.0;
         };
         let channels = outgoing.channels;
-        let landed = outgoing
-            .left
-            .is_some_and(|left| slots.saturating_sub(left) / self.channels >= behind + CROSS);
-        // Until the boundary is known, never read so near the ring's end that
-        // what is read could be the new list's first frames.
-        let readable = match outgoing.left {
-            Some(left) => left,
-            None => self.consumer.slots().saturating_sub(CROSS * channels),
+        // the old reading's frames left, which the new one may wait on
+        let left = (outgoing.end - outgoing.next) / channels;
+        let holds = self.consumer.slots() / self.channels;
+        let landed = self.pending.is_none()
+            && self.head.is_some()
+            && (holds >= behind + CROSS + LAND_LEAD || (holds >= behind + CROSS && left <= CROSS));
+        let Some(outgoing) = self.outgoing.as_mut() else {
+            return 0.0;
         };
-        // Landed, the new list takes over from this frame, crossfaded over
-        // what the old one plays next.
-        if landed || readable < channels {
+        if outgoing.splice {
+            // The new reading begins where the kept frames end: they play to
+            // their end, and it goes on from the next frame as one reading --
+            // or, where it is not in yet, comes in from silence once it is.
+            if outgoing.next + channels > outgoing.end {
+                self.outgoing = None;
+                let seamless = self.pending.is_none()
+                    && self.head == Some(frame)
+                    && self.consumer.slots() >= self.channels;
+                self.faded = [0.0; CROSS];
+                self.fade_in = if seamless { 0 } else { CROSS };
+                return 0.0;
+            }
+        } else if landed || outgoing.next + channels > outgoing.end {
             self.end_outgoing(channel);
             return 0.0;
         }
-        let mut value = 0.0;
-        for c in 0..channels {
-            let v = self.consumer.pop().unwrap_or(0.0);
-            if c == channel.min(channels - 1) {
-                value = v;
-            }
-        }
-        self.popped += channels as u64;
-        if let Some(left) = self.outgoing.as_mut().and_then(|o| o.left.as_mut()) {
-            *left -= channels;
-        }
+        let value = self.kept[outgoing.next + channel.min(channels - 1)];
+        outgoing.next += channels;
         value
     }
 
-    /// **The outgoing list is done**: the frames of it the fade-in plays over
-    /// are kept (`channel`'s, as many as are left, up to the fade's length),
-    /// what is left of it goes, and the list that replaced it is crossfaded
-    /// in from here.
+    /// **The outgoing reading is done**: the frames of it the fade-in plays
+    /// over are taken from what was kept (`channel`'s, up to the fade's
+    /// length, silence past what is left), and the reading that replaced it
+    /// is crossfaded in from here -- in from silence where the kept frames
+    /// ran out before it landed.
     fn end_outgoing(&mut self, channel: usize) {
         self.faded = [0.0; CROSS];
         if let Some(Outgoing {
             channels,
-            left: Some(mut left),
+            mut next,
+            end,
+            ..
         }) = self.outgoing.take()
         {
             let pick = channel.min(channels - 1);
             for slot in self.faded.iter_mut() {
-                if left < channels {
+                if next + channels > end {
                     break;
                 }
-                for c in 0..channels {
-                    let v = self.consumer.pop().unwrap_or(0.0);
-                    if c == pick {
-                        *slot = v;
-                    }
-                }
-                left -= channels;
-                self.popped += channels as u64;
+                *slot = self.kept[next + pick];
+                next += channels;
             }
-            if let Ok(chunk) = self.consumer.read_chunk(left.min(self.consumer.slots())) {
-                chunk.commit_all();
-            }
-            self.popped += left as u64;
-            self.fade_in = CROSS;
-        } else {
-            // the refill never landed while it played: a silence, as before
-            self.fade_in = 0;
         }
+        self.fade_in = CROSS;
+    }
+
+    /// **Keeps the reading in hand aside and throws the ring away**: its next
+    /// frames from `frame` (the one the transport plays now), as many as
+    /// [`KEPT`] holds and no more than `agree` (the frames the new reading
+    /// reads alike, where they are bounded), to play while the new reading is
+    /// read into an empty ring. What the I/O thread pushes of the old reading
+    /// after this is before the new one's boundary, and goes when it lands.
+    fn keep_outgoing(&mut self, frame: u64, agree: Option<u64>) {
+        if let Some(head) = self.head
+            && head < frame
+        {
+            self.skip(frame - head);
+        }
+        let channels = self.channels.max(1);
+        let alike = agree.map_or(usize::MAX, |f| f as usize * channels);
+        let n = self
+            .consumer
+            .slots()
+            .min(KEPT / channels * channels)
+            .min(alike);
+        if n >= channels
+            && let Ok(chunk) = self.consumer.read_chunk(n)
+        {
+            let (a, b) = chunk.as_slices();
+            self.kept[..a.len()].copy_from_slice(a);
+            self.kept[a.len()..a.len() + b.len()].copy_from_slice(b);
+            chunk.commit_all();
+            self.popped += n as u64;
+            self.outgoing = Some(Outgoing {
+                channels,
+                next: 0,
+                end: n,
+                splice: false,
+                wrap: self.wrap,
+            });
+        }
+        self.discard();
+    }
+
+    /// Throws away everything the ring holds.
+    fn discard(&mut self) {
+        let n = self.consumer.slots();
+        if let Ok(chunk) = self.consumer.read_chunk(n) {
+            chunk.commit_all();
+        }
+        self.popped += n as u64;
     }
 
     /// The sample of `channel` at list frame `frame`, or silence -- counted
@@ -674,11 +726,51 @@ impl TransportDiskIn {
                 && self.head.is_some()
                 && self.pending.is_none()
                 && self.outgoing.is_none();
-            let was = self.channels;
+            // The reading in hand is kept aside and the ring emptied, so the
+            // ring holds one reading at a time; one already kept (a change
+            // before the last one landed) plays on, and what the ring holds of
+            // the reading that did not land goes.
+            // **Only the loop changed**: the same list, read another way. What
+            // is kept of the old reading is the take up to where the two
+            // readings part, so the new one is read from there and spliced on.
+            let rewrapped = address == self.sent && looping == self.looping && generation.is_none();
+            let mut from = None;
+            if playing {
+                let frame = place(0).0.unwrap_or(0);
+                // the old reading is right only as far as the new one reads
+                // the same frames
+                let agree = ListWrap::agree(self.wrap, wrap, frame);
+                self.keep_outgoing(frame, agree);
+                if rewrapped && let Some(outgoing) = self.outgoing.as_mut() {
+                    outgoing.splice = true;
+                    let kept = (outgoing.end / outgoing.channels) as u64;
+                    from = Some(ListWrap::advance(wrap, frame, kept));
+                }
+            } else if !self.offline && self.outgoing.is_some() {
+                // A change before the last one landed: the kept frames play
+                // on, and what the ring holds of the reading that did not land
+                // goes. Spliced, they are the take as far as they agree with
+                // this reading too, which goes on from there.
+                self.discard();
+                let frame = place(0).0.unwrap_or(0);
+                if let Some(outgoing) = self.outgoing.as_mut() {
+                    if rewrapped && outgoing.splice {
+                        let channels = outgoing.channels;
+                        let mut left = (outgoing.end - outgoing.next) / channels;
+                        if let Some(agree) = ListWrap::agree(outgoing.wrap, wrap, frame) {
+                            left = left.min(agree as usize);
+                        }
+                        outgoing.end = outgoing.next + left * channels;
+                        from = Some(ListWrap::advance(wrap, frame, left as u64));
+                    } else {
+                        outgoing.splice = false;
+                    }
+                }
+            }
             let previous_wrap = (self.looping, self.wrap);
             self.looping = looping;
             self.wrap = wrap;
-            let frame = place(0).1.unwrap_or(0);
+            let frame = from.unwrap_or_else(|| place(0).1.unwrap_or(0));
             // The shape first: offline the refill lands inside the call.
             let (channels, previous) = (buf.channels().max(1), (self.channels, self.frames));
             self.channels = channels;
@@ -688,12 +780,6 @@ impl TransportDiskIn {
                 self.sent = address;
                 if let (Some(link), Some(g)) = (self.fed.as_mut(), generation) {
                     link.generation = g;
-                }
-                if playing {
-                    self.outgoing = Some(Outgoing {
-                        channels: was,
-                        left: None,
-                    });
                 }
             } else {
                 (self.channels, self.frames) = previous;

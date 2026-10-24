@@ -110,6 +110,8 @@ pub mod stream {
     pub const RING_SAMPLES: usize = 1 << 17;
 
     pub use super::LIST_CROSS as CROSS;
+    pub use super::LIST_KEPT as KEPT;
+    pub use super::LIST_LAND_LEAD as LAND_LEAD;
 }
 
 /// **How many frames a list replaced while it plays fades out over, and the
@@ -117,6 +119,19 @@ pub mod stream {
 /// milliseconds at 48 kHz, which a cut heard while looping reads as the cut
 /// and not as a click.
 pub const LIST_CROSS: usize = 128;
+
+/// **How many samples of the old reading a list replaced while it plays
+/// keeps** to play while the new one is read (`TransportDiskIn`, natively
+/// and in a page): 340 ms of stereo at 48 kHz, which a refill and the lead
+/// it lands with are well inside.
+pub const LIST_KEPT: usize = 32768;
+
+/// **How far past the frame it takes over at a replacing reading holds
+/// before it takes over**, in frames: 43 ms at 48 kHz, more than a device's
+/// callback plays in one burst, so the reader that took over is not starved
+/// before its I/O has run again. Where the kept frames run out sooner, it
+/// takes over with what it holds.
+pub const LIST_LAND_LEAD: usize = 2048;
 
 /// **How much of a list a cued reader holds before it says it is ready**
 /// (`/transport_cue`), in frames: 85 ms at 48 kHz, the lead its refills
@@ -165,6 +180,20 @@ impl ListWrap {
     /// when no wrap is ahead of it.
     pub fn before(wrap: Option<Self>, frame: u64) -> Option<u64> {
         wrap.filter(|w| frame < w.to).map(|w| w.to - frame)
+    }
+
+    /// **How many frames from `frame` a reading through `old` and one
+    /// through `new` read alike**: up to the first of their wraps ahead, past
+    /// which one goes back and the other goes on. `None` when they wrap alike
+    /// or neither wraps ahead: the two read the same frames as far as they go.
+    pub fn agree(old: Option<Self>, new: Option<Self>, frame: u64) -> Option<u64> {
+        if old == new {
+            return None;
+        }
+        match (Self::before(old, frame), Self::before(new, frame)) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 }
 #[cfg(feature = "synth")]

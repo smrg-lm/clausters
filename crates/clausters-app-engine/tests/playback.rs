@@ -653,8 +653,9 @@ fn moved_loop_steps(fed: bool) -> (Vec<usize>, Vec<(usize, u64, u64)>) {
     let steps = (600..heard.len())
         .filter(|&i| (heard[i] - heard[i - 1]).abs() > 0.005)
         .collect();
+    // a transport held by its cue stands still, which is not a jump
     let jumps = (1..at.len())
-        .filter(|&b| at[b] != at[b - 1] + BLOCK_SIZE as u64)
+        .filter(|&b| at[b] != at[b - 1] && at[b] != at[b - 1] + BLOCK_SIZE as u64)
         .map(|b| (b, at[b - 1], at[b]))
         .collect();
     let _ = std::fs::remove_file(&path);
@@ -666,10 +667,10 @@ fn a_loop_moved_while_it_plays_is_crossfaded() {
     for fed in [true, false] {
         let (steps, jumps) = moved_loop_steps(fed);
         // the position never moves but where the loop comes round, once
-        assert_eq!(jumps.len(), 2, "fed {fed}: {jumps:?}");
-        let wrap = jumps[1].0;
+        assert_eq!(jumps.len(), 1, "fed {fed}: {jumps:?}");
+        let wrap = jumps[0].0;
         assert!(
-            jumps[1].2 < jumps[1].1,
+            jumps[0].2 < jumps[0].1,
             "fed {fed}: the loop came round: {jumps:?}"
         );
         // and the output steps only there
@@ -679,5 +680,119 @@ fn a_loop_moved_while_it_plays_is_crossfaded() {
                 .all(|&i| i / BLOCK_SIZE + 1 == wrap || i / BLOCK_SIZE == wrap),
             "fed {fed}: steps at {steps:?}, the loop came round in block {wrap}"
         );
+    }
+}
+
+/// **The loop switch turned while it plays changes nothing that is heard**:
+/// each turn is a reading replaced while it plays, and a reading that
+/// agrees with the one before it is crossfaded into itself. The engine runs
+/// in bursts of sixteen blocks, as a device's callback runs it, and the
+/// switch turns every one to two bursts; every block the transport plays
+/// straight through is the take's frames at its position, sample for
+/// sample. A loop set, moved or cleared is the same reading up to where the
+/// two part, and the new one is spliced on there. Over the application's fed
+/// stream and over the reader's own thread alike.
+#[test]
+fn the_loop_switch_turned_while_it_plays_is_not_heard() {
+    use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
+    for fed in [true, false] {
+        let (path, values) = take(if fed { "switch-fed" } else { "switch-own" });
+        let (mut engine, handle) = engine_pair(SR as f32, 2);
+        let app = Arc::new(Mutex::new(AppEngine::over(handle)));
+        let reading = app.lock().unwrap().reading();
+        let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+        let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
+        let feed = TakeFeed::start(1);
+        if fed {
+            let part = clausters_document::clipboard::SegmentPart {
+                path: path.clone(),
+                start: 0,
+                frames: FRAMES as u64,
+                fade_in: 0,
+                fade_out: 0,
+                fade_in_shape: Default::default(),
+                fade_out_shape: Default::default(),
+                channels: None,
+                source_channels: 1,
+                source_frames: FRAMES as u64,
+                source_rate: SR,
+            };
+            let list = ReadList::of(&[part], 1, SR, &mut Headers::default()).unwrap();
+            feed.set(Arc::new(list));
+            let buffers = AppEngine::alloc_take(1, &mut ids).unwrap();
+            app.lock()
+                .unwrap()
+                .install_take(&feed, FRAMES as u64, &buffers);
+            playback
+                .sync_streams(1, buffers, FRAMES as u64, SR, SR, &mut ids)
+                .unwrap();
+        } else {
+            let bufnum = ids.alloc(Space::Buffers, 1).unwrap() as i32;
+            app.lock().unwrap().push(vec![Cmd::SetBuffer {
+                index: bufnum as usize,
+                buffer: Some(join(&path)),
+            }]);
+            playback
+                .sync(1, bufnum, 1, FRAMES as u64, SR, SR, &mut ids)
+                .unwrap();
+        }
+        let transport = playback.transport().unwrap_or(0) as usize;
+        let looped = Pass::Loop {
+            from: 1000,
+            to: 21000,
+        };
+        playback.play(1, 1000, looped);
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        let (mut on, mut next, mut sounding) = (true, 40usize, false);
+        let (mut checked, mut wrong) = (0, Vec::new());
+        for b in 0..3000usize {
+            // Not within two bursts of the loop's end: there a reading the
+            // switch asks for cannot be read before the frames where the two
+            // part are played (the root plan's "A loop switched at its end").
+            let at = reading.transport_position(transport) as usize;
+            let near_end = (21_000 - 2 * 16 * BLOCK_SIZE..21_000).contains(&at);
+            if b == next && near_end {
+                next += 1;
+            }
+            if b == next {
+                on = !on;
+                playback.set_pass(if on {
+                    looped
+                } else {
+                    Pass::Until {
+                        end: FRAMES as u64,
+                        back: 1000,
+                    }
+                });
+                next = b + 16 + (b * 7919) % 17;
+            }
+            let before = reading.transport_position(transport) as usize;
+            engine.process_block(&mut out);
+            app.lock().unwrap().pump();
+            let after = reading.transport_position(transport) as usize;
+            let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
+            sounding |= b > 0 && left[0] != 0.0;
+            // a block played straight through, past the play's ramp and
+            // short of the end's
+            if sounding && b > 20 && after == before + BLOCK_SIZE && after <= FRAMES - 600 {
+                checked += 1;
+                if let Some(i) =
+                    (0..BLOCK_SIZE).find(|&i| (left[i] - values[before + i]).abs() > 1e-6)
+                {
+                    wrong.push((b, i, left[i], values[before + i]));
+                }
+            }
+            if b % 16 == 15 {
+                std::thread::sleep(Duration::from_micros(1_333 * 16));
+            }
+        }
+        assert!(checked > 300, "fed {fed}: only {checked} blocks checked");
+        assert!(
+            wrong.is_empty(),
+            "fed {fed}: {} of {checked} blocks wrong: {:?}",
+            wrong.len(),
+            &wrong[..wrong.len().min(8)]
+        );
+        let _ = std::fs::remove_file(&path);
     }
 }
