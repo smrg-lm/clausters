@@ -5,7 +5,9 @@
 # %% Setup: one server, one host
 import math
 
-from clausters import Session
+import pathlib
+
+from clausters import Session, SoundFile
 from clausters.defs import Buffer
 from clausters.gui import edit
 from clausters.multitrack import Content, Multitrack
@@ -87,10 +89,12 @@ print(m.selected)
 m.unselect()
 
 # %% AUDIO 1: a take, its transport
-take = Buffer.from_samples([math.exp(-1.5 * i / frames) * 0.5
-                            * math.sin(2 * math.pi * 880.0 * i / rate)
-                            for i in range(frames)], 1, rate, server=server)
-server.sync()
+out = pathlib.Path(__file__).resolve().parents[1] / "out"
+out.mkdir(exist_ok=True)
+take = SoundFile.write(out / "span_selected.wav",
+                       [math.exp(-1.5 * i / frames) * 0.5
+                        * math.sin(2 * math.pi * 880.0 * i / rate)
+                        for i in range(frames)], 1, rate, sample_format="float")
 e = edit(take, title="take")
 at = e.transport
 at.play()                 # the whole take
@@ -106,7 +110,7 @@ at.loop()
 at.play()                 # repeats 0.5..1.0
 at.stop()
 at.unloop()
-e.select(Segment(e.buffer, int(1.2 * rate), 0.4))
+e.select(Segment(e.file, int(1.2 * rate), 0.4))
 print(at.span)            # (1.2, 1.6)
 
 # %% AUDIO 4: drag a range by hand, then run this

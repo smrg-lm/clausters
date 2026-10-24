@@ -26,8 +26,8 @@ designed around it. See [`form`](form.md).
 
 ## What an editor is
 
-`gui.Editor` edits **one structure** — a buffer's samples, a break-point curve, a
-timeline of events — and it knows nothing about any arrangement. That is the whole
+`gui.Editor` edits **one structure**, a break-point curve or a
+timeline of events, and it knows nothing about any arrangement. That is the whole
 of it, and it is deliberately the plain case: editing a curve is what an editor is
 for.
 
@@ -143,7 +143,7 @@ why the curve row below names three unrelated types:
 
 | `edit(x)` where x is | opens | over | its vocabulary |
 |---|---|---|---|
-| a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
+| a `SoundFile` | `AudioEditor`, the handler of the GUI host's audio editor | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
@@ -153,63 +153,81 @@ why the curve row below names three unrelated types:
 
 **A roll can paint what is played**: `edit(sequence, { midiIn: true })` asks the host to open its MIDI input and write each incoming note into the roll — on the step cursor while the transport is stopped, at the play line while it plays, held as long as the key. Each is an edit of the sequence like a note a hand drew, so it is in the history and in every other window over it. A native host opens a port named `clausters-gui` to route a keyboard into; the host in a page listens to every MIDI input the browser has, and the browser asks the person's permission for that the first time a roll that listens is opened.
 
-**A `SoundFile` or a `Buffer` opens in the audio editor**, `editing.AudioEditor`.
-It writes nothing it was handed while it edits. The take is **a list of spans of files**, and
-every edit leaves a new list: a cut takes a span out, a paste of a copy puts its spans in,
-and an edit that makes new samples -- a pencil stroke, a pasted block, a mix
-(Ctrl+Shift+V), a gain curve applied, Edit -> Reverse -- **renders** them offline into a
-file of the editor's working folder, which the list then names: a stroke is a file the
-size of the stroke, spliced over the frames it was drawn on. An undo is the list before,
+**A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
+opens it in a window of its own, on an engine of the application's own, and every gesture,
+render and undo runs in the host's process. What `edit` answers is its **handler**,
+`editing.AudioEditor`: each of its members is a call to the application (`host.openApp`,
+`host.callApp`), so what it reads is a promise, asked again each time, where the Python
+client's is a property. A server buffer is not edited, since it is loaded on a server the
+application does not reach: `buffer.write(path)` and edit the file. **In a page the host
+holds no audio editor yet**: its engine in the worklet and the application in the host's wasm
+are the next step, and until then `edit(file)` in a tab rejects saying so; under node, with a
+native host, it opens. It writes nothing it was handed while it edits. The take is **a list
+of spans of files**, and every edit leaves a new list: a cut takes a span out, a paste of a
+copy puts its spans in, and an edit that makes new samples (a pencil stroke, a pasted block,
+a mix with Ctrl+Shift+V, a gain curve applied, Edit -> Reverse) **renders** them offline into
+a file of the application's working folder, which the list then names: a stroke is a file
+the size of the stroke, spliced over the frames it was drawn on. An undo is the list before,
 so it costs the list and not the samples, and a take of an hour cuts and pastes as fast as
-one of a second. The files a history or the clipboard can still reach are kept, and
-deleted when nothing can. **A file changed on disk is said**: when the window comes back, the files the take reads are looked at, and one another program changed or removed since the editor read it is said on the window's status bar; the editor's own save is no change. The working folder is a folder of the user's cache under node, on disk (
-`clausters/work` under the platform's cache folder, or `$CLAUSTERS_CACHE_DIR`, the same
-one the Python client uses), and in a tab a folder of the page's own storage, unless
-`workspace` names one, and goes with the editor; one an editor left when its process or
-its tab ended first goes the next time any editor opens. A render that fails takes away what it had written there. What it
-opens is a file -- read where it is -- or a server buffer, which the open writes to the
-working folder first. A compressed file (MP3, FLAC) is decoded into a buffer by `edit` and
-opened through it; `readsInPlace(file)` says which. `await editor.save()` renders the
-edited take over what it was opened from -- the file, moved aside first while the list
-reads it and the render moved where it was, or the buffer, read back whole at the take's
-length -- and Ctrl+S in the window does the same. `editor.save({ path })` renders it as
-another file and `editor.save({ buffer })` into another buffer (`buffer: true` for a new
-one), which a later save then writes over. `await edit(SoundFile.empty(channels, frames,
-rate))` is silence not written anywhere yet -- its first save needs a path, which Ctrl+S
-asks for in a **Save as...** form and `editor.save()` refuses without one. `editor.file` is
-the `SoundFile` the take is now. The window's File menu has **New file...** (a form for the
-channels, the length and the rate, which adds the new file to this editor), **Open
-file...** (the host's file chooser, with Ctrl/Shift to select several files) and **Save
-as...**. `editor.buffer` is the join the
-edited take sounds through, to play or read, and `editor.parts` the spans of files it is made of. **It plays what it edits** on a transport of its own (another window's play moves nothing in it), and `editor.transport` is that `Transport` in the take's seconds: the space bar over the window plays the marked range, or from the position cursor, and `L` loops it -- the same `await transport.play()`, `span` and `loop(start, end)` from a page, each side reading what the other set. **A range swept while it loops is the loop's new span**: the loop follows the hand as it draws, and the head goes to the start of the range when the sweep is let go. A pass that is not looping keeps the end it was played with, and the next play reads the range. What the hand marked is samples, and `await editor.selected()` answers them as a `Segment` over `editor.buffer` (its `start` a frame, its `duration` seconds); `await editor.select(segment)` marks one and `await editor.unselect()` marks nothing. In an audio editor the samples marked and the transport's `span` are one range, so setting either sets both.
+one of a second. The files a history or the clipboard can still reach are kept, and deleted
+when nothing can. **A file changed on disk is said**: when the window comes back, the files
+the take reads are looked at, and one another program changed or removed since the editor
+read it is said on the window's status bar; the editor's own save is no change. The working
+folder is the host's, a folder of the user's cache on disk (`clausters/work` under the
+platform's cache folder, or `$CLAUSTERS_CACHE_DIR`), and goes with the window; one a host
+left when its process was killed goes the next time any editor opens. A render that fails
+takes away what it had written there. What it opens is a WAV, RF64 or W64 file, read where it
+is; a compressed file (MP3, FLAC) is not opened yet, and `readsInPlace(file)` says which.
+`await editor.save()` renders the edited take over the file it was opened from (moved aside
+first while the list reads it, and the render moved where it was), resolving once the file is
+whole, and Ctrl+S in the window does the same. `await editor.save({ path })` renders it as
+another file, which a later save then writes over. `await edit(SoundFile.empty(channels,
+frames, rate))` is silence not written anywhere yet: its first save needs a path, which
+Ctrl+S asks for in a **Save as...** form and `editor.save()` refuses without one.
+`await editor.file()` is the `SoundFile` the take is now. The window's File menu has **New
+file...** (a form for the channels, the length and the rate, which adds the new file to this
+editor), **Open file...** (the host's file chooser, with Ctrl/Shift to select several files)
+and **Save as...**. `await editor.parts()` is the spans of files the take is made of. **It
+plays what it edits** on the application's engine, on a transport of its own (another
+window's play moves nothing in it), and `editor.transport` is that transport in the take's
+seconds, with the verbs and the span a server's `Transport` has: the space bar over the
+window plays the marked range, or from the position cursor, and `L` loops it, the same
+`await transport.play()`, `setSpan` and `loop(start, end)` from a page, each side reading
+what the other set. **A range swept while it loops is the loop's new span**: the loop
+follows the hand as it draws, and the head goes to the start of the range when the sweep is
+let go. A pass that is not looping keeps the end it was played with, and the next play reads
+the range. What the hand marked is samples, and `await editor.selected()` answers them as a
+`Segment` over the file (its `start` a frame, its `duration` seconds);
+`await editor.select(segment)` marks one and `await editor.unselect()` marks nothing. In an
+audio editor the samples marked and the transport's span are one range, so setting either
+sets both.
 
 An editor holds several files, listed in an independent widget on the left.
-`editor.files` lists the open SoundFiles (`null` for a buffer-only entry),
-and `editor.file` is the focused one. `await editor.openFile(path)` or
+`await editor.files()` lists the open SoundFiles, and `await editor.file()` is
+the focused one. `await editor.openFile(path)` or
 `await editor.openFile([pathA, pathB])` adds files to the same editor;
 `await editor.newFile(channels, frames, rate)` adds an empty one.
 `await editor.focusFile(index)` and `await editor.closeFile(index)` use
 zero-based list indices; omitting the close index closes the focused file.
 Each file keeps its cursor, selection, edits and undo/redo history. Switching
-files stops playback and restores its cursor on the same server transport;
-only the focused file plays. View -> Files toggles the list;
-`editor.hideFiles()` and `editor.showFiles()` do the same from a script.
-These operations also work on a handler with no GUI open.
+files restores its cursor on the same transport; only the focused file plays.
+View -> Files toggles the list; `editor.hideFiles()` and `editor.showFiles()`
+do the same from a script.
 
-**The editor opens without a file.** `new gui.editing.AudioEditor(null, {
-server })` is the application on its own: its window keeps the menu bar and
-the file list, says where the take would be that no file is open, and offers
-File -> New file and File -> Open file. Closing the last file leaves an editor
-in the same state rather than closing it; File -> Close closes the window.
-With no file open, `editor.file` is `null`, `editor.files` is empty, and a verb
-that acts on a file (`parts`, `save`, an edit) throws a `RangeError`.
+**The editor opens without a file.** `await new gui.editing.AudioEditor().open()`
+is the application on its own: its window keeps the menu bar and the file list,
+says where the take would be that no file is open, and offers File -> New file
+and File -> Open file. Closing the last file leaves an editor in the same state
+rather than closing it; File -> Close closes the window. With no file open,
+`editor.file()` resolves to `null`, `editor.files()` to an empty list, and a verb
+that acts on a file (`parts`, `save`, an edit) rejects with a `RangeError`.
 
-The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`), also available as `editor.viewWave()`, `editor.viewSpectrogram()` and `editor.viewBoth()`. `editor.layers` accepts the same names and layer objects as the signal builders. `showLayer(name)`, `hideLayer(name)`, `soloLayer(name)` and `layerAlpha(name, alpha)` change the shared application's stack. Solo toggles without changing visibility. Waveform and spectrogram are two **views** of the take: one replaces the other in the take's lane, and both (`B`) stacks them, the waveform in the take's lane and the spectrogram in a lane under it, on one time axis with one selection and play cursor and a vertical each. The layers of `editor.layers` are the **visualization layers** of the view in the take's lane; a frequency layer and an amplitude layer cannot both claim its vertical, and a stack can still superpose them with one of the two in boxes of its own. The menu's views are the defaults, not the only ones. The gain envelope is an **edit layer** over the take, superposed on whichever view is in its lane. Visualization changes leave the take and its history intact. The vertical ruler is in the units of the layer that claims the axis, and each quantity keeps its own vertical zoom: a spectrogram opens no further than its whole frequency range, and returning to the waveform finds the amplitude zoom where it was left.
+The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`), also available as `editor.viewWave()`, `editor.viewSpectrogram()` and `editor.viewBoth()`. `editor.setLayers(stack)` accepts the same names and layer objects as the signal builders, and `await editor.layers()` reads them. `showLayer(name)`, `hideLayer(name)`, `soloLayer(name)` and `layerAlpha(name, alpha)` change the shared application's stack. Solo toggles without changing visibility. Waveform and spectrogram are two **views** of the take: one replaces the other in the take's lane, and both (`B`) stacks them, the waveform in the take's lane and the spectrogram in a lane under it, on one time axis with one selection and play cursor and a vertical each. The layers of `editor.layers()` are the **visualization layers** of the view in the take's lane; a frequency layer and an amplitude layer cannot both claim its vertical, and a stack can still superpose them with one of the two in boxes of its own. The menu's views are the defaults, not the only ones. The gain envelope is an **edit layer** over the take, superposed on whichever view is in its lane. Visualization changes leave the take and its history intact. The vertical ruler is in the units of the layer that claims the axis, and each quantity keeps its own vertical zoom: a spectrogram opens no further than its whole frequency range, and returning to the waveform finds the amplitude zoom where it was left.
 
 The picture now stands in a `pane`: one time ruler, selection and playhead
-shared by its bodies. `editor.layer = "take"` puts the take body in hand, the
+shared by its bodies. `editor.setLayer("take")` puts the take body in hand, the
 same action as View → Edit audio. This edit body is separate from
-`editor.layers`, which chooses pictures of the samples. `pane(...)` also
+`editor.layers()`, which chooses pictures of the samples. `pane(...)` also
 accepts curve bodies; its `layer` property names the active body (`points`,
 `points:1`, etc.), and `hidden` excludes named bodies from drawing and editing.
 
@@ -244,7 +262,7 @@ without a window, for a caller composing one. It is `await`ed where the referenc
 client's `edit` is not, for the reason `plot` and `View.open` are — resolving the
 ambient host may have to boot it.
 
-Nothing is handed back: the object passed in *is* the edited one -- except a buffer, which the audio editor writes back when it is saved. A **multitrack** is
+Nothing is handed back: the object passed in *is* the edited one, except a sound file, which the audio editor writes when it is saved. A **multitrack** is
 one of them, and what opens is the multitrack editor — the rest of this
 chapter is what it edits.
 

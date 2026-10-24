@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """``edit(file)``: a take in the audio editor, edited as a list of parts.
 
-A `clausters.SoundFile` opens in `clausters.gui.editing.AudioEditor`, which
-reads it where it is and writes nothing it was handed until it is saved. The
-take is a list of spans of files, and every edit leaves a new list:
+A `clausters.SoundFile` opens in the audio editor, an application the GUI
+host holds, in a window of the host's and on an engine of its own; what
+``edit`` answers is its handler, `clausters.gui.editing.AudioEditor`. The
+editor reads the file where it is and writes nothing it was handed until it
+is saved. The take is a list of spans of files, and every edit leaves a new
+list:
 
 - a **cut** puts the span's parts on the clipboard, then removes them;
 - a **paste** of a copy puts its parts in -- nothing is made;
@@ -41,13 +44,14 @@ looping, the selection -- or the whole take -- plays over and over, and a
 selection drawn again while it loops is where it loops next: the loop follows
 the drag, and the sound goes to the new start when the drag is let go. The
 **meter** beside the take reads its level while it plays and falls when it
-stops, and neither a play nor a stop clicks: the editor sounds the take through
-nodes of its own, whose output fades in and out with the transport.
+stops, and neither a play nor a stop clicks: the editor sounds the take on its
+own engine, whose output fades in and out with the transport.
 **Wheel** to zoom in until each sample is a disc, then **Alt+drag**
 to draw. **Ctrl+Z** and **Ctrl+Shift+Z** walk the history. Every one of
 these is also in the **menu bar** -- File, Edit, View, Transport, Help, each
 entry with its key -- and the transport and the clipboard are **tools** under
-it, which act on the take as the keys do. ``hear()`` plays the take as the edits have left it, and ``parts()``
+it, which act on the take as the keys do. ``hear()`` plays the take as the
+edits have left it, through the editor's transport, and ``parts()``
 prints what it is made of. ``editor.save()`` -- or Ctrl+S in the window --
 writes the edit back into the file it was opened from, and
 ``editor.save(path)`` writes it as another file instead. File -> New file...
@@ -90,7 +94,7 @@ import math
 import pathlib
 import sys
 
-from clausters import Session, SoundFile, play
+from clausters import Session, SoundFile
 from clausters.gui import edit
 
 SECONDS = 2.0
@@ -126,8 +130,8 @@ take = SoundFile.write(OUT / "edit_audio.wav", samples, 1, rate, sample_format="
 # the files the edits rendered -- until you save.
 
 # %%
-session.gui()          # the host wired to this session's server
-editor = edit(take, title="take", server=server)
+session.gui()          # the host, which holds the audio editor
+editor = edit(take, title="take")
 
 # %% [markdown]
 # ## Two views of the same take
@@ -182,14 +186,13 @@ def apply_envelope():
 # %% [markdown]
 # ## Hear it, and read what it is made of
 #
-# `editor.buffer` is the join the take sounds through: the take as the edits
-# have left it, streamed from its files, which `clausters.play` reads like any
-# other buffer.
+# The editor plays on its own engine, in the host's process: its transport
+# is the one the space bar drives, and `editor.transport` plays it from here.
 
 # %%
 def hear():
-    """Play the take as the edits have left it."""
-    play(editor.buffer, server=server)
+    """Play the take as the edits have left it, from its start."""
+    editor.transport.play(0.0)
 
 
 def parts():
@@ -213,7 +216,7 @@ def many_channels():
     tones = [math.exp(-3.0 * i / frames) * 0.5 * math.sin(2 * math.pi * 440.0 * (1 + c / 4) * i / rate)
              for i in range(frames) for c in range(8)]
     wide = edit(SoundFile.write(OUT / "edit_audio_8ch.wav", tones, 8, rate, sample_format="float"),
-                title="eight channels", server=server)
+                title="eight channels")
     wide.fold_channel(1)
     wide.fold_channel(4)
     return wide
@@ -270,7 +273,7 @@ def close_file():
 def no_file():
     """Open a second audio editor with no file in it."""
     from clausters.gui.editing import AudioEditor
-    other = AudioEditor(server=server, title="no file")
+    other = AudioEditor(title="no file")
     other.open()
     return other
 

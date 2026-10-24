@@ -1268,14 +1268,23 @@ Python property that reads becomes a method, a property that writes becomes a
   `t.span = (0, 2)`; TypeScript `await t.playing()`, `await t.end()`,
   `await t.setEnd(4)`, `await t.setSpan([0, 2])`. `t.span` and `t.looping`
   read local state and stay properties in both;
-- what the hand marked (`Marking`, the mixin `NotesEditor`,
-  `MultitrackEditor` and `AudioEditor` take): Python `editor.selected`,
-  `editor.select(marked)`, `editor.unselect()`; TypeScript
-  `await editor.selected()`, `await editor.select(marked)`,
-  `await editor.unselect()`. One shape for the three, since the words are
-  written once: a roll's and a multitrack's marks are the host's to answer,
-  and an `AudioEditor`'s, though its own state, are awaited as the others
-  are — marking there moves the transport's span, which sends;
+- what the hand marked (`Marking`, the mixin `NotesEditor` and
+  `MultitrackEditor` take, and the same three words on `AudioEditor`):
+  Python `editor.selected`, `editor.select(marked)`, `editor.unselect()`;
+  TypeScript `await editor.selected()`, `await editor.select(marked)`,
+  `await editor.unselect()`;
+- the audio editor (`AudioEditor`), the handler of an application the GUI
+  host holds, where every read is a call through the host's application
+  door: Python `editor.file`, `editor.files`, `editor.parts`,
+  `editor.dirty`, `editor.cursor`, `editor.sample_rate`, `editor.can_undo`
+  and the history's labels, `editor.actions`, `editor.envelope`,
+  `editor.folded`, `editor.layers` and `editor.layer`; TypeScript the same
+  names as methods that resolve (`await editor.file()`), with the two that
+  are also written, `layers` and `layer`, set by `setLayers` and
+  `setLayer`. Its transport (`AudioTransport`) reads `span` and `looping`
+  from the application, so in TypeScript they are methods too
+  (`await t.span()`, `await t.looping()`), beside `setSpan`; and its
+  `undo`, `redo`, `save` and every verb that edits answer a promise;
 - playing a sequence: Python `play(seq)` and `seq.play()` answer the
   `Transport`; TypeScript answers a promise of it;
 - the default session's server: Python `main.server_or_boot()`; TypeScript

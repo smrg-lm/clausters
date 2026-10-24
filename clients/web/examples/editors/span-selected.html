@@ -69,7 +69,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
       /examples/editors/span-selected.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, loadCore } from "../../dist/index.js";
+      import { Session, SoundFile, gui, loadCore, opfs } from "../../dist/index.js";
       import { Buffer } from "../../dist/defs/index.js";
       import { Content, Multitrack } from "../../dist/multitrack.js";
       import { Segment } from "../../dist/segments.js";
@@ -189,10 +189,10 @@ editors. Press the buttons in order; each step says what to look at.</div>
 
       // AUDIO 1: a take, its transport
       step("audio1", ["audio2"], async () => {
-        take = await Buffer.fromSamples(Float32Array.from({ length: frames },
+        await opfs.makeDirectory("out");
+        take = await SoundFile.write("out/span_selected.wav", Float32Array.from({ length: frames },
           (_, i) => Math.exp(-1.5 * i / frames) * 0.5
-            * Math.sin(2 * Math.PI * 880.0 * i / rate)), 1, rate, { server });
-        await server.sync();
+            * Math.sin(2 * Math.PI * 880.0 * i / rate)), 1, rate, { sampleFormat: "float" });
         e = await gui.edit(take, { title: "take", stage: $("take") });
         at = e.transport;
         await at.play();          // the whole take
@@ -213,16 +213,16 @@ editors. Press the buttons in order; each step says what to look at.</div>
         await at.play();          // repeats 0.5..1.0
         await at.stop();
         await at.unloop();
-        await e.select(new Segment(e.buffer, Math.trunc(1.2 * rate), 0.4));
-        log(JSON.stringify(at.span)); // [1.2,1.6]
+        await e.select(new Segment(await e.file(), Math.trunc(1.2 * rate), 0.4));
+        log(JSON.stringify(await at.span())); // [1.2,1.6]
       });
 
       // AUDIO 4: drag a range by hand, then press this
       step("audio4", ["close"], async () => {
         const marked = await e.selected();
-        log(`${JSON.stringify(at.span)} ${marked?.start} ${marked?.duration}`);
+        log(`${JSON.stringify(await at.span())} ${marked?.start} ${marked?.duration}`);
         await e.unselect();       // the band goes away
-        log(JSON.stringify(at.span)); // null
+        log(JSON.stringify(await at.span())); // null
       });
 
       // Close

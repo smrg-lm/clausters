@@ -35,7 +35,7 @@
     -->
     <script type="module">
       import { Session, opfs, loadCore, Buffer } from "../dist/index.js";
-      import { AudioEditor } from "../dist/gui/editing/index.js";
+      import { Workspace } from "../dist/base/workspace.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -197,71 +197,9 @@
           info.sampleRate === 48000 && worst < 1e-6 && failed.length > 0 &&
           rightInfo.channels === 1 &&
           [...rightSamples].every((s) => Math.abs(s + 0.25) < 1e-6);
-        // **The audio editor over the page's storage**: the buffer is written
-        // to the editor's folder in OPFS, each stroke is a real offline render
-        // in the worker into a file there, an undo names the earlier render
-        // again, and an edit after it deletes the render the redo held. A copy
-        // names files, a paste puts them in, a mix renders, and a render the
-        // clipboard names outlives the editor.
-        // a folder handed over is the caller's to make
-        await opfs.makeDirectory("application-work");
-        const editor = new AudioEditor(buf, { workspace: "application-work" });
-        // every piece of work landed, the renders carried out beside the queue too
-        const idle = () => editor.domain.settled();
-        await idle();
-        editor.coreCall("window", { widget: 1234 });
-        const stroke = async (seq, value) => {
-          editor.apply("/gui_event", [1234, seq, editor.editing.version, "draw", 0, 10, [value], [0]]);
-          await idle();
-        };
-        const paths = () => editor.parts.map((part) => part.path);
-        const written = async (path) => (await opfs.exists(path)) && (await opfs.sizeOf(path)) > 80;
-        if (!(await written(paths()[0]))) throw new Error(`the buffer was not written to OPFS: ${paths()[0]}`);
-        await stroke(1, 0.5);
-        const first = paths()[1];
-        await stroke(2, 0.25);
-        const second = paths()[1];
-        if (!first.endsWith("-stroke.w64") || !(await written(first)) || !(await written(second)))
-          throw new Error(`the strokes were not rendered into OPFS: ${paths()}`);
-        if (!editor.undo()) throw new Error("the second stroke could not be undone");
-        await idle();
-        if (paths()[1] !== first) throw new Error(`undo did not name the first render again: ${paths()}`);
-        await stroke(3, 0.75);
-        if (await opfs.exists(second)) throw new Error("the render only the redo held was not deleted");
-        log("audio editor: a buffer written to OPFS, strokes rendered there in the worker, undo naming files, a discarded render deleted");
-        let clipboard = "";
-        // No renderer: accept the normal host acknowledgement/correction
-        // messages while inspecting the copied document.
-        editor.host = { clipboard: (document) => { clipboard = document; },
-          ack: () => {}, push: () => {}, set: () => {} };
-        editor.apply("/gui_event", [1234, 4, editor.editing.version, "copy", 10, 1]);
-        await idle();
-        const copied = clipboard;
-        const named = JSON.parse(copied).content.parts[0].path;
-        if (JSON.parse(copied).content.kind !== "segments") throw new Error("a copy is not of segments");
-        editor.apply("/gui_event", [1234, 5, editor.editing.version, "paste", 40, "segments", copied]);
-        await idle();
-        if (!paths().includes(named)) throw new Error("a paste did not put the copy's file in");
-        editor.apply("/gui_event", [1234, 6, editor.editing.version, "mix", 40, "segments", copied]);
-        await idle();
-        const mixed = paths().find((path) => path.endsWith("-mixed.w64"));
-        if (mixed === undefined || !(await written(mixed))) throw new Error(`the mix was not rendered: ${paths()}`);
-        editor.apply("/gui_event", [1234, 7, editor.editing.version, "copy", 10, 1]);
-        await idle();
-        if (!editor.undo()) throw new Error("a copy lost the destination's history");
-        await idle();
-        editor.host = null;
-        const held = JSON.parse(clipboard).content.parts[0].path;
-        editor.close();
-        await idle();
-        if (!(await opfs.exists(held))) throw new Error("a render the clipboard names was deleted with the editor");
-        log("clipboard: a copy of segments pasted, a mix rendered, and a render it names outliving the editor");
-
-        // **An editor's own folder is held by a Web Lock**: one a closed tab
-        // left, which no tab holds, goes when the next editor opens. Its own
-        // goes with its close but for what a history still reaches (here the
-        // buffer's context, which outlives the window), and stays held while
-        // the tab lives.
+        // **A working folder is held by a Web Lock**: one a closed tab left,
+        // which no tab holds, goes when the next one is made, and its own goes
+        // with its close.
         const folders = async () => {
           const names = [];
           try {
@@ -274,20 +212,22 @@
         const heldLocks = async () => (await navigator.locks.query()).held.map((lock) => lock.name);
         await opfs.makeDirectory("clausters/work/audio-left");
         await opfs.writeFile("clausters/work/audio-left/reversed.w64", new Uint8Array(8));
-        const own = new AudioEditor(buf);
-        await own.domain.settled();
+        const own = new Workspace("audio");
+        await own.ready;
         const opened = await folders();
         if (opened.includes("audio-left")) throw new Error("a folder no tab holds was not swept");
         if (opened.length !== 1 || !opened[0].startsWith("audio-"))
-          throw new Error(`the editor's folder is not in the page's working root: ${opened}`);
+          throw new Error(`the folder is not in the page's working root: ${opened}`);
         if (!(await heldLocks()).includes(`clausters-work:${opened[0]}`))
-          throw new Error("the editor's folder is not held by a lock");
-        own.close();
-        await own.domain.settled();
-        const after = await folders();
-        if (after.length !== 0 && !(await heldLocks()).includes(`clausters-work:${after[0]}`))
-          throw new Error(`the editor's folder outlived its close unheld: ${after}`);
-        log("working folder: one a closed tab left swept by the next editor, the editor's own held by a lock");
+          throw new Error("the folder is not held by a lock");
+        await opfs.writeFile(`${own.path}/kept.w64`, new Uint8Array(8));
+        if (await own.close()) throw new Error("a folder holding a file was removed");
+        if (!(await heldLocks()).includes(`clausters-work:${opened[0]}`))
+          throw new Error("a folder still holding a file was let go of");
+        await opfs.removeFile(`${own.path}/kept.w64`);
+        if (!(await own.close()) || (await folders()).length !== 0)
+          throw new Error(`the folder outlived its close: ${await folders()}`);
+        log("working folder: one a closed tab left swept by the next, its own held by a lock and gone with its close");
 
         verdict(ok
           ? `PASS: Buffer.read pulled ${info.frames} frames of ${info.channels} ` +
@@ -297,7 +237,7 @@
             `buffer.write went back out and read back at ${backWorst.toExponential(1)}, ` +
             `a ${LONG}-frame take crossing ${Math.ceil(LONG / 4800)} runs at ` +
             `${longWorst.toExponential(1)} with the caller's array left intact, ` +
-            `and the audio editor rendered its edits into OPFS in the worker`
+            `and a working folder was held by a Web Lock and swept when nobody held it`
           : `FAIL: frames ${info.frames}/${FRAMES}, channels ${info.channels}, ` +
             `rate ${info.sampleRate}, delta ${worst}, failure "${failed}", ` +
             `selected ${rightInfo.channels} ${[...rightSamples]}, ` +

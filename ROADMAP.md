@@ -308,7 +308,9 @@ its plan; the plan is where its acceptance is read.
   application's reader and peaks; the audio editor's session file; the
   multitrack on the same modules; and the server's cleaning last, once
   nothing calls what it removes. Before `X25`, which should port this
-  lifecycle. **Related:** found moving the editor onto files, and taken
+  lifecycle. `X30` closes with the apps plan's "What the clients' audio
+  coordinator leaves behind" (Found by use), swept after its page step.
+  **Related:** found moving the editor onto files, and taken
   after `X32`: the apps plan's "A compressed file opens through a buffer of
   all of it" (Found by use); to look at in a page before the audio editor's
   eye pass: the GUI plan's "A spectrogram of a server buffer may draw nothing

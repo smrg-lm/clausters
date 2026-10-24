@@ -833,8 +833,11 @@ class GuiHost:
         cannot take), and `clausters.errors.ReplyTimeout` past ``timeout``.
         """
         answer = self._app_request("/gui_app_open", str(app), json.dumps(dict(options or {})),
-                           timeout=timeout)
-        return int(answer["window"])
+                                   timeout=timeout)
+        window = int(answer["window"])
+        # open until its `/gui_closed`, as a window this client opened is
+        self._open.add(window)
+        return window
 
     def call_app(self, id, call: dict, timeout: "float | None" = None):
         """``/gui_app_call``: **one call to the application open in window

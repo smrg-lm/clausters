@@ -600,10 +600,14 @@ impl Host {
             effects.push(reply(Ok(answer)));
             self.publish_audio_actions(def_id);
         } else if let Some(query) = call["query"].as_str() {
-            let answer = audio.app.call(
-                &mut audio.editing,
-                &json!({"verb": "audio", "member": member, "query": query}),
-            );
+            // what the window reads of the editor: its transport, its
+            // actions, the history of the file in focus
+            let request = match query {
+                "actions" => json!({"verb": "actions", "member": member}),
+                "history" => json!({"verb": "state", "member": member}),
+                _ => json!({"verb": "audio", "member": member, "query": query}),
+            };
+            let answer = audio.app.call(&mut audio.editing, &request);
             effects.push(reply(Ok(answer)));
         } else if let Some(Value::Object(action)) = call.get("do") {
             let mut action = Value::Object(action.clone());
@@ -922,6 +926,10 @@ mod tests {
         // a query of its state
         let state = reply_of(&call(&mut host, 3, json!({"query": "transport"})), 3).unwrap();
         assert!(state["ok"]["transport"].is_u64(), "{state}");
+        let history = reply_of(&call(&mut host, 30, json!({"query": "history"})), 30).unwrap();
+        assert_eq!(history["ok"]["canUndo"], false, "{history}");
+        let actions = reply_of(&call(&mut host, 31, json!({"query": "actions"})), 31).unwrap();
+        assert!(actions["ok"].is_object(), "{actions}");
         // an action that renders, answered when it lands, to the client
         let save = json!({"do": {"verb": "save",
             "request": {"path": out.to_string_lossy(), "format": "int16"}}});
@@ -948,6 +956,31 @@ mod tests {
             json!(out.to_string_lossy()),
             "{answer}"
         );
+        // an edit undone through the door, as the handler's undo does
+        let widget = host.audio.as_ref().unwrap().windows[&window].ids["widget"]
+            .as_i64()
+            .unwrap() as i32;
+        let delete = host.event_message(
+            widget,
+            7,
+            vec![
+                OscType::String("delete".into()),
+                OscType::Float(0.0),
+                OscType::Float(12_000.0),
+            ],
+        );
+        assert!(host.deliver(window, &delete));
+        host.take_effects();
+        assert_eq!(parts(&mut host, window)[0]["frames"], 12_000);
+        let history = reply_of(&call(&mut host, 40, json!({"query": "history"})), 40).unwrap();
+        assert_eq!(history["ok"]["canUndo"], true, "{history}");
+        let version = history["ok"]["version"].clone();
+        let undo = json!({"do": {"verb": "event", "addr": "/gui_event",
+            "args": [window, 0, version, "undo"]}});
+        let undone = reply_of(&call(&mut host, 41, undo), 41).unwrap();
+        assert!(undone["error"].is_null(), "{undone}");
+        host.take_effects();
+        assert_eq!(parts(&mut host, window)[0]["frames"], 24_000, "undone");
         // what it cannot take is an error of its kind
         let wrong = reply_of(&call(&mut host, 5, json!({"nothing": 1})), 5).unwrap();
         assert_eq!(wrong["error"]["type"], "value", "{wrong}");

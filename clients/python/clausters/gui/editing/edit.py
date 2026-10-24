@@ -9,12 +9,13 @@ takes over the draining, so a script that edits writes no loop at all --
 
 -- and what comes back is the editor, which is the handle the window is closed
 and undone through. Reading is done on the structure itself: nothing is handed
-back at the end because the object passed in *is* the edited one. A buffer is
-the exception, and deliberately: `clausters.gui.editing.AudioEditor` edits a
-copy of it and writes it back when it is saved, as an audio editor does.
+back at the end because the object passed in *is* the edited one. A sound file
+is the exception, and deliberately: the audio editor
+(`clausters.gui.editing.AudioEditor`) is an application the GUI host holds,
+which writes the file only when it is saved, as an audio editor does.
 
-One call over the fundamental structures -- a buffer's samples, a break-point
-curve, a timeline of events, and a **multitrack** -- each of which is a
+One call over the fundamental structures (a sound file, a break-point
+curve, a timeline of events, and a **multitrack**), each of which is a
 `clausters.gui.editing.Editor` with its own domain and its own view and nothing
 else. It dispatches on **what the structure is** rather than on a keyword,
 because that is the question a caller has already answered by holding one.
@@ -46,7 +47,7 @@ from .controls import NodeEditor
 from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
-from .audio import AudioEditor, is_take, reads_in_place
+from .audio import AudioEditor
 from ...soundfile import SoundFile
 from .score import ScoreEditor, is_score
 
@@ -56,9 +57,9 @@ def edit(structure, *, sample_rate: float = 0.0,
     """Open ``structure`` in an editor of its own kind.
 
     Args:
-        structure: what to edit -- a `clausters.defs.Buffer` or a
-            `clausters.SoundFile` (in the audio editor, which edits a copy and
-            writes it back on `save`; a file not written yet asks for a path), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
+        structure: what to edit: a `clausters.SoundFile` (in the audio
+            editor, the GUI host's application, which writes the file only on
+            `save`; a WAV, RF64 or W64 file on disk), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
             `clausters.multitrack.Automation`), a `clausters.seq.EventSequence`
             (its notes, in place), a `clausters.seq.Timeline` (rendered into a
             sequence first -- ``until=`` bounds one that does not end -- which
@@ -68,7 +69,7 @@ def edit(structure, *, sample_rate: float = 0.0,
             place) -- or a running `clausters.defs.Node`, whose def's controls
             open in a generic editor (`clausters.gui.editing.NodeEditor`).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A
-            take knows its own and needs none; anything else takes the
+            sound file needs none; anything else takes the
             ambient server's nominal rate -- the current session's, else the
             default session's, as a play resolves its server -- and 48 kHz
             with no server anywhere.
@@ -102,8 +103,8 @@ def edit(structure, *, sample_rate: float = 0.0,
             the transcription's keys, which say how the sequence is read
             where its events do not (``meter``, ``key``, ``clef``,
             ``beat_unit``, ``division``, ``tuplets``, ``voices``,
-            ``dynamics``), and ``interp``. A node takes ``title`` only. A
-            `clausters.SoundFile` takes ``server``, the one it is loaded on.
+            ``dynamics``), and ``interp``. A node takes ``title`` only, and a
+            sound file ``title`` and ``layers``.
 
     Returns:
         The editor, **open** -- the one already open over ``structure``, when
@@ -114,9 +115,10 @@ def edit(structure, *, sample_rate: float = 0.0,
         -- and a caller who wants none of that may discard it: the host holds an
         open editor until its window closes, so ``edit(curve)`` on its own is a
         complete program. Reading the edited data is done on the structure that
-        was passed in, which *is* the edited one -- except a buffer, which the
-        audio editor writes back when it is saved, and a timeline, whose
-        rendered events are the editor's ``sequence``.
+        was passed in, which *is* the edited one, except a sound file, which the
+        audio editor writes when it is saved (its ``file`` reads what it is
+        now), and a timeline, whose rendered events are the editor's
+        ``sequence``.
 
     Raises:
         TypeError: for something none of the three domains reads, naming what
@@ -130,16 +132,18 @@ def edit(structure, *, sample_rate: float = 0.0,
         if opened is not None:
             return opened
     if isinstance(structure, SoundFile):
-        # A file is the take, read where it is -- or, compressed, decoded into
-        # a buffer of the editor's own; it is what a save writes.
-        if reads_in_place(structure):
-            editor = AudioEditor(structure, sample_rate=sample_rate, **options)
-        else:
-            take = structure.to_buffer(server=options.pop("server", None))
-            editor = AudioEditor(take, sample_rate=sample_rate, file=structure, **options)
-    elif is_take(structure):
-        editor = AudioEditor(structure, sample_rate=sample_rate, **options)
-    elif is_curve(structure):
+        # **The file is the application's**, opened by the host in a window
+        # of its own; this is its handler
+        editor = AudioEditor(structure, **options)
+        if open:
+            editor.open(host)
+            _open_audio.append(editor)
+        return editor
+    if _is_buffer(structure):
+        raise TypeError(
+            "the audio editor edits sound files, and a buffer is loaded on a server "
+            "it does not reach: write it to a file (`buffer.write(path)`) and edit that")
+    if is_curve(structure):
         editor = PointsEditor(structure, sample_rate=sample_rate or _ambient_rate(),
                               **options)
     elif is_events(structure):
@@ -167,14 +171,25 @@ def edit(structure, *, sample_rate: float = 0.0,
                                   **options)
     else:
         raise TypeError(
-            f"nothing edits a {type(structure).__name__}: `edit` opens a Buffer "
-            f"(its samples), a curve -- anything with to_points/set_points -- "
+            f"nothing edits a {type(structure).__name__}: `edit` opens a SoundFile "
+            f"(its samples), a curve (anything with to_points/set_points), "
             f"an EventSequence or a Timeline (its notes), "
             f"a Multitrack (the multitrack) or a Score (its page)."
         )
     if open:
         editor.open(host)
     return editor
+
+
+#: The audio editors this script opened, which a second `edit` of the same
+#: file finds.
+_open_audio: list = []
+
+
+def _is_buffer(structure) -> bool:
+    """Whether ``structure`` is a server buffer, which the audio editor no
+    longer opens."""
+    return hasattr(structure, "bufnum") and hasattr(structure, "set_samples")
 
 
 #: The node editors open, by server and node id: a running node's controls
@@ -219,7 +234,12 @@ def _already_open(structure, host, options):
     Found among the views of the structure's editing context, since every
     editor attaches there when it opens. A timeline is rendered into a new
     sequence by each call, so it never finds one."""
-    kinds = ((is_take, AudioEditor), (is_curve, PointsEditor), (is_events, NotesEditor),
+    if isinstance(structure, SoundFile):
+        _open_audio[:] = [e for e in _open_audio if not e.closed]
+        return next((e for e in _open_audio
+                     if e._file is not None and e._file.path == structure.path
+                     and (host is None or e.host is host)), None)
+    kinds = ((is_curve, PointsEditor), (is_events, NotesEditor),
              (is_score, ScoreEditor), (is_multitrack, MultitrackEditor))
     kind = next((k for test, k in kinds if test(structure)), None)
     if kind is None or isinstance(structure, Timeline):

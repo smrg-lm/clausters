@@ -182,7 +182,7 @@ def test_open_false_builds_the_editor_without_a_window():
 
 
 def test_something_none_of_the_three_reads_says_what_they_are():
-    with pytest.raises(TypeError, match="edit` opens a Buffer"):
+    with pytest.raises(TypeError, match="edit` opens a SoundFile"):
         edit(object())
 
 
@@ -211,9 +211,12 @@ def test_marking_is_taken_by_the_editors_that_act_on_what_is_marked():
     the roll, the multitrack and the audio editor have it, and the points
     editor, where no operation acts on a group of points, has none of it --
     nor a time range of its own."""
-    for marks in (NotesEditor, MultitrackEditor, AudioEditor):
+    for marks in (NotesEditor, MultitrackEditor):
         assert issubclass(marks, Marking)
         assert not {"selected", "select", "unselect"} & set(vars(marks))
+    # the audio editor is the host's application, and its handler marks
+    # through the application's transport
+    assert {"selected", "select", "unselect"} <= set(vars(AudioEditor))
     assert not issubclass(PointsEditor, Marking)
     editor = edit(a_curve(), sample_rate=SR, open=False)
     for word in ("selected", "select", "unselect", "span"):

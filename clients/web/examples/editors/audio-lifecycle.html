@@ -20,7 +20,7 @@
   <body>
     <main>
       <div id="note">The audio editor's lifecycle, walked: two windows, several
-files, one shared undo order, the clipboard between them, and saves that fail,
+files, an undo order per file, the clipboard between them, and saves that fail,
 that are edited after and that close the window.
 
 Each button below is a step, and each says what to look at and what to listen
@@ -42,12 +42,10 @@ drawn over <code>b.wav</code>, and the meter shows two channels at zero. Click
 channel, moving, and its play cursor is back. Space stops.
 <code>second</code> played meanwhile moves nothing in <code>first</code>.<br>
 
-<b>Independent and shared history.</b> <code>a.wav</code> and
-<code>d.wav</code> share one undo order (<code>sharedHistory</code>):
-<b>cut second</b> cuts <code>d.wav</code>, and <b>undo in first</b> -- Ctrl+Z in
-<code>first</code> over <code>a.wav</code> -- puts it back without moving
-<code>first</code>'s focus. <code>b.wav</code> and <code>c.wav</code> each have
-an order of their own: an edit there is undone only there.<br>
+<b>An undo order per file.</b> <b>cut second</b> cuts <code>d.wav</code>, and
+<b>undo in first</b> (Ctrl+Z in <code>first</code> over <code>a.wav</code>)
+leaves it cut: every file has an order of its own, and an edit is undone only
+where it was made. <b>undo in second</b> puts it back.<br>
 
 <b>The clipboard's lifetime, and a change of type.</b> <b>copy first</b> copies
 a span of <code>a.wav</code>; <b>paste second</b> pastes it into
@@ -69,8 +67,8 @@ was written; <b>undo in second</b> brings back the written take, and it is clean
 the take.<br>
 
 A write in flight is too short for a hand to edit through, so an edit, a focus
-change or a close landing while the reply is still out is checked by the client
-suites (their shared fault trace), not here.<br>
+change or a close landing while the reply is still out is checked by the
+application's own suites, not here.<br>
 
 <b>What it costs.</b> Leave both windows alone for two seconds and press
 <b>activity</b>: a stopped window ticks for nothing. Play in one and press it
@@ -100,7 +98,9 @@ for nothing.</div>
     <!--
       The web sibling of clients/python/examples/editors/audio_lifecycle.py,
       call for call: the same four takes written as the same files, the same
-      two editors over one editing context, and the same steps. The files are
+      two editors, and the same steps. Until the page's host holds the audio
+      editor (the step after the native host's, crates/clausters-apps/PLAN.md),
+      opening the windows here says the host holds no audio editor in a page. The files are
       in the page's own storage (`opfs`), and the save into a directory that
       does not exist is refused by it as the disk refuses the script's.
 
@@ -146,36 +146,31 @@ for nothing.</div>
         const c = await tone("c.wav", 880.0, 6);
         const d = await tone("d.wav", 550.0, 1);
 
-        // Two windows, one shared undo order: both editors take one editing
-        // context, and each joins its first file to the context's shared
-        // order. Files opened later keep orders of their own.
+        // Two windows: both are windows of the audio editor the GUI host
+        // holds, and every file in them keeps an undo order of its own.
         await session.gui();
-        const shared = new gui.editing.Editing();
-        const first = await gui.edit(a, {
-          title: "first", context: shared, sharedHistory: true, server, stage: $("first"),
-        });
+        const first = await gui.edit(a, { title: "first", stage: $("first") });
         await first.openFile([b.path, c.path]);
         await first.focusFile(0);
-        const second = await gui.edit(d, {
-          title: "second", context: shared, sharedHistory: true, server, stage: $("second"),
-        });
+        const second = await gui.edit(d, { title: "second", stage: $("second") });
 
         // What each window holds: its files, and the one in focus.
-        const status = () => {
+        const status = async () => {
           for (const editor of [first, second]) {
             if (editor.closed) {
-              log(`${editor.title}: closed; ${editor.file.path} holds ${editor.file.frames} frames, ` +
-                `dirty ${editor.dirty}`);
+              const file = await editor.file();
+              log(`${editor.title}: closed; ${file.path} holds ${file.frames} frames, ` +
+                `dirty ${await editor.dirty()}`);
               continue;
             }
-            const names = editor.files.filter((f) => f !== null).map((f) => name(f.path));
-            const file = editor.file;
+            const names = (await editor.files()).filter((f) => f !== null).map((f) => name(f.path));
+            const file = await editor.file();
             if (file === null) {
               log(`${editor.title}: no file; open ${names}`);
               continue;
             }
             log(`${editor.title}: ${name(file.path)}, ${file.frames} frames, ${file.channels} ch, ` +
-              `dirty ${editor.dirty}, undo ${editor.undoLabel ?? "none"}; open ${names}`);
+              `dirty ${await editor.dirty()}, undo ${(await editor.undoLabel()) ?? "none"}; open ${names}`);
           }
         };
 
@@ -190,11 +185,11 @@ for nothing.</div>
           }
         };
 
-        // Independent and shared history: a tenth of a second marked from
-        // 0.5 s and cut, in `second`; undone from `first`, whose file in focus
-        // shares the order.
+        // An undo order per file: a tenth of a second marked from 0.5 s and
+        // cut, in `second`; an undo in `first` leaves it, and one in `second`
+        // puts it back.
         const cutSecond = async () => {
-          await second.select(new segments.Segment(second.buffer, Math.round(0.5 * second.sampleRate), 0.1));
+          await second.select(new segments.Segment(await second.file(), Math.round(0.5 * await second.sampleRate()), 0.1));
           second.cut();
         };
         const undoInFirst = () => first.undo();
@@ -204,7 +199,7 @@ for nothing.</div>
         // outlives the file it came from, and a paste never converts it.
         const copyFirst = async () => {
           await first.focusFile(0);
-          await first.select(new segments.Segment(first.buffer, Math.round(0.2 * first.sampleRate), 0.3));
+          await first.select(new segments.Segment(await first.file(), Math.round(0.2 * await first.sampleRate()), 0.3));
           first.copy();
         };
         const pasteSecond = () => second.paste();
@@ -226,12 +221,12 @@ for nothing.</div>
         };
         const saveThenEdit = async () => {
           await second.save({ path: "out/d_saved.wav" });
-          await second.select(new segments.Segment(second.buffer, Math.round(0.5 * second.sampleRate), 0.1));
+          await second.select(new segments.Segment(await second.file(), Math.round(0.5 * await second.sampleRate()), 0.1));
           second.cut();
         };
         const saveAndClose = async () => {
           await second.save({ path: "out/d_closed.wav" });
-          second.close();
+          await second.close();
         };
 
         const steps = {

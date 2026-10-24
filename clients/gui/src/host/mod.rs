@@ -742,7 +742,9 @@ pub const GUI_APP_OPEN: &str = "/gui_app_open";
 /// through: `{"member": {"verb", ...}}` asks its editor something or sets
 /// something on it and is answered at once; `{"do": {"verb", ...}}` is one
 /// of its actions (a save, a reverse), carried to its end and answered
-/// when it ends, renders and all; `{"query": name}` reads its state.
+/// when it ends, renders and all; `{"query": name}` reads its state
+/// (`transport`, `actions`, and `history`: the undo order of the file in
+/// focus).
 /// Answered by [`GUI_APP_REPLY`].
 pub const GUI_APP_CALL: &str = "/gui_app_call";
 /// `/gui_app_reply <seq> <json>`: the answer to a [`GUI_APP_OPEN`] or a

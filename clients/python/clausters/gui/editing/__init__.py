@@ -33,7 +33,8 @@ whole design:
   of a person does wrong is otherwise visible to nobody.
 `edit(x)` is how a person calls it: one verb over the fundamental structures,
 dispatching on what the structure is -- `AudioEditor` over a
-`clausters.defs.Buffer`, `PointsEditor` over a curve (a
+`clausters.SoundFile` (the handler of the GUI host's audio editor),
+`PointsEditor` over a curve (a
 `clausters.defs.Bpf`, an `clausters.defs.Env` or a
 `clausters.multitrack.Automation`),
 `NotesEditor` over a `clausters.seq.Timeline`, `MultitrackEditor` over a
@@ -53,7 +54,7 @@ writes changes.
 """
 
 from .application import BASE_ID, Application
-from .audio import AudioDomain, AudioEditor, reads_in_place
+from .audio import AudioEditor, AudioTransport, reads_in_place
 from ...history import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
@@ -72,8 +73,8 @@ from .trace import watch
 from .view import View
 
 __all__ = [
-    "AudioDomain",
     "AudioEditor",
+    "AudioTransport",
     "ATTR",
     "Application",
     "BASE_ID",

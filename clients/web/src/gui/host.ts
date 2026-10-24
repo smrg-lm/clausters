@@ -1051,7 +1051,10 @@ export class GuiHost {
      */
     async openApp(app: string, options: Record<string, unknown> = {}, timeout = 5.0): Promise<number> {
         const answer = await this.app("/gui_app_open", [app, JSON.stringify(options)], timeout);
-        return Number((answer as { window: number }).window);
+        const window = Number((answer as { window: number }).window);
+        // open until its `/gui_closed`, as a window this client opened is
+        this.opened.add(window);
+        return window;
     }
 
     /**

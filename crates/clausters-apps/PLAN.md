@@ -3249,8 +3249,16 @@ over the opened file) carries over.
       answered when it ends; both answered by `/gui_app_reply`, and the
       opener told `/gui_closed` (`docs/gui-protocol.md`). Both clients'
       `GuiHost` call them (`open_app`/`call_app`).
-    - ⬜ Both clients as the editor's handler, over those doors:
-      `edit(Buffer)` and the client's coordinator go.
+    - ✅ Both clients as the editor's handler, over those doors:
+      `edit(SoundFile)` asks the host to open the application and answers
+      `AudioEditor`, whose every member is a call (`member`, `query`,
+      `do`), and `editor.transport` is an `AudioTransport` of the
+      application's. `edit(Buffer)`, `server=`, `sources=`, `context=`,
+      `shared_history=`, `workspace=`, `file=`, `buffer`, `save(buffer=)`
+      and the client's coordinator went from both clients, and with them
+      the shared undo order between two windows. Undo and redo are the
+      window's event through `do`; the door gained the `actions` and
+      `history` queries. A page's editor rejects until the next item.
     - ⬜ The page: cross-origin isolation, shared memory, the engine in the
       worklet and the application in the host's wasm.
   **Acceptance:** the audio editor plays, loops, stops and
@@ -5140,9 +5148,23 @@ wrong.
   follow.
 
 - ⬜ **A compressed file opens through a buffer of all of it**
-  *(found 2026-10-23, moving the audio editor onto files)*. A part streams
+  *(found 2026-10-23, moving the audio editor onto files)*. Since the
+  clients became the handler (2026-10-24), a compressed file is not opened
+  at all: the application reads WAV, RF64 and W64 in place and refuses the
+  rest, and so does `edit`. A part streams
   PCM only (WAV, RF64, W64), so an MP3 or a FLAC is decoded whole into a
   server buffer by `edit`, which the open then writes to the working folder:
   an hour of it costs the memory and the time the files model removes for
   everything else. It should be decoded into the working folder a run at a
   time, as an offline render reads a stream, without a buffer between.
+
+- ⬜ **What the clients' audio coordinator leaves behind** *(found
+  2026-10-24, making both clients the audio editor's handler)*. With the
+  coordinator gone from the clients, these have no caller in them: the
+  Python `_native.Workspace` and `_native.AudioEditorPlayback` bindings,
+  `SamplesView` (still exported by both clients' `editing`), and the node
+  half of the web client's `src/base/workspace.ts` with its decision ("The
+  web client holds its working folder by what it has"), since under node
+  the folder is now the native host's. The page half of that module is
+  what the page step can hold the application's folder with, so the sweep
+  waits for it and closes `X30`.

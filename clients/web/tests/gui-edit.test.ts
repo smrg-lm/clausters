@@ -138,7 +138,7 @@ test("the verb opens the editor the structure asks for", async () => {
 });
 
 test("something none of the three reads says what they are", async () => {
-    await assert.rejects(() => edit({}), /edit` opens a Buffer/);
+    await assert.rejects(() => edit({}), /edit` opens a SoundFile/);
 });
 
 test("the verb opens on the host it is given", async () => {
@@ -179,10 +179,15 @@ test("marking is taken by the editors that act on what is marked", async () => {
     // roll, the multitrack and the audio editor have it, and the points editor,
     // where no operation acts on a group of points, has none of it -- nor a
     // time range of its own.
-    for (const marks of [NotesEditor, MultitrackEditor, AudioEditor]) {
+    for (const marks of [NotesEditor, MultitrackEditor]) {
         for (const word of ["selected", "select", "unselect"] as const) {
             assert.equal(marks.prototype[word], Marking.prototype[word]);
         }
+    }
+    // the audio editor is the host's application, and its handler marks
+    // through the application's transport
+    for (const word of ["selected", "select", "unselect"] as const) {
+        assert.equal(typeof AudioEditor.prototype[word], "function");
     }
     const editor = await edit(aCurve(), { sampleRate: SR, open: false });
     assert.ok(editor instanceof PointsEditor);

@@ -22,8 +22,10 @@
       <div id="note"><code>edit(file)</code>: a take in the audio editor, edited
 as a list of parts.
 
-A <code>SoundFile</code> opens in <code>AudioEditor</code>, which reads it where
-it is and writes nothing it was handed until it is saved. The take is a list of
+A <code>SoundFile</code> opens in the audio editor, an application the GUI host
+holds, in a window of the host's and on an engine of its own; what
+<code>edit</code> answers is its handler, <code>AudioEditor</code>. The editor
+reads the file where it is and writes nothing it was handed until it is saved. The take is a list of
 spans of files, and every edit leaves a new list: a <b>cut</b> puts the span's
 parts on the clipboard, then removes them; a <b>paste</b> of a copy puts its
 parts in -- nothing is made; a <b>mix</b> renders the copy added onto the frames
@@ -65,8 +67,8 @@ looping, the selection -- or the whole take -- plays over and over, and a
 selection drawn again while it loops is where it loops next: the loop follows
 the drag, and the sound goes to the new start when the drag is let go. The
 <b>meter</b> beside the take reads its level while it plays and falls when it
-stops, and neither a play nor a stop clicks: the editor sounds the take through
-nodes of its own, whose output fades in and out with the transport.
+stops, and neither a play nor a stop clicks: the editor sounds the take on its
+own engine, whose output fades in and out with the transport.
 <b>Wheel</b> to zoom in until each sample is a disc, then
 <b>Alt+drag</b> to draw. <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> walk the
 history. Every one of these is also in the <b>menu bar</b> -- File, Edit,
@@ -98,7 +100,7 @@ with nothing selected, Paste mixed with a copy at another rate, and the View
 and Edit entries mark the view and the layer in force. With the
 File -&gt; New file dialog up, Ctrl+Z reaches neither the take nor anything
 behind the dialog; in its name field it undoes the typing.
-<code>editor.actions</code> holds the same readings.</div>
+<code>editor.actions()</code> reads the same readings.</div>
 
       <button id="run">open the take</button>
       <div id="stage"></div>
@@ -126,8 +128,13 @@ behind the dialog; in its name field it undoes the typing.
     <!--
       The web sibling of clients/python/examples/editors/edit_audio.py, call
       for call: the same generated take written as the same file, the same
-      `edit`, the same `play` of the join it sounds through, and the same list of parts
-      read back. The file is in the page's own storage (`opfs`).
+      `edit`, the same play through the editor's transport, and the same list
+      of parts read back. The file is in the page's own storage (`opfs`).
+
+      Until the page's host holds the audio editor (the step after the native
+      host's, `crates/clausters-apps/PLAN.md`), opening the take here says the
+      host holds no audio editor in a page; the calls below are the ones that
+      will run then.
 
       The platform's differences are the usual two: the host is the wasm one in
       this tab and draws into an element, and nothing is pumped.
@@ -136,7 +143,7 @@ behind the dialog; in its name field it undoes the typing.
       /examples/editors/edit-audio.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, SoundFile, gui, opfs, play } from "../../dist/index.js";
+      import { Session, SoundFile, gui, opfs } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -169,38 +176,35 @@ behind the dialog; in its name field it undoes the typing.
         // is. The file is not written while you edit -- every edit is a new
         // list of parts over it and over the files the edits rendered -- until
         // you save.
-        const editor = await gui.edit(take, {
-          title: "take", server, stage: $("stage"),
-        });
+        const editor = await gui.edit(take, { title: "take", stage: $("stage") });
 
         // Two views of the same take: waveform and spectrogram replace each
         // other in the take's lane, and both stacks them in two lanes.
         $("take-layer").disabled = false;
         $("wave").disabled = false;
-        $("take-layer").onclick = () => { editor.layer = "take"; };
+        $("take-layer").onclick = () => editor.setLayer("take");
         $("wave").onclick = () => editor.viewWave();
         $("spectrogram").disabled = false;
         $("spectrogram").onclick = () => editor.viewSpectrogram();
         $("both").disabled = false;
         $("both").onclick = () => editor.viewBoth();
 
-        // `editor.buffer` is the join the take sounds through: the take as the
-        // edits have left it, streamed from its files, which `play` reads like
-        // any other buffer.
         // The same curve and calls as the Python example, in seconds.
         $("envelope").disabled = false;
-        $("envelope").onclick = () => {
-          editor.showEnvelope();
-          editor.setEnvelope([0, 0, 3, 0, 0.5, 1, 1, 0, SECONDS, 0.25, 1, 0]);
+        $("envelope").onclick = async () => {
+          await editor.showEnvelope();
+          await editor.setEnvelope([0, 0, 3, 0, 0.5, 1, 1, 0, SECONDS, 0.25, 1, 0]);
         };
         $("apply-envelope").disabled = false;
         $("apply-envelope").onclick = () => editor.applyEnvelope();
 
         $("play").disabled = false;
-        $("play").onclick = () => play(editor.buffer, { server });
+        // The editor plays on its own engine: its transport is the one the
+        // space bar drives, and `editor.transport` plays it from here.
+        $("play").onclick = () => editor.transport.play(0.0);
         $("parts").disabled = false;
-        $("parts").onclick = () => {
-          for (const part of editor.parts) {
+        $("parts").onclick = async () => {
+          for (const part of await editor.parts()) {
             log(`${part.path}: frames ${part.start}..${part.start + part.frames}`);
           }
         };
@@ -221,10 +225,10 @@ behind the dialog; in its name field it undoes the typing.
           }
           const wide = await gui.edit(
             await SoundFile.write("out/edit_audio_8ch.wav", tones, 8, rate, { sampleFormat: "float" }),
-            { title: "eight channels", server },
+            { title: "eight channels" },
           );
-          wide.foldChannel(1);
-          wide.foldChannel(4);
+          await wide.foldChannel(1);
+          await wide.foldChannel(4);
         };
 
         // A file not written yet: `SoundFile.empty` is a shape with no path,
@@ -255,8 +259,8 @@ behind the dialog; in its name field it undoes the typing.
         // and File -> Close closes it.
         $("no-file").disabled = false;
         $("no-file").onclick = async () => {
-          const other = new gui.editing.AudioEditor(null, { server, title: "no file" });
-          await other.open(undefined, { stage: $("stage") });
+          const other = new gui.editing.AudioEditor(null, { title: "no file" });
+          await other.open();
         };
 
         log("drag to select, Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V, Alt+drag to draw");

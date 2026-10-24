@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The audio editor's lifecycle, walked: two windows, several files, one
-shared undo order, the clipboard between them, and saves that fail, that are
+"""The audio editor's lifecycle, walked: two windows, several files, an undo
+order per file, the clipboard between them, and saves that fail, that are
 edited after and that close the window.
 
 Each step below is a function to call from a cell, and each says what to look
@@ -20,11 +20,10 @@ meter shows two channels at zero. Click ``c.wav``: six channels at zero. Click
 ``a.wav`` again: one channel, moving, and its play cursor is back. Space stops.
 ``second`` played meanwhile moves nothing in ``first``.
 
-**Independent and shared history.** ``a.wav`` and ``d.wav`` share one undo
-order (``shared_history``): ``cut_second()`` cuts ``d.wav``, and
-``undo_in_first()`` -- Ctrl+Z in ``first`` over ``a.wav`` -- puts it back without
-moving ``first``'s focus. ``b.wav`` and ``c.wav`` each have an order of their
-own: an edit there is undone only there.
+**An undo order per file.** ``cut_second()`` cuts ``d.wav``, and
+``undo_in_first()`` (Ctrl+Z in ``first`` over ``a.wav``) leaves it cut: every
+file has an order of its own, and an edit is undone only where it was made.
+``undo_in_second()`` puts it back.
 
 **The clipboard's lifetime, and a change of type.** ``copy_first()`` copies a
 span of ``a.wav``; ``paste_second()`` pastes it into ``d.wav`` (mono into
@@ -43,10 +42,10 @@ written; ``undo_in_second()`` brings back the written take, and it is clean.
 ``save_and_close()`` saves ``d.wav`` once more and closes ``second``: the
 window goes once the write is done, and the file holds the take.
 
-A write in flight is too short for a hand to edit through -- five minutes of
-stereo save in under half a second -- so an edit, a focus change or a close
-landing while the reply is still out is checked by the client suites (their
-shared fault trace), not here.
+A write in flight is too short for a hand to edit through (five minutes of
+stereo save in under half a second), so an edit, a focus change or a close
+landing while the reply is still out is checked by the application's own
+suites, not here.
 
 **What it costs.** Leave both windows alone for two seconds and call
 ``activity()``: a stopped window ticks for nothing. Play in one and call it
@@ -72,7 +71,6 @@ import sys
 from clausters import Session, SoundFile
 from clausters.errors import CommandError
 from clausters.gui import edit
-from clausters.gui.editing import Editing
 from clausters.segments import Segment
 
 SECONDS = 2.0
@@ -107,18 +105,17 @@ c = tone("c.wav", 880.0, 6)
 d = tone("d.wav", 550.0, 1)
 
 # %% [markdown]
-# ## Two windows, one shared undo order
+# ## Two windows
 #
-# Both editors take one editing context, and each joins its first file to the
-# context's shared order. Files opened later keep orders of their own.
+# Both are windows of the audio editor the GUI host holds, and every file in
+# them keeps an undo order of its own.
 
 # %%
 session.gui()
-shared = Editing()
-first = edit(a, title="first", context=shared, shared_history=True, server=server)
+first = edit(a, title="first")
 first.open_file([b.path, c.path])
 first.focus_file(0)
-second = edit(d, title="second", context=shared, shared_history=True, server=server)
+second = edit(d, title="second")
 
 
 def status():
@@ -150,20 +147,20 @@ def activity():
 
 
 # %% [markdown]
-# ## Independent and shared history
+# ## An undo order per file
 #
-# A tenth of a second marked from 0.5 s and cut, in `second`; undone from
-# `first`, whose file in focus shares the order.
+# A tenth of a second marked from 0.5 s and cut, in `second`; an undo in
+# `first` leaves it, and one in `second` puts it back.
 
 # %%
 def cut_second():
     """Cut a span of ``d.wav``: a tenth of a second from 0.5 s."""
-    second.select(Segment(second.buffer, round(0.5 * second.sample_rate), 0.1))
+    second.select(Segment(second.file, round(0.5 * second.sample_rate), 0.1))
     second.cut()
 
 
 def undo_in_first():
-    """Ctrl+Z in ``first``: the shared order puts ``d.wav``'s cut back."""
+    """Ctrl+Z in ``first``: ``d.wav``'s cut is not in its order, and stays."""
     first.undo()
 
 
@@ -182,7 +179,7 @@ def undo_in_second():
 def copy_first():
     """Copy a span of ``a.wav``."""
     first.focus_file(0)
-    first.select(Segment(first.buffer, round(0.2 * first.sample_rate), 0.3))
+    first.select(Segment(first.file, round(0.2 * first.sample_rate), 0.3))
     first.copy()
 
 
@@ -220,7 +217,7 @@ def failed_save():
 def save_then_edit():
     """Save ``d.wav``, then cut it: dirty again."""
     second.save(str(OUT / "d_saved.wav"))
-    second.select(Segment(second.buffer, round(0.5 * second.sample_rate), 0.1))
+    second.select(Segment(second.file, round(0.5 * second.sample_rate), 0.1))
     second.cut()
 
 

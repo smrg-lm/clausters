@@ -37,12 +37,11 @@ import { NotesEditor, isEvents } from "./events.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import { MultitrackEditor, isMultitrack } from "./multitrack.ts";
 import type { MultitrackEditorOptions } from "./multitrack.ts";
-import type { AudioEditorOptions } from "./audio.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
 import type { PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
-import { AudioEditor, isTake, readsInPlace } from "./audio.ts";
+import { AudioEditor } from "./audio.ts";
 import { SoundFile } from "../../soundfile.ts";
 import { ScoreEditor, isScore } from "./score.ts";
 import type { Interpretation, Transcription } from "../notation/sheet.ts";
@@ -54,13 +53,15 @@ import { NodeEditor } from "./controls.ts";
 /** What `edit` passes on to whichever editor the structure asks for. */
 export interface EditOptions {
     /**
-     * The engine's rate, which fixes the data<->view bridge. A take knows its own
-     * and needs none; anything else takes the ambient server's nominal rate --
+     * The engine's rate, which fixes the data<->view bridge. A sound file
+     * needs none; anything else takes the ambient server's nominal rate --
      * the current session's, else the default session's, as a play resolves
      * its server -- and 48 kHz with no server anywhere.
      */
     sampleRate?: number;
     title?: string;
+    /** A sound file's: what the audio editor's picture measures, innermost last. */
+    layers?: readonly unknown[];
     width?: number;
     height?: number;
     baseId?: number;
@@ -141,7 +142,7 @@ export interface EditOptions {
      * row; a multitrack opened with none still edits.
      */
     sources?: MultitrackEditorOptions["sources"];
-    /** The multitrack's server, and the one a {@link SoundFile} is loaded on. */
+    /** The multitrack's server. */
     server?: Server;
     /**
      * **A curve's own four**, ignored by every other structure: the ranges its
@@ -152,16 +153,6 @@ export interface EditOptions {
     max?: PointsEditorOptions["max"];
     start?: PointsEditorOptions["start"];
     end?: PointsEditorOptions["end"];
-    /**
-     * An audio editor's: whether its take's undo order is the editing
-     * context's shared one ({@link AudioEditorOptions.sharedHistory}).
-     */
-    sharedHistory?: boolean;
-    /**
-     * **A take's own**, ignored by every other structure: the folder the
-     * audio editor renders its files into ({@link AudioEditorOptions.workspace}).
-     */
-    workspace?: string;
 }
 
 /**
@@ -184,27 +175,13 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
     const {
         sampleRate = 0, host: _h, stage: _s, open: _o, min, max, start, end, view,
         meter, key, clef, beatUnit, division, tuplets, voices, dynamics, interp,
-        ...rest
+        layers: _layers, ...rest
     } = options;
-    if (structure instanceof SoundFile) {
-        // A file is the take, read where it is -- or, compressed, decoded into
-        // a buffer of the editor's own; it is what a save writes.
-        if (readsInPlace(structure)) {
-            return new AudioEditor(structure, { sampleRate, ...rest }) as unknown as Editor<never>;
-        }
-        const { server, ...others } = rest;
-        const take = await structure.toBuffer({ server });
-        return new AudioEditor(take, {
-            sampleRate,
-            ...others,
-            file: structure,
-        }) as unknown as Editor<never>;
-    }
-    if (isTake(structure)) {
-        return new AudioEditor(structure, {
-            sampleRate,
-            ...rest,
-        }) as unknown as Editor<never>;
+    if (isBuffer(structure)) {
+        throw new TypeError(
+            "the audio editor edits sound files, and a buffer is loaded on a server it does " +
+                "not reach: write it to a file (`buffer.write(path)`) and edit that",
+        );
     }
     if (isCurve(structure)) {
         return new PointsEditor(structure, {
@@ -245,15 +222,16 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
     }
     throw new TypeError(
         `nothing edits a ${(structure as object)?.constructor?.name ?? typeof structure}: ` +
-            "`edit` opens a Buffer or a SoundFile (its samples), an Automation (its curve), an " +
+            "`edit` opens a SoundFile (its samples), an Automation (its curve), an " +
             "EventSequence or a Timeline (its notes), a Multitrack (the multitrack) or a " +
             "Score (its page).",
     );
 }
 
 /**
- * Opens `structure` in an editor of its own kind -- a `Buffer` or a
- * `SoundFile` (its samples; a file not written yet asks for a path), an
+ * Opens `structure` in an editor of its own kind: a `SoundFile` (in the
+ * audio editor, the GUI host's application, answered by its handler, an
+ * {@link AudioEditor}; a WAV, RF64 or W64 file on disk), an
  * `Automation` (its curve), a `Timeline` (its notes), a `Multitrack` (the
  * multitrack) or a `Score` (a symbolic score, on its page, in place), or a
  * running `Node`, whose def's controls open in a generic editor
@@ -276,12 +254,14 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
  * bare failure teaches nothing.
  */
 export async function edit(structure: Node, options?: EditOptions): Promise<NodeEditor>;
+export async function edit(structure: SoundFile, options?: EditOptions): Promise<AudioEditor>;
 export async function edit(structure: unknown, options?: EditOptions): Promise<Editor<never>>;
 export async function edit(
     structure: unknown,
     options: EditOptions = {},
-): Promise<Editor<never> | NodeEditor> {
+): Promise<Editor<never> | NodeEditor | AudioEditor> {
     if (structure instanceof Node) return nodeEditor(structure, options);
+    if (structure instanceof SoundFile) return audioEditor(structure, options);
     // **A timeline is rendered, and the roll edits what it produced**: the
     // events, as concrete data in the timeline's beats with its map. The
     // timeline itself is code and is left as it was; the sequence is the
@@ -293,7 +273,7 @@ export async function edit(
     const { until, ...rest } = options;
     const opened = structure instanceof Timeline ? await structure.renderEvents(until) : structure;
     // A take knows its own rate; anything else takes the ambient server's.
-    if (!rest.sampleRate && !isTake(opened) && !(opened instanceof SoundFile)) {
+    if (!rest.sampleRate) {
         rest.sampleRate = await ambientRate();
     }
     const editor = await editorFor(opened, rest);
@@ -301,6 +281,36 @@ export async function edit(
         await editor.open(options.host, { stage: options.stage });
     }
     return editor;
+}
+
+/** The audio editors this page opened, which a second `edit` of the same file finds. */
+const openAudio: AudioEditor[] = [];
+
+/**
+ * **The audio editor over `file`**: the one already open over it, on the same
+ * host when one is named, or a new one. The file is the application's,
+ * opened by the host in a window of its own, and this is its handler.
+ */
+async function audioEditor(file: SoundFile, options: EditOptions): Promise<AudioEditor> {
+    for (let i = openAudio.length - 1; i >= 0; i--) if (openAudio[i]!.closed) openAudio.splice(i, 1);
+    if (options.open !== false) {
+        const current = openAudio.find((editor) =>
+            editor.opening?.path === file.path &&
+            (options.host === undefined || editor.host === options.host));
+        if (current !== undefined) return current;
+    }
+    const editor = new AudioEditor(file, { title: options.title, layers: options.layers });
+    if (options.open !== false) {
+        await editor.open(options.host);
+        openAudio.push(editor);
+    }
+    return editor;
+}
+
+/** Whether `structure` is a server buffer, which the audio editor no longer opens. */
+function isBuffer(structure: unknown): boolean {
+    return typeof structure === "object" && structure !== null &&
+        "bufnum" in structure && "setSamples" in structure;
 }
 
 /**
@@ -345,7 +355,6 @@ async function nodeEditor(node: Node, options: EditOptions): Promise<NodeEditor>
  */
 function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | null {
     const kinds: [(s: unknown) => boolean, new (...args: never[]) => object][] = [
-        [isTake, AudioEditor],
         [isCurve, PointsEditor],
         [isEvents, NotesEditor],
         [isScore, ScoreEditor],
