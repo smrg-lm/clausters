@@ -465,9 +465,6 @@ own.
 | `clausters_editing_runner_new` | `JsStepRunner.new` | `idiom` — C hands back an opaque pointer, wasm a class; **steps being carried out**: the one queue a playback's answers are walked through, whatever waits on the reply |
 | `clausters_editing_runner_free` | `n/a` | wasm frees by `Drop` |
 | `clausters_editing_runner_call` | `JsStepRunner.call` | `idiom` — **one verb of the runner**, as JSON: `push` steps for a server, what is `ready` to go out (the awaited message last, with what it awaits), a `reply` offered back, and whether it is `idle`. **One door rather than one per verb**, as the editor's. A script blocks on the last message's reply and a page awaits it; both hand the reply back the same way. C sizes and fills a buffer where wasm returns the string |
-| `clausters_editing_audio_playback_new` | `JsAudioEditorPlayback.new` | `idiom` — C hands back an opaque pointer, wasm a class; **the audio editor as it is playing** — its structure, its open files and its own transport, answering every verb as steps. It takes the chunk a fill may carry and the transport, negative for one of its own, which its `open` verb or its first sync takes from the id spaces and its `close` gives back |
-| `clausters_editing_audio_playback_free` | `JsAudioEditorPlayback` `Drop` | `idiom` — wasm frees by `Drop`, C needs an explicit `_free`; the bookkeeping, not the nodes |
-| `clausters_editing_audio_playback_call` | `JsAudioEditorPlayback.call` | `idiom` — one JSON door for every verb (`sync`, `closeFile`, `play`, `resume`, `pause`, `stop`, `locate`, `cue`, `close`, `setRolling`, `state`, `space`), allocating from the client's id spaces; C sizes and fills (changing the playback and the spaces only on the fill) where wasm returns the string |
 | `clausters_editing_notes_playback_new` | `JsNotesPlayback.new` | `idiom` — C returns a handle; wasm wraps the playback in an object. It takes the transport, negative for one of its own, which its `open` verb or its first play takes from the id spaces and its `close` gives back — one playback per sequence, so two sequences sound together |
 | `clausters_editing_notes_playback_free` | — | `n/a` — wasm frees by `Drop` |
 | `clausters_editing_notes_playback_call` | `JsNotesPlayback.call` | `idiom` — the notes editor's playback, every verb as steps over the sequence handed in; C fills a buffer size-then-fill, running on a copy so the sizing pass changes nothing, and wasm returns the string |
@@ -666,9 +663,6 @@ every bulk path already has, recorded in `docs/ipc.md`.
 | `clausters_ws_recv` | — | `n/a` — as above |
 | `clausters_ws_close` | — | `n/a` — as above |
 | `clausters_ws_last_error` | — | `n/a` — as above |
-| `clausters_core_workspace_create` | — | `n/a` — wasm has no filesystem of its own: a page's working folder is a folder of its origin's storage, held by a Web Lock, and under node the module cannot reach the disk's locks either. So the web client holds its folder in `src/base/workspace.ts`, by the core's root and rule, with a lock that names its process (the core's lock names it too) where node has no file lock. That is a second implementation of one rule, which the root, the lock files and the sweep keep the same as the core's |
-| `clausters_core_workspace_path` | — | `n/a` — as above |
-| `clausters_core_workspace_free` | — | `n/a` — as above |
 | `clausters_core_abi_version` | — | `n/a` — the cdylib is loaded by a client built separately, so it answers a version handshake (`CORE_ABI_VERSION`); the wasm module ships inside the npm package and is rebuilt with it, so there are never two versions to reconcile |
 
 
@@ -1233,6 +1227,12 @@ reports it, searched and paged. Additive.
 `_path` and `_free`: a folder under the user's cache, on disk, held by a lock
 while the handle lives and removed when it is freed, or by the next editor to
 open when its process ended without freeing it. Additive.
+
+**v94 the clients' audio coordinator goes.** The audio editor's application
+moved into the GUI host, so `clausters_editing_audio_playback_new`, `_free`
+and `_call` (and the wasm `AudioEditorPlayback`) and
+`clausters_core_workspace_create`, `_path` and `_free` have no client to
+call them, and are removed. Breaking: six symbols gone.
 
 
 ## The client surface: one capability, two shapes

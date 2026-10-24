@@ -19,7 +19,8 @@
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
-      import { Session, SoundFile, gui, opfs, segments } from "../dist/index.js";
+      import { Bus, Session, SoundFile, Synth, SynthDef, data, gui, opfs, segments } from "../dist/index.js";
+      import { out, sine } from "../dist/defs/index.js";
       const { Segment } = segments;
 
       const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
@@ -109,17 +110,51 @@
         }
         log("undone: the take is one part again");
 
+        // **The client's server plays on beside it**: a tone on a bus of
+        // the page's own engine, read back while the editor plays.
+        const server = session.server;
+        const toneBus = Bus.audio(1, { server });
+        await new SynthDef("beside", out(toneBus.index, sine(660).mul(0.5))).send(server);
+        const tone = new Synth("beside", {}, { server });
+        const taps = await data.TapStream.open(server, [toneBus.index], { frames: 1024, periodMs: 20 });
+        const toneLevel = () => {
+          const window = taps.window(toneBus.index);
+          return window ? Math.max(...window.samples.map(Math.abs)) : 0;
+        };
+        await until(() => toneLevel() > 0.4, "the page's engine to sound");
+
         // **The editor's own engine plays**: in a page, in an AudioWorklet
         // over the shared memory. The pass from the last tenth of a second
         // ends only if the engine's blocks run.
         await editor.transport.play(0.9);
         await until(() => editor.transport.playing(), "the transport to play");
         if (!(await editor.transport.wait(5))) throw new Error("the pass never ended: no engine ran it");
-        log("played: the editor's transport, on its engine in the page's audio");
+
+        // **A loop plays on past its end**: a fifth of a second looped is
+        // still playing well after a pass of it would have ended, and the
+        // page's tone with it.
+        await editor.transport.loop(0.2, 0.4);
+        await editor.transport.play(0.2);
+        await until(() => editor.transport.playing(), "the loop to play");
+        await sleep(900);
+        if (!(await editor.transport.playing())) throw new Error("the loop ended like a pass");
+        if (!(await editor.transport.looping())) throw new Error("the loop switch went off");
+        const beside = toneLevel();
+        if (beside <= 0.4) throw new Error(`the page's engine fell to ${beside} while the editor played`);
+
+        // **A locate moves the head**: the loop let go of and the head put
+        // near the take's end, the pass ends there.
+        await editor.transport.unloop();
+        await editor.transport.locate(0.95);
+        if (!(await editor.transport.wait(5))) throw new Error("the located pass never ended");
+        tone.free();
+        log(`played: a pass, a loop past its end and a locate, on the editor's engine; ` +
+          `the page's own engine at ${beside.toFixed(3)} beside it`);
 
         verdict("PASS: the audio editor opened a take in a page, rendered an edit on a " +
           "thread into its working folder, saved it into the page's storage, walked its " +
-          "history back and played on an engine of its own");
+          "history back, and played, looped and located on an engine of its own while the " +
+          "page's engine played on beside it");
         await editor.close();
       } catch (error) {
         verdict(`FAIL: ${error?.message ?? error}`);

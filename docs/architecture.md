@@ -1128,11 +1128,10 @@ folder is the core's (`clausters_core::workspace`): under the user's cache, on
 disk, since a render of hours is tens of gigabytes and the temporary directory
 is memory on many machines; held by a lock file beside it while its session
 lives, removed when it ends, and swept by the next editor to open where the
-process was killed. The web client holds the same folder by what it has
-(`clients/web/src/base/workspace.ts`): under node, the same root and lock
-files, the lock naming its process and touched while it is held, since node
-has no file lock; in a tab, a folder of the origin's storage held by a Web
-Lock, swept when no tab holds it. A batch that fails deletes the renders it had written
+process was killed. The folder is the application's, so it is the GUI host's
+wherever the host runs: in a page it is a folder of the origin's storage held
+by a Web Lock (`clausters_core::workspace`'s page side, through the file
+layer), swept when no tab holds it. A batch that fails deletes the renders it had written
 there (the editor's `scratch` verb names which are its own). A turn answers the renders and the `/buffer_stitch` that
 puts the join -- the RT buffer the take plays through, its parts naming file
 spans -- over the new list, and the window draws the list itself, from its

@@ -91,7 +91,7 @@ export { Playback } from "./playback.ts";
 export type { End, Pass, RenderStep, Step, StepArg } from "./playback.ts";
 export { PointsDomain, PointsEditor, PointsView } from "./points.ts";
 export type { EditableCurve, PointsEditorOptions, PointsRules } from "./points.ts";
-export { MEASURES, SamplesView, measures } from "./samples.ts";
+export { MEASURES, measures } from "./samples.ts";
 export type { Measure } from "./samples.ts";
 export { Echo } from "./echo.ts";
 export type { Answer, Correction, Envelope, Turn } from "./echo.ts";

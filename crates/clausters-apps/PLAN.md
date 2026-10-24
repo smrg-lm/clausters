@@ -3182,7 +3182,7 @@ what `X28` built that the model keeps (renders into a working folder, the
 coordinator's per-completion waits, the changed-on-disk notice, the save
 over the opened file) carries over.
 
-- ⬜ **X30 - An editing application holds its engine.** The host links the
+- ✅ **X30 - An editing application holds its engine.** The host links the
   engine and speaks to it by direct calls, natively and in a page (the
   engine in the worklet, the application in a worker, over shared memory);
   the audio editor's playback, its transport and its nodes move from OSC
@@ -5217,7 +5217,7 @@ wrong.
   everything else. It should be decoded into the working folder a run at a
   time, as an offline render reads a stream, without a buffer between.
 
-- ⬜ **What the clients' audio coordinator leaves behind** *(found
+- ✅ **What the clients' audio coordinator leaves behind** *(found
   2026-10-24, making both clients the audio editor's handler)*. With the
   coordinator gone from the clients, these have no caller in them: the
   Python `_native.Workspace` and `_native.AudioEditorPlayback` bindings,
@@ -5227,6 +5227,12 @@ wrong.
   the folder is now the native host's. The page half of that module is
   what the page step can hold the application's folder with, so the sweep
   waits for it and closes `X30`.
+  *Fixed 2026-10-24:* the page step held the folder through the core
+  (`clausters_core::workspace`'s page side), so nothing calls
+  `src/base/workspace.ts` and it went with its test and its decision
+  (superseded). `_native.Workspace` and `_native.AudioEditorPlayback` went
+  with the C ABI symbols behind them and the wasm `AudioEditorPlayback`
+  (core ABI v94), and `SamplesView` from both clients' `editing`.
 
 - ⬜ **Two playback tests of the application's engine fail now and then under
   a parallel run** *(found 2026-10-24, moving the application's threads

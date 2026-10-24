@@ -19,9 +19,8 @@
 import { EXISTS, FAILED, FileRequest, Refused, field, fileOp as enumOp } from "../base/file-requests.ts";
 
 /**
- * The prefix of a working folder's Web Lock, before the folder's name: the
- * one `src/base/workspace.ts` holds a page's folders by, so either sweeps
- * what the other left.
+ * The prefix of a working folder's Web Lock, before the folder's name: what a
+ * sweep reads to tell a folder some tab holds from one a closed tab left.
  */
 const TAB_LOCK = "clausters-work:";
 

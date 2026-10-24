@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 93
+CORE_ABI_VERSION = 94
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -323,15 +323,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_editing_runner_call.restype = ctypes.c_size_t
     lib.clausters_editing_playback_free.argtypes = [ctypes.c_void_p]
-    lib.clausters_editing_audio_playback_new.restype = ctypes.c_void_p
-    lib.clausters_editing_audio_playback_new.argtypes = [ctypes.c_size_t, ctypes.c_int32]
-    lib.clausters_editing_audio_playback_free.argtypes = [ctypes.c_void_p]
-    lib.clausters_editing_audio_playback_free.restype = None
-    lib.clausters_editing_audio_playback_call.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_void_p,
-        u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_audio_playback_call.restype = ctypes.c_size_t
     lib.clausters_editing_notes_playback_new.restype = ctypes.c_void_p
     lib.clausters_editing_notes_playback_new.argtypes = [ctypes.c_int32]
     lib.clausters_editing_notes_playback_free.argtypes = [ctypes.c_void_p]
@@ -998,14 +989,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_ws_close.argtypes = [ctypes.c_void_p]
     lib.clausters_ws_last_error.restype = ctypes.c_char_p
     lib.clausters_ws_last_error.argtypes = []
-    # An editor's working folder (ABI v93): an opaque handle that holds the
-    # folder's lock, and removes the folder when it is freed.
-    lib.clausters_core_workspace_create.restype = ctypes.c_void_p
-    lib.clausters_core_workspace_create.argtypes = [ctypes.c_char_p]
-    lib.clausters_core_workspace_path.restype = ctypes.c_char_p
-    lib.clausters_core_workspace_path.argtypes = [ctypes.c_void_p]
-    lib.clausters_core_workspace_free.restype = None
-    lib.clausters_core_workspace_free.argtypes = [ctypes.c_void_p]
     _configure_notation(lib)
     return lib
 
@@ -1935,56 +1918,6 @@ class MultitrackPlayback:
             return 0.0
         return float(lib().clausters_editing_playback_samples_to_secs(
             ctypes.c_void_p(self._handle), int(samples)))
-
-
-class AudioEditorPlayback:
-    """**The audio editor, as it is playing** (`clausters_editing_audio_playback_*`):
-    its structure, its open files and its own transport, answering every verb
-    as steps -- the same object the GUI host holds.
-
-    One door, `call`, for every verb the crate names: ``open``, ``sync``,
-    ``closeFile``, ``play``, ``resume``, ``pause``, ``stop``, ``locate``,
-    ``cue``, ``close``, ``setRolling``, and the two queries ``state`` and
-    ``space``. A verb that changes the server answers ``{"steps": [...]}``; a
-    query its own object.
-
-    Args:
-        chunk: how many samples one ``/buffer_setRange`` carries.
-        transport: the transport it plays on; ``None`` for one of its own,
-            which ``open`` takes from the id spaces and ``close`` gives back.
-    """
-
-    def __init__(self, *, chunk: int = 8192, transport: "int | None" = None):
-        self._handle = lib().clausters_editing_audio_playback_new(
-            max(1, int(chunk)), -1 if transport is None else int(transport))
-
-    def __del__(self):
-        self.free()
-
-    def free(self) -> None:
-        """Free the bookkeeping. Not the nodes: ``close`` answers the steps that
-        free those."""
-        handle, self._handle = getattr(self, "_handle", None), None
-        if handle:
-            lib().clausters_editing_audio_playback_free(ctypes.c_void_p(handle))
-
-    def call(self, verb: str, ids: "IdSpaces", **args) -> dict:
-        """One verb, allocating from ``ids``: its answer.
-
-        Raises:
-            ValueError: the crate refused it -- an unknown verb, or an id space
-                exhausted; nothing changes then.
-        """
-        if not self._handle:
-            return {"steps": []}
-        body = json.dumps({"verb": verb, **args}).encode("utf-8")
-        raw = size_then_fill(lib().clausters_editing_audio_playback_call,
-                             ctypes.c_void_p(self._handle), as_u8(body), len(body),
-                             ctypes.c_void_p(ids._handle))
-        answer = json.loads(raw.decode("utf-8")) if raw else {"steps": []}
-        if "error" in answer:
-            raise ValueError(answer["error"])
-        return answer
 
 
 class NotesPlayback:
@@ -3475,26 +3408,6 @@ def unix_to_ntp(unix_secs: float) -> int:
     """A Unix timestamp packed into the 64 NTP timetag bits (adds the
     1900->1970 offset, then packs like `ntp_timetag`)."""
     return lib().clausters_core_unix_to_ntp(float(unix_secs))
-
-
-class Workspace:
-    """**An editor's working folder**, the core's (`clausters_core::workspace`):
-    a folder under the user's cache, on disk -- never the temporary directory,
-    which is memory on many machines -- held by a lock while this is open and
-    removed by `close`. A process that ends without closing it lets go of the
-    lock however it ends, and the next editor to open removes the folder."""
-
-    def __init__(self, name: str):
-        self._handle = lib().clausters_core_workspace_create(name.encode())
-        if not self._handle:
-            raise OSError(f"no working folder for {name!r} could be made")
-        self.path = lib().clausters_core_workspace_path(self._handle).decode()
-
-    def close(self) -> None:
-        """Removes the folder and lets go of its lock; closing twice is nothing."""
-        if self._handle:
-            lib().clausters_core_workspace_free(self._handle)
-            self._handle = None
 
 
 def degree_to_midinote(degree: float, alter: float, octave: float, root: float,

@@ -35,7 +35,6 @@
     -->
     <script type="module">
       import { Session, opfs, loadCore, Buffer } from "../dist/index.js";
-      import { Workspace } from "../dist/base/workspace.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -197,38 +196,6 @@
           info.sampleRate === 48000 && worst < 1e-6 && failed.length > 0 &&
           rightInfo.channels === 1 &&
           [...rightSamples].every((s) => Math.abs(s + 0.25) < 1e-6);
-        // **A working folder is held by a Web Lock**: one a closed tab left,
-        // which no tab holds, goes when the next one is made, and its own goes
-        // with its close.
-        const folders = async () => {
-          const names = [];
-          try {
-            let dir = await navigator.storage.getDirectory();
-            for (const part of ["clausters", "work"]) dir = await dir.getDirectoryHandle(part);
-            for await (const [name, handle] of dir.entries()) if (handle.kind === "directory") names.push(name);
-          } catch { /* not there yet */ }
-          return names;
-        };
-        const heldLocks = async () => (await navigator.locks.query()).held.map((lock) => lock.name);
-        await opfs.makeDirectory("clausters/work/audio-left");
-        await opfs.writeFile("clausters/work/audio-left/reversed.w64", new Uint8Array(8));
-        const own = new Workspace("audio");
-        await own.ready;
-        const opened = await folders();
-        if (opened.includes("audio-left")) throw new Error("a folder no tab holds was not swept");
-        if (opened.length !== 1 || !opened[0].startsWith("audio-"))
-          throw new Error(`the folder is not in the page's working root: ${opened}`);
-        if (!(await heldLocks()).includes(`clausters-work:${opened[0]}`))
-          throw new Error("the folder is not held by a lock");
-        await opfs.writeFile(`${own.path}/kept.w64`, new Uint8Array(8));
-        if (await own.close()) throw new Error("a folder holding a file was removed");
-        if (!(await heldLocks()).includes(`clausters-work:${opened[0]}`))
-          throw new Error("a folder still holding a file was let go of");
-        await opfs.removeFile(`${own.path}/kept.w64`);
-        if (!(await own.close()) || (await folders()).length !== 0)
-          throw new Error(`the folder outlived its close: ${await folders()}`);
-        log("working folder: one a closed tab left swept by the next, its own held by a lock and gone with its close");
-
         verdict(ok
           ? `PASS: Buffer.read pulled ${info.frames} frames of ${info.channels} ` +
             `channels out of OPFS through the NRT worker (worst sample delta ` +
@@ -236,8 +203,7 @@
             `readChannels([1]) came back mono at the right channel's value, and ` +
             `buffer.write went back out and read back at ${backWorst.toExponential(1)}, ` +
             `a ${LONG}-frame take crossing ${Math.ceil(LONG / 4800)} runs at ` +
-            `${longWorst.toExponential(1)} with the caller's array left intact, ` +
-            `and a working folder was held by a Web Lock and swept when nobody held it`
+            `${longWorst.toExponential(1)} with the caller's array left intact`
           : `FAIL: frames ${info.frames}/${FRAMES}, channels ${info.channels}, ` +
             `rate ${info.sampleRate}, delta ${worst}, failure "${failed}", ` +
             `selected ${rightInfo.channels} ${[...rightSamples]}, ` +

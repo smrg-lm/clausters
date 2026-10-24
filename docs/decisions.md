@@ -11028,6 +11028,13 @@ Rejected: a sweep by age alone, which would remove a live session's folder
 after an hour of editing; and keeping node in the temporary directory, which on
 many machines is memory, the reason the native folder moved.
 
+*Superseded the same day.* The audio editor's application moved into the GUI
+host, so no client holds a working folder any more: the host's application
+holds it through the core, by its file lock natively and, in a page, by a Web
+Lock through the file layer (`clausters_core::workspace`'s page side). The
+web client's `src/base/workspace.ts` was removed with the clients' audio
+coordinator.
+
 ## The applications in a page are a second build of the host, on a pinned nightly (2026-10-24)
 
 Context: an editing application in a page runs as one program over one

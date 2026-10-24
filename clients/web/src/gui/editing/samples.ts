@@ -1,5 +1,5 @@
 /**
- * The picture a take is drawn in: one `waveform`, and the measures it stacks.
+ * What a take's picture measures, and the wire's samples as numbers.
  *
  * **What the picture measures is the view's.** A waveform is drawn as a stack of
  * measures over one field -- what the signal reached (`peak`) with what it held
@@ -9,25 +9,13 @@
  * Measuring twice into one body is also what makes the rest of it one thing: one
  * axis, one ruler, one selection, one playhead, one upload of the samples.
  *
- * The editor that draws a take in it is {@link AudioEditor}.
+ * The editor whose picture these measure is {@link AudioEditor}.
  *
  * @module
  */
 
-import type { Buffer } from "../../defs/buffer.ts";
 import { samplesMeasures } from "../../core/clausters_core_web.js";
 import type { SignalLayer, SignalLayers } from "../guidef.ts";
-import type { GuiNode } from "../guidef.ts";
-import type { PropValue } from "../host.ts";
-import type { Editor } from "./editor.ts";
-import { View } from "./view.ts";
-
-/** What a take's window is composed through: the editor's door to its core. */
-interface TakeWindow {
-    syncCore(): void;
-    windowWidget(role: string, key?: string): number;
-    coreCall(verb: string, args?: Record<string, unknown>): Record<string, unknown>;
-}
 
 /**
  * The editor's default stack: what the signal reached and held inside it.
@@ -85,58 +73,4 @@ function floats(blob: unknown): number[] {
     if (blob instanceof Float32Array) return [...blob];
     if (Array.isArray(blob)) return blob.map(Number);
     return [];
-}
-
-/**
- * A pane holding the take's signal body, drawn by the host straight from
- * the server buffer. Visual measures remain a prop of that body; the pane
- * owns the time axis, ruler, selection and playhead.
- *
- * **The window is the application's**, composed in the shared crate
- * (`EditingCore`): the waveform, the gesture plan a take is edited with (a
- * drag selects, Alt draws, Ctrl grabs one sample), the label and the correction
- * a write answers with. What is left here is the id a hand's gestures come back
- * on.
- */
-export class SamplesView extends View<Buffer> {
-    /** What the picture measures, innermost last. */
-    layers: Measure[];
-
-    constructor(layers: SignalLayers | Iterable<Measure> = MEASURES) {
-        super();
-        this.layers = measures(layers);
-    }
-
-    build(editor: Editor<Buffer | null>): GuiNode {
-        const ed = editor as unknown as TakeWindow;
-        const wid = this.register(ed.windowWidget("waveform"), editor.structure);
-        // the window's own widgets keep their ids while the files change
-        const meter = this.register(ed.windowWidget("meter"), editor.structure);
-        const pane = this.register(ed.windowWidget("pane"), editor.structure);
-        ed.syncCore();
-        const envelope = this.register(ed.windowWidget("envelope"), editor.structure);
-        // the spectrogram's lane, drawn when the views are stacked
-        const lane = this.register(ed.windowWidget("lane"), editor.structure);
-        // the crate names the widgets of its dialogs and this numbers them
-        const named = ed.coreCall("dialogs").dialogs;
-        const dialogs: Record<string, number> = {};
-        for (const name of Array.isArray(named) ? named.map(String) : []) {
-            dialogs[name] = this.register(ed.windowWidget("dialog", name), editor.structure);
-        }
-        const tree = ed.coreCall("window", {
-            widget: wid, meter, pane, envelope, lane, dialogs,
-            filesWidget: this.register(ed.windowWidget("files"), editor.structure),
-        }) as unknown as GuiNode;
-        // **A page's own widgets are its objects**, so they are appended here
-        // rather than composed in the crate.
-        tree.children = [...(tree.children ?? []), ...editor.extra];
-        return tree;
-    }
-
-    override props(editor: Editor<Buffer | null>, widgetId: number): Record<string, PropValue> {
-        return (editor as unknown as TakeWindow).coreCall("props", { widget: widgetId }) as Record<
-            string,
-            PropValue
-        >;
-    }
 }

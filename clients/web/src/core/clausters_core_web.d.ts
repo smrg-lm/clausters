@@ -2,26 +2,6 @@
 /* eslint-disable */
 
 /**
- * **The audio editor, as it is playing**: its structure, its files and its
- * transport, answering every verb as steps (JSON).
- */
-export class AudioEditorPlayback {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * One verb, as JSON: `{"verb": ...}` in, steps or a query's answer out.
-     */
-    call(request: string, ids: IdSpaces): string;
-    /**
-     * A playback; `chunk` is how many samples one fill carries, and
-     * `transport` the transport it plays on -- negative for one of its own,
-     * which it takes from the id spaces with its `open` verb or its first
-     * sync.
-     */
-    constructor(chunk: number, transport: number);
-}
-
-/**
  * One document, held in Rust -- the JS face of
  * [`clausters_document::Document`].
  */
@@ -2047,7 +2027,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_audioeditorplayback_free: (a: number, b: number) => void;
     readonly __wbg_document_free: (a: number, b: number) => void;
     readonly __wbg_editingcore_free: (a: number, b: number) => void;
     readonly __wbg_history_free: (a: number, b: number) => void;
@@ -2068,8 +2047,6 @@ export interface InitOutput {
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly __wbg_widgetids_free: (a: number, b: number) => void;
     readonly articulation: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly audioeditorplayback_call: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly audioeditorplayback_new: (a: number, b: number) => number;
     readonly bar: (a: number, b: number) => number;
     readonly bark_to_hz: (a: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;

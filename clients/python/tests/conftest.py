@@ -1,7 +1,7 @@
 """What every test of the package shares.
 
-The audio editor's working folders are made under the user's cache
-(`clausters._native.Workspace`), and a test that opens an editor without
+The audio editor's working folders are made under the user's cache by the
+GUI host that holds the editor, and a test that opens an editor without
 closing it would leave one there for the next editor to sweep. The suite gets
 a cache of its own instead, removed when it ends.
 """

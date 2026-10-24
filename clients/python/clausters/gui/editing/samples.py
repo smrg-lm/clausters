@@ -1,4 +1,4 @@
-"""The picture a take is drawn in: one `waveform`, and the measures it stacks.
+"""What a take's picture measures, and the wire's samples as numbers.
 
 **What the picture measures is the view's.** A waveform is drawn as a stack of
 measures over one field -- what the signal reached (``peak``) with what it held
@@ -8,14 +8,13 @@ of them on one rectangle are not layers, the second hides the first. Measuring
 twice into one body is also what makes the rest of it one thing: one axis, one
 ruler, one selection, one playhead, one upload of the samples.
 
-The editor that draws a take in it is `clausters.gui.editing.AudioEditor`.
+The editor whose picture these measure is `clausters.gui.editing.AudioEditor`.
 """
 
 import struct
 from array import array
 
 from ... import _native
-from .view import View
 
 
 #: The editor's default stack: what the signal reached and held inside it.
@@ -55,45 +54,3 @@ def _floats(blob) -> list:
     if isinstance(blob, (list, tuple)):
         return [float(v) for v in blob]
     return []
-
-
-class SamplesView(View):
-    """A pane holding the take's signal body, drawn by the host straight from
-    the server buffer. Visual measures remain a prop of that body; the pane
-    owns the time axis, ruler, selection and playhead.
-
-    **The window is the application's**, composed in the shared crate
-    (`clausters._native.EditingCore`): the waveform, the gesture plan a
-    take is edited with (a drag selects, Alt draws, Ctrl grabs one sample), the
-    label and the correction a write answers with. What is left here is the id a
-    hand's gestures come back on.
-    """
-
-    def __init__(self, layers=MEASURES):
-        super().__init__()
-        #: What the picture measures, innermost last.
-        self.layers = measures(layers)
-
-    def build(self, editor) -> dict:
-        wid = self.register(editor._window_widget("waveform"), editor.structure)
-        # the window's own widgets keep their ids while the files change
-        meter = self.register(editor._window_widget("meter"), editor.structure)
-        pane = self.register(editor._window_widget("pane"), editor.structure)
-        editor._sync_core()
-        envelope = self.register(editor._window_widget("envelope"), editor.structure)
-        # the spectrogram's lane, drawn when the views are stacked
-        lane = self.register(editor._window_widget("lane"), editor.structure)
-        # the crate names the widgets of its dialogs and this numbers them
-        dialogs = {str(name): self.register(editor._window_widget("dialog", str(name)),
-                                            editor.structure)
-                   for name in editor._call("dialogs").get("dialogs") or ()}
-        files_widget = self.register(editor._window_widget("files"), editor.structure)
-        tree = editor._call("window", filesWidget=files_widget, widget=wid, meter=meter,
-                            pane=pane, envelope=envelope, lane=lane, dialogs=dialogs)
-        # **A script's own widgets are its objects**, so they are appended here
-        # rather than composed in the crate.
-        tree["children"] = [*tree.get("children", ()), *editor.extra]
-        return tree
-
-    def props(self, editor, widget_id: int) -> dict:
-        return editor._call("props", widget=int(widget_id))
