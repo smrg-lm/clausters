@@ -3472,6 +3472,28 @@ Every entry carries a checkbox.
   root plan's "An effect applied from its preview is heard twice for a
   moment" holds one way, should it apply).
 
+- ⬜ **A process edited in a panel of its own: the gain envelope first**
+  *(the user, 2026-10-25, after trying the gain envelope from the Process
+  menu)*. The gain curve is not a second body the hand chooses beside the
+  take, as *Edit audio* and *Edit gain envelope* now make it: it is a
+  separate view for one edit, with its own actions and its own overlays,
+  entered to edit the curve and left by applying or cancelling it. As a
+  mode beside *Edit audio*, going back with *Edit audio* leaves the curve
+  shown, and only an apply puts it away. The shape the user proposed:
+  Process holds one entry, *Edit gain envelope*, which shows the curve over
+  the waveform and opens a **side panel**, as image editors dock the
+  options of the tool in hand, beside the file list the window already
+  has. The panel holds *Apply*, *Reset* and *Cancel* and a check that
+  previews the curve on what is heard (the effect heard live before it is
+  applied, the entry above). The same panel is meant to hold any other
+  process's options, so it **needs more planning before it is built**: what
+  a panel is to the host (a widget of the window, docked, shown and hidden
+  by the application), what a process states to fill one, how a panel's
+  actions read as the application's verbs both clients call, and what
+  leaving the view without applying keeps. It also settles the Process
+  menu's open question of one Apply per kind of edit (*The audio editor's
+  Edit menu names one entry per kind of edit*, below).
+
 - ⬜ **Persist an application's multi-file workspace** *(ownership audit,
   2026-10-18)*. Saving an audio file is not saving the open-file set. Define
   whether file order, focused file and presentation settings belong in a

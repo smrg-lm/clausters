@@ -423,7 +423,9 @@ Named, not enumerated: each is written where it belongs and is read there.
   trapezoid; what replaces the refused join over overlapping boxes; the host
   keeping the pile; a master in the multitrack's view; and, among its open
   decisions, what a version means across a load), and the applications'
-  (time-stretch from a clip's edge; what a bare window leaves to its handle;
+  (a process edited in a panel of its own, the gain envelope first, which
+  needs planning to be general; time-stretch from a clip's edge; what a bare
+  window leaves to its handle;
   a box of notes that chooses its synth; a roll's tempo and barlines as
   parameters; the score
   editor's editing rules as modules; what a score editor's hand expects and
