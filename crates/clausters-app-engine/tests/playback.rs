@@ -967,3 +967,84 @@ fn two_loop_switches_close_together_at_its_end_are_not_heard() {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+/// **A pass that ends on its own is taken in on the application's turn**:
+/// played to the end of the take, the transport stops, and the editor hears
+/// it with nothing asked of it -- its state is no longer playing, the window
+/// is told, and an edit it refused while playing is not refused for that.
+/// Once taken in, nothing more is said.
+#[test]
+fn a_pass_that_ends_on_its_own_is_taken_in() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::Editing;
+    use serde_json::json;
+
+    let (path, _) = take("ended");
+    let workspace = std::env::temp_dir().join(format!("app-engine-end-{}", std::process::id()));
+    std::fs::create_dir_all(&workspace).unwrap();
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let mut app = App::new(Arc::new(Mutex::new(AppEngine::over(handle))));
+    let mut editing = Editing::new();
+    app.hold(&mut editing);
+    let opened = app.call(
+        &mut editing,
+        &json!({"verb": "openAudio", "key": "take", "path": path,
+            "workspace": workspace.to_string_lossy(), "frames": FRAMES,
+            "channels": 1, "rate": SR}),
+    );
+    let member = opened["member"].as_u64().expect("an audio member") as u32;
+    for call in [
+        json!({"verb": "sync", "window": 900}),
+        json!({"verb": "window", "widget": 12}),
+    ] {
+        app.call(
+            &mut editing,
+            &json!({"verb": "member", "member": member, "call": call}),
+        );
+    }
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "open", "empty": false}),
+    );
+    let app_engine = Arc::clone(app.engine());
+    // the last tenth of the take
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        member,
+        json!({"verb": "play", "at": 0.45}),
+    );
+    let state = |app: &mut App, editing: &mut Editing| {
+        app.query(editing, member, "transport")["state"].clone()
+    };
+    assert_eq!(state(&mut app, &mut editing)["rolling"], true);
+    blocks(&mut engine, &app_engine, 600);
+    let told: Vec<_> = app
+        .landed(&mut editing)
+        .into_iter()
+        .filter(|ran| ran.member == member)
+        .collect();
+    assert!(
+        told.iter()
+            .any(|ran| ran.effects.iter().any(|e| e["kind"] == "set")),
+        "the window is told: {told:?}"
+    );
+    let now = state(&mut app, &mut editing);
+    assert_eq!(now["rolling"], false, "{now}");
+    assert!(now["playing"].is_null(), "{now}");
+    let actions = app.call(&mut editing, &json!({"verb": "actions", "member": member}));
+    assert_ne!(
+        actions["delete"]["reason"], "the file is playing: stop it to edit",
+        "{actions}"
+    );
+    assert!(
+        app.landed(&mut editing).is_empty(),
+        "taken in once, and nothing more is said"
+    );
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir_all(&workspace);
+}

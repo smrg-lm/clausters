@@ -219,6 +219,26 @@ fn resume(
     Ok(answer)
 }
 
+/// The members whose session believes its transport rolls while the
+/// context's engine has stopped it ([`Editing::stopped`]).
+pub(super) fn stopped(editing: &Editing) -> Vec<MemberId> {
+    let Some(engine) = editing.engine.as_ref() else {
+        return Vec::new();
+    };
+    editing
+        .sessions
+        .iter()
+        .filter(|(_, session)| {
+            session.playback.rolling()
+                && session
+                    .playback
+                    .transport()
+                    .is_some_and(|transport| !engine.rolling(transport))
+        })
+        .map(|(member, _)| *member)
+        .collect()
+}
+
 /// **What a script reads of member `member`**: `transport` or `output`.
 fn query(editing: &mut Editing, member: MemberId, query: &str) -> Value {
     if let Err(error) = audio_member(editing, member) {

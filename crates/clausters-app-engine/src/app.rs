@@ -206,7 +206,8 @@ impl App {
 
     /// **Takes back what the engine handed over** and resumes every run whose
     /// render landed, in the order they landed; a render's progress comes
-    /// back as a `progress` effect of a [`Ran`] with no end.
+    /// back as a `progress` effect of a [`Ran`] with no end, and a member
+    /// whose pass ended on its own as the [`Ran`] of its `playing` action.
     pub fn landed(&mut self, editing: &mut Editing) -> Vec<Ran> {
         self.engine.lock().unwrap_or_else(|e| e.into_inner()).pump();
         let mut out = Vec::new();
@@ -244,6 +245,13 @@ impl App {
                     out.push(self.went(member, token, ran, lease));
                 }
             }
+        }
+        // **A pass that ended on its own is taken in**: the transport stopped
+        // at its end, and the member hears it now rather than at the next
+        // thing asked of it, and its window is told as a window's run is.
+        for member in editing.stopped() {
+            let playing = json!({"verb": "playing", "window": true});
+            out.push(self.act(editing, member, playing, 0, false));
         }
         out
     }

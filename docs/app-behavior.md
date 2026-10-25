@@ -235,6 +235,11 @@ code that keeps it lives.
   start puts the cursor before the first frame, which plays too; going to the
   end puts it past the last, where the take has played out: a play from there
   stops at once unless it loops, and a paste there goes after all of it.
+- **A pass that ends on its own is taken in at once.** The transport stops at
+  the end of the take or the selection and goes back to the position cursor,
+  and the editor hears it on its next turn, with nothing else asked: it is no
+  longer playing, the window is told, and an edit refused while playing is
+  available again (`Editing::stopped`).
 - **The cursor moves the music.** A click placing the position cursor, or a
   selection let go (whose start the cursor goes to), moves the play cursor
   there too: a stopped transport stands on it, and a file playing goes on

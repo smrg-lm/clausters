@@ -132,6 +132,16 @@ impl Editing {
             _ => json!({"error": "the member answers no queries"}),
         }
     }
+
+    /// **The members whose pass ended on its own**: each believes its
+    /// transport rolls, and the engine has stopped it at the end of the
+    /// take or the selection. The caller runs each one's `playing` action,
+    /// which takes the stop in and tells the window, so the transport's
+    /// state, the play cursor and the actions it refuses while playing are
+    /// not left as they were until the next thing the hand does.
+    pub fn stopped(&self) -> Vec<MemberId> {
+        super::coordinator::stopped(self)
+    }
 }
 
 /// What a member that runs no actions answers one.
