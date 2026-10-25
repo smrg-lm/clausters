@@ -731,6 +731,60 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// **A copy is held by the application, and a paste reads it there**: the
+    /// window's copy puts on the host's clipboard a document that names the
+    /// copy the application keeps, and a paste carrying that document puts
+    /// the copied span in, read from where the copy is kept.
+    #[test]
+    fn a_copy_is_pasted_from_where_the_application_keeps_it() {
+        let path = take("copy", 24_000);
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        let widget = widget_of(&host, def_id);
+        let copy = host.event_message(
+            widget,
+            1,
+            vec![
+                OscType::String("copy".into()),
+                OscType::Float(0.0),
+                OscType::Float(6_000.0),
+            ],
+        );
+        assert!(host.deliver(def_id, &copy));
+        until(&mut host, "the copy reached the clipboard", |host| {
+            host.clipboard
+                .doc()
+                .is_some_and(|doc| doc.kind() == "segments")
+        });
+        let doc = host.clipboard.doc().unwrap().clone();
+        let clausters_document::clipboard::Content::Segments {
+            held, parts: named, ..
+        } = &doc.content
+        else {
+            unreachable!("a copy of segments");
+        };
+        assert!(named.is_empty(), "the parts stay with the application");
+        assert_eq!(held.as_ref().unwrap().files, std::slice::from_ref(&path));
+        let paste = host.event_message(
+            widget,
+            2,
+            vec![
+                OscType::String("paste".into()),
+                OscType::Float(24_000.0),
+                OscType::String("segments".into()),
+                OscType::String(doc.to_json()),
+            ],
+        );
+        assert!(host.deliver(def_id, &paste));
+        until(&mut host, "the paste landed", |host| {
+            parts(host, def_id).len() == 2
+        });
+        let after = parts(&mut host, def_id);
+        assert_eq!(after[1]["start"], 0, "{after:?}");
+        assert_eq!(after[1]["frames"], 6_000, "{after:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// **The working folder is on disk, and goes with its window**: under the
     /// user's cache rather than the temporary directory, which is memory on
     /// many machines, and removed when the window closes or the host ends.

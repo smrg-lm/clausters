@@ -294,22 +294,14 @@ fn an_editor_applies_a_curve_by_rendering_the_list_and_undo_names_the_take_again
             .count()
     };
     walk(&editor.open().unwrap());
+    // the list as data: the window is handed it by reference
     let parts = |editor: &mut clausters_apps::audio::editor::AudioEditor| -> Vec<Value> {
-        let tree: Value =
-            serde_json::from_str(&call_json(editor, r#"{"verb":"window","widget":10}"#)).unwrap();
-        fn find(v: &Value) -> Option<Value> {
-            if let Some(list) = v.get("segments") {
-                return Some(list["parts"].clone());
-            }
-            match v {
-                Value::Array(a) => a.iter().find_map(find),
-                Value::Object(o) => o.values().find_map(find),
-                _ => None,
-            }
-        }
-        find(&tree).unwrap().as_array().unwrap().clone()
+        let list: Value =
+            serde_json::from_str(&call_json(editor, r#"{"verb":"segments"}"#)).unwrap();
+        list["parts"].as_array().unwrap().clone()
     };
-    parts(&mut editor);
+    // the window over the take, which the gestures are on
+    call_json(&mut editor, r#"{"verb":"window","widget":10}"#);
     let cut = editor.event(
         &clausters_apps::turn::Event {
             addr: "/gui_event".into(),

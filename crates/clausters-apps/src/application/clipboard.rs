@@ -53,8 +53,9 @@ impl Exchange {
         // **A copy of segments names files**, not a buffer: nothing is held
         // for it, and the files it names stay while it does
         // ([`Exchange::files`]).
-        if let Content::Segments { parts, .. } = &doc.content {
-            if parts.is_empty() {
+        if let Content::Segments { parts, held, .. } = &doc.content {
+            // one the application keeps names its files beside the number
+            if parts.is_empty() && held.as_ref().is_none_or(|h| h.files.is_empty()) {
                 return Err("a copy of segments names no file".into());
             }
             let raw = doc.to_json();
