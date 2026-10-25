@@ -206,13 +206,19 @@ impl Host {
 /// It answers with the **facet** and not with the element, which is what the
 /// callers wanted from it all along: every one of them goes on to ask a
 /// question about samples.
+///
+/// **A list of segments is a take whatever its picture**: a waveform holds
+/// the list's summary and a spectrogram alone holds columns and no summary,
+/// and both draw the same take, so a list counts before its picture does.
+/// Asking for the summary alone made Select all find nothing in the
+/// spectrogram.
 pub(super) fn element_with_samples(
     widget: &widget::Widget,
 ) -> Option<&dyn widget::element::Samples> {
     std::iter::once(widget)
         .chain(widget.children.iter())
         .filter_map(|w| w.kind.as_samples())
-        .find(|s| s.sample_shape().is_some())
+        .find(|s| s.segments().is_some() || s.sample_shape().is_some())
 }
 
 /// **Asks every element of this tree that holds samples to do `apply`**,

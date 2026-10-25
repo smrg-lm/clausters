@@ -808,6 +808,39 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// **Every view of the take answers the same verbs**: the spectrogram
+    /// alone is the take's picture as the waveform is, so Select all sweeps
+    /// the whole take in each of the three views.
+    #[test]
+    fn select_all_sweeps_the_take_in_every_view() {
+        let path = take("views", 24_000);
+        for view in ["view_wave", "view_spectrogram", "view_both"] {
+            let mut host = host();
+            let def_id = opened(&mut host, &path);
+            let widget = widget_of(&host, def_id);
+            let message = host.event_message(widget, 1, vec![OscType::String(view.into())]);
+            assert!(host.deliver(def_id, &message));
+            until(&mut host, "the view never came", |h| {
+                let layers = h.registry.get(widget).unwrap().props.get("layers").cloned();
+                layers.is_some_and(|l| (l == json!("spectrogram")) == (view == "view_spectrogram"))
+            });
+            let widget = widget_of(&host, def_id);
+            let key = host.timeline_key(widget).expect("on an axis");
+            let ctx = crate::host::gestures::GestureCtx::new(def_id, 1000, 520);
+            crate::host::gestures::Gestures::default().command(&mut host, &ctx, "select_all");
+            let mut swept = (0.0, 0.0);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while std::time::Instant::now() < deadline && swept.1 == 0.0 {
+                host.take_effects();
+                let state = host.timelines().state(key).unwrap();
+                swept = (state.sel_start, state.sel_len);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert_eq!(swept, (0.0, 24_000.0), "{view}");
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// **A copy is held by the application, and a paste reads it there**: the
     /// window's copy puts on the host's clipboard a document that names the
     /// copy the application keeps, and a paste carrying that document puts

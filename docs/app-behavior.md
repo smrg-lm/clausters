@@ -108,6 +108,11 @@ code that keeps it lives.
   pane (the take, the gain envelope); one is in hand at a time. Views are
   placed as **alternatives** in one lane, one shown at a time, or **stacked**
   in lanes of their own on one axis.
+- **A view changes the picture, never the verbs.** The waveform, the
+  spectrogram alone and the two stacked are pictures of one take, and every
+  verb, key, tool and gesture does the same in each: select all, the ends, a
+  delete, a sweep, a click. A view whose picture is not a summary (the
+  spectrogram's columns) is still the take for whatever asks for one.
 - **The defaults, not the limits.** The audio editor's menu superposes the
   edit layers (the envelope over the take) and the visualization layers of
   one quantity (RMS inside the peaks), and places the waveform and the
