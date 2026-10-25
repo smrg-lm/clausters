@@ -385,3 +385,109 @@ fn a_forgotten_list_is_absent() {
     );
     assert_eq!(q.args[1], OscType::Int(-1));
 }
+
+/// Every column of a span, walked reply by reply as a view asks for them:
+/// each column's channels in turn, `window / 2` bytes each.
+fn spectrum(
+    answerer: &mut Answerer,
+    io: &mut Disk,
+    key: i32,
+    (start, hop, columns, window): (usize, usize, usize, usize),
+    channels: usize,
+) -> Vec<u8> {
+    let mut got = Vec::new();
+    let mut done = 0;
+    while done < columns {
+        let reply = ask(
+            answerer,
+            io,
+            "/buffer_spectrum",
+            vec![
+                OscType::Int(key),
+                OscType::Long((start + done * hop) as i64),
+                OscType::Int(hop as i32),
+                OscType::Int((columns - done) as i32),
+                OscType::Int(window as i32),
+            ],
+        );
+        let Some(OscType::Blob(blob)) = reply.args.last() else {
+            panic!("{reply:?}");
+        };
+        let answered = blob.len() / (channels * window / 2);
+        assert!(answered > 0, "a reply answers a column at least");
+        done += answered;
+        got.extend_from_slice(blob);
+    }
+    got
+}
+
+/// **A list's spectrogram is composed from its files' columns**, as its
+/// summary is from their peaks: a column inside a part is the window its
+/// file holds at the nearest point of a grid of the hop laid over the file,
+/// so after a cut the columns of what was there before are found again and
+/// only the seam's are analyzed.
+#[test]
+fn an_edit_s_spectrogram_is_composed_from_the_columns_analyzed_before() {
+    let dir = scratch("columns");
+    let frames = 1 << 17;
+    let data = noise(frames, 11);
+    let (path, _) = take(&dir, "a", &data, 1, false);
+    let (hop, window) = (512, 1024);
+    let mut answerer = Answerer::default();
+    let mut io = Disk::default();
+    answerer.define(-2, list(1, vec![part(&path, None, 0, frames, (1, frames))]));
+    let columns = (frames - window) / hop;
+    let whole = spectrum(&mut answerer, &mut io, -2, (0, hop, columns, window), 1);
+    let analyzed = answerer.columns_analyzed;
+    assert_eq!(analyzed, columns, "each column analyzed once");
+    // a column is the file's window where the grid puts it
+    let (hann, gain) = clausters_core::stft::analysis_window(window);
+    let column_at = |at: usize| -> Vec<u8> {
+        let mut out = vec![0.0f32; window / 2];
+        clausters_core::stft::column_into(
+            &data[at..at + window],
+            &hann,
+            gain,
+            &mut vec![0.0; window],
+            &mut vec![0.0; window / 2],
+            &mut out,
+        );
+        out.iter()
+            .map(|m| clausters_core::stft::quantize(*m))
+            .collect()
+    };
+    assert_eq!(&whole[7 * 512..8 * 512], column_at(7 * hop).as_slice());
+    // A cut of 10_001 frames, off the grid: what follows it moves by that
+    // much, and its columns are the ones already analyzed.
+    let cut = (40_000, 10_001);
+    let edited = list(
+        1,
+        vec![
+            part(&path, None, 0, cut.0, (1, frames)),
+            part(
+                &path,
+                None,
+                cut.0 + cut.1,
+                frames - cut.0 - cut.1,
+                (1, frames),
+            ),
+        ],
+    );
+    answerer.define(-3, edited.clone());
+    let columns = (edited.frames - window) / hop;
+    let after = spectrum(&mut answerer, &mut io, -3, (0, hop, columns, window), 1);
+    let fresh = answerer.columns_analyzed - analyzed;
+    assert!(
+        fresh <= 4,
+        "only the windows over the seam are analyzed: {fresh} of {columns}"
+    );
+    assert!(answerer.columns_reused >= columns - 4);
+    // past the cut, a column at list frame f is the file's at the grid point
+    // nearest f + the cut
+    let c = 100;
+    let f = c * hop;
+    assert!(f > cut.0 + window);
+    let at = (f + cut.1 + hop / 2) / hop * hop;
+    assert_eq!(&after[c * 512..(c + 1) * 512], column_at(at).as_slice());
+    let _ = std::fs::remove_dir_all(&dir);
+}

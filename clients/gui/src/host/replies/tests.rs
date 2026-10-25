@@ -582,8 +582,28 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     // And held, they owe nothing more.
     assert!(crate::host::frame::columns_owed_of(stft, false, &nav, 200.0).is_none());
 
-    // **Each column is the analysis of what plays there**: the list's
-    // samples through its parts and fades, analyzed as a whole signal is.
+    // **Each column is the analysis of what plays there**: a window over a
+    // seam or a fade is the list's samples through its parts and fades,
+    // analyzed as a whole signal is; one inside a part is that part's file
+    // at the nearest point of a grid of the hop laid over the file, which is
+    // how an edit's columns are found again (`disk::answer`).
+    let source_of = |p: &crate::host::disk::ListPart| {
+        if p.path.as_ref() == a {
+            &a_samples
+        } else {
+            &b_samples
+        }
+    };
+    let inside = |first: usize| {
+        parsed.part_at(first).filter(|p| {
+            let s = &p.span;
+            !s.resampled()
+                && first >= s.start() + s.fade_in
+                && first + 512 <= s.end().saturating_sub(s.fade_out)
+                && (s.src_start + first - s.start() + span.hop / 2) / span.hop * span.hop + 512
+                    <= s.src_frames()
+        })
+    };
     let played = |f: usize| {
         let part = parsed.part_at(f);
         part.map_or(0.0, |p| {
@@ -601,9 +621,16 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     let (mut w, mut sp, mut col) = (vec![0.0; 512], vec![0.0; 256], vec![0.0; 256]);
     for c in 0..stft.n_frames() {
         let first = c * span.hop;
-        let frame: Vec<f32> = (first..first + 512)
-            .map(|f| if f < 2 * frames { played(f) } else { 0.0 })
-            .collect();
+        let frame: Vec<f32> = match inside(first) {
+            Some(p) => {
+                let s = &p.span;
+                let at = (s.src_start + first - s.start() + span.hop / 2) / span.hop * span.hop;
+                source_of(&p)[at..at + 512].to_vec()
+            }
+            None => (first..first + 512)
+                .map(|f| if f < 2 * frames { played(f) } else { 0.0 })
+                .collect(),
+        };
         clausters_core::stft::column_into(&frame, &hann, gain, &mut w, &mut sp, &mut col);
         let want: Vec<u8> = col
             .iter()

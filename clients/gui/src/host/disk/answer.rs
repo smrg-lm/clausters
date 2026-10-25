@@ -230,7 +230,46 @@ pub struct Answerer {
     /// Parts summarized from their file, over the answerer's life -- what a
     /// test reads to know a picture was composed from the nodes it holds.
     pub parts_read: usize,
+    /// **A spectrogram's columns of each file**, as the peaks are a file's:
+    /// one window of a source channel at a point of a hop grid laid over the
+    /// file's own frames, so a list's columns inside a part are found again
+    /// wherever an edit moves that part ([`Self::spectrum_reply`]).
+    columns: HashMap<ColumnKey, Arc<[u8]>>,
+    /// The columns kept, oldest first, and the bytes they hold.
+    column_order: std::collections::VecDeque<ColumnKey>,
+    column_bytes: usize,
+    /// Columns analyzed from a file, and found again, over the answerer's
+    /// life: what a test reads to know an edit's spectrogram was composed
+    /// from what was already analyzed.
+    pub columns_analyzed: usize,
+    pub columns_reused: usize,
 }
+
+/// A column of one file's channel: the window, the hop of the grid and the
+/// point of it the window starts at.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct ColumnKey {
+    path: Arc<str>,
+    channel: usize,
+    window: usize,
+    hop: usize,
+    at: usize,
+}
+
+/// What [`Answerer::composed`] makes of one column of a list.
+enum Composed {
+    /// The column of each of the list's channels, from its file's.
+    Columns(Vec<Arc<[u8]>>),
+    /// Blocks of samples it has to read first, asked for.
+    Need,
+    /// The window is not inside one part as its file holds it: a seam, a
+    /// fade, another rate. It is analyzed through the list.
+    No,
+}
+
+/// Bytes of columns kept at most: past it the oldest are let go of and
+/// analyzed again when asked. A column is half a window, a byte a bin.
+const COLUMN_BYTES_HELD: usize = 32 << 20;
 
 /// Nodes whose summary is kept at most; past it they are let go of and
 /// found again. A node's summary is 32 bytes.
@@ -626,9 +665,10 @@ impl Answerer {
     ///
     /// A list is never read whole, so its spectrogram is never analyzed
     /// whole: a view asks for the span it shows, at a hop of about a column
-    /// of its own, and asks again when it moves. Each window is read through
-    /// the parts, fades and channel maps included, so what is analyzed is
-    /// what plays. An answer reads at most [`SPECTRUM_BLOCKS`] blocks it does
+    /// of its own, and asks again when it moves. A window inside one part is
+    /// its file's column, kept and found again after an edit
+    /// ([`Self::composed`]); any other is read through the parts, fades and
+    /// channel maps included, so what is analyzed is what plays. An answer reads at most [`SPECTRUM_BLOCKS`] blocks it does
     /// not hold; past them it answers the columns it could, at least one,
     /// and the view asks for the rest from where it ended.
     fn spectrum_reply(&mut self, key: i32, list: &List, args: &[OscType]) -> Answer {
@@ -651,6 +691,31 @@ impl Answerer {
         for c in 0..columns {
             let first = start + c * hop;
             let before = needs.len();
+            // **Inside one part, from its file's columns**: found again after
+            // an edit that moved the part, analyzed once otherwise.
+            match self.composed(list, first, window, hop, channels, &mut needs) {
+                Composed::Columns(columns) => {
+                    if needs.is_empty() {
+                        for column in columns {
+                            out.extend_from_slice(&column);
+                        }
+                        answered += 1;
+                    }
+                    continue;
+                }
+                Composed::Need => {
+                    needs = dedup(std::mem::take(&mut needs));
+                    if answered > 0 {
+                        needs.truncate(before);
+                        break;
+                    }
+                    if needs.len() >= SPECTRUM_BLOCKS {
+                        break;
+                    }
+                    continue;
+                }
+                Composed::No => {}
+            }
             let mut values = vec![0.0f32; window * channels];
             {
                 let mut samples = FileSamples {
@@ -733,6 +798,117 @@ impl Answerer {
                 OscType::Blob(out),
             ],
         })
+    }
+}
+
+impl Answerer {
+    /// **One column of a list from its file's columns**, when its window lies
+    /// inside one part, clear of the part's fades and at the list's rate: the
+    /// window the file holds there, at the nearest point of a grid of `hop`
+    /// frames laid over the file's own frames, so the same column serves the
+    /// part wherever an edit places it. A column off the grid by up to half a
+    /// hop is one the view draws a column wide anyway.
+    fn composed(
+        &mut self,
+        list: &List,
+        first: usize,
+        window: usize,
+        hop: usize,
+        channels: usize,
+        needs: &mut Vec<Need>,
+    ) -> Composed {
+        if first + window > list.frames {
+            return Composed::No;
+        }
+        let Some(part) = list.part_at(first) else {
+            return Composed::No;
+        };
+        let span = &part.span;
+        let inside = first >= span.start() + span.fade_in
+            && first + window <= span.end().saturating_sub(span.fade_out);
+        if span.resampled() || !inside {
+            return Composed::No;
+        }
+        let at = (span.src_start + (first - span.start()) + hop / 2) / hop;
+        if at * hop + window > span.src_frames() {
+            return Composed::No;
+        }
+        let bins = window / 2;
+        let mut out = Vec::with_capacity(channels);
+        for ch in 0..channels {
+            let source = span.map.get(ch).copied().unwrap_or(-1);
+            let Ok(source) = usize::try_from(source) else {
+                // a channel mapped to nothing is silence, which analyzes to
+                // the floor
+                out.push(Arc::from(vec![0u8; bins]));
+                continue;
+            };
+            let key = ColumnKey {
+                path: Arc::clone(&part.path),
+                channel: source,
+                window,
+                hop,
+                at,
+            };
+            if let Some(column) = self.columns.get(&key) {
+                self.columns_reused += 1;
+                out.push(Arc::clone(column));
+                continue;
+            }
+            let before = needs.len();
+            let mut frame = vec![0.0f32; window];
+            {
+                let mut samples = FileSamples {
+                    answerer: self,
+                    bucket: 1,
+                    needs,
+                    hot: None,
+                    cold: None,
+                };
+                for (i, x) in frame.iter_mut().enumerate() {
+                    *x = samples.frame(&part, at * hop + i, source);
+                }
+            }
+            if needs.len() > before {
+                return Composed::Need;
+            }
+            let (hann, gain) = clausters_core::stft::analysis_window(window);
+            let mut windowed = vec![0.0f32; window];
+            let mut spectrum = vec![0.0f32; bins];
+            let mut magnitudes = vec![0.0f32; bins];
+            clausters_core::stft::column_into(
+                &frame,
+                &hann,
+                gain,
+                &mut windowed,
+                &mut spectrum,
+                &mut magnitudes,
+            );
+            let column: Arc<[u8]> = magnitudes
+                .iter()
+                .map(|m| clausters_core::stft::quantize(*m))
+                .collect();
+            self.samples_read += window;
+            self.columns_analyzed += 1;
+            self.keep_column(key, Arc::clone(&column));
+            out.push(column);
+        }
+        Composed::Columns(out)
+    }
+
+    /// Keeps `column`, letting go of the oldest past [`COLUMN_BYTES_HELD`].
+    fn keep_column(&mut self, key: ColumnKey, column: Arc<[u8]>) {
+        self.column_bytes += column.len();
+        self.column_order.push_back(key.clone());
+        self.columns.insert(key, column);
+        while self.column_bytes > COLUMN_BYTES_HELD {
+            let Some(oldest) = self.column_order.pop_front() else {
+                break;
+            };
+            if let Some(gone) = self.columns.remove(&oldest) {
+                self.column_bytes -= gone.len();
+            }
+        }
     }
 }
 

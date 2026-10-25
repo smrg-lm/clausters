@@ -10855,6 +10855,23 @@ length: over an hour of stereo, 760 columns of 2048 frames read 37 MB in 87 ms
 natively. A stored analysis stays a Future direction of the GUI plan, to take
 only if a measurement asks for it.
 
+*Revised 2026-10-25: the columns inside a part are kept, by file.* Analyzing
+what is shown was cheap, but it made an edit's picture wait for an analysis
+of the whole span again: after a cut or a paste the view kept the take as it
+was until every column had been read and analyzed, so the picture did not
+follow the edit, which is the one thing an editor's picture must do. The
+answerer now keeps a **file's** columns in memory, as the peaks are a file's:
+one window of a source channel at a point of a grid of the hop laid over the
+file's own frames. A list's column whose window lies inside one part, clear
+of its fades and at the list's rate, is that file's column at the nearest
+grid point, so an edit that moves a part finds its columns again and only the
+windows over the new seams are read and analyzed. The reasoning above still
+holds where it was about: a window across a seam, a fade or a resampled part
+is not in any file, and it is analyzed through the list, exactly. What it
+trades is up to half a hop of offset for a column inside a part, at a hop of
+about a column of the view. The columns are kept in memory, bounded; keeping
+them on disk beside the peaks is the GUI plan's Future direction.
+
 ## A render's progress is a window prop, not a status line (2026-10-23)
 
 An edit that renders runs its offline render in the client, and a gain over

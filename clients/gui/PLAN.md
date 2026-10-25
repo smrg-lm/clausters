@@ -4377,7 +4377,15 @@ Following the project rule: code + tests, a clear commit message (the record of 
   sample read, composed where a part keeps its file's hop and analyzed from
   the samples only across a seam, a fade or a resampled part. Take it only if
   the measured cost of the analysis asks for it: over an hour today it is
-  87 ms natively.
+  87 ms natively. *Half of it since 2026-10-25, in memory:* what asked for it
+  was not the cost but an edit's picture, which waited for the span to be
+  analyzed again and so did not follow a cut or a paste. The answerer keeps
+  each file's columns at a grid of the view's hop over the file's frames and
+  composes a list's from them, analyzing only the windows over a seam, a fade
+  or a resampled part (`disk::answer`, `docs/decisions.md`). What is left is
+  this entry's other half: keeping them on disk beside the peaks, with the
+  levels that keep each bin's largest, so a file opened again, or zoomed out
+  past what was analyzed, reads no samples.
 
 - ✅ **The multitrack application is written twice: once in the crate and once in the host** *(named 2026-09-12 by the user; closed 2026-09-13)*. The standalone host is now an endpoint of the one application rather than a second copy of it: it plays the piece through `nodes::plan` + `Instance::reconcile` (`host/instance.rs`, which replaced `document/sound.rs`), pushes the projection's whole picture back, asks the projection which tags are the piece's, and realizes a minted join through `clausters_editing::sources::stitch` -- the one reading of a segmented source, bound by both clients as `editing_stitch`.
 
