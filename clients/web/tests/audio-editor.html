@@ -110,6 +110,19 @@
         }
         log("undone: the take is one part again");
 
+        // **A take of three files**: the first half reversed again, and a
+        // span across its seam reversed in turn, so the take reads two
+        // renders and the file it was opened from, with a seam between each.
+        await editor.select(new Segment(file, 0, half / rate));
+        editor.reverse();
+        await until(async () => (await editor.parts()).length === 2,
+          async () => `the first reverse to land: ${JSON.stringify(await editor.parts())}`);
+        await editor.select(new Segment(file, 0.4, 0.2));
+        editor.reverse();
+        await until(async () => new Set((await editor.parts()).map((p) => p.path)).size === 3,
+          async () => `the second reverse to land: ${JSON.stringify(await editor.parts())}`);
+        log(`three files: ${(await editor.parts()).map((p) => p.path).join(", ")}`);
+
         // **The client's server plays on beside it**: a tone on a bus of
         // the page's own engine, read back while the editor plays.
         const server = session.server;
@@ -130,15 +143,26 @@
         await until(() => editor.transport.playing(), "the transport to play");
         if (!(await editor.transport.wait(5))) throw new Error("the pass never ended: no engine ran it");
 
-        // **A loop plays on past its end**: a fifth of a second looped is
-        // still playing well after a pass of it would have ended, and the
-        // page's tone with it.
-        await editor.transport.loop(0.2, 0.4);
-        await editor.transport.play(0.2);
+        // **A loop across the seams of three files sounds, and no frame is
+        // missing**: the span from 0.3 s to 0.7 s crosses both seams, and
+        // is still playing well after a pass of it would have ended; what
+        // the editor's meter reads is the take, and its engine played no
+        // silence for want of a frame -- the application's thread reading
+        // the take into the rings its engine plays, in the worklet.
+        const starvedBefore = (await editor.query("output")).starved;
+        await editor.transport.loop(0.3, 0.7);
+        await editor.transport.play(0.3);
         await until(() => editor.transport.playing(), "the loop to play");
-        await sleep(900);
+        await sleep(400);
+        const output = await editor.query("output");
+        await sleep(1_100);
         if (!(await editor.transport.playing())) throw new Error("the loop ended like a pass");
         if (!(await editor.transport.looping())) throw new Error("the loop switch went off");
+        if (!(output.levels?.[0] > 0.05)) {
+          throw new Error(`the editor's engine played no take: ${JSON.stringify(output)}`);
+        }
+        const starved = (await editor.query("output")).starved - starvedBefore;
+        if (starved !== 0) throw new Error(`the loop played ${starved} samples of silence`);
         const beside = toneLevel();
         if (beside <= 0.4) throw new Error(`the page's engine fell to ${beside} while the editor played`);
 
@@ -148,13 +172,15 @@
         await editor.transport.locate(0.95);
         if (!(await editor.transport.wait(5))) throw new Error("the located pass never ended");
         tone.free();
-        log(`played: a pass, a loop past its end and a locate, on the editor's engine; ` +
-          `the page's own engine at ${beside.toFixed(3)} beside it`);
+        log(`played: a pass, a loop across the seams of three files at ` +
+          `${output.levels[0].toFixed(3)} with no frame missing, and a locate, on the ` +
+          `editor's engine; the page's own engine at ${beside.toFixed(3)} beside it`);
 
         verdict("PASS: the audio editor opened a take in a page, rendered an edit on a " +
           "thread into its working folder, saved it into the page's storage, walked its " +
-          "history back, and played, looped and located on an engine of its own while the " +
-          "page's engine played on beside it");
+          "history back, and played, looped across the seams of three files with no frame " +
+          "missing and located on an engine of its own while the page's engine played on " +
+          "beside it");
         await editor.close();
       } catch (error) {
         verdict(`FAIL: ${error?.message ?? error}`);

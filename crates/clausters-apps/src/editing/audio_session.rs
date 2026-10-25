@@ -436,6 +436,21 @@ pub(super) fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -
             "focused": session.focused(editing, member),
             "state": session.state(),
         }),
+        // **What the editor's engine plays**: the level its meter reads on
+        // each channel of the file shown (none while that file is still),
+        // and the samples played as silence for want of a frame read in
+        // time since the engine opened.
+        (Some(session), Some("output")) => {
+            let engine = editing.engine.as_ref();
+            let levels: Vec<f32> = match session.playback.meters() {
+                Some((bus, channels)) if bus >= 0 => (0..channels)
+                    .map(|c| engine.map_or(0.0, |e| e.control(bus as usize + c)))
+                    .collect(),
+                Some((_, channels)) => vec![0.0; channels],
+                None => Vec::new(),
+            };
+            json!({"levels": levels, "starved": engine.map_or(0, |e| e.starved())})
+        }
         _ => json!({"error": "the audio editor has no session"}),
     }
 }

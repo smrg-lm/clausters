@@ -458,6 +458,14 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
     for (i, &s) in heard.iter().enumerate().skip(from) {
         assert_eq!(s, values[i - start], "sample {i}");
     }
+    // what it plays, as a script asks: its meter reads the take, and no
+    // frame was missing
+    let output = app.call(
+        &mut editing,
+        &json!({"verb": "audio", "member": member, "query": "output"}),
+    );
+    assert!(output["levels"][0].as_f64().unwrap() > 0.2, "{output}");
+    assert_eq!(output["starved"], 0, "{output}");
     // A cursor placed while it plays moves the music there.
     let v = version(&mut app, &mut editing);
     act(

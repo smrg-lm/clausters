@@ -24,6 +24,13 @@
 //! has no counterpart for, and this way the surface a script writes against is
 //! the same one in both.
 //!
+//! **A page whose engine has threads reads its lists natively.** An editing
+//! application's engine in a page shares its memory with its threads (its
+//! build has `target_feature = "atomics"`), so its `TransportDiskIn` is the
+//! native reader (`dsp::stream`), its thread a worker, and the one a take its
+//! application feeds plays through (`dsp::fed`). This reader is the one of a
+//! page whose engine has no thread to give it.
+//!
 //! The registry is a `thread_local`, and that is not a shortcut: everything
 //! that touches it -- building a synth, dropping one, and the host's own calls --
 //! happens on the one thread a page's engine has.

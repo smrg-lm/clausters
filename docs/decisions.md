@@ -11103,3 +11103,30 @@ avoids. The parts already name immutable files, so the tree shares them
 with nothing written. Also rejected: keeping the JSON forms and making
 them faster, since a list written out per edit costs the list however fast
 it is written.
+
+## A page whose engine has threads reads its lists with the native reader (2026-10-25)
+
+Context: an editing application in a page runs its engine in an AudioWorklet
+over memory it shares with its threads, and plays its takes through streams
+its own thread fills (`dsp::fed`). The list reader a page's engine had
+(`dsp::disk_web`) is the one of a page with no threads: the page reads each
+stream's files and pushes them in, so it knows no fed stream, and nothing in
+the application's page polls it. The audio editor in a page therefore played
+silence while its transport ran -- its page test checked the transport, not
+what was heard; read back through the editor's meter it read zero.
+
+Decision: wherever the engine has threads -- natively, and in a page whose
+build has `target_feature = "atomics"` -- `TransportDiskIn` is the native
+reader (`dsp::stream`), its thread spawned through `clausters_core::threads`
+(a worker in a page) and its files read through `clausters_core::files`, and
+the I/O thread's account and offline waits are one module both build
+(`dsp::io_thread`, which counts its naps where a page has no clock). Only a
+page whose engine has no threads, a client's, keeps the host-fed reader. So
+the application reads its takes with the same code bit for bit natively and
+in a page, which is what the second turn asked, and its page test now asks
+the editor what it plays (`{"query": "output"}`: its meter's levels and the
+samples played as silence for want of a frame).
+
+Rejected: teaching the host-fed reader the fed stream, which would have made
+three implementations of one reader's real-time half where two already had
+to agree.

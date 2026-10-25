@@ -692,24 +692,9 @@ impl AudioFileState {
             self.channels,
             self.rate,
         );
-        // At the file's own rate the take's frames are its tree's; at
-        // another each part's span fills its share of them.
-        let frames = if rate == self.rate {
-            list.tree.frames()
-        } else {
-            list.tree
-                .iter()
-                .map(|placed| {
-                    let span = placed.part.source.range.map_or(0, |r| r.len());
-                    let from = list.file(placed.part).map_or(rate, |f| f.rate);
-                    parts::contributed(span, from, rate)
-                })
-                .sum()
-        };
         crate::editing::held::HeldTake {
             file: self.id.0 as u64,
             revision: self.revision,
-            frames,
             list,
             channels: self.channels,
             rate,

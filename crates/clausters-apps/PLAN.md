@@ -3343,16 +3343,44 @@ over the opened file) carries over.
   to 190 hours and 58,800 parts (`clients/gui/tests/shared_blocks.rs`):
   0.01 ms a paste from the first to the last, microseconds an undo or a
   redo, about 830 bytes told to the window, a whole picture in a few
-  milliseconds, and memory grown under a megabyte. Left for `X32`: a take
-  read at a rate other than its file's is counted again part by part when
-  it is handed to the engine.
-- ⬜ **X32 - The application reads its takes, and draws them.** The
+  milliseconds, and memory grown under a megabyte. Left for `X32`, and
+  done there: a take read at a rate other than its file's was counted again
+  part by part when it was handed to the engine.
+- ✅ **X32 - The application reads its takes, and draws them.** The
   application's reader thread fills the rings an engine node consumes,
   following the transport and its loop, pre-rolled before a play; the peaks
   are measured and read by the application through the core. **Acceptance:**
   a cued play sounds from its first frame, a loop across seams of three files
   plays with no silent frame, a locate never plays a stale frame, the audio
   thread neither allocates nor waits, natively and in a page.
+  *Done 2026-10-25.* The reader, its rings, its loop and its cue came
+  forward into `X30`; what this milestone found and did:
+  - **The page played silence.** A page's engine read lists with the
+    host-fed reader, which knows no fed stream, so the editor's transport
+    ran over nothing; read through its meter, the page's editor played
+    zero. Wherever the engine has threads (natively, and the applications'
+    build in a page) `TransportDiskIn` is now the native reader, its thread
+    a worker through `clausters_core::threads` (`docs/decisions.md`, "A
+    page whose engine has threads reads its lists with the native reader").
+  - **A take read at another rate** than its files' is counted node by
+    node and kept by identity (`take::Counts`), so an edit is not counted
+    again part by part; the engine counts the frames it installs.
+  - **The peaks through the core**: a peaks file's head, where each array
+    of each level is, and the walk over aligned blocks are
+    `clausters_core::peaks` (`FileHead`, `aligned_blocks`), read by the
+    pyramid in memory and the GUI host's block reader alike; the host
+    kept its own copy of the format before. Measuring stays the
+    application's offline render of `DiskIn` into `PeaksOut`.
+  - **What the editor plays, asked**: the `output` query answers its
+    meter's levels and the samples played as silence for want of a frame.
+  - **Acceptance**, natively over a take of three files
+    (`crates/clausters-app-engine/tests/reading.rs`): a cued play heard
+    from its first frame under a rising ramp, a loop across both seams with
+    no silent frame, and a locate that plays only where it was and then
+    where it went; the fed stream's real-time half allocates nothing
+    (`tests/rt_safety.rs`) and takes no lock. In a page
+    (`audio-editor.html?isolated`): a loop across the seams of three files
+    reads the take on the editor's meter with no sample missing.
 - ⬜ **X33 - The audio editor's session file.** Contents and place decided
   with the user when it opens. **Acceptance:** written with it.
 - ⬜ **X34 - The multitrack over the same modules.** What `X29` asked

@@ -34,95 +34,17 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::JoinHandle;
-use std::time::Duration;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::dsp::io_thread::{Turn, wait_for};
 use crate::dsp::registry::{BuildCtx, UGenConfig};
 use crate::dsp::{ProcessCtx, UGen, at};
-use crate::server::meters::{Meters, Role, Stamp, stamp};
+use crate::server::meters::Role;
 
 /// Ring capacity in samples (~1.4 s of mono audio at 48 kHz; less per channel
 /// for multichannel reads). Absorbs disk/scheduler jitter.
 const RING_SAMPLES: usize = 1 << 16;
-
-/// How long the I/O thread parks when its ring is full/empty before retrying.
-const PARK: Duration = Duration::from_millis(2);
-
-// ---- the load table ----
-
-/// An I/O thread's account in the load table: the stretches it worked, never
-/// the parks between them.
-///
-/// A stretch runs from one park to the next and is added only if something was
-/// done in it -- a thread that wakes to a ring still full, or still empty, did
-/// no work and is not a call. Dropping it closes the last stretch, so every
-/// way out of a thread's loop is accounted.
-pub(crate) struct Turn {
-    meters: Arc<Meters>,
-    role: Role,
-    since: Stamp,
-    worked: bool,
-}
-
-impl Turn {
-    pub(crate) fn new(meters: Arc<Meters>, role: Role) -> Self {
-        Self {
-            meters,
-            role,
-            since: stamp(),
-            worked: false,
-        }
-    }
-
-    /// Something was done in this stretch.
-    pub(crate) fn worked(&mut self) {
-        self.worked = true;
-    }
-
-    /// Closes the stretch, parks, and opens the next one. A park is cut short
-    /// by an unpark, which is how a reader that follows the transport is
-    /// woken for a refill.
-    pub(crate) fn park(&mut self) {
-        self.close();
-        std::thread::park_timeout(PARK);
-        self.since = stamp();
-    }
-
-    fn close(&mut self) {
-        if self.worked {
-            self.meters.add(self.role, 0, self.since.elapsed_nanos());
-            self.worked = false;
-        }
-    }
-}
-
-impl Drop for Turn {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
-/// **Waits for `ready`**, for a stream an offline render plays: nothing waits
-/// on the clock there, so a `DiskIn` waits for its frames and a `DiskOut` for
-/// room rather than losing the race. Gives up after ten seconds of nothing --
-/// a thread that died -- and says so by answering `false`.
-pub(crate) fn wait_for(mut ready: impl FnMut() -> bool) -> bool {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    let mut spins = 0u32;
-    while !ready() {
-        if std::time::Instant::now() > deadline {
-            return false;
-        }
-        spins += 1;
-        if spins < 64 {
-            std::thread::yield_now();
-        } else {
-            std::thread::sleep(Duration::from_micros(50));
-        }
-    }
-    true
-}
 
 /// Sets its flag when dropped: how a reader thread says it has returned,
 /// whichever way it left.

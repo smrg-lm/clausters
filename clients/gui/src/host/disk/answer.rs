@@ -32,8 +32,8 @@ use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::pcm::Layout;
-use clausters_core::peaks::SpanStats;
 use clausters_core::peaks::compose::{Ends, PartSamples, list_span};
+use clausters_core::peaks::{FileHead, SpanStats, aligned_blocks};
 
 use clausters_document::parts::tree::{Node, Placed};
 
@@ -111,7 +111,7 @@ pub enum What {
     /// A sound file's header.
     Head,
     /// A peaks file's header.
-    PeaksHead,
+    FileHead,
     /// One array (`0` min, `1` max, `2` mean square) of a block of one level
     /// of one channel of a peaks file.
     Level {
@@ -154,67 +154,11 @@ struct LevelBlock {
     arrays: [Option<Vec<f32>>; 3],
 }
 
-/// A peaks file's header: what its levels are and where each one is.
-#[derive(Clone, Debug)]
-struct PeaksHead {
-    base: usize,
-    frames: usize,
-    channels: usize,
-    /// Buckets at each level.
-    lens: Vec<usize>,
-}
-
-impl PeaksHead {
-    /// Reads the header of a version-3 multichannel peaks file (the one a
-    /// peaks UGen writes): its magic, its version, its base bucket, its
-    /// frames, its channels and its level count. The levels' sizes follow
-    /// from those, as the writer lays them out.
-    fn parse(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 40 || &bytes[..4] != b"CLPK" {
-            return Err("not a peaks file".into());
-        }
-        let u64_at = |i: usize| u64::from_le_bytes(bytes[i..i + 8].try_into().unwrap()) as usize;
-        let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        if version != 3 {
-            return Err(format!("a peaks file of version {version}, not 3"));
-        }
-        let (base, frames, channels, levels) = (u64_at(8), u64_at(16), u64_at(24), u64_at(32));
-        if base == 0 || channels == 0 {
-            return Err("a peaks file with no bucket or no channels".into());
-        }
-        let mut lens = Vec::with_capacity(levels);
-        let mut n = frames.div_ceil(base);
-        for _ in 0..levels {
-            lens.push(n);
-            n = n.div_ceil(2);
-        }
-        Ok(Self {
-            base,
-            frames,
-            channels,
-            lens,
-        })
-    }
-
-    /// The byte size the header says the file has, which a file of another
-    /// size does not match.
-    fn size(&self) -> u64 {
-        40 + (self.channels * self.lens.iter().map(|n| 16 + 12 * n).sum::<usize>()) as u64
-    }
-
-    /// Where array `array` of level `level` of channel `channel` begins.
-    fn offset(&self, channel: usize, level: usize, array: usize) -> u64 {
-        let per_channel: usize = self.lens.iter().map(|n| 16 + 12 * n).sum();
-        let before: usize = self.lens[..level].iter().map(|n| 16 + 12 * n).sum();
-        (40 + channel * per_channel + before + 16 + array * 4 * self.lens[level]) as u64
-    }
-}
-
 /// A peaks file: its age, its header and the level blocks read of it.
 #[derive(Default)]
 struct Peaks {
     stat: Option<Result<Stat, String>>,
-    head: Option<Result<PeaksHead, String>>,
+    head: Option<Result<FileHead, String>>,
     levels: HashMap<(usize, usize, usize), Held<LevelBlock>>,
     /// The clock its size and age were last asked at.
     checked: u64,
@@ -406,11 +350,11 @@ impl Answerer {
                     file.head_asked = LARGE_HEAD_BYTES;
                 }
             }
-            What::PeaksHead => {
+            What::FileHead => {
                 let Some(peaks) = self.peaks.get_mut(path) else {
                     return;
                 };
-                peaks.head = Some(bytes.and_then(|b| PeaksHead::parse(&b)));
+                peaks.head = Some(bytes.and_then(|b| FileHead::parse(&b)));
             }
             What::Level {
                 channel,
@@ -546,8 +490,8 @@ impl Answerer {
                 Some(Ok(stat)) if peaks.head.is_none() => needs.push(Need::Read {
                     path,
                     offset: 0,
-                    len: 40.min(stat.len as usize),
-                    what: What::PeaksHead,
+                    len: FileHead::BYTES.min(stat.len as usize),
+                    what: What::FileHead,
                 }),
                 Some(Ok(_)) => {}
             }
@@ -832,7 +776,7 @@ impl FileSamples<'_> {
     }
 
     /// The peaks of `path`, when they are there and describe it.
-    fn peaks_of(&self, path: &str) -> Option<(Arc<str>, PeaksHead)> {
+    fn peaks_of(&self, path: &str) -> Option<(Arc<str>, FileHead)> {
         let file = self.answerer.files.get(path)?;
         let name = file.peaks.clone()?;
         let peaks = self.answerer.peaks.get(&name)?;
@@ -920,7 +864,7 @@ impl FileSamples<'_> {
     fn level(
         &mut self,
         name: &Arc<str>,
-        head: &PeaksHead,
+        head: &FileHead,
         ch: usize,
         level: usize,
         index: usize,
@@ -971,7 +915,7 @@ impl FileSamples<'_> {
     fn fold(
         &mut self,
         path: &Arc<str>,
-        (name, head): (&Arc<str>, &PeaksHead),
+        (name, head): (&Arc<str>, &FileHead),
         ch: usize,
         (a, b): (usize, usize),
         ends: Ends,
@@ -1006,18 +950,8 @@ impl FileSamples<'_> {
             return self.sample_stats(path, ch, a, b, read);
         }
         let mut missing = false;
-        let mut i = first;
-        while i < last {
-            let mut level = 0;
-            while level + 1 < head.lens.len()
-                && (i >> level).is_multiple_of(2)
-                && i + (2usize << level) <= last
-            {
-                level += 1;
-            }
-            let index = i >> level;
-            let lvl_bucket = base << level;
-            let count = lvl_bucket.min(frames.saturating_sub(index * lvl_bucket));
+        for (level, index) in aligned_blocks(head.lens.len(), first, last) {
+            let count = head.count(level, index);
             match self.level(name, head, ch, level, index) {
                 Some([min, max, ms]) if count > 0 => stats.merge(SpanStats {
                     min,
@@ -1028,7 +962,6 @@ impl FileSamples<'_> {
                 Some(_) => {}
                 None => missing = true,
             }
-            i += 1usize << level;
         }
         let inner = (first * base, (last * base).min(frames));
         stats.merge(self.sample_stats(path, ch, a, inner.0.max(a).min(b), read));

@@ -8,7 +8,9 @@
 //! file part cannot be: an hour of take is not in the pool, and reading it
 //! where the audio thread asks would be I/O on the audio thread. So it is
 //! **streamed**, by `DiskIn`'s design generalized -- one I/O thread per
-//! reader, racing the audio thread through a lock-free ring -- and the
+//! reader (`clausters_core::threads`: a thread natively, a worker in a page
+//! whose engine shares its memory with its threads), racing the audio thread
+//! through a lock-free ring -- and the
 //! generalization is that the stream **follows the transport** instead of
 //! running from a file's top:
 //!
@@ -73,7 +75,8 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::thread::JoinHandle;
+
+use clausters_core::threads::Spawned;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -178,8 +181,8 @@ pub struct TransportDiskIn {
     consumer: Consumer<f32>,
     requests: Producer<Request>,
     shared: Arc<Shared>,
-    thread: std::thread::Thread,
-    handle: Option<JoinHandle<()>>,
+    /// The reader's I/O thread: a thread natively, a worker in a page.
+    io: Option<Spawned>,
     meters: Arc<Meters>,
     /// The list last sent to the I/O thread, as an address: it holds that
     /// `Arc`, so the address cannot be reused while it is the one compared.
@@ -270,20 +273,22 @@ impl TransportDiskIn {
             stop: AtomicBool::new(false),
             ack: AtomicU64::new(0),
         });
-        let handle = {
+        let io = {
             let shared = Arc::clone(&shared);
-            let turn = crate::dsp::disk::Turn::new(Arc::clone(meters), Role::DiskIn);
-            std::thread::Builder::new()
-                .name("diskin-list".into())
-                .spawn(move || fill(inbox, producer, shared, turn))
-                .expect("failed to spawn the TransportDiskIn thread")
+            let turn = crate::dsp::io_thread::Turn::new(Arc::clone(meters), Role::DiskIn);
+            clausters_core::threads::spawn("diskin-list", move || {
+                fill(inbox, producer, shared, turn)
+            })
+            .inspect_err(|e| {
+                tracing::warn!("TransportDiskIn: no I/O thread ({e}); its lists are silent")
+            })
+            .ok()
         };
         Self {
             consumer,
             requests,
             shared,
-            thread: handle.thread().clone(),
-            handle: Some(handle),
+            io,
             meters: Arc::clone(meters),
             sent: 0,
             looping: false,
@@ -321,7 +326,11 @@ impl TransportDiskIn {
     fn wake(&self) {
         match &self.fed {
             Some(link) => link.shared.wake(),
-            None => self.thread.unpark(),
+            None => {
+                if let Some(io) = &self.io {
+                    io.unpark();
+                }
+            }
         }
     }
 
@@ -420,7 +429,7 @@ impl TransportDiskIn {
         };
         if self.offline {
             let (ack, epoch) = (self.ack(), self.epoch);
-            crate::dsp::disk::wait_for(|| (ack.load(Ordering::Acquire) >> 48) as u16 == epoch);
+            crate::dsp::io_thread::wait_for(|| (ack.load(Ordering::Acquire) >> 48) as u16 == epoch);
         }
         let ack = self.ack().load(Ordering::Acquire);
         if (ack >> 48) as u16 != self.epoch {
@@ -657,7 +666,7 @@ impl TransportDiskIn {
         }
         if self.offline && self.head == Some(frame) && self.consumer.slots() < self.channels {
             let (consumer, channels) = (&self.consumer, self.channels);
-            crate::dsp::disk::wait_for(|| consumer.slots() >= channels);
+            crate::dsp::io_thread::wait_for(|| consumer.slots() >= channels);
         }
         if self.head != Some(frame) || self.consumer.slots() < self.channels {
             *starved += 1;
@@ -1004,9 +1013,10 @@ impl TransportDiskIn {
 impl Drop for TransportDiskIn {
     fn drop(&mut self) {
         self.shared.stop.store(true, Ordering::Release);
-        self.thread.unpark();
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
+        if let Some(io) = self.io.take() {
+            io.unpark();
+            // waited for natively; in a page it ends on its own
+            io.join();
         }
     }
 }
@@ -1114,7 +1124,7 @@ fn fill(
     inbox: Consumer<Request>,
     producer: Producer<f32>,
     shared: Arc<Shared>,
-    turn: crate::dsp::disk::Turn,
+    turn: crate::dsp::io_thread::Turn,
 ) {
     render_list(
         Own {
@@ -1128,7 +1138,7 @@ fn fill(
 
 /// **A list rendered into a ring, following a reader's requests**: the loop
 /// of a reader's own I/O thread, and of a fed stream's owner.
-fn render_list(mut side: impl Side, mut turn: crate::dsp::disk::Turn) {
+fn render_list(mut side: impl Side, mut turn: crate::dsp::io_thread::Turn) {
     let mut list: Option<Arc<Buffer>> = None;
     let mut next: Option<u64> = None;
     let mut looping = false;
@@ -1252,8 +1262,8 @@ pub struct FedList {
     placed: Arc<std::sync::Mutex<Option<Arc<Buffer>>>>,
     stop: Arc<AtomicBool>,
     shared: Arc<FeedShared>,
-    thread: std::thread::Thread,
-    handle: Option<JoinHandle<()>>,
+    /// The owner's thread: a thread natively, a worker in a page.
+    io: Option<Spawned>,
 }
 
 impl FedList {
@@ -1268,19 +1278,16 @@ impl FedList {
             placed: Arc::clone(&placed),
             stop: Arc::clone(&stop),
         };
-        let handle = std::thread::Builder::new()
-            .name("fed-list".into())
-            .spawn(move || {
-                side.feeder.wake_me();
-                render_list(side, crate::dsp::disk::Turn::new(meters, Role::DiskIn));
-            })
-            .expect("failed to spawn a fed list's thread");
+        let io = clausters_core::threads::spawn("fed-list", move || {
+            side.feeder.wake_me();
+            render_list(side, crate::dsp::io_thread::Turn::new(meters, Role::DiskIn));
+        })
+        .expect("failed to spawn a fed list's thread");
         FedList {
             placed,
             stop,
             shared,
-            thread: handle.thread().clone(),
-            handle: Some(handle),
+            io: Some(io),
         }
     }
 
@@ -1291,16 +1298,18 @@ impl FedList {
             *placed = Some(list);
         }
         self.shared.generation.fetch_add(1, Ordering::AcqRel);
-        self.thread.unpark();
+        if let Some(io) = &self.io {
+            io.unpark();
+        }
     }
 }
 
 impl Drop for FedList {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        self.thread.unpark();
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
+        if let Some(io) = self.io.take() {
+            io.unpark();
+            io.join();
         }
     }
 }

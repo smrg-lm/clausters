@@ -48,6 +48,13 @@ pub mod disk;
 #[cfg(all(feature = "synth", target_arch = "wasm32"))]
 #[path = "disk_web.rs"]
 pub mod disk;
+// An I/O thread's account and its waits, where the engine has threads: natively,
+// and in a page whose engine shares its memory with its threads.
+#[cfg(all(
+    feature = "synth",
+    any(not(target_arch = "wasm32"), target_feature = "atomics")
+))]
+pub(crate) mod io_thread;
 // The peaks file of a signal, written beside a `DiskOut`'s samples.
 #[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
 pub mod peaks_out;
@@ -99,10 +106,21 @@ pub mod scalar;
 pub mod sine;
 #[cfg(feature = "synth")]
 pub mod spectral;
-#[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
+// The list reader is one and the same wherever the engine has threads:
+// natively, and in a page whose engine shares its memory with its threads (an
+// editing application's), where its threads are workers.
+#[cfg(all(
+    feature = "synth",
+    any(not(target_arch = "wasm32"), target_feature = "atomics")
+))]
 pub mod stream;
-/// In a page the list reader is the host-fed one beside `DiskIn`'s.
-#[cfg(all(feature = "synth", target_arch = "wasm32"))]
+/// In a page whose engine has no threads the list reader is the host-fed one
+/// beside `DiskIn`'s.
+#[cfg(all(
+    feature = "synth",
+    target_arch = "wasm32",
+    not(target_feature = "atomics")
+))]
 pub mod stream {
     pub use super::disk::TransportDiskIn;
 

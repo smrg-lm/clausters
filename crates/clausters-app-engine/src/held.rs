@@ -17,7 +17,7 @@ use clausters_apps::editing::held::{HeldEngine, HeldTake};
 use clausters_core::ids::{IdSpaces, Space};
 use clausters_editing::apply::Medium;
 
-use crate::take::{Headers, ReadList, TakeFeed};
+use crate::take::{Counts, Headers, ReadList, TakeFeed};
 use crate::{AppEngine, EngineMedium};
 
 /// One file's reading: its feed, the buffers its readers play, and the list
@@ -34,6 +34,9 @@ pub struct HeldAudio {
     engine: Arc<Mutex<AppEngine>>,
     headers: Headers,
     readings: HashMap<u64, Reading>,
+    /// What the nodes of the takes it reads fill at its rate, kept across
+    /// the takes an edit hands it.
+    counts: Arc<Counts>,
 }
 
 impl std::fmt::Debug for HeldAudio {
@@ -51,6 +54,7 @@ impl HeldAudio {
             engine,
             headers: Headers::default(),
             readings: HashMap::new(),
+            counts: Arc::default(),
         }
     }
 
@@ -97,8 +101,9 @@ impl HeldEngine for HeldAudio {
         {
             self.free(was, ids);
         }
-        let list = ReadList::over(&take.list, take.rate, &mut self.headers)
+        let list = ReadList::over(&take.list, take.rate, &mut self.headers, &self.counts)
             .inspect_err(|e| tracing::warn!("the audio editor's take: {e}"))?;
+        let frames = list.frames();
         let new = !self.readings.contains_key(&take.file);
         if new {
             let buffers = AppEngine::alloc_take(channels, ids).map_err(|e| e.to_string())?;
@@ -108,7 +113,7 @@ impl HeldEngine for HeldAudio {
                     feed: TakeFeed::start(channels),
                     buffers,
                     revision: take.revision,
-                    frames: take.frames,
+                    frames,
                 },
             );
         }
@@ -117,12 +122,12 @@ impl HeldEngine for HeldAudio {
             return Err("the take is not read".into());
         };
         reading.feed.set(Arc::new(list));
-        if new || reading.frames != take.frames {
+        if new || reading.frames != frames {
             let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
-            engine.install_take(&reading.feed, take.frames, &reading.buffers);
+            engine.install_take(&reading.feed, frames, &reading.buffers);
         }
         reading.revision = take.revision;
-        reading.frames = take.frames;
+        reading.frames = frames;
         Ok(reading.buffers.clone())
     }
 
@@ -134,6 +139,14 @@ impl HeldEngine for HeldAudio {
         if let Some(reading) = self.readings.remove(&file) {
             self.free(reading, ids);
         }
+    }
+
+    fn control(&self, bus: usize) -> f32 {
+        self.engine().reading().control(bus)
+    }
+
+    fn starved(&self) -> u64 {
+        self.engine().handle().meters().starved()
     }
 
     fn rolling(&self, transport: i32) -> bool {

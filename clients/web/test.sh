@@ -228,6 +228,8 @@ where() { [ "$BROWSER" = chrome ] || printf ' [%s]' "$BROWSER"; }
 
 # Headless Firefox on a profile of its own, prepared to let a page play: no
 # autoplay gate (the engine starts without a gesture, as Chrome is told to),
+# its output at no volume (headless Chrome sends nothing to the machine's
+# device, and Firefox does: a page's test tones are not to be heard),
 # WebGL forced on the software path (the GUI host needs WebGL2 and headless
 # has no GPU), and the first-run and reporting machinery off. Backgrounded and
 # its own process-group leader, as Chrome is, for `reap_browser`.
@@ -242,6 +244,7 @@ user_pref("browser.aboutwelcome.enabled", false);
 user_pref("datareporting.policy.dataSubmissionEnabled", false);
 user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
 user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("media.volume_scale", "0.0");
 PREFS
     $LEAD "$FIREFOX" --headless --no-remote --profile "$3" \
         --window-size "$2" \

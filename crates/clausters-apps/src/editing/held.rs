@@ -30,8 +30,6 @@ pub struct HeldTake {
     pub list: FileList,
     /// How many channels the take is.
     pub channels: u32,
-    /// How many frames it comes to at `rate`.
-    pub frames: u64,
     /// The rate it is read at: the engine's.
     pub rate: f64,
 }
@@ -52,4 +50,10 @@ pub trait HeldEngine: std::fmt::Debug + Send {
     fn close(&mut self, file: u64, ids: &mut IdSpaces);
     /// Whether `transport` rolls, as the engine says now.
     fn rolling(&self, transport: i32) -> bool;
+    /// Control bus `bus` as the engine left it last: what a meter it plays
+    /// through reads.
+    fn control(&self, bus: usize) -> f32;
+    /// **How many samples its readers played as silence** for want of a
+    /// frame read in time, since it opened: a dropout, counted.
+    fn starved(&self) -> u64;
 }

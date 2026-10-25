@@ -94,7 +94,7 @@ impl PeaksOut {
         });
         let handle = {
             let shared = Arc::clone(&shared);
-            let turn = crate::dsp::disk::Turn::new(Arc::clone(meters), Role::DiskOut);
+            let turn = crate::dsp::io_thread::Turn::new(Arc::clone(meters), Role::DiskOut);
             std::thread::Builder::new()
                 .name("peaksout".into())
                 .spawn(move || writer(path, consumer, shared, turn))
@@ -124,7 +124,7 @@ impl Active {
         let filled = self.filled.max(1) as f64;
         if self.offline && self.producer.slots() < n {
             let producer = &self.producer;
-            crate::dsp::disk::wait_for(|| producer.slots() >= n);
+            crate::dsp::io_thread::wait_for(|| producer.slots() >= n);
         }
         match self.producer.write_chunk_uninit(n) {
             Ok(chunk) => {
@@ -206,7 +206,7 @@ fn writer(
     path: String,
     mut consumer: Consumer<f32>,
     shared: Arc<Shared>,
-    mut turn: crate::dsp::disk::Turn,
+    mut turn: crate::dsp::io_thread::Turn,
 ) {
     let mut stats: Vec<f32> = Vec::new();
     loop {

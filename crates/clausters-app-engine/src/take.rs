@@ -18,8 +18,8 @@
 //! in place after an edit, and every reader fades into it from where it is.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clausters_core::threads::Spawned;
@@ -29,7 +29,7 @@ use clausters::dsp::fed::{Fed, Feeder, feed};
 use clausters_core::pcm::{Layout, Reader};
 use clausters_core::segments::{Cut, FadeShape, PartSpan, rate_between};
 use clausters_document::clipboard::SegmentPart;
-use clausters_document::parts::tree::Placed;
+use clausters_document::parts::tree::Node;
 use clausters_document::parts::{FileList, TakeFile, Tree, contributed};
 use clausters_document::session::Part;
 use clausters_document::{Lifetime, Range, SourceId, SourceRef};
@@ -48,21 +48,39 @@ const PARK: Duration = Duration::from_millis(2);
 const OPEN_FILES: usize = 8;
 
 /// **A take as it is read**: its parts, shared with the take the editor
-/// holds ([`Tree`]), counted at the rate it is read at, and the layout of
-/// each file they name.
+/// holds ([`Tree`]), and the layout of each file they name.
 ///
-/// A part is placed where it is read by descending the tree from the frame
+/// A part is found where it is read by descending the tree from the frame
 /// asked, so making one costs the files the take names and reading from any
 /// frame costs the tree's height: an edit of a take of thousands of parts
-/// hands the reader a new tree and nothing is placed again.
+/// hands the reader a new tree and nothing is placed again. At the list's
+/// own rate a node fills the frames the tree counts; at another each part
+/// fills its span at the ratio of the two ([`contributed`]), and what a node
+/// fills is counted once, the first time it is read, and kept by the node's
+/// identity ([`Counts`]) -- so a take read at another rate is not counted
+/// again by every edit either.
 #[derive(Debug)]
 pub struct ReadList {
     tree: Tree,
     files: Arc<BTreeMap<SourceId, TakeFile>>,
     layouts: HashMap<SourceId, Arc<Layout>>,
     rate: f64,
+    list_rate: f64,
     channels: usize,
+    counts: Arc<Counts>,
 }
+
+/// **What each node of a take fills at a rate other than its list's**, by
+/// the node's identity: kept by whoever reads one take after another (the
+/// engine an application holds), since the nodes an edit did not make are
+/// the ones the take before it had. A node's identity is never reused.
+#[derive(Debug, Default)]
+pub struct Counts {
+    filled: Mutex<HashMap<u64, u64>>,
+}
+
+/// Nodes whose count is kept at most; past it they are counted again.
+const COUNTS_HELD: usize = 1 << 20;
 
 impl ReadList {
     /// The list `parts` make, `channels` wide at `rate`, each file's header
@@ -112,44 +130,35 @@ impl ReadList {
             tree,
             files: Arc::new(files),
         };
-        ReadList::over(&list, rate, headers)
+        ReadList::over(&list, rate, headers, &Arc::default())
     }
 
     /// **`list` read at `rate`**, each file's header read once through
-    /// `headers`. At the list's own rate its tree is read as it is; at
-    /// another each part fills the frames of `rate` its span does, so the
-    /// tree is counted again, part by part.
-    pub fn over(list: &FileList, rate: f64, headers: &mut Headers) -> Result<ReadList, String> {
+    /// `headers`, what its nodes fill at `rate` kept in `counts`.
+    pub fn over(
+        list: &FileList,
+        rate: f64,
+        headers: &mut Headers,
+        counts: &Arc<Counts>,
+    ) -> Result<ReadList, String> {
         let mut layouts = HashMap::new();
         for (id, file) in list.files.iter() {
             layouts.insert(*id, headers.layout(&file.path)?);
         }
-        let tree = if rate == list.rate {
-            list.tree.clone()
-        } else {
-            Tree::from_counted(
-                list.tree
-                    .iter()
-                    .map(|placed| {
-                        let span = placed.part.source.range.map_or(0, |r| r.len());
-                        let from = list.file(placed.part).map_or(rate, |f| f.rate);
-                        (placed.part.clone(), contributed(span, from, rate))
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        };
         Ok(ReadList {
-            tree,
+            tree: list.tree.clone(),
             files: Arc::clone(&list.files),
             layouts,
             rate,
+            list_rate: list.rate,
             channels: list.channels.max(1) as usize,
+            counts: Arc::clone(counts),
         })
     }
 
-    /// How many frames the take comes to.
+    /// How many frames the take comes to, at the rate it is read.
     pub fn frames(&self) -> u64 {
-        self.tree.frames()
+        self.tree.root().map_or(0, |root| self.filled(root))
     }
 
     /// How many channels it is.
@@ -157,12 +166,72 @@ impl ReadList {
         self.channels
     }
 
+    /// **The frames `node` fills at the rate it is read**: the tree's own
+    /// count at the list's rate, and at another each part's span at the
+    /// ratio, summed and kept.
+    fn filled(&self, node: &Node) -> u64 {
+        if self.rate == self.list_rate {
+            return node.frames();
+        }
+        if let Some(n) = self
+            .counts
+            .filled
+            .lock()
+            .ok()
+            .and_then(|f| f.get(&node.id()).copied())
+        {
+            return n;
+        }
+        let n = match (node.part(), node.children()) {
+            (Some(part), _) => {
+                let span = part.source.range.map_or(0, |r| r.len());
+                let from = self
+                    .files
+                    .get(&part.source.source)
+                    .map_or(self.rate, |f| f.rate);
+                contributed(span, from, self.rate)
+            }
+            (None, Some((l, r))) => self.filled(l) + self.filled(r),
+            (None, None) => 0,
+        };
+        if let Ok(mut filled) = self.counts.filled.lock() {
+            if filled.len() >= COUNTS_HELD {
+                filled.clear();
+            }
+            filled.insert(node.id(), n);
+        }
+        n
+    }
+
+    /// **The parts frames `a..b` cross**, each with where it starts and how
+    /// many frames it fills at the rate it is read.
+    fn crossing<'a>(
+        &self,
+        node: &'a Node,
+        start: u64,
+        (a, b): (u64, u64),
+        out: &mut Vec<(u64, u64, &'a Part)>,
+    ) {
+        let end = start + self.filled(node);
+        if end <= a || start >= b {
+            return;
+        }
+        match (node.part(), node.children()) {
+            (Some(part), _) => out.push((start, end - start, part)),
+            (None, Some((l, r))) => {
+                let mid = start + self.filled(l);
+                self.crossing(l, start, (a, b), out);
+                self.crossing(r, mid, (a, b), out);
+            }
+            (None, None) => {}
+        }
+    }
+
     /// One part where it is read: its span over its file, and the file's
     /// layout.
-    fn placed(&self, placed: Placed) -> Option<(PartSpan, &Arc<Layout>)> {
-        let id = placed.part.source.source;
+    fn placed(&self, start: u64, frames: u64, part: &Part) -> Option<(PartSpan, &Arc<Layout>)> {
+        let id = part.source.source;
         let (file, layout) = (self.files.get(&id)?, self.layouts.get(&id)?);
-        let part = placed.part;
         let range = part.source.range?;
         let map = (0..self.channels)
             .map(|c| match &part.channels {
@@ -172,7 +241,7 @@ impl ReadList {
             .collect();
         let cut = Cut {
             src_start: range.start as usize,
-            frames: placed.frames as usize,
+            frames: frames as usize,
             fade_in: part.fade_in as usize,
             fade_out: part.fade_out as usize,
             fade_in_shape: FadeShape {
@@ -186,7 +255,7 @@ impl ReadList {
             map,
         };
         let ratio = rate_between(file.rate, self.rate).unwrap_or(1.0);
-        let span = PartSpan::new(cut, layout.frames as usize, ratio, placed.start as usize);
+        let span = PartSpan::new(cut, layout.frames as usize, ratio, start as usize);
         Some((span, layout))
     }
 
@@ -195,15 +264,17 @@ impl ReadList {
     fn render(&self, at: u64, n: usize, channel: usize, out: &mut Vec<f32>, files: &mut Files) {
         out.clear();
         out.resize(n, 0.0);
+        let Some(root) = self.tree.root() else {
+            return;
+        };
+        let mut parts = Vec::new();
+        self.crossing(root, 0, (at, at + n as u64), &mut parts);
         let at = at as usize;
-        for placed in self.tree.iter_from(at as u64) {
-            let from = (placed.start as usize).max(at);
-            if from >= at + n {
-                break;
-            }
-            let Some((part, layout)) = self.placed(placed) else {
+        for (start, frames, part) in parts {
+            let Some((part, layout)) = self.placed(start, frames, part) else {
                 continue;
             };
+            let from = part.start().max(at);
             let k = from - at;
             let inner = from - part.start();
             let len = (part.end() - from).min(n - k);
@@ -448,5 +519,138 @@ fn serve(mut feeders: Vec<Feeder>, placed: Arc<Handed>, stop: Arc<AtomicBool>) {
         if !worked {
             std::thread::park_timeout(PARK);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clausters_document::parts::Rates;
+
+    /// A mono float file at `rate`, each frame told apart.
+    fn file(name: &str, rate: u32, frames: usize) -> String {
+        let path = std::env::temp_dir().join(format!("take-{name}-{}.wav", std::process::id()));
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut w = hound::WavWriter::create(&path, spec).unwrap();
+        for f in 0..frames {
+            w.write_sample(0.25 + f as f32 / (1 << 20) as f32).unwrap();
+        }
+        w.finalize().unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    fn part(start: u64, end: u64) -> Part {
+        Part {
+            source: SourceRef {
+                source: SourceId(7),
+                lifetime: Lifetime::Temporary,
+                generation: 0,
+                range: Some(Range { start, end }),
+            },
+            fade_in: 0,
+            fade_out: 0,
+            fade_in_shape: Default::default(),
+            fade_out_shape: Default::default(),
+            channels: None,
+        }
+    }
+
+    fn read(list: &ReadList) -> Vec<f32> {
+        let mut files = Files {
+            open: Vec::new(),
+            span: Vec::new(),
+        };
+        let mut out = Vec::new();
+        list.render(0, list.frames() as usize, 0, &mut out, &mut files);
+        out
+    }
+
+    /// **A take read at a rate other than its file's** is the same take
+    /// counted part by part at that rate -- what the flat list gave -- and
+    /// an edit that shares its nodes is counted only where it made new ones.
+    #[test]
+    fn a_take_read_at_another_rate_is_counted_once_per_node() {
+        let path = file("rate", 44_100, 20_000);
+        let parts = [part(0, 4_410), part(10_000, 14_410), part(2_000, 6_000)];
+        let rates = std::collections::BTreeMap::new();
+        let tree = Tree::from_parts(
+            &parts,
+            &Rates {
+                join: 44_100.0,
+                of: &rates,
+            },
+        )
+        .unwrap();
+        let files: BTreeMap<SourceId, TakeFile> = [(
+            SourceId(7),
+            TakeFile {
+                path: path.as_str().into(),
+                peaks: None,
+                channels: 1,
+                frames: 20_000,
+                rate: 44_100.0,
+            },
+        )]
+        .into();
+        let list = FileList {
+            channels: 1,
+            rate: 44_100.0,
+            tree,
+            files: Arc::new(files),
+        };
+        let counts = Arc::new(Counts::default());
+        let mut headers = Headers::default();
+        let over = ReadList::over(&list, 48_000.0, &mut headers, &counts).unwrap();
+        // the flat list at 48 kHz, each part's frames counted at the ratio
+        let flat: Vec<SegmentPart> = parts
+            .iter()
+            .map(|p| {
+                let r = p.source.range.unwrap();
+                SegmentPart {
+                    path: path.clone(),
+                    start: r.start,
+                    frames: contributed(r.len(), 44_100.0, 48_000.0),
+                    fade_in: 0,
+                    fade_out: 0,
+                    fade_in_shape: Default::default(),
+                    fade_out_shape: Default::default(),
+                    channels: None,
+                    source_channels: 1,
+                    source_frames: 20_000,
+                    source_rate: 44_100.0,
+                }
+            })
+            .collect();
+        let of = ReadList::of(&flat, 1, 48_000.0, &mut headers).unwrap();
+        assert_eq!(over.frames(), of.frames());
+        assert_eq!(read(&over), read(&of));
+        // every node counted once
+        let counted = counts.filled.lock().unwrap().len();
+        assert_eq!(counted, 2 * parts.len() - 1);
+        // an edit sharing the take's nodes counts the few it made
+        let edited = FileList {
+            tree: list
+                .tree
+                .insert(
+                    0,
+                    &list.tree,
+                    &Rates {
+                        join: 44_100.0,
+                        of: &rates,
+                    },
+                )
+                .unwrap(),
+            ..list.clone()
+        };
+        let again = ReadList::over(&edited, 48_000.0, &mut headers, &counts).unwrap();
+        assert_eq!(again.frames(), 2 * of.frames());
+        let made = counts.filled.lock().unwrap().len() - counted;
+        assert!(made <= 4, "the edit was counted again: {made} nodes");
+        let _ = std::fs::remove_file(&path);
     }
 }

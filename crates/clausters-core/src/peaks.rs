@@ -304,10 +304,133 @@ struct Level {
 /// given the buffer's length: `bucket`, or the ragged remainder at the tail.
 /// **Derived rather than stored**, which is what lets a level combine exactly
 /// without the cache growing a count array.
-fn bucket_count(total_samples: usize, bucket: usize, index: usize) -> usize {
+pub fn bucket_count(total_samples: usize, bucket: usize, index: usize) -> usize {
     total_samples
         .saturating_sub(index.saturating_mul(bucket))
         .min(bucket)
+}
+
+/// **The largest aligned blocks of a pyramid's levels over its base buckets
+/// `first..last`**, as `(level, index)` in order: at each position the
+/// coarsest level whose bucket starts there and still fits -- a block of
+/// `2^level` base buckets is aligned exactly when the position has that many
+/// trailing zeros -- so a span costs the logarithm of its buckets, a segment
+/// tree's own walk. `levels` is how many levels there are.
+///
+/// One walk for every reader of a pyramid: one held in memory
+/// ([`Pyramid::aligned_stats`]) and one read from its file a block at a time
+/// (the GUI host's, over [`FileHead`]).
+pub fn aligned_blocks(levels: usize, first: usize, last: usize) -> AlignedBlocks {
+    AlignedBlocks {
+        levels,
+        at: first,
+        last,
+    }
+}
+
+/// The walk [`aligned_blocks`] answers.
+#[derive(Clone, Debug)]
+pub struct AlignedBlocks {
+    levels: usize,
+    at: usize,
+    last: usize,
+}
+
+impl Iterator for AlignedBlocks {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<(usize, usize)> {
+        if self.at >= self.last {
+            return None;
+        }
+        let i = self.at;
+        let mut level = 0;
+        while level + 1 < self.levels
+            && (i >> level).is_multiple_of(2)
+            && i + (2usize << level) <= self.last
+        {
+            level += 1;
+        }
+        self.at += 1usize << level;
+        Some((level, i >> level))
+    }
+}
+
+/// **The head of a peaks file** (the version-3 layout [`MultiPyramid::to_bytes`]
+/// writes), and where each array of each level of each channel is in it: what
+/// a reader that reads the file a block at a time, rather than whole, needs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileHead {
+    /// Frames per base bucket.
+    pub base: usize,
+    /// The frames summarized.
+    pub frames: usize,
+    pub channels: usize,
+    /// Buckets at each level, finest first.
+    pub lens: Vec<usize>,
+}
+
+impl FileHead {
+    /// The bytes the head is: what a reader reads first.
+    pub const BYTES: usize = 40;
+
+    /// **Reads the head of a version-3 peaks file**: its magic, its version,
+    /// its base bucket, its frames, its channels and its level count. The
+    /// levels' sizes follow from those, as the writer lays them out.
+    pub fn parse(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < Self::BYTES {
+            return Err("not a peaks file".into());
+        }
+        let mut r = bytes::Reader::new(bytes);
+        r.tag(MAGIC).ok_or("not a peaks file")?;
+        let version = r.u32().ok_or("not a peaks file")?;
+        if version != VERSION_MEASURE {
+            return Err(format!(
+                "a peaks file of version {version}, not {VERSION_MEASURE}"
+            ));
+        }
+        let mut field = || r.usize().ok_or("a peaks file's head is cut short");
+        let (base, frames, channels, levels) = (field()?, field()?, field()?, field()?);
+        if base == 0 || channels == 0 {
+            return Err("a peaks file with no bucket or no channels".into());
+        }
+        let mut lens = Vec::with_capacity(levels);
+        let mut n = frames.div_ceil(base);
+        for _ in 0..levels {
+            lens.push(n);
+            n = n.div_ceil(2);
+        }
+        Ok(Self {
+            base,
+            frames,
+            channels,
+            lens,
+        })
+    }
+
+    /// The byte size the head says the file has, which a file of another
+    /// size does not match.
+    pub fn size(&self) -> u64 {
+        Self::BYTES as u64 + (self.channels * self.channel_bytes()) as u64
+    }
+
+    /// Where array `array` (`0` min, `1` max, `2` mean square) of level
+    /// `level` of channel `channel` begins.
+    pub fn offset(&self, channel: usize, level: usize, array: usize) -> u64 {
+        let before: usize = self.lens[..level].iter().map(|n| 16 + 12 * n).sum();
+        (Self::BYTES + channel * self.channel_bytes() + before + 16 + array * 4 * self.lens[level])
+            as u64
+    }
+
+    /// The frames bucket `index` of `level` covers: a level's bucket, or
+    /// what is left of the file in its last one.
+    pub fn count(&self, level: usize, index: usize) -> usize {
+        bucket_count(self.frames, self.base << level, index)
+    }
+
+    fn channel_bytes(&self) -> usize {
+        self.lens.iter().map(|n| 16 + 12 * n).sum()
+    }
 }
 
 /// A min/max pyramid over a mono buffer. Total storage is ~2x the level-0 size,
@@ -694,20 +817,8 @@ impl Pyramid {
             end: (last * base).min(self.total_samples),
             measured: true,
         };
-        let mut i = first;
-        while i < last {
-            // The largest level whose bucket starts here and still fits. A
-            // block of 2^level level-0 buckets is aligned exactly when the
-            // index has that many trailing zeros.
-            let mut level = 0;
-            while level + 1 < self.levels.len()
-                && (i >> level).is_multiple_of(2)
-                && i + (2usize << level) <= last
-            {
-                level += 1;
-            }
+        for (level, index) in aligned_blocks(self.levels.len(), first, last) {
             let lvl = &self.levels[level];
-            let index = i >> level;
             if index >= lvl.min.len() {
                 break;
             }
@@ -719,7 +830,6 @@ impl Pyramid {
                 Some(ms) => stats.sum_sq += ms[index] as f64 * n as f64,
                 None => stats.measured = false,
             }
-            i += 1usize << level;
         }
         (stats.count > 0).then_some(stats)
     }
@@ -1158,6 +1268,54 @@ pub fn multi_cache_size(frames: usize, channels: usize, base_bucket: usize) -> u
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A peaks file is read a block at a time from its head**: the head
+    /// says the file's size and where every array of every level of every
+    /// channel is, as the writer laid them out, and the walk over aligned
+    /// blocks folds a span as the pyramid in memory does.
+    #[test]
+    fn a_peaks_file_is_read_from_its_head_a_block_at_a_time() {
+        let frames = 10_000;
+        let samples: Vec<f32> = (0..frames * 2)
+            .map(|i| ((i * 7919) % 1000) as f32 / 1000.0 - 0.5)
+            .collect();
+        let pyramid = MultiPyramid::build_interleaved(&samples, 2, 256);
+        let bytes = pyramid.to_bytes();
+        let head = FileHead::parse(&bytes[..FileHead::BYTES]).unwrap();
+        assert_eq!(head.size(), bytes.len() as u64);
+        assert_eq!((head.base, head.frames, head.channels), (256, frames, 2));
+        for ch in 0..2 {
+            let levels = &pyramid.channel(ch).unwrap().levels;
+            assert_eq!(head.lens.len(), levels.len());
+            for (level, lvl) in levels.iter().enumerate() {
+                assert_eq!(head.lens[level], lvl.min.len());
+                for (array, values) in [&lvl.min, &lvl.max, lvl.ms.as_ref().unwrap()]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let at = head.offset(ch, level, array) as usize;
+                    let read: Vec<f32> = bytes[at..at + 4 * values.len()]
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|b| f32::from_ne_bytes(*b))
+                        .collect();
+                    assert_eq!(&read, values, "channel {ch} level {level} array {array}");
+                }
+            }
+        }
+        // the walk folds what the pyramid folds
+        let p = pyramid.channel(1).unwrap();
+        let (first, last) = (3, 37);
+        let mut lo = f32::INFINITY;
+        let mut count = 0;
+        for (level, index) in aligned_blocks(p.levels.len(), first, last) {
+            lo = lo.min(p.levels[level].min[index]);
+            count += head.count(level, index);
+        }
+        let folded = p.aligned_stats(first * 256, last * 256).unwrap();
+        assert_eq!((lo, count), (folded.min, folded.count));
+    }
 
     fn ramp(n: usize) -> Vec<f32> {
         (0..n).map(|i| (i as f32 * 0.01).sin()).collect()

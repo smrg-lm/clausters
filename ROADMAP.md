@@ -304,7 +304,7 @@ its plan; the plan is where its acceptance is read.
 ### The near work
 
 - ⬜ **The second turn: an editing application holds its engine**,
-  milestones `X32` to `X34`, then `S23` *(`crates/clausters-apps/PLAN.md`,
+  milestones `X33` and `X34`, then `S23` *(`crates/clausters-apps/PLAN.md`,
   "The second turn: an editing application holds its engine"; `S23` in root
   `PLAN.md`)*. **Taken next**, on the user's word: a copy and paste pattern
   that reaches hours hangs the audio editor, because each paste flattens the
@@ -312,8 +312,8 @@ its plan; the plan is where its acceptance is read.
   message that outgrows a packet. It revises the first turn
   ("The turn: an application's takes live on disk", `X28` and `X29`), whose
   surviving work carries over. In that order, now that the application
-  holds its engine and its take is shared blocks: the application's reader
-  and peaks; the audio editor's session file; the multitrack on the same
+  holds its engine, its take is shared blocks and it reads and draws its
+  takes: the audio editor's session file; the multitrack on the same
   modules; and the server's cleaning last, once
   nothing calls what it removes. Before `X25`, which should port this
   lifecycle.
@@ -325,10 +325,9 @@ its plan; the plan is where its acceptance is read.
 
   | Order | Milestone | Plan |
   |---|---|---|
-  | 1 | `X32` — The application reads its takes, and draws them | `crates/clausters-apps/PLAN.md` |
-  | 2 | `X33` — The audio editor's session file | `crates/clausters-apps/PLAN.md` |
-  | 3 | `X34` — The multitrack over the same modules | `crates/clausters-apps/PLAN.md` |
-  | 4 | `S23` — The server keeps no editing commands, widened | root `PLAN.md` |
+  | 1 | `X33` — The audio editor's session file | `crates/clausters-apps/PLAN.md` |
+  | 2 | `X34` — The multitrack over the same modules | `crates/clausters-apps/PLAN.md` |
+  | 3 | `S23` — The server keeps no editing commands, widened | root `PLAN.md` |
 
 - ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
   summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A
