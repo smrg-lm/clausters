@@ -99,7 +99,7 @@ pub(super) enum ToApp {
 /// What the application says back to the host.
 pub(super) enum FromApp {
     /// The takes what follows names by number, handed over by reference
-    /// (`clausters_apps::audio::shared`): sent before the answer that names
+    /// (`clausters_apps::audio::shared`, the context's): sent before the answer that names
     /// them, so the host holds each one when it reads its number.
     Lists(Vec<(u64, clausters_document::parts::FileList)>),
     /// The engine is open: what its windows' meters and play cursors read.
@@ -177,9 +177,9 @@ impl Said {
         Said { tx, wake }
     }
 
-    fn send(&self, said: FromApp) {
-        // the lists what is said names go first, from the thread that named them
-        let lists = clausters_apps::audio::shared::said();
+    /// Says `said`, the lists it names (`lists`, the context's since it was
+    /// last asked) going first.
+    fn send(&self, lists: Vec<(u64, clausters_document::parts::FileList)>, said: FromApp) {
         if !lists.is_empty() {
             let _ = self.tx.send(FromApp::Lists(lists));
         }
@@ -209,18 +209,21 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
             // every open asked of an editor with no engine says why
             while let Ok(ask) = rx.recv() {
                 if let ToApp::Open { def_id, reply, .. } = ask {
-                    out.send(FromApp::Opened {
-                        def_id,
-                        outcome: Err(format!("the audio editor has no engine: {e}")),
-                        reply,
-                    });
+                    out.send(
+                        Vec::new(),
+                        FromApp::Opened {
+                            def_id,
+                            outcome: Err(format!("the audio editor has no engine: {e}")),
+                            reply,
+                        },
+                    );
                 }
             }
             return;
         }
     };
     let reading = engine.lock().unwrap_or_else(|e| e.into_inner()).reading();
-    out.send(FromApp::Engine(reading));
+    out.send(Vec::new(), FromApp::Engine(reading));
     let app = AudioApp::new(engine);
     let mut editing = Editing::new();
     app.hold(&mut editing);
@@ -269,11 +272,14 @@ impl App {
                 reply,
             } => {
                 let outcome = self.open(def_id, &key, &title, path.as_deref());
-                self.out.send(FromApp::Opened {
-                    def_id,
-                    outcome,
-                    reply,
-                });
+                self.out.send(
+                    self.editing.said(),
+                    FromApp::Opened {
+                        def_id,
+                        outcome,
+                        reply,
+                    },
+                );
             }
             ToApp::Bind {
                 def_id,
@@ -521,13 +527,16 @@ impl App {
             effects.push(effect);
         }
         let actions = self.actions(def_id);
-        self.out.send(FromApp::Ran {
-            def_id,
-            effects,
-            actions,
-            end: ran.end,
-            say,
-        });
+        self.out.send(
+            self.editing.said(),
+            FromApp::Ran {
+                def_id,
+                effects,
+                actions,
+                end: ran.end,
+                say,
+            },
+        );
     }
 
     /// The window's tree, drawn with the ids it was numbered with.
@@ -580,13 +589,16 @@ impl App {
     /// The actions said on their own, after a call that may have moved them.
     fn say_actions(&mut self, def_id: i32) {
         if let Some(actions) = self.actions(def_id) {
-            self.out.send(FromApp::Ran {
-                def_id,
-                effects: Vec::new(),
-                actions: Some(actions),
-                end: None,
-                say: false,
-            });
+            self.out.send(
+                self.editing.said(),
+                FromApp::Ran {
+                    def_id,
+                    effects: Vec::new(),
+                    actions: Some(actions),
+                    end: None,
+                    say: false,
+                },
+            );
         }
     }
 
@@ -597,7 +609,8 @@ impl App {
                 let _ = tx.send(answer);
             }
             Reply::Client(to, seq) => {
-                self.out.send(FromApp::Reply { to, seq, answer });
+                self.out
+                    .send(self.editing.said(), FromApp::Reply { to, seq, answer });
             }
         }
     }

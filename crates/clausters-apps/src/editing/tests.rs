@@ -1053,11 +1053,7 @@ fn a_stroke_s_take_is_freed_when_no_entry_can_reach_it() {
     let first = draw(&mut editing, take, 1, 10);
     let before = named(&editing);
     assert_eq!(before.len(), 2, "the take before the stroke and after it");
-    assert!(
-        before
-            .iter()
-            .all(|id| crate::audio::shared::take(*id).is_some())
-    );
+    assert!(before.iter().all(|id| editing.shared.take(*id).is_some()));
     assert!(first.get("freed").is_none());
     let undone = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
     assert_eq!(undone["effects"][0]["kind"], "audio");
@@ -1069,18 +1065,10 @@ fn a_stroke_s_take_is_freed_when_no_entry_can_reach_it() {
         "the redo is gone, and the stroke's render with it"
     );
     // and so are the takes its entry named, while the new entry's stay
-    assert!(
-        before
-            .iter()
-            .all(|id| crate::audio::shared::take(*id).is_none())
-    );
+    assert!(before.iter().all(|id| editing.shared.take(*id).is_none()));
     let after = named(&editing);
     assert_eq!(after.len(), 2);
-    assert!(
-        after
-            .iter()
-            .all(|id| crate::audio::shared::take(*id).is_some())
-    );
+    assert!(after.iter().all(|id| editing.shared.take(*id).is_some()));
 }
 
 /// **An empty file in focus has nothing to undo**, whether the edited one
@@ -1645,16 +1633,10 @@ fn a_forgotten_audio_member_lets_go_of_what_only_it_named() {
         .filter(|id| id & (1 << 61) != 0 && id & (1 << 62) == 0)
         .collect();
     assert!(!named.is_empty());
-    assert!(
-        named
-            .iter()
-            .all(|id| crate::audio::shared::take(*id).is_some())
-    );
+    assert!(named.iter().all(|id| editing.shared.take(*id).is_some()));
     let freed = editing.forget_audio(take);
     assert!(
-        named
-            .iter()
-            .all(|id| crate::audio::shared::take(*id).is_none()),
+        named.iter().all(|id| editing.shared.take(*id).is_none()),
         "the takes its entries named are let go"
     );
     let files: Vec<&String> = freed.iter().flat_map(|f| &f.files).collect();

@@ -194,6 +194,7 @@ impl Application for AudioEditor {
                 next.window_state.workspace = self.window_state.workspace.clone();
             }
             next.window_state.server = self.window_state.server;
+            next.window_state.shared = self.window_state.shared.clone();
             let mut plan = next.prepare(
                 Request {
                     command: Command::Open,

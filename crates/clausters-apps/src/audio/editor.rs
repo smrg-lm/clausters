@@ -621,6 +621,9 @@ struct AudioWindowState {
     files_widget: Option<i32>,
     files_visible: bool,
     playing: Option<i64>,
+    // What its lists, copies and history entries are kept under: its
+    // context's, once a context holds it.
+    shared: shared::Shared,
 }
 
 #[derive(Clone, Debug)]
@@ -714,6 +717,7 @@ impl AudioEditor {
                 files_widget: None,
                 files_visible: true,
                 playing: None,
+                shared: shared::Shared::default(),
             },
             open_files: AudioFiles {
                 rows: Vec::new(),
@@ -807,6 +811,17 @@ impl AudioEditor {
     /// The list the take is now, flat.
     pub fn list(&self) -> Vec<Part> {
         self.file.contents.parts.to_vec()
+    }
+
+    /// **What its lists, copies and history entries are kept under**: its
+    /// context's ([`shared::Shared`]).
+    pub fn shared(&self) -> &shared::Shared {
+        &self.window_state.shared
+    }
+
+    /// Keeps what it hands on by reference under `shared`: its context's.
+    pub(crate) fn share(&mut self, shared: shared::Shared) {
+        self.window_state.shared = shared;
     }
 
     /// The take's parts as they are held: a tree, shared.
@@ -1043,7 +1058,7 @@ impl AudioEditor {
     /// owns, or one a list still reads.
     pub(crate) fn release(&mut self, source: SourceId) -> Vec<String> {
         // a take a history entry named, kept for it
-        if shared::let_go_take(source.0) {
+        if self.window_state.shared.let_go_take(source.0) {
             return Vec::new();
         }
         if self.rooted().contains(&source) {
@@ -1208,13 +1223,13 @@ impl AudioEditor {
     }
 
     /// **The list the window draws**: the take's parts as they are held,
-    /// handed to the host by reference ([`shared::say`]) and named here by
+    /// handed to the host by reference ([`shared::Shared::say`]) and named here by
     /// the number it is kept under, with its shape -- so what an edit tells
     /// the window is the same few bytes whatever the take's length.
     pub(crate) fn segments(&self) -> Value {
         let list = self.file_list(&self.file.contents.parts);
         let frames = list.tree.frames();
-        json!({"shared": shared::say(list), "channels": self.file.channels,
+        json!({"shared": self.window_state.shared.say(list), "channels": self.file.channels,
                "sample_rate": self.file.rate, "frames": frames})
     }
 
@@ -1343,7 +1358,7 @@ impl AudioEditor {
     /// file; or, from a payload that carries its parts, read from them.
     pub(crate) fn take_named(&self, payload: &Value) -> Option<parts::Take> {
         if let Some(take) = payload.get("take").and_then(Value::as_u64) {
-            return shared::take(take);
+            return self.window_state.shared.take(take);
         }
         parts::Take::read(&Opaque(payload.clone()), &self.rates_of())
     }

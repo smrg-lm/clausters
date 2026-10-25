@@ -355,8 +355,11 @@ pub struct Editing {
     /// run holds the session while it decides whether an edit may start.
     audio_playing: std::collections::BTreeMap<MemberId, u64>,
     /// The engine the application holds, when it holds one: an audio member
-    /// opened from then on plays on it, and is never stitched a join.
+    /// opened from then on plays on it.
     engine: Option<Box<dyn held::HeldEngine>>,
+    /// What its audio members hand on by reference: the lists a window draws,
+    /// the copies, the takes the histories name.
+    shared: crate::audio::shared::Shared,
 }
 
 impl Default for Editing {
@@ -383,6 +386,7 @@ impl Editing {
             sessions: Default::default(),
             audio_playing: Default::default(),
             engine: None,
+            shared: Default::default(),
         }
     }
 
@@ -641,7 +645,10 @@ impl Editing {
         self.admit(member, None)
     }
 
-    fn admit(&mut self, member: Member, shared: Option<&str>) -> MemberId {
+    fn admit(&mut self, mut member: Member, shared: Option<&str>) -> MemberId {
+        if let Member::Audio(editor) = &mut member {
+            editor.share(self.shared.clone());
+        }
         let id = self.seats.len() as MemberId;
         let object = Object {
             member: id,
@@ -709,6 +716,18 @@ impl Editing {
             .map(|seat| &mut seat.member)
     }
 
+    /// What its audio members hand on by reference ([`crate::audio::shared`]).
+    #[cfg(test)]
+    pub(crate) fn shared(&self) -> &crate::audio::shared::Shared {
+        &self.shared
+    }
+
+    /// **The lists its audio members named since the last call**, for the
+    /// host: what their answers name by number, handed over by reference.
+    pub fn said(&self) -> Vec<(u64, clausters_document::parts::FileList)> {
+        self.shared.said()
+    }
+
     /// **An audio member whose window is gone leaves the context**: every
     /// file it holds is closed, its history with it, so the takes and the
     /// renders only it named are let go; its session goes, and what is left
@@ -724,8 +743,10 @@ impl Editing {
             self.services.histories.close(Object { member, id });
         }
         let freed = self.release();
+        let shared = self.shared.clone();
         if let Some(Member::Audio(editor)) = self.member_mut(member) {
             **editor = AudioEditor::empty();
+            editor.share(shared);
         }
         self.sync_resources();
         freed

@@ -136,7 +136,10 @@ fn opening_measures_the_file_and_draws_its_list() {
     );
     assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
     let def = call(&mut editor, json!({"verb": "window", "widget": 12}));
-    let list = shared::told(&def["children"][1]["segments"]).expect("a list by reference");
+    let list = editor
+        .shared()
+        .told(&def["children"][1]["segments"])
+        .expect("a list by reference");
     let file = list.file(list.tree.iter().next().unwrap().part).unwrap();
     assert_eq!(&*file.path, "/in/take3.wav", "the window draws the list");
     assert!(
@@ -174,7 +177,10 @@ fn a_stroke_is_a_new_take_the_size_of_the_stroke_spliced_over_its_frames() {
     );
     let leg = &out["record"]["legs"][0];
     assert_eq!(leg["forward"]["edit"]["intent"], "parts");
-    let before = shared::take(leg["backward"]["take"].as_u64().unwrap()).unwrap();
+    let before = editor
+        .shared()
+        .take(leg["backward"]["take"].as_u64().unwrap())
+        .unwrap();
     assert_eq!(
         before.parts.count(),
         1,
@@ -229,7 +235,10 @@ fn a_cut_takes_the_span_out_and_writes_no_samples() {
     );
     assert_eq!(out["record"]["label"], "cut");
     let corrections = &out["answer"]["corrections"];
-    let told = shared::told(&corrections[0]["props"]["segments"]).expect("the new list");
+    let told = editor
+        .shared()
+        .told(&corrections[0]["props"]["segments"])
+        .expect("the new list");
     assert!(
         told.tree.same(&editor.file.contents.parts),
         "the picture is told the new list, the take's own"
@@ -1217,7 +1226,10 @@ fn a_copy_names_the_span_s_files_and_a_paste_elsewhere_reads_them() {
     assert_eq!(clip["content"]["frames"], 20);
     // the copy is held by reference, and names the files it reads
     assert_eq!(clip["content"]["held"]["files"], json!(["/in/take3.wav"]));
-    let held = shared::copy(clip["content"]["held"]["id"].as_u64().unwrap()).unwrap();
+    let held = editor
+        .shared()
+        .copy(clip["content"]["held"]["id"].as_u64().unwrap())
+        .unwrap();
     let first = held.tree.iter().next().unwrap().part;
     assert_eq!(first.source.range.unwrap().start, 10);
     assert!(copied.get("record").is_none(), "a copy is not an edit");
@@ -1228,6 +1240,8 @@ fn a_copy_names_the_span_s_files_and_a_paste_elsewhere_reads_them() {
         .to_string(),
     )
     .unwrap();
+    // two editors of one context keep their copies in one place
+    other.share(editor.shared().clone());
     call(&mut other, json!({"verb": "window", "widget": 12}));
     let pasted = event(
         &mut other,

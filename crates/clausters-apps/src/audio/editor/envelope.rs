@@ -401,12 +401,7 @@ mod tests {
         let before = out.record.unwrap().legs[0].backward["take"]
             .as_u64()
             .unwrap();
-        assert!(
-            !crate::audio::shared::take(before)
-                .unwrap()
-                .automation
-                .is_empty()
-        );
+        assert!(!editing.shared().take(before).unwrap().automation.is_empty());
         assert_eq!(editing.undo_label(), Some("apply gain envelope".into()));
         assert!(editing.step(Direction::Undo).stepped);
         let Some(Member::Audio(e)) = editing.member(id) else {

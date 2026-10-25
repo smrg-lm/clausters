@@ -1129,7 +1129,10 @@ What holds a take holds a reference to it: a copy is kept by the application
 and its clipboard document names it by number (`HeldCopy`), a history entry
 names the take before and after by number (`audio::shared`, let go of when the
 history lets go of the entry, as it lets go of a render), and the window is
-handed the tree itself (below). A cut is a new list and a copy is the span's
+handed the tree itself (below). What is kept by number is the editing
+context's (`audio::shared::Shared`, one per context and handed to each audio
+editor it holds), so it goes with the context and a member that leaves lets
+go of what only it named. A cut is a new list and a copy is the span's
 tree; a paste of a block, a mix, a pencil stroke, a gain apply and a reverse each are an
 **offline render** (`Step::Render`, scored by `audio::renders`) into a new file of
 the working folder, which reads the list with `TransportDiskIn` and writes with

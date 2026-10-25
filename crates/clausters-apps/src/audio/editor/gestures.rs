@@ -13,7 +13,7 @@ type Carried = (parts::Tree, Vec<Step>);
 type Edited = Option<(String, parts::Tree, Vec<Step>)>;
 
 /// **A history entry's half**: the take kept under `take`
-/// ([`shared::keep_take`]), which is the file's content revision `revision`.
+/// ([`shared::Shared::keep_take`]), which is the file's content revision `revision`.
 /// The entry holds the take's number as it holds the files the take reads,
 /// so the take is let go of when the entry is ([`AudioEditor::release`]).
 fn take_payload(take: u64, revision: u64) -> Value {
@@ -158,8 +158,8 @@ impl AudioEditor {
         self.file.next_revision += 1;
         self.file.revision = self.file.next_revision;
         self.file.dirty = self.file.revision != self.file.saved_revision;
-        let after = shared::keep_take(&self.file.contents);
-        let was = shared::keep_take(before);
+        let after = self.window_state.shared.keep_take(&self.file.contents);
+        let was = self.window_state.shared.keep_take(before);
         let forward = take_payload(after, self.file.revision);
         let backward = take_payload(was, previous);
         let ids = |list: &parts::Tree, take: u64| {
@@ -240,7 +240,7 @@ impl AudioEditor {
             span.frames(),
             self.file.rate,
             HeldCopy {
-                id: shared::keep_copy(list),
+                id: self.window_state.shared.keep_copy(list),
                 files,
             },
         );
@@ -294,8 +294,11 @@ impl AudioEditor {
                 ..
             } => {
                 fits(channels, self.file.channels)?;
-                let copy =
-                    shared::copy(held.id).ok_or("the copy is no longer held: copy it again")?;
+                let copy = self
+                    .window_state
+                    .shared
+                    .copy(held.id)
+                    .ok_or("the copy is no longer held: copy it again")?;
                 for (id, file) in copy.files.iter() {
                     let peaks = match &file.peaks {
                         Some(peaks) => peaks.to_string(),

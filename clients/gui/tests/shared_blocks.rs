@@ -24,7 +24,6 @@
 use std::time::Instant;
 
 use clausters_apps::audio::editor::{AudioEditor, call_json, new_json};
-use clausters_apps::audio::shared;
 use clausters_apps::turn::Event;
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::peaks::MultiPyramid;
@@ -219,7 +218,7 @@ fn a_copy_pasted_to_a_hundred_hours_costs_what_its_first_paste_did() {
             // **What the window is told**, as the application's thread
             // hands it over: the take by reference, and its number.
             let started = Instant::now();
-            receive(shared::said());
+            receive(editor.shared().said());
             let segments = out["answer"]["corrections"]
                 .as_array()
                 .unwrap()

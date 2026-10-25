@@ -3413,12 +3413,20 @@ over the opened file) carries over.
     server. The coordinator's tests run over an engine that plays nothing,
     and the samples-level checks drive the application that holds the
     engine (`crates/clausters-app-engine/tests/coordinator.rs`).
-  - ⬜ **The coordinator is typed**: effects and awaits are Rust types, the
+  - ✅ **The coordinator is typed**: effects and awaits are Rust types, the
     context and the editor are called by their methods, and JSON is written
     only at a client's door and the C ABI; an await the application answers
     in place becomes a call, and only a render suspends a run. The takes a
     history or a clipboard names are held by the context, not by
-    process-wide registries.
+    process-wide registries. *Done 2026-10-25:* the coordinator's driver answers
+    every await through the application's `Services` and hands back only a
+    render (`Editing::audio_act`, `audio_landed`, `audio_query`); a run
+    answers a typed `Answer` and waits on a typed `Await`; the context's and
+    the editor's doors have a form over values the coordinator calls, and
+    the playback's JSON door went for typed calls. What stays JSON is the
+    window's effects, which the host draws, and the editor's outcomes, which
+    a client's door answers too. The lists, copies and takes are kept per
+    context (`audio::shared::Shared`).
   - ✅ **The files split by what they do**: the context's door
     (`editing/door.rs`) and its tests, the coordinator
     (`editing/coordinator/`: its actions, its runs, a task carried out, an
