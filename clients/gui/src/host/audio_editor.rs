@@ -841,6 +841,41 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// **A correction that comes alone redraws the window**: folding a
+    /// channel changes one prop of the take's picture and nothing else, and
+    /// the window must be drawn again when it lands rather than at the next
+    /// frame something else asks for.
+    #[test]
+    fn a_folded_channel_redraws_the_window() {
+        let path = std::env::temp_dir()
+            .join(format!("host-audio-fold-{}.wav", std::process::id()))
+            .to_string_lossy()
+            .into_owned();
+        let mut w = clausters_core::pcm::Writer::create(&path, 2, 48_000.0, "float").unwrap();
+        w.write(&[0.25; 2 * 4800]).unwrap();
+        w.finalize().unwrap();
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        let widget = widget_of(&host, def_id);
+        let _ = host.take_effects();
+        let fold = host.event_message(
+            widget,
+            1,
+            vec![OscType::String("fold_channel".into()), OscType::Int(1)],
+        );
+        assert!(host.deliver(def_id, &fold));
+        let mut redrawn = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !redrawn {
+            assert!(std::time::Instant::now() < deadline, "never redrawn");
+            redrawn = host.take_effects().iter().any(|e| {
+                matches!(e, HostEffect::Redraw(id) | HostEffect::RedrawLive(id) if *id == def_id)
+            }) && host.registry.get(widget).unwrap().props.get("folded") == Some(&json!([1]));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// **A copy is held by the application, and a paste reads it there**: the
     /// window's copy puts on the host's clipboard a document that names the
     /// copy the application keeps, and a paste carrying that document puts

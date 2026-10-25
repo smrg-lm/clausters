@@ -737,6 +737,11 @@ impl Host {
                 self.set_props(id, props.into_iter().collect(), &mut fx);
             }
         }
+        // **What the corrections changed is drawn now**: the redraw a set
+        // asks for goes out with them. Dropped, a correction that came alone
+        // (a channel folded from the menu) waited for the next frame
+        // something else asked for, seconds on a still window.
+        self.pending_effects.extend(fx);
         self.settle(ack::Acked {
             seq: seq as i32,
             doc_version,
