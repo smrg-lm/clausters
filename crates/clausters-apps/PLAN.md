@@ -3520,7 +3520,10 @@ Every entry carries a checkbox.
   with its own insert, bypass and free verbs -- and are part of this design.
   Still open: the one Apply. *Since 2026-10-23* the menu has no preview
   entries: the gain envelope's preview was removed (the turn to disk's
-  eighth decision), and Edit holds only *Apply gain envelope*.
+  eighth decision), and Edit holds only *Apply gain envelope*. *Since
+  2026-10-25* the gain curve's entries (*Edit audio*, *Edit gain envelope*,
+  *Apply gain envelope*) are in Process beside *Reverse*, so Edit holds no
+  process; the one Apply is still the open question.
 
 - ⬜ **A roll may need its tempo and its barlines as parameters** *(the
   user, 2026-10-06, hearing the page of a sequence against the rolls over

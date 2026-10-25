@@ -170,7 +170,7 @@ node with a native host; in a page that is not isolated it rejects saying the ho
 audio editor. It writes nothing it was handed while it edits. The take is **a list
 of spans of files**, and every edit leaves a new list: a cut takes a span out, a paste of a
 copy puts its spans in, and an edit that makes new samples (a pencil stroke, a pasted block,
-a mix with Ctrl+Shift+V, a gain curve applied, Edit -> Reverse) **renders** them offline into
+a mix with Ctrl+Shift+V, a gain curve applied, Process -> Reverse) **renders** them offline into
 a file of the application's working folder, which the list then names: a stroke is a file
 the size of the stroke, spliced over the frames it was drawn on. An undo is the list before,
 so it costs the list and not the samples, and a take of an hour cuts and pastes as fast as
@@ -236,7 +236,7 @@ same action as View → Edit audio. This edit body is separate from
 accepts curve bodies; its `layer` property names the active body (`points`,
 `points:1`, etc.), and `hidden` excludes named bodies from drawing and editing.
 
-`editor.showEnvelope()` (View → Edit gain envelope) shows and selects the gain
+`editor.showEnvelope()` (Process → Edit gain envelope) shows and selects the gain
 curve. `editor.envelope` reads its flat `time, value, shape, curve` quads in
 seconds; `editor.setEnvelope([...])` records a curve edit in the same undo
 order as sample edits. The header names the gain scale: zero to one, where one is unity, and the
@@ -246,7 +246,7 @@ segment takes its shape and curvature from its first point, using the same
 shapes as an envelope. Values before the first point and after the last hold.
 The curve stays on the take's time axis when sample spans are cut or pasted.
 
-`editor.applyEnvelope()` (Edit → Apply gain envelope) renders that gain into
+`editor.applyEnvelope()` (Process → Apply gain envelope) renders that gain into
 a new take and resets the curve to unity. Undo restores both the original
 take and the unapplied curve; redo restores the rendered take without applying
 gain a second time. Curve edits alone leave the samples unchanged.

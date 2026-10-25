@@ -13,7 +13,7 @@ list:
 - a **mix** renders the copy added onto the frames it lands on into a file
   of the editor's working folder, which the list then names;
 - a **pencil stroke** renders a file the size of the stroke and splices it
-  over the frames it was drawn on; Edit -> Reverse renders the selection
+  over the frames it was drawn on; Process -> Reverse renders the selection
   backwards the same way.
 
 So an undo is the list before: it costs the list, not the samples, and a take
@@ -165,7 +165,7 @@ def both():
 # %% [markdown]
 # ## A gain envelope over the take
 #
-# Edit -> Edit gain envelope selects the curve body, and the vertical ruler
+# Process -> Edit gain envelope selects the curve body, and the vertical ruler
 # reads gain while it is in hand. Drag its points or bend a
 # segment; double-click adds a point. These edits keep the samples intact.
 # `envelope()` shows a shaped fade; `apply_envelope()` renders it into a new

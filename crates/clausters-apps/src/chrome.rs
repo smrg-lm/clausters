@@ -25,7 +25,8 @@
 //! | `keys` | the window's keys |
 //!
 //! **What each adds**: the audio editor `save`, `mix` (a paste that adds)
-//! and its processes (`reverse`), under a Process menu of its own;
+//! and its processes (`reverse`, the gain curve and the choice of the body
+//! the hand edits), under a Process menu of its own;
 //! the multitrack and the roll `split`, `join` and `quantize`; the multitrack
 //! the rows' own commands (`add_track`, `reset_heights`, `compact_tracks`), a
 //! transport that pauses (`pause`, `stop`), how its boxes of notes are drawn
@@ -147,16 +148,6 @@ pub fn menu(app: App, saves: bool) -> Value {
         edit.push(entry(app, "mix"));
     }
     edit.extend([entry(app, "delete"), sep(), entry(app, "select_all")]);
-    if app == App::Audio {
-        // what the hand edits, and the curve applied to the take
-        edit.extend([
-            sep(),
-            entry(app, "layer_take"),
-            entry(app, "show_envelope"),
-            sep(),
-            entry(app, "apply_envelope"),
-        ]);
-    }
     if app != App::Audio {
         edit.extend([
             sep(),
@@ -218,8 +209,19 @@ pub fn menu(app: App, saves: bool) -> Value {
         sub("Transport", transport),
     ];
     if app == App::Audio {
-        // what renders the selection into new samples
-        bar.push(sub("Process", vec![entry(app, "reverse")]));
+        // what renders into new samples: the selection reversed, and the
+        // gain curve, with the choice of the body the hand edits beside the
+        // curve it chooses
+        bar.push(sub(
+            "Process",
+            vec![
+                entry(app, "reverse"),
+                sep(),
+                entry(app, "layer_take"),
+                entry(app, "show_envelope"),
+                entry(app, "apply_envelope"),
+            ],
+        ));
     }
     if app == App::Multitrack {
         bar.push(sub("Track", vec![entry(app, "add_track")]));
@@ -402,7 +404,26 @@ mod tests {
             .iter()
             .find(|m| m["label"] == "Process")
             .expect("a Process menu");
-        assert_eq!(process["menu"][0]["verb"], "reverse");
+        let processes: Vec<&str> = process["menu"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["verb"].as_str())
+            .collect();
+        assert_eq!(
+            processes,
+            ["reverse", "layer_take", "show_envelope", "apply_envelope"]
+        );
+        let edit = bar
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["label"] == "Edit")
+            .unwrap();
+        assert!(
+            !edit.to_string().contains("envelope"),
+            "the gain curve is a process"
+        );
         assert!(!audio.contains(&"split".into()));
         let notes = verbs(&menu(App::Notes, false));
         assert!(!notes.contains(&"save".into()) && notes.contains(&"quantize".into()));
