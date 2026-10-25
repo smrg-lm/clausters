@@ -879,6 +879,19 @@ impl SignalElement {
         self.layers.drawn_measures().next().is_some()
     }
 
+    /// **The two forms the element draws, as a pair**: whether it draws the
+    /// texture and whether it draws any trace -- what decides the resource a
+    /// bulk load asks for ([`Self::want`]).
+    pub fn draws_form(&self) -> (bool, bool) {
+        (self.is_texture_view(), self.draws_traces())
+    }
+
+    /// Whether the source is a list of segments over files, read through the
+    /// take key the host gave it.
+    pub fn reads_list(&self) -> bool {
+        self.source.data().is_some_and(|d| d.segments.is_some())
+    }
+
     /// **What this element's vertical axis measures**, resolved: what the stack
     /// put on the axis, and -- where every layer sits in a box of its own -- the
     /// presentation's own quantity, since the axis is still drawn and still has

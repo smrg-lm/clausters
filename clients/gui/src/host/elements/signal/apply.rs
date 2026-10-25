@@ -193,9 +193,18 @@ impl SignalElement {
                         // take's shape and peaks on every view switch for
                         // exactly this. A file or a cache is two resources (an
                         // analysis and a pyramid) and is read again.
+                        //
+                        // **And except a list**, which is two resources too: its
+                        // summary is a pyramid and its spectrogram is columns, so
+                        // the picture held is forgotten and the other one asked.
                         if (self.is_texture_view() && !texture) || (self.draws_traces() && !traces)
                         {
-                            if self.holds_resolved_buffer() {
+                            if self.reads_list() {
+                                if let Some(data) = self.source.data_mut() {
+                                    data.body = None;
+                                }
+                                self.reread();
+                            } else if self.holds_resolved_buffer() {
                                 self.refresh_analysis();
                             } else {
                                 self.reread();

@@ -594,6 +594,7 @@ impl Samples for SignalElement {
         // saying these samples changed: the picture is carried to be drawn
         // until the new one has come, and the read is still owed.
         let reload = was_el.reload_asked || self.reload_asked;
+        let form = self.draws_form();
         let Source::Data(was) = &was_el.source else {
             return false;
         };
@@ -622,6 +623,14 @@ impl Samples for SignalElement {
             && now.channels == was.channels
             && now.base_bucket == was.base_bucket;
         if !same || now.body.is_some() {
+            return false;
+        }
+        // **A list's picture is one form, not every form**: a server buffer
+        // is one resource the element rebuilds into a trace or a texture,
+        // but a list's summary is a pyramid and its spectrogram is columns
+        // analyzed where they are looked at. A def that moved between the
+        // two keeps the take key and asks for the other picture.
+        if now.segments.is_some() && was_el.draws_form() != form {
             return false;
         }
         let Some(body) = &was.body else {
@@ -909,6 +918,52 @@ mod tests {
             info.iter().find(|(k, _)| k == "layers").map(|(_, v)| v),
             Some(&serde_json::json!("peak rms"))
         );
+    }
+
+    /// **A list's summary is not its spectrogram.** A server buffer is one
+    /// resource every form is rebuilt from, but a list of segments is read
+    /// as a pyramid for a trace and as columns for a texture, so a take that
+    /// moves to the spectrogram alone asks for it under the take key it
+    /// keeps -- on a live set, and on a def that rebuilds it -- instead of
+    /// holding the peaks it can never draw.
+    #[test]
+    fn a_list_moved_to_the_spectrogram_asks_for_it() {
+        use crate::host::widget::element::{Bulk, Element, Samples};
+        let def = |measure: &str| {
+            let json = format!(
+                r#"{{"id":1,"type":"signal","view":"trace","measure":"{measure}",
+                    "segments":{{"channels":1,"sample_rate":48000.0,"parts":[
+                        {{"path":"/a.wav","start":0,"frames":4096,"source_channels":1,
+                          "source_frames":4096,"source_rate":48000.0}}]}}}}"#
+            );
+            let w = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+            w.signal().expect("a signal element").clone()
+        };
+        let summarized = || {
+            let mut wave = def("peak rms");
+            assert!(wave.name_list(-2));
+            wave.source.data_mut().unwrap().body = Some(std::sync::Arc::new(
+                crate::waveform::WaveformData::from_interleaved(&[0.5; 4096], 1, 64),
+            ));
+            assert_eq!(wave.want(), None, "the trace has its picture");
+            wave
+        };
+
+        let mut live = summarized();
+        assert!(live.set("layers", &serde_json::json!("spectrogram")));
+        assert!(matches!(live.take_reload(), Some(Bulk::Buffer(-2))));
+        assert!(matches!(live.want(), Some(Bulk::Buffer(-2))));
+
+        let was = summarized();
+        let mut rebuilt = def("spectrogram");
+        assert!(!rebuilt.carry_resolved(&was), "the peaks are not carried");
+        assert!(
+            matches!(rebuilt.want(), Some(Bulk::Buffer(-2))),
+            "the take key is"
+        );
+
+        let mut same = def("peak rms");
+        assert!(same.carry_resolved(&was), "a trace still carries its own");
     }
 
     /// **Two layers cannot claim one vertical for two quantities**, and the
