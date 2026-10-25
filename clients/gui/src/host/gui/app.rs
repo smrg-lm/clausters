@@ -749,9 +749,12 @@ impl App {
         // (no `/gui_def` over the wire) is opened now. Its events have no script
         // to return to, so they go to a placeholder origin. Pre-loaded windows
         // mean this is a standalone app -- closing the last one quits it.
+        // So does an application the host opened before the loop (the
+        // audio editor of `--audio`), whose window is drawn on a later turn,
+        // once the application has opened its file.
         let standalone_origin = PLACEHOLDER_ORIGIN;
         let preloaded = self.host.window_def_ids();
-        self.standalone = !preloaded.is_empty();
+        self.standalone = !preloaded.is_empty() || self.host.owns_an_application();
         for id in preloaded {
             if !self.windows.contains_key(&id) {
                 self.open_window(lp, id, standalone_origin);

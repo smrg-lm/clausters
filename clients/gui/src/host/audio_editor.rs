@@ -259,6 +259,16 @@ impl Host {
         rx
     }
 
+    /// **Whether this host owns an audio editor's window**, open or still
+    /// opening: a host started over one (`--audio`) is that application, and
+    /// closing its last window ends it. A page is never started over one.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn owns_an_application(&self) -> bool {
+        self.audio
+            .as_ref()
+            .is_some_and(|audio| !audio.windows.is_empty())
+    }
+
     /// Whether window `def_id` is an audio editor this host owns.
     pub(crate) fn owns_audio(&self, def_id: i32) -> bool {
         self.audio
@@ -747,6 +757,18 @@ mod tests {
         }));
         rx.recv_timeout(std::time::Duration::from_secs(20))
             .expect("the application woke the loop");
+    }
+
+    /// **A host opened over an editor is that application** before its window
+    /// is drawn: the front reads it as it starts, and ends the process when
+    /// that window is closed.
+    #[test]
+    fn a_host_owns_its_application_before_the_window_is_drawn() {
+        let mut host = host();
+        assert!(!host.owns_an_application());
+        let def_id = host.open_audio(None, "Audio").expect("opened");
+        assert!(host.window_def(def_id).is_none(), "not drawn yet");
+        assert!(host.owns_an_application());
     }
 
     /// **A copy is held by the application, and a paste reads it there**: the
