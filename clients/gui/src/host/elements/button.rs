@@ -110,6 +110,21 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
+impl Button {
+    /// **Whether it is drawn held**: while the hand holds it, unless its verb
+    /// reads a switch or a choice, which is drawn as the reading says and
+    /// nothing else. The reading changes when the owner has done the verb,
+    /// after the release; drawn held under the hand as well, a click showed
+    /// the switch on, off as the hand let go, and on again when the reading
+    /// came. A key never held it, and a click now looks as the key does.
+    fn active(&self, state: Option<&ActionState>) -> bool {
+        match state.and_then(|s| s.checked) {
+            Some(on) => on,
+            None => self.held,
+        }
+    }
+}
+
 fn from_props(props: &Map<String, Value>) -> Button {
     Button {
         label: parse::label(props),
@@ -159,7 +174,7 @@ impl Element for Button {
             self.icon,
             ctx.rect,
             controls::ButtonLook {
-                active: self.held || state.and_then(|s| s.checked).unwrap_or(false),
+                active: self.active(state),
                 hovered: ctx.hovered && state.is_none_or(|s| s.enabled),
                 flat: self.flat,
             },
@@ -312,6 +327,37 @@ mod tests {
         let (values, _) = parts(b.release((10.0, 10.0), true, &input(&m)));
         assert_eq!(values, vec![vec![OscType::Int(0)]]);
         assert!(!b.held);
+    }
+
+    /// **A tool over a switch is drawn as the switch reads**, held or not: the
+    /// reading moves only once the owner has done the verb, after the release,
+    /// so drawing the hand as well flickered on, off and on again. A tool with
+    /// no reading to show is drawn held while the hand holds it.
+    #[test]
+    fn a_tool_over_a_switch_draws_the_reading_not_the_hand() {
+        let m = Metrics::default();
+        let reading = |checked: Option<bool>| -> ActionState {
+            serde_json::from_value(serde_json::json!({
+                "kind": if checked.is_some() { "toggle" } else { "command" },
+                "enabled": true,
+                "checked": checked,
+                "target": {"kind": "document", "member": 0, "object": 1},
+            }))
+            .unwrap()
+        };
+        let mut b = from_props(&props(r#"{"label":"loop","verb":"loop"}"#));
+        on_press(&mut b, &m);
+        assert!(!b.active(Some(&reading(Some(false)))), "off while held");
+        assert!(b.active(Some(&reading(Some(true)))));
+        assert!(b.active(Some(&reading(None))), "a command shows the hand");
+        assert!(b.active(None));
+        let _ = b.release((10.0, 10.0), true, &input(&m));
+        assert!(!b.active(Some(&reading(Some(false)))));
+        assert!(
+            b.active(Some(&reading(Some(true)))),
+            "on once the reading is"
+        );
+        assert!(!b.active(None));
     }
 
     /// The bang: one value at the press, and a release that is worth nothing
