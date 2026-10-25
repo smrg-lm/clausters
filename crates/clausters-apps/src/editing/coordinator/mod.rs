@@ -76,12 +76,14 @@ use serde_json::{Value, json};
 use super::{Editing, Member, MemberId, call_json};
 
 mod actions;
+mod driver;
 mod outcome;
 mod run;
 mod step;
 #[cfg(test)]
 mod tests;
 
+pub use driver::{Header, Raised, Ran, Render, Services};
 use run::{Raise, Run, Task};
 
 /// Why a verb that acts on a file is refused by an editor with none open.
@@ -170,9 +172,10 @@ fn take_rate(editing: &Editing, member: MemberId, file: u64) -> f64 {
     }
 }
 
-/// **The `audio` door**: `do` starts a run, `run` with `result` resumes one,
-/// `query` answers what a script reads of the transport.
-pub(super) fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -> Value {
+/// **The coordinator's own door**, which its driver ([`Editing::audio_act`])
+/// speaks: `do` starts a run, `run` with `result` resumes one, `query`
+/// answers what a script reads of the transport.
+fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -> Value {
     let Some(member) = request["member"]
         .as_u64()
         .and_then(|m| MemberId::try_from(m).ok())

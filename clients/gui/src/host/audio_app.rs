@@ -386,11 +386,7 @@ impl App {
         first.end = ran.end;
         // **The play cursor is the editor's transport's position**: taken as
         // the open starts, which a render of the file's peaks may outlast.
-        let transport = self.app.call(
-            &mut self.editing,
-            &json!({"verb": "audio", "member": member, "query": "transport"}),
-        )["transport"]
-            .clone();
+        let transport = self.app.query(&mut self.editing, member, "transport")["transport"].clone();
         first
             .effects
             .push(json!({"kind": "transport", "transport": transport}));
@@ -436,12 +432,17 @@ impl App {
         } else if let Some(query) = call["query"].as_str() {
             // what the window reads of the editor: its transport, its
             // actions, the history of the file in focus
-            let request = match query {
-                "actions" => json!({"verb": "actions", "member": member}),
-                "history" => json!({"verb": "state", "member": member}),
-                _ => json!({"verb": "audio", "member": member, "query": query}),
+            let answer = match query {
+                "actions" => self.app.call(
+                    &mut self.editing,
+                    &json!({"verb": "actions", "member": member}),
+                ),
+                "history" => self.app.call(
+                    &mut self.editing,
+                    &json!({"verb": "state", "member": member}),
+                ),
+                _ => self.app.query(&mut self.editing, member, query),
             };
-            let answer = self.app.call(&mut self.editing, &request);
             self.answer(reply, Ok(answer));
         } else if let Some(Value::Object(action)) = call.get("do") {
             let mut action = Value::Object(action.clone());

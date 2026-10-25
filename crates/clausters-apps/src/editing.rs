@@ -56,7 +56,8 @@ mod door;
 mod exchange;
 pub mod held;
 
-pub use door::{call_json, call_json_ids};
+pub use coordinator::{Header, Raised, Ran, Render, Services};
+pub use door::call_json;
 
 /// The version an unedited context is at. One rather than zero, because zero is
 /// what an edit means by *unstated* when it names the state it was made against.

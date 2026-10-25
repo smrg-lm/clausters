@@ -1,7 +1,7 @@
 //! The coordinator's runs, driven by a client that holds, fails and
 //! reorders awaits over an engine that plays nothing.
 
-use super::super::call_json_ids;
+use super::super::call_json;
 use super::super::held::{HeldEngine, HeldTake};
 use super::*;
 use clausters_core::ids::{IdShare, ServerShape, Space};
@@ -65,18 +65,64 @@ impl HeldEngine for Engine {
     }
 }
 
-/// **A client that does what it is asked**: every await succeeds, the
+/// **A client that does what it is asked**: every service succeeds, the
 /// engine's transport rolls as `rolling` says, a file read is a
-/// two-channel take, and every effect and await is written down.
+/// two-channel take, and every effect and service is written down. A render
+/// is held until the test lands it.
 struct Client {
     ids: IdSpaces,
     rolling: bool,
     engine: Arc<Mutex<Told>>,
+    /// The service that fails once: `steps`.
     fail: Option<&'static str>,
     trace: Vec<String>,
     effects: Vec<Value>,
     /// What a look on disk finds, by path.
     stamps: Value,
+    /// The files the services deleted, in order.
+    deleted: Vec<String>,
+}
+
+/// **The client's services**, each written down as the await it was:
+/// `await:steps` (steps carried out), `await:shape` (a header read),
+/// `await:stat` (a look on disk) and `delete`.
+struct Disk<'a> {
+    trace: &'a mut Vec<String>,
+    fail: &'a mut Option<&'static str>,
+    stamps: &'a Value,
+    deleted: &'a mut Vec<String>,
+}
+
+impl Services for Disk<'_> {
+    fn header(&mut self, _path: &str) -> Result<Header, String> {
+        self.trace.push("await:shape".into());
+        Ok(Header {
+            frames: 200,
+            channels: 2,
+            rate: 48_000.0,
+            codec: "wav".into(),
+            sample_format: Some("float".into()),
+        })
+    }
+    fn stamps(&mut self, _paths: &[String]) -> Value {
+        self.trace.push("await:stat".into());
+        self.stamps.clone()
+    }
+    fn carry(&mut self, _steps: &[clausters_editing::apply::Step]) -> Result<(), String> {
+        self.trace.push("await:steps".into());
+        if *self.fail == Some("steps") {
+            *self.fail = None;
+            return Err("refused".into());
+        }
+        Ok(())
+    }
+    fn delete(&mut self, files: &[String]) {
+        self.trace.push("delete".into());
+        self.deleted.extend_from_slice(files);
+    }
+    fn call_off(&mut self, _member: MemberId) {
+        self.trace.push("call_off".into());
+    }
 }
 
 impl Client {
@@ -89,37 +135,55 @@ impl Client {
             trace: Vec::new(),
             effects: Vec::new(),
             stamps: json!({}),
+            deleted: Vec::new(),
         }
     }
 
-    fn call(&mut self, editing: &mut Editing, request: Value) -> Value {
+    fn hold(&mut self, editing: &mut Editing) {
         if editing.engine.is_none() {
             editing.hold_engine(Box::new(Engine(Arc::clone(&self.engine))));
         }
         self.engine.lock().unwrap().rolling = self.rolling;
-        serde_json::from_str(&call_json_ids(editing, &request.to_string(), &mut self.ids)).unwrap()
     }
 
-    /// Run one action to its end, answering its awaits.
+    fn call(&mut self, editing: &mut Editing, request: Value) -> Value {
+        self.hold(editing);
+        serde_json::from_str(&call_json(editing, &request.to_string())).unwrap()
+    }
+
+    fn query(&mut self, editing: &mut Editing, member: MemberId, query: &str) -> Value {
+        self.hold(editing);
+        editing.audio_query(member, query, &mut self.ids)
+    }
+
+    /// Run one action to its end, its renders landed as they come.
     fn run(&mut self, editing: &mut Editing, member: MemberId, action: Value) -> Value {
         let first = self.begin(editing, member, action);
         self.finish(editing, member, first)
     }
 
-    /// **Start an action and stop at its first await**, which is handed
-    /// back unanswered: a service that has not answered yet. The effects
-    /// decided before it are carried out.
+    /// **Start an action and stop at its first render**, which is held: a
+    /// render that has not landed yet. The effects decided before it are
+    /// written down.
     fn begin(&mut self, editing: &mut Editing, member: MemberId, action: Value) -> Value {
-        let answer = self.call(
-            editing,
-            json!({"verb": "audio", "member": member, "do": action}),
+        self.hold(editing);
+        let ran = editing.audio_act(
+            member,
+            &action,
+            action["lease"] == true,
+            &mut Disk {
+                trace: &mut self.trace,
+                fail: &mut self.fail,
+                stamps: &self.stamps,
+                deleted: &mut self.deleted,
+            },
+            &mut self.ids,
         );
-        self.log(&answer);
-        answer
+        self.said(ran)
     }
 
-    /// Answer the await `pending` stopped at with `result`, and stop at
-    /// the next one or at the end.
+    /// Land the render `pending` waits on, as `result` says (`{}` or
+    /// `{"failed": reason}`), and stop at the next one or at the end.
     fn answer(
         &mut self,
         editing: &mut Editing,
@@ -127,63 +191,52 @@ impl Client {
         pending: &Value,
         result: Value,
     ) -> Value {
-        let answer = self.call(
-            editing,
-            json!({"verb": "audio", "member": member, "run": pending["run"], "result": result}),
+        self.hold(editing);
+        let result = match result["failed"].as_str() {
+            Some(reason) => Err(reason.to_string()),
+            None => Ok(()),
+        };
+        let ran = editing.audio_landed(
+            member,
+            pending["run"].as_u64().unwrap_or(0),
+            result,
+            false,
+            &mut Disk {
+                trace: &mut self.trace,
+                fail: &mut self.fail,
+                stamps: &self.stamps,
+                deleted: &mut self.deleted,
+            },
+            &mut self.ids,
         );
-        self.log(&answer);
-        answer
+        self.said(ran)
     }
 
-    /// Carry a run on from `answer` to its end, answering every await
-    /// as the service would.
+    /// Carry a run on from `answer` to its end, every render landing.
     fn finish(&mut self, editing: &mut Editing, member: MemberId, mut answer: Value) -> Value {
         while answer["done"] != true {
-            let result = self.reply(editing, member, &answer["await"]);
-            answer = self.answer(editing, member, &answer, result);
+            answer = self.answer(editing, member, &answer, json!({}));
         }
         answer
     }
 
-    fn log(&mut self, answer: &Value) {
-        for effect in answer["effects"].as_array().cloned().unwrap_or_default() {
+    /// What a run came to, written down: its effects, the render it waits
+    /// on (`await:batch`), or its end.
+    fn said(&mut self, ran: Ran) -> Value {
+        for effect in ran.effects {
             self.trace
                 .push(effect["kind"].as_str().unwrap().to_string());
             self.effects.push(effect);
         }
-        if answer["done"] != true {
-            let kind = answer["await"]["kind"].as_str().unwrap_or_default();
-            self.trace.push(format!("await:{kind}"));
+        if let Some(render) = ran.render {
+            self.trace.push("await:batch".into());
+            return json!({"done": false, "run": render.run});
         }
-    }
-
-    /// What the service answers an await with: a failure when `fail`
-    /// names its kind, else what it asked for. A history step is carried
-    /// out as a client carries it: its operation run to its end.
-    fn reply(&mut self, editing: &mut Editing, member: MemberId, wait: &Value) -> Value {
-        let kind = wait["kind"].as_str().unwrap_or_default();
-        if self.fail == Some(kind) {
-            self.fail = None;
-            return json!({"failed": "refused"});
-        }
-        match kind {
-            "stat" => json!({"stamps": self.stamps}),
-            "shape" => {
-                json!({"frames": 200, "channels": 2, "rate": 48000.0,
-                    "path": wait["path"], "untitled": false})
-            }
-            "stepped" => {
-                let prepared = wait["stepped"]["operation"].clone();
-                if prepared.is_object() {
-                    self.run(
-                        editing,
-                        member,
-                        json!({"verb": "operation", "prepared": prepared}),
-                    );
-                }
-                json!({"changed": true})
-            }
-            _ => json!({}),
+        match ran.end {
+            Some(Ok(result)) => json!({"done": true, "result": result}),
+            Some(Err(raised)) => json!({"done": true,
+                "error": {"type": raised.kind, "message": raised.message}}),
+            None => json!({"done": false}),
         }
     }
 }
@@ -210,31 +263,21 @@ fn save(path: &str) -> Value {
     json!({"verb": "save", "request": {"path": path, "format": "float"}})
 }
 
-/// Carry `pending` on to the first await of `kind`, answering the
-/// others; that one is handed back unanswered.
+/// The render `pending` stopped at, held: a run stops at its first.
 fn until(
-    client: &mut Client,
-    editing: &mut Editing,
-    member: MemberId,
-    mut pending: Value,
+    _client: &mut Client,
+    _editing: &mut Editing,
+    _member: MemberId,
+    pending: Value,
     kind: &str,
-    nth: usize,
+    _nth: usize,
 ) -> Value {
-    let mut seen = 0;
-    loop {
-        assert_ne!(
-            pending["done"], true,
-            "the run ended before its {kind}: {pending}"
-        );
-        if pending["await"]["kind"] == kind {
-            seen += 1;
-            if seen == nth {
-                return pending;
-            }
-        }
-        let result = client.reply(editing, member, &pending["await"]);
-        pending = client.answer(editing, member, &pending, result);
-    }
+    assert_eq!(kind, "batch");
+    assert_ne!(
+        pending["done"], true,
+        "the run ended before its render: {pending}"
+    );
+    pending
 }
 
 fn opened(client: &mut Client, editing: &mut Editing, empty: bool) -> MemberId {
@@ -423,8 +466,7 @@ fn a_failed_await_ends_the_run_for_the_client_to_raise() {
         json!({"verb": "play", "window": true}),
     );
     assert_eq!(answer["done"], true);
-    assert_eq!(answer["rethrow"], true, "{answer}");
-    assert_eq!(answer["reason"], "refused");
+    assert_eq!(answer["error"]["message"], "refused", "{answer}");
 }
 
 #[test]
@@ -468,10 +510,7 @@ fn a_script_reads_the_span_and_the_loop_switch_it_set() {
         json!({"verb": "span", "span": [0.0, 0.001]}),
     );
     client.run(&mut editing, member, json!({"verb": "looping", "on": true}));
-    let state = client.call(
-        &mut editing,
-        json!({"verb": "audio", "member": member, "query": "transport"}),
-    );
+    let state = client.query(&mut editing, member, "transport");
     assert_eq!(state["span"], json!([0.0, 0.001]));
     assert_eq!(state["looping"], true);
 }
@@ -488,12 +527,8 @@ fn a_script_s_loop_switch_is_the_menu_s_check_and_each_file_keeps_its_own() {
         client.call(editing, json!({"verb": "actions", "member": member}))["loop"]["checked"]
             .clone()
     };
-    let transport = |client: &mut Client, editing: &mut Editing| {
-        client.call(
-            editing,
-            json!({"verb": "audio", "member": member, "query": "transport"}),
-        )
-    };
+    let transport =
+        |client: &mut Client, editing: &mut Editing| client.query(editing, member, "transport");
     client.run(&mut editing, member, json!({"verb": "looping", "on": true}));
     assert_eq!(
         checked(&mut client, &mut editing),
@@ -589,7 +624,7 @@ fn a_failed_save_keeps_the_target_and_a_retry_writes_it() {
     let failed = client.finish(&mut editing, member, failed);
     assert_eq!(failed["done"], true);
     assert!(
-        failed["error"].is_object() || failed["rethrow"] == true,
+        failed["error"].is_object(),
         "the client raises the refusal: {failed}"
     );
     let after = binding(&mut editing, member);
@@ -602,9 +637,8 @@ fn a_failed_save_keeps_the_target_and_a_retry_writes_it() {
     assert_eq!(clean["file"]["path"], "/takes/refused.wav");
 }
 
-/// **The window's work called off**: its `"call_off"` is answered with
-/// the effect that has the client stop its renders, and nothing of the
-/// take moves.
+/// **The window's work called off**: its `"call_off"` has the caller stop
+/// its renders, and nothing of the take moves.
 #[test]
 fn a_window_call_off_has_the_client_stop_its_renders() {
     let mut editing = Editing::new();
@@ -617,9 +651,9 @@ fn a_window_call_off_has_the_client_stop_its_renders() {
     let answer = client.run(&mut editing, member, call_off);
     assert!(answer["error"].is_null(), "{answer}");
     assert!(
-        client.effects.iter().any(|e| e["kind"] == "call_off"),
+        client.trace.iter().any(|k| k == "call_off"),
         "{:?}",
-        client.effects
+        client.trace
     );
     assert_eq!(binding(&mut editing, member), before);
 }
@@ -636,23 +670,14 @@ fn a_failed_render_deletes_its_scratch_and_nothing_else() {
         "args": [12, 1, editing.version(), "reverse", 10.0, 20.0]});
     let first = client.begin(&mut editing, member, reverse);
     let render = until(&mut client, &mut editing, member, first, "batch", 1);
+    client.deleted.clear();
     let failed = client.answer(
         &mut editing,
         member,
         &render,
         json!({"failed": "Disk quota exceeded"}),
     );
-    let deleted = |answer: &Value| -> Vec<String> {
-        answer["effects"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|e| e["kind"] == "delete")
-            .flat_map(|e| e["files"].as_array().cloned().unwrap_or_default())
-            .filter_map(|f| f.as_str().map(str::to_string))
-            .collect()
-    };
-    let files = deleted(&failed);
+    let files = std::mem::take(&mut client.deleted);
     assert!(!files.is_empty(), "{failed}");
     assert!(files.iter().all(|f| f.starts_with("/work/")), "{files:?}");
     assert!(files.iter().any(|f| f.ends_with(".w64")), "{files:?}");
@@ -661,6 +686,7 @@ fn a_failed_render_deletes_its_scratch_and_nothing_else() {
 
     let first = client.begin(&mut editing, member, save("/takes/refused.wav"));
     let write = until(&mut client, &mut editing, member, first, "batch", 1);
+    client.deleted.clear();
     let failed = client.answer(
         &mut editing,
         member,
@@ -668,7 +694,7 @@ fn a_failed_render_deletes_its_scratch_and_nothing_else() {
         json!({"failed": "quota exceeded"}),
     );
     assert!(
-        deleted(&failed).iter().all(|f| !f.starts_with("/takes/")),
+        client.deleted.iter().all(|f| !f.starts_with("/takes/")),
         "{failed}"
     );
 }
@@ -744,7 +770,7 @@ fn a_duplicate_completion_is_refused_and_changes_nothing() {
     assert!(done["error"].is_null(), "{done}");
     let version = editing.version();
     let again = client.answer(&mut editing, member, &batch, json!({}));
-    assert!(again["error"].is_string(), "{again}");
+    assert!(again["error"].is_object(), "{again}");
     assert_eq!(editing.version(), version);
     let state = client.call(&mut editing, json!({"verb": "state", "member": member}));
     assert_eq!(state["undoLabel"], "reverse", "one entry: {state}");

@@ -1556,8 +1556,8 @@ The host `Clip` continues to own the typed document, blobs and system-text mirro
 #### The audio coordinator
 
 Every action of an audio member enters one place,
-`clausters_apps::editing::coordinator`, reached through the context's
-`audio` verb (`call_json_ids`, which carries the engine's id spaces): a
+`clausters_apps::editing::coordinator`, reached through
+`Editing::audio_act` (with the engine's id spaces): a
 gesture or a menu entry (`event`), a script's edit (`act`) or member verb
 (`verb`), the transport (`play`, `pause`, `stop`, `locate`, `span`,
 `looping`, `playing`), opening and saving, the window closing. The
@@ -1572,14 +1572,17 @@ whose readers read each file's list, and nothing is stitched on a server.
 
 An action is a **run**. It answers its **effects** in order (an answer to
 the window, props on a widget, the window drawn again, a binding projected,
-takes released) and stops on an **await** when what follows depends on its
-caller: steps carried out (a render on a thread of the application's own), a
-file's header read, an operation's batch, a history step carried out, a
-clipboard document published. The caller performs both and resumes the run
-with the await's result. A failed await unwinds the run through the cleanups
-and handlers it passed (a copy that never reached the clipboard tells the
-window why) and ends it for the caller to raise what failed. Runs stack, so
-an operation a release starts while a run waits is a run of its own.
+takes released) and stops on an **await** when what follows depends on something
+outside the context: steps carried out, a file's header read, the files on
+disk, a history step carried out, a clipboard document published. Its driver
+answers each in place through what the application does
+(`editing::Services`: the disk and steps carried out on its turn), and only
+a render is handed back (`Ran::render`), which the application runs on a
+thread of its own and lands with `Editing::audio_landed`. A failed await
+unwinds the run through the cleanups and handlers it passed (a copy that
+never reached the clipboard tells the window why) and ends it for the caller
+to raise what failed. Runs stack, so an operation a history step starts
+while a run waits is a run of its own, carried inline, renders included.
 
 The clients are the editor's handler and run nothing of this: their verbs
 reach the application through the host's door (`/gui_app_call`).

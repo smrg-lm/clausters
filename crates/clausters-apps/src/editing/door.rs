@@ -25,25 +25,6 @@ struct RecordedLeg {
     holds_backward: Vec<u64>,
 }
 
-/// **[`call_json`], with the server's id spaces**: what the `audio` verb
-/// needs, since an audio member's coordinator allocates its playback's nodes,
-/// buses and transport from them. `audio` -- `member`, and `do` (an action:
-/// starts a run), `run` with `result` (resumes one) or `query`; the answer
-/// is the run's effects and its await or its end (`coordinator`). Every
-/// other verb is [`call_json`]'s.
-pub fn call_json_ids(
-    editing: &mut Editing,
-    request: &str,
-    ids: &mut clausters_core::ids::IdSpaces,
-) -> String {
-    match serde_json::from_str::<Value>(request) {
-        Ok(value) if value["verb"] == "audio" => {
-            coordinator::call(editing, &value, ids).to_string()
-        }
-        _ => call_json(editing, request),
-    }
-}
-
 /// **One verb of a context, over JSON** -- the door both clients bind.
 ///
 /// `request` names the `verb` and carries its arguments:

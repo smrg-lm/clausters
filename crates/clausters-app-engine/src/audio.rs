@@ -2,13 +2,13 @@
 //! engine**: every action of the editor's coordinator run to its end in the
 //! application's process.
 //!
-//! The coordinator (`clausters_apps::editing`, the `audio` door) answers an
-//! action as an ordered list of effects and, where what comes next depends on
-//! it, one thing to wait on. A client used to carry those out: steps on its
-//! server, a file's header read, the clipboard published, a history step
-//! carried. [`AudioApp`] carries them out here, over an engine the application
-//! holds, and hands back only what is the window's (props to set, the window
-//! drawn again, an answer, the file bound), which the host draws.
+//! The coordinator (`Editing::audio_act`, in `clausters_apps::editing`)
+//! carries an action as far as it goes and asks its caller for what is the
+//! caller's ([`Services`]): a file's header, the files on disk, steps carried
+//! out, files deleted. [`AudioApp`] answers those here, over an engine the
+//! application holds, runs on threads of its own the renders a run waits on,
+//! and hands back only what is the window's (props to set, the window drawn
+//! again, an answer, the file bound), which the host draws.
 //!
 //! **A render does not hold the application.** A run that waits on a render
 //! hands it to a thread of its own and stops; the next [`AudioApp::landed`]
@@ -22,24 +22,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
-use clausters_apps::editing::{Editing, MemberId, call_json_ids};
+use clausters_apps::editing::{Editing, Header, MemberId, Services, call_json};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
-use clausters_editing::apply::{Step, steps_from_json};
+use clausters_editing::apply::Step;
 use serde_json::{Value, json};
+
+pub use clausters_apps::editing::Raised;
 
 use crate::AppEngine;
 use crate::held::HeldAudio;
-
-/// **What an action raised**: its kind, as the coordinator names it
-/// (`value`, `command`, `runtime`), and why.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Raised {
-    /// `value` (a request the editor cannot take), `command` (an operation
-    /// refused) or `runtime` (a state the editor is not in any more).
-    pub kind: String,
-    /// Why.
-    pub message: String,
-}
 
 /// **An action carried as far as it goes**: the effects that are the
 /// window's, in order, and its end -- `None` while it waits on a render.
@@ -50,11 +41,8 @@ pub struct Ran {
     /// What the caller named the action by, handed back with its end.
     pub token: u64,
     /// The window's effects, each `{"kind", ...}` as the coordinator says
-    /// them: `echo`, `set`, `publish`, `band`, `looping`, `bind`, `layers`,
-    /// `cursor`, `locate`, `changed`, `closeWindow`, `closedWindow`; and
-    /// `resync` (every widget drawn again, after a history step), `clipboard`
-    /// (`document`, the clipboard's) and `progress` (`path`, `done`, `total`;
-    /// `done` null once a render has ended).
+    /// them (`clausters_apps::editing::Ran`), and `progress` (`label`,
+    /// `done`, `total`; `done` null once a render has ended).
     pub effects: Vec<Value>,
     /// Its result, or what it raised; `None` while a render runs.
     pub end: Option<Result<Value, Raised>>,
@@ -74,8 +62,8 @@ enum Note {
     Landed {
         member: MemberId,
         token: u64,
-        run: Value,
-        result: Value,
+        run: u64,
+        result: Result<(), String>,
         lease: bool,
     },
 }
@@ -97,6 +85,56 @@ impl std::fmt::Debug for AudioApp {
     }
 }
 
+/// **What the application does for a run, at once** ([`Services`]): the
+/// disk, and the steps carried out on its turn.
+struct Here<'a> {
+    live: &'a mut HashMap<MemberId, Vec<Arc<AtomicBool>>>,
+}
+
+impl Services for Here<'_> {
+    fn header(&mut self, path: &str) -> Result<Header, String> {
+        let info = clausters::server::nrt::probe_audio(path)?;
+        Ok(Header {
+            frames: info.frames,
+            channels: info.channels as u32,
+            rate: info.sample_rate,
+            codec: info.codec,
+            sample_format: info.sample_format,
+        })
+    }
+
+    fn stamps(&mut self, paths: &[String]) -> Value {
+        let mut stamps = serde_json::Map::new();
+        for path in paths {
+            let stamp = clausters_core::files::metadata(path)
+                .ok()
+                .map(|m| json!({"modified": m.modified_ms.unwrap_or(0.0), "size": m.len}));
+            stamps.insert(path.clone(), stamp.unwrap_or(Value::Null));
+        }
+        Value::Object(stamps)
+    }
+
+    fn carry(&mut self, steps: &[Step]) -> Result<(), String> {
+        crate::steps::carry(steps, |_, _, _| {})
+    }
+
+    fn delete(&mut self, files: &[String]) {
+        for path in files {
+            if let Err(e) = clausters_core::files::remove_file(path)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!("the audio editor could not delete {path}: {e}");
+            }
+        }
+    }
+
+    fn call_off(&mut self, member: MemberId) {
+        for live in self.live.remove(&member).unwrap_or_default() {
+            live.store(false, Ordering::Release);
+        }
+    }
+}
+
 impl AudioApp {
     /// The application half over `engine`.
     pub fn new(engine: Arc<Mutex<AppEngine>>) -> AudioApp {
@@ -112,9 +150,10 @@ impl AudioApp {
     /// step, where its window closed in the middle of one -- a reverse of a
     /// day goes on writing its pieces otherwise, for a folder that is gone.
     pub fn call_off(&mut self, member: MemberId) {
-        for live in self.live.remove(&member).unwrap_or_default() {
-            live.store(false, Ordering::Release);
+        Here {
+            live: &mut self.live,
         }
+        .call_off(member);
     }
 
     /// The engine it holds.
@@ -128,10 +167,15 @@ impl AudioApp {
         editing.hold_engine(Box::new(HeldAudio::new(Arc::clone(&self.engine))));
     }
 
-    /// One verb of the context's door, with this engine's ids.
+    /// One verb of the context's door.
     pub fn call(&mut self, editing: &mut Editing, request: &Value) -> Value {
-        serde_json::from_str(&call_json_ids(editing, &request.to_string(), &mut self.ids))
-            .unwrap_or(Value::Null)
+        serde_json::from_str(&call_json(editing, &request.to_string())).unwrap_or(Value::Null)
+    }
+
+    /// **What a script reads of audio member `member`**: `transport` or
+    /// `output` (`Editing::audio_query`).
+    pub fn query(&mut self, editing: &mut Editing, member: MemberId, query: &str) -> Value {
+        editing.audio_query(member, query, &mut self.ids)
     }
 
     /// **Starts `action` on audio member `member`** and carries it as far as
@@ -145,18 +189,16 @@ impl AudioApp {
         token: u64,
         lease: bool,
     ) -> Ran {
-        let answer = self.call(
-            editing,
-            &json!({"verb": "audio", "member": member, "do": action}),
-        );
-        let mut ran = Ran {
+        let ran = editing.audio_act(
             member,
-            token,
-            effects: Vec::new(),
-            end: None,
-        };
-        self.drive(editing, member, answer, lease, false, &mut ran);
-        ran
+            &action,
+            lease,
+            &mut Here {
+                live: &mut self.live,
+            },
+            &mut self.ids,
+        );
+        self.went(member, token, ran, lease)
     }
 
     /// **Takes back what the engine handed over** and resumes every run whose
@@ -186,90 +228,45 @@ impl AudioApp {
                     result,
                     lease,
                 } => {
-                    let answer = self.call(
-                        editing,
-                        &json!({"verb": "audio", "member": member, "run": run,
-                            "result": result}),
-                    );
-                    let mut ran = Ran {
+                    let ran = editing.audio_landed(
                         member,
-                        token,
-                        effects: Vec::new(),
-                        end: None,
-                    };
-                    self.drive(editing, member, answer, lease, false, &mut ran);
-                    out.push(ran);
+                        run,
+                        result,
+                        lease,
+                        &mut Here {
+                            live: &mut self.live,
+                        },
+                        &mut self.ids,
+                    );
+                    out.push(self.went(member, token, ran, lease));
                 }
             }
         }
         out
     }
 
-    /// Carries a run on from `answer` until it ends or hands a render off.
-    /// `inline` carries a render in place (a history step's).
-    fn drive(
+    /// What a run came to, its render handed to a thread of its own.
+    fn went(
         &mut self,
-        editing: &mut Editing,
         member: MemberId,
-        mut answer: Value,
+        token: u64,
+        ran: clausters_apps::editing::Ran,
         lease: bool,
-        inline: bool,
-        ran: &mut Ran,
-    ) {
-        loop {
-            if answer.get("run").is_none() {
-                ran.end = Some(Err(Raised {
-                    kind: "runtime".into(),
-                    message: answer["error"]
-                        .as_str()
-                        .unwrap_or("the audio editor did not answer")
-                        .into(),
-                }));
-                return;
-            }
-            for effect in answer["effects"].as_array().cloned().unwrap_or_default() {
-                self.effect(editing, effect, lease, ran);
-            }
-            if answer["done"] == true {
-                ran.end = Some(end_of(&answer));
-                return;
-            }
-            let wait = answer["await"].clone();
-            let kind = wait["kind"].as_str().unwrap_or_default();
-            let result = match kind {
-                "steps" | "batch" => {
-                    let steps = steps_from_json(&wait["steps"]);
-                    let renders = steps.iter().any(|s| matches!(s, Step::Render(_)));
-                    if renders && !inline {
-                        self.hand_off(member, ran.token, answer["run"].clone(), steps, lease);
-                        return;
-                    }
-                    carried(crate::steps::carry(&steps, |_, _, _| {}))
-                }
-                "shape" => shape(&wait),
-                "stat" => stat(&wait),
-                "stepped" => self.stepped(editing, member, &wait["stepped"], ran),
-                "clipboard" => self.clipboard(editing, member, &wait, ran),
-                other => json!({"failed": format!("the audio editor cannot wait on {other:?}")}),
-            };
-            answer = self.call(
-                editing,
-                &json!({"verb": "audio", "member": member, "run": answer["run"],
-                    "result": result}),
-            );
+    ) -> Ran {
+        if let Some(render) = ran.render {
+            self.hand_off(member, token, render.run, render.steps, lease);
+        }
+        Ran {
+            member,
+            token,
+            effects: ran.effects,
+            end: ran.end,
         }
     }
 
     /// **A render carried out off the application's turn**: the steps on a
     /// thread of their own, their progress and their end said back.
-    fn hand_off(
-        &mut self,
-        member: MemberId,
-        token: u64,
-        run: Value,
-        steps: Vec<Step>,
-        lease: bool,
-    ) {
+    fn hand_off(&mut self, member: MemberId, token: u64, run: u64, steps: Vec<Step>, lease: bool) {
         let tx = self.notes.0.clone();
         let live = Arc::new(AtomicBool::new(true));
         let renders = self.live.entry(member).or_default();
@@ -300,7 +297,7 @@ impl AudioApp {
                     });
                 }
             };
-            let result = carried(crate::steps::carry_while(&steps, &live, &mut told));
+            let result = crate::steps::carry_while(&steps, &live, &mut told);
             drop(live);
             let _ = tx.send(Note::Progress {
                 member,
@@ -320,208 +317,10 @@ impl AudioApp {
             let _ = self.notes.0.send(Note::Landed {
                 member,
                 token,
-                run: Value::Null,
-                result: json!({"failed": format!("no thread for the render: {e}")}),
+                run,
+                result: Err(format!("no thread for the render: {e}")),
                 lease,
             });
-        }
-    }
-
-    /// One effect of a run: carried out here when it is the application's,
-    /// handed to the window otherwise.
-    fn effect(&mut self, editing: &mut Editing, effect: Value, lease: bool, ran: &mut Ran) {
-        match effect["kind"].as_str().unwrap_or_default() {
-            // the context keeps its own version
-            "version" => {}
-            "release" => {
-                for freed in effect["freed"].as_array().into_iter().flatten() {
-                    delete(&freed["files"]);
-                }
-            }
-            "delete" => delete(&effect["files"]),
-            "call_off" => self.call_off(ran.member),
-            "operationEcho" => ran.effects.push(json!({"kind": "echo",
-                "answer": effect["echo"]["answer"]})),
-            "lease" => {
-                if lease {
-                    self.call(
-                        editing,
-                        &json!({"verb": "exchange", "action": "release",
-                            "lease": effect["lease"]}),
-                    );
-                }
-            }
-            _ => ran.effects.push(effect),
-        }
-    }
-
-    /// **A step of the history carried out** -- one the context already took
-    /// -- and whether anything moved: the operation it names run to its end,
-    /// the files it changed sounded again, and every widget drawn again.
-    fn stepped(
-        &mut self,
-        editing: &mut Editing,
-        member: MemberId,
-        stepped: &Value,
-        ran: &mut Ran,
-    ) -> Value {
-        if stepped["stepped"] != true {
-            return json!({"changed": false});
-        }
-        self.carry(editing, member, stepped, ran);
-        for freed in stepped["freed"].as_array().into_iter().flatten() {
-            delete(&freed["files"]);
-        }
-        ran.effects.push(json!({"kind": "resync"}));
-        json!({"changed": true})
-    }
-
-    fn carry(&mut self, editing: &mut Editing, member: MemberId, stepped: &Value, ran: &mut Ran) {
-        if let Some(operation) = stepped.get("operation").filter(|o| !o.is_null()) {
-            let at = operation["member"].as_u64().unwrap_or(member as u64) as MemberId;
-            let answer = self.call(
-                editing,
-                &json!({"verb": "audio", "member": at, "do":
-                    {"verb": "operation", "prepared": operation}}),
-            );
-            let mut nested = Ran {
-                member: at,
-                token: 0,
-                effects: Vec::new(),
-                end: None,
-            };
-            self.drive(editing, at, answer, false, true, &mut nested);
-            ran.effects.extend(nested.effects);
-            if let Some(Ok(completed)) = nested.end {
-                self.carry(editing, at, &completed["stepped"], ran);
-            }
-            return;
-        }
-        for effect in stepped["effects"].as_array().into_iter().flatten() {
-            if effect["kind"] != "audio" {
-                continue;
-            }
-            let at = effect["member"].as_u64().unwrap_or(member as u64) as MemberId;
-            if !effect["file"].is_null() {
-                let answer = self.call(
-                    editing,
-                    &json!({"verb": "audio", "member": at, "do":
-                        {"verb": "syncSound", "file": effect["file"]}}),
-                );
-                let mut nested = Ran {
-                    member: at,
-                    token: 0,
-                    effects: Vec::new(),
-                    end: None,
-                };
-                self.drive(editing, at, answer, false, true, &mut nested);
-                ran.effects.extend(nested.effects);
-            }
-        }
-    }
-
-    /// **A copy published**: the clipboard names the spans of files it is
-    /// of, and the window's clipboard holds the document.
-    fn clipboard(
-        &mut self,
-        editing: &mut Editing,
-        member: MemberId,
-        wait: &Value,
-        ran: &mut Ran,
-    ) -> Value {
-        let mut document = wait["document"].clone();
-        if wait["ready"] != true {
-            let published = self.call(
-                editing,
-                &json!({"verb": "exchange", "action": "publish", "member": member,
-                    "document": document}),
-            );
-            if let Some(error) = published["error"].as_str() {
-                return json!({ "failed": error });
-            }
-            document = published["document"].clone();
-        }
-        ran.effects
-            .push(json!({"kind": "clipboard", "document": document}));
-        json!({})
-    }
-}
-
-/// How a run ended: its result, or what it raised.
-fn end_of(answer: &Value) -> Result<Value, Raised> {
-    if answer["rethrow"] == true {
-        return Err(Raised {
-            kind: "command".into(),
-            message: answer["reason"].as_str().unwrap_or_default().into(),
-        });
-    }
-    match answer.get("error").filter(|e| !e.is_null()) {
-        Some(error) => Err(Raised {
-            kind: error["type"].as_str().unwrap_or("runtime").into(),
-            message: error["message"].as_str().unwrap_or_default().into(),
-        }),
-        None => Ok(answer.get("result").cloned().unwrap_or(Value::Null)),
-    }
-}
-
-/// A carried batch as an await's result.
-fn carried(outcome: Result<(), String>) -> Value {
-    match outcome {
-        Ok(()) => json!({}),
-        Err(failed) => json!({ "failed": failed }),
-    }
-}
-
-/// The containers a part of a list reads in place.
-const IN_PLACE: &[&str] = &["wav", "w64", "rf64"];
-
-/// **A file asked for**, by the window or a script: its header read (a new
-/// file is the shape it is asked as).
-fn shape(wait: &Value) -> Value {
-    if let Some(shape) = wait.get("shape").filter(|s| !s.is_null()) {
-        return json!({"frames": shape["frames"], "channels": shape["channels"],
-            "rate": shape["rate"], "path": null, "untitled": true,
-            "codec": null, "sample_format": null});
-    }
-    let path = wait["path"].as_str().unwrap_or_default();
-    match clausters::server::nrt::probe_audio(path) {
-        Ok(info) if IN_PLACE.contains(&info.codec.as_str()) => json!({
-            "frames": info.frames, "channels": info.channels,
-            "rate": info.sample_rate, "path": path,
-            "untitled": false, "codec": info.codec,
-            "sample_format": info.sample_format,
-        }),
-        Ok(info) => json!({"failed": format!(
-            "{path} is a {} file, which the audio editor does not read in place", info.codec)}),
-        Err(e) => json!({ "failed": e }),
-    }
-}
-
-/// **The files asked about, as they are on disk**: when each was last
-/// modified, in milliseconds since the epoch, and its size, or `null` for
-/// one that is not there.
-fn stat(wait: &Value) -> Value {
-    let mut stamps = serde_json::Map::new();
-    for path in wait["paths"].as_array().into_iter().flatten() {
-        let Some(path) = path.as_str() else {
-            continue;
-        };
-        let stamp = clausters_core::files::metadata(path)
-            .ok()
-            .map(|m| json!({"modified": m.modified_ms.unwrap_or(0.0), "size": m.len}));
-        stamps.insert(path.into(), stamp.unwrap_or(Value::Null));
-    }
-    json!({ "stamps": stamps })
-}
-
-/// Deletes the files `files` names: renders nothing reaches any more.
-fn delete(files: &Value) {
-    for path in files.as_array().into_iter().flatten() {
-        if let Some(path) = path.as_str()
-            && let Err(e) = clausters_core::files::remove_file(path)
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
-            tracing::warn!("the audio editor could not delete {path}: {e}");
         }
     }
 }
