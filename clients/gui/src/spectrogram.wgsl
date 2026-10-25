@@ -22,6 +22,12 @@ struct Uniforms {
     // edge is drawn for its full rectangle and the part outside clip space is
     // rasterized away. The identity (1, 1, 0, 0) for a view shown whole.
     rect: vec4<f32>,
+    // **Where this picture is drawn**, across the element (0 left .. 1
+    // right): x..y is what its columns cover, z..w a hole where a finer
+    // picture of the same take is drawn over it (empty when z > w). A
+    // transform of a span draws nothing past its columns, where it used to
+    // stretch the first and the last over the rest of the view.
+    cover: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -164,5 +170,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     // Remap the stored magnitude into the display dB window for contrast.
     let c = clamp((mag - u.db.x) / max(u.db.y - u.db.x, 1e-5), 0.0, 1.0);
+    // Last, so the derivatives above are taken in uniform control flow.
+    if in.uv.x < u.cover.x || in.uv.x > u.cover.y
+        || (in.uv.x >= u.cover.z && in.uv.x < u.cover.w) {
+        discard;
+    }
     return vec4<f32>(colormap(c, u.db.z), u.db.w);
 }

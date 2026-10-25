@@ -79,6 +79,10 @@ struct Uniforms {
     /// xy = scale, zw = offset of the [`Framing`] that places the picture
     /// inside its viewport -- the identity for a view the window shows whole.
     rect: [f32; 4],
+    /// x..y = what the columns cover and z..w = the hole a finer picture is
+    /// drawn in, both across the element (`0` left, `1` right); the hole is
+    /// empty when z > w.
+    cover: [f32; 4],
 }
 
 /// GPU renderer for spectrograms: the pipeline that samples a magnitude texture
@@ -454,6 +458,15 @@ pub struct SpectrogramView {
     /// The quantized column a rolling push uploads through -- held so a landing
     /// column allocates nothing.
     scratch: Vec<u8>,
+    /// **The picture of the whole take under this one**, when this is a
+    /// transform of a span of it: drawn first, wherever this one's columns
+    /// do not reach. A zoom that leaves what is held, and an edit that moves
+    /// the take, show the whole take coarser until the new columns land,
+    /// where the held span was stretched over the view.
+    overview: Option<Box<SpectrogramView>>,
+    /// The samples a finer picture drawn over this one covers, which this one
+    /// leaves to it.
+    hole: Option<(f64, f64)>,
 }
 
 impl SpectrogramView {
@@ -485,6 +498,8 @@ impl SpectrogramView {
             drag_freq_start: 0.0,
             framing: Framing::IDENTITY,
             scratch: Vec::new(),
+            overview: None,
+            hole: None,
         }
     }
 
@@ -545,6 +560,38 @@ impl SpectrogramView {
     /// The analysis this view draws (e.g. for a frequency ruler's Nyquist).
     pub fn stft(&self) -> &Stft {
         &self.stft
+    }
+
+    /// **The samples this view's columns cover**: everything for a transform
+    /// of a whole signal and for a ring, and for one of a span from where it
+    /// starts to the end of its last column.
+    pub fn covers(&self) -> (f64, f64) {
+        if !self.stft.is_span() {
+            return (f64::NEG_INFINITY, f64::INFINITY);
+        }
+        let a = self.stft.origin() as f64;
+        (a, a + (self.stft.n_frames() * self.stft.hop()) as f64)
+    }
+
+    /// Whether its columns cover the whole of the take it is a picture of.
+    pub fn is_whole(&self) -> bool {
+        let (a, b) = self.covers();
+        a <= 0.0 && b >= self.stft.total_samples() as f64
+    }
+
+    /// The picture of the whole take drawn under this one (see the field).
+    pub fn overview(&self) -> Option<&SpectrogramView> {
+        self.overview.as_deref()
+    }
+
+    /// Takes the picture of the whole take from under this one.
+    pub fn take_overview(&mut self) -> Option<SpectrogramView> {
+        self.overview.take().map(|o| *o)
+    }
+
+    /// Puts `overview`, a picture of the whole take, under this one.
+    pub fn set_overview(&mut self, overview: Option<SpectrogramView>) {
+        self.overview = overview.map(Box::new);
     }
 
     /// Sets the display state from widget props: the dB window (contrast), the
@@ -684,6 +731,11 @@ impl SpectrogramView {
     /// point under the cursor stays fixed in both modes.
     fn uniforms(&self, view: &View) -> Uniforms {
         let (start, len) = self.time_fraction(view);
+        let across = |s: f64| ((s - view.start) / view.len.max(f64::MIN_POSITIVE)) as f32;
+        let (a, b) = self.covers();
+        let (hole_a, hole_b) = self
+            .hole
+            .map_or((1.0, 0.0), |(a, b)| (across(a), across(b)));
 
         let (d0, d1) = (
             self.freq.start() as f32,
@@ -706,6 +758,7 @@ impl SpectrogramView {
                 self.framing.offset[0],
                 self.framing.offset[1],
             ],
+            cover: [across(a), across(b), hole_a, hole_b],
         }
     }
 }
@@ -723,12 +776,28 @@ impl TimelineView for SpectrogramView {
         view: &View,
         render_width_px: u32,
     ) {
+        if let Some(mut overview) = self.overview.take() {
+            // Drawn as this one is, and left out where this one is drawn.
+            overview.freq = self.freq;
+            overview.scale = self.scale;
+            overview.db_floor = self.db_floor;
+            overview.db_ceil = self.db_ceil;
+            overview.colormap = self.colormap;
+            overview.alpha = self.alpha;
+            overview.framing = self.framing;
+            overview.hole = Some(self.covers());
+            overview.upload(device, queue, renderers, view, render_width_px);
+            self.overview = Some(overview);
+        }
         self.hold(device, queue, &renderers.spectrogram, view, render_width_px);
         let u = self.uniforms(view);
         self.texture.write_uniforms(queue, &u);
     }
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>, renderers: &Renderers) {
+        if let Some(overview) = &self.overview {
+            renderers.spectrogram.draw(pass, &overview.texture);
+        }
         renderers.spectrogram.draw(pass, &self.texture);
     }
 

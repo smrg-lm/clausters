@@ -145,9 +145,11 @@ pub(crate) struct SpectrogramSlot {
     /// and taken by the leg, which asks for them. The waveform's
     /// [`WaveformSlot::owed`], for the texture.
     pub(crate) owed: std::cell::Cell<Option<Owed>>,
-    /// **Its columns are of a list that was since redefined**: the view
-    /// keeps drawing them, and owes the columns of the new one.
-    pub(crate) stale: std::cell::Cell<bool>,
+    /// **Its columns are of a list that was since redefined**, and the new
+    /// one's length: the view keeps drawing them, and owes the columns of the
+    /// new one over the take as long as it is now, since the columns it holds
+    /// measure the take it was.
+    pub(crate) stale: std::cell::Cell<Option<usize>>,
 }
 
 impl SpectrogramSlot {
@@ -173,7 +175,7 @@ pub(crate) fn spectrogram_slot(
     Some(SpectrogramSlot {
         views,
         owed: std::cell::Cell::new(None),
-        stale: std::cell::Cell::new(false),
+        stale: std::cell::Cell::new(None),
     })
 }
 
@@ -195,6 +197,27 @@ pub(crate) fn keep_data(widget: &mut Widget, data: &Loaded) {
         Loaded::Shared(shared) => widget.take_bulk(|| Loaded::Shared(shared.clone())),
         _ => false,
     };
+}
+
+/// **A picture of a span keeps the picture of the whole take** the slot it
+/// replaces had: the overview under it, or the held picture itself when that
+/// was the whole take. One of the whole take replaces both, and one of a take
+/// of another length keeps nothing of it, since what it held is not where it
+/// was any more.
+fn keep_overviews(slot: &mut SpectrogramSlot, mut held: SpectrogramSlot) {
+    for (view, mut was) in slot.views.iter_mut().zip(held.views.drain(..)) {
+        if !view.stft().is_span() || !was.stft().is_span() || view.is_whole() {
+            continue;
+        }
+        let overview = if was.is_whole() {
+            Some(was)
+        } else {
+            was.take_overview()
+        };
+        view.set_overview(
+            overview.filter(|o| o.stft().total_samples() == view.stft().total_samples()),
+        );
+    }
 }
 
 /// **Puts a resolved bulk resource into the slot its element claimed**, keyed
@@ -225,7 +248,16 @@ pub(crate) fn place_in_slot(
             Some(total)
         }
         Loaded::Stfts(stfts) => {
-            let slot = spectrogram_slot(stfts, gpu, renderers)?;
+            let held = spectrograms.remove(&id);
+            let Some(mut slot) = spectrogram_slot(stfts, gpu, renderers) else {
+                if let Some(held) = held {
+                    spectrograms.insert(id, held);
+                }
+                return None;
+            };
+            if let Some(held) = held {
+                keep_overviews(&mut slot, held);
+            }
             let total = slot.total_samples();
             spectrograms.insert(id, slot);
             Some(total)
@@ -287,7 +319,7 @@ fn roll_into_slot(
             SpectrogramSlot {
                 views: vec![view],
                 owed: std::cell::Cell::new(None),
-                stale: std::cell::Cell::new(false),
+                stale: std::cell::Cell::new(None),
             },
         );
     }
@@ -689,56 +721,90 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
 
 /// **The columns a texture of a span owes the view `nav`**, `width` pixels
 /// wide, or `None` when what it holds draws it: a transform of the whole
-/// signal never owes any, and one of a span owes the view's when the view
-/// moved past it or is drawn at a hop more than twice or under half the one
-/// it holds.
+/// signal never owes any.
 ///
-/// The span asked runs a quarter of the view past either side, so a pan
-/// that small is drawn from what is held, and its hop is about a column of
-/// the view. Zoomed out the columns are a preview, a window apiece over
-/// seconds of the take; zoomed in they overlap, at a sample a column at the
-/// finest.
+/// A picture of a list is two: **the whole take**, about a column to the
+/// pixel when the view shows all of it, which is drawn wherever nothing finer
+/// is held, and **the span shown**, asked when the view is narrower than the
+/// whole take's columns resolve. The whole take is owed first, and again
+/// whenever the list changes, at the length the take has now. The span asked
+/// runs a quarter of the view past either side, so a pan that small is drawn
+/// from what is held, and both hops are a power of two, so a small zoom and
+/// a pan ask for the columns the answerer already holds.
 pub(crate) fn columns_owed(slot: &SpectrogramSlot, nav: &View, width: f64) -> Option<Owed> {
-    columns_owed_of(slot.views.first()?.stft(), slot.stale.get(), nav, width)
+    let view = slot.views.first()?;
+    let overview = if view.is_whole() {
+        Some(view)
+    } else {
+        view.overview()
+    };
+    columns_owed_of(
+        view.stft(),
+        overview.map(|o| o.stft()),
+        slot.stale.get(),
+        nav,
+        width,
+    )
 }
 
-/// [`columns_owed`] of the transform a slot draws, and whether it is stale.
-pub(crate) fn columns_owed_of(stft: &Stft, stale: bool, nav: &View, width: f64) -> Option<Owed> {
-    if !stft.is_span() || width <= 0.0 || nav.len <= 0.0 {
+/// [`columns_owed`] of the transform a slot draws, the picture of the whole
+/// take it has, and the length of the take when its list changed since.
+pub(crate) fn columns_owed_of(
+    held: &Stft,
+    overview: Option<&Stft>,
+    stale: Option<usize>,
+    nav: &View,
+    width: f64,
+) -> Option<Owed> {
+    if !held.is_span() || width <= 0.0 || nav.len <= 0.0 {
         return None;
     }
-    let total = stft.total_samples();
+    let total = stale.unwrap_or(held.total_samples());
     if total == 0 {
         return None;
     }
-    let want = ((nav.len / width).floor() as usize).max(1);
+    let span = |start: usize, end: usize, hop: usize| {
+        Owed::Columns(crate::host::columns::ColumnSpan {
+            start,
+            hop,
+            columns: end.saturating_sub(start).div_ceil(hop).max(1) + 1,
+            window: held.window_size(),
+            sample_rate: held.sample_rate(),
+            total,
+        })
+    };
+    let overview = match overview {
+        Some(o) if stale.is_none() && o.total_samples() == total && o.n_frames() > 1 => o,
+        _ => return Some(span(0, total, power_hop(total as f64 / width))),
+    };
+    let want = power_hop(nav.len / width);
     let a = nav.start.floor().max(0.0) as usize;
     let b = ((nav.start + nav.len).ceil().max(0.0) as usize).min(total);
-    let held = (
-        stft.origin(),
-        stft.origin() + stft.n_frames().saturating_sub(1) * stft.hop(),
-    );
-    let hop = stft.hop();
-    if !stale
-        && hop <= want * 2
-        && hop * 2 >= want
-        && held.0 <= a
-        && b.min(total.saturating_sub(1)) <= held.1
-    {
+    let answers = |stft: &Stft| {
+        let first = stft.origin();
+        let last = first + stft.n_frames().saturating_sub(1) * stft.hop();
+        stft.hop() <= want * 2
+            && (stft.hop() * 2 >= want || stft.origin() == 0 && last + stft.hop() >= total)
+            && first <= a
+            && b.min(total.saturating_sub(1)) <= last
+    };
+    if answers(held) || answers(overview) {
         return None;
     }
     let margin = (nav.len / 4.0).ceil() as usize;
-    let start = a.saturating_sub(margin);
-    let end = (b + margin).min(total);
-    let columns = (end.saturating_sub(start)).div_ceil(want).max(1) + 1;
-    Some(Owed::Columns(crate::host::columns::ColumnSpan {
-        start,
-        hop: want,
-        columns,
-        window: stft.window_size(),
-        sample_rate: stft.sample_rate(),
-        total,
-    }))
+    Some(span(
+        a.saturating_sub(margin),
+        (b + margin).min(total),
+        want,
+    ))
+}
+
+/// **The hop for `per_px` frames a pixel**: the largest power of two under
+/// it, at least one frame. A view a little wider or narrower asks for the
+/// same columns.
+fn power_hop(per_px: f64) -> usize {
+    let at_least = per_px.floor().max(1.0) as usize;
+    1 << (usize::BITS - 1 - at_least.leading_zeros())
 }
 
 /// **How far past either edge of a view what it is owed reaches**, in views.

@@ -60,9 +60,10 @@ pub(crate) trait Front {
     /// taken so each is asked for once.
     fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)>;
     /// **Marks the columns widget `widget_id` of window `def_id` holds as of
-    /// a list since redefined**, answering whether it holds any: a view that
-    /// does keeps drawing them and owes the new list's.
-    fn stale_columns(&self, def_id: i32, widget_id: i32) -> bool;
+    /// a list since redefined**, `frames` long now, answering whether it
+    /// holds any: a view that does keeps drawing them and owes the new
+    /// list's, over the take as long as it is now.
+    fn stale_columns(&self, def_id: i32, widget_id: i32, frames: usize) -> bool;
     /// The widgets a hand is holding in this front's windows, which a value
     /// read back must not move ([`Host::read_back`]).
     fn held(&self) -> Vec<i32>;
@@ -261,7 +262,7 @@ pub(crate) trait Front {
         else {
             return;
         };
-        if !self.stale_columns(want.def_id, want.widget_id) {
+        if !self.stale_columns(want.def_id, want.widget_id, frames) {
             let rate = if declared > 0.0 {
                 declared as f32
             } else {

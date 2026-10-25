@@ -53,7 +53,7 @@ impl Front for Probe {
     fn take_owed(&self, _def_id: i32) -> Vec<(i32, Owed)> {
         Vec::new()
     }
-    fn stale_columns(&self, _def_id: i32, _widget_id: i32) -> bool {
+    fn stale_columns(&self, _def_id: i32, _widget_id: i32, _frames: usize) -> bool {
         false
     }
     fn held(&self) -> Vec<i32> {
@@ -561,12 +561,15 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         start: 0.0,
         len: (2 * frames) as f64,
     };
-    let owed = crate::host::frame::columns_owed_of(&dark[0], false, &nav, 200.0)
+    let owed = crate::host::frame::columns_owed_of(&dark[0], Some(&dark[0]), None, &nav, 200.0)
         .expect("the columns are owed");
     let crate::host::frame::Owed::Columns(span) = owed else {
         panic!("{owed:?}")
     };
-    assert_eq!(span.hop, (2 * frames) / 200);
+    // About a column to the pixel, at the power of two under it.
+    let per_px = (2 * frames) / 200;
+    assert!(span.hop.is_power_of_two() && span.hop <= per_px && span.hop * 2 > per_px);
+    assert_eq!(span.start, 0);
     assert_eq!(span.window, 512);
     let ask = probe.fetches.columns.want(key, 1, 40, span).expect("asked");
     probe.to_server(ask);
@@ -580,7 +583,7 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         (span.columns, span.hop, 0)
     );
     // And held, they owe nothing more.
-    assert!(crate::host::frame::columns_owed_of(stft, false, &nav, 200.0).is_none());
+    assert!(crate::host::frame::columns_owed_of(stft, Some(stft), None, &nav, 200.0).is_none());
 
     // **Each column is the analysis of what plays there**: a window over a
     // seam or a fade is the list's samples through its parts and fades,
@@ -655,7 +658,33 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     assert!((loudest(10) - 1_000.0).abs() < 200.0, "{}", loudest(10));
     assert!((loudest(stft.n_frames() - 20) - 6_000.0).abs() < 200.0);
 
-    // **A redefine owes the new list's columns**, keeping these.
-    assert!(crate::host::frame::columns_owed_of(stft, true, &nav, 200.0).is_some());
+    // **A redefine owes the new list's columns**, keeping these, over the
+    // whole of the take as long as it is now: a paste that made it longer
+    // was asked for over the length it had, and the part it gained stayed
+    // one column stretched to the end.
+    for now in [frames, 2 * frames, 3 * frames] {
+        let owed = crate::host::frame::columns_owed_of(stft, Some(stft), Some(now), &nav, 200.0)
+            .expect("the new list's columns");
+        let crate::host::frame::Owed::Columns(again) = owed else {
+            panic!("{owed:?}")
+        };
+        assert_eq!((again.start, again.total), (0, now));
+        assert!(again.hop * (again.columns - 1) >= now, "{again:?}");
+    }
+    // **Zoomed in, the span shown is owed over the whole take held**: a
+    // tenth of it, at a power of two near a column to the pixel.
+    let near = crate::viewport::View {
+        start: frames as f64,
+        len: (2 * frames / 10) as f64,
+    };
+    let owed = crate::host::frame::columns_owed_of(stft, Some(stft), None, &near, 200.0)
+        .expect("the span's columns");
+    let crate::host::frame::Owed::Columns(close) = owed else {
+        panic!("{owed:?}")
+    };
+    assert!(
+        close.start < frames && close.start + close.hop * close.columns > frames + 2 * frames / 10
+    );
+    assert!(close.hop.is_power_of_two() && close.hop < span.hop);
     let _ = std::fs::remove_dir_all(&dir);
 }

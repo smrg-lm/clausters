@@ -167,6 +167,15 @@ code that keeps it lives.
   where the run held covers the view; beyond a run there are no zeros to draw.
   A take of hours is addressed by frames past what an `int32` counts, as longs
   on the wire.
+- **A spectrogram of a list holds the whole take under the span shown.**
+  Its columns are asked of the list as two pictures: the whole take, about a
+  column to the pixel, and the span shown once the view is narrower than
+  that resolves. A view draws the span where its columns reach and the whole
+  take everywhere else, so a zoom out, or a pan past what is held, shows the
+  whole take coarser at once and never stretches the span's first or last
+  column over the rest. After an edit the whole take is asked again first,
+  at the length the take has now, and the picture before the edit is drawn
+  only where its columns reach.
 - **A time is never narrowed.** A group holds its times as NTP ticks
   (`clausters_core::time::Time`, an `i64` of 2^-32 s) at the rate its
   members speak; on the wire a whole frame crosses as an `int64` and a

@@ -424,14 +424,14 @@ impl Front for WebApp {
         }
     }
 
-    fn stale_columns(&self, def_id: i32, widget_id: i32) -> bool {
+    fn stale_columns(&self, def_id: i32, widget_id: i32, frames: usize) -> bool {
         let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) else {
             return false;
         };
         let slots = &render.spectrograms;
         match slots.get(&(widget_id, SlotKey::SELF)) {
             Some(slot) if slot.views.first().is_some_and(|v| v.stft().is_span()) => {
-                slot.stale.set(true);
+                slot.stale.set(Some(frames));
                 true
             }
             _ => false,
