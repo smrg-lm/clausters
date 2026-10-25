@@ -1556,7 +1556,7 @@ The host `Clip` continues to own the typed document, blobs and system-text mirro
 #### The audio coordinator
 
 Every action of an audio member enters one place,
-`clausters_apps::editing::audio_session`, reached through the context's
+`clausters_apps::editing::coordinator`, reached through the context's
 `audio` verb (`call_json_ids`, which carries the engine's id spaces): a
 gesture or a menu entry (`event`), a script's edit (`act`) or member verb
 (`verb`), the transport (`play`, `pause`, `stop`, `locate`, `span`,

@@ -3419,9 +3419,11 @@ over the opened file) carries over.
     in place becomes a call, and only a render suspends a run. The takes a
     history or a clipboard names are held by the context, not by
     process-wide registries.
-  - ⬜ **The files split by what they do**: the context's door, the
-    coordinator's runs and the outcome it carries out, and the editor's
-    edits, door and actions, each a module of its own.
+  - ✅ **The files split by what they do**: the context's door
+    (`editing/door.rs`) and its tests, the coordinator
+    (`editing/coordinator/`: its actions, its runs, a task carried out, an
+    outcome carried out, and its tests), and the editor's gestures and
+    edits, door and actions (`audio/editor/`), each a module of its own.
   - ⬜ **The seam the multitrack plugs into**: the engine reads a take per
     reader rather than per audio file, and the driver of an application's
     runs and its thread in the host are written over an application, not
