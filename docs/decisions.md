@@ -10603,6 +10603,11 @@ The host mirrors typed publication as text and remembers the observed platform v
 
 ## An audio action is a run of effects and awaits in the shared core (2026-10-21)
 
+*Revised 2026-10-25 ("A member's run is driven in its application's
+process, and JSON is spoken only at a client's door"): the run, its order
+and its unwinding stand; the JSON vocabulary its two clients needed does
+not, since no client runs it any more.*
+
 Each client used to decide what an audio editor's action led to: which
 playback verb follows a focus change, when the meter is read, when a copy is
 published and its cut committed, when freed takes are released. The two
@@ -11132,3 +11137,40 @@ samples played as silence for want of a frame).
 Rejected: teaching the host-fed reader the fed stream, which would have made
 three implementations of one reader's real-time half where two already had
 to agree.
+
+
+## A member's run is driven in its application's process, and JSON is spoken only at a client's door (2026-10-25)
+
+*Decided with the user, 2026-10-25, reviewing the audio editor's code
+before the multitrack is put on its modules.* The coordinator's runs were
+written in JSON (2026-10-21) because two client languages carried them out,
+one synchronously and one not. Since the GUI host's application holds the
+editor's engine (`X30`), its only caller is Rust in the same process, and the
+JSON had become four doors deep for one gesture: the application wrote a
+request as text for the context, which wrote one for the coordinator, which
+wrote one for the context again and for the editor, each answer parsed back,
+and most awaits were answered at once by that same caller.
+
+**The run stays and its driver moves beside it.** A member's action is still
+a run of ordered effects that stops on an await and unwinds a failure through
+the cleanups it passed; what changed is who answers. The loop that answers the
+awaits is the context's (`Editing::start`, `land`, `query`), over what only
+the caller does (`editing::Caller`: a file's header, the files on disk, steps
+carried out on its turn, files deleted, renders called off), and the one await
+handed back is a render, which the application runs on a thread of its own and
+lands. Awaits and answers are typed; the context's and the editor's doors have a
+form over values that the coordinator calls; the playback's JSON door went.
+
+**What stays JSON, and why.** The window's effects, since the host draws them
+as it draws any client's GuiDef and props; the editor's outcomes, since a
+client's door (`/gui_app_call`) answers the same ones; and every door a client
+or the C ABI binds. A typed form of those is a change of the protocol, not of
+this design.
+
+**What it keeps out of the multitrack's way.** The engine reads a take per
+reader, not per audio file (`HeldTake::reader`), the application that holds
+the engine drives any member (`app_engine::app::App`), and what is handed on
+by reference is kept per editing context (`audio::shared::Shared`) rather than
+by the process, so a member that leaves the context lets go of what only it
+named.
+

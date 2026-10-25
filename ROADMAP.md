@@ -313,8 +313,8 @@ its plan; the plan is where its acceptance is read.
   ("The turn: an application's takes live on disk", `X28` and `X29`), whose
   surviving work carries over. In that order, now that the application
   holds its engine, its take is shared blocks and it reads and draws its
-  takes: the multitrack on the same modules, those modules first made
-  shareable (`X34`'s first parts, from the code review of 2026-10-25); and the server's cleaning last, once nothing calls what it removes.
+  takes: the multitrack on the same modules, which its first parts made
+  shareable (the code review of 2026-10-25, done); and the server's cleaning last, once nothing calls what it removes.
   Before `X25`, which should port this lifecycle.
   **Related:** found moving the editor onto files, and taken
   after `X32`: the apps plan's "A compressed file opens through a buffer of
