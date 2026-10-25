@@ -147,6 +147,10 @@ pub struct Outcome {
     /// Internal marker used when a draft decodes a window save.
     #[serde(skip)]
     pub(crate) save_requested: bool,
+    /// Internal marker: the turn applied the gain curve, which the view puts
+    /// away once the change commits.
+    #[serde(skip)]
+    pub(crate) put_away: bool,
     /// What to send the host, `silent` for nothing.
     pub answer: Option<Answer>,
     /// The stamp a [`Kind::Step`] is answered with.

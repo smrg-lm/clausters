@@ -400,6 +400,7 @@ code that keeps it lives.
 
 - **A failed repair remains reachable.** After resolving an I/O failure, an audio editor's `retry_pending()` / `retryPending()` retries its pending repairs without repeating the edits. Until repair succeeds, the affected objects remain locked and their sources retained. Concurrent retries cannot dispatch the same repair twice; a successful retry does not repeat the original gesture receipt or change history.
 - **Content confirmation preserves current presentation.** Showing or hiding an envelope while an edit or history restore waits for I/O remains in effect after confirmation and redraw. Curve visibility is matched by identity against the current file, not restored from the prepared content snapshot.
+- **An applied curve is put away.** Apply renders the gain curve into the take and leaves it at unity, which shows nothing: once the render lands the curve is hidden and the hand is back on the take. An undo brings the points back and leaves the curve hidden, since which body is shown is the view's. What a confirmation tells the window is the whole pane as the editor holds it (its label, the body in hand, whether the curve is shown), never part of it.
 
 ## Checking a change
 

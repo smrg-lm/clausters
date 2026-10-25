@@ -771,6 +771,43 @@ mod tests {
         assert!(host.owns_an_application());
     }
 
+    /// **An applied gain curve leaves the window editing the take**: the
+    /// apply lands after its render, and what the window is told then is
+    /// the pane as the editor has it, with the hand back on the samples and
+    /// the curve hidden, not only its label.
+    #[test]
+    fn an_applied_envelope_leaves_the_window_editing_the_take() {
+        let path = take("envelope", 24_000);
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        let pane = *host
+            .registry
+            .kinds()
+            .iter()
+            .find(|(_, kind)| *kind == "pane")
+            .expect("a pane")
+            .0;
+        let act = |host: &mut Host, call: Value| {
+            ask(host, def_id, json!({"do": {"verb": "act", "call": call}}));
+        };
+        let prop = |host: &Host, key: &str| host.registry.get(pane).unwrap().props[key].clone();
+        act(&mut host, json!({"verb": "show_envelope"}));
+        until(&mut host, "the curve was never shown", |h| {
+            prop(h, "layer") == "points"
+        });
+        assert_eq!(prop(&host, "hidden"), "");
+        act(
+            &mut host,
+            json!({"verb": "setautomation", "points": [0, 0, 1, 0, 0.5, 1, 1, 0]}),
+        );
+        act(&mut host, json!({"verb": "apply_envelope"}));
+        until(&mut host, "the window never went back to the take", |h| {
+            prop(h, "layer") == "take"
+        });
+        assert_eq!(prop(&host, "hidden"), "points", "the curve is put away");
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// **A copy is held by the application, and a paste reads it there**: the
     /// window's copy puts on the host's clipboard a document that names the
     /// copy the application keeps, and a paste carrying that document puts

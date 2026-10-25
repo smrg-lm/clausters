@@ -295,13 +295,47 @@ impl AudioEditor {
             points::point(Second(frames as f64 / self.file.rate), 1.0, 1.0, 0.0),
         ];
         out.record = Some(self.record("apply gain envelope", &before));
+        out.put_away = true;
+        self.put_away_envelope();
         out.planned_steps = steps.clone();
         out.steps = Some(steps_json(&steps));
         out.changed = true;
         out.version += 1;
         let mut corrections = self.reread();
         corrections.extend(self.envelope_corrections());
+        corrections.extend(self.pane_correction());
         (None, corrections)
+    }
+
+    /// **The pane as the editor's state has it**: its label, the body the
+    /// hand edits, and whether the gain curve is shown over the take.
+    pub(super) fn pane_correction(&self) -> Option<Correction> {
+        let pane = self.window_state.pane?;
+        let mut props = json!({"label": self.pane_label(),
+            "layer": self.file.presentation.edit_layer});
+        if self.window_state.envelope_widget.is_some() {
+            let shown = self
+                .file
+                .contents
+                .automation
+                .first()
+                .is_some_and(|a| a.visible);
+            props["hidden"] = json!(if shown { "" } else { "points" });
+        }
+        Some(Correction {
+            widget: i64::from(pane),
+            props,
+        })
+    }
+
+    /// **The curve is in the take now**: what is left of it is unity, which
+    /// shows nothing, so it is put away and the hand edits the samples
+    /// again. The view's, like the curve's visibility: no history step.
+    pub(super) fn put_away_envelope(&mut self) {
+        if let Some(curve) = self.file.contents.automation.first_mut() {
+            curve.visible = false;
+        }
+        self.file.presentation.edit_layer = "take".into();
     }
 }
 
@@ -425,6 +459,52 @@ mod tests {
             "the render, again"
         );
         assert_eq!(e.envelope_quads(false)[1], 1.0);
+    }
+
+    /// **An applied curve is put away**: it is in the take now and what is
+    /// left of it is unity, so the hand goes back to the samples and the
+    /// pane hides the curve. An undo brings the curve's points back and
+    /// leaves it hidden: which body is shown is the view's, not history.
+    #[test]
+    fn an_applied_envelope_goes_back_to_editing_the_take() {
+        let mut editing = Editing::default();
+        let id = editing.join("take", Member::Audio(Box::new(editor())));
+        editing.act(id, &json!({"verb":"show_envelope"})).unwrap();
+        editing
+            .act(
+                id,
+                &json!({"verb":"setautomation", "points":[0,0,1,0,1,1,1,0]}),
+            )
+            .unwrap();
+        let applied = editing.act(id, &json!({"verb":"apply_envelope"})).unwrap();
+        let crate::editing::Outcome::Audio(out) = applied.outcome else {
+            panic!("audio");
+        };
+        let answer = serde_json::to_value(out.answer.unwrap()).unwrap();
+        let pane: Vec<&Value> = answer["corrections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["widget"] == 11)
+            .map(|c| &c["props"])
+            .collect();
+        assert!(pane.iter().any(|p| p["layer"] == "take"), "{pane:?}");
+        assert!(pane.iter().any(|p| p["hidden"] == "points"), "{pane:?}");
+        let Some(Member::Audio(e)) = editing.member(id) else {
+            panic!("audio");
+        };
+        assert_eq!(e.file.presentation.edit_layer, "take");
+        assert!(!e.file.contents.automation[0].visible);
+        assert_eq!(
+            e.pane_label(),
+            crate::samples::label(e.take_name().as_deref())
+        );
+        assert!(editing.step(Direction::Undo).stepped);
+        let Some(Member::Audio(e)) = editing.member(id) else {
+            panic!("audio");
+        };
+        assert_eq!(e.envelope_quads(false)[1], 0.0, "the curve is back");
+        assert!(!e.file.contents.automation[0].visible, "and still hidden");
     }
 
     #[test]

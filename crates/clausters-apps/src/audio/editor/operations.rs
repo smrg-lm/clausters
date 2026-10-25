@@ -73,6 +73,9 @@ struct Contents {
     // The view the change leaves, where it opened it out (a paste shown
     // whole).
     viewport: Option<(f64, f64)>,
+    // The change applied the gain curve: what is left of it is unity, so it
+    // is put away and the hand edits the samples again.
+    put_away: bool,
 }
 
 #[derive(Debug)]
@@ -294,6 +297,7 @@ impl Application for AudioEditor {
                         opened: draft.file.opened,
                         landing: None,
                         viewport: None,
+                        put_away: false,
                     }),
                 }
             }
@@ -379,6 +383,7 @@ impl Application for AudioEditor {
                     opened: draft.file.opened,
                     landing: outcome.cue,
                     viewport: draft.file.presentation.viewport,
+                    put_away: outcome.put_away,
                 })
             }
         };
@@ -431,6 +436,7 @@ impl Application for AudioEditor {
                     opened: None,
                     landing: None,
                     viewport: None,
+                    put_away: false,
                 }),
             ) else {
                 unreachable!()
@@ -500,6 +506,9 @@ impl Application for AudioEditor {
                         }
                         if contents.viewport.is_some() {
                             editor.file.presentation.viewport = contents.viewport;
+                        }
+                        if contents.put_away {
+                            editor.put_away_envelope();
                         }
                         editor.keep_on_take();
                         if let Some(record) = &delta.outcome.record {
@@ -613,12 +622,7 @@ impl Application for AudioEditor {
                 );
             }
             corrections.extend(self.focus_corrections());
-            if let Some(pane) = self.window_state.pane {
-                corrections.push(Correction {
-                    widget: i64::from(pane),
-                    props: json!({"label":self.pane_label()}),
-                });
-            }
+            corrections.extend(self.pane_correction());
             delta.outcome.answer = Some(conversation::answer(seq, 0, reason, corrections));
         }
         delta.outcome.prepared_complete = true;
@@ -833,6 +837,36 @@ mod tests {
         }
         event.args.clear();
         assert!(editor.command_for(&event).is_none());
+    }
+
+    /// **An applied curve is put away as the render lands**: the change is
+    /// prepared on a draft, so what the apply leaves of the view (the hand
+    /// back on the samples, the curve hidden) is carried by the change and
+    /// taken when it commits, not lost with the draft.
+    #[test]
+    fn an_applied_envelope_is_put_away_when_it_commits() {
+        // the client's verb, and the window's menu entry
+        let window = Command::Edit(Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(17), json!(1), json!(0), json!("apply_envelope")],
+        });
+        for apply in [Command::ApplyGain, window] {
+            let (mut editor, mut services) = opened();
+            editor.ensure_envelope();
+            editor.file.contents.automation[0].visible = true;
+            editor.file.presentation.edit_layer = "points".into();
+            let ticket = begin(
+                &mut editor,
+                &mut services,
+                Command::GainEnvelope(vec![0.0, 0.0, 1.0, 0.0, 0.001, 1.0, 1.0, 0.0]),
+            );
+            assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
+            let ticket = begin(&mut editor, &mut services, apply);
+            assert_eq!(editor.file.presentation.edit_layer, "points", "not yet");
+            assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
+            assert_eq!(editor.file.presentation.edit_layer, "take");
+            assert!(!editor.file.contents.automation[0].visible);
+        }
     }
 
     #[test]
