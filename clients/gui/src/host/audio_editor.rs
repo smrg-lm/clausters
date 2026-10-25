@@ -1142,4 +1142,39 @@ mod tests {
         });
         let _ = std::fs::remove_file(&path);
     }
+
+    /// **A window closing leaves another's action waiting**: a save asked
+    /// of one window is answered with where it wrote, though a second
+    /// window closed while its render ran.
+    #[test]
+    fn a_window_closing_leaves_another_s_save_to_land() {
+        let first = take("saving", 48_000);
+        let second = take("closing", 4_800);
+        let out =
+            std::env::temp_dir().join(format!("host-audio-saving-out-{}.wav", std::process::id()));
+        let mut host = host();
+        let saving = opened(&mut host, &first);
+        let closing = opened(&mut host, &second);
+        let rx = host.ask_audio(
+            saving,
+            json!({"do": {"verb": "save",
+                "request": {"path": out.to_string_lossy(), "format": "float"}}}),
+        );
+        host.close_audio(closing);
+        let mut answer = None;
+        until(&mut host, "the save was never answered", |_| {
+            answer = rx.try_recv().ok();
+            answer.is_some()
+        });
+        let saved = answer.unwrap().expect("the save is answered as it lands");
+        assert_eq!(
+            saved["destination"]["path"],
+            json!(out.to_string_lossy()),
+            "{saved}"
+        );
+        for path in [&first, &second] {
+            let _ = std::fs::remove_file(path);
+        }
+        let _ = std::fs::remove_file(&out);
+    }
 }

@@ -151,8 +151,9 @@ struct App {
     app: AudioApp,
     editing: Editing,
     windows: HashMap<i32, Window>,
-    /// A door's actions waiting on a render, by the token they started with.
-    asked: HashMap<u64, Reply>,
+    /// A door's actions waiting on a render, by the token they started with,
+    /// and the window each was asked through.
+    asked: HashMap<u64, (i32, Reply)>,
     next_token: u64,
     out: Said,
 }
@@ -459,7 +460,7 @@ impl App {
             let answered = match ran.end.as_ref().map(ended) {
                 Some(answer) => Some((reply, answer)),
                 None => {
-                    self.asked.insert(token, reply);
+                    self.asked.insert(token, (def_id, reply));
                     None
                 }
             };
@@ -495,7 +496,7 @@ impl App {
             };
             // **A client's action answered as it ends**, to the client
             let asked = match ran.end {
-                Some(_) => self.asked.remove(&ran.token),
+                Some(_) => self.asked.remove(&ran.token).map(|(_, reply)| reply),
                 None => None,
             };
             let say = asked.is_none();
@@ -612,7 +613,18 @@ impl App {
     fn forget(&mut self, def_id: i32) {
         if let Some(window) = self.windows.remove(&def_id) {
             self.app.call_off(window.member);
-            let gone: Vec<Reply> = self.asked.drain().map(|(_, r)| r).collect();
+            // only this window's: another's goes on waiting for its render
+            let gone: Vec<u64> = self
+                .asked
+                .iter()
+                .filter(|(_, (window, _))| *window == def_id)
+                .map(|(token, _)| *token)
+                .collect();
+            let gone: Vec<Reply> = gone
+                .into_iter()
+                .filter_map(|token| self.asked.remove(&token))
+                .map(|(_, reply)| reply)
+                .collect();
             for reply in gone {
                 self.answer(
                     reply,

@@ -315,9 +315,8 @@ its plan; the plan is where its acceptance is read.
   holds its engine, its take is shared blocks and it reads and draws its
   takes: the multitrack on the same modules, those modules first made
   shareable (`X34`'s first parts, from the code review of 2026-10-25, with
-  the two fixes it found: "A window closing answers every window's pending
-  action" and "A closed audio window stays in the editing context", Found by
-  use); and the server's cleaning last, once nothing calls what it removes.
+  the fix it found: "A closed audio window stays in the editing context",
+  Found by use); and the server's cleaning last, once nothing calls what it removes.
   Before `X25`, which should port this lifecycle.
   **Related:** found moving the editor onto files, and taken
   after `X32`: the apps plan's "A compressed file opens through a buffer of

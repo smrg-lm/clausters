@@ -5353,7 +5353,7 @@ wrong.
   map a part reads should be one function the drawing and the reading both
   call.
 
-- ⬜ **A window closing answers every window's pending action** *(found
+- ✅ **A window closing answers every window's pending action** *(found
   2026-10-25, reviewing the audio editor's code before `X34`)*. The host's
   application thread forgets a closed window by answering every action
   still waiting on a render with "the window closed", whichever window it
@@ -5361,6 +5361,8 @@ wrong.
   two editors open, closing one while the other saves raises in the other's
   client, and the save lands anyway. Only that window's actions should be
   answered.
+  *Fixed 2026-10-25:* each action waiting on a render is held with the
+  window it was asked through, and a closing window answers only its own.
 
 - ⬜ **A closed audio window stays in the editing context** *(found
   2026-10-25, the same review)*. A window that closes detaches its view and
