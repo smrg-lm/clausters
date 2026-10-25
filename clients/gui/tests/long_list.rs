@@ -24,11 +24,14 @@ const FRAMES: usize = SR * 3600;
 const CHANNELS: usize = 2;
 const COLUMNS: usize = 760;
 
-/// Writes an hour of stereo as a float W64 and its peaks, a minute at a
-/// time, so neither is ever held whole.
+/// Writes an hour of stereo as a float W64, its peaks and the spectral
+/// summary beside them, a minute at a time, so none is ever held whole.
 fn write_take(path: &str, peaks: &str) {
     let mut w = clausters_core::pcm::Writer::create(path, CHANNELS, SR as f64, "float").unwrap();
     let mut stats = Vec::with_capacity(FRAMES.div_ceil(256) * CHANNELS * 3);
+    let mut spectra = clausters_core::spectra::Accumulator::new(CHANNELS);
+    spectra.set_channels(CHANNELS);
+    let mut columns = Vec::new();
     let mut s = 1u32;
     let chunk = SR * 60;
     let mut block = vec![0.0f32; chunk * CHANNELS];
@@ -43,6 +46,10 @@ fn write_take(path: &str, peaks: &str) {
             }
         }
         w.write(&block).unwrap();
+        let mut done = |col: &[u8]| columns.extend_from_slice(col);
+        for frame in block.as_chunks::<CHANNELS>().0 {
+            spectra.push(|c| frame[c], &mut done);
+        }
         for bucket in block.chunks(256 * CHANNELS) {
             let n = bucket.len() / CHANNELS;
             for ch in 0..CHANNELS {
@@ -58,6 +65,11 @@ fn write_take(path: &str, peaks: &str) {
     let mut pyramid = MultiPyramid::empty(FRAMES, CHANNELS, 256);
     assert!(pyramid.write_buckets(0, 256, &stats));
     pyramid.write_cache(peaks).unwrap();
+    spectra.finish(&mut |col: &[u8]| columns.extend_from_slice(col));
+    clausters_core::spectra::Spectra::from_columns(FRAMES, CHANNELS, &columns)
+        .unwrap()
+        .write(clausters_core::spectra::beside_peaks(peaks))
+        .unwrap();
 }
 
 /// Bytes read and replies, over one conversation.
@@ -154,11 +166,12 @@ fn an_hour_is_opened_edited_and_zoomed_by_what_its_window_resolves() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("hour.w64").to_string_lossy().into_owned();
     let peaks = dir.join("hour.peaks").to_string_lossy().into_owned();
-    if !std::path::Path::new(&peaks).exists() {
+    let spectra = clausters_core::spectra::beside_peaks(&peaks);
+    if !std::path::Path::new(&spectra).exists() {
         let t = Instant::now();
         write_take(&path, &peaks);
         println!(
-            "wrote an hour of stereo and its peaks in {:.1} s",
+            "wrote an hour of stereo, its peaks and its spectral summary in {:.1} s",
             t.elapsed().as_secs_f64()
         );
     }
@@ -247,9 +260,11 @@ fn an_hour_is_opened_edited_and_zoomed_by_what_its_window_resolves() {
     let seams = 10 * 6 * 2 * SAMPLE_BLOCK * CHANNELS * 4;
     assert!(edits.bytes < seams + 2_000_000, "{} bytes", edits.bytes);
 
-    // **Its spectrogram**: 760 columns of 2048-frame windows over the whole
-    // of the last list, as the view zoomed out asks them -- what is read is
-    // the windows, whatever the take's length.
+    // **Its spectrogram**: 760 columns over the whole of the last list, as
+    // the view zoomed out asks them, each the largest of what happened in
+    // the frames it stands for: folded from the files' spectral summaries,
+    // so what is read is the summaries' columns and no sample, whatever the
+    // take's length.
     let mut spectrum = Cost::default();
     let read_before = answerer.samples_read;
     let t = Instant::now();
@@ -264,14 +279,14 @@ fn an_hour_is_opened_edited_and_zoomed_by_what_its_window_resolves() {
                 OscType::Long((columns * hop) as i64),
                 OscType::Int(hop as i32),
                 OscType::Int((COLUMNS - columns) as i32),
-                OscType::Int(2048),
+                OscType::Int(clausters_core::spectra::WINDOW as i32),
             ],
         };
         let reply = ask(&mut answerer, &mut disk, &msg, &mut spectrum);
         let OscType::Blob(blob) = &reply.args[5] else {
             panic!("{reply:?}");
         };
-        let came = blob.len() / (CHANNELS * 1024);
+        let came = blob.len() / (CHANNELS * clausters_core::spectra::BINS);
         assert!(came > 0, "an answer of no columns");
         columns += came;
     }
@@ -281,14 +296,14 @@ fn an_hour_is_opened_edited_and_zoomed_by_what_its_window_resolves() {
         spectrum.replies,
         spectrum.bytes / 1000
     );
-    assert_eq!(
-        answerer.samples_read - read_before,
-        COLUMNS * 2048 * CHANNELS
-    );
-    // A window straddles two sample blocks at most.
+    assert_eq!(answerer.samples_read - read_before, 0, "no sample read");
+    assert!(answerer.columns_summarized >= COLUMNS);
+    // The summaries' columns, a level a column at most, a block of them at a
+    // time.
+    let summary_bytes = std::fs::metadata(&spectra).unwrap().len() as usize;
     assert!(
-        spectrum.bytes <= COLUMNS * 2 * SAMPLE_BLOCK * CHANNELS * 4,
-        "{} bytes",
+        spectrum.bytes <= summary_bytes,
+        "{} bytes of {summary_bytes}",
         spectrum.bytes
     );
 

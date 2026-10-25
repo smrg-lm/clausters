@@ -78,6 +78,13 @@ pub(crate) fn peaks_beside(path: &str) -> String {
     }
 }
 
+/// **Where the spectral summary beside the peaks at `peaks` is**: what the
+/// UGen that writes the peaks writes beside them, and goes with them
+/// (`clausters_core::spectra::beside_peaks`).
+pub(crate) fn spectra_beside(peaks: &str) -> String {
+    clausters_core::spectra::beside_peaks(peaks)
+}
+
 /// **The list's parts by location**: each part a span of its file, its
 /// frames the file's, with what the file is -- what a copy carries. A part over a source the table does not hold is left
 /// out, since nothing could read it.

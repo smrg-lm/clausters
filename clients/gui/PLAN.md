@@ -4368,7 +4368,7 @@ Following the project rule: code + tests, a clear commit message (the record of 
 
 ## Future directions (to fold into milestones as they firm up)
 
-- ⬜ **A list's spectrogram kept beside its peaks** *(named 2026-10-22,
+- ✅ **A list's spectrogram kept beside its peaks** *(named 2026-10-22,
   deciding how a list's spectrogram is drawn)*. A list's spectrogram is
   analyzed from its samples over the span shown, which costs the view's width
   times the window on every move past what it holds. A stored analysis beside
@@ -4385,7 +4385,11 @@ Following the project rule: code + tests, a clear commit message (the record of 
   or a resampled part (`disk::answer`, `docs/decisions.md`). What is left is
   this entry's other half: keeping them on disk beside the peaks, with the
   levels that keep each bin's largest, so a file opened again, or zoomed out
-  past what was analyzed, reads no samples.
+  past what was analyzed, reads no samples. *Closed 2026-10-25:* the summary beside the
+  peaks is `clausters_core::spectra`, written by `PeaksOut` in the render
+  that writes the peaks, natively and in a page; a column of the view at
+  least a summary column wide is folded from it and reads no sample, and every
+  column is the largest of the windows it stands for (`docs/decisions.md`).
 
 - ✅ **The multitrack application is written twice: once in the crate and once in the host** *(named 2026-09-12 by the user; closed 2026-09-13)*. The standalone host is now an endpoint of the one application rather than a second copy of it: it plays the piece through `nodes::plan` + `Instance::reconcile` (`host/instance.rs`, which replaced `document/sound.rs`), pushes the projection's whole picture back, asks the projection which tags are the piece's, and realizes a minted join through `clausters_editing::sources::stitch` -- the one reading of a segmented source, bound by both clients as `editing_stitch`.
 

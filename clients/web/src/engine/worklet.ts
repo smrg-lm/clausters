@@ -500,7 +500,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         if (this.nrt === null) return;
         const streams = JSON.parse(this.server.diskPoll()) as {
             id: number;
-            direction: "in" | "out" | "list" | "peaks";
+            direction: "in" | "out" | "list" | "peaks" | "spectra";
             path: string;
             channels: number;
             looping: boolean;
@@ -517,7 +517,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             live.add(s.id);
             if (s.direction === "in") this.feed(s);
             else if (s.direction === "list") this.feedList(s);
-            else if (s.direction === "peaks") this.drainPeaks(s);
+            else if (s.direction === "peaks" || s.direction === "spectra") this.drainPeaks(s, s.direction);
             else this.drain(s);
         }
         // A synth that was freed took its stream with it; close its recording.
@@ -653,8 +653,9 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     }
 
     /**
-     * One `PeaksOut`: hand the Worker its buckets, and once its synth is gone
-     * and everything is drained, the word to write the file -- then forget it.
+     * One `PeaksOut`: hand the Worker its buckets, or the columns of the
+     * spectral summary it writes beside them, and once its synth is gone and
+     * everything is drained, the word to write the file; then it is forgotten.
      */
     private drainPeaks(s: {
         id: number;
@@ -664,13 +665,13 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         start: number;
         format: string;
         samples: number;
-    }): void {
+    }, kind: "peaks" | "spectra"): void {
         const stats = s.samples > 0 ? this.server.diskPull(s.id, s.samples) : new Float32Array(0);
         const final = s.looping && stats.length >= s.samples;
         if (stats.length === 0 && !final) return;
         this.nrt!.postMessage(
             {
-                type: "peaks",
+                type: kind,
                 ticket: s.id,
                 path: s.path,
                 stats,

@@ -129,6 +129,13 @@ interface PeaksRequest {
     final: boolean;
 }
 
+/** The spectral summary a `PeaksOut` writes beside its peaks, kept and
+ *  written as they are: its finest columns in `stats`, a byte of a bin as a
+ *  float. */
+interface SpectraRequest extends Omit<PeaksRequest, "type"> {
+    type: "spectra";
+}
+
 /** `DiskOut`: append a recorded run, and close the file when `final`. */
 interface RecordRequest {
     type: "record";
@@ -177,6 +184,7 @@ type Request =
     | WriteRequest
     | RecordRequest
     | PeaksRequest
+    | SpectraRequest
     | FaustRequest
     | FaustHeapRequest
     | { type: "ping" };
@@ -272,6 +280,7 @@ type Decoder = {
         free(): void;
     };
     peaksFile: (frames: number, channels: number, stats: Float32Array) => Uint8Array<ArrayBuffer>;
+    spectraFile: (frames: number, channels: number, columns: Float32Array) => Uint8Array<ArrayBuffer>;
     stripFaustData: (module: Uint8Array) => Uint8Array;
     faustBoxFromJson: (json: string) => number;
     faustSignalsFromJson: (json: string) => Uint32Array;
@@ -615,7 +624,7 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         }
         return;
     }
-    if (request.type === "peaks") {
+    if (request.type === "peaks" || request.type === "spectra") {
         let held = peaks.get(request.path) ?? [];
         if (request.stats.length > 0) held.push(request.stats);
         if (!request.final) {
@@ -633,9 +642,11 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
                 at += run.length;
             }
             held = [];
-            // The pyramid is the shared core's, as a native `PeaksOut`'s is.
-            const { peaksFile } = await load();
-            await writeFile(request.path, peaksFile(request.frames, request.channels, stats));
+            // The pyramid is the shared core's, as a native `PeaksOut`'s is,
+            // and so is the spectral summary's.
+            const { peaksFile, spectraFile } = await load();
+            const write = request.type === "peaks" ? peaksFile : spectraFile;
+            await writeFile(request.path, write(request.frames, request.channels, stats));
         } catch (e) {
             console.warn(`PeaksOut: ${request.path}: ${message(e)}`);
         }

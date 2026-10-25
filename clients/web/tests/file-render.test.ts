@@ -10,7 +10,8 @@
 //  - a list of two files played by `TransportDiskIn` in a render is read from
 //    its first frame -- a stream reads inside the block that needs it, as a
 //    native render's waits for its thread, so nothing is played as silence --
-//    and the `PeaksOut` beside it writes its file.
+//    and the `PeaksOut` beside it writes its file, and the spectral summary
+//    beside that.
 
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -114,6 +115,10 @@ test("a list of files is read from its first frame, and its peaks are written", 
         assert.ok(samples.slice(12_000).every((v) => v === -0.5), "then the second");
         const head = new TextDecoder().decode((await readFile(peaks)).subarray(0, 4));
         assert.equal(head, "CLPK");
+        // and the spectral summary beside them
+        const spectra = join(dir, "list.spectra");
+        const tag = new TextDecoder().decode((await readFile(spectra)).subarray(0, 4));
+        assert.equal(tag, "CLSP");
     } finally {
         await rm(dir, { recursive: true, force: true });
     }
@@ -163,7 +168,7 @@ test("a render with no path keeps no output and does its work", async () => {
         const head = new TextDecoder().decode((await readFile(peaks)).subarray(0, 4));
         assert.equal(head, "CLPK");
         const { readdir } = await import("node:fs/promises");
-        assert.deepEqual(await readdir(dir), ["tone.peaks"]);
+        assert.deepEqual((await readdir(dir)).sort(), ["tone.peaks", "tone.spectra"]);
     } finally {
         await rm(dir, { recursive: true, force: true });
     }

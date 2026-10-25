@@ -151,6 +151,15 @@ export function soundHeader(path: string, container: string, channels: number, s
 export function soundShape(head: Uint8Array, path: string, file_bytes: number): SoundShape;
 
 /**
+ * **A spectral summary's bytes** from the finest columns a `PeaksOut`
+ * reported, a byte of a bin as a float, in the order it reports them
+ * (column after column, each channel's bins in turn), for `frames` frames
+ * of `channels` channels: the file a native `PeaksOut` writes beside its
+ * peaks, built by the same core (`clausters_core::spectra`).
+ */
+export function spectraFile(frames: number, channels: number, columns: Float32Array): Uint8Array;
+
+/**
  * Removes the data segment a Faust wasm module carries, so the module can be
  * instantiated against the engine's own linear memory.
  *
@@ -206,6 +215,7 @@ export interface InitOutput {
     readonly soundshape_dataOffset: (a: number) => number;
     readonly soundshape_float: (a: number) => number;
     readonly soundshape_frames: (a: number) => number;
+    readonly spectraFile: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly stripFaustData: (a: number, b: number) => [number, number, number, number];
     readonly wavHeader: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly probed_frames: (a: number) => number;

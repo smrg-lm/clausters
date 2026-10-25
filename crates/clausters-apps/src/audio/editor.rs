@@ -1062,7 +1062,8 @@ impl AudioEditor {
 
     /// **The files to delete now that nothing names `source`**: a render of
     /// this editor's that no open file's list reads any more (the history
-    /// that let go of it said so), and its peaks. Nothing for a file the user
+    /// that let go of it said so), its peaks and the spectral summary beside
+    /// them. Nothing for a file the user
     /// owns, or one a list still reads.
     pub(crate) fn release(&mut self, source: SourceId) -> Vec<String> {
         // a take a history entry named, kept for it
@@ -1077,8 +1078,10 @@ impl AudioEditor {
             if let Some(gone) = file.sources.remove(&source) {
                 file.rates.remove(&source);
                 if gone.render && !out.contains(&gone.path) {
+                    let spectra = sources::spectra_beside(&gone.peaks);
                     out.push(gone.path);
                     out.push(gone.peaks);
+                    out.push(spectra);
                 }
             }
         }

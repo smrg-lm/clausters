@@ -75,7 +75,7 @@ export class WebServer {
     diskListPush(id: number, generation: number, at: number, list_frames: number, samples: Float32Array): boolean;
     /**
      * Every open disk stream and what it wants right now, as JSON: an array of
-     * `{id, direction: "in"|"out"|"list"|"peaks", path, channels, looping, start,
+     * `{id, direction: "in"|"out"|"list"|"peaks"|"spectra", path, channels, looping, start,
      * format, samples, generation, at, listFrames, span}`. `start` is the
      * frame an `in` reads from first; `samples` is room to fill for an `in`,
      * and samples waiting for an `out`. A `list` (`TransportDiskIn`) asks for
@@ -337,7 +337,8 @@ export function scoreFiles(score: Uint8Array): string;
 
 /**
  * **The files a score's synths write**, as a JSON array of paths: its
- * `DiskOut`s' and `PeaksOut`s', which a page creates before a
+ * `DiskOut`s' and `PeaksOut`s' (a peaks file and the spectral summary
+ * beside it), which a page creates before a
  * [`render_file`] of it starts.
  */
 export function scoreOutputs(score: Uint8Array): string;

@@ -769,6 +769,7 @@ pub(crate) fn columns_owed_of(
             hop,
             columns: end.saturating_sub(start).div_ceil(hop).max(1) + 1,
             window: held.window_size(),
+            analysis: 0,
             sample_rate: held.sample_rate(),
             total,
         })

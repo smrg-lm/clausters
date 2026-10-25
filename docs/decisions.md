@@ -10872,6 +10872,52 @@ trades is up to half a hop of offset for a column inside a part, at a hop of
 about a column of the view. The columns are kept in memory, bounded; keeping
 them on disk beside the peaks is the GUI plan's Future direction.
 
+*Revised 2026-10-25, again: a column is what happened in its frames, and a
+coarse one is read from a summary on disk.* One window per column was a
+preview, and a wrong one: zoomed out, a column of seconds was the spectrum of
+the 21 ms at its start, so a click or a note between two windows was not in
+the picture at all, the aliasing a waveform drawn from one sample a pixel
+would have. A column is now each bin's **largest** over the windows every
+hop inside it, as a waveform's pixel is the extremes of its samples, which is
+the standard reduction for a long file's spectrogram (a peak cache over
+columns, time reduced, bins kept). That costs every window of the span, so a
+coarse column is read from a **spectral summary** kept beside the file's
+peaks (`clausters_core::spectra`): the windows of the time-frequency view's
+own analysis (1024 frames every 512), one column for every 16 of them each
+bin the largest, and levels halving that, a byte a bin. Three choices in it
+are not obvious:
+
+- **What is kept is not the transform.** A column per window takes about as
+  many bytes as the samples it describes, which is no summary. The finest
+  level is 16 windows, 8192 frames, wide: an eighth of a byte a frame and a
+  channel with its levels, 43 MB beside an hour of stereo (whose peaks take
+  32 MB and whose samples 1.4 GB as floats). A view finer than that
+  analyzes the windows it shows, which costs what it shows, and keeps them
+  in memory as before.
+- **It is written by `PeaksOut`, not by a UGen of its own.** It is the same
+  file's overview, made where the samples are made for the reason the peaks
+  are, by every render that writes peaks and the one that measures an opened
+  file. A UGen of its own would have been a new surface in both clients'
+  catalogs and in every path a render drains its outputs through, for a file
+  no script names. The audio thread folds the windows (the core's transform is
+  on the stack, so nothing is allocated) and pushes a column every 8192
+  frames.
+- **A coarse column is assigned the summary's columns whose middle is in it**,
+  so each is in exactly one column of the view and is off by at most half its
+  width, which the threshold (a column of the view at least as wide as one of
+  the summary) keeps under half a pixel. Where a view column is dozens of
+  summary columns wide its edges are rounded to a level an eighth of it, as
+  a coarse column of peaks is, so it reads the levels it is drawn at: an
+  hour of stereo cut into 21 parts is drawn 760 columns wide in 7 ms from
+  2.5 MB of the summaries, where analyzing a window a column read 37 MB of
+  samples in 87 ms. A fade lowers what its part gives by its largest gain in
+  the column; a part at another rate is in no summary and its column is
+  analyzed.
+
+The summary is of one analysis. A view analyzing with another window or hop
+draws every column from the samples, pooled the same way; a summary per
+analysis was not worth a file each.
+
 ## A render's progress is a window prop, not a status line (2026-10-23)
 
 An edit that renders runs its offline render in the client, and a gain over

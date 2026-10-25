@@ -115,6 +115,27 @@ fn assert_peaks_match(samples: &[f32], channels: usize, peaks: &str) {
     }
 }
 
+/// **The spectral summary beside the peaks is the summary of the samples**,
+/// column for column: the one `PeaksOut` folded as it played against the one
+/// folded from the file read back.
+fn assert_spectra_match(samples: &[f32], channels: usize, peaks: &str) {
+    use clausters::clausters_core::spectra::{Accumulator, Spectra, beside_peaks};
+    let mut acc = Accumulator::new(channels);
+    acc.set_channels(channels);
+    let mut columns = Vec::new();
+    let mut done = |col: &[u8]| columns.extend_from_slice(col);
+    for frame in samples.chunks_exact(channels) {
+        acc.push(|c| frame[c], &mut done);
+    }
+    acc.finish(&mut done);
+    let frames = samples.len() / channels;
+    let built = Spectra::from_columns(frames, channels, &columns).expect("the columns");
+    let kept = Spectra::from_bytes(&std::fs::read(beside_peaks(peaks)).expect("written beside"))
+        .expect("a spectral summary");
+    assert_eq!(kept.head, built.head);
+    assert!(kept == built, "the summary of the samples written");
+}
+
 /// **A render writes a W64 and an RF64 and both read back sample for
 /// sample**, the same as the WAV of the same render, and the peaks file
 /// written beside each is the summary of its samples.
@@ -131,6 +152,7 @@ fn a_render_writes_every_container_and_its_peaks() {
         assert_eq!((back.channels(), back.frames()), (2, 62_400), "{name}");
         let samples = back.to_vec();
         assert_peaks_match(&samples, 2, peaks);
+        assert_spectra_match(&samples, 2, peaks);
         takes.push(samples);
     }
     assert_eq!(takes[0], takes[1], "the W64 holds the WAV's samples");
@@ -192,6 +214,7 @@ fn a_file_is_measured_by_a_render_of_disk_in_into_peaks_out() {
     // disk measures the file and not the silence of an underrun.
     clausters::server::render::render_to_vec(&score, &stereo()).unwrap();
     assert_peaks_match(&samples, 2, measured.to_str().unwrap());
+    assert_spectra_match(&samples, 2, measured.to_str().unwrap());
     let _ = std::fs::remove_dir_all(&dir);
 }
 

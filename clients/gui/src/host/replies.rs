@@ -1020,7 +1020,18 @@ pub(crate) trait Front {
                     channels,
                     SpanUse::Window { def_id, widget_id },
                 ),
-                Owed::Columns(span) => self.fetches().columns.want(bufnum, def_id, widget_id, span),
+                Owed::Columns(mut span) => {
+                    // the element's own hop, which only it knows
+                    if let Some(Some(SlotKind::Texture { hop, .. })) = self
+                        .host()
+                        .window_def(def_id)
+                        .and_then(|t| t.find(widget_id))
+                        .map(|w| w.bulk_target().kind.needs().slot)
+                    {
+                        span.analysis = hop;
+                    }
+                    self.fetches().columns.want(bufnum, def_id, widget_id, span)
+                }
             };
             if let Some(msg) = msg {
                 self.to_server(msg);

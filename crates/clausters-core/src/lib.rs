@@ -144,6 +144,7 @@ pub mod rng;
 pub mod scale;
 pub mod segments;
 pub mod shm;
+pub mod spectra;
 pub mod spectrum;
 pub mod stft;
 pub mod tempoclock;

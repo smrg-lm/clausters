@@ -482,7 +482,7 @@ impl WebServer {
     }
 
     /// Every open disk stream and what it wants right now, as JSON: an array of
-    /// `{id, direction: "in"|"out"|"list"|"peaks", path, channels, looping, start,
+    /// `{id, direction: "in"|"out"|"list"|"peaks"|"spectra", path, channels, looping, start,
     /// format, samples, generation, at, listFrames, span}`. `start` is the
     /// frame an `in` reads from first; `samples` is room to fill for an `in`,
     /// and samples waiting for an `out`. A `list` (`TransportDiskIn`) asks for
@@ -710,7 +710,8 @@ pub fn score_files(score: &[u8]) -> Result<String, JsErrorish> {
 }
 
 /// **The files a score's synths write**, as a JSON array of paths: its
-/// `DiskOut`s' and `PeaksOut`s', which a page creates before a
+/// `DiskOut`s' and `PeaksOut`s' (a peaks file and the spectral summary
+/// beside it), which a page creates before a
 /// [`render_file`] of it starts.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = scoreOutputs))]
 pub fn score_outputs(score: &[u8]) -> Result<String, JsErrorish> {
@@ -830,6 +831,7 @@ fn disk_poll_json() -> String {
                         Direction::Out => "out",
                         Direction::List => "list",
                         Direction::Peaks => "peaks",
+                        Direction::Spectra => "spectra",
                     },
                     json_string(&r.path),
                     r.channels,

@@ -65,6 +65,11 @@ pub enum Direction {
     /// the frames summarized, `looping` says the synth is gone, and `format`
     /// is `"lost"` when the ring could not take a bucket.
     Peaks,
+    /// The finest columns of the spectral summary beside a peaks file
+    /// (`PeaksOut`, `clausters_core::spectra`), a byte of a bin as a float,
+    /// drained and written as [`Direction::Peaks`] is: `path` is the
+    /// summary's, `start` the frames summarized.
+    Spectra,
 }
 
 /// What one open stream wants from the host right now.
@@ -1512,6 +1517,11 @@ pub struct PeaksOut {
 struct PeaksActive {
     id: u32,
     producer: Producer<f32>,
+    /// The spectral summary's stream, its ring and the columns' fold.
+    spectra_id: u32,
+    columns: Producer<f32>,
+    spectra: clausters_core::spectra::Accumulator,
+    columns_lost: bool,
     acc: Box<[(f32, f32, f64)]>,
     channels: usize,
     filled: usize,
@@ -1521,6 +1531,10 @@ struct PeaksActive {
 
 /// The most channels one `PeaksOut` summarizes, as natively.
 const PEAKS_CHANNELS: usize = 64;
+
+/// The ring of a `PeaksOut`'s spectral columns, in floats: 512 a channel a
+/// column, half a minute of stereo between two drains.
+const COLUMN_RING: usize = 1 << 17;
 const PEAKS_EMPTY: (f32, f32, f64) = (f32::INFINITY, f32::NEG_INFINITY, 0.0);
 
 impl PeaksOut {
@@ -1530,6 +1544,20 @@ impl PeaksOut {
             return Self { active: None };
         };
         let (producer, consumer) = RingBuffer::new(RING_SAMPLES);
+        let (columns, column_consumer) = RingBuffer::new(COLUMN_RING);
+        let spectra_id = fresh_id();
+        register(Slot {
+            id: spectra_id,
+            direction: Direction::Spectra,
+            path: clausters_core::spectra::beside_peaks(&path),
+            channels: 0,
+            looping: false,
+            start: 0,
+            format: String::new(),
+            end: End::Draining(column_consumer),
+            list: None,
+            offline: None,
+        });
         let id = fresh_id();
         register(Slot {
             id,
@@ -1547,6 +1575,10 @@ impl PeaksOut {
             active: Some(PeaksActive {
                 id,
                 producer,
+                spectra_id,
+                columns,
+                spectra: clausters_core::spectra::Accumulator::new(PEAKS_CHANNELS),
+                columns_lost: false,
                 acc: vec![PEAKS_EMPTY; PEAKS_CHANNELS].into_boxed_slice(),
                 channels: 0,
                 filled: 0,
@@ -1575,11 +1607,32 @@ impl PeaksActive {
         self.filled = 0;
     }
 
-    /// Tells the registry what the host needs to write the file.
+    /// Folds frame `i` of `inputs` into the spectral column, and pushes the
+    /// column it finishes.
+    fn fold_spectrum(&mut self, inputs: &[&[f32]], i: usize) {
+        let Self {
+            spectra,
+            columns,
+            columns_lost,
+            ..
+        } = self;
+        spectra.push(
+            |c| inputs.get(c).map_or(0.0, |input| at(input, i)),
+            &mut |column| push_column(columns, columns_lost, column),
+        );
+    }
+
+    /// Tells the registry what the host needs to write the files: the peaks
+    /// and the spectral summary.
     fn publish(&self, ended: bool) {
-        let (id, channels, frames, lost) = (self.id, self.channels, self.frames, self.lost);
+        let channels = self.channels;
+        let frames = self.frames;
+        let rows = [(self.id, self.lost), (self.spectra_id, self.columns_lost)];
         STREAMS.with(|s| {
-            if let Some(slot) = s.borrow_mut().iter_mut().find(|slot| slot.id == id) {
+            for slot in s.borrow_mut().iter_mut() {
+                let Some(&(_, lost)) = rows.iter().find(|(id, _)| *id == slot.id) else {
+                    continue;
+                };
                 slot.channels = channels;
                 slot.start = frames;
                 slot.looping = ended;
@@ -1588,6 +1641,17 @@ impl PeaksActive {
                 }
             }
         });
+    }
+}
+
+/// Pushes a finished spectral column into its ring, a byte as a float, or
+/// notes it lost.
+fn push_column(columns: &mut Producer<f32>, lost: &mut bool, column: &[u8]) {
+    match columns.write_chunk_uninit(column.len()) {
+        Ok(chunk) => {
+            chunk.fill_from_iter(column.iter().map(|b| f32::from(*b)));
+        }
+        Err(_) => *lost = true,
     }
 }
 
@@ -1607,8 +1671,10 @@ impl UGen for PeaksOut {
         };
         if a.channels == 0 {
             a.channels = inputs.len().clamp(1, PEAKS_CHANNELS);
+            a.spectra.set_channels(a.channels);
         }
         for i in 0..output.len() {
+            a.fold_spectrum(inputs, i);
             for (c, cell) in a.acc[..a.channels].iter_mut().enumerate() {
                 let x = inputs.get(c).map_or(0.0, |input| at(input, i));
                 cell.0 = cell.0.min(x);
@@ -1633,6 +1699,13 @@ impl Drop for PeaksOut {
             if a.filled > 0 && a.channels > 0 {
                 a.push();
             }
+            let PeaksActive {
+                spectra,
+                columns,
+                columns_lost,
+                ..
+            } = a;
+            spectra.finish(&mut |column| push_column(columns, columns_lost, column));
             a.publish(true);
         }
     }

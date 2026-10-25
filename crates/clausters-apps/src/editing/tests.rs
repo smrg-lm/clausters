@@ -1061,8 +1061,12 @@ fn a_stroke_s_take_is_freed_when_no_entry_can_reach_it() {
     let second = draw(&mut editing, take, 2, 30);
     assert_eq!(
         second["freed"],
-        json!([{"member": take, "files": ["/work/1-2-stroke.w64", "/work/1-2-stroke.peaks"]}]),
-        "the redo is gone, and the stroke's render with it"
+        json!([{"member": take, "files": [
+            "/work/1-2-stroke.w64",
+            "/work/1-2-stroke.peaks",
+            "/work/1-2-stroke.spectra",
+        ]}]),
+        "the redo is gone, and the stroke's render with it, its summaries too"
     );
     // and so are the takes its entry named, while the new entry's stay
     assert!(before.iter().all(|id| editing.shared.take(*id).is_none()));

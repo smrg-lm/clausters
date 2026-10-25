@@ -289,6 +289,12 @@ export interface PeaksOutOptions {
  * freed. A writer that fell behind writes no file rather than one that draws
  * what is not there. Like `diskOut` it delivers out of the graph, so it is a
  * valid def root on its own.
+ *
+ * Beside it, at `path` with its extension made `.spectra`, it writes the
+ * take's **spectral summary**: what a spectrogram of more of the take than its
+ * samples are worth reading for is drawn from. A window of 1024 frames every
+ * 512, each bin the largest it was over every 16 windows, and each coarser
+ * level, a byte a bin.
  */
 export const peaksOut = (signals: Channel | Channel[], { path }: PeaksOutOptions): Ugen =>
     new Ugen("PeaksOut", Array.isArray(signals) ? signals : [signals], {

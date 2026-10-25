@@ -633,14 +633,16 @@ impl AudioFileState {
     /// the file.
     fn closed(&self) -> Closed {
         // its renders, and the peaks the editor measured of a file it opened
+        // with the spectral summary beside them
         let files = self
             .sources
             .values()
             .flat_map(|s| {
                 let measured = s.peaks != sources::peaks_beside(&s.path);
                 let path = s.render.then(|| s.path.clone());
-                let peaks = (s.render || measured).then(|| s.peaks.clone());
-                path.into_iter().chain(peaks)
+                let peaks = (s.render || measured)
+                    .then(|| [s.peaks.clone(), sources::spectra_beside(&s.peaks)]);
+                path.into_iter().chain(peaks.into_iter().flatten())
             })
             .collect();
         Closed { files }

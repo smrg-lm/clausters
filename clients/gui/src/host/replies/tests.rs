@@ -585,11 +585,14 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     // And held, they owe nothing more.
     assert!(crate::host::frame::columns_owed_of(stft, Some(stft), None, &nav, 200.0).is_none());
 
-    // **Each column is the analysis of what plays there**: a window over a
-    // seam or a fade is the list's samples through its parts and fades,
-    // analyzed as a whole signal is; one inside a part is that part's file
-    // at the nearest point of a grid of the hop laid over the file, which is
-    // how an edit's columns are found again (`disk::answer`).
+    // **Each column is the analysis of what plays there**, each bin the
+    // largest it was over the windows every half window inside it: a window
+    // over a seam or a fade is the list's samples through its parts and
+    // fades, analyzed as a whole signal is; one inside a part is that part's
+    // file at the nearest point of a grid of the half window laid over the
+    // file, which is how an edit's or a zoom's columns are found again
+    // (`disk::answer`).
+    let grid = 256;
     let source_of = |p: &crate::host::disk::ListPart| {
         if p.path.as_ref() == a {
             &a_samples
@@ -603,7 +606,7 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
             !s.resampled()
                 && first >= s.start() + s.fade_in
                 && first + 512 <= s.end().saturating_sub(s.fade_out)
-                && (s.src_start + first - s.start() + span.hop / 2) / span.hop * span.hop + 512
+                && (s.src_start + first - s.start() + grid / 2) / grid * grid + 512
                     <= s.src_frames()
         })
     };
@@ -623,22 +626,24 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     let (hann, gain) = clausters_core::stft::analysis_window(512);
     let (mut w, mut sp, mut col) = (vec![0.0; 512], vec![0.0; 256], vec![0.0; 256]);
     for c in 0..stft.n_frames() {
-        let first = c * span.hop;
-        let frame: Vec<f32> = match inside(first) {
-            Some(p) => {
-                let s = &p.span;
-                let at = (s.src_start + first - s.start() + span.hop / 2) / span.hop * span.hop;
-                source_of(&p)[at..at + 512].to_vec()
+        let mut want = vec![0u8; 256];
+        let end = ((c + 1) * span.hop).min(2 * frames).max(c * span.hop + 1);
+        for first in (c * span.hop..end).step_by(grid) {
+            let frame: Vec<f32> = match inside(first) {
+                Some(p) => {
+                    let s = &p.span;
+                    let at = (s.src_start + first - s.start() + grid / 2) / grid * grid;
+                    source_of(&p)[at..at + 512].to_vec()
+                }
+                None => (first..first + 512)
+                    .map(|f| if f < 2 * frames { played(f) } else { 0.0 })
+                    .collect(),
+            };
+            clausters_core::stft::column_into(&frame, &hann, gain, &mut w, &mut sp, &mut col);
+            for (o, m) in want.iter_mut().zip(&col) {
+                *o = (*o).max(clausters_core::stft::quantize(*m));
             }
-            None => (first..first + 512)
-                .map(|f| if f < 2 * frames { played(f) } else { 0.0 })
-                .collect(),
-        };
-        clausters_core::stft::column_into(&frame, &hann, gain, &mut w, &mut sp, &mut col);
-        let want: Vec<u8> = col
-            .iter()
-            .map(|m| clausters_core::stft::quantize(*m))
-            .collect();
+        }
         let got: Vec<u8> = stft
             .column(c)
             .iter()

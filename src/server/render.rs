@@ -118,13 +118,18 @@ impl OscScore {
     }
 
     /// **Every file the score's synths write**, once each: the paths of its
-    /// synth defs' `DiskOut`s and `PeaksOut`s, which a page's render creates
+    /// synth defs' `DiskOut`s and `PeaksOut`s, and the spectral summary each
+    /// `PeaksOut` writes beside its peaks, which a page's render creates
     /// before it starts, as it opens [`files`](Self::files).
     pub fn outputs(&self) -> Vec<String> {
         let mut out = Vec::new();
         for msg in self.events.iter().flat_map(|ev| &ev.messages) {
-            for path in def_paths(msg, &["DiskOut", "PeaksOut"]) {
+            for path in def_paths(msg, &["DiskOut"]) {
                 add_once(&mut out, &path);
+            }
+            for path in def_paths(msg, &["PeaksOut"]) {
+                add_once(&mut out, &path);
+                add_once(&mut out, &clausters_core::spectra::beside_peaks(&path));
             }
         }
         out
@@ -708,11 +713,13 @@ mod page_streams {
     }
 
     /// The render's outputs being drained: each `DiskOut` into its file,
-    /// each `PeaksOut`'s base buckets kept until its synth is gone.
+    /// each `PeaksOut`'s base buckets and spectral columns kept until its
+    /// synth is gone.
     pub(super) struct Served {
         rate: f64,
         recordings: HashMap<u32, Option<Writer>>,
         summaries: HashMap<u32, Vec<f32>>,
+        columns: HashMap<u32, Vec<u8>>,
         scratch: Vec<f32>,
     }
 
@@ -725,6 +732,7 @@ mod page_streams {
                 rate,
                 recordings: HashMap::new(),
                 summaries: HashMap::new(),
+                columns: HashMap::new(),
                 scratch: Vec::new(),
             }
         }
@@ -736,6 +744,7 @@ mod page_streams {
                 match row.direction {
                     Direction::Out => self.record(&row),
                     Direction::Peaks => self.summarize(&row),
+                    Direction::Spectra => self.spectra(&row),
                     Direction::In | Direction::List => {}
                 }
             }
@@ -813,6 +822,51 @@ mod page_streams {
             }
             if let Err(e) = pyramid.write_cache(&row.path) {
                 tracing::warn!("PeaksOut: {}: {e}", row.path);
+            }
+        }
+
+        /// A `PeaksOut`'s spectral columns, and the summary they make once
+        /// its synth is gone, through the same core as natively.
+        fn spectra(&mut self, row: &disk::StreamRequest) {
+            if row.samples > 0 {
+                let run: Vec<u8> = self
+                    .pull(row.id, row.samples)
+                    .iter()
+                    .map(|v| *v as u8)
+                    .collect();
+                self.columns.entry(row.id).or_default().extend(run);
+            }
+            if !row.looping {
+                self.columns.entry(row.id).or_default();
+                return;
+            }
+            disk::release(row.id);
+            let columns = self.columns.remove(&row.id).unwrap_or_default();
+            if row.format == "lost" {
+                tracing::warn!(
+                    "PeaksOut: {}: spectral columns were lost while writing, so no spectral \
+                     summary is written rather than one that draws what is not there",
+                    row.path
+                );
+                return;
+            }
+            if row.start == 0 || row.channels == 0 {
+                return;
+            }
+            match clausters_core::spectra::Spectra::from_columns(
+                row.start as usize,
+                row.channels,
+                &columns,
+            ) {
+                Some(spectra) => {
+                    if let Err(e) = spectra.write(&row.path) {
+                        tracing::warn!("PeaksOut: {}: {e}", row.path);
+                    }
+                }
+                None => tracing::warn!(
+                    "PeaksOut: {}: the columns do not cover the frames summarized",
+                    row.path
+                ),
             }
         }
 

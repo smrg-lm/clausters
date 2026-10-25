@@ -30,6 +30,9 @@ struct ColumnsAsk {
     hop: usize,
     columns: usize,
     window: usize,
+    /// The view's own hop, which a column wider than it is the largest of
+    /// the windows on.
+    analysis: usize,
     sample_rate: f32,
     /// The take's length, which the transform of a span carries for the
     /// axis that has to know how long the take is.
@@ -53,6 +56,7 @@ impl ColumnsAsk {
                 OscType::Int(self.hop as i32),
                 OscType::Int((self.columns - self.answered) as i32),
                 OscType::Int(self.window as i32),
+                OscType::Int(self.analysis as i32),
             ],
         }
     }
@@ -80,6 +84,9 @@ pub(crate) struct ColumnSpan {
     pub hop: usize,
     pub columns: usize,
     pub window: usize,
+    /// The view's own hop (`0`: half the window), set by whoever knows the
+    /// element's analysis.
+    pub analysis: usize,
     pub sample_rate: f32,
     pub total: usize,
 }
@@ -110,6 +117,7 @@ impl ColumnAsks {
             hop: span.hop.max(1),
             columns: span.columns,
             window: span.window,
+            analysis: span.analysis,
             sample_rate: span.sample_rate,
             total: span.total,
             got: Vec::new(),
@@ -230,6 +238,7 @@ mod tests {
             hop: 100,
             columns,
             window: 8,
+            analysis: 0,
             sample_rate: 48_000.0,
             total: 10_000,
         }

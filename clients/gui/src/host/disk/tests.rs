@@ -491,3 +491,137 @@ fn an_edit_s_spectrogram_is_composed_from_the_columns_analyzed_before() {
     assert_eq!(&after[c * 512..(c + 1) * 512], column_at(at).as_slice());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Writes the spectral summary of `samples` (interleaved) beside the peaks at
+/// `peaks`, as the UGen that writes the peaks writes it, and answers it.
+fn summary_beside(
+    peaks: &str,
+    samples: &[f32],
+    channels: usize,
+) -> clausters_core::spectra::Spectra {
+    use clausters_core::spectra::{Accumulator, Spectra, beside_peaks};
+    let mut acc = Accumulator::new(channels);
+    acc.set_channels(channels);
+    let mut columns = Vec::new();
+    let mut done = |col: &[u8]| columns.extend_from_slice(col);
+    for frame in samples.chunks_exact(channels) {
+        acc.push(|c| frame[c], &mut done);
+    }
+    acc.finish(&mut done);
+    let spectra = Spectra::from_columns(samples.len() / channels, channels, &columns).unwrap();
+    spectra.write(beside_peaks(peaks)).unwrap();
+    spectra
+}
+
+/// **A zoomed-out spectrogram of a list is read from its files' spectral
+/// summaries, with no sample**: a column of the view is, for each part it
+/// crosses, the largest of the summary's columns whose middle falls in what
+/// the part plays there, a fade lowering what its part gives; and where a
+/// file has no summary the same columns are analyzed from the samples.
+#[test]
+fn a_zoomed_out_spectrogram_is_read_from_the_spectral_summaries() {
+    use clausters_core::spectra::{BINS, COLUMN_FRAMES, HOP, WINDOW};
+    let dir = scratch("spectra");
+    let frames = 12 * COLUMN_FRAMES + 333;
+    let channels = 2;
+    let data = noise(frames * channels, 5);
+    let (path, peaks) = take(&dir, "a", &data, channels, true);
+    let kept = summary_beside(&peaks, &data, channels);
+    // a cut off every grid, and a fade on the second part
+    let cut = (3 * COLUMN_FRAMES + 1_001, 2 * COLUMN_FRAMES + 77);
+    let mut second = part(
+        &path,
+        Some(&peaks),
+        cut.0 + cut.1,
+        frames - cut.0 - cut.1,
+        (2, frames),
+    );
+    second["fade_in"] = json!(COLUMN_FRAMES);
+    let edited = list(
+        channels,
+        vec![part(&path, Some(&peaks), 0, cut.0, (2, frames)), second],
+    );
+    let mut answerer = Answerer::default();
+    let mut io = Disk::default();
+    answerer.define(-2, edited.clone());
+    let hop = 2 * COLUMN_FRAMES;
+    let columns = edited.frames.div_ceil(hop);
+    let got = spectrum(
+        &mut answerer,
+        &mut io,
+        -2,
+        (0, hop, columns, WINDOW),
+        channels,
+    );
+    assert_eq!(answerer.samples_read, 0, "no sample read");
+    assert_eq!(answerer.columns_summarized, columns);
+    // the same rule, over the summary held in memory
+    let parts = edited.parts();
+    for c in 0..columns {
+        let (a, b) = (c * hop, ((c + 1) * hop).min(edited.frames));
+        for ch in 0..channels {
+            let mut want = vec![0u8; BINS];
+            for p in &parts {
+                let s = &p.span;
+                let (pa, pb) = (a.max(s.start()), b.min(s.end()));
+                if pa >= pb {
+                    continue;
+                }
+                let from = s.src_start + pa - s.start();
+                let to = from + (pb - pa);
+                let n = kept.head.lens[0];
+                let first = |f: usize| {
+                    f.saturating_sub(COLUMN_FRAMES / 2)
+                        .div_ceil(COLUMN_FRAMES)
+                        .min(n)
+                };
+                let (mut k0, mut k1) = (first(from), first(to));
+                if k0 >= k1 {
+                    k0 = (from / COLUMN_FRAMES).min(n - 1);
+                    k1 = k0 + 1;
+                }
+                let (i0, i1) = (pa - s.start(), pb - s.start());
+                let shift = if i1 > s.fade_in {
+                    0
+                } else {
+                    let g = s.gain(i0).max(s.gain(i1 - 1));
+                    (20.0 * g.log10() / clausters_core::stft::REF_FLOOR * 255.0).round() as u8
+                };
+                for k in k0..k1 {
+                    for (w, m) in want.iter_mut().zip(kept.column(ch, 0, k)) {
+                        *w = (*w).max(m.saturating_sub(shift));
+                    }
+                }
+            }
+            let at = (c * channels + ch) * BINS;
+            assert_eq!(
+                &got[at..at + BINS],
+                want.as_slice(),
+                "column {c} channel {ch}"
+            );
+        }
+    }
+    // A file with no summary: the same view is analyzed, every window of it
+    // on the grid of the hop.
+    let (bare, _) = take(&dir, "b", &data, channels, false);
+    let plain = list(channels, vec![part(&bare, None, 0, frames, (2, frames))]);
+    let mut answerer = Answerer::default();
+    answerer.define(-3, plain);
+    let got = spectrum(
+        &mut answerer,
+        &mut io,
+        -3,
+        (0, hop, frames.div_ceil(hop), WINDOW),
+        channels,
+    );
+    assert_eq!(answerer.columns_summarized, 0);
+    // inside the file each channel's window is its file's; the last ones,
+    // reaching past the end, are read through the list
+    let windows = answerer.columns_analyzed + channels * answerer.list_windows;
+    assert!(
+        windows >= channels * (frames / HOP),
+        "every window analyzed: {windows}"
+    );
+    assert_eq!(got.len(), frames.div_ceil(hop) * channels * BINS);
+    let _ = std::fs::remove_dir_all(&dir);
+}
