@@ -94,6 +94,7 @@ pub(crate) fn freq_scale_from_str(s: &str) -> Option<FreqScale> {
         "log" => FreqScale::Log,
         "mel" => FreqScale::Mel,
         "bark" => FreqScale::Bark,
+        "note" | "notes" => FreqScale::Note,
         _ => return None,
     })
 }

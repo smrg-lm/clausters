@@ -87,6 +87,21 @@ pub fn analysis_window(window_size: usize) -> (Vec<f32>, f32) {
     (hann, gain)
 }
 
+/// **The analysis window of another shape** and its coherent gain: the
+/// [`crate::window`] shape `wintype` names (an `FFT`'s, `0` Hann), normalized
+/// so a full-scale sine reads about 0 dB through any of them. Hann is
+/// [`analysis_window`]'s, coefficient for coefficient.
+pub fn analysis_window_of(window_size: usize, wintype: i32) -> (Vec<f32>, f32) {
+    let shape = crate::window::Window::from_wintype(wintype);
+    if shape == crate::window::Window::Hann {
+        return analysis_window(window_size);
+    }
+    let mut window = vec![0.0f32; window_size];
+    shape.fill(&mut window);
+    let gain = window.iter().sum::<f32>() * 0.5;
+    (window, gain.max(f32::MIN_POSITIVE))
+}
+
 /// **One column of a spectrogram**: `frame` windowed, transformed, and mapped
 /// to the normalized 0..1 magnitudes the texture stores.
 ///
@@ -160,6 +175,12 @@ pub struct Stft {
     /// Whether this is a transform of a span ([`Stft::of_span`]), which a view
     /// asks again when it moves past it, rather than of a whole signal.
     span: bool,
+    /// **The analysis its columns come from**: the hop between two windows
+    /// and the window's shape (`wintype`). A stored transform's hop is its
+    /// columns'; one of a span may stand for many windows a column
+    /// ([`Stft::with_analysis`]), which is what a view asks again by when it
+    /// is told to analyze otherwise.
+    analysis: (usize, i32),
 }
 
 /// A magnitude as a texture stores it: one byte of the normalized range.
@@ -172,6 +193,18 @@ impl Stft {
     /// `hop` is the frame advance (e.g. `window_size / 2`); `sample_rate` is used
     /// for the frequency axis.
     pub fn compute(samples: &[f32], window_size: usize, hop: usize, sample_rate: f32) -> Self {
+        Self::compute_with(samples, window_size, hop, sample_rate, 0)
+    }
+
+    /// [`compute`](Stft::compute) through the window shape `wintype` names
+    /// ([`analysis_window_of`]).
+    pub fn compute_with(
+        samples: &[f32],
+        window_size: usize,
+        hop: usize,
+        sample_rate: f32,
+        wintype: i32,
+    ) -> Self {
         assert!(
             fft::supports(window_size) && hop >= 1,
             "window_size must be a supported FFT size {:?}",
@@ -185,7 +218,7 @@ impl Stft {
             1 + (total_samples - window_size) / hop
         };
 
-        let (hann, win_gain) = analysis_window(window_size);
+        let (hann, win_gain) = analysis_window_of(window_size, wintype);
         let mut mags = vec![0.0f32; n_frames * n_bins];
         let mut windowed = vec![0.0f32; window_size];
         let mut spectrum = vec![0.0f32; n_bins]; // n_bins == window_size / 2
@@ -217,6 +250,7 @@ impl Stft {
             levels: Vec::new(),
             origin: 0,
             span: false,
+            analysis: (hop, wintype),
         }
     }
 
@@ -236,9 +270,20 @@ impl Stft {
         hop: usize,
         sample_rate: f32,
     ) -> Option<Self> {
+        Self::analyze_with(samples, window_size, hop, sample_rate, 0)
+    }
+
+    /// [`analyze`](Stft::analyze) through the window shape `wintype` names.
+    pub fn analyze_with(
+        samples: &[f32],
+        window_size: usize,
+        hop: usize,
+        sample_rate: f32,
+        wintype: i32,
+    ) -> Option<Self> {
         (fft::supports(window_size) && hop >= 1).then(|| {
             let hop = hop_capped(samples.len(), window_size, hop);
-            Self::compute(samples, window_size, hop, sample_rate)
+            Self::compute_with(samples, window_size, hop, sample_rate, wintype)
         })
     }
 
@@ -276,6 +321,7 @@ impl Stft {
             levels: Vec::new(),
             origin: 0,
             span: false,
+            analysis: (hop.max(1), 0),
         }
     }
 
@@ -314,7 +360,21 @@ impl Stft {
             levels: Vec::new(),
             origin,
             span: true,
+            analysis: (hop.max(1), 0),
         })
+    }
+
+    /// The same transform, its columns said to come from windows every
+    /// `hop` of the shape `wintype` names.
+    pub fn with_analysis(mut self, hop: usize, wintype: i32) -> Self {
+        self.analysis = (hop.max(1), wintype);
+        self
+    }
+
+    /// The analysis its columns come from: the hop between two windows and
+    /// the window's shape.
+    pub fn analysis(&self) -> (usize, i32) {
+        self.analysis
     }
 
     /// The sample the first frame starts at (see the field).
@@ -563,6 +623,7 @@ impl Stft {
             levels: Vec::new(),
             origin: 0,
             span: false,
+            analysis: (hop, 0),
         })
     }
 

@@ -183,6 +183,14 @@ pub struct TextureLook {
     pub freq_scale: crate::spectrogram::FreqScale,
     /// The colormap index the texture pipeline resolves.
     pub colormap: i32,
+    /// Each frequency band drawn at its own scale.
+    pub normalize: bool,
+    /// The reference A4 of a note axis, in hertz.
+    pub tuning: f32,
+    /// **The analysis the picture is asked to be of**: the window, the hop
+    /// between windows and the window's shape. A picture of a list made of
+    /// another is asked again.
+    pub analysis: (usize, usize, i32),
 }
 
 /// One time-frequency picture a container draws **inside itself**: which of its
@@ -589,6 +597,8 @@ pub enum Bulk {
         channels: usize,
         window_size: usize,
         hop: usize,
+        /// The window's shape, as an `FFT`'s `wintype`.
+        wintype: i32,
         sample_rate: f64,
     },
     /// A **server buffer**, pulled over the host's client leg rather than off
@@ -701,6 +711,8 @@ pub enum SlotKind {
     Texture {
         window_size: usize,
         hop: usize,
+        /// The window's shape, as an `FFT`'s `wintype`.
+        wintype: i32,
         /// The rate to place the analysis on (`0.0` = the server's).
         sample_rate: f64,
     },

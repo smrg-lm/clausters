@@ -337,8 +337,7 @@ fn roll_into_slot(
 /// data source (mapped path, fetched buffer, inline samples).
 pub(crate) fn stft_channels(
     channels: Vec<Vec<f32>>,
-    window_size: usize,
-    hop: usize,
+    (window_size, hop, wintype): (usize, usize, i32),
     sample_rate: f64,
 ) -> Vec<Stft> {
     let sr = if sample_rate > 0.0 {
@@ -351,7 +350,7 @@ pub(crate) fn stft_channels(
         // The one analysis every end makes, so a cache a client wrote and
         // a take the host mapped are the same transform. A window the FFT
         // has no size for was refused when the props were read.
-        .filter_map(|ch| Stft::analyze(&ch, window_size, hop, sr))
+        .filter_map(|ch| Stft::analyze_with(&ch, window_size, hop, sr, wintype))
         .collect()
 }
 
@@ -727,11 +726,18 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
 /// pixel when the view shows all of it, which is drawn wherever nothing finer
 /// is held, and **the span shown**, asked when the view is narrower than the
 /// whole take's columns resolve. The whole take is owed first, and again
-/// whenever the list changes, at the length the take has now. The span asked
+/// whenever the list changes, at the length the take has now, and whenever
+/// the view is told to analyze otherwise (`analysis`: the window, the hop
+/// between windows and their shape). The span asked
 /// runs a quarter of the view past either side, so a pan that small is drawn
 /// from what is held, and both hops are a power of two, so a small zoom and
 /// a pan ask for the columns the answerer already holds.
-pub(crate) fn columns_owed(slot: &SpectrogramSlot, nav: &View, width: f64) -> Option<Owed> {
+pub(crate) fn columns_owed(
+    slot: &SpectrogramSlot,
+    nav: &View,
+    width: f64,
+    analysis: (usize, usize, i32),
+) -> Option<Owed> {
     let view = slot.views.first()?;
     let overview = if view.is_whole() {
         Some(view)
@@ -744,17 +750,20 @@ pub(crate) fn columns_owed(slot: &SpectrogramSlot, nav: &View, width: f64) -> Op
         slot.stale.get(),
         nav,
         width,
+        analysis,
     )
 }
 
 /// [`columns_owed`] of the transform a slot draws, the picture of the whole
-/// take it has, and the length of the take when its list changed since.
+/// take it has, the length of the take when its list changed since, and the
+/// analysis the view asks for.
 pub(crate) fn columns_owed_of(
     held: &Stft,
     overview: Option<&Stft>,
     stale: Option<usize>,
     nav: &View,
     width: f64,
+    (window, hop, wintype): (usize, usize, i32),
 ) -> Option<Owed> {
     if !held.is_span() || width <= 0.0 || nav.len <= 0.0 {
         return None;
@@ -768,14 +777,21 @@ pub(crate) fn columns_owed_of(
             start,
             hop,
             columns: end.saturating_sub(start).div_ceil(hop).max(1) + 1,
-            window: held.window_size(),
+            window,
             analysis: 0,
+            wintype: 0,
             sample_rate: held.sample_rate(),
             total,
         })
     };
+    // a picture of another analysis than the one asked for is no picture
+    let analyzed = |s: &Stft| s.window_size() == window && s.analysis() == (hop.max(1), wintype);
     let overview = match overview {
-        Some(o) if stale.is_none() && o.total_samples() == total && o.n_frames() > 1 => o,
+        Some(o)
+            if stale.is_none() && o.total_samples() == total && o.n_frames() > 1 && analyzed(o) =>
+        {
+            o
+        }
         _ => return Some(span(0, total, power_hop(total as f64 / width))),
     };
     let want = power_hop(nav.len / width);
@@ -789,7 +805,7 @@ pub(crate) fn columns_owed_of(
             && first <= a
             && b.min(total.saturating_sub(1)) <= last
     };
-    if answers(held) || answers(overview) {
+    if analyzed(held) && answers(held) || answers(overview) {
         return None;
     }
     let margin = (nav.len / 4.0).ceil() as usize;
@@ -1931,6 +1947,7 @@ fn upload_heavy(
                     look.freq_scale,
                     look.colormap.max(0) as u32,
                 );
+                view.set_shaping(look.normalize, look.tuning);
                 view.set_alpha(alpha);
                 view.set_freq_window(item.look.y.0, item.look.y.1);
                 view.set_framing(framing_of(
@@ -1956,11 +1973,12 @@ fn upload_heavy(
             let channels = slot.views.len();
             for (ch, view) in slot.views.iter_mut().enumerate() {
                 view.set_display(
-                    item.db_floor,
-                    item.db_ceil,
-                    item.freq_scale,
-                    item.colormap.max(0) as u32,
+                    item.look.db_floor,
+                    item.look.db_ceil,
+                    item.look.freq_scale,
+                    item.look.colormap.max(0) as u32,
                 );
+                view.set_shaping(item.look.normalize, item.look.tuning);
                 view.set_framing(framing_of(
                     channel_rect(item.rect, channels, ch),
                     fb_w,
@@ -3306,7 +3324,7 @@ mod tests {
     fn stft_channels_keep_the_hop_past_a_textures_width() {
         let n = 200_000;
         let chan: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
-        let stacks = stft_channels(vec![chan], 256, 8, 48_000.0);
+        let stacks = stft_channels(vec![chan], (256, 8, 0), 48_000.0);
         assert_eq!(stacks.len(), 1);
         assert_eq!(stacks[0].hop(), 8);
         assert!(stacks[0].n_frames() > crate::spectrogram::MAX_FRAMES);

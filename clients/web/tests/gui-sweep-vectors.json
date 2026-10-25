@@ -3267,6 +3267,36 @@
  },
  {
   "builder": "spectrogram",
+  "option": "wintype",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "wintype": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "normalize",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "normalize": 1
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "tuning",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "tuning": 3.5
+  }
+ },
+ {
+  "builder": "spectrogram",
   "option": "ruler",
   "value": "beats",
   "tree": {

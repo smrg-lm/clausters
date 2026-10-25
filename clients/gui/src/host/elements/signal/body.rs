@@ -31,12 +31,7 @@ impl SignalElement {
     /// the clip's id, against the clip's own axis. Every other presentation
     /// draws itself ([`Self::draw_body`]).
     pub fn texture_body(&self) -> Option<TextureLook> {
-        self.is_texture_view().then_some(TextureLook {
-            db_floor: self.spectral.db_floor,
-            db_ceil: self.spectral.db_ceil,
-            freq_scale: self.spectral.freq_scale,
-            colormap: self.spectral.colormap,
-        })
+        self.is_texture_view().then(|| self.look())
     }
 
     /// The take, drawn into a clip's rectangle against the clip's local axis:

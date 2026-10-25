@@ -24,7 +24,9 @@
 //! drawing of a ruler strip, shared by every ruled view (the editor-grade
 //! frames and the plot).
 
-use clausters_core::scale::{bark_to_hz, hz_to_bark, hz_to_mel, mel_to_hz};
+use clausters_core::scale::{
+    bark_to_hz, hz_to_bark, hz_to_mel, hz_to_midi_tuned, mel_to_hz, midi_to_hz_tuned, note_name,
+};
 use clausters_core::tempoclock;
 use clausters_core::tempomap::TempoMap;
 
@@ -465,6 +467,75 @@ fn fmt_samples(v: f64) -> String {
     }
 }
 
+/// **The reference tuning a note axis was laid out at**: its floor is C0 at
+/// that tuning, 57 semitones under A4.
+pub(crate) fn tuning_of(nyquist: f64, f_lo_norm: f64) -> f64 {
+    f_lo_norm.clamp(1e-5, 0.5) * nyquist * 2f64.powf(57.0 / 12.0)
+}
+
+/// **A frequency as the note it is nearest** at reference `a4`, and the cents
+/// it is off it: `A4`, `C#5 +12`, `G2 -30`.
+pub(crate) fn note_readout(f: f64, a4: f64) -> String {
+    let midi = hz_to_midi_tuned(f, a4);
+    let nearest = midi.round();
+    let cents = ((midi - nearest) * 100.0).round() as i64;
+    let name = note_name(nearest as i32);
+    match cents {
+        0 => name,
+        c => format!("{name} {c:+}"),
+    }
+}
+
+/// **The ticks of a note axis**: every C labelled with its name, and as many
+/// of the other notes as fit, the naturals named where their labels fit and
+/// the rest as marks, at reference `a4` over the frequencies `f_bot..f_top`.
+fn note_ticks(
+    a4: f64,
+    (f_bot, f_top): (f64, f64),
+    height_px: f64,
+    to_frac: &impl Fn(f64) -> f64,
+    g: Gaps,
+) -> Vec<Tick> {
+    let first = hz_to_midi_tuned(f_bot.max(1.0), a4).ceil() as i32;
+    let last = hz_to_midi_tuned(f_top, a4).floor() as i32;
+    let gap_l = g.label_v();
+    // How far apart a semitone is where they are closest, which is the same
+    // everywhere on a note axis: the axis is geometric.
+    let semitone = (to_frac(midi_to_hz_tuned(70.0, a4)) - to_frac(midi_to_hz_tuned(69.0, a4)))
+        .abs()
+        * height_px;
+    let natural = |m: i32| !clausters_core::scale::is_black_key(m);
+    let named = |m: i32| {
+        let class = m.rem_euclid(12);
+        if semitone * 12.0 < gap_l {
+            // under an octave a label: every other C
+            class == 0 && m.div_euclid(12) % 2 == 0
+        } else if semitone * 12.0 < 3.0 * gap_l {
+            class == 0
+        } else if semitone * 2.0 < gap_l {
+            matches!(class, 0 | 4 | 7)
+        } else if semitone < gap_l {
+            natural(m)
+        } else {
+            true
+        }
+    };
+    let marked = |m: i32| semitone >= g.tick || natural(m) && semitone * 2.0 >= g.tick;
+    (first..=last)
+        .filter_map(|m| {
+            let d = to_frac(midi_to_hz_tuned(f64::from(m), a4));
+            if !(-1e-9..=1.0 + 1e-9).contains(&d) {
+                return None;
+            }
+            let label = named(m).then(|| note_name(m));
+            (label.is_some() || marked(m)).then(|| Tick {
+                frac: d.clamp(0.0, 1.0),
+                label,
+            })
+        })
+        .collect()
+}
+
 /// A frequency in Hz, compacted with K above the thousands.
 fn fmt_hz(f: f64) -> String {
     if f >= 1000.0 {
@@ -784,7 +855,7 @@ pub(crate) fn readout_value(v: f64, span: f64) -> String {
 pub(crate) fn display_to_hz(d: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f64) -> f64 {
     match scale {
         FreqScale::Linear => nyquist * d,
-        FreqScale::Log => nyquist * f_lo_norm.clamp(1e-5, 0.5).powf(1.0 - d),
+        FreqScale::Log | FreqScale::Note => nyquist * f_lo_norm.clamp(1e-5, 0.5).powf(1.0 - d),
         FreqScale::Mel => mel_to_hz(d * hz_to_mel(nyquist)),
         FreqScale::Bark => {
             let z0 = hz_to_bark(0.0);
@@ -798,7 +869,7 @@ pub(crate) fn display_to_hz(d: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f
 pub(crate) fn hz_to_display(f: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f64) -> f64 {
     match scale {
         FreqScale::Linear => f / nyquist,
-        FreqScale::Log => {
+        FreqScale::Log | FreqScale::Note => {
             let f_lo = f_lo_norm.clamp(1e-5, 0.5);
             1.0 - (f / nyquist).ln() / f_lo.ln()
         }
@@ -838,6 +909,15 @@ pub(crate) fn hz_ticks(
     let f_top = display_to_hz((y_start + y_len).min(1.0), nyquist, scale, f_lo_norm).min(nyquist);
     if f_top <= f_bot {
         return Vec::new();
+    }
+    if scale == FreqScale::Note {
+        return note_ticks(
+            tuning_of(nyquist, f_lo_norm),
+            (f_bot, f_top),
+            height_px,
+            &to_frac,
+            g,
+        );
     }
     let mut out = Vec::new();
     let gap_l = g.label_v();
@@ -1085,6 +1165,7 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
         FreqScale::Log => "LOG",
         FreqScale::Mel => "MEL",
         FreqScale::Bark => "BRK",
+        FreqScale::Note => "TET",
     }
 }
 
@@ -1959,6 +2040,72 @@ mod tests {
         );
         assert!(labels(&db_zoom).contains(&"-1"), "{:?}", labels(&db_zoom));
         assert_no_v_collisions(&db_zoom, 150.0, "db zoomed");
+    }
+
+    /// **A note axis names the notes**: every C where an octave has room
+    /// for a label, the naturals as it is zoomed in, never two labels over
+    /// each other; a tuning moves every note by its ratio, and the readout
+    /// names the nearest note and how far off it is.
+    #[test]
+    fn a_note_axis_names_the_notes_at_its_tuning() {
+        let nyq = 24_000.0;
+        for a4 in [440.0, 415.0] {
+            let floor = clausters_core::scale::c0_hz(a4) / nyq;
+            assert!((tuning_of(nyq, floor) - a4).abs() < 1e-6);
+            let whole = hz_ticks(
+                nyq,
+                FreqScale::Note,
+                floor,
+                600.0,
+                0.0,
+                1.0,
+                &Metrics::default(),
+            );
+            let names: Vec<&str> = whole.iter().filter_map(|t| t.label.as_deref()).collect();
+            assert!(names.contains(&"C4"), "{names:?}");
+            // every octave's C, and what else has room
+            for c in ["C1", "C2", "C3", "C5", "C6", "C7", "C8"] {
+                assert!(names.contains(&c), "{c} in {names:?}");
+            }
+            assert_no_v_collisions(&whole, 600.0, "notes");
+            // A4 sits where the tuning puts it
+            let a = hz_to_display(a4, nyq, FreqScale::Note, floor);
+            let near = |f: f64| (display_to_hz(a, nyq, FreqScale::Note, floor) - f).abs() < 1e-6;
+            assert!(near(a4));
+            // zoomed in to an octave around A4, the naturals are named
+            let c4 = hz_to_display(
+                clausters_core::scale::midi_to_hz_tuned(60.0, a4),
+                nyq,
+                FreqScale::Note,
+                floor,
+            );
+            let c5 = hz_to_display(
+                clausters_core::scale::midi_to_hz_tuned(72.0, a4),
+                nyq,
+                FreqScale::Note,
+                floor,
+            );
+            let octave = hz_ticks(
+                nyq,
+                FreqScale::Note,
+                floor,
+                600.0,
+                c4,
+                c5 - c4,
+                &Metrics::default(),
+            );
+            let names: Vec<&str> = octave.iter().filter_map(|t| t.label.as_deref()).collect();
+            for n in ["D4", "E4", "F4", "G4", "A4", "B4"] {
+                assert!(names.contains(&n), "{n} in {names:?}");
+            }
+            assert_no_v_collisions(&octave, 600.0, "an octave of notes");
+        }
+        assert_eq!(note_readout(440.0, 440.0), "A4");
+        assert_eq!(note_readout(445.0, 440.0), "A4 +20");
+        assert_eq!(note_readout(430.0, 440.0), "A4 -40");
+        assert_eq!(note_readout(261.63, 440.0), "C4");
+        assert_eq!(note_readout(415.0, 415.0), "A4");
+        assert_eq!(scale_tag(FreqScale::Note), "TET");
     }
 
     #[test]

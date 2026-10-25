@@ -138,6 +138,7 @@ impl SignalElement {
                     channels: data.channels,
                     window_size: self.spectral.fft_size,
                     hop: self.spectral.hop,
+                    wintype: self.spectral.wintype,
                     sample_rate: self.editor.sample_rate,
                 });
             }
@@ -212,6 +213,7 @@ impl SignalElement {
             SlotKind::Texture {
                 window_size: self.spectral.fft_size,
                 hop: self.spectral.hop,
+                wintype: self.spectral.wintype,
                 sample_rate: self.editor.sample_rate,
             }
         } else {

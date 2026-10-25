@@ -449,7 +449,14 @@ pub(super) fn draw_editor_overlay(
             // cursor's height for the frequency under it.
             Vertical::Frequency(nyquist, scale, f_lo) => {
                 let f = ruler::display_to_hz(display, nyquist, scale, f_lo);
-                format!("{time}  {} HZ", f.round() as i64)
+                match scale {
+                    // a note axis names the note, and how far off it
+                    crate::spectrogram::FreqScale::Note => format!(
+                        "{time}  {}",
+                        ruler::note_readout(f, ruler::tuning_of(nyquist, f_lo))
+                    ),
+                    _ => format!("{time}  {} HZ", f.round() as i64),
+                }
             }
             // A trace: the value at the cursor's height within its row, read
             // through the same domain the geometry was built with -- so the
@@ -654,7 +661,12 @@ pub(super) fn draw_timeline_meshes(
         // The same note for a texture of a span, which holds the columns of
         // what was last looked at.
         if let Some(slot) = spectro {
-            slot.owed.set(columns_owed(slot, &local, body.w as f64));
+            slot.owed.set(columns_owed(
+                slot,
+                &local,
+                body.w as f64,
+                look.look.analysis,
+            ));
         }
         // **The stack, back to front.** Everything up to the texture goes into
         // the base mesh, everything after it into the overlay: the GPU pass

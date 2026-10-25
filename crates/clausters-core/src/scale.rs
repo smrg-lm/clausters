@@ -71,6 +71,30 @@ pub fn hz_to_midi(hz: f64) -> f64 {
     69.0 + 12.0 * (hz / 440.0).log2()
 }
 
+/// MIDI note number -> hertz, equal temperament over a reference `a4` for
+/// A4 (note 69): [`midi_to_hz`] at another tuning.
+#[inline]
+pub fn midi_to_hz_tuned(midi: f64, a4: f64) -> f64 {
+    a4 * 2f64.powf((midi - 69.0) / 12.0)
+}
+
+/// Hertz -> (fractional) MIDI note number over a reference `a4`, the inverse
+/// of [`midi_to_hz_tuned`]; non-positive input maps to note 0.
+#[inline]
+pub fn hz_to_midi_tuned(hz: f64, a4: f64) -> f64 {
+    if hz <= 0.0 || a4 <= 0.0 {
+        return 0.0;
+    }
+    69.0 + 12.0 * (hz / a4).log2()
+}
+
+/// **The frequency of C0 at a reference `a4`** (note 12, 16.35 Hz at 440):
+/// the floor of an axis laid out in equal-tempered notes.
+#[inline]
+pub fn c0_hz(a4: f64) -> f64 {
+    midi_to_hz_tuned(12.0, a4)
+}
+
 /// The twelve pitch-class names, sharp spelling, index 0 = C.
 pub const PITCH_CLASSES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
@@ -103,6 +127,16 @@ pub fn note_name(midi: i32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tuning_moves_every_note_by_its_ratio() {
+        assert!((midi_to_hz_tuned(69.0, 440.0) - 440.0).abs() < 1e-9);
+        assert!((midi_to_hz_tuned(69.0, 432.0) - 432.0).abs() < 1e-9);
+        assert!((midi_to_hz_tuned(81.0, 415.0) - 830.0).abs() < 1e-9);
+        assert!((hz_to_midi_tuned(midi_to_hz_tuned(61.3, 442.0), 442.0) - 61.3).abs() < 1e-9);
+        assert!((c0_hz(440.0) - 16.351_597_831_287_414).abs() < 1e-9);
+        assert_eq!(midi_to_hz_tuned(60.0, 440.0), midi_to_hz(60.0));
+    }
 
     #[test]
     fn note_names_follow_scientific_pitch() {

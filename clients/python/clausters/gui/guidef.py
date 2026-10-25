@@ -2155,6 +2155,8 @@ def spectrogram(*, autofit: bool | None = None,
                 sample_rate: float | None = None, db_floor: float | None = None,
                 db_ceil: float | None = None, freq_scale: str | None = None,
                 log_freq: bool | None = None, colormap: int | None = None,
+                wintype: int | None = None, normalize: bool | None = None,
+                tuning: float | None = None,
                 layers=None,
                 ruler: str | None = None, ruler_y: str | None = None, tempo: float | None = None, tempo_map=None,
                 beat_at: float | None = None, quant: float | None = None,
@@ -2181,10 +2183,16 @@ def spectrogram(*, autofit: bool | None = None,
     places the frequency axis for ``path``/inline sources (a fetched ``buffer``
     brings its own rate). The display is live (``GuiHost.set``): the dB window
     ``[db_floor, db_ceil]`` (default ``-90``/``0``) controls contrast,
-    ``freq_scale`` picks the frequency axis -- ``"log"`` (the default),
-    ``"linear"``, ``"mel"`` or ``"bark"`` (``log_freq`` is the legacy boolean
-    alias for the first two) -- and ``colormap`` picks 0 viridis / 1 magma /
-    2 grayscale.
+    ``freq_scale`` picks the frequency axis, ``"log"`` (the default),
+    ``"linear"``, ``"mel"``, ``"bark"`` or ``"note"`` (``log_freq`` is the
+    legacy boolean alias for the first two), and ``colormap`` picks 0
+    viridis / 1 magma / 2 grayscale. ``"note"`` is the log axis from C0,
+    its ruler naming the equal-tempered notes at ``tuning``, the reference
+    A4 in hertz (default 440). ``wintype`` is the analysis window's shape, as
+    an FFT's: ``0`` Hann (the default), ``-1`` rectangular, ``1`` sine, ``2``
+    Welch, ``3`` Hamming, ``4`` Blackman. ``normalize`` draws each frequency
+    band at its own scale, its loudest at the top of the colours, so a band
+    with little energy is not left dim beside a loud one.
 
     The rulers ride their own strips beside the view: ``ruler_y`` (``"hz"``,
     the default, or ``"off"``) draws the frequency ruler, its tick positions
@@ -2215,7 +2223,8 @@ def spectrogram(*, autofit: bool | None = None,
                        blob=blob, buffer=buffer, segments=segments, path=path, cache=cache,
                        channels=channels, folded=_folded(folded), window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
-                       colormap=colormap, layers=layers, color=color)
+                       colormap=colormap, wintype=wintype, tuning=tuning,
+                       layers=layers, color=color)
     extra.update(_axes(axes, markers=_held(markers, _flat_markers), ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        tempo=tempo, tempo_map=_tempo_map(tempo_map),
                        beat_at=beat_at, quant=quant, autofit=autofit,
@@ -2227,6 +2236,8 @@ def spectrogram(*, autofit: bool | None = None,
                        y_start=y_start, y_len=y_len, link=link))
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
+    if normalize is not None:
+        extra["normalize"] = 1 if normalize else 0
     return node("signal", id=id, view="spectrogram", **extra, **props)
 
 

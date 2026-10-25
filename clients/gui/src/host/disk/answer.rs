@@ -310,6 +310,7 @@ struct ColumnKey {
     path: Arc<str>,
     channel: usize,
     window: usize,
+    wintype: i32,
     hop: usize,
     at: usize,
 }
@@ -758,7 +759,8 @@ impl Answerer {
 }
 
 impl Answerer {
-    /// `/buffer_spectrum key start hop columns window [analysis]`: **the
+    /// `/buffer_spectrum key start hop columns window [analysis [wintype]]`:
+    /// **the
     /// columns of a spectrogram of the list over a span**, column `c`
     /// standing for the `hop` frames from `start + c * hop`, answered as
     /// `/buffer_spectrum.reply key start hop window channels blob`: each
@@ -776,7 +778,7 @@ impl Answerer {
     ///   ([`Self::summarized`]), when the view analyzes as the summary does;
     /// - one wider than the view's own hop (`analysis`, half the window when
     ///   not said) is the largest of the windows every `analysis` frames
-    ///   inside it;
+    ///   inside it, at most [`COLUMN_WINDOWS`] of them;
     /// - one narrower is the one window at its start.
     ///
     /// A window inside one part is its file's, kept and found again after
@@ -794,13 +796,16 @@ impl Answerer {
             h => h,
         }
         .max(1);
+        let wintype = args.get(5).and_then(as_i64).unwrap_or(0) as i32;
         if !clausters_core::fft::supports(window) || columns == 0 {
             return Answer::None;
         }
         let channels = list.channels.max(1);
         let mut needs = Vec::new();
-        let stored =
-            window == spectra::WINDOW && analysis == spectra::HOP && hop >= spectra::COLUMN_FRAMES;
+        let stored = window == spectra::WINDOW
+            && analysis == spectra::HOP
+            && wintype == 0
+            && hop >= spectra::COLUMN_FRAMES;
         if stored {
             self.spectra_shapes(list, &mut needs);
             if !needs.is_empty() {
@@ -814,7 +819,13 @@ impl Answerer {
         for c in 0..columns {
             let first = start + c * hop;
             let before = needs.len();
-            let column = self.column_of(list, first, hop, window, analysis, stored, &mut needs);
+            let column = self.column_of(
+                list,
+                (first, hop),
+                (window, analysis, wintype),
+                stored,
+                &mut needs,
+            );
             needs = dedup(std::mem::take(&mut needs));
             match column {
                 // In order: a column is answered only after every one before it.
@@ -859,14 +870,11 @@ impl Answerer {
 
     /// **One column of the list**, each of its channels' bins, or `None`
     /// with what it needs read noted (see [`Self::spectrum_reply`]).
-    #[allow(clippy::too_many_arguments)]
     fn column_of(
         &mut self,
         list: &List,
-        first: usize,
-        hop: usize,
-        window: usize,
-        analysis: usize,
+        (first, hop): (usize, usize),
+        (window, analysis, wintype): (usize, usize, i32),
         stored: bool,
         needs: &mut Vec<Need>,
     ) -> Option<Vec<Arc<[u8]>>> {
@@ -882,18 +890,22 @@ impl Answerer {
                 Composed::No => {}
             }
         }
+        let shape = (window, wintype);
         if hop <= analysis {
-            return self.one_window(list, first, window, hop, channels, needs);
+            return self.one_window(list, first, shape, hop, channels, needs);
         }
         // The largest of the windows the column stands for, each on the
-        // grid of the view's own hop, which an edit or a zoom finds again.
+        // grid of the view's own hop, which an edit or a zoom finds again;
+        // a hop so fine that a column would analyze more than a few dozen is
+        // widened, since a pixel could not show what it adds.
+        let analysis = analysis.max(hop / COLUMN_WINDOWS);
         let bins = window / 2;
         let mut largest = vec![vec![0u8; bins]; channels];
         let mut whole = true;
         let end = (first + hop).min(list.frames).max(first + 1);
         let mut at = first;
         while at < end {
-            match self.one_window(list, at, window, analysis, channels, needs) {
+            match self.one_window(list, at, shape, analysis, channels, needs) {
                 Some(column) => {
                     for (into, channel) in largest.iter_mut().zip(column) {
                         for (o, m) in into.iter_mut().zip(channel.iter()) {
@@ -916,13 +928,13 @@ impl Answerer {
         &mut self,
         list: &List,
         first: usize,
-        window: usize,
+        (window, wintype): (usize, i32),
         grid: usize,
         channels: usize,
         needs: &mut Vec<Need>,
     ) -> Option<Vec<Arc<[u8]>>> {
         let before = needs.len();
-        match self.composed(list, first, window, grid, channels, needs) {
+        match self.composed(list, first, (window, wintype), grid, channels, needs) {
             Composed::Columns(columns) => return (needs.len() == before).then_some(columns),
             Composed::Need => return None,
             Composed::No => {}
@@ -963,7 +975,7 @@ impl Answerer {
             return None;
         }
         let bins = window / 2;
-        let (hann, gain) = clausters_core::stft::analysis_window(window);
+        let (hann, gain) = clausters_core::stft::analysis_window_of(window, wintype);
         let (mut windowed, mut spectrum) = (vec![0.0f32; window], vec![0.0f32; bins]);
         let (mut frame, mut column) = (vec![0.0f32; window], vec![0.0f32; bins]);
         let mut out = Vec::with_capacity(channels);
@@ -1206,7 +1218,7 @@ impl Answerer {
         &mut self,
         list: &List,
         first: usize,
-        window: usize,
+        (window, wintype): (usize, i32),
         hop: usize,
         channels: usize,
         needs: &mut Vec<Need>,
@@ -1241,6 +1253,7 @@ impl Answerer {
                 path: Arc::clone(&part.path),
                 channel: source,
                 window,
+                wintype,
                 hop,
                 at,
             };
@@ -1266,7 +1279,7 @@ impl Answerer {
             if needs.len() > before {
                 return Composed::Need;
             }
-            let (hann, gain) = clausters_core::stft::analysis_window(window);
+            let (hann, gain) = clausters_core::stft::analysis_window_of(window, wintype);
             let mut windowed = vec![0.0f32; window];
             let mut spectrum = vec![0.0f32; bins];
             let mut magnitudes = vec![0.0f32; bins];
@@ -1310,6 +1323,11 @@ impl Answerer {
 /// a window straddles two at most, so this is about a hundred columns of a
 /// zoomed-out view, and a few megabytes of a stereo float file.
 pub const SPECTRUM_BLOCKS: usize = 192;
+
+/// **Windows one column is the largest of, at most**: past it the windows
+/// are spread further apart, since a pixel cannot show what a finer hop adds
+/// and a column of seconds at a hop of a few frames would analyze thousands.
+pub const COLUMN_WINDOWS: usize = 64;
 
 /// Windows one spectrum answer analyzes at most once it has a column to
 /// answer: some tens of milliseconds, so a view of minutes pooled from its

@@ -33,6 +33,8 @@ struct ColumnsAsk {
     /// The view's own hop, which a column wider than it is the largest of
     /// the windows on.
     analysis: usize,
+    /// The window's shape, as an `FFT`'s `wintype`.
+    wintype: i32,
     sample_rate: f32,
     /// The take's length, which the transform of a span carries for the
     /// axis that has to know how long the take is.
@@ -57,6 +59,7 @@ impl ColumnsAsk {
                 OscType::Int((self.columns - self.answered) as i32),
                 OscType::Int(self.window as i32),
                 OscType::Int(self.analysis as i32),
+                OscType::Int(self.wintype),
             ],
         }
     }
@@ -84,9 +87,10 @@ pub(crate) struct ColumnSpan {
     pub hop: usize,
     pub columns: usize,
     pub window: usize,
-    /// The view's own hop (`0`: half the window), set by whoever knows the
-    /// element's analysis.
+    /// The view's own hop (`0`: half the window) and the window's shape,
+    /// set by whoever knows the element's analysis.
     pub analysis: usize,
+    pub wintype: i32,
     pub sample_rate: f32,
     pub total: usize,
 }
@@ -118,6 +122,7 @@ impl ColumnAsks {
             columns: span.columns,
             window: span.window,
             analysis: span.analysis,
+            wintype: span.wintype,
             sample_rate: span.sample_rate,
             total: span.total,
             got: Vec::new(),
@@ -190,6 +195,13 @@ impl ColumnAsks {
                     ask.sample_rate,
                     ask.total,
                 )
+                .map(|stft| {
+                    let analysis = match ask.analysis {
+                        0 => ask.window / 2,
+                        h => h,
+                    };
+                    stft.with_analysis(analysis, ask.wintype)
+                })
             })
             .collect();
         (
@@ -239,6 +251,7 @@ mod tests {
             columns,
             window: 8,
             analysis: 0,
+            wintype: 0,
             sample_rate: 48_000.0,
             total: 10_000,
         }

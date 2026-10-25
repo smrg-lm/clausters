@@ -206,8 +206,10 @@
           "hop": 512,
           "db_floor": -90.0,
           "db_ceil": 0.0,
-          "freq_scale": "mel",
+          "freq_scale": "note",
           "colormap": 1,
+          "wintype": 4,
+          "tuning": 432.0,
           "axes": {
             "x": {
               "unit": "time",
@@ -217,7 +219,8 @@
             "y": {
               "unit": "hz"
             }
-          }
+          },
+          "normalize": 1
         },
         {
           "type": "signal",

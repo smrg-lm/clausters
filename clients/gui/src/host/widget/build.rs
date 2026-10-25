@@ -142,6 +142,12 @@ fn spectral_props(
         averaging: number(props, "averaging", base.averaging).clamp(0.0, 0.99),
         peak_hold: props.get("peak_hold").and_then(truthy).unwrap_or(false),
         colormap: int_prop(props, "colormap", base.colormap),
+        wintype: int_prop(props, "wintype", base.wintype),
+        normalize: props
+            .get("normalize")
+            .and_then(truthy)
+            .unwrap_or(base.normalize),
+        tuning: signal::tuning_of(number(props, "tuning", base.tuning)),
     }
 }
 

@@ -126,14 +126,14 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
             channels,
             window_size,
             hop,
+            wintype,
             sample_rate,
             ..
         } => {
             let flat = decode_f32(&bytes);
             let stfts = frame::stft_channels(
                 frame::deinterleave(&flat, channels),
-                window_size,
-                hop,
+                (window_size, hop, wintype),
                 sample_rate,
             );
             log(&format!(

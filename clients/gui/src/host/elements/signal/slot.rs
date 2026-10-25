@@ -92,8 +92,11 @@ impl SignalElement {
         {
             fills.push(SlotFill::Texture(crate::host::frame::stft_channels(
                 crate::host::frame::deinterleave(&samples, channels),
-                self.spectral.fft_size,
-                self.spectral.hop,
+                (
+                    self.spectral.fft_size,
+                    self.spectral.hop,
+                    self.spectral.wintype,
+                ),
                 self.editor.sample_rate,
             )));
         }

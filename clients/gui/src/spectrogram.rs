@@ -38,6 +38,10 @@ pub enum FreqScale {
     Log,
     Mel,
     Bark,
+    /// **Equal-tempered notes**: the log axis, from C0 at the view's
+    /// reference tuning, its ruler naming the notes. The floor is the only
+    /// thing that differs, and it carries the tuning (`clausters_core::scale::c0_hz`).
+    Note,
 }
 
 impl FreqScale {
@@ -45,7 +49,7 @@ impl FreqScale {
     pub(crate) fn index(self) -> u32 {
         match self {
             FreqScale::Linear => 0,
-            FreqScale::Log => 1,
+            FreqScale::Log | FreqScale::Note => 1,
             FreqScale::Mel => 2,
             FreqScale::Bark => 3,
         }
@@ -57,7 +61,8 @@ impl FreqScale {
             FreqScale::Linear => FreqScale::Log,
             FreqScale::Log => FreqScale::Mel,
             FreqScale::Mel => FreqScale::Bark,
-            FreqScale::Bark => FreqScale::Linear,
+            FreqScale::Bark => FreqScale::Note,
+            FreqScale::Note => FreqScale::Linear,
         }
     }
 }
@@ -83,6 +88,9 @@ struct Uniforms {
     /// drawn in, both across the element (`0` left, `1` right); the hole is
     /// empty when z > w.
     cover: [f32; 4],
+    /// x = whether each band is drawn at its own scale (`1`), against the
+    /// loudest it is in the rows texture.
+    shape: [f32; 4],
 }
 
 /// GPU renderer for spectrograms: the pipeline that samples a magnitude texture
@@ -109,6 +117,9 @@ pub struct SpectrogramTexture {
     /// Kept so a rolling ring can write its new columns into the texture it
     /// already has, instead of building a new one per tick.
     texture: wgpu::Texture,
+    /// **The loudest each row is**, one texel a bin: what a band is drawn
+    /// against when each band is at its own scale.
+    rows: wgpu::Texture,
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
 }
@@ -146,6 +157,21 @@ impl SpectrogramTexture {
             view_formats: &[],
         });
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let rows = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("spectrogram rows"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: size.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let rows_view = rows.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("spectrogram sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -176,14 +202,45 @@ impl SpectrogramTexture {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&rows_view),
+                },
             ],
         });
 
         Self {
             texture,
+            rows,
             bind_group,
             uniform_buffer,
         }
+    }
+
+    /// Writes the loudest of each row, one byte a bin.
+    fn write_rows(&self, queue: &wgpu::Queue, rows: &[u8]) {
+        if rows.is_empty() {
+            return;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.rows,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            rows,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(1),
+                rows_per_image: Some(rows.len() as u32),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: rows.len() as u32,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     /// Writes the whole texture from `texels`, row-major by bin (`height`
@@ -322,6 +379,16 @@ impl SpectrogramRenderer {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
                     count: None,
                 },
             ],
@@ -467,6 +534,14 @@ pub struct SpectrogramView {
     /// The samples a finer picture drawn over this one covers, which this one
     /// leaves to it.
     hole: Option<(f64, f64)>,
+    /// Each frequency band drawn at its own scale.
+    normalize: bool,
+    /// The reference A4 of a note axis, in hertz.
+    tuning: f32,
+    /// **The loudest each row is in what this view holds**, and what the
+    /// card holds of a band's scale: the whole take's, under a span.
+    rows: Vec<u8>,
+    rows_on_card: Vec<u8>,
 }
 
 impl SpectrogramView {
@@ -500,6 +575,10 @@ impl SpectrogramView {
             scratch: Vec::new(),
             overview: None,
             hole: None,
+            normalize: false,
+            tuning: 440.0,
+            rows: Vec::new(),
+            rows_on_card: Vec::new(),
         }
     }
 
@@ -604,6 +683,14 @@ impl SpectrogramView {
         self.alpha = alpha.clamp(0.0, 1.0);
     }
 
+    /// **How the magnitudes are shaped** before the colours: each band at
+    /// its own scale (`normalize`), and the reference A4 a note axis is laid
+    /// out at (`tuning`). Uniform writes, like the display.
+    pub fn set_shaping(&mut self, normalize: bool, tuning: f32) {
+        self.normalize = normalize;
+        self.tuning = tuning;
+    }
+
     pub fn set_display(&mut self, db_floor: f32, db_ceil: f32, scale: FreqScale, colormap: u32) {
         self.db_floor = db_floor;
         self.db_ceil = db_ceil;
@@ -615,7 +702,11 @@ impl SpectrogramView {
     /// same `f_lo` the shader's display->bin mapping uses, exposed so a ruler
     /// places its ticks with the identical geometry.
     pub fn log_floor(&self) -> f32 {
-        (20.0 / self.stft.nyquist()).clamp(1e-5, 0.5)
+        let floor = match self.scale {
+            FreqScale::Note => clausters_core::scale::c0_hz(f64::from(self.tuning)) as f32,
+            _ => 20.0,
+        };
+        (floor / self.stft.nyquist()).clamp(1e-5, 0.5)
     }
 
     /// Sets the visible frequency window from normalized display coordinates
@@ -696,6 +787,11 @@ impl SpectrogramView {
             }
         }
         self.texture.write_all(queue, &texels, w, h);
+        self.rows = texels
+            .chunks_exact(w)
+            .map(|row| row.iter().copied().max().unwrap_or(0))
+            .collect();
+        self.rows_on_card.clear();
         self.held = Some(want);
     }
 
@@ -741,8 +837,9 @@ impl SpectrogramView {
             self.freq.start() as f32,
             (self.freq.start() + self.freq.len()) as f32,
         );
-        // Bottom of the log axis (~20 Hz), normalized to Nyquist.
-        let f_lo = (20.0 / self.stft.nyquist()).clamp(1e-5, 0.5);
+        // Bottom of the log axis (~20 Hz, or C0 of a note axis), normalized
+        // to Nyquist.
+        let f_lo = self.log_floor();
 
         let span = -REF_FLOOR;
         let lo = ((self.db_floor - REF_FLOOR) / span).clamp(0.0, 1.0);
@@ -759,6 +856,7 @@ impl SpectrogramView {
                 self.framing.offset[1],
             ],
             cover: [across(a), across(b), hole_a, hole_b],
+            shape: [f32::from(u8::from(self.normalize)), 0.0, 0.0, 0.0],
         }
     }
 }
@@ -785,11 +883,23 @@ impl TimelineView for SpectrogramView {
             overview.colormap = self.colormap;
             overview.alpha = self.alpha;
             overview.framing = self.framing;
+            overview.normalize = self.normalize;
+            overview.tuning = self.tuning;
             overview.hole = Some(self.covers());
             overview.upload(device, queue, renderers, view, render_width_px);
             self.overview = Some(overview);
         }
         self.hold(device, queue, &renderers.spectrogram, view, render_width_px);
+        // A band's scale is the whole take's where there is one, so a zoom
+        // does not change how loud a band looks.
+        let rows = self
+            .overview
+            .as_ref()
+            .map_or(&self.rows, |overview| &overview.rows);
+        if self.normalize && *rows != self.rows_on_card {
+            self.texture.write_rows(queue, rows);
+            self.rows_on_card = rows.clone();
+        }
         let u = self.uniforms(view);
         self.texture.write_uniforms(queue, &u);
     }

@@ -28,11 +28,29 @@ struct Uniforms {
     // transform of a span draws nothing past its columns, where it used to
     // stretch the first and the last over the rest of the view.
     cover: vec4<f32>,
+    // x = 1 where each frequency band is drawn at its own scale: lifted so
+    // the loudest it is (the rows texture) is the top of the range.
+    shape: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var tex: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
+@group(0) @binding(3) var rows: texture_2d<f32>;
+
+// **The stored magnitude at texture place (x, y)**, a band lifted to its own
+// scale where the view asks for it. A row nothing has measured (a live ring)
+// is left as it is.
+fn level(x: f32, y: f32) -> f32 {
+    var m = textureSampleLevel(tex, samp, vec2<f32>(x, y), 0.0).r;
+    if u.shape.x > 0.5 {
+        let top = textureSampleLevel(rows, samp, vec2<f32>(0.5, y), 0.0).r;
+        if top > 0.0 {
+            m = min(1.0, m + 1.0 - top);
+        }
+    }
+    return m;
+}
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -184,7 +202,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 if ny > 1u {
                     y = (y0 + floor(f32(j) * (y1 - y0 + 1.0) / f32(ny)) + 0.5) / bins;
                 }
-                mag = max(mag, textureSampleLevel(tex, samp, vec2<f32>(x, y), 0.0).r);
+                mag = max(mag, level(x, y));
             }
         }
     } else {
@@ -195,10 +213,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let f = y - k;
         let row = vec4<f32>(k - 1.0, k, k + 1.0, k + 2.0);
         let at = (clamp(row, vec4<f32>(0.0), vec4<f32>(bins - 1.0)) + 0.5) / bins;
-        let m0 = textureSampleLevel(tex, samp, vec2<f32>(t, at.x), 0.0).r;
-        let m1 = textureSampleLevel(tex, samp, vec2<f32>(t, at.y), 0.0).r;
-        let m2 = textureSampleLevel(tex, samp, vec2<f32>(t, at.z), 0.0).r;
-        let m3 = textureSampleLevel(tex, samp, vec2<f32>(t, at.w), 0.0).r;
+        let m0 = level(t, at.x);
+        let m1 = level(t, at.y);
+        let m2 = level(t, at.z);
+        let m3 = level(t, at.w);
         // Catmull-Rom, clamped: the curve may overshoot a peak, a magnitude
         // may not.
         let c = m1 + 0.5 * f * (m2 - m0

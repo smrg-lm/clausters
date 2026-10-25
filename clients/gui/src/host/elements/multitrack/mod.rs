@@ -767,8 +767,11 @@ impl Slotted for Multitrack {
                 let body = self.takes.get(&bufnum)?;
                 let stfts = crate::host::frame::stft_channels(
                     crate::host::frame::deinterleave(&samples, channels),
-                    body.spectral.fft_size,
-                    body.spectral.hop,
+                    (
+                        body.spectral.fft_size,
+                        body.spectral.hop,
+                        body.spectral.wintype,
+                    ),
                     body.editor.sample_rate,
                 );
                 Some((SlotKey(i64::from(bufnum)), SlotFill::Texture(stfts)))

@@ -149,8 +149,8 @@ const trees: Record<string, () => GuiNode> = {
             spectrogram({
                 id: 2, cache: "take.stft", windowSize: 2048, hop: 512,
                 sampleRate: 48000.0, dbFloor: -90.0, dbCeil: 0.0,
-                freqScale: "mel", colormap: 1, ruler: "time", rulerY: "hz",
-                link: 7,
+                freqScale: "note", colormap: 1, wintype: 4, normalize: true,
+                tuning: 432.0, ruler: "time", rulerY: "hz", link: 7,
             }),
             plot({
                 id: 3, data: [0.0, 0.5, -0.5, 1.0], view: "spectrum",

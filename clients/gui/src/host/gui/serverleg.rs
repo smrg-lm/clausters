@@ -140,6 +140,7 @@ impl App {
             if let Some(SlotKind::Texture {
                 window_size,
                 hop,
+                wintype,
                 sample_rate: declared,
             }) = slot
             {
@@ -150,8 +151,7 @@ impl App {
                 };
                 let stfts = frame::stft_channels(
                     frame::deinterleave(&take.read_all(), channels),
-                    window_size,
-                    hop,
+                    (window_size, hop, wintype),
                     rate,
                 );
                 if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu, &ws.renderers) {

@@ -625,3 +625,58 @@ fn a_zoomed_out_spectrogram_is_read_from_the_spectral_summaries() {
     assert_eq!(got.len(), frames.div_ceil(hop) * channels * BINS);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **The window's shape is the view's**: a list's columns analyzed through a
+/// Blackman window are that window's analysis of the file, and kept apart
+/// from the Hann ones of the same file.
+#[test]
+fn a_lists_columns_are_analyzed_through_the_window_asked_for() {
+    let dir = scratch("wintype");
+    let frames = 1 << 15;
+    let data = noise(frames, 3);
+    let (path, _) = take(&dir, "a", &data, 1, false);
+    let mut answerer = Answerer::default();
+    let mut io = Disk::default();
+    answerer.define(-2, list(1, vec![part(&path, None, 0, frames, (1, frames))]));
+    let column = |answerer: &mut Answerer, io: &mut Disk, wintype: i32| -> Vec<u8> {
+        let reply = ask(
+            answerer,
+            io,
+            "/buffer_spectrum",
+            vec![
+                OscType::Int(-2),
+                OscType::Long(4096),
+                OscType::Int(512),
+                OscType::Int(1),
+                OscType::Int(1024),
+                OscType::Int(512),
+                OscType::Int(wintype),
+            ],
+        );
+        let Some(OscType::Blob(blob)) = reply.args.last() else {
+            panic!("{reply:?}");
+        };
+        blob.clone()
+    };
+    let want = |wintype: i32| -> Vec<u8> {
+        let (window, gain) = clausters_core::stft::analysis_window_of(1024, wintype);
+        let mut out = vec![0.0f32; 512];
+        clausters_core::stft::column_into(
+            &data[4096..4096 + 1024],
+            &window,
+            gain,
+            &mut vec![0.0; 1024],
+            &mut vec![0.0; 512],
+            &mut out,
+        );
+        out.iter()
+            .map(|m| clausters_core::stft::quantize(*m))
+            .collect()
+    };
+    let hann = column(&mut answerer, &mut io, 0);
+    let blackman = column(&mut answerer, &mut io, 4);
+    assert_eq!(hann, want(0));
+    assert_eq!(blackman, want(4));
+    assert_ne!(hann, blackman, "two windows, two pictures");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -561,8 +561,15 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         start: 0.0,
         len: (2 * frames) as f64,
     };
-    let owed = crate::host::frame::columns_owed_of(&dark[0], Some(&dark[0]), None, &nav, 200.0)
-        .expect("the columns are owed");
+    let owed = crate::host::frame::columns_owed_of(
+        &dark[0],
+        Some(&dark[0]),
+        None,
+        &nav,
+        200.0,
+        (512, 256, 0),
+    )
+    .expect("the columns are owed");
     let crate::host::frame::Owed::Columns(span) = owed else {
         panic!("{owed:?}")
     };
@@ -583,7 +590,10 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         (span.columns, span.hop, 0)
     );
     // And held, they owe nothing more.
-    assert!(crate::host::frame::columns_owed_of(stft, Some(stft), None, &nav, 200.0).is_none());
+    assert!(
+        crate::host::frame::columns_owed_of(stft, Some(stft), None, &nav, 200.0, (512, 256, 0))
+            .is_none()
+    );
 
     // **Each column is the analysis of what plays there**, each bin the
     // largest it was over the windows every half window inside it: a window
@@ -668,8 +678,15 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     // was asked for over the length it had, and the part it gained stayed
     // one column stretched to the end.
     for now in [frames, 2 * frames, 3 * frames] {
-        let owed = crate::host::frame::columns_owed_of(stft, Some(stft), Some(now), &nav, 200.0)
-            .expect("the new list's columns");
+        let owed = crate::host::frame::columns_owed_of(
+            stft,
+            Some(stft),
+            Some(now),
+            &nav,
+            200.0,
+            (512, 256, 0),
+        )
+        .expect("the new list's columns");
         let crate::host::frame::Owed::Columns(again) = owed else {
             panic!("{owed:?}")
         };
@@ -682,8 +699,9 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         start: frames as f64,
         len: (2 * frames / 10) as f64,
     };
-    let owed = crate::host::frame::columns_owed_of(stft, Some(stft), None, &near, 200.0)
-        .expect("the span's columns");
+    let owed =
+        crate::host::frame::columns_owed_of(stft, Some(stft), None, &near, 200.0, (512, 256, 0))
+            .expect("the span's columns");
     let crate::host::frame::Owed::Columns(close) = owed else {
         panic!("{owed:?}")
     };
@@ -691,5 +709,16 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         close.start < frames && close.start + close.hop * close.columns > frames + 2 * frames / 10
     );
     assert!(close.hop.is_power_of_two() && close.hop < span.hop);
+    // **Another analysis owes the whole take again**: a window, a hop or a
+    // shape the held columns are not of.
+    for analysis in [(2048, 1024, 0), (512, 128, 0), (512, 256, 4)] {
+        let owed =
+            crate::host::frame::columns_owed_of(stft, Some(stft), None, &nav, 200.0, analysis)
+                .expect("the columns of the analysis asked for");
+        let crate::host::frame::Owed::Columns(again) = owed else {
+            panic!("{owed:?}")
+        };
+        assert_eq!((again.start, again.window), (0, analysis.0), "{analysis:?}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -2813,8 +2813,14 @@ export function waveform(
  * take's length does not coarsen it). A `cache` is the analysis already made
  * (`data.stftCache` builds one). The display is live:
  * the dB window `[dbFloor, dbCeil]` sets the contrast, `freqScale` picks the
- * frequency axis (`"log"` -- the default -- `"linear"`, `"mel"` or `"bark"`)
- * and `colormap` picks 0 viridis / 1 magma / 2 grayscale.
+ * frequency axis (`"log"`, the default, `"linear"`, `"mel"`, `"bark"` or
+ * `"note"`) and `colormap` picks 0 viridis / 1 magma / 2 grayscale. `"note"`
+ * is the log axis from C0, its ruler naming the equal-tempered notes at
+ * `tuning`, the reference A4 in hertz (default 440). `wintype` is the
+ * analysis window's shape, as an FFT's: `0` Hann (the default), `-1`
+ * rectangular, `1` sine, `2` Welch, `3` Hamming, `4` Blackman. `normalize`
+ * draws each frequency band at its own scale, its loudest at the top of the
+ * colours, so a band with little energy is not left dim beside a loud one.
  */
 export function spectrogram(
     options: SourceOptions & SegmentsOptions & TimelineOptions & {
@@ -2826,6 +2832,12 @@ export function spectrogram(
         /** The legacy boolean alias of `freqScale`: log against linear. */
         logFreq?: boolean;
         colormap?: number;
+        /** The analysis window's shape, as an FFT's `wintype`. */
+        wintype?: number;
+        /** Each frequency band at its own scale. */
+        normalize?: boolean;
+        /** The reference A4 of a `"note"` axis, in hertz. */
+        tuning?: number;
         /**
          * **The stack the texture is one layer of** -- which is how a wave goes
          * *over* a spectrogram rather than beside it:
@@ -2843,7 +2855,8 @@ export function spectrogram(
 ): GuiNode {
     const {
         cache, path, buffer, segments, data, blob, channels, folded, windowSize,
-        hop, dbFloor, dbCeil, freqScale, logFreq, colormap, layers, rulerY, ...timeline
+        hop, dbFloor, dbCeil, freqScale, logFreq, colormap, wintype, normalize, tuning,
+        layers, rulerY, ...timeline
     } = options;
     return node("signal", {
         view: "spectrogram",
@@ -2858,6 +2871,9 @@ export function spectrogram(
             ["freq_scale", freqScale],
             ["log_freq", flag(logFreq)],
             ["colormap", colormap],
+            ["wintype", wintype],
+            ["normalize", flag(normalize)],
+            ["tuning", tuning],
             ["layers", layers],
         ]),
     });

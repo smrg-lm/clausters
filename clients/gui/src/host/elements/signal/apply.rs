@@ -116,6 +116,21 @@ impl SignalElement {
                 .as_i64()
                 .map(|n| self.spectral.colormap = n as i32)
                 .is_some(),
+            // The rest of the analysis, live: a hop between windows and the
+            // window's shape.
+            "hop" => v
+                .as_u64()
+                .map(|n| self.spectral.hop = (n as usize).max(1))
+                .is_some(),
+            "wintype" => v
+                .as_i64()
+                .map(|n| self.spectral.wintype = n as i32)
+                .is_some(),
+            "normalize" => truthy(v).map(|b| self.spectral.normalize = b).is_some(),
+            "tuning" => v
+                .as_f64()
+                .map(|x| self.spectral.tuning = super::tuning_of(x as f32))
+                .is_some(),
             // The loudness layer's own scale and guides -- the parameters of a
             // measure live with the measure, on the element.
             "loudness_target" => v.as_f64().map(|x| self.loudness.target = x).is_some(),
@@ -295,7 +310,12 @@ impl SignalElement {
             _ => self.editor.apply(key, v),
         };
         // The cached analysis reads the presentation, the size and the rate.
-        if handled && matches!(key, "view" | "fft_size" | "window_size" | "sample_rate") {
+        if handled
+            && matches!(
+                key,
+                "view" | "fft_size" | "window_size" | "hop" | "wintype" | "sample_rate"
+            )
+        {
             self.refresh_analysis();
         }
         // **The loudness layer's own mutation points.** Measuring is a pass
@@ -323,6 +343,8 @@ impl SignalElement {
                 "view"
                     | "fft_size"
                     | "window_size"
+                    | "hop"
+                    | "wintype"
                     | "sample_rate"
                     | "channels"
                     | "data"
@@ -352,6 +374,32 @@ mod data_tests {
             &[],
         )
         .unwrap()
+    }
+
+    /// **A spectrogram's analysis and shaping are live**: the hop, the
+    /// window's shape, each band at its own scale, the tuning of a note axis
+    /// (bounded to a note's frequency); a change of the analysis rebuilds the
+    /// picture, and the look the frame samples it with says what it is.
+    #[test]
+    fn a_spectrograms_analysis_and_shaping_are_set_live() {
+        use crate::host::widget::element::Element;
+        let mut e = el(r#"{"id":1,"type":"signal","view":"spectrogram","data":[0.0,1.0]}"#);
+        e.slot_dirty = false;
+        assert!(e.set("hop", &serde_json::json!(128)));
+        assert!(e.slot_dirty, "another hop is another picture");
+        e.slot_dirty = false;
+        assert!(e.set("wintype", &serde_json::json!(4)));
+        assert!(e.slot_dirty, "and so is another window");
+        assert!(e.set("normalize", &serde_json::json!(1)));
+        assert!(e.set("freq_scale", &serde_json::json!("note")));
+        assert!(e.set("tuning", &serde_json::json!(432.0)));
+        let look = e.look();
+        assert_eq!(look.analysis, (e.spectral.fft_size, 128, 4));
+        assert!(look.normalize);
+        assert_eq!(look.freq_scale, crate::spectrogram::FreqScale::Note);
+        assert_eq!(look.tuning, 432.0);
+        assert!(e.set("tuning", &serde_json::json!(5.0)));
+        assert_eq!(e.look().tuning, 440.0, "a tuning is a note's frequency");
     }
 
     /// The owner's half of an edit: the samples that now hold are pushed, and

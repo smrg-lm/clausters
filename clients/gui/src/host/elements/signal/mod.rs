@@ -416,6 +416,25 @@ pub struct Spectral {
     pub peak_hold: bool,
     /// The time-frequency colormap index.
     pub colormap: i32,
+    /// The analysis window's shape, as an `FFT`'s `wintype` (`0` Hann).
+    pub wintype: i32,
+    /// **Each frequency band at its own scale**: a band's loudest drawn at
+    /// the top of the colours, so a band with little energy is not left
+    /// dim beside a loud one.
+    pub normalize: bool,
+    /// The reference A4, in hertz, of a note axis.
+    pub tuning: f32,
+}
+
+/// **A reference tuning as a note axis takes it**: between 200 and 1000 Hz,
+/// and 440 for anything else, a choice of a note's frequency rather than a
+/// way to move the axis anywhere.
+pub fn tuning_of(a4: f32) -> f32 {
+    if (200.0..=1000.0).contains(&a4) {
+        a4
+    } else {
+        440.0
+    }
 }
 
 impl Default for Spectral {
@@ -429,6 +448,9 @@ impl Default for Spectral {
             averaging: 0.5,
             peak_hold: false,
             colormap: 0,
+            wintype: 0,
+            normalize: false,
+            tuning: 440.0,
         }
     }
 }

@@ -393,6 +393,7 @@ pub(crate) trait Front {
                 Some(SlotKind::Texture {
                     window_size,
                     hop,
+                    wintype,
                     sample_rate: declared,
                 }) => {
                     let rate = if declared > 0.0 {
@@ -402,8 +403,7 @@ pub(crate) trait Front {
                     };
                     let stfts = frame::stft_channels(
                         frame::deinterleave(&samples, channels),
-                        window_size,
-                        hop,
+                        (window_size, hop, wintype),
                         rate,
                     );
                     self.place_slot(want.def_id, want.widget_id, Loaded::Stfts(stfts));
@@ -1022,13 +1022,14 @@ pub(crate) trait Front {
                 ),
                 Owed::Columns(mut span) => {
                     // the element's own hop, which only it knows
-                    if let Some(Some(SlotKind::Texture { hop, .. })) = self
+                    if let Some(Some(SlotKind::Texture { hop, wintype, .. })) = self
                         .host()
                         .window_def(def_id)
                         .and_then(|t| t.find(widget_id))
                         .map(|w| w.bulk_target().kind.needs().slot)
                     {
                         span.analysis = hop;
+                        span.wintype = wintype;
                     }
                     self.fetches().columns.want(bufnum, def_id, widget_id, span)
                 }

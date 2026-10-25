@@ -40,10 +40,7 @@ pub(super) struct SpectralBodyItem {
     pub(super) rect: Rect,
     pub(super) local: View,
     pub(super) clip: Option<Rect>,
-    pub(super) db_floor: f32,
-    pub(super) db_ceil: f32,
-    pub(super) freq_scale: FreqScale,
-    pub(super) colormap: i32,
+    pub(super) look: crate::host::widget::element::TextureLook,
 }
 
 /// **What a placed editor-grade signal view draws**, as the element stated it:
@@ -283,10 +280,7 @@ pub(super) fn collect_widgets(
                             rect: body.rect,
                             local: body.local,
                             clip: p.clip,
-                            db_floor: body.look.db_floor,
-                            db_ceil: body.look.db_ceil,
-                            freq_scale: body.look.freq_scale,
-                            colormap: body.look.colormap,
+                            look: body.look,
                         });
                     }
                 }
