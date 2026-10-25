@@ -8862,3 +8862,23 @@ module of its own.
     times), and a span past an `int32` is refused with a warning instead of
     landing elsewhere. A sample rate as a float, a fade's length and a
     tap's frame count are not times of a take and stay as they are.
+
+- ⬜ **A long list's spectrogram does not follow an edit, and a zoom
+  distorts it until it settles** *(found 2026-10-25 by the user, editing a
+  stereo take of five minutes in the audio editor's spectrogram view, after
+  the file's columns were kept by the answerer)*. On a short take the
+  edited spectrogram is there within a frame or two; on a long one, after
+  a cut, the part of the take past about two minutes and a half is drawn
+  as one column stretched to the end, every bin a horizontal line, and it
+  stays so. Zooming in or out draws the picture distorted (columns of the
+  previous level stretched over the new axis) until the new columns land.
+  Both are the view's columns arriving late or not at all over a long span:
+  an answer reads at most a few blocks it does not hold and answers the
+  columns it could, and the view, which keeps the picture it had until the
+  span is covered, draws what it holds stretched over what it shows. What
+  to settle: what a view draws over the columns it does not hold yet (the
+  old ones moved by the edit, nothing, or the coarser level), and why the
+  rest of a long span is never asked again after an edit. The user decided
+  to take it with the side panel for processes (`crates/clausters-apps/PLAN.md`,
+  "A process edited in a panel of its own"), as the next pass over the
+  spectrogram. Test it on a take of minutes, not seconds.
