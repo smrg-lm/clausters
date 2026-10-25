@@ -94,13 +94,22 @@ pub enum Pass {
 /// at the end of the selection or of the take and goes back to the position
 /// cursor -- where a selection's play started, when there is no cursor apart
 /// from it.
+///
+/// **A position cursor at the take's end plays the take from its start**, as
+/// audio editors do: from there nothing is left to hear, and a play that
+/// sounds nothing and says nothing reads as broken. The pass still goes back
+/// to the cursor, where the hand put it.
 pub fn space(
     looping: bool,
     selection: Option<(u64, u64)>,
     cursor: Option<u64>,
     frames: u64,
 ) -> (u64, Pass) {
-    let start = selection.map_or(cursor.unwrap_or(0), |(from, _)| from);
+    let start = match (selection, cursor) {
+        (Some((from, _)), _) => from,
+        (None, Some(at)) if at < frames => at,
+        _ => 0,
+    };
     let pass = if looping {
         let (from, to) = selection.unwrap_or((0, frames));
         Pass::Loop { from, to }
@@ -1208,6 +1217,31 @@ mod tests {
         assert_eq!(
             space(true, Some((20, 40)), Some(5), 100),
             (20, Pass::Loop { from: 20, to: 40 })
+        );
+    }
+
+    /// **A cursor at the end plays from the start**, and the pass goes back
+    /// to it: nothing is left to hear from there.
+    #[test]
+    fn a_cursor_at_the_end_plays_from_the_start() {
+        assert_eq!(
+            space(false, None, Some(100), 100),
+            (
+                0,
+                Pass::Until {
+                    end: 100,
+                    back: 100
+                }
+            )
+        );
+        assert_eq!(
+            space(true, None, Some(100), 100),
+            (0, Pass::Loop { from: 0, to: 100 })
+        );
+        assert_eq!(
+            space(false, None, Some(99), 100),
+            (99, Pass::Until { end: 100, back: 99 }),
+            "a frame left is played"
         );
     }
 

@@ -233,8 +233,10 @@ code that keeps it lives.
   stands where the edit landed.
 - **The ends are before the first frame and past the last.** Going to the
   start puts the cursor before the first frame, which plays too; going to the
-  end puts it past the last, where the take has played out: a play from there
-  stops at once unless it loops, and a paste there goes after all of it.
+  end puts it past the last, where the take has played out, and a paste there
+  goes after all of it. A play from there, with nothing selected, plays the
+  take from its start, as audio editors do, and goes back to the cursor at
+  the end (`clausters_editing::audio_playback::space`).
 - **The cursor moves the music.** A click placing the position cursor, or a
   selection let go (whose start the cursor goes to), moves the play cursor
   there too: a stopped transport stands on it, and a file playing goes on
