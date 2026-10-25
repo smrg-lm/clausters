@@ -1,14 +1,14 @@
-//! **The audio editor's engine, held by its application**: what the
-//! coordinator asks of an engine in its own process
+//! **The engine's take readers, held by its application**: what an
+//! application's members ask of an engine in its own process
 //! ([`clausters_apps::editing::held::HeldEngine`]), answered over an
 //! [`AppEngine`] with the take reader of [`crate::take`].
 //!
-//! Each file the editor sounds has a [`TakeFeed`]: a fed stream per channel
-//! and the thread that reads the file's list into them. A file's list handed
-//! over again (an edit, an undo) is put in place in its feed, and the readers
-//! fade into it from where they are; a list of another length puts the
-//! buffers in the pool again at that length, over the same streams, so the
-//! readers keep their rings.
+//! Each reader a member sounds (an audio editor's file) has a [`TakeFeed`]:
+//! a fed stream per channel and the thread that reads its list into them. A
+//! list handed over again (an edit, an undo) is put in place in its feed,
+//! and the readers fade into it from where they are; a list of another
+//! length puts the buffers in the pool again at that length, over the same
+//! streams, so the readers keep their rings.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -20,7 +20,7 @@ use clausters_editing::apply::Medium;
 use crate::take::{Counts, Headers, ReadList, TakeFeed};
 use crate::{AppEngine, EngineMedium};
 
-/// One file's reading: its feed, the buffers its readers play, and the list
+/// One reader's reading: its feed, the buffers its readers play, and the list
 /// it reads.
 struct Reading {
     feed: TakeFeed,
@@ -29,8 +29,8 @@ struct Reading {
     frames: u64,
 }
 
-/// **An audio editor's engine, in its application's process.**
-pub struct HeldAudio {
+/// **The take readers of an engine, in its application's process.**
+pub struct Readers {
     engine: Arc<Mutex<AppEngine>>,
     headers: Headers,
     readings: HashMap<u64, Reading>,
@@ -39,18 +39,18 @@ pub struct HeldAudio {
     counts: Arc<Counts>,
 }
 
-impl std::fmt::Debug for HeldAudio {
+impl std::fmt::Debug for Readers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HeldAudio")
+        f.debug_struct("Readers")
             .field("files", &self.readings.len())
             .finish()
     }
 }
 
-impl HeldAudio {
-    /// The audio editor's engine over `engine`, reading nothing yet.
-    pub fn new(engine: Arc<Mutex<AppEngine>>) -> HeldAudio {
-        HeldAudio {
+impl Readers {
+    /// The readers over `engine`, reading nothing yet.
+    pub fn new(engine: Arc<Mutex<AppEngine>>) -> Readers {
+        Readers {
             engine,
             headers: Headers::default(),
             readings: HashMap::new(),
@@ -81,7 +81,7 @@ impl HeldAudio {
     }
 }
 
-impl HeldEngine for HeldAudio {
+impl HeldEngine for Readers {
     fn medium(&mut self) -> Box<dyn Medium + Send> {
         Box::new(EngineMedium::new(Arc::clone(&self.engine)))
     }
@@ -92,23 +92,23 @@ impl HeldEngine for HeldAudio {
 
     fn take(&mut self, take: &HeldTake, ids: &mut IdSpaces) -> Result<Vec<i32>, String> {
         let channels = take.channels.max(1) as usize;
-        // A file of another width is read anew.
+        // A take of another width is read anew.
         if self
             .readings
-            .get(&take.file)
+            .get(&take.reader)
             .is_some_and(|r| r.feed.channels() != channels)
-            && let Some(was) = self.readings.remove(&take.file)
+            && let Some(was) = self.readings.remove(&take.reader)
         {
             self.free(was, ids);
         }
         let list = ReadList::over(&take.list, take.rate, &mut self.headers, &self.counts)
-            .inspect_err(|e| tracing::warn!("the audio editor's take: {e}"))?;
+            .inspect_err(|e| tracing::warn!("a take the engine reads: {e}"))?;
         let frames = list.frames();
-        let new = !self.readings.contains_key(&take.file);
+        let new = !self.readings.contains_key(&take.reader);
         if new {
             let buffers = AppEngine::alloc_take(channels, ids).map_err(|e| e.to_string())?;
             self.readings.insert(
-                take.file,
+                take.reader,
                 Reading {
                     feed: TakeFeed::start(channels),
                     buffers,
@@ -118,7 +118,7 @@ impl HeldEngine for HeldAudio {
             );
         }
         let engine = Arc::clone(&self.engine);
-        let Some(reading) = self.readings.get_mut(&take.file) else {
+        let Some(reading) = self.readings.get_mut(&take.reader) else {
             return Err("the take is not read".into());
         };
         reading.feed.set(Arc::new(list));
@@ -131,12 +131,12 @@ impl HeldEngine for HeldAudio {
         Ok(reading.buffers.clone())
     }
 
-    fn revision(&self, file: u64) -> Option<u64> {
-        self.readings.get(&file).map(|r| r.revision)
+    fn revision(&self, reader: u64) -> Option<u64> {
+        self.readings.get(&reader).map(|r| r.revision)
     }
 
-    fn close(&mut self, file: u64, ids: &mut IdSpaces) {
-        if let Some(reading) = self.readings.remove(&file) {
+    fn close(&mut self, reader: u64, ids: &mut IdSpaces) {
+        if let Some(reading) = self.readings.remove(&reader) {
             self.free(reading, ids);
         }
     }

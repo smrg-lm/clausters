@@ -1050,9 +1050,11 @@ streams in the pool, and `AudioEditorPlayback::sync_streams` points each
 channel's reader at its own. No list, stitch or file is in the engine.
 **The audio editor's coordinator plays on it** (`held`): an editing context
 told `Editing::hold_engine` asks the engine it holds
-(`clausters_apps::editing::held::HeldEngine`, which `HeldAudio` answers) for
-its playback's medium, hands it each file's take as a `HeldTake` (its tree,
-by reference, the rate it is read at and the revision it is of) and plays
+(`clausters_apps::editing::held::HeldEngine`, which `held::Readers` answers) for
+its playback's medium, hands it each file's take as a `HeldTake` under the
+reader it names it by (the file's identity; a multitrack's track would be
+another reader), with its tree by reference, the rate it is read at and the
+revision it is of, and plays
 the buffers it answers, and asks it whether a transport rolls instead of awaiting a client.
 The editor stitches nothing then, and after each step of a run the files
 whose revision moved are handed over again. **A play waits for its cue**:
@@ -1060,10 +1062,12 @@ whose revision moved are handed over again. **A play waits for its cue**:
 with it or after it, until `pump` takes the cue's `Garbage::TransportCued`,
 as a client waits for the cue's `/done` before it rolls a server's
 transport; so the first frame a play sounds is the frame it starts on.
-**The runs are carried in the application** (`audio::AudioApp`): each
-action of the coordinator is driven to its end there, renders and moves
-included (`steps::carry`, the core's offline render in a thread of the
-application's, resumed by `AudioApp::landed` in whichever order they land),
+**The runs are carried in the application** (`app::App`): each action of
+a member is driven by the context (`Editing::start`, which hands an audio
+member's to its coordinator) and the application does what the context asks
+of it (`editing::Caller`), renders and moves included (`steps::carry`, the
+core's offline render in a thread of the application's, resumed by
+`App::landed` in whichever order they land),
 a file's header probed, a history step carried and a copy published through
 the context's clipboard exchange, and only the window's effects come back.
 **The GUI host owns the audio editor** (`host::audio_editor`, natively and
@@ -1560,7 +1564,7 @@ The host `Clip` continues to own the typed document, blobs and system-text mirro
 
 Every action of an audio member enters one place,
 `clausters_apps::editing::coordinator`, reached through
-`Editing::audio_act` (with the engine's id spaces): a
+`Editing::start` (with the engine's id spaces): a
 gesture or a menu entry (`event`), a script's edit (`act`) or member verb
 (`verb`), the transport (`play`, `pause`, `stop`, `locate`, `span`,
 `looping`, `playing`), opening and saving, the window closing. The
@@ -1569,7 +1573,7 @@ script and a hand share (the span, the loop switch, a script's pause), and
 decides the order of everything an action leads to through the context's
 doors (`member`, `event`, `act`, `operation`, `retainMember`, `dropRoot`), so
 the editor's rules stay in the editor. Its caller is the application that
-holds the editor's engine (`clausters_app_engine::audio::AudioApp`, on the
+holds the editor's engine (`clausters_app_engine::app::App`, on the
 GUI host's application thread); the coordinator plays only on that engine,
 whose readers read each file's list, and nothing is stitched on a server.
 
@@ -1579,9 +1583,9 @@ takes released) and stops on an **await** when what follows depends on something
 outside the context: steps carried out, a file's header read, the files on
 disk, a history step carried out, a clipboard document published. Its driver
 answers each in place through what the application does
-(`editing::Services`: the disk and steps carried out on its turn), and only
+(`editing::Caller`: the disk and steps carried out on its turn), and only
 a render is handed back (`Ran::render`), which the application runs on a
-thread of its own and lands with `Editing::audio_landed`. A failed await
+thread of its own and lands with `Editing::land`. A failed await
 unwinds the run through the cleanups and handlers it passed (a copy that
 never reached the clipboard tells the window why) and ends it for the caller
 to raise what failed. Runs stack, so an operation a history step starts

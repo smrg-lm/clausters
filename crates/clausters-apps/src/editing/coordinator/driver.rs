@@ -1,134 +1,64 @@
-//! **A run carried as far as it goes, in its caller's process**: every await
-//! answered in place through what the caller does ([`Services`]), and only a
-//! render handed back, since a render is the one thing that takes as long as
-//! a take is long.
+//! **An audio member's run carried as far as it goes, in its caller's
+//! process**: every await answered in place through what the caller does
+//! ([`Caller`]), and only a render handed back, since a render is the one
+//! thing that takes as long as a take is long.
 //!
 //! The coordinator's runs stop on an await whenever what follows depends on
 //! something outside the context: a file's header, the files on disk, steps
 //! carried out, a history step's operation, the clipboard. The application
 //! that holds the editor's engine answers all of them at once except a
 //! render, which it runs on a thread of its own; this is the loop that
-//! answers them, so the application only says how ([`Services`]) and runs
+//! answers them, so the application only says how ([`Caller`]) and runs
 //! the renders it is handed ([`Ran::render`]).
 
 use clausters_editing::apply::{Step, steps_from_json};
 
 use super::run::{Await, End, Failure};
 use super::*;
-
-/// **What the caller does for a run**, at once: the I/O and the threads are
-/// the caller's, never the coordinator's.
-pub trait Services {
-    /// The header of the sound file at `path`.
-    fn header(&mut self, path: &str) -> Result<Header, String>;
-    /// **The files at `paths`, as they are on disk**: each path to
-    /// `{"modified", "size"}` (milliseconds since the epoch, bytes), or
-    /// `null` for one that is not there.
-    fn stamps(&mut self, paths: &[String]) -> Value;
-    /// **Carries `steps` out** in order, renders included, on the caller's
-    /// turn: what a history step does, and a batch with no render.
-    fn carry(&mut self, steps: &[Step]) -> Result<(), String>;
-    /// Deletes `files`: renders nothing names any more.
-    fn delete(&mut self, files: &[String]);
-    /// Calls off member `member`'s renders under way, each before its next
-    /// step.
-    fn call_off(&mut self, member: MemberId);
-}
-
-/// A sound file's header, as [`Services::header`] reads it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Header {
-    /// Frames per channel.
-    pub frames: u64,
-    /// Channels.
-    pub channels: u32,
-    /// The rate it was written at.
-    pub rate: f64,
-    /// Its container (`wav`, `w64`, `rf64`, `flac`, ...).
-    pub codec: String,
-    /// Its sample format (`float`, `int24`, `int16`, ...), where it says.
-    pub sample_format: Option<String>,
-}
+use crate::editing::{Caller, Raised, Ran, Render};
 
 /// The containers a part of a list reads in place.
 const IN_PLACE: &[&str] = &["wav", "w64", "rf64"];
-
-/// **What an action raised**: its kind, as the coordinator names it
-/// (`value`, `command`, `runtime`), and why.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Raised {
-    /// `value` (a request the editor cannot take), `command` (an operation
-    /// refused) or `runtime` (a state the editor is not in any more).
-    pub kind: String,
-    /// Why.
-    pub message: String,
-}
-
-/// **A render a run waits on**, handed to the caller to run off its turn:
-/// the steps, and the run it resumes ([`Editing::audio_landed`]).
-#[derive(Debug)]
-pub struct Render {
-    /// The run it is for.
-    pub run: u64,
-    /// The steps, a render among them.
-    pub steps: Vec<Step>,
-}
-
-/// **An action carried as far as it goes**: the effects that are the
-/// window's, in order, and its end, or the render it waits on.
-#[derive(Debug, Default)]
-pub struct Ran {
-    /// The window's effects, each `{"kind", ...}`: `echo`, `set`, `publish`,
-    /// `band`, `looping`, `bind`, `layers`, `cursor`, `locate`, `changed`,
-    /// `closeWindow`, `closedWindow`; and `resync` (every widget drawn
-    /// again, after a history step) and `clipboard` (`document`, the
-    /// clipboard's).
-    pub effects: Vec<Value>,
-    /// Its result, or what it raised; `None` while it waits on a render.
-    pub end: Option<Result<Value, Raised>>,
-    /// The render it waits on, for the caller to run and land.
-    pub render: Option<Render>,
-}
 
 impl Editing {
     /// **Starts `action` on audio member `member`** and carries it as far as
     /// it goes: to its end, or to a render it hands back. `lease` says the
     /// action holds the clipboard lease its event was prepared with; `ids`
     /// are the engine's, which its playback is allocated from.
-    pub fn audio_act(
+    pub(crate) fn audio_act(
         &mut self,
         member: MemberId,
         action: &Value,
         lease: bool,
-        services: &mut dyn Services,
+        caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {
         let mut ran = Ran::default();
-        self.audio_start(member, action, lease, false, services, ids, &mut ran);
+        self.audio_start(member, action, lease, false, caller, ids, &mut ran);
         ran
     }
 
     /// **A render landed**: the run it was for resumed with how it went,
     /// and carried on as far as it goes.
-    pub fn audio_landed(
+    pub(crate) fn audio_landed(
         &mut self,
         member: MemberId,
         run: u64,
         result: Result<(), String>,
         lease: bool,
-        services: &mut dyn Services,
+        caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {
         let mut ran = Ran::default();
         let answer = resume(self, member, run, result.map(|()| json!({})), ids);
-        self.audio_drive(member, answer, lease, false, services, ids, &mut ran);
+        self.audio_drive(member, answer, lease, false, caller, ids, &mut ran);
         ran
     }
 
     /// **What a script reads of an audio member**: `transport` (its
     /// transport, span, loop switch and state) or `output` (its meter's
     /// levels and the samples played as silence).
-    pub fn audio_query(&mut self, member: MemberId, query: &str) -> Value {
+    pub(crate) fn audio_query(&mut self, member: MemberId, query: &str) -> Value {
         super::query(self, member, query)
     }
 
@@ -139,12 +69,12 @@ impl Editing {
         action: &Value,
         lease: bool,
         inline: bool,
-        services: &mut dyn Services,
+        caller: &mut dyn Caller,
         ids: &mut IdSpaces,
         ran: &mut Ran,
     ) {
         let answer = begin(self, member, action, ids);
-        self.audio_drive(member, answer, lease, inline, services, ids, ran);
+        self.audio_drive(member, answer, lease, inline, caller, ids, ran);
     }
 
     /// Carries a run on from `answer` until it ends or hands a render off.
@@ -156,7 +86,7 @@ impl Editing {
         mut answer: Result<Answer, String>,
         lease: bool,
         inline: bool,
-        services: &mut dyn Services,
+        caller: &mut dyn Caller,
         ids: &mut IdSpaces,
         ran: &mut Ran,
     ) {
@@ -172,7 +102,7 @@ impl Editing {
                 }
             };
             for effect in effects {
-                self.audio_effect(member, effect, lease, services, ran);
+                self.audio_effect(member, effect, lease, caller, ran);
             }
             let wait = match end {
                 End::Done(result) => {
@@ -193,12 +123,12 @@ impl Editing {
                         ran.render = Some(Render { run, steps });
                         return;
                     }
-                    services.carry(&steps).map(|()| json!({}))
+                    caller.carry(&steps).map(|()| json!({}))
                 }
-                Await::Shape(file) => shape(&file, services),
-                Await::Stat(paths) => Ok(json!({"stamps": services.stamps(&strings(&paths))})),
+                Await::Shape(file) => shape(&file, caller),
+                Await::Stat(paths) => Ok(json!({"stamps": caller.stamps(&strings(&paths))})),
                 Await::Stepped(stepped) => {
-                    Ok(self.audio_stepped(member, &stepped, services, ids, ran))
+                    Ok(self.audio_stepped(member, &stepped, caller, ids, ran))
                 }
                 Await::Clipboard { document, ready } => {
                     self.audio_clipboard(member, document, ready, ran)
@@ -215,7 +145,7 @@ impl Editing {
         member: MemberId,
         effect: Value,
         lease: bool,
-        services: &mut dyn Services,
+        caller: &mut dyn Caller,
         ran: &mut Ran,
     ) {
         match effect["kind"].as_str().unwrap_or_default() {
@@ -223,11 +153,11 @@ impl Editing {
             "version" => {}
             "release" => {
                 for freed in effect["freed"].as_array().into_iter().flatten() {
-                    services.delete(&strings(&freed["files"]));
+                    caller.delete(&strings(&freed["files"]));
                 }
             }
-            "delete" => services.delete(&strings(&effect["files"])),
-            "call_off" => services.call_off(member),
+            "delete" => caller.delete(&strings(&effect["files"])),
+            "call_off" => caller.call_off(member),
             "operationEcho" => ran.effects.push(json!({"kind": "echo",
                 "answer": effect["echo"]["answer"]})),
             "lease" => {
@@ -247,16 +177,16 @@ impl Editing {
         &mut self,
         member: MemberId,
         stepped: &Value,
-        services: &mut dyn Services,
+        caller: &mut dyn Caller,
         ids: &mut IdSpaces,
         ran: &mut Ran,
     ) -> Value {
         if stepped["stepped"] != true {
             return json!({"changed": false});
         }
-        self.audio_carry_step(member, stepped, services, ids, ran);
+        self.audio_carry_step(member, stepped, caller, ids, ran);
         for freed in stepped["freed"].as_array().into_iter().flatten() {
-            services.delete(&strings(&freed["files"]));
+            caller.delete(&strings(&freed["files"]));
         }
         ran.effects.push(json!({"kind": "resync"}));
         json!({"changed": true})
@@ -266,7 +196,7 @@ impl Editing {
         &mut self,
         member: MemberId,
         stepped: &Value,
-        services: &mut dyn Services,
+        caller: &mut dyn Caller,
         ids: &mut IdSpaces,
         ran: &mut Ran,
     ) {
@@ -278,13 +208,13 @@ impl Editing {
                 &json!({"verb": "operation", "prepared": operation}),
                 false,
                 true,
-                services,
+                caller,
                 ids,
                 &mut nested,
             );
             ran.effects.extend(nested.effects);
             if let Some(Ok(completed)) = nested.end {
-                self.audio_carry_step(at, &completed["stepped"], services, ids, ran);
+                self.audio_carry_step(at, &completed["stepped"], caller, ids, ran);
             }
             return;
         }
@@ -299,7 +229,7 @@ impl Editing {
                 &json!({"verb": "syncSound", "file": effect["file"]}),
                 false,
                 true,
-                services,
+                caller,
                 ids,
                 &mut nested,
             );
@@ -357,7 +287,7 @@ fn raised(failure: Failure) -> Raised {
 /// **A file asked for**, by the window or a script: its header read (a new
 /// file is the shape it is asked as), and refused where a part could not
 /// read it in place.
-fn shape(file: &Value, services: &mut dyn Services) -> Result<Value, String> {
+fn shape(file: &Value, caller: &mut dyn Caller) -> Result<Value, String> {
     if let Some(shape) = file.get("shape").filter(|s| !s.is_null()) {
         return Ok(
             json!({"frames": shape["frames"], "channels": shape["channels"],
@@ -366,7 +296,7 @@ fn shape(file: &Value, services: &mut dyn Services) -> Result<Value, String> {
         );
     }
     let path = file["path"].as_str().unwrap_or_default();
-    let info = services.header(path)?;
+    let info = caller.header(path)?;
     if !IN_PLACE.contains(&info.codec.as_str()) {
         return Err(format!(
             "{path} is a {} file, which the audio editor does not read in place",

@@ -354,12 +354,12 @@ fn the_application_reads_its_take_into_the_engine() {
 /// that holds the engine: a render it handed off is waited for, the engine
 /// processed meanwhile as its device would.
 fn act(
-    app: &mut clausters_app_engine::audio::AudioApp,
+    app: &mut clausters_app_engine::app::App,
     editing: &mut clausters_apps::editing::Editing,
     engine: &mut clausters::server::engine::Engine,
     member: u32,
     action: serde_json::Value,
-) -> clausters_app_engine::audio::Ran {
+) -> clausters_app_engine::app::Ran {
     let mut ran = app.act(editing, member, action, 7, false);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     let mut effects = std::mem::take(&mut ran.effects);
@@ -387,7 +387,7 @@ fn act(
 
 /// The editing context's version, which an event is made against.
 fn version(
-    app: &mut clausters_app_engine::audio::AudioApp,
+    app: &mut clausters_app_engine::app::App,
     editing: &mut clausters_apps::editing::Editing,
 ) -> serde_json::Value {
     app.call(editing, &serde_json::json!({"verb": "state"}))["version"].clone()
@@ -401,7 +401,7 @@ fn version(
 /// them.
 #[test]
 fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
-    use clausters_app_engine::audio::AudioApp;
+    use clausters_app_engine::app::App;
     use clausters_apps::editing::Editing;
     use serde_json::json;
 
@@ -409,14 +409,14 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
     let workspace = std::env::temp_dir().join(format!("app-engine-ws-{}", std::process::id()));
     std::fs::create_dir_all(&workspace).unwrap();
     let (mut engine, handle) = engine_pair(SR as f32, 2);
-    let mut app = AudioApp::new(Arc::new(Mutex::new(AppEngine::over(handle))));
+    let mut app = App::new(Arc::new(Mutex::new(AppEngine::over(handle))));
     let mut editing = Editing::new();
     app.hold(&mut editing);
     let opened = app.call(
         &mut editing,
         &json!({"verb": "openAudio", "key": "take", "path": path,
             "workspace": workspace.to_string_lossy(), "frames": FRAMES,
-            "channels": 1, "rate": SR, "display": 0}),
+            "channels": 1, "rate": SR}),
     );
     let member = opened["member"].as_u64().expect("an audio member") as u32;
     for call in [
@@ -433,7 +433,7 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
         &mut editing,
         &mut engine,
         member,
-        json!({"verb": "open", "chunk": 1, "rate": SR, "empty": false}),
+        json!({"verb": "open", "empty": false}),
     );
     let result = opened.end.unwrap().unwrap();
     assert!(result["transport"].is_i64(), "{result}");
@@ -460,10 +460,7 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
     }
     // what it plays, as a script asks: its meter reads the take, and no
     // frame was missing
-    let output = app.call(
-        &mut editing,
-        &json!({"verb": "audio", "member": member, "query": "output"}),
-    );
+    let output = app.query(&mut editing, member, "output");
     assert!(output["levels"][0].as_f64().unwrap() > 0.2, "{output}");
     assert_eq!(output["starved"], 0, "{output}");
     // A cursor placed while it plays moves the music there.
@@ -477,10 +474,7 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
             "args": [12, 9, v, "locate", 18_000.0]}),
     );
     let reading = app_engine.lock().unwrap().reading();
-    let transport = app.call(
-        &mut editing,
-        &json!({"verb": "audio", "member": member, "query": "transport"}),
-    )["transport"]
+    let transport = app.query(&mut editing, member, "transport")["transport"]
         .as_u64()
         .unwrap() as usize;
     blocks(&mut engine, &app_engine, 1);

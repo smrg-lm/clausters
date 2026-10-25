@@ -3432,10 +3432,20 @@ over the opened file) carries over.
     (`editing/coordinator/`: its actions, its runs, a task carried out, an
     outcome carried out, and its tests), and the editor's gestures and
     edits, door and actions (`audio/editor/`), each a module of its own.
-  - ⬜ **The seam the multitrack plugs into**: the engine reads a take per
+  - ✅ **The seam the multitrack plugs into**: the engine reads a take per
     reader rather than per audio file, and the driver of an application's
     runs and its thread in the host are written over an application, not
-    over the audio editor.
+    over the audio editor. *Done 2026-10-25:* a `HeldTake` names its
+    `reader` (an audio editor's file; a multitrack's track is another), the
+    engine's readers are `app_engine::held::Readers`, and the application
+    that holds the engine is `app_engine::app::App`, driving any member
+    through the context's `Editing::start`, `land` and `query`, which hand
+    an audio member's actions to its coordinator and answer a member with
+    none that it runs none; what a member asks of its caller is
+    `editing::Caller`. The host's application thread keeps its audio shape
+    (its window's open reads a sound file's header, its bind names the
+    audio window's widgets): the multitrack's window is what tells how the
+    two differ, so the thread is widened with it, in this milestone.
 
 ## Definition of done (per milestone)
 

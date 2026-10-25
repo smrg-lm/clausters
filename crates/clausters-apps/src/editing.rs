@@ -51,12 +51,13 @@ use crate::score::editor::{self as score, ScoreEditor};
 use crate::turn::{Event, Kind, Record, int};
 
 mod audio_operations;
+mod caller;
 mod coordinator;
 mod door;
 mod exchange;
 pub mod held;
 
-pub use coordinator::{Header, Raised, Ran, Render, Services};
+pub use caller::{Caller, Header, Raised, Ran, Render};
 pub use door::call_json;
 
 /// The version an unedited context is at. One rather than zero, because zero is

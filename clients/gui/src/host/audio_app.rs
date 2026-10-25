@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clausters_app_engine::AppEngine;
-use clausters_app_engine::audio::{AudioApp, Raised, Ran};
+use clausters_app_engine::app::{App as Application, Raised, Ran};
 use clausters_apps::editing::{Editing, MemberId};
 use serde_json::{Value, json};
 
@@ -148,7 +148,7 @@ struct Window {
 
 /// **The application on its thread**.
 struct App {
-    app: AudioApp,
+    app: Application,
     editing: Editing,
     windows: HashMap<i32, Window>,
     /// A door's actions waiting on a render, by the token they started with,
@@ -224,7 +224,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
     };
     let reading = engine.lock().unwrap_or_else(|e| e.into_inner()).reading();
     out.send(Vec::new(), FromApp::Engine(reading));
-    let app = AudioApp::new(engine);
+    let app = Application::new(engine);
     let mut editing = Editing::new();
     app.hold(&mut editing);
     let mut state = App {

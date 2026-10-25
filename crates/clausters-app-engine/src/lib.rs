@@ -22,7 +22,7 @@
 //! The engine knows no file, no segment and no peaks: what it is handed is
 //! nodes, buses, buffers and transport commands.
 
-pub mod audio;
+pub mod app;
 /// What an engine publishes, read without its handle ([`AppEngine::reading`]).
 pub use clausters::server::engine::EngineReading;
 /// The engine's processing half, and the frames it processes a block at a

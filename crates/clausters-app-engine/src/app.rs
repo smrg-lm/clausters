@@ -1,17 +1,17 @@
-//! **The audio editor, carried out by the application that holds its
-//! engine**: every action of the editor's coordinator run to its end in the
+//! **An editing application's members, carried out by the application that
+//! holds their engine**: every action of a member run to its end in the
 //! application's process.
 //!
-//! The coordinator (`Editing::audio_act`, in `clausters_apps::editing`)
-//! carries an action as far as it goes and asks its caller for what is the
-//! caller's ([`Services`]): a file's header, the files on disk, steps carried
-//! out, files deleted. [`AudioApp`] answers those here, over an engine the
-//! application holds, runs on threads of its own the renders a run waits on,
-//! and hands back only what is the window's (props to set, the window drawn
-//! again, an answer, the file bound), which the host draws.
+//! The editing context (`Editing::start`, in `clausters_apps::editing`)
+//! carries a member's action as far as it goes and asks its caller for what
+//! is the caller's ([`Caller`]): a file's header, the files on disk, steps
+//! carried out, files deleted. [`App`] answers those here, over an engine
+//! the application holds, runs on threads of its own the renders a run waits
+//! on, and hands back only what is the window's (props to set, the window
+//! drawn again, an answer, the file bound), which the host draws.
 //!
 //! **A render does not hold the application.** A run that waits on a render
-//! hands it to a thread of its own and stops; the next [`AudioApp::landed`]
+//! hands it to a thread of its own and stops; the next [`App::landed`]
 //! resumes it with how the render went, so a render of another file starts
 //! meanwhile and either lands first. A history step is carried to its end in
 //! place, renders included, since what it undoes is waited for by the step
@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
-use clausters_apps::editing::{Editing, Header, MemberId, Services, call_json};
+use clausters_apps::editing::{Caller, Editing, Header, MemberId, call_json};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_editing::apply::Step;
 use serde_json::{Value, json};
@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 pub use clausters_apps::editing::Raised;
 
 use crate::AppEngine;
-use crate::held::HeldAudio;
+use crate::held::Readers;
 
 /// **An action carried as far as it goes**: the effects that are the
 /// window's, in order, and its end -- `None` while it waits on a render.
@@ -68,30 +68,30 @@ enum Note {
     },
 }
 
-/// **The audio editor's application half**: the engine it holds, the ids
+/// **An editing application's half that holds its engine**: the engine, the ids
 /// its nodes, buses and buffers are numbered from, and the renders in
 /// flight.
-pub struct AudioApp {
+pub struct App {
     engine: Arc<Mutex<AppEngine>>,
     ids: IdSpaces,
     notes: (Sender<Note>, Receiver<Note>),
-    /// Each member's renders under way, which [`AudioApp::forget`] lets go.
+    /// Each member's renders under way, which [`App::forget`] lets go.
     live: HashMap<MemberId, Vec<Arc<AtomicBool>>>,
 }
 
-impl std::fmt::Debug for AudioApp {
+impl std::fmt::Debug for App {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AudioApp").finish_non_exhaustive()
+        f.debug_struct("App").finish_non_exhaustive()
     }
 }
 
-/// **What the application does for a run, at once** ([`Services`]): the
+/// **What the application does for a run, at once** ([`Caller`]): the
 /// disk, and the steps carried out on its turn.
 struct Here<'a> {
     live: &'a mut HashMap<MemberId, Vec<Arc<AtomicBool>>>,
 }
 
-impl Services for Here<'_> {
+impl Caller for Here<'_> {
     fn header(&mut self, path: &str) -> Result<Header, String> {
         let info = clausters::server::nrt::probe_audio(path)?;
         Ok(Header {
@@ -135,10 +135,10 @@ impl Services for Here<'_> {
     }
 }
 
-impl AudioApp {
+impl App {
     /// The application half over `engine`.
-    pub fn new(engine: Arc<Mutex<AppEngine>>) -> AudioApp {
-        AudioApp {
+    pub fn new(engine: Arc<Mutex<AppEngine>>) -> App {
+        App {
             engine,
             ids: IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE),
             notes: channel(),
@@ -165,10 +165,10 @@ impl AudioApp {
         &self.engine
     }
 
-    /// **Has `editing` play its audio members on this engine**; called once,
+    /// **Has `editing` play its members on this engine**; called once,
     /// before the first opens.
     pub fn hold(&self, editing: &mut Editing) {
-        editing.hold_engine(Box::new(HeldAudio::new(Arc::clone(&self.engine))));
+        editing.hold_engine(Box::new(Readers::new(Arc::clone(&self.engine))));
     }
 
     /// One verb of the context's door.
@@ -176,13 +176,12 @@ impl AudioApp {
         serde_json::from_str(&call_json(editing, &request.to_string())).unwrap_or(Value::Null)
     }
 
-    /// **What a script reads of audio member `member`**: `transport` or
-    /// `output` (`Editing::audio_query`).
+    /// **What a script reads of member `member`** (`Editing::query`).
     pub fn query(&mut self, editing: &mut Editing, member: MemberId, query: &str) -> Value {
-        editing.audio_query(member, query)
+        editing.query(member, query)
     }
 
-    /// **Starts `action` on audio member `member`** and carries it as far as
+    /// **Starts `action` on member `member`** and carries it as far as
     /// it goes; `token` comes back with its end. `lease` says the action
     /// holds the clipboard lease its event was prepared with.
     pub fn act(
@@ -193,7 +192,7 @@ impl AudioApp {
         token: u64,
         lease: bool,
     ) -> Ran {
-        let ran = editing.audio_act(
+        let ran = editing.start(
             member,
             &action,
             lease,
@@ -232,7 +231,7 @@ impl AudioApp {
                     result,
                     lease,
                 } => {
-                    let ran = editing.audio_landed(
+                    let ran = editing.land(
                         member,
                         run,
                         result,

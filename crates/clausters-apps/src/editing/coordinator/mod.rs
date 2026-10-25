@@ -4,7 +4,7 @@
 //! out.
 //!
 //! The caller is the application that holds the editor's engine
-//! (`clausters_app_engine::audio::AudioApp`, on the GUI host's application
+//! (`clausters_app_engine::app::App`, on the GUI host's application
 //! thread, natively and in a page). The clients are the editor's handler and
 //! carry nothing out: their verbs reach the application through the host's
 //! door, and it runs them here. Which playback verb follows a focus change,
@@ -80,7 +80,6 @@ mod step;
 #[cfg(test)]
 mod tests;
 
-pub use driver::{Header, Raised, Ran, Render, Services};
 use run::{Answer, Run, Task};
 
 /// Why a verb that acts on a file is refused by an editor with none open.
@@ -145,10 +144,10 @@ fn retake(
         // A list the engine cannot read is the engine's to say (it plays the
         // parts it can); the readers keep the length they had.
         if let Ok(buffers) = engine.take(&take, ids) {
-            let frames = take_frames(editing, member, take.file);
-            let take_rate = take_rate(editing, member, take.file);
+            let frames = take_frames(editing, member, take.reader);
+            let take_rate = take_rate(editing, member, take.reader);
             // the readers' span set again, or made again at another width
-            let _ = playback.sync_streams(take.file, buffers, frames, take_rate, rate, ids);
+            let _ = playback.sync_streams(take.reader, buffers, frames, take_rate, rate, ids);
         }
     }
 }

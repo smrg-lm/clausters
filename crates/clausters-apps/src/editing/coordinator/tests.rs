@@ -4,6 +4,7 @@
 use super::super::call_json;
 use super::super::held::{HeldEngine, HeldTake};
 use super::*;
+use crate::editing::{Caller, Header, Ran};
 use clausters_core::ids::{IdShare, ServerShape, Space};
 use clausters_editing::apply::{Applier, Endpoint};
 use std::collections::HashMap;
@@ -37,7 +38,7 @@ impl HeldEngine for Engine {
             .lock()
             .unwrap()
             .revisions
-            .insert(take.file, take.revision);
+            .insert(take.reader, take.revision);
         (0..take.channels)
             .map(|_| {
                 ids.alloc(Space::Buffers, 1)
@@ -93,7 +94,7 @@ struct Disk<'a> {
     deleted: &'a mut Vec<String>,
 }
 
-impl Services for Disk<'_> {
+impl Caller for Disk<'_> {
     fn header(&mut self, _path: &str) -> Result<Header, String> {
         self.trace.push("await:shape".into());
         Ok(Header {
@@ -153,7 +154,7 @@ impl Client {
 
     fn query(&mut self, editing: &mut Editing, member: MemberId, query: &str) -> Value {
         self.hold(editing);
-        editing.audio_query(member, query)
+        editing.query(member, query)
     }
 
     /// Run one action to its end, its renders landed as they come.
@@ -167,7 +168,7 @@ impl Client {
     /// written down.
     fn begin(&mut self, editing: &mut Editing, member: MemberId, action: Value) -> Value {
         self.hold(editing);
-        let ran = editing.audio_act(
+        let ran = editing.start(
             member,
             &action,
             action["lease"] == true,
@@ -196,7 +197,7 @@ impl Client {
             Some(reason) => Err(reason.to_string()),
             None => Ok(()),
         };
-        let ran = editing.audio_landed(
+        let ran = editing.land(
             member,
             pending["run"].as_u64().unwrap_or(0),
             result,

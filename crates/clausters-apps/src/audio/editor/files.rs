@@ -686,7 +686,7 @@ impl AudioFileState {
             self.rate,
         );
         crate::editing::held::HeldTake {
-            file: self.id.0 as u64,
+            reader: self.id.0 as u64,
             revision: self.revision,
             list,
             channels: self.channels,

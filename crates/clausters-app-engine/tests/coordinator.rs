@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use clausters_app_engine::AppEngine;
-use clausters_app_engine::audio::{AudioApp, Ran};
+use clausters_app_engine::app::{App, Ran};
 use clausters_apps::editing::{Editing, MemberId};
 use serde_json::{Value, json};
 
@@ -34,7 +34,7 @@ fn ramp(i: usize) -> f32 {
 /// thread holds them, with what the host would keep: the clipboard's
 /// document.
 struct Client {
-    app: AudioApp,
+    app: App,
     editing: Editing,
     /// The file the take is opened from, and the editor's working folder.
     take: String,
@@ -54,7 +54,7 @@ impl Client {
         let work = directory.join("work");
         std::fs::create_dir(&work).unwrap();
         let (engine, _processed) = AppEngine::detached(SR as f32, 2);
-        let app = AudioApp::new(Arc::new(Mutex::new(engine)));
+        let app = App::new(Arc::new(Mutex::new(engine)));
         let mut editing = Editing::new();
         app.hold(&mut editing);
         Client {
