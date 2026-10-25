@@ -444,24 +444,13 @@ class Editing:
 
     def carry(self, stepped: dict) -> None:
         """**Carry a step's effects out** on the structures they name: a multitrack
-        written back, a take's writes projected, an audio editor's join
-        stitched again, a curve's points written back, an external member's
-        payloads applied -- and then the
-        takes the step let go of freed."""
+        written back, a curve's points written back, an external member's
+        payloads applied -- and then the sources the step let go of freed."""
         with self.applying():
             self._carry(stepped)
         self.release(stepped.get("freed"))
 
     def _carry(self, stepped: dict) -> None:
-        if stepped.get("operation") is not None:
-            prepared = stepped["operation"]
-            member = int(prepared["member"])
-            structure, handler = self._handlers.get(member, (None, None))
-            if handler is None or not hasattr(handler, "execute_operation"):
-                raise RuntimeError("the history operation has no executor")
-            completed = handler.execute_operation(structure, prepared)
-            self._carry(completed.get("stepped") or {})
-            return
         for effect in stepped.get("effects") or ():
             structure, handler = self._handlers.get(int(effect.get("member", -1)),
                                                     (None, None))
@@ -470,11 +459,6 @@ class Editing:
             if effect.get("kind") == "multitrack":
                 handler.stepped(structure, effect.get("applied") or {})
                 continue
-            if effect.get("kind") == "audio":
-                handler.run(structure, effect.get("steps") or [])
-                if effect.get("file") is not None and hasattr(handler, "sound_file"):
-                    handler.sound_file(structure, effect["file"])
-                continue
             if effect.get("kind") == "points":
                 handler.write(structure, effect.get("points") or [])
                 continue
@@ -482,43 +466,18 @@ class Editing:
                 if isinstance(payload, dict):
                     handler.project(structure, payload)
 
-    def _operation_returned(self, returned):
-        if returned is None:
-            return
-        structure, handler = self._handlers.get(int(returned["member"]), (None, None))
-        if handler is not None and hasattr(handler, "operation_returned"):
-            handler.operation_returned(structure, returned["server"], returned.get("buffers") or [])
-
-    def _operation_echo(self, echo):
-        if echo is None:
-            return
-        structure, handler = self._handlers.get(int(echo["member"]), (None, None))
-        if handler is not None and hasattr(handler, "operation_echo"):
-            handler.operation_echo(structure, echo["answer"])
-
-    def _run_batch(self, member, server, steps):
-        structure, handler = self._handlers.get(int(member), (None, None))
-        if handler is None or not hasattr(handler, "execute_batch"):
-            raise RuntimeError("the operation has no endpoint executor")
-        handler.execute_batch(structure, server, steps)
-
     def release(self, freed) -> None:
         """**Free what nothing reaches any more** -- what a turn or a step
         hands back as ``freed``, each under the member that made it, whose
-        server it is on: an audio editor's buffers and the renders it wrote, a
-        multitrack's joins by source id. Called after the turn's own steps are
-        carried out, so no join is still reading them."""
+        server it is on: a multitrack's joins by source id. Called after the
+        turn's own steps are carried out, so no join is still reading them."""
         for entry in freed or ():
             structure, handler = self._handlers.get(int(entry.get("member", -1)),
                                                     (None, None))
             if handler is None:
                 continue
-            if entry.get("buffers") and hasattr(handler, "free"):
-                handler.free(structure, entry.get("buffers") or [])
             if entry.get("sources") and hasattr(handler, "free_sources"):
                 handler.free_sources(structure, entry["sources"])
-            if entry.get("files") and hasattr(handler, "delete_files"):
-                handler.delete_files(structure, entry["files"])
 
     def state(self, member: "int | None" = None) -> dict:
         """What an undo menu reads of the order `step` walks for ``member``:

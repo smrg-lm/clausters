@@ -76,7 +76,7 @@ pub use time::*;
 /// The C ABI version of this surface. Bump on any incompatible change; what
 /// each version changed is recorded in `docs/bindings.md` ("What each core
 /// ABI version changed").
-pub const CORE_ABI_VERSION: u32 = 94;
+pub const CORE_ABI_VERSION: u32 = 95;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

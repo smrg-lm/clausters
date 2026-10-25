@@ -508,7 +508,6 @@ host composed a third, so one editor looked three ways.
 | `clausters_apps_editing_new` | `JsEditing.new` | `idiom` — **an editing context**: one undo order over every editor opened in it. No application holds a history of its own; one opened alone is a context of one. It carries no transport bound: a step hands a take's writes back as payloads, and the member turns them into steps with the bound of the server the take is on |
 | `clausters_apps_editing_free` | `n/a` | wasm frees by `Drop`; freeing a context frees the editors opened in it |
 | `clausters_apps_editing_call` | `JsEditing.call` | `idiom` — **one verb of the context**, as JSON: open a multitrack or an audio editor under a key and answer its member and structure (a second member with the same key is the same structure, and a client names that structure's widgets by it), take in an `external` structure the crate does not apply, read and record a member's `event`, `step` the history, `record` an external member's entry, limit the `bytes` of takes only the history holds, reach a `member`'s own verbs, and read the `state`. A turn and a step answer the takes nothing reaches any more as `freed`, under the member whose server they are on. **C runs a verb once** across its sizing and filling calls, keeping the answer between them, because a history is not copied for a sizing pass the way an editor is; wasm returns the string |
-| `clausters_apps_editing_call_ids` | `JsEditing.call_ids` | `idiom` — **one verb with the server's id spaces**: the `audio` verb is an audio member's coordinator, which owns that member's playback and allocates its nodes, buses and transport from the client's id spaces; `do` starts a run of an action (a gesture, a verb, the transport, a save), `run` with `result` resumes it, `query` reads the transport, and each answer is the run's ordered effects and its await or its end. Every other verb is `call`'s. C runs a verb once across its sizing and filling calls, as `call` does; wasm returns the string |
 
 The context also exposes internal service verbs through that same JSON door: `resources` reads registered source metadata; `retain` replaces a consumer root; `retainMember` retains a member's current sources for playback or pending work; `dropRoot` ends that lease and returns release/storage effects; `invalidate` forgets one server incarnation without freeing its reused ids. `openAudio` accepts `server: {connection, generation}`. Resource ids are `{server: {connection, generation}, buffer}`; roots are `{kind, owner}`, with independent `contents`, `history`, `clipboard`, `playback` and `pending` kinds. Audio history effects include `file: {id, display, channels, frames, rate, preview}` so an adapter updates the edited object's playback even when another file is viewed. These extend the existing JSON payload; C and wasm still call the same Rust implementation.
 
@@ -1233,6 +1232,11 @@ moved into the GUI host, so `clausters_editing_audio_playback_new`, `_free`
 and `_call` (and the wasm `AudioEditorPlayback`) and
 `clausters_core_workspace_create`, `_path` and `_free` have no client to
 call them, and are removed. Breaking: six symbols gone.
+
+**v95 the context's door with id spaces goes.** No client runs the audio
+editor's coordinator any more: the GUI host's application drives it in its
+own process. `clausters_apps_editing_call_ids` (and the wasm `callIds`) had
+no caller, and are removed. Breaking: one symbol gone.
 
 
 ## The client surface: one capability, two shapes

@@ -165,7 +165,7 @@ fn a_copy_pasted_to_a_hundred_hours_costs_what_its_first_paste_did() {
     std::fs::create_dir_all(&work).unwrap();
     let mut editor = new_json(
         &json!({"path": path, "workspace": work.to_string_lossy(), "frames": FRAMES,
-                "channels": CHANNELS, "rate": SR, "display": 9})
+                "channels": CHANNELS, "rate": SR})
         .to_string(),
     )
     .unwrap();
@@ -247,13 +247,13 @@ fn a_copy_pasted_to_a_hundred_hours_costs_what_its_first_paste_did() {
     let mut steps: Vec<f64> = Vec::new();
     for leg in legs.iter().rev() {
         let started = Instant::now();
-        editor.apply(&leg["backward"]).expect("an undo");
+        assert!(editor.apply(&leg["backward"]), "an undo");
         steps.push(started.elapsed().as_secs_f64() * 1e3);
     }
     assert_eq!(editor.length() as usize, FRAMES, "all undone");
     for leg in &legs {
         let started = Instant::now();
-        editor.apply(&leg["forward"]["edit"]).expect("a redo");
+        assert!(editor.apply(&leg["forward"]["edit"]), "a redo");
         steps.push(started.elapsed().as_secs_f64() * 1e3);
     }
     assert_eq!(editor.length(), length, "all redone");

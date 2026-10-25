@@ -1,8 +1,8 @@
 //! **The window a take is drawn in**, and the measures its picture stacks --
 //! what the audio editor opens ([`crate::audio`]).
 //!
-//! A pane owns the time axis, with the take's signal body over the server
-//! buffer, measured as a stack -- what the signal reached (`peak`) with
+//! A pane owns the time axis, with the take's signal body over the files its
+//! list reads, measured as a stack -- what the signal reached (`peak`) with
 //! what it held inside that (`rms`) -- and edited with the catalogue's
 //! three-gesture plan (a drag selects, Alt draws, Ctrl grabs one sample). The
 //! picture is the catalogue's (`clausters_document::view::catalogue`); what is
@@ -45,19 +45,17 @@ pub fn measures<S: AsRef<str>>(stack: &[S]) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// What the header of a take is labelled: its name, or the buffer it is in when
-/// it has none.
-pub fn label(name: Option<&str>, buffer: i64) -> String {
+/// What the header of a take is labelled: its name, or `untitled` when it
+/// has none.
+pub fn label(name: Option<&str>) -> String {
     match name {
         Some(name) if !name.is_empty() => name.to_string(),
-        _ => format!("buffer {buffer}"),
+        _ => "untitled".into(),
     }
 }
 
 /// Everything a window over a take is composed from.
 pub struct Window<'a> {
-    /// The server buffer the take is in.
-    pub buffer: i64,
     /// Its interleaved channel count.
     pub channels: u32,
     /// The take's name, when it has one.
@@ -97,9 +95,8 @@ pub struct Window<'a> {
     /// where the take would be it says how to open one.
     pub empty: bool,
     /// **The take as a list of segments over files**, which the picture
-    /// draws from its files in place of `buffer`: an audio editor's take
-    /// lives on disk.
-    pub segments: Option<&'a Value>,
+    /// draws from its files: an audio editor's take lives on disk.
+    pub segments: &'a Value,
 }
 
 /// What a window with no file open says where the take would be.
@@ -132,12 +129,11 @@ pub fn window(w: &Window<'_>) -> Value {
         );
     }
     let mut picture = catalogue::waveform(&Waveform {
-        buffer: Some(w.buffer),
         channels: Some(w.channels.max(1)),
         measure: w.layers.to_wire(),
         ruler: "time".into(),
         sample_rate: w.rate,
-        label: label(w.name, w.buffer),
+        label: label(w.name),
         // The application decides whether this file reads the transport.
         // Rebuilding a view must not re-enable another file's play cursor.
         cursor: Some(0.0),
@@ -146,10 +142,7 @@ pub fn window(w: &Window<'_>) -> Value {
     });
     picture.insert("id".into(), json!(w.widget));
     picture.insert("weight".into(), json!(1.0));
-    if let Some(list) = w.segments {
-        picture.remove("buffer");
-        picture.insert("segments".into(), list.clone());
-    }
+    picture.insert("segments".into(), w.segments.clone());
     // A take drawn from a summary leaves the host no samples to copy: the
     // editor copies it, naming the takes the span is made of.
     picture.insert("copies".into(), json!("owner"));
@@ -162,7 +155,6 @@ pub fn window(w: &Window<'_>) -> Value {
     // at the bottom of the stack, and the take's lane carries none.
     let lane = w.lane.map(|id| {
         let mut lane = catalogue::waveform(&Waveform {
-            buffer: Some(w.buffer),
             channels: Some(w.channels.max(1)),
             measure: "spectrogram".into(),
             ruler: "time".into(),
@@ -171,10 +163,7 @@ pub fn window(w: &Window<'_>) -> Value {
         });
         lane.insert("id".into(), json!(id));
         lane.insert("weight".into(), json!(1.0));
-        if let Some(list) = w.segments {
-            lane.remove("buffer");
-            lane.insert("segments".into(), list.clone());
-        }
+        lane.insert("segments".into(), w.segments.clone());
         lane.insert("link".into(), json!(w.pane.unwrap_or(w.widget)));
         // A picture of the take, never a surface a hand edits samples on.
         lane.insert("editable".into(), json!(false));
@@ -312,7 +301,6 @@ mod tests {
     fn compose(name: Option<&str>) -> Value {
         let layers = Stack::checked(&json!(["peak", "rms"])).unwrap();
         window(&Window {
-            buffer: 3,
             channels: 2,
             name,
             layers: &layers,
@@ -329,7 +317,7 @@ mod tests {
             folded: &[],
             lane: None,
             empty: false,
-            segments: None,
+            segments: &json!({"shared": 1}),
         })
     }
 
@@ -356,7 +344,8 @@ mod tests {
         let take = &children[0];
         assert_eq!(take["type"], "signal");
         assert_eq!(take["id"], 9);
-        assert_eq!(take["buffer"], 3);
+        assert!(take.get("buffer").is_none(), "drawn from its files");
+        assert_eq!(take["segments"], json!({"shared": 1}));
         assert_eq!(take["channels"], 2);
         assert_eq!(take["measure"], "peak rms");
         assert_eq!(
@@ -379,11 +368,11 @@ mod tests {
         );
     }
 
-    /// A take with no name is shown under the buffer it is in.
+    /// A take with no name is shown as untitled.
     #[test]
-    fn a_nameless_take_is_labelled_by_its_buffer() {
-        assert_eq!(compose(None)["children"][0]["label"], "buffer 3");
-        assert_eq!(compose(Some(""))["children"][0]["label"], "buffer 3");
+    fn a_nameless_take_is_untitled() {
+        assert_eq!(compose(None)["children"][0]["label"], "untitled");
+        assert_eq!(compose(Some(""))["children"][0]["label"], "untitled");
     }
 
     /// **A correction is "read it again"**, whichever widget it names.

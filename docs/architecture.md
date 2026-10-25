@@ -1557,34 +1557,32 @@ The host `Clip` continues to own the typed document, blobs and system-text mirro
 
 Every action of an audio member enters one place,
 `clausters_apps::editing::audio_session`, reached through the context's
-`audio` verb (`call_json_ids`, which carries the server's id spaces): a
+`audio` verb (`call_json_ids`, which carries the engine's id spaces): a
 gesture or a menu entry (`event`), a script's edit (`act`) or member verb
 (`verb`), the transport (`play`, `pause`, `stop`, `locate`, `span`,
 `looping`, `playing`), opening and saving, the window closing. The
 coordinator owns the member's `AudioEditorPlayback` and the transport facts a
 script and a hand share (the span, the loop switch, a script's pause), and
-decides the order of everything an action leads to through the doors the
-clients used to call themselves (`member`, `event`, `act`, `operation`,
-`retainMember`, `dropRoot`), so the editor's rules stay in the editor.
+decides the order of everything an action leads to through the context's
+doors (`member`, `event`, `act`, `operation`, `retainMember`, `dropRoot`), so
+the editor's rules stay in the editor. Its caller is the application that
+holds the editor's engine (`clausters_app_engine::audio::AudioApp`, on the
+GUI host's application thread); the coordinator plays only on that engine,
+whose readers read each file's list, and nothing is stitched on a server.
 
 An action is a **run**. It answers its **effects** in order (an answer to
 the window, props on a widget, the window drawn again, a binding projected,
-takes released) and stops on an **await** when what follows depends on the
-client: steps carried out on the server, whether the transport rolls, a file
-read into buffers, an operation's batch, a history step carried out, a
-clipboard document published. The client performs both and resumes the run
+takes released) and stops on an **await** when what follows depends on its
+caller: steps carried out (a render on a thread of the application's own), a
+file's header read, an operation's batch, a history step carried out, a
+clipboard document published. The caller performs both and resumes the run
 with the await's result. A failed await unwinds the run through the cleanups
-and handlers it passed (a copy that never reached the clipboard frees its
-buffer and tells the window why) and ends it for the client to raise what
-failed. Runs stack, so an operation a release starts while a run waits is a
-run of its own.
+and handlers it passed (a copy that never reached the clipboard tells the
+window why) and ends it for the caller to raise what failed. Runs stack, so
+an operation a release starts while a run waits is a run of its own.
 
-What stays in a client is what only it can do: sockets and waiting, reading a
-`SoundFile`, allocating buffer numbers, and projecting a binding or the layers
-onto its language objects. Python performs a run synchronously; the web client
-performs the effects decided before a run's first await at once and the rest in
-its queued work, so an answer it owes at once (whether the take changed, why a
-verb refused) is read off the first answer.
+The clients are the editor's handler and run nothing of this: their verbs
+reach the application through the host's door (`/gui_app_call`).
 
 **One copy of each state.** Whether a file is dirty is the editor's reading
 (its content revision against the saved one), asked through the binding when a
@@ -1608,15 +1606,14 @@ moves past, and its next gesture is refused as stale. A script performs the
 walk inside the call, so the order is the same there by construction.
 
 **How the contract is checked.** The coordinator's tests drive it with a
-client that holds, fails and reorders awaits (an edit while a save's write is
-out, a refused write and its retry, two files' completions in the other order,
-a duplicate completion, a close while a write is out, a copy refused before the
-cut it serves); `tests/audio_coordinator.rs` plays a client of the coordinator
-against an offline server and reads the samples back after cut, paste, mix,
-undo, redo, a save read back from its WAV, a refused write and a history held
-on disk; and both clients replay one shared fault trace
-(`clients/web/tests/audio-trace-vectors.json`, `faults`) in which a server
-refuses and is slow, comparing what each step leaves. The paired example
+client that holds, fails and reorders awaits over an engine that plays
+nothing (an edit while a save's write is out, a refused write and its retry,
+two files' completions in the other order, a duplicate completion, a close
+while a write is out, a render refused before its edit lands);
+`crates/clausters-app-engine/tests/coordinator.rs` drives the application
+that holds the engine, its renders on its own threads, and reads the samples
+back after cut, paste, mix, undo, redo, a save read back from its WAV, a
+refused write and renders kept or let go by the history. The paired example
 `editors/audio_lifecycle` is the manual walk over the same contract.
 
 #### Activity: what an open application keeps doing

@@ -246,15 +246,6 @@ impl AudioApp {
                     }
                     carried(crate::steps::carry(&steps, |_, _, _| {}))
                 }
-                "rolling" => {
-                    let transport = wait["transport"].as_u64().unwrap_or(0) as usize;
-                    let rolling = self
-                        .engine
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .rolling(transport);
-                    json!({ "rolling": rolling })
-                }
                 "shape" => shape(&wait),
                 "stat" => stat(&wait),
                 "stepped" => self.stepped(editing, member, &wait["stepped"], ran),
@@ -340,9 +331,8 @@ impl AudioApp {
     /// handed to the window otherwise.
     fn effect(&mut self, editing: &mut Editing, effect: Value, lease: bool, ran: &mut Ran) {
         match effect["kind"].as_str().unwrap_or_default() {
-            // the context keeps its own version, and an engine the application
-            // holds has no buffers of a server's to free or give back
-            "version" | "free" | "returned" | "bufferFree" => {}
+            // the context keeps its own version
+            "version" => {}
             "release" => {
                 for freed in effect["freed"].as_array().into_iter().flatten() {
                     delete(&freed["files"]);
@@ -412,10 +402,6 @@ impl AudioApp {
                 continue;
             }
             let at = effect["member"].as_u64().unwrap_or(member as u64) as MemberId;
-            let steps = steps_from_json(&effect["steps"]);
-            if let Err(e) = crate::steps::carry(&steps, |_, _, _| {}) {
-                tracing::warn!("the audio editor's step: {e}");
-            }
             if !effect["file"].is_null() {
                 let answer = self.call(
                     editing,
@@ -490,19 +476,18 @@ fn carried(outcome: Result<(), String>) -> Value {
 const IN_PLACE: &[&str] = &["wav", "w64", "rf64"];
 
 /// **A file asked for**, by the window or a script: its header read (a new
-/// file is the shape it is asked as). There is no display buffer: the engine
-/// reads the list itself.
+/// file is the shape it is asked as).
 fn shape(wait: &Value) -> Value {
     if let Some(shape) = wait.get("shape").filter(|s| !s.is_null()) {
         return json!({"frames": shape["frames"], "channels": shape["channels"],
-            "rate": shape["rate"], "display": 0, "path": null, "untitled": true,
+            "rate": shape["rate"], "path": null, "untitled": true,
             "codec": null, "sample_format": null});
     }
     let path = wait["path"].as_str().unwrap_or_default();
     match clausters::server::nrt::probe_audio(path) {
         Ok(info) if IN_PLACE.contains(&info.codec.as_str()) => json!({
             "frames": info.frames, "channels": info.channels,
-            "rate": info.sample_rate, "display": 0, "path": path,
+            "rate": info.sample_rate, "path": path,
             "untitled": false, "codec": info.codec,
             "sample_format": info.sample_format,
         }),

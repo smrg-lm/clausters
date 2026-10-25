@@ -13,7 +13,7 @@ const GAIN_MAX: f64 = 1.0;
 
 impl AudioEditor {
     pub(super) fn pane_label(&self) -> String {
-        let take = crate::samples::label(self.take_name().as_deref(), self.file.display);
+        let take = crate::samples::label(self.take_name().as_deref());
         if self.file.presentation.edit_layer.starts_with("points") {
             format!("{take} -- gain 0..{GAIN_MAX}")
         } else {
@@ -286,7 +286,7 @@ impl AudioEditor {
             Ok(made) => made,
             Err(why) => return (Some(why), Vec::new()),
         };
-        let mut steps = vec![renders::gain(&list, &curve, &output)];
+        let steps = vec![renders::gain(&list, &curve, &output)];
         let before = self.file.contents.clone();
         let id = self.rendered(&output, frames, self.file.rate);
         self.file.contents.parts = self.tree_of(&[part(id, 0, frames)]);
@@ -294,7 +294,6 @@ impl AudioEditor {
             points::point(Second(0.0), 1.0, 1.0, 0.0),
             points::point(Second(frames as f64 / self.file.rate), 1.0, 1.0, 0.0),
         ];
-        steps.extend(self.stitched());
         out.record = Some(self.record("apply gain envelope", &before));
         out.planned_steps = steps.clone();
         out.steps = Some(steps_json(&steps));
@@ -314,8 +313,7 @@ mod tests {
 
     fn editor() -> AudioEditor {
         let mut e =
-            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":48000,"display":2}"#)
-                .unwrap();
+            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":48000}"#).unwrap();
         call_json(
             &mut e,
             r#"{"verb":"window","widget":10,"pane":11,"envelope":12}"#,

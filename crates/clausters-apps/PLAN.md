@@ -3403,11 +3403,16 @@ over the opened file) carries over.
   most of its awaits are answered at once by that same caller, and the path
   over a client's server the clients no longer take is still whole. The
   multitrack would copy all of it. The parts, in order:
-  - ⬜ **The path over a server goes**: the coordinator's endpoint medium,
+  - ✅ **The path over a server goes**: the coordinator's endpoint medium,
     the join and its stitch, the `display` buffer, an editor opened over a
     buffer or saving into one, the awaits only a server needed, the
     recoveries that free server buffers, and the context's door with id
-    spaces in both bindings, which no client calls.
+    spaces in both bindings, which no client calls (core ABI v95), with the
+    audio branches the clients' history kept. A block in a server's buffer
+    is refused by a paste, since the editor's engine does not reach that
+    server. The coordinator's tests run over an engine that plays nothing,
+    and the samples-level checks drive the application that holds the
+    engine (`crates/clausters-app-engine/tests/coordinator.rs`).
   - ⬜ **The coordinator is typed**: effects and awaits are Rust types, the
     context and the editor are called by their methods, and JSON is written
     only at a client's door and the C ABI; an await the application answers

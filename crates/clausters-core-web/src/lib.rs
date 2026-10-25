@@ -1799,14 +1799,6 @@ impl JsEditing {
         clausters_apps::editing::call_json(&mut self.0, request)
     }
 
-    /// One verb with the server's id spaces, as
-    /// `clausters_apps::editing::call_json_ids` documents: the `audio` verb
-    /// allocates an audio member's playback from `ids`.
-    #[wasm_bindgen(js_name = callIds)]
-    pub fn call_ids(&mut self, request: &str, ids: &mut JsIdSpaces) -> String {
-        clausters_apps::editing::call_json_ids(&mut self.0, request, &mut ids.0)
-    }
-
     /// Opens a notes editor over `sequence`, which it then edits in place --
     /// the C ABI's `clausters_apps_editing_open_notes`. `request` carries the
     /// `key` and what the editor is built from.

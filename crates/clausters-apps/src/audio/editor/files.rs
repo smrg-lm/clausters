@@ -25,7 +25,7 @@ impl AudioEditor {
         self.open_files.open
     }
 
-    /// The focused open object's stable identity, not its display buffer.
+    /// The focused open file's identity.
     pub fn focused_file(&self) -> i64 {
         self.file.id.0
     }
@@ -97,7 +97,7 @@ impl AudioEditor {
         if !self.open_files.open {
             return json!({"active": false});
         }
-        json!({"id":self.file.id, "display":self.file.display, "channels":self.file.channels,
+        json!({"id":self.file.id, "channels":self.file.channels,
             "frames":self.length(), "rate":self.file.rate, "active":self.window_state.active})
     }
 
@@ -108,7 +108,7 @@ impl AudioEditor {
         }
         let (start, end) = self.file.presentation.selection.unwrap_or((0, 0));
         json!({"id": self.file.id, "generation": self.window_state.binding_generation,
-            "display": self.file.display, "take": self.file.opened, "channels": self.file.channels,
+            "take": self.file.opened, "channels": self.file.channels,
             "rate": self.file.rate, "frames": self.length(), "cursor": self.file.presentation.cursor.unwrap_or(0),
             "span": if end > start { json!([start as f64 / self.file.rate, end as f64 / self.file.rate]) } else { Value::Null },
             "file": self.file(), "layers": self.layers(), "looping": self.file.presentation.looping, "dirty": self.file.dirty})
@@ -415,13 +415,7 @@ impl AudioEditor {
         }
         let values = match form {
             Form::New => dialogs::new_of(self.file.channels, self.file.rate),
-            Form::SaveAs => {
-                let path = match &self.file.target {
-                    Target::File(path) => path.clone(),
-                    Target::Buffer(_) => String::new(),
-                };
-                [("path".to_string(), path)].into()
-            }
+            Form::SaveAs => [("path".to_string(), self.file.target.clone())].into(),
             Form::Open => BTreeMap::new(),
         };
         (
@@ -514,7 +508,7 @@ impl AudioEditor {
                     if path.is_empty() {
                         Some("a file is saved under a path".into())
                     } else {
-                        match self.save_target(Some(Target::File(path)), "float") {
+                        match self.save_target(Some(path), "float") {
                             Ok(target) => {
                                 // the operation the request becomes writes here
                                 self.file.target = target;
@@ -556,8 +550,6 @@ impl AudioEditor {
 /// **What closing a file lets go of**: the steps that free the join it
 /// played through, that buffer, and the renders to delete.
 pub(crate) struct Closed {
-    pub steps: Value,
-    pub buffers: Vec<i64>,
     pub files: Vec<String>,
 }
 
@@ -577,10 +569,9 @@ mod tests {
 
     #[test]
     fn the_file_list_is_an_independent_hideable_widget_on_the_left() {
-        let mut editor = super::super::new_json(
-            r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000,"display":2}"#,
-        )
-        .unwrap();
+        let mut editor =
+            super::super::new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000}"#)
+                .unwrap();
         editor.window_state.bare = true;
         editor.window_state.files_widget = Some(20);
         let tree = editor.window(10, None);
@@ -596,10 +587,9 @@ mod tests {
     /// focus, and keeps the row in focus selected.
     #[test]
     fn the_list_marks_the_file_that_plays() {
-        let mut editor = super::super::new_json(
-            r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000,"display":2}"#,
-        )
-        .unwrap();
+        let mut editor =
+            super::super::new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000}"#)
+                .unwrap();
         editor.window_state.files_widget = Some(20);
         let answer: serde_json::Value = serde_json::from_str(&super::super::call_json(
             &mut editor,
@@ -620,21 +610,10 @@ mod tests {
 }
 
 impl AudioFileState {
-    /// **What closing this file lets go of**: the join the server plays,
-    /// freed, and the renders its list was made of, to delete -- the history
-    /// that could walk back to them goes with the file.
+    /// **What closing this file lets go of**: the renders its list was made
+    /// of, to delete -- the history that could walk back to them goes with
+    /// the file.
     fn closed(&self) -> Closed {
-        let display = self.display as i32;
-        let steps = steps_json(&[
-            send(
-                "/buffer_free",
-                vec![clausters_core::osc::OscType::Int(display)],
-            ),
-            clausters_editing::apply::Step::AwaitDone {
-                command: "/buffer_free".into(),
-                index: Some(display),
-            },
-        ]);
         // its renders, and the peaks the editor measured of a file it opened
         let files = self
             .sources
@@ -646,29 +625,25 @@ impl AudioFileState {
                 path.into_iter().chain(peaks)
             })
             .collect();
-        Closed {
-            steps,
-            buffers: vec![self.display],
-            files,
-        }
+        Closed { files }
     }
     pub(super) fn take_name(&self) -> Option<String> {
         if let Some(name) = self.name.as_ref().filter(|n| !n.is_empty()) {
             return Some(name.clone());
         }
-        match &self.target {
-            Target::File(path) if path.is_empty() => Some("untitled".into()),
-            Target::File(path) => std::path::Path::new(path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(str::to_string),
-            Target::Buffer(_) => None,
+        if self.target.is_empty() {
+            return Some("untitled".into());
         }
+        std::path::Path::new(&self.target)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
     }
     pub fn file(&self) -> Value {
-        let path = match &self.target {
-            Target::File(path) if !path.is_empty() => json!(path),
-            _ => Value::Null,
+        let path = if self.target.is_empty() {
+            Value::Null
+        } else {
+            json!(self.target)
         };
         json!({
             "path": path,
@@ -682,7 +657,7 @@ impl AudioFileState {
         })
     }
     pub fn untitled(&self) -> bool {
-        matches!(&self.target, Target::File(path) if path.is_empty())
+        self.target.is_empty()
     }
     fn held_take(&self, rate: f64) -> crate::editing::held::HeldTake {
         let rate = if rate > 0.0 { rate } else { self.rate };
@@ -704,7 +679,7 @@ impl AudioFileState {
         self.contents.parts.frames()
     }
     fn description(&self) -> Value {
-        json!({"id": self.id, "label": self.take_name().unwrap_or_else(|| format!("buffer {}", self.display)), "file": self.file()})
+        json!({"id": self.id, "label": crate::samples::label(self.take_name().as_deref()), "file": self.file()})
     }
     /// The files this one cannot let go of: the one it was opened from, and
     /// every file its list reads now.
@@ -730,8 +705,7 @@ mod ownership_tests {
     #[test]
     fn file_navigation_restores_the_observed_viewport_and_selection() {
         let mut editor =
-            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":10000,"display":9}"#)
-                .unwrap();
+            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":10000}"#).unwrap();
         editor.window(10, None);
         for (tag, values) in [
             ("view", vec![json!(1200), json!(2000)]),
@@ -750,10 +724,7 @@ mod ownership_tests {
             );
         }
         editor.add_file(
-            new_json(
-                r#"{"path":"/in/take50.wav","workspace":"/work","frames":20000,"display":51}"#,
-            )
-            .unwrap(),
+            new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":20000}"#).unwrap(),
         );
         let fresh = editor.focus_corrections();
         assert_eq!(
@@ -777,8 +748,7 @@ mod ownership_tests {
     #[test]
     fn focus_rebinds_file_state_without_copying_the_window_or_its_conversation() {
         let mut editor =
-            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100,"display":9}"#)
-                .unwrap();
+            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100}"#).unwrap();
         editor.window_state.files_widget = Some(40);
         editor.window_state.pane = Some(11);
         editor.window_state.lane = Some(13);
@@ -794,17 +764,16 @@ mod ownership_tests {
         editor.file.presentation.views = Views::Stacked;
         let contents = editor.file.contents.clone();
         let first = editor.focused_file();
-        editor.add_file(new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"channels":6,"display":51}"#).unwrap());
+        editor.add_file(
+            new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"channels":6}"#)
+                .unwrap(),
+        );
         let second = editor.focused_file();
         assert_ne!(first, second);
-        assert_ne!(second, editor.file.display);
         assert_eq!(editor.window_state.conversation.applied, 17);
         assert_eq!(editor.window_state.files_widget, Some(40));
         assert_eq!(editor.window_state.workspace.as_deref(), Some("/work"));
         assert_eq!(editor.window_state.binding_generation, 1);
-        // Changing a display binding does not change the open object's identity.
-        call(&mut editor, json!({"verb":"sync", "display":999}));
-        assert_eq!(editor.focused_file(), second);
         editor.focus_file(first).unwrap();
         assert_eq!(editor.file.contents, contents);
         assert_eq!(editor.file.presentation.cursor, Some(31));
@@ -818,7 +787,6 @@ mod ownership_tests {
             "redraw retains the binding"
         );
         editor.focus_file(second).unwrap();
-        assert_eq!(editor.file.display, 999);
         let third_generation = editor.window_state.binding_generation;
         editor.close_file(first).unwrap();
         assert_eq!(editor.window_state.binding_generation, third_generation);
@@ -837,16 +805,14 @@ mod ownership_tests {
                 .find_map(|child| anchor(child, widget))
         }
         let mut editor =
-            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100,"display":9}"#)
-                .unwrap();
+            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100}"#).unwrap();
         call(
             &mut editor,
             json!({"verb":"window", "widget":10, "pane":11, "lane":13}),
         );
         let first = editor.focused_file();
         editor.add_file(
-            new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"display":51}"#)
-                .unwrap(),
+            new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200}"#).unwrap(),
         );
         let second = editor.focused_file();
         call(&mut editor, json!({"verb":"playing", "file":first}));
@@ -869,8 +835,7 @@ mod ownership_tests {
     #[test]
     fn transport_projects_only_its_file_and_resizes_the_existing_meter() {
         let mut editor =
-            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100,"display":9}"#)
-                .unwrap();
+            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100}"#).unwrap();
         call(
             &mut editor,
             json!({"verb":"sync", "meters":{"bus":-1,"channels":1}}),
@@ -882,8 +847,7 @@ mod ownership_tests {
         editor.file.presentation.views = Views::Stacked;
         let first = editor.focused_file();
         editor.add_file(
-            new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"display":51}"#)
-                .unwrap(),
+            new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200}"#).unwrap(),
         );
         editor.file.presentation.views = Views::Stacked;
         let out = call(
@@ -922,8 +886,7 @@ mod ownership_tests {
     #[test]
     fn a_meter_the_window_does_not_draw_is_not_corrected() {
         let mut editor =
-            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100,"display":9}"#)
-                .unwrap();
+            new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100}"#).unwrap();
         // drawn before a playback said where its meter writes: no meter
         call(
             &mut editor,

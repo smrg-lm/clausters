@@ -92,13 +92,13 @@ fn ten_pastes(path: &str, frames: u64, span: u64, what: &str) -> f64 {
     let dir = scratch(&format!("{what}-work"));
     let mut editor = new_json(
         &json!({"path": path, "workspace": dir.to_string_lossy(), "frames": frames,
-                "channels": 2, "rate": SR, "display": 9})
+                "channels": 2, "rate": SR})
         .to_string(),
     )
     .unwrap();
     call_json(
         &mut editor,
-        &json!({"verb": "sync", "window": WINDOW, "rate": SR}).to_string(),
+        &json!({"verb": "sync", "window": WINDOW}).to_string(),
     );
     call_json(
         &mut editor,
@@ -115,7 +115,6 @@ fn ten_pastes(path: &str, frames: u64, span: u64, what: &str) -> f64 {
     let mut slowest: f64 = 0.0;
     let mut times = Vec::new();
     let mut legs = Vec::new();
-    let mut stitches = Vec::new();
     let mut timed = |ms: f64, times: &mut Vec<f64>| {
         times.push(ms);
         slowest = slowest.max(ms);
@@ -132,9 +131,8 @@ fn ten_pastes(path: &str, frames: u64, span: u64, what: &str) -> f64 {
         version = out["version"].as_i64().unwrap_or(version + 1);
         let (renders, sent) = kinds(&out["steps"]);
         assert_eq!(renders, 0, "{what}: a paste of a copy renders nothing");
-        assert_eq!(sent, ["/buffer_stitch"], "{what}: and sends one stitch");
+        assert!(sent.is_empty(), "{what}: and sends nothing: {sent:?}");
         legs.push(out["record"]["legs"][0].clone());
-        stitches.push(out["steps"].clone());
     }
     let length = |editor: &mut AudioEditor| {
         serde_json::from_str::<Value>(&call_json(editor, r#"{"verb":"parts"}"#)).unwrap()["frames"]
@@ -146,19 +144,18 @@ fn ten_pastes(path: &str, frames: u64, span: u64, what: &str) -> f64 {
         frames + 10 * span,
         "{what}: ten spans in"
     );
-    // undo the ten, and redo them: each a list, stitched
+    // undo the ten, and redo them: each a list put back, which renders
+    // nothing
     for leg in legs.iter().rev() {
         let started = Instant::now();
-        let steps = editor.apply(&leg["backward"]).expect("an undo");
+        assert!(editor.apply(&leg["backward"]), "{what}: an undo");
         timed(started.elapsed().as_secs_f64() * 1e3, &mut times);
-        assert_eq!(kinds(&steps).0, 0, "{what}: an undo renders nothing");
     }
     assert_eq!(length(&mut editor), frames, "{what}: undone");
     for leg in &legs {
         let started = Instant::now();
-        let steps = editor.apply(&leg["forward"]["edit"]).expect("a redo");
+        assert!(editor.apply(&leg["forward"]["edit"]), "{what}: a redo");
         timed(started.elapsed().as_secs_f64() * 1e3, &mut times);
-        assert_eq!(kinds(&steps).0, 0, "{what}: a redo renders nothing");
     }
     assert_eq!(length(&mut editor), frames + 10 * span, "{what}: redone");
     let grown = resident().saturating_sub(before);
@@ -175,67 +172,8 @@ fn ten_pastes(path: &str, frames: u64, span: u64, what: &str) -> f64 {
         grown < 16 << 20,
         "{what}: memory grew {grown} bytes over ten pastes"
     );
-    #[cfg(feature = "synth")]
-    server_holds_the_lists(&stitches, what);
     let _ = std::fs::remove_dir_all(&dir);
     slowest
-}
-
-/// **The server holds the ten lists and not their samples**: each paste's
-/// stitch, carried out on an offline server of this process, leaves its
-/// memory where it was.
-#[cfg(feature = "synth")]
-fn server_holds_the_lists(stitches: &[Value], what: &str) {
-    use clausters::server::nrtsession::{NrtSession, SessionConfig};
-    let mut server = NrtSession::open(&SessionConfig {
-        sample_rate: SR,
-        channels: 2,
-        ..Default::default()
-    })
-    .expect("open");
-    server.settle_for(4);
-    let before = resident();
-    let started = Instant::now();
-    for steps in stitches {
-        for step in steps_from_json(steps) {
-            if let Step::Send(m) = step {
-                assert!(server.send_msg(&m.addr, m.args).expect("encode"));
-            }
-        }
-        server.settle_for(8);
-    }
-    // every stitch answered, none refused
-    let (mut done, mut failed) = (0, Vec::new());
-    let mut bytes = vec![0u8; 1 << 16];
-    for _ in 0..200 {
-        while let Some(len) = server.poll_into(&mut bytes) {
-            if let Ok(rosc::OscPacket::Message(reply)) =
-                clausters::osc::decode_packet(&bytes[..len])
-            {
-                match reply.addr.as_str() {
-                    "/done" => done += 1,
-                    "/fail" => failed.push(format!("{:?}", reply.args)),
-                    _ => {}
-                }
-            }
-        }
-        if done == stitches.len() || !failed.is_empty() {
-            break;
-        }
-        server.settle_for(4);
-    }
-    assert!(failed.is_empty(), "{what}: {failed:?}");
-    assert_eq!(done, stitches.len(), "{what}: every stitch answered");
-    let ms = started.elapsed().as_secs_f64() * 1e3;
-    let grown = resident().saturating_sub(before);
-    println!(
-        "{what}: the server stitched the ten lists in {ms:.1} ms; its memory grew {} KB",
-        grown / 1024
-    );
-    assert!(
-        grown < 16 << 20,
-        "{what}: the server's memory grew {grown} bytes over ten stitches"
-    );
 }
 
 fn median(times: &mut [f64]) -> f64 {

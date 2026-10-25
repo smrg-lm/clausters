@@ -317,7 +317,7 @@ impl App {
         let workspace = clausters_core::workspace::Workspace::create("audio")
             .map_err(|e| format!("the working folder: {e}"))?;
         let mut request = json!({"verb": "openAudio", "key": key,
-            "workspace": workspace.path().to_string_lossy(), "title": title, "display": 0});
+            "workspace": workspace.path().to_string_lossy(), "title": title});
         match path {
             Some(path) => {
                 let info = clausters_app_engine::probe_audio(path)?;
@@ -369,12 +369,6 @@ impl App {
             json!({"verb": "sync", "window": def_id, "title": title}),
         );
         self.member_call(member, json!({"verb": "attach_view"}));
-        let rate = self
-            .app
-            .engine()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .sample_rate();
         let mut first = Ran {
             member,
             token: 0,
@@ -384,7 +378,7 @@ impl App {
         let ran = self.app.act(
             &mut self.editing,
             member,
-            json!({"verb": "open", "chunk": 1, "rate": rate, "empty": empty, "window": true}),
+            json!({"verb": "open", "empty": empty, "window": true}),
             0,
             false,
         );

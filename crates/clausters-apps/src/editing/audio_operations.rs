@@ -22,7 +22,6 @@ enum AudioCommand {
     Open,
     Save {
         path: Option<String>,
-        buffer: Option<i64>,
         #[serde(default = "float_format")]
         format: String,
     },
@@ -105,13 +104,11 @@ impl Editing {
             Ok(file) => file,
             Err(error) => return json!({"error":error}),
         };
-        let unused = file.unused_buffers();
         match self.prepare_audio(member, Command::AddFile(Box::new(file)), 0) {
             Ok(ticket) => json!({"turn":"route", "operation":self.audio_next(ticket)}),
             Err(error) => {
                 let freed = self.release();
-                json!({"error":error,"freed":freed,"returned":{
-                    "member":member,"server":self.seats[member as usize].server,"buffers":unused}})
+                json!({"error":error,"freed":freed})
             }
         }
     }
@@ -120,41 +117,7 @@ impl Editing {
         let Member::Audio(editor) = self.member(member)? else {
             return None;
         };
-        let mut command = editor.command_for(event)?;
-        if let Command::Paste { clipboard, .. } = &mut command {
-            let doc = clausters_document::clipboard::Clipboard::parse(
-                event
-                    .args
-                    .get(6)
-                    .and_then(Value::as_str)
-                    .unwrap_or_default(),
-            );
-            *clipboard = if let clausters_document::clipboard::Content::Buffer {
-                buffer,
-                frames,
-                channels,
-                ..
-            } = doc.content
-            {
-                let server = self.seats.get(member as usize)?.server;
-                let id = ResourceId {
-                    server,
-                    buffer: i64::from(buffer),
-                };
-                if self.services.resources.source(id).is_none() {
-                    self.services.resources.register(Source {
-                        id,
-                        member,
-                        bytes: frames.saturating_mul(u64::from(channels)).saturating_mul(4),
-                        owned: false,
-                    });
-                }
-                Some(id)
-            } else {
-                None
-            };
-        }
-        Some(command)
+        editor.command_for(event)
     }
 
     pub(super) fn prepare_audio_event(
@@ -319,10 +282,7 @@ impl Editing {
         };
         let destination = outcome.saved.clone().unwrap_or_else(|| {
             editor
-                .over_file(target.object, |editor| match editor.target() {
-                    audio::Target::File(path) => json!({"path":path}),
-                    audio::Target::Buffer(buffer) => json!({"buffer":buffer}),
-                })
+                .over_file(target.object, |editor| json!({"path": editor.target()}))
                 .unwrap_or(Value::Null)
         });
         if outcome.binding.is_some() {
@@ -376,11 +336,7 @@ impl Editing {
                             let file = editor
                                 .over_file(object, |editor| editor.playback_file())
                                 .unwrap();
-                            previews.push(Effect::Audio {
-                                member,
-                                steps: json!([]),
-                                file,
-                            });
+                            previews.push(Effect::Audio { member, file });
                             plans.push((member, plan));
                         }
                         _ => {
@@ -488,11 +444,6 @@ impl Editing {
                 ));
             }
         };
-        for effect in &mut stepped.effects {
-            if let Effect::Audio { steps, .. } = effect {
-                *steps = json!([]);
-            }
-        }
         let echo = self.audio_runtime.finish_walk(
             &mut self.services.resources,
             ticket,
@@ -524,14 +475,8 @@ impl Editing {
             OperationCall::Prepare { member, command } => {
                 let command = match command {
                     AudioCommand::Open => Command::Open,
-                    AudioCommand::Save {
-                        path,
-                        buffer,
-                        format,
-                    } => Command::Save {
-                        target: path
-                            .map(audio::Target::File)
-                            .or_else(|| buffer.map(audio::Target::Buffer)),
+                    AudioCommand::Save { path, format } => Command::Save {
+                        target: path,
                         format,
                     },
                     AudioCommand::Edit { event } => match self.decode_audio_event(member, &event) {
@@ -591,13 +536,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn audio_gesture_decoding_supplies_endpoint_scoped_clipboard_reads() {
+    fn a_paste_or_a_mix_decodes_only_from_the_editor_s_own_widgets() {
         let mut editing = Editing::new();
         let opened = call_json(
             &mut editing,
             &json!({
                 "verb":"openAudio", "key":"take:3", "path":"/in/take3.wav",
-                "workspace":"/work", "frames":100, "display":9
+                "workspace":"/work", "frames":100
             })
             .to_string(),
         );
@@ -610,63 +555,32 @@ mod tests {
             "call":{"verb":"window", "widget":12}})
             .to_string(),
         );
-        let document = clausters_document::clipboard::Clipboard {
-            content: clausters_document::clipboard::Content::Buffer {
-                buffer: 77,
-                frames: 10,
-                channels: 2,
-                sample_rate: 48000.0,
-                location: None,
-            },
-            origin: None,
-        }
-        .to_json();
-        let id = ResourceId {
-            server: editing.seats[member as usize].server,
-            buffer: 77,
-        };
-        let foreign = Event {
+        let gesture = |widget: i64, tag: &str| Event {
             addr: "/gui_event".into(),
             args: vec![
-                json!(999),
+                json!(widget),
                 json!(1),
                 json!(0),
-                json!("paste"),
+                json!(tag),
                 json!(0),
                 json!(0),
-                json!(document),
+                json!("{}"),
             ],
         };
-        assert!(editing.decode_audio_event(member, &foreign).is_none());
         assert!(
-            editing.services.resources.source(id).is_none(),
-            "foreign gestures cannot register clipboard resources"
+            editing
+                .decode_audio_event(member, &gesture(999, "paste"))
+                .is_none(),
+            "a foreign gesture is not the editor's"
         );
         for tag in ["paste", "mix"] {
-            let event = Event {
-                addr: "/gui_event".into(),
-                args: vec![
-                    json!(12),
-                    json!(1),
-                    json!(0),
-                    json!(tag),
-                    json!(0),
-                    json!(0),
-                    json!(document),
-                ],
-            };
-            let Some(audio::operations::Command::Paste {
-                clipboard,
-                event: decoded,
-            }) = editing.decode_audio_event(member, &event)
+            let event = gesture(12, tag);
+            let Some(audio::operations::Command::Paste(decoded)) =
+                editing.decode_audio_event(member, &event)
             else {
                 panic!("paste command expected")
             };
-            assert_eq!(clipboard, Some(id));
             assert_eq!(decoded.args, event.args);
-            let source = editing.services.resources.source(id).unwrap();
-            assert_eq!(source.bytes, 80);
-            assert!(!source.owned);
         }
         let event = Event {
             addr: "/gui_event".into(),

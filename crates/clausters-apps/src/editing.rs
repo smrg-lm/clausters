@@ -40,9 +40,7 @@ use clausters_document::{Opaque, SourceId};
 use clausters_editing::conversation::Answer;
 
 use crate::application::histories::{Histories, Object, ScopeId};
-use crate::application::resources::{
-    ResourceId, Resources, Root, RootKind, ServerInstance, Source,
-};
+use crate::application::resources::{ResourceId, Resources, Root, RootKind, ServerInstance};
 use crate::audio::editor::{self as audio, AudioEditor};
 use crate::multitrack::editor::{self as multitrack, MultitrackEditor};
 use crate::notes::Shared;
@@ -242,15 +240,13 @@ pub enum Effect {
         /// What applying it did: the multitrack as it now stands, a source minted.
         applied: multitrack::Applied,
     },
-    /// The steps an audio editor's take is stitched again with, for the list
-    /// the step handed it.
+    /// An audio editor put the list the step names back on one of its
+    /// files: the file, as its playback sounds it.
     #[serde(rename_all = "camelCase")]
     Audio {
         /// The member.
         member: MemberId,
-        /// The steps, in the JSON a runner walks.
-        steps: Value,
-        /// The edited object's playback projection, independent of view focus.
+        /// The edited file's playback projection, independent of view focus.
         file: Value,
     },
     /// A notes editor applied the step to the sequence it shares: its holder
@@ -990,18 +986,14 @@ impl Editing {
                             let before = editor.before_step();
                             let result = payloads
                                 .last()
-                                .and_then(|p| editor.apply(&p.0))
-                                .map(|steps| (steps, editor.playback_file()));
+                                .is_some_and(|p| editor.apply(&p.0))
+                                .then(|| editor.playback_file());
                             (before, result)
                         }) {
                             kept.push((id, Kept::Audio(target, before)));
-                            if let Some((steps, file)) = result {
+                            if let Some(file) = result {
                                 stepped = true;
-                                out.effects.push(Effect::Audio {
-                                    member,
-                                    steps,
-                                    file,
-                                });
+                                out.effects.push(Effect::Audio { member, file });
                             }
                         }
                     }
@@ -1533,35 +1525,6 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             {
                 editing.close_audio_file(member, file);
                 editing.sync_resources();
-                let server = editing.seats[member as usize].server;
-                let protected: Vec<i64> = value["freedBuffers"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_i64)
-                    .filter(|&buffer| {
-                        editing
-                            .services
-                            .resources
-                            .retained(ResourceId { server, buffer })
-                    })
-                    .collect();
-                if let Some(buffers) = value["freedBuffers"].as_array_mut() {
-                    buffers.retain(|buffer| !protected.contains(&buffer.as_i64().unwrap_or(-1)));
-                    for buffer in buffers.iter().filter_map(Value::as_i64) {
-                        let id = ResourceId { server, buffer };
-                        if editing.services.resources.source(id).is_none() {
-                            editing.services.resources.register(Source {
-                                id,
-                                member,
-                                bytes: 0,
-                                owned: true,
-                            });
-                        }
-                        editing.services.resources.released(id);
-                    }
-                }
-                value["steps"] = json!([]);
                 if value["close"] != true {
                     editing.select_member(member);
                 }
@@ -2120,8 +2083,7 @@ mod tests {
     /// drawn by widget 50 in window 49, with buffers for new takes.
     fn a_take() -> Member {
         let mut editor = audio::new_json(
-            r#"{"path":"/in/take7.wav","workspace":"/work", "frames": 100, "display": 9,
-                "version": 1}"#,
+            r#"{"path":"/in/take7.wav","workspace":"/work", "frames": 100, "version": 1}"#,
         )
         .unwrap();
         audio::call_json(&mut editor, r#"{"verb": "window", "widget": 50}"#);
@@ -2476,11 +2438,11 @@ mod tests {
         let Outcome::Audio(outcome) = &turned.outcome else {
             panic!()
         };
-        assert!(outcome.answer.is_none(), "the receipt waits for I/O");
-        let prepared = serde_json::to_value(stepped.operation.unwrap()).unwrap();
-        let (completed, _) = settle_operation(&mut editing, prepared);
-        assert_eq!(completed["echo"]["answer"]["seq"], 2);
-        assert_eq!(completed["echo"]["answer"]["docVersion"], 3);
+        // a step that renders nothing is taken at once, and answered
+        assert!(stepped.operation.is_none());
+        let answer = serde_json::to_value(outcome.answer.as_ref().expect("answered")).unwrap();
+        assert_eq!(answer["seq"], 2, "{answer}");
+        assert_eq!(answer["docVersion"], 3, "{answer}");
     }
 
     /// The JSON door opens members, turns, steps and reports the state.
@@ -2491,7 +2453,7 @@ mod tests {
         let opening = raw_call(
             &mut editing,
             json!({"verb":"member","member":member,
-            "call":{"verb":"add_file","path":"/in/take50.wav","workspace":"/work","frames":100,"display":51,"untitled":true}}),
+            "call":{"verb":"add_file","path":"/in/take50.wav","workspace":"/work","frames":100,"untitled":true}}),
         );
         assert!(opening["operation"].is_object());
         let files = raw_call(
@@ -2514,9 +2476,8 @@ mod tests {
             &mut editing,
             json!({"verb":"operation","action":"repaired","ticket":failed["repair"]}),
         );
-        assert_eq!(repaired["returned"]["buffers"], json!([51]));
-        // a file of the disk reserved no buffer of a take, so nothing else
-        // comes back
+        assert_eq!(repaired["returned"]["buffers"], json!([]));
+        // a file of the disk reserves nothing, so nothing comes back
         assert!(repaired["freed"].as_array().is_none_or(|f| f.is_empty()));
         assert_eq!(
             raw_call(
@@ -2635,8 +2596,7 @@ mod tests {
         let mut editing = Editing::default();
         let take = call(
             &mut editing,
-            json!({"verb": "openAudio", "sharedHistory": true, "key": "buffer:7", "path":"/in/take7.wav","workspace":"/work", "frames": 100,
-                   "display": 9}),
+            json!({"verb": "openAudio", "sharedHistory": true, "key": "buffer:7", "path":"/in/take7.wav","workspace":"/work", "frames": 100}),
         )["member"]
             .clone();
         call(
@@ -2781,7 +2741,7 @@ mod tests {
         let opened = call(
             editing,
             json!({"verb": "openAudio", "sharedHistory": true, "key": "take:3", "path":"/in/take3.wav","workspace":"/work", "frames": 100,
-                   "rate": 48000, "display": 9}),
+                   "rate": 48000}),
         );
         let member = opened["member"].as_u64().unwrap() as MemberId;
         call(
@@ -2858,7 +2818,7 @@ mod tests {
             let member = call(
                 editing,
                 json!({"verb": "openAudio", "key": format!("file:{n}"), "path": format!("/in/take{}.wav", 3 + n), "workspace": "/work",
-                       "frames": 100, "rate": 48000, "display": 9 + n}),
+                       "frames": 100, "rate": 48000}),
             )["member"]
                 .as_u64()
                 .unwrap() as MemberId;
@@ -2901,7 +2861,7 @@ mod tests {
                 &mut editing,
                 json!({"verb": "member", "member": member, "call": {"verb": "add_file",
                        "path":"/in/take50.wav","workspace":"/work", "frames": 100, "channels": 1, "rate": 48000,
-                       "display": 51, "untitled": true}}),
+                       "untitled": true}}),
             );
             let (first, second) = (0, 1);
             let (edited, empty) = if edited_first {
@@ -3000,8 +2960,7 @@ mod tests {
             call(
                 &mut editing,
                 json!({"verb":"member", "member":member,
-                "call":{"verb":"add_file", "path":"/in/take50.wav","workspace":"/work", "frames":100,
-                    "display":51}}),
+                "call":{"verb":"add_file", "path":"/in/take50.wav","workspace":"/work", "frames":100}}),
             );
             draw(&mut editing, member, 2, 20);
             if direction == "redo" {
@@ -3054,7 +3013,7 @@ mod tests {
         call(
             &mut editing,
             json!({"verb": "member", "member": member, "call": {"verb": "add_file",
-            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "display": 51, "untitled": true}}),
+            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "untitled": true}}),
         );
         assert_eq!(
             draw(&mut editing, member, 1, 30)["outcome"]["changed"],
@@ -3063,7 +3022,7 @@ mod tests {
         let other = call(
             &mut editing,
             json!({"verb": "openAudio", "sharedHistory": true, "key": "take:4", "path":"/in/take4.wav","workspace":"/work", "frames": 100,
-                   "rate": 48000, "display": 19}),
+                   "rate": 48000}),
         )["member"]
             .as_u64()
             .unwrap() as MemberId;
@@ -3108,7 +3067,7 @@ mod tests {
         call(
             &mut editing,
             json!({"verb": "member", "member": member, "call": {"verb": "add_file",
-            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "display": 51, "untitled": true}}),
+            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "untitled": true}}),
         );
         call(
             &mut editing,
@@ -3142,7 +3101,7 @@ mod tests {
         call(
             &mut editing,
             json!({"verb": "member", "member": member, "call": {"verb": "add_file",
-            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "display": 51, "untitled": true}}),
+            "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1, "rate": 48000, "untitled": true}}),
         );
         let version = editing.version();
         let asked = call(
@@ -3172,8 +3131,7 @@ mod tests {
         let mut editing = Editing::new();
         let opened = call(
             &mut editing,
-            json!({"verb": "openAudio", "key": "audio:empty", "empty": true,
-                   "display": 9}),
+            json!({"verb": "openAudio", "key": "audio:empty", "empty": true}),
         );
         let member = opened["member"].as_u64().unwrap() as MemberId;
         let member_call = |editing: &mut Editing, inner: Value| {
@@ -3193,9 +3151,9 @@ mod tests {
         let added = member_call(
             &mut editing,
             json!({"verb": "add_file", "path":"/in/take50.wav","workspace":"/work", "frames": 200,
-            "channels": 1, "rate": 48000, "display": 51, "untitled": true}),
+            "channels": 1, "rate": 48000, "untitled": true}),
         );
-        assert_eq!(added["binding"]["display"], 51, "{added}");
+        assert_eq!(added["binding"]["id"], 2, "{added}");
         let version = editing.version();
         let drawn = call(
             &mut editing,
@@ -3235,9 +3193,9 @@ mod tests {
         let added = member_call(
             &mut editing,
             json!({"verb": "add_file", "path":"/in/take50.wav","workspace":"/work", "frames": 200,
-            "channels": 2, "rate": 48000, "display": 51, "untitled": true}),
+            "channels": 2, "rate": 48000, "untitled": true}),
         );
-        assert_eq!(added["binding"]["display"], 51);
+        assert_eq!(added["binding"]["id"], 2);
         assert!(!editing.can_undo(), "a new file has no edits");
         let second = draw(&mut editing, member, 2, 30);
         assert_eq!(second["outcome"]["changed"], true);
@@ -3272,7 +3230,7 @@ mod tests {
         assert!(editing.step(Direction::Redo).stepped);
         let closed = member_call(&mut editing, json!({"verb": "close_file", "file": 1}));
         assert_eq!(
-            closed["binding"]["display"], 51,
+            closed["binding"]["id"], 2,
             "closing a background file keeps focus"
         );
         assert_eq!(
@@ -3297,7 +3255,7 @@ mod tests {
             &mut editing,
             json!({"verb":"member", "member":member, "call":{
             "verb":"add_file", "path":"/in/take50.wav","workspace":"/work", "frames":200, "channels":2,
-            "rate":48000, "display":51}}),
+            "rate":48000}}),
         );
         let before = call(
             &mut editing,
@@ -3325,7 +3283,7 @@ mod tests {
         draw(&mut editing, member, 1, 10);
         call(
             &mut editing,
-            json!({"verb":"member", "member":member, "call":{"verb":"add_file", "path":"/in/take50.wav","workspace":"/work","frames":200,"display":51}}),
+            json!({"verb":"member", "member":member, "call":{"verb":"add_file", "path":"/in/take50.wav","workspace":"/work","frames":200}}),
         );
         let binding = call(
             &mut editing,
@@ -3334,7 +3292,6 @@ mod tests {
         let stepped = call(&mut editing, json!({"verb":"step", "direction":"undo"}));
         assert_eq!(stepped["stepped"], true);
         assert_eq!(stepped["effects"][0]["file"]["id"], 1);
-        assert_eq!(stepped["effects"][0]["file"]["display"], 9);
         let after = call(
             &mut editing,
             json!({"verb":"member", "member":member, "call":{"verb":"binding"}}),

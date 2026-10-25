@@ -275,7 +275,7 @@ fn an_editor_applies_a_curve_by_rendering_the_list_and_undo_names_the_take_again
     std::fs::create_dir_all(&work).unwrap();
     let mut editor = new_json(
         &json!({"path": take, "workspace": work, "frames": FRAMES, "channels": 2,
-                "rate": RATE, "display": 8})
+                "rate": RATE})
         .to_string(),
     )
     .unwrap();
@@ -283,7 +283,7 @@ fn an_editor_applies_a_curve_by_rendering_the_list_and_undo_names_the_take_again
         &mut editor,
         &json!({"verb": "sync", "rate": RATE}).to_string(),
     );
-    // carries out the renders a batch holds; the stitch is the engine's
+    // carries out the renders a batch holds
     let walk = |steps: &Value| -> usize {
         steps_from_json(steps)
             .into_iter()
@@ -351,12 +351,16 @@ fn an_editor_applies_a_curve_by_rendering_the_list_and_undo_names_the_take_again
     );
 
     let leg = &applied.record.unwrap().legs[0];
-    let back = editor.apply(&leg.backward).unwrap();
-    assert_eq!(walk(&back), 0, "an undo renders nothing");
+    assert!(
+        editor.apply(&leg.backward),
+        "an undo, which renders nothing"
+    );
     let undone = parts(&mut editor);
     assert_eq!(undone.len(), 2);
     assert!(undone.iter().all(|p| p["path"] == take.as_str()));
-    let forward = editor.apply(&leg.forward["edit"]).unwrap();
-    assert_eq!(walk(&forward), 0, "a redo names the render again");
+    assert!(
+        editor.apply(&leg.forward["edit"]),
+        "a redo names the render again"
+    );
     assert_eq!(parts(&mut editor)[0]["path"], rendered.as_str());
 }

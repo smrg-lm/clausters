@@ -84,32 +84,15 @@ export interface Applier {
  * onto the object a page holds.
  */
 export interface StepHandler extends Applier {
-    /** Execute a prepared history operation on its declared endpoint. */
-    executeOperation?(structure: never | object, prepared: Record<string, unknown>, complete: (result: Record<string, any>) => void): void;
-    /** The work this member has queued so far, landed: an operation it is carrying out included. */
-    idle?(): Promise<void>;
-    /** Execute one routed I/O batch; policy remains in the application core. */
-    executeBatch?(structure: never | object, server: { connection: number; generation: number }, steps: unknown[]): Promise<void>;
     stepped?(structure: never | object, applied: Record<string, unknown>): void;
     /** A points editor's: write the curve's points back, as flat quads. */
     write?(structure: never | object, points: readonly number[]): void;
-    /** An audio editor's: carry out the steps that stitch its take again. */
-    run?(structure: never | object, steps: unknown[]): void;
-    /** Update an edited object's playback independently of the viewed object. */
-    operationReturned?(structure: never | object, server: { connection: number; generation: number }, buffers: number[]): void;
-    operationEcho?(structure: never | object, answer: unknown): void;
-    soundFile?(structure: never | object, file: Record<string, unknown>): void;
-    /** An audio editor's: free buffers nothing reaches any more. */
-    free?(structure: never | object, buffers: number[]): void;
     /**
      * A multitrack's: free joins no box reads and no undo or redo can put
      * back, by source id -- the buffer built for each, and its place in the
      * table.
      */
     freeSources?(structure: never | object, sources: number[]): void;
-    /** Delete files no entry and no member names any more: an audio
-     *  editor's renders. */
-    deleteFiles?(structure: never | object, files: string[]): void;
 }
 
 /**
@@ -149,7 +132,7 @@ export interface RecordingLeg {
 
 /** One thing a step does, for a page to carry out. */
 export interface Effect {
-    /** `"multitrack"`, `"samples"`, `"audio"`, `"points"` or `"external"`. */
+    /** `"multitrack"`, `"notes"`, `"points"`, `"score"` or `"external"`. */
     kind: string;
     /** The member it is for. */
     member: number;
@@ -157,33 +140,23 @@ export interface Effect {
     applied?: Record<string, unknown>;
     /** A take's writes, or an external member's payloads. */
     payloads?: unknown[];
-    /** An audio editor's: the steps that stitch its take again. */
-    steps?: unknown[];
-    /** The edited audio object's playback projection, even when not viewed. */
-    file?: Record<string, unknown>;
     /** A points editor's: the curve's points, as flat quads, to write back. */
     points?: number[];
 }
 
 /**
- * **Takes a member made that nothing reaches any more**: the buffers to free,
- * on that member's server.
+ * **Sources a member made that nothing reaches any more**: a multitrack's
+ * joins, on that member's server.
  */
 export interface Freed {
-    /** The member whose takes they were. */
+    /** The member whose sources they were. */
     member: number;
-    /** The buffer numbers, to give back: an audio editor's. */
-    buffers?: number[];
     /** A multitrack's joins, by source id, to free and drop from its table. */
     sources?: number[];
-    /** An audio editor's renders and their peaks, by path, to delete. */
-    files?: string[];
 }
 
 /** **What a step of the order came to.** */
 export interface Stepped {
-    /** Uncommitted I/O prepared by the application core. */
-    operation?: Record<string, unknown>;
     /** Whether anything moved. */
     stepped?: boolean;
     /** Why nothing did, where the crate says. */
@@ -257,19 +230,6 @@ export class Editing {
     >();
     protected readonly attached = new Set<WeakRef<Adopting>>();
 
-    /**
-     * **The work every member has queued so far, landed**: what a window
-     * waits for before it is told where a step left the context, since the
-     * member that owns a stepped object carries the step out on its own queue
-     * -- not necessarily the queue of the window that asked for it.
-     *
-     * @internal
-     */
-    landed(): Promise<void> {
-        const queued = [...this.handlers.values()].map(({ handler }) =>
-            handler?.idle?.().catch(() => {}) ?? Promise.resolve());
-        return Promise.all(queued).then(() => {});
-    }
     /**
      * How deep the current turn is, and whether anything moved in it. One
      * gesture can reach here twice, and the other windows want *one* redraw.
@@ -754,9 +714,8 @@ export class Editing {
 
     /**
      * **Carry a step's effects out** on the structures they name: a multitrack
-     * written back, a take's writes projected, an audio editor's join stitched
-     * again, an external member's payloads applied -- and then the takes the
-     * step let go of freed.
+     * written back, a curve's points written back, an external member's
+     * payloads applied -- and then the sources the step let go of freed.
      */
     carry(stepped: Stepped): void {
         this.applying(() => this.#carry(stepped));
@@ -764,23 +723,11 @@ export class Editing {
     }
 
     #carry(stepped: Stepped): void {
-        if (stepped.operation !== undefined) {
-            const prepared = stepped.operation;
-            const held = this.handlers.get(Number(prepared.member));
-            if (held?.handler?.executeOperation === undefined) throw new Error("the history operation has no executor");
-            held.handler.executeOperation(held.structure as never, prepared, (completed) => this.#carry(completed.stepped ?? {}));
-            return;
-        }
         for (const effect of stepped.effects ?? []) {
             const held = this.handlers.get(Number(effect.member));
             if (held === undefined || held.handler === null) continue;
             if (effect.kind === "multitrack") {
                 held.handler.stepped?.(held.structure as never, effect.applied ?? {});
-                continue;
-            }
-            if (effect.kind === "audio") {
-                held.handler.run?.(held.structure as never, effect.steps ?? []);
-                if (effect.file !== undefined) held.handler.soundFile?.(held.structure as never, effect.file);
                 continue;
             }
             if (effect.kind === "points") {
@@ -795,46 +742,18 @@ export class Editing {
         }
     }
 
-    /** Return unused ids after the core has confirmed cleanup. @internal */
-    operationReturned(returned: { member: number; server: { connection: number; generation: number }; buffers: number[] } | null | undefined): void {
-        if (returned == null) return;
-        const held = this.handlers.get(returned.member);
-        held?.handler?.operationReturned?.(held.structure as never, returned.server, returned.buffers);
-    }
-
-    /** Deliver the originating gesture receipt selected by the core. @internal */
-    operationEcho(echo: { member: number; answer: unknown } | null | undefined): void {
-        if (echo == null) return;
-        const held = this.handlers.get(echo.member);
-        held?.handler?.operationEcho?.(held.structure as never, echo.answer);
-    }
-
-    /** Execute a batch on its member's original endpoint. @internal */
-    async executeBatch(member: number, server: { connection: number; generation: number }, steps: unknown[]): Promise<void> {
-        const held = this.handlers.get(member);
-        if (held?.handler?.executeBatch === undefined) throw new Error("the operation has no endpoint executor");
-        await held.handler.executeBatch(held.structure as never, server, steps);
-    }
-
     /**
      * **Free what nothing reaches any more** -- what a turn or a step hands
      * back as `freed`, each under the member that made it, whose server it is
-     * on: an audio editor's buffers and the renders it wrote, a multitrack's
-     * joins by source id. Called after the turn's own steps are carried out,
-     * so no join is still reading them.
+     * on: a multitrack's joins by source id. Called after the turn's own steps
+     * are carried out, so no join is still reading them.
      */
     release(freed: readonly Freed[] | undefined): void {
         for (const entry of freed ?? []) {
             const held = this.handlers.get(Number(entry.member));
             if (held === undefined || held.handler === null) continue;
-            if ((entry.buffers ?? []).length > 0) {
-                held.handler.free?.(held.structure as never, entry.buffers ?? []);
-            }
             if ((entry.sources ?? []).length > 0) {
                 held.handler.freeSources?.(held.structure as never, entry.sources ?? []);
-            }
-            if ((entry.files ?? []).length > 0) {
-                held.handler.deleteFiles?.(held.structure as never, entry.files ?? []);
             }
         }
     }

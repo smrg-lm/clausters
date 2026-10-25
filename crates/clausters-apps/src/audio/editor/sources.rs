@@ -1,8 +1,8 @@
 //! **The files a take is made of**: the table an open file's list reads, and
 //! what is made of it -- the take as its readers read it (the window, the
 //! clipboard, the application's reader: [`file_list`], a reference), the list
-//! a render reads, the list written out for a caller that reads it as data,
-//! and the join a server plays.
+//! a render reads, and the list written out for a caller that reads it as
+//! data.
 //!
 //! A take lives on disk: its list's parts are spans of files that never
 //! change, the one it was opened from and the renders its edits wrote into
@@ -12,7 +12,6 @@
 
 use std::collections::BTreeMap;
 
-use clausters_core::osc::{OscMessage, OscType};
 use clausters_document::clipboard::SegmentPart;
 use clausters_document::session::Part;
 use clausters_document::{SourceId, parts};
@@ -175,40 +174,6 @@ pub(crate) fn wire_list(parts: &[Part], sources: &Sources, channels: u32, rate: 
         })
         .collect();
     json!({"channels": channels, "sample_rate": rate, "parts": parts})
-}
-
-/// **The join the server plays**: `/buffer_stitch` of the list into buffer
-/// `display`, at `rate`, each part over its file. Played by
-/// `TransportDiskIn`, which reads it from the files ahead of the playhead.
-pub(crate) fn stitch(display: i32, list: &renders::List) -> OscMessage {
-    let frames = clausters_editing::apply::count_arg;
-    let mut args = vec![
-        OscType::Int(display),
-        OscType::Int(list.channels as i32),
-        OscType::Float(list.rate as f32),
-    ];
-    for part in &list.parts {
-        args.push(OscType::String(part.path.clone()));
-        args.push(frames(part.start));
-        args.push(frames(part.frames));
-        args.push(OscType::Int(part.fade_in as i32));
-        args.push(OscType::Int(part.fade_out as i32));
-        args.push(OscType::Int(part.fade_in_shape.shape));
-        args.push(OscType::Float(part.fade_in_shape.curve as f32));
-        args.push(OscType::Int(part.fade_out_shape.shape));
-        args.push(OscType::Float(part.fade_out_shape.curve as f32));
-        for c in 0..list.channels as i32 {
-            let picked = match &part.channels {
-                Some(map) => map.get(c as usize).copied().unwrap_or(-1),
-                None => c % part.source_channels.max(1) as i32,
-            };
-            args.push(OscType::Int(picked));
-        }
-    }
-    OscMessage {
-        addr: "/buffer_stitch".into(),
-        args,
-    }
 }
 
 #[cfg(test)]

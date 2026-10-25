@@ -13,23 +13,12 @@ fn open(editor: &mut AudioEditor) -> Value {
 }
 
 /// The steps a save operation carries out, `request` as a save reads it
-/// (`path` or `buffer`, and `format`), and where it writes.
+/// (`path` and `format`), and where it writes.
 fn save(editor: &mut AudioEditor, request: Value) -> Value {
     let format = request["format"].as_str().unwrap_or("float").to_string();
-    let to = match (request["path"].as_str(), request["buffer"].as_i64()) {
-        (Some(path), _) => Some(Target::File(path.to_string())),
-        (None, Some(buffer)) => Some(Target::Buffer(buffer)),
-        (None, None) => None,
-    };
+    let to = request["path"].as_str().map(str::to_string);
     match editor.save_steps(to, &format) {
-        Ok(steps) => {
-            let mut answer = json!({ "steps": steps_json(&steps) });
-            match editor.target() {
-                Target::File(path) => answer["path"] = json!(path),
-                Target::Buffer(buffer) => answer["buffer"] = json!(buffer),
-            }
-            answer
-        }
+        Ok(steps) => json!({ "steps": steps_json(&steps), "path": editor.target() }),
         Err(error) => json!({ "error": error }),
     }
 }
@@ -39,8 +28,7 @@ fn save(editor: &mut AudioEditor, request: Value) -> Value {
 /// 20 and 21 handed over for new takes.
 fn opened(channels: u32) -> AudioEditor {
     let mut editor = new_json(
-        &json!({"path":"/in/take3.wav","workspace":"/work", "frames": 100, "channels": channels, "rate": 44100,
-                "display": 9})
+        &json!({"path":"/in/take3.wav","workspace":"/work", "frames": 100, "channels": channels, "rate": 44100})
         .to_string(),
     )
     .unwrap();
@@ -110,16 +98,6 @@ fn walk(steps: &Value) -> Vec<String> {
         .collect()
 }
 
-fn args(steps: &Value, addr: &str) -> Vec<Value> {
-    steps
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["send"]["addr"] == addr)
-        .map(|s| s["send"]["args"].as_array().unwrap().clone())
-        .unwrap_or_default()
-}
-
 /// A message the window sends that asks for a save: whether it did, and the
 /// steps the save operation it becomes would write, to where it now names.
 fn window_save(editor: &mut AudioEditor, args: Value) -> (bool, Value) {
@@ -143,26 +121,19 @@ fn event(editor: &mut AudioEditor, args: Value) -> Value {
 }
 
 /// **Opening reads nothing of the file but its peaks, measured once**: a
-/// render of the file into its peaks in the working folder, then the join
-/// the server plays stitched over the file itself, which the window draws as
-/// a list.
+/// render of the file into its peaks in the working folder, which the
+/// window draws as a list over the file itself.
 #[test]
-fn opening_measures_the_file_and_stitches_the_join_over_it() {
+fn opening_measures_the_file_and_draws_its_list() {
     let mut editor = opened(1);
     let steps = open(&mut editor)["steps"].clone();
-    assert_eq!(
-        walk(&steps),
-        ["render", "/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(&steps), ["render"]);
     let measured = &renders(&steps)[0];
     assert_eq!(measured["path"], "", "the measure keeps no output");
     assert_eq!(
         measured["label"], "Open file",
         "shown as the open's progress"
     );
-    let stitched = args(&steps, "/buffer_stitch");
-    assert_eq!(stitched[0], json!({"i": 9}), "the display buffer");
-    assert_eq!(stitched[3], json!({"s": "/in/take3.wav"}), "reads the file");
     assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
     let def = call(&mut editor, json!({"verb": "window", "widget": 12}));
     let list = shared::told(&def["children"][1]["segments"]).expect("a list by reference");
@@ -175,72 +146,6 @@ fn opening_measures_the_file_and_stitches_the_join_over_it() {
     assert!(def["children"][1].get("buffer").is_none());
 }
 
-/// **A file a part cannot read is opened through a buffer of it**: the
-/// client decodes it, the open writes the buffer to the working folder, and
-/// a save goes to the file -- whose format, a compressed one, a save then
-/// refuses, so it is saved somewhere else.
-#[test]
-fn a_compressed_file_opens_through_its_buffer_and_saves_to_its_path() {
-    let mut editor = new_json(
-        &json!({"take": 3, "path": "/in/song.mp3", "frames": 100, "channels": 1,
-                "rate": 44100, "display": 9, "workspace": "/work"})
-        .to_string(),
-    )
-    .unwrap();
-    call(&mut editor, json!({"verb": "window", "widget": 12}));
-    let opened = open(&mut editor)["steps"].clone();
-    assert_eq!(walk(&opened)[0], "/buffer_write");
-    assert_eq!(spans(&mut editor), [span("1-opened", 0, 100)]);
-    assert_eq!(
-        call(&mut editor, json!({"verb": "file"}))["path"],
-        "/in/song.mp3"
-    );
-}
-
-/// **A take opened over a server buffer is a file of the working folder**,
-/// written from the buffer by the open; a save renders the take and reads
-/// the render back into the buffer, at the take's length.
-#[test]
-fn a_save_over_a_buffer_fills_it_from_a_render_of_the_take() {
-    let mut editor = new_json(
-        &json!({"take": 3, "frames": 100, "channels": 1, "rate": 44100, "display": 9,
-                "workspace": "/work"})
-        .to_string(),
-    )
-    .unwrap();
-    call(&mut editor, json!({"verb": "window", "widget": 12}));
-    let opened = open(&mut editor)["steps"].clone();
-    assert_eq!(
-        walk(&opened),
-        [
-            "/buffer_write",
-            "await /buffer_write",
-            "render",
-            "/buffer_stitch",
-            "await /buffer_stitch"
-        ]
-    );
-    assert_eq!(
-        args(&opened, "/buffer_write")[1],
-        json!({"s": "/work/1-opened.w64"})
-    );
-    event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
-    let saved = save(&mut editor, json!({}));
-    assert_eq!(saved["buffer"], 3, "over the buffer it was opened from");
-    let steps = &saved["steps"];
-    assert_eq!(
-        walk(steps)[..3],
-        ["render", "/buffer_allocRead", "await /buffer_allocRead"]
-    );
-    assert_eq!(args(steps, "/buffer_allocRead")[0], json!({"i": 3}));
-    let moved = save(&mut editor, json!({"buffer": 40}));
-    assert_eq!(moved["buffer"], 40, "a save-as into another buffer");
-    assert!(
-        save(&mut editor, json!({"buffer": 9}))["error"].is_string(),
-        "never the join"
-    );
-}
-
 #[test]
 fn a_stroke_is_a_new_take_the_size_of_the_stroke_spliced_over_its_frames() {
     let mut editor = opened(1);
@@ -251,10 +156,7 @@ fn a_stroke_is_a_new_take_the_size_of_the_stroke_spliced_over_its_frames() {
     assert_eq!(out["turn"], "route");
     assert_eq!(out["answer"]["seq"], 1);
     let steps = &out["steps"];
-    assert_eq!(
-        walk(steps),
-        ["render", "/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(steps), ["render"]);
     let render = &renders(steps)[0];
     assert_eq!(
         render["path"], "/work/1-2-stroke.w64",
@@ -320,10 +222,7 @@ fn a_stroke_with_no_working_folder_is_refused_and_redrawn() {
 fn a_cut_takes_the_span_out_and_writes_no_samples() {
     let mut editor = opened(1);
     let out = event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
-    assert_eq!(
-        walk(&out["steps"]),
-        ["/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(&out["steps"]), [] as [&str; 0]);
     assert_eq!(
         spans(&mut editor),
         [span("take3", 0, 10), span("take3", 30, 100)]
@@ -376,10 +275,7 @@ fn a_paste_of_a_block_is_a_file_of_its_own_put_in_at_the_position() {
         &mut editor,
         json!([12, 1, 0, "paste", 50.0, "samples", doc, [0.1, 0.2, 0.3]]),
     );
-    assert_eq!(
-        walk(&out["steps"]),
-        ["render", "/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(&out["steps"]), ["render"]);
     assert_eq!(
         spans(&mut editor),
         [
@@ -414,10 +310,7 @@ fn a_paste_of_segments_names_their_files_and_makes_nothing() {
         &mut editor,
         json!([12, 1, 0, "paste", 50.0, "segments", doc]),
     );
-    assert_eq!(
-        walk(&out["steps"]),
-        ["/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(&out["steps"]), [] as [&str; 0]);
     assert_eq!(
         spans(&mut editor),
         [
@@ -550,10 +443,9 @@ fn a_list_the_history_hands_back_is_the_take_again() {
     let mut editor = opened(1);
     let out = event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
     let before = out["record"]["legs"][0]["backward"].clone();
-    let steps = editor.apply(&before).unwrap();
-    assert_eq!(walk(&steps), ["/buffer_stitch", "await /buffer_stitch"]);
+    assert!(editor.apply(&before));
     assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
-    assert!(editor.apply(&json!({"intent": "write"})).is_none());
+    assert!(!editor.apply(&json!({"intent": "write"})));
 }
 
 #[test]
@@ -565,10 +457,7 @@ fn a_mix_is_a_new_take_over_the_frames_the_block_lands_on() {
         json!([12, 1, 0, "mix", 98.0, "samples", doc, [0.1, 0.2, 0.3]]),
     );
     let steps = &out["steps"];
-    assert_eq!(
-        walk(steps),
-        ["render", "/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(steps), ["render"]);
     // two frames: the block runs past the end of the take and is mixed as
     // far as it goes
     assert_eq!(
@@ -588,16 +477,7 @@ fn a_save_renders_the_take_over_its_file_and_a_save_as_moves_it() {
     event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
     let saved = save(&mut editor, json!({}));
     assert_eq!(saved["path"], "/in/take3.wav");
-    assert_eq!(
-        walk(&saved["steps"]),
-        [
-            "render",
-            "move",
-            "move",
-            "/buffer_stitch",
-            "await /buffer_stitch"
-        ]
-    );
+    assert_eq!(walk(&saved["steps"]), ["render", "move", "move"]);
     let moves: Vec<&Value> = saved["steps"]
         .as_array()
         .unwrap()
@@ -761,8 +641,7 @@ fn a_redrawn_selection_is_the_span_a_loop_in_progress_follows() {
 fn a_selection_far_into_a_take_is_matched_to_the_frame() {
     // An hour at 48 kHz, and an odd frame in it.
     let mut editor = new_json(
-        &json!({"path":"/in/take3.wav","workspace":"/work", "frames": 200_000_000_u64, "channels": 1, "rate": 48000,
-                "display": 9})
+        &json!({"path":"/in/take3.wav","workspace":"/work", "frames": 200_000_000_u64, "channels": 1, "rate": 48000})
         .to_string(),
     )
     .unwrap();
@@ -870,10 +749,7 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
     // and the next Ctrl+S writes there with no form
     let (requested, again) = window_save(&mut editor, json!([900, 4, 0, "save"]));
     assert!(requested);
-    assert_eq!(
-        walk(&again["steps"]),
-        ["render", "/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(&again["steps"]), ["render"]);
     assert_eq!(renders(&again["steps"])[0]["path"], "/takes/new.wav");
 }
 
@@ -1222,7 +1098,7 @@ fn the_close_file_entry_names_the_focused_file_by_its_identity() {
 /// every verb that acts on a file is refused, saying why.
 #[test]
 fn an_editor_opens_with_no_file_and_answers_only_the_window_s_verbs() {
-    let mut editor = new_json(r#"{"empty":true,"display":9,"window":900}"#).unwrap();
+    let mut editor = new_json(r#"{"empty":true,"window":900}"#).unwrap();
     let names = call(&mut editor, json!({"verb": "dialogs"}))["dialogs"].clone();
     let ids: BTreeMap<String, i64> = names
         .as_array()
@@ -1306,15 +1182,15 @@ fn an_editor_opens_with_no_file_and_answers_only_the_window_s_verbs() {
 /// window draws it.
 #[test]
 fn a_file_added_to_an_empty_editor_comes_into_focus() {
-    let mut editor = new_json(r#"{"empty":true,"display":9,"window":900}"#).unwrap();
+    let mut editor = new_json(r#"{"empty":true,"window":900}"#).unwrap();
     call(&mut editor, json!({"verb": "window", "widget": 12}));
     let added = call(
         &mut editor,
         json!({"verb": "add_file", "path":"/in/take50.wav","workspace":"/work", "frames": 200, "channels": 1,
-               "rate": 48000, "display": 51, "path": "/a.wav"}),
+               "rate": 48000, "path": "/a.wav"}),
     );
     assert!(added.get("error").is_none(), "{added}");
-    assert_eq!(added["binding"]["display"], 51);
+    assert_eq!(added["binding"]["id"], 2);
     let files = call(&mut editor, json!({"verb": "files"}))["files"].clone();
     assert_eq!(files.as_array().unwrap().len(), 1);
     let tree = call(&mut editor, json!({"verb": "window", "widget": 12}));
@@ -1348,8 +1224,7 @@ fn a_copy_names_the_span_s_files_and_a_paste_elsewhere_reads_them() {
     assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
 
     let mut other = new_json(
-        &json!({"path":"/in/take30.wav","workspace":"/work2", "frames": 100, "channels": 1, "rate": 48000,
-                "display": 31})
+        &json!({"path":"/in/take30.wav","workspace":"/work2", "frames": 100, "channels": 1, "rate": 48000})
         .to_string(),
     )
     .unwrap();
@@ -1358,10 +1233,7 @@ fn a_copy_names_the_span_s_files_and_a_paste_elsewhere_reads_them() {
         &mut other,
         json!([12, 1, 0, "paste", 50.0, "segments", doc]),
     );
-    assert_eq!(
-        walk(&pasted["steps"]),
-        ["/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(&pasted["steps"]), [] as [&str; 0]);
     assert_eq!(
         spans(&mut other),
         [
@@ -1402,10 +1274,7 @@ fn a_copy_mixes_into_a_span_and_a_width_or_rate_mismatch_refuses() {
     let doc = copied["clipboard"].as_str().unwrap();
     let mixed = event(&mut editor, json!([12, 2, 0, "mix", 90, "segments", doc]));
     assert!(mixed["changed"].as_bool().unwrap());
-    assert_eq!(
-        walk(&mixed["steps"]),
-        ["render", "/buffer_stitch", "await /buffer_stitch"]
-    );
+    assert_eq!(walk(&mixed["steps"]), ["render"]);
     assert_eq!(
         spans(&mut editor),
         [span("take3", 0, 90), span("1-2-mixed", 0, 10)]
@@ -1454,7 +1323,7 @@ fn a_file_changed_on_disk_is_said_when_the_window_comes_back() {
     let stamp = |modified: f64| json!({"modified": modified, "size": 4_000});
     let mut editor = new_json(
         &json!({"path": "/in/take3.wav", "workspace": "/work", "frames": 100, "channels": 1,
-                "rate": 44100, "display": 9, "stamp": stamp(1.0)})
+                "rate": 44100, "stamp": stamp(1.0)})
         .to_string(),
     )
     .unwrap();
@@ -1514,7 +1383,7 @@ fn a_long_span_is_reversed_in_pieces_from_its_end() {
     let frames = 2 * piece + 1_000;
     let mut editor = new_json(
         &json!({"path":"/in/long.wav","workspace":"/work", "frames": frames, "channels": 1,
-                "rate": 48000, "display": 9})
+                "rate": 48000})
         .to_string(),
     )
     .unwrap();

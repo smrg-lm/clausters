@@ -7,14 +7,14 @@ use super::*;
 use crate::application::{
     histories::Object,
     operations::{Access, Batch, Operation, Result as OperationResult, Target as OperationTarget},
-    resources::{ResourceId, ServerInstance},
+    resources::ServerInstance,
     services::{Application, Services},
 };
 
 /// Typed audio work; the language/host adapter decodes commands before entry.
 #[derive(Debug)]
 pub enum Command {
-    /// Build the initial private samples and join.
+    /// Read the file opened for its peaks, or write a new one.
     Open,
     /// Prepare a new independent file without publishing it in the list.
     AddFile(Box<AudioEditor>),
@@ -22,17 +22,14 @@ pub enum Command {
     WindowSave(Event),
     /// Save an immutable snapshot, confirming its checkpoint only after I/O.
     Save {
-        target: Option<Target>,
+        target: Option<String>,
         format: String,
     },
     /// A sample edit in the existing host gesture vocabulary.
     Edit(Event),
-    /// Paste an explicitly leased clipboard source; host offsets are decoded
-    /// by the boundary, never by the application lifecycle.
-    Paste {
-        event: Event,
-        clipboard: Option<ResourceId>,
-    },
+    /// Paste or mix what the clipboard carries; host offsets are decoded by
+    /// the boundary, never by the application lifecycle.
+    Paste(Event),
     /// Edit gain automation without generating samples.
     GainEnvelope(Vec<f64>),
     /// Render the current gain envelope into new samples.
@@ -83,7 +80,7 @@ enum Change {
     AddFile(Box<AudioFileState>),
     Contents(Contents),
     Save {
-        target: Target,
+        target: String,
         format: String,
         revision: u64,
         frames: u64,
@@ -147,18 +144,11 @@ impl AudioEditor {
             return Some(Command::WindowSave(event.clone()));
         }
         match tag {
-            "paste" | "mix" => Some(Command::Paste {
-                event: event.clone(),
-                clipboard: None,
-            }),
+            "paste" | "mix" => Some(Command::Paste(event.clone())),
             "draw" | "sample" | "cut" | "delete" | "copy" | "copy_cut" | "reverse"
             | "apply_envelope" | "apply" | "points" => Some(Command::Edit(event.clone())),
             _ => None,
         }
-    }
-
-    pub(crate) fn unused_buffers(&self) -> Vec<i64> {
-        vec![self.file.display]
     }
 
     fn draft(&self) -> Self {
@@ -203,10 +193,6 @@ impl Application for AudioEditor {
             if self.window_state.workspace.is_some() {
                 next.window_state.workspace = self.window_state.workspace.clone();
             }
-            if self.window_state.engine_rate > 0.0 {
-                next.window_state.engine_rate = self.window_state.engine_rate;
-            }
-            next.window_state.held = self.window_state.held;
             next.window_state.server = self.window_state.server;
             let mut plan = next.prepare(
                 Request {
@@ -222,7 +208,7 @@ impl Application for AudioEditor {
             next.file.sources = contents.sources;
             next.file.rates = contents.rates;
             next.file.opened = contents.opened;
-            next.file.written_from = None;
+            next.file.silence = false;
             plan.commit.binding = self.window_state.binding_generation;
             plan.commit.workspace = next.window_state.workspace.clone();
             plan.commit.change = Change::AddFile(Box::new(next.file));
@@ -262,10 +248,6 @@ impl Application for AudioEditor {
             object: self.focused_file(),
             server: request.server,
         };
-        let clipboard_read = match &request.command {
-            Command::Paste { clipboard, .. } => *clipboard,
-            _ => None,
-        };
         let mut draft = self.draft();
         let mut outcome = Outcome {
             turn: Kind::Route,
@@ -279,11 +261,6 @@ impl Application for AudioEditor {
                 target: destination,
                 format,
             } => {
-                if let Some(Target::Buffer(buffer)) = destination.as_ref()
-                    && *buffer == self.file.display
-                {
-                    return Err("the save target is the buffer this editor plays".into());
-                }
                 let steps = draft.save_steps(destination, &format)?;
                 // The take is read from files that never change, so an
                 // edit need not wait for a save -- unless the save moves a
@@ -323,7 +300,7 @@ impl Application for AudioEditor {
                 let steps = match command {
                     Command::AddFile(_) => unreachable!(),
                     Command::Open => draft.open_steps()?,
-                    Command::Edit(event) | Command::Paste { event, .. } => {
+                    Command::Edit(event) | Command::Paste(event) => {
                         outcome = draft.event(&event, request.version);
                         outcome.planned_steps.clone()
                     }
@@ -381,7 +358,7 @@ impl Application for AudioEditor {
                         draft.file.next_revision =
                             draft.file.next_revision.max(draft.file.revision);
                         outcome.changed = true;
-                        draft.stitched()
+                        Vec::new()
                     }
                     Command::Save { .. } | Command::WindowSave(_) => unreachable!(),
                 };
@@ -404,10 +381,6 @@ impl Application for AudioEditor {
                 })
             }
         };
-        let mut reads = Vec::new();
-        if let Some(id) = clipboard_read {
-            reads.push(id);
-        }
         if let Some(Answer::Ack { seq, .. } | Answer::Push { seq, .. }) = &mut outcome.answer {
             *seq = request.seq;
         }
@@ -431,7 +404,7 @@ impl Application for AudioEditor {
             access,
             batches,
             allocations: Vec::new(),
-            reads,
+            reads: Vec::new(),
             commit,
         })
     }
@@ -519,7 +492,7 @@ impl Application for AudioEditor {
                         editor.file.sources.extend(contents.sources);
                         editor.file.rates.extend(contents.rates);
                         editor.file.opened = contents.opened;
-                        editor.file.written_from = None;
+                        editor.file.silence = false;
                         if let Some(at) = contents.landing {
                             editor.file.presentation.cursor = Some(at);
                             editor.file.presentation.selection = None;
@@ -554,19 +527,12 @@ impl Application for AudioEditor {
                                 *source = moved;
                             }
                         }
-                        let mut saved = match &target {
-                            Target::File(path) => json!({"path":path}),
-                            Target::Buffer(buffer) => json!({"buffer":buffer}),
-                        };
-                        saved["frames"] = json!(frames);
-                        saved["channels"] = json!(channels);
-                        saved["rate"] = json!(rate);
-                        delta.outcome.saved = Some(saved);
+                        delta.outcome.saved = Some(json!({"path": target,
+                            "frames": frames, "channels": channels, "rate": rate}));
                         // a file saved over is changed on disk by this
                         // editor: the next look takes it as it is
-                        if let (Target::File(path), Some((read, stamp))) =
-                            (&target, editor.file.disk.as_mut())
-                            && read == path
+                        if let Some((read, stamp)) = editor.file.disk.as_mut()
+                            && *read == target
                         {
                             *stamp = None;
                         }
@@ -691,34 +657,13 @@ impl Application for AudioEditor {
             };
             outcome.answer = Some(conversation::answer(seq, 0, Some(reason), self.reread()));
         }
-        let returned = if let Change::AddFile(file) = &delta.change {
-            vec![file.display]
-        } else {
-            Vec::new()
-        };
-        // What the server holds is put back to what the list still is: the
-        // join of a file that never opened is freed, and one of an edit that
-        // did not land is stitched again over the list it kept.
-        let recovery = match delta.change {
-            Change::AddFile(file) => vec![
-                send("/buffer_free", vec![OscType::Int(file.display as i32)]),
-                Step::AwaitDone {
-                    command: "/buffer_free".into(),
-                    index: Some(file.display as i32),
-                },
-            ],
-            Change::Save { .. } => self
-                .over_file(delta.target.object, |editor| editor.stitched())
-                .unwrap_or_default(),
-            Change::Contents(_) => self
-                .over_file(delta.target.object, |editor| editor.stitched())
-                .unwrap_or_default(),
-        };
+        // nothing was published: the list is what it was, and the files a
+        // failed batch wrote are its scratch, which the caller deletes
         Completion {
             committed: false,
             outcome,
-            recovery,
-            returned,
+            recovery: Vec::new(),
+            returned: Vec::new(),
         }
     }
 }
@@ -783,7 +728,7 @@ mod tests {
         }
     }
     fn editor() -> AudioEditor {
-        let mut editor=super::super::new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":100,"channels":1,"rate":48000,"display":2}"#).unwrap();
+        let mut editor=super::super::new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":100,"channels":1,"rate":48000}"#).unwrap();
         editor.window(17, None);
         editor
     }
@@ -802,7 +747,13 @@ mod tests {
         result: OperationResult,
     ) -> Completion {
         loop {
-            let (batch, _) = services.operations.next(ticket).unwrap();
+            // work with nothing to carry out is ready at once
+            let Some((batch, _)) = services.operations.next(ticket) else {
+                let finished = services.operations.finish_ready(ticket).unwrap();
+                return services
+                    .operations
+                    .finish(editor, &mut services.shared, finished);
+            };
             if let Some(finished) = services.operations.complete(
                 &services.shared.resources,
                 ticket,
@@ -975,7 +926,7 @@ mod tests {
             "an edit during the save waits"
         );
         assert!(finish(&mut editor, &mut services, over, OperationResult::Success).committed);
-        assert_eq!(editor.target(), &Target::File("/in/take1.wav".into()));
+        assert_eq!(editor.target(), "/in/take1.wav");
         let edit = begin(&mut editor, &mut services, stroke());
         finish(&mut editor, &mut services, edit, OperationResult::Success);
         // a save elsewhere reads only files that never change: an edit
@@ -984,7 +935,7 @@ mod tests {
             &mut editor,
             &mut services,
             Command::Save {
-                target: Some(Target::File("saved.wav".into())),
+                target: Some("saved.wav".into()),
                 format: "float".into(),
             },
         );
@@ -1000,7 +951,7 @@ mod tests {
         };
         finish(&mut editor, &mut services, edit, OperationResult::Success);
         assert!(finish(&mut editor, &mut services, ticket, OperationResult::Success).committed);
-        assert_eq!(editor.target(), &Target::File("saved.wav".into()));
+        assert_eq!(editor.target(), "saved.wav");
         assert!(editor.file.dirty, "the edit is newer than what was saved");
         let undo = services
             .shared
@@ -1030,7 +981,7 @@ mod tests {
             &mut editor,
             &mut services,
             Command::Save {
-                target: Some(Target::File("failed.wav".into())),
+                target: Some("failed.wav".into()),
                 format: "float".into(),
             },
         );
@@ -1043,7 +994,7 @@ mod tests {
             )
             .committed
         );
-        assert_eq!(editor.target(), &Target::File("saved.wav".into()));
+        assert_eq!(editor.target(), "saved.wav");
         assert!(editor.file.dirty);
     }
 
@@ -1051,7 +1002,7 @@ mod tests {
     /// next look takes the file as it is, and a change after it is said.
     #[test]
     fn a_save_over_the_read_file_is_not_told_as_changed_on_disk() {
-        let mut editor = super::super::new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":100,"channels":1,"rate":48000,"display":2,"stamp":{"modified":1.0,"size":10}}"#).unwrap();
+        let mut editor = super::super::new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":100,"channels":1,"rate":48000,"stamp":{"modified":1.0,"size":10}}"#).unwrap();
         editor.window(17, None);
         let mut services = Harness::default();
         let ticket = begin(
@@ -1107,22 +1058,22 @@ mod tests {
             &mut editor,
             &mut services,
             Command::Save {
-                target: Some(Target::Buffer(99)),
+                target: Some("/out/kept.wav".into()),
                 format: "float".into(),
             },
         );
-        editor.add_file(super::super::new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"channels":2,"rate":44100,"display":51}"#).unwrap());
+        editor.add_file(super::super::new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"channels":2,"rate":44100}"#).unwrap());
         let focused = editor.focused_file();
         let completion = finish(&mut editor, &mut services, ticket, OperationResult::Success);
         assert!(completion.committed);
         assert_eq!(
             completion.outcome.saved.unwrap(),
-            json!({"buffer":99,"frames":100,"channels":1,"rate":48000.0})
+            json!({"path":"/out/kept.wav","frames":100,"channels":1,"rate":48000.0})
         );
         assert_eq!(editor.focused_file(), focused);
-        assert_eq!(editor.target(), &Target::File("/in/take50.wav".into()));
+        assert_eq!(editor.target(), "/in/take50.wav");
         editor.focus_file(original).unwrap();
-        assert_eq!(editor.target(), &Target::Buffer(99));
+        assert_eq!(editor.target(), "/out/kept.wav");
     }
 
     #[test]
@@ -1131,10 +1082,8 @@ mod tests {
         let original = editor.focused_file();
         let ticket = begin(&mut editor, &mut services, stroke());
         editor.add_file(
-            super::super::new_json(
-                r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"display":51}"#,
-            )
-            .unwrap(),
+            super::super::new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200}"#)
+                .unwrap(),
         );
         let focused = editor.focused_file();
         let completion = finish(&mut editor, &mut services, ticket, OperationResult::Success);
@@ -1153,10 +1102,8 @@ mod tests {
         let first = editor.focused_file();
         let held = begin(&mut editor, &mut services, stroke());
         editor.add_file(
-            super::super::new_json(
-                r#"{"path":"/in/take50.wav","workspace":"/work","frames":200,"display":51}"#,
-            )
-            .unwrap(),
+            super::super::new_json(r#"{"path":"/in/take50.wav","workspace":"/work","frames":200}"#)
+                .unwrap(),
         );
         let second = editor.focused_file();
         let opened = begin(&mut editor, &mut services, Command::Open);

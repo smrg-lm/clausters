@@ -52,27 +52,24 @@
 //! window drawn again), `band` and `looping` (the selection band and the loop switch a script set),
 //! `bind` (the file in focus, or none), `layers`, `cursor` (the
 //! position a script placed), `locate` (the position a hand placed),
-//! `changed` (the data changed in this gesture), `free` (buffers to free),
-//! `delete` (files to delete: a closed file's renders), `release` (freed
-//! buffers and, in each `freed` entry's `files`, renders nothing names any
-//! more, to delete, as a turn hands them back), `returned`
-//! (buffer numbers an operation gives back), `operationEcho`, `bufferFree`
-//! (a copy's buffer nobody holds), `lease` (the event's clipboard lease),
-//! `closeWindow` and `closedWindow`.
+//! `changed` (the data changed in this gesture), `delete` (files to delete:
+//! a closed file's renders), `release` (in each `freed` entry's `files`,
+//! renders nothing names any more, to delete, as a turn hands them back),
+//! `operationEcho`, `lease` (the event's clipboard lease), `closeWindow` and
+//! `closedWindow`.
 //!
 //! Awaits, each `{"kind", ...}`: `steps` (`via` `join`, `plain` or
-//! `service`), `rolling`, `shape` (a `path`, whose header the caller reads,
-//! or a new file's `shape`), `batch` (an operation's batch on the member's
-//! engine), `stepped`, `clipboard`. A result is `{}` on success,
-//! `{"failed": reason}` on failure, and carries what the await asked for:
-//! `rolling`, the file's facts (`frames`, `channels`, `rate`, `path`,
-//! `untitled`, `codec`, `sample_format`, and over a server the `display`
-//! buffer its join is stitched into), `changed`.
+//! `service`), `shape` (a `path`, whose header the caller reads, or a new
+//! file's `shape`), `batch` (an operation's batch on the member's engine),
+//! `stepped`, `clipboard`. A result is `{}` on success, `{"failed": reason}`
+//! on failure, and carries what the await asked for: the file's facts
+//! (`frames`, `channels`, `rate`, `path`, `untitled`, `codec`,
+//! `sample_format`), `changed`.
 
 use std::collections::{BTreeMap, VecDeque};
 
 use clausters_core::ids::IdSpaces;
-use clausters_editing::apply::{Applier, Endpoint, Medium};
+use clausters_editing::apply::Medium;
 use clausters_editing::audio_playback::{self, AudioEditorPlayback};
 use serde_json::{Value, json};
 
@@ -88,7 +85,7 @@ const NO_FILE: &str = "no file is open";
 #[derive(Debug)]
 pub(super) struct Session {
     playback: AudioEditorPlayback<Box<dyn Medium + Send>>,
-    /// The engine's rate, handed over at open; 0 when it would not say.
+    /// The engine's rate.
     rate: f64,
     /// Whether a script paused the pass, which a play without a position
     /// resumes.
@@ -146,8 +143,6 @@ enum Flow {
 enum Resume {
     /// Steps carried out: nothing to read, a failure unwinds.
     Steps,
-    /// Whether the transport rolls.
-    Rolling(Rolled),
     /// One file read into buffers, to add.
     Read,
     /// The open files looked at on disk, the window having come back: the
@@ -247,7 +242,7 @@ enum Task {
     TellMeters,
     /// The window's play cursor and the list's play mark corrected.
     ShowTransport,
-    /// The playback asked whether the transport rolls.
+    /// The engine asked whether the transport rolls.
     Rolling(Rolled),
     /// A playback verb, its steps carried out.
     Playback { verb: &'static str, args: Value },
@@ -280,8 +275,8 @@ enum Cleanup {
 #[derive(Clone, Debug)]
 enum Handler {
     /// A copy that failed before or while it was published: the window is
-    /// told why, and a buffer nobody holds is freed.
-    Clipboard { outcome: Value, published: bool },
+    /// told why.
+    Clipboard { outcome: Value },
 }
 
 /// **One action in progress.**
@@ -301,42 +296,23 @@ struct Run {
 }
 
 impl Session {
-    /// The endpoint and the engine's rate, as the open hands them over: a
-    /// playback that has not taken its transport yet is made again for them.
-    fn reopen(&mut self, editing: &mut Editing, chunk: usize, rate: f64) {
-        if self.playback.transport().is_none() {
-            self.playback = playback_in(editing, chunk);
-        }
-        // an engine the application holds says its own rate
-        self.rate = editing.engine.as_ref().map_or(rate, |engine| engine.rate());
-    }
-
-    fn new(editing: &mut Editing, chunk: usize, rate: f64) -> Session {
-        Session {
-            playback: playback_in(editing, chunk),
-            rate,
+    /// A session over the engine the context holds, which says its rate;
+    /// `None` without one.
+    fn new(editing: &mut Editing) -> Option<Session> {
+        let engine = editing.engine.as_mut()?;
+        Some(Session {
+            rate: engine.rate(),
+            playback: AudioEditorPlayback::in_medium(engine.medium()),
             paused: false,
             runs: BTreeMap::new(),
             next: 1,
-        }
+        })
     }
 }
 
-/// **A playback in the medium the context plays on**: an engine the
-/// application holds, or an endpoint's steps for a client to carry out.
-fn playback_in(editing: &mut Editing, chunk: usize) -> AudioEditorPlayback<Box<dyn Medium + Send>> {
-    let medium: Box<dyn Medium + Send> = match editing.engine.as_mut() {
-        Some(engine) => engine.medium(),
-        None => Box::new(Applier::new(Endpoint {
-            chunk: chunk.max(1),
-        })),
-    };
-    AudioEditorPlayback::in_medium(medium)
-}
-
-/// **The takes an engine the application holds reads, brought up to date**:
-/// every file the engine reads whose list changed since is handed to it
-/// again, and its readers told its new length. Nothing over a server.
+/// **The takes the engine reads, brought up to date**: every file the
+/// engine reads whose list changed since is handed to it again, and its
+/// readers told its new length.
 fn retake(
     editing: &mut Editing,
     member: MemberId,
@@ -397,19 +373,14 @@ pub(super) fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -
         return json!({"error": "the member is not an audio application"});
     };
     if let Some(action) = request.get("do") {
-        // a verb before the open (a page sets the layers while its server is
-        // still asked for its rate) finds a session to run in
-        let mut session = editing
+        // a verb before the open finds a session to run in
+        let Some(mut session) = editing
             .sessions
             .remove(&member)
-            .unwrap_or_else(|| Session::new(editing, 1, 0.0));
-        if action["verb"] == "open" {
-            session.reopen(
-                editing,
-                action["chunk"].as_u64().unwrap_or(1) as usize,
-                action["rate"].as_f64().unwrap_or(0.0),
-            );
-        }
+            .or_else(|| Session::new(editing))
+        else {
+            return json!({"error": "the audio editor has no engine"});
+        };
         editing.note_playing(member, session.playback.playing());
         let answer = session.start(editing, member, action, ids);
         editing.note_playing(member, session.playback.playing());
@@ -556,20 +527,10 @@ impl Session {
         }
         let tasks: Vec<Task> = match verb {
             "open" => {
-                if let Err(error) = self.playback.alloc_transport(ids) {
+                if self.playback.transport().is_none()
+                    && let Err(error) = self.playback.alloc_transport(ids)
+                {
                     return finished(id, Raise::Runtime, &error.to_string());
-                }
-                // An engine the application holds reads the lists itself.
-                if editing.engine.is_some() {
-                    member_call(editing, member, json!({"verb": "sync", "held": true}));
-                }
-                // The join the editor plays is stitched at the engine's rate.
-                if self.rate > 0.0 {
-                    member_call(
-                        editing,
-                        member,
-                        json!({"verb": "sync", "engine_rate": self.rate}),
-                    );
                 }
                 let mut tasks = Vec::new();
                 if action["empty"] != true {
@@ -982,23 +943,7 @@ impl Session {
                 }
             }
             (Resume::Steps, None) => {}
-            (Resume::Clipboard, None) => {
-                // the copy is on the clipboard: a failure from here frees nothing
-                if let Some(run) = self.runs.get_mut(&id)
-                    && let Some(Task::Catch(Handler::Clipboard { published, .. })) = run
-                        .tasks
-                        .iter_mut()
-                        .find(|t| matches!(t, Task::Catch(Handler::Clipboard { .. })))
-                {
-                    *published = true;
-                }
-            }
-            (Resume::Rolling(rolled), None) => {
-                let rolling = result["rolling"] == true;
-                self.playback.set_rolling(rolling);
-                let tasks = self.rolled(editing, member, rolled, rolling);
-                self.push(id, tasks);
-            }
+            (Resume::Clipboard, None) => {}
             (Resume::Read, None) => self.push(id, vec![Task::AddFile(result.clone())]),
             (Resume::Stepped, None) => {
                 if let Some(run) = self.runs.get_mut(&id) {
@@ -1014,10 +959,9 @@ impl Session {
         answer
     }
 
-    /// What a rolling answer leads to.
-    /// **The file in focus sounds on an engine the application holds**: its
-    /// list handed to the engine, and the playback's readers set to the
-    /// buffers the engine answers, one per channel. `None` over a server.
+    /// **The file in focus sounds on the engine**: its list handed to the
+    /// engine, and the playback's readers set to the buffers the engine
+    /// answers, one per channel.
     fn sync_held(
         &mut self,
         editing: &mut Editing,
@@ -1025,26 +969,24 @@ impl Session {
         id: u64,
         file: &Value,
         ids: &mut IdSpaces,
-    ) -> Option<Flow> {
-        let rate = editing.engine.as_ref().map(|engine| {
-            if self.rate > 0.0 {
-                self.rate
-            } else {
-                engine.rate()
-            }
-        })?;
-        let wanted = file["id"].as_u64()?;
+    ) -> Flow {
+        let rate = self.rate;
+        let Some(wanted) = file["id"].as_u64() else {
+            return Flow::Next;
+        };
         let take = match editing.member(member) {
             Some(Member::Audio(editor)) => editor
                 .held_takes(rate, |file, _| file == wanted)
                 .into_iter()
-                .next()?,
-            _ => return None,
+                .next(),
+            _ => None,
         };
-        let engine = editing.engine.as_mut()?;
+        let (Some(take), Some(engine)) = (take, editing.engine.as_mut()) else {
+            return Flow::Next;
+        };
         let buffers = match engine.take(&take, ids) {
             Ok(buffers) => buffers,
-            Err(e) => return Some(Flow::Fail(Failure::Own(Raise::Runtime, e))),
+            Err(e) => return Flow::Fail(Failure::Own(Raise::Runtime, e)),
         };
         let frames = file["frames"].as_u64().unwrap_or(0);
         let take_rate = file["rate"].as_f64().unwrap_or(0.0);
@@ -1052,12 +994,13 @@ impl Session {
             .playback
             .sync_streams(wanted, buffers, frames, take_rate, rate, ids)
         {
-            return Some(Flow::Fail(Failure::Own(Raise::Runtime, e.to_string())));
+            return Flow::Fail(Failure::Own(Raise::Runtime, e.to_string()));
         }
         self.push(id, vec![Task::RetainPlayback]);
-        Some(Flow::Next)
+        Flow::Next
     }
 
+    /// What the engine's answer whether the transport rolls leads to.
     fn rolled(
         &mut self,
         editing: &mut Editing,
@@ -1185,21 +1128,13 @@ impl Session {
         for task in run.tasks {
             match task {
                 Task::Finally(Cleanup::Lease) => effects.push(tagged("lease", json!({}))),
-                Task::Catch(Handler::Clipboard { outcome, published }) => {
-                    if has(&outcome, "clipboard") {
-                        let mut answer = outcome["answer"].clone();
-                        if answer.is_object() {
-                            answer["reason"] = json!(failure.reason());
-                            answer["docVersion"] = json!(editing.version());
-                        }
-                        effects.push(tagged("echo", json!({"answer": answer})));
+                Task::Catch(Handler::Clipboard { outcome }) if has(&outcome, "clipboard") => {
+                    let mut answer = outcome["answer"].clone();
+                    if answer.is_object() {
+                        answer["reason"] = json!(failure.reason());
+                        answer["docVersion"] = json!(editing.version());
                     }
-                    if !published && has(&outcome, "clipboardBuffer") {
-                        effects.push(tagged(
-                            "bufferFree",
-                            json!({"buffer": outcome["clipboardBuffer"]}),
-                        ));
-                    }
+                    effects.push(tagged("echo", json!({"answer": answer})));
                 }
                 _ => {}
             }
@@ -1291,9 +1226,6 @@ impl Session {
                 lease,
             } => {
                 let mut tasks = Vec::new();
-                if truthy(&outcome["freedBuffers"]) {
-                    tasks.push(effect("free", json!({"buffers": outcome["freedBuffers"]})));
-                }
                 // a closed file's renders: its history went with it
                 if truthy(&outcome["deleteFiles"]) {
                     tasks.push(effect("delete", json!({"files": outcome["deleteFiles"]})));
@@ -1364,7 +1296,7 @@ impl Session {
             Task::PublishClipboard(outcome) => Flow::Await(
                 tagged(
                     "clipboard",
-                    json!({"document": outcome["clipboard"], "buffer": outcome["clipboardBuffer"],
+                    json!({"document": outcome["clipboard"],
                         "ready": outcome["clipboardReady"] == true}),
                 ),
                 Resume::Clipboard,
@@ -1422,9 +1354,6 @@ impl Session {
                 let answer = member_call(editing, member, call);
                 let mut tasks = Vec::new();
                 if has(&answer, "error") {
-                    if has(&answer, "returned") {
-                        tasks.push(effect("returned", json!({"returned": answer["returned"]})));
-                    }
                     tasks.extend(release(&answer["freed"]));
                 }
                 tasks.push(Task::Take {
@@ -1508,9 +1437,6 @@ impl Session {
                 if has(&answer, "version") {
                     effects.push(tagged("version", json!({"version": answer["version"]})));
                 }
-                if has(&answer, "returned") {
-                    effects.push(tagged("returned", json!({"returned": answer["returned"]})));
-                }
                 if has(&answer, "echo") {
                     effects.push(tagged("operationEcho", json!({"echo": answer["echo"]})));
                 }
@@ -1550,17 +1476,7 @@ impl Session {
                 if file["active"] == false {
                     return Flow::Next;
                 }
-                if let Some(flow) = self.sync_held(editing, member, id, &file, ids) {
-                    return flow;
-                }
-                let args = json!({"file": file["id"], "buffer": file["display"],
-                    "channels": file["channels"], "frames": file["frames"],
-                    "takeRate": file["rate"], "rate": self.rate});
-                self.push(
-                    id,
-                    vec![Task::Playback { verb: "sync", args }, Task::RetainPlayback],
-                );
-                Flow::Next
+                self.sync_held(editing, member, id, &file, ids)
             }
             Task::TellMeters => {
                 let meters = self.meters();
@@ -1585,8 +1501,8 @@ impl Session {
                 }
                 Flow::Next
             }
-            // an engine the application holds says whether it rolls
-            Task::Rolling(rolled) if editing.engine.is_some() => {
+            // the engine says whether it rolls
+            Task::Rolling(rolled) => {
                 let rolling = self.playback.transport().is_some_and(|transport| {
                     editing
                         .engine
@@ -1598,10 +1514,6 @@ impl Session {
                 self.push(id, tasks);
                 Flow::Next
             }
-            Task::Rolling(rolled) => Flow::Await(
-                tagged("rolling", json!({"transport": self.playback.transport()})),
-                Resume::Rolling(rolled),
-            ),
             Task::Playback { verb, args } => {
                 if verb == "closeFile"
                     && let (Some(engine), Some(file)) =
@@ -1779,10 +1691,9 @@ impl Session {
                 tasks.push(Task::Cut(outcome.clone()));
             }
         }
-        if copied || has(&outcome, "clipboardBuffer") {
+        if copied {
             tasks.push(Task::Catch(Handler::Clipboard {
                 outcome: outcome.clone(),
-                published: false,
             }));
         }
         if lease {
@@ -1888,16 +1799,76 @@ fn paths(paths: &Value) -> VecDeque<Value> {
 #[cfg(test)]
 mod tests {
     use super::super::call_json_ids;
+    use super::super::held::{HeldEngine, HeldTake};
     use super::*;
-    use clausters_core::ids::{IdShare, ServerShape};
+    use clausters_core::ids::{IdShare, ServerShape, Space};
+    use clausters_editing::apply::{Applier, Endpoint};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    /// What the engine below has been told, as a test reads it.
+    #[derive(Debug, Default)]
+    struct Told {
+        rolling: bool,
+        /// The revision it reads of each file.
+        revisions: HashMap<u64, u64>,
+        /// The files closed, in order.
+        closed: Vec<u64>,
+    }
+
+    /// **An engine that plays nothing**: its playback's ops are steps a
+    /// test reads, its transport rolls as the client says, and a take handed
+    /// to it is one buffer per channel.
+    #[derive(Debug)]
+    struct Engine(Arc<Mutex<Told>>);
+
+    impl HeldEngine for Engine {
+        fn medium(&mut self) -> Box<dyn Medium + Send> {
+            Box::new(Applier::new(Endpoint { chunk: 4096 }))
+        }
+        fn rate(&self) -> f64 {
+            48_000.0
+        }
+        fn take(&mut self, take: &HeldTake, ids: &mut IdSpaces) -> Result<Vec<i32>, String> {
+            self.0
+                .lock()
+                .unwrap()
+                .revisions
+                .insert(take.file, take.revision);
+            (0..take.channels)
+                .map(|_| {
+                    ids.alloc(Space::Buffers, 1)
+                        .map(|b| b as i32)
+                        .map_err(|e| e.to_string())
+                })
+                .collect()
+        }
+        fn revision(&self, file: u64) -> Option<u64> {
+            self.0.lock().unwrap().revisions.get(&file).copied()
+        }
+        fn close(&mut self, file: u64, _ids: &mut IdSpaces) {
+            let mut told = self.0.lock().unwrap();
+            told.revisions.remove(&file);
+            told.closed.push(file);
+        }
+        fn rolling(&self, _transport: i32) -> bool {
+            self.0.lock().unwrap().rolling
+        }
+        fn control(&self, _bus: usize) -> f32 {
+            0.0
+        }
+        fn starved(&self) -> u64 {
+            0
+        }
+    }
 
     /// **A client that does what it is asked**: every await succeeds, the
-    /// transport rolls as `rolling` says, a file read is a two-channel take
-    /// in fresh buffers, and every effect and await is written down.
+    /// engine's transport rolls as `rolling` says, a file read is a
+    /// two-channel take, and every effect and await is written down.
     struct Client {
         ids: IdSpaces,
         rolling: bool,
-        next: i64,
+        engine: Arc<Mutex<Told>>,
         fail: Option<&'static str>,
         trace: Vec<String>,
         effects: Vec<Value>,
@@ -1910,7 +1881,7 @@ mod tests {
             Client {
                 ids: IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE),
                 rolling: false,
-                next: 100,
+                engine: Arc::default(),
                 fail: None,
                 trace: Vec::new(),
                 effects: Vec::new(),
@@ -1919,13 +1890,12 @@ mod tests {
         }
 
         fn call(&mut self, editing: &mut Editing, request: Value) -> Value {
+            if editing.engine.is_none() {
+                editing.hold_engine(Box::new(Engine(Arc::clone(&self.engine))));
+            }
+            self.engine.lock().unwrap().rolling = self.rolling;
             serde_json::from_str(&call_json_ids(editing, &request.to_string(), &mut self.ids))
                 .unwrap()
-        }
-
-        fn buffer(&mut self) -> i64 {
-            self.next += 1;
-            self.next
         }
 
         /// Run one action to its end, answering its awaits.
@@ -1995,12 +1965,10 @@ mod tests {
                 return json!({"failed": "refused"});
             }
             match kind {
-                "rolling" => json!({"rolling": self.rolling}),
                 "stat" => json!({"stamps": self.stamps}),
                 "shape" => {
-                    let display = self.buffer();
                     json!({"frames": 200, "channels": 2, "rate": 48000.0,
-                        "display": display, "path": wait["path"], "untitled": false})
+                        "path": wait["path"], "untitled": false})
                 }
                 "stepped" => {
                     let prepared = wait["stepped"]["operation"].clone();
@@ -2027,6 +1995,13 @@ mod tests {
     fn cut(seq: i64, editing: &Editing) -> Value {
         json!({"verb": "event", "addr": "/gui_event", "window": true,
             "args": [12, seq, editing.version(), "cut", 10.0, 20.0]})
+    }
+
+    /// The same 20 frames reversed: an edit that renders, so its run waits
+    /// on a batch.
+    fn reverse(seq: i64, editing: &Editing) -> Value {
+        json!({"verb": "event", "addr": "/gui_event", "window": true,
+            "args": [12, seq, editing.version(), "reverse", 10.0, 20.0]})
     }
 
     fn save(path: &str) -> Value {
@@ -2062,10 +2037,9 @@ mod tests {
 
     fn opened(client: &mut Client, editing: &mut Editing, empty: bool) -> MemberId {
         let request = if empty {
-            json!({"verb": "openAudio", "key": "audio:empty", "empty": true, "display": 9})
+            json!({"verb": "openAudio", "key": "audio:empty", "empty": true})
         } else {
-            json!({"verb": "openAudio", "key": "take:3", "path":"/in/take3.wav","workspace":"/work", "frames": 100,
-                "display": 9})
+            json!({"verb": "openAudio", "key": "take:3", "path":"/in/take3.wav","workspace":"/work", "frames": 100})
         };
         let member = client.call(editing, request)["member"].as_u64().unwrap() as MemberId;
         client.call(
@@ -2104,7 +2078,7 @@ mod tests {
         let member = client.call(
             &mut editing,
             json!({"verb": "openAudio", "key": "take:3", "path": "/in/take3.wav",
-                "workspace": "/work", "frames": 100, "display": 9,
+                "workspace": "/work", "frames": 100,
                 "stamp": {"modified": 1.0, "size": 10}}),
         )["member"]
             .as_u64()
@@ -2149,16 +2123,14 @@ mod tests {
     }
 
     #[test]
-    fn opening_copies_the_take_and_then_sounds_it() {
+    fn opening_measures_the_take_and_hands_it_to_the_engine() {
         let mut editing = Editing::new();
         let mut client = Client::new();
         opened(&mut client, &mut editing, false);
         let trace = &client.trace;
-        // the join is an operation's batch, and the sound follows it
-        assert!(
-            position(trace, "await:batch") < position(trace, "await:steps"),
-            "{trace:?}"
-        );
+        // the peaks are an operation's batch, and the engine reads the take
+        assert!(trace.contains(&"await:batch".to_string()), "{trace:?}");
+        assert_eq!(client.engine.lock().unwrap().revisions.len(), 1);
         assert!(
             !trace.contains(&"dirty".to_string()),
             "dirty is read from the editor, never projected: {trace:?}"
@@ -2193,10 +2165,9 @@ mod tests {
         assert!(answer["error"].is_null(), "{answer}");
         let trace = &client.trace;
         let bind = position(trace, "bind");
-        let rolling = position(trace, "await:rolling");
         let publish = position(trace, "publish");
         assert!(position(trace, "await:shape") < bind, "{trace:?}");
-        assert!(bind < rolling && rolling < publish, "{trace:?}");
+        assert!(bind < publish, "{trace:?}");
         // the meter is known when the window is drawn again
         let session = editing.sessions.get(&member).unwrap();
         assert!(session.playback.meters().is_some());
@@ -2220,13 +2191,9 @@ mod tests {
         };
         play(&mut client, &mut editing);
         let trace = client.trace.clone();
-        let rolling = position(&trace, "await:rolling");
+        assert!(trace.contains(&"await:steps".to_string()), "{trace:?}");
         assert!(
-            trace[rolling..].contains(&"await:steps".to_string()),
-            "{trace:?}"
-        );
-        assert!(
-            trace[rolling..].contains(&"set".to_string()),
+            trace.contains(&"set".to_string()),
             "the play cursor: {trace:?}"
         );
         assert_eq!(
@@ -2505,7 +2472,7 @@ mod tests {
     }
 
     /// **Completions out of order, each to its own file**: a save of A is
-    /// out while B comes into focus and is cut; B's batch answers first and
+    /// out while B comes into focus and is reversed; B's batch answers first and
     /// A's last. Each lands on the file it was started on, and the late one
     /// moves nothing in the window, which is showing B.
     #[test]
@@ -2526,19 +2493,19 @@ mod tests {
         );
         let b = binding(&mut editing, member)["id"].clone();
         assert_ne!(a, b);
-        let action = cut(2, &editing);
+        let action = reverse(2, &editing);
 
         let started = client.begin(&mut editing, member, action);
-        let cut_b = until(&mut client, &mut editing, member, started, "batch", 1);
-        let cut_b = client.finish(&mut editing, member, cut_b);
-        assert!(cut_b["error"].is_null(), "{cut_b}");
+        let reversed = until(&mut client, &mut editing, member, started, "batch", 1);
+        let reversed = client.finish(&mut editing, member, reversed);
+        assert!(reversed["error"].is_null(), "{reversed}");
         client.effects.clear();
         let saved = client.finish(&mut editing, member, write_a);
         assert!(saved["error"].is_null(), "{saved}");
         let shown = binding(&mut editing, member);
         assert_eq!(shown["id"], b, "the window still shows B");
-        assert_eq!(shown["dirty"], true, "B's cut is B's");
-        assert_eq!(shown["frames"], 180);
+        assert_eq!(shown["dirty"], true, "B's edit is B's");
+        assert_eq!(shown["frames"], 200);
         assert!(
             !client
                 .effects
@@ -2566,7 +2533,7 @@ mod tests {
         let mut editing = Editing::new();
         let mut client = Client::new();
         let member = opened(&mut client, &mut editing, false);
-        let action = cut(1, &editing);
+        let action = reverse(1, &editing);
 
         let started = client.begin(&mut editing, member, action);
         let batch = until(&mut client, &mut editing, member, started, "batch", 1);
@@ -2577,7 +2544,8 @@ mod tests {
         let again = client.answer(&mut editing, member, &batch, json!({}));
         assert!(again["error"].is_string(), "{again}");
         assert_eq!(editing.version(), version);
-        assert_eq!(binding(&mut editing, member)["frames"], 80);
+        let state = client.call(&mut editing, json!({"verb": "state", "member": member}));
+        assert_eq!(state["undoLabel"], "reverse", "one entry: {state}");
     }
 
     /// **The window closed while a save is out**: the view goes and the
@@ -2620,30 +2588,26 @@ mod tests {
         );
     }
 
-    /// **A copy that fails before it reaches the clipboard** removes nothing:
-    /// the cut's samples stay, and the window is told why.
+    /// **An edit whose render fails** changes nothing: the take stays as
+    /// it was, clean, and nothing is recorded.
     #[test]
-    fn a_cut_whose_copy_fails_leaves_the_take_whole() {
+    fn an_edit_whose_render_fails_leaves_the_take_whole() {
         let mut editing = Editing::new();
         let mut client = Client::new();
         let member = opened(&mut client, &mut editing, false);
-        let action = cut(1, &editing);
+        let action = reverse(1, &editing);
 
         let started = client.begin(&mut editing, member, action);
-        let copy = until(&mut client, &mut editing, member, started, "batch", 1);
+        let render = until(&mut client, &mut editing, member, started, "batch", 1);
         let failed = client.answer(
             &mut editing,
             member,
-            &copy,
-            json!({"failed": "copy refused"}),
+            &render,
+            json!({"failed": "render refused"}),
         );
         let failed = client.finish(&mut editing, member, failed);
         assert_eq!(failed["done"], true, "{failed}");
-        assert_eq!(
-            binding(&mut editing, member)["frames"],
-            100,
-            "nothing was removed"
-        );
+        assert_eq!(binding(&mut editing, member)["frames"], 100);
         assert_eq!(binding(&mut editing, member)["dirty"], false);
         let undo = client.call(&mut editing, json!({"verb": "state", "member": member}));
         assert_eq!(undo["canUndo"], false, "and nothing was recorded");
@@ -2656,19 +2620,16 @@ mod tests {
             .unwrap_or_else(|| panic!("no {kind} in {trace:?}"))
     }
 
+    /// **The answer that has the window read the list again** follows the
+    /// renders of the files it names.
     #[test]
-    fn the_answer_that_reloads_the_join_follows_the_steps_that_make_it() {
+    fn the_answer_that_reloads_the_list_follows_the_renders_that_make_it() {
         let mut editing = Editing::new();
         let mut client = Client::new();
         let member = opened(&mut client, &mut editing, false);
         client.trace.clear();
-        let version = editing.version();
-        client.run(
-            &mut editing,
-            member,
-            json!({"verb": "event", "addr": "/gui_event",
-                "args": [12, 1, version, "cut", 10.0, 20.0], "window": true}),
-        );
+        let action = reverse(1, &editing);
+        client.run(&mut editing, member, action);
         let trace = &client.trace;
         assert!(
             last(trace, "await:batch") < last(trace, "echo"),
@@ -2688,13 +2649,13 @@ mod tests {
             client.trace.clear();
             client.effects.clear();
             let version = editing.version();
-            client.run(
+            let answer = client.run(
                 editing,
                 member,
                 json!({"verb": "event", "addr": "/gui_event",
                     "args": [12, seq, version, "cut", 10.0, 20.0], "window": true}),
             );
-            client.trace.iter().any(|k| k == "await:batch")
+            answer["result"] == true
         };
         client.rolling = true;
         client.run(
@@ -2703,7 +2664,7 @@ mod tests {
             json!({"verb": "play", "window": true}),
         );
         let version = editing.version();
-        assert!(!cut(&mut client, &mut editing, 1), "nothing is carried out");
+        assert!(!cut(&mut client, &mut editing, 1), "nothing is cut");
         assert_eq!(editing.version(), version, "and nothing changed");
         let said = client
             .effects
@@ -2729,7 +2690,7 @@ mod tests {
     }
 
     #[test]
-    fn a_closed_file_s_takes_are_released_after_its_join_stops_reading_them() {
+    fn a_closed_file_stops_being_read_before_what_it_measured_is_deleted() {
         let mut editing = Editing::new();
         let mut client = Client::new();
         let member = opened(&mut client, &mut editing, false);
@@ -2745,9 +2706,10 @@ mod tests {
             json!({"verb": "verb", "call": {"verb": "close_file"}, "window": true}),
         );
         let trace = &client.trace;
-        // the playback lets the file go before its buffers are freed
+        // the engine lets the file go before its peaks are deleted
+        assert_eq!(client.engine.lock().unwrap().closed.len(), 1);
         assert!(
-            position(trace, "await:steps") < position(trace, "free"),
+            position(trace, "await:steps") < position(trace, "delete"),
             "{trace:?}"
         );
     }
