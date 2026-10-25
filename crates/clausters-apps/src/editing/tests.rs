@@ -1617,3 +1617,54 @@ fn a_lost_endpoint_refuses_its_step_without_blocking_unrelated_context_edits() {
     );
     assert!(editing.can_undo());
 }
+
+/// **A window gone takes its member's history with it**: the takes its
+/// entries named are let go, the renders only it wrote are handed back to
+/// delete, and what stays of the member holds no file.
+#[test]
+fn a_forgotten_audio_member_lets_go_of_what_only_it_named() {
+    let mut editing = Editing::default();
+    let opened = call(
+        &mut editing,
+        json!({"verb": "openAudio", "key": "take:3", "path":"/in/take3.wav",
+               "workspace":"/work", "frames": 100, "rate": 48000}),
+    );
+    let take = opened["member"].as_u64().unwrap() as MemberId;
+    call(
+        &mut editing,
+        json!({"verb": "member", "member": take, "call": {"verb": "window", "widget": 12}}),
+    );
+    draw(&mut editing, take, 1, 10);
+    draw(&mut editing, take, 2, 30);
+    let named: Vec<u64> = editing
+        .services
+        .histories
+        .held_sources()
+        .into_iter()
+        .map(|s| s.0)
+        .filter(|id| id & (1 << 61) != 0 && id & (1 << 62) == 0)
+        .collect();
+    assert!(!named.is_empty());
+    assert!(
+        named
+            .iter()
+            .all(|id| crate::audio::shared::take(*id).is_some())
+    );
+    let freed = editing.forget_audio(take);
+    assert!(
+        named
+            .iter()
+            .all(|id| crate::audio::shared::take(*id).is_none()),
+        "the takes its entries named are let go"
+    );
+    let files: Vec<&String> = freed.iter().flat_map(|f| &f.files).collect();
+    assert!(
+        files.iter().any(|f| f.ends_with("-stroke.w64")),
+        "its renders are handed back: {files:?}"
+    );
+    assert!(editing.services.histories.held_sources().is_empty());
+    assert!(matches!(
+        editing.member(take),
+        Some(Member::Audio(editor)) if !editor.has_file()
+    ));
+}

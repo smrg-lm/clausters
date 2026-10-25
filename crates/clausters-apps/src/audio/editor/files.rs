@@ -25,6 +25,24 @@ impl AudioEditor {
         self.open_files.open
     }
 
+    /// **Every file it holds, let go of**: their identities, for the
+    /// histories to close; from here on it roots none of them, so what only
+    /// it named can be released.
+    pub(crate) fn let_go_files(&mut self) -> Vec<i64> {
+        if !self.open_files.open {
+            return Vec::new();
+        }
+        self.open_files.open = false;
+        std::iter::once(self.file.id.0)
+            .chain(self.open_files.parked.keys().map(|id| id.0))
+            .collect()
+    }
+
+    /// **An editor with no file**, holding nothing.
+    pub(crate) fn empty() -> AudioEditor {
+        new_json(r#"{"empty": true}"#).expect("an empty editor")
+    }
+
     /// The focused open file's identity.
     pub fn focused_file(&self) -> i64 {
         self.file.id.0

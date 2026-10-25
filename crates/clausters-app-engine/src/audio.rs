@@ -75,7 +75,7 @@ pub struct AudioApp {
     engine: Arc<Mutex<AppEngine>>,
     ids: IdSpaces,
     notes: (Sender<Note>, Receiver<Note>),
-    /// Each member's renders under way, which [`AudioApp::call_off`] lets go.
+    /// Each member's renders under way, which [`AudioApp::forget`] lets go.
     live: HashMap<MemberId, Vec<Arc<AtomicBool>>>,
 }
 
@@ -146,14 +146,18 @@ impl AudioApp {
         }
     }
 
-    /// **Calls off member `member`'s renders**: each stops before its next
-    /// step, where its window closed in the middle of one -- a reverse of a
-    /// day goes on writing its pieces otherwise, for a folder that is gone.
-    pub fn call_off(&mut self, member: MemberId) {
-        Here {
+    /// **Member `member`'s window is gone**: its renders are called off,
+    /// each before its next step -- a reverse of a day goes on writing its
+    /// pieces otherwise, for a folder that is gone -- and it leaves
+    /// `editing`, the renders only it wrote deleted.
+    pub fn forget(&mut self, editing: &mut Editing, member: MemberId) {
+        let mut here = Here {
             live: &mut self.live,
+        };
+        here.call_off(member);
+        for freed in editing.forget_audio(member) {
+            here.delete(&freed.files);
         }
-        .call_off(member);
     }
 
     /// The engine it holds.

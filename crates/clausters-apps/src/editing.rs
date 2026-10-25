@@ -709,6 +709,28 @@ impl Editing {
             .map(|seat| &mut seat.member)
     }
 
+    /// **An audio member whose window is gone leaves the context**: every
+    /// file it holds is closed, its history with it, so the takes and the
+    /// renders only it named are let go; its session goes, and what is left
+    /// of it is an editor with no file. Its seat stays, so no other member's
+    /// number moves. Answers what that freed, the renders to delete among it.
+    pub fn forget_audio(&mut self, member: MemberId) -> Vec<Freed> {
+        self.sessions.remove(&member);
+        let files = match self.member_mut(member) {
+            Some(Member::Audio(editor)) => editor.let_go_files(),
+            _ => return Vec::new(),
+        };
+        for id in files {
+            self.services.histories.close(Object { member, id });
+        }
+        let freed = self.release();
+        if let Some(Member::Audio(editor)) = self.member_mut(member) {
+            **editor = AudioEditor::empty();
+        }
+        self.sync_resources();
+        freed
+    }
+
     /// **An edit that leaves no entry still moves the version**: one applied
     /// with no inverse to record, which a host must stop naming the version it
     /// was made against. Answers the version it moved to.

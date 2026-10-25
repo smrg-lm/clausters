@@ -607,7 +607,7 @@ impl App {
     /// folder goes with it, dropped.
     fn forget(&mut self, def_id: i32) {
         if let Some(window) = self.windows.remove(&def_id) {
-            self.app.call_off(window.member);
+            self.app.forget(&mut self.editing, window.member);
             // only this window's: another's goes on waiting for its render
             let gone: Vec<u64> = self
                 .asked

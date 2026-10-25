@@ -5379,10 +5379,14 @@ wrong.
   the other read. *Fixed 2026-10-25:* a made file is named after the
   number it is open under in its editor.
 
-- ⬜ **A closed audio window stays in the editing context** *(found
+- ✅ **A closed audio window stays in the editing context** *(found
   2026-10-25, the same review)*. A window that closes detaches its view and
   stops its playback, but its member keeps its seat with its files, their
   histories and the takes those name, the last in a registry of the whole
   process (`audio/shared.rs`), so the application's memory grows with every
   window opened and closed over its life. A member whose window is gone
   should leave the context and let go of what only it named.
+  *Fixed 2026-10-25:* a window's member leaves the context with it
+  (`Editing::forget_audio`): every file it holds is closed with its
+  history, the takes and renders only it named are let go, and its seat
+  keeps an editor with no file.
