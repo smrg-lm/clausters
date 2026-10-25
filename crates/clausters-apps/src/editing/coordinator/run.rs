@@ -45,8 +45,56 @@ impl Failure {
 /// How one step of a run went on.
 pub(super) enum Flow {
     Next,
-    Await(Value, Resume),
+    Await(Await, Resume),
     Fail(Failure),
+}
+
+/// **What a run waits on**, for its driver to do in place or hand back.
+#[derive(Clone, Debug)]
+pub(super) enum Await {
+    /// Steps to carry out, in the JSON a runner walks: a playback's, a
+    /// turn's, or an operation's batch.
+    Steps(Value),
+    /// A file to add: `{"path"}`, whose header is read, or a new file's
+    /// `{"shape"}`.
+    Shape(Value),
+    /// The files at these paths, as they are on disk.
+    Stat(Value),
+    /// A history step the context took, to carry out.
+    Stepped(Value),
+    /// A copy's clipboard document, to publish unless `ready`.
+    Clipboard { document: Value, ready: bool },
+}
+
+/// **How far a run went**: the effects it said, and its end or what it
+/// waits on.
+#[derive(Debug)]
+pub(super) struct Answer {
+    pub(super) run: u64,
+    pub(super) effects: Vec<Value>,
+    pub(super) end: End,
+}
+
+/// A run's end, or what it waits on.
+#[derive(Debug)]
+pub(super) enum End {
+    /// It ended with its result.
+    Done(Value),
+    /// It ended on a failure, unwound.
+    Failed(Failure),
+    /// It waits.
+    Waits(Await),
+}
+
+impl Answer {
+    /// A run that ended at once on a failure of the coordinator's.
+    pub(super) fn refused(run: u64, raise: Raise, message: &str) -> Answer {
+        Answer {
+            run,
+            effects: Vec::new(),
+            end: End::Failed(Failure::Own(raise, message.into())),
+        }
+    }
 }
 
 /// **What a resumed run does with the client's result.**
@@ -67,12 +115,6 @@ pub(super) enum Resume {
         repairing: bool,
         member: Option<MemberId>,
         rendered: Vec<String>,
-    },
-    /// A repair's recovery batch carried out.
-    Recovery {
-        ticket: Value,
-        rest: Vec<Value>,
-        repairing: bool,
     },
     /// A history step carried out: whether it changed anything.
     Stepped,
@@ -161,8 +203,8 @@ pub(super) enum Task {
     RetainPlayback,
     /// The member's playback root dropped.
     DropPlayback,
-    /// Steps to carry out on the server.
-    Steps { via: &'static str, steps: Value },
+    /// Steps to carry out, in the JSON a runner walks.
+    Steps(Value),
     /// A history step to carry out.
     Stepped(Value),
     /// The window closed (`closed`: by the host, not asked).
@@ -220,13 +262,16 @@ impl Session {
         editing: &mut Editing,
         member: MemberId,
         id: u64,
-        result: &Value,
+        result: Result<Value, String>,
         ids: &mut IdSpaces,
-    ) -> Value {
+    ) -> Answer {
         let Some(waiting) = self.runs.get_mut(&id).and_then(|run| run.waiting.take()) else {
-            return json!({"error": "no run is waiting under that number"});
+            return Answer::refused(id, Raise::Runtime, "no run is waiting under that number");
         };
-        let failed = result.get("failed").and_then(Value::as_str);
+        let (result, failed) = match &result {
+            Ok(result) => (result.clone(), None),
+            Err(reason) => (Value::Null, Some(reason.as_str())),
+        };
         let mut effects = Vec::new();
         match (waiting, failed) {
             // a batch that failed is the operation's to hear, not raised
@@ -267,45 +312,6 @@ impl Session {
                 );
                 self.push(id, vec![Task::OperationAnswer { answer, repairing }]);
             }
-            (
-                Resume::Recovery {
-                    ticket, repairing, ..
-                },
-                Some(reason),
-            ) => {
-                let answer = door(
-                    editing,
-                    json!({"verb": "operation", "action": "repairFailed",
-                        "ticket": ticket, "reason": reason}),
-                );
-                self.push(id, vec![Task::OperationDone { answer, repairing }]);
-            }
-            (
-                Resume::Recovery {
-                    ticket,
-                    rest,
-                    repairing,
-                },
-                None,
-            ) => {
-                if let Some((next, more)) = rest.split_first() {
-                    if let Some(run) = self.runs.get_mut(&id) {
-                        run.waiting = Some(Resume::Recovery {
-                            ticket,
-                            rest: more.to_vec(),
-                            repairing,
-                        });
-                    }
-                    return json!({"run": id, "done": false, "effects": [],
-                        "await": tagged("batch", json!({"member": next["member"],
-                            "server": next["server"], "steps": next["steps"]}))});
-                }
-                let answer = door(
-                    editing,
-                    json!({"verb": "operation", "action": "repaired", "ticket": ticket}),
-                );
-                self.push(id, vec![Task::OperationDone { answer, repairing }]);
-            }
             // A look that failed finds nothing changed: the window's event
             // is answered all the same.
             (Resume::Stat { seq }, failed) => {
@@ -325,14 +331,7 @@ impl Session {
                 );
             }
             (_, Some(reason)) => {
-                if let Some(answer) = self.unwind(
-                    editing,
-                    id,
-                    Failure::Client(reason.to_string()),
-                    &mut effects,
-                ) {
-                    return answer;
-                }
+                return self.unwind(editing, id, Failure::Client(reason.to_string()), effects);
             }
             (Resume::Steps, None) => {}
             (Resume::Clipboard, None) => {}
@@ -345,8 +344,8 @@ impl Session {
         }
         let mut answer = self.drive(editing, member, id, ids);
         if !effects.is_empty() {
-            effects.extend(answer["effects"].as_array().cloned().unwrap_or_default());
-            answer["effects"] = json!(effects);
+            effects.append(&mut answer.effects);
+            answer.effects = effects;
         }
         answer
     }
@@ -358,28 +357,32 @@ impl Session {
         member: MemberId,
         id: u64,
         ids: &mut IdSpaces,
-    ) -> Value {
+    ) -> Answer {
         let mut effects = Vec::new();
         loop {
             let Some(task) = self.runs.get_mut(&id).and_then(|run| run.tasks.pop_front()) else {
                 retake(editing, member, &mut self.playback, self.rate, ids);
                 let run = self.runs.remove(&id).unwrap_or_default();
-                return json!({"run": id, "done": true, "effects": effects, "result": run.result});
+                return Answer {
+                    run: id,
+                    effects,
+                    end: End::Done(run.result),
+                };
             };
             match self.step(editing, member, id, task, &mut effects, ids) {
                 Flow::Next => {}
-                Flow::Await(request, resume) => {
+                Flow::Await(wait, resume) => {
                     retake(editing, member, &mut self.playback, self.rate, ids);
                     if let Some(run) = self.runs.get_mut(&id) {
                         run.waiting = Some(resume);
                     }
-                    return json!({"run": id, "done": false, "effects": effects, "await": request});
+                    return Answer {
+                        run: id,
+                        effects,
+                        end: End::Waits(wait),
+                    };
                 }
-                Flow::Fail(failure) => {
-                    if let Some(answer) = self.unwind(editing, id, failure, &mut effects) {
-                        return answer;
-                    }
-                }
+                Flow::Fail(failure) => return self.unwind(editing, id, failure, effects),
             }
         }
     }
@@ -392,8 +395,8 @@ impl Session {
         editing: &Editing,
         id: u64,
         failure: Failure,
-        effects: &mut Vec<Value>,
-    ) -> Option<Value> {
+        mut effects: Vec<Value>,
+    ) -> Answer {
         let run = self.runs.remove(&id).unwrap_or_default();
         for task in run.tasks {
             match task {
@@ -409,17 +412,11 @@ impl Session {
                 _ => {}
             }
         }
-        let mut answer = json!({"run": id, "done": true, "effects": std::mem::take(effects)});
-        match failure {
-            Failure::Client(reason) => {
-                answer["rethrow"] = json!(true);
-                answer["reason"] = json!(reason);
-            }
-            Failure::Own(raise, message) => {
-                answer["error"] = json!({"type": raise.name(), "message": message});
-            }
+        Answer {
+            run: id,
+            effects,
+            end: End::Failed(failure),
         }
-        Some(answer)
     }
 }
 

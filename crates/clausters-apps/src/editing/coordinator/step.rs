@@ -45,14 +45,8 @@ impl Session {
             }
             // reached without a failure: nothing to handle
             Task::Catch(_) => Flow::Next,
-            Task::Steps { via, steps } => Flow::Await(
-                tagged("steps", json!({"via": via, "steps": steps})),
-                Resume::Steps,
-            ),
-            Task::Stepped(stepped) => Flow::Await(
-                tagged("stepped", json!({"stepped": stepped})),
-                Resume::Stepped,
-            ),
+            Task::Steps(steps) => Flow::Await(Await::Steps(steps), Resume::Steps),
+            Task::Stepped(stepped) => Flow::Await(Await::Stepped(stepped), Resume::Stepped),
             Task::Take { outcome, lease } => match self.take(id, outcome, lease) {
                 Ok(tasks) => {
                     self.push(id, tasks);
@@ -148,11 +142,10 @@ impl Session {
                 Flow::Next
             }
             Task::PublishClipboard(outcome) => Flow::Await(
-                tagged(
-                    "clipboard",
-                    json!({"document": outcome["clipboard"],
-                        "ready": outcome["clipboardReady"] == true}),
-                ),
+                Await::Clipboard {
+                    document: outcome["clipboard"].clone(),
+                    ready: outcome["clipboardReady"] == true,
+                },
                 Resume::Clipboard,
             ),
             Task::Cut(outcome) => {
@@ -184,7 +177,7 @@ impl Session {
                 Flow::Next
             }
             Task::Stat(check) => Flow::Await(
-                tagged("stat", json!({"paths": check["paths"]})),
+                Await::Stat(check["paths"].clone()),
                 Resume::Stat {
                     seq: check["seq"].clone(),
                 },
@@ -200,7 +193,7 @@ impl Session {
                     Some(shape) => json!({"shape": shape}),
                     None => json!({"path": file["path"]}),
                 };
-                Flow::Await(tagged("shape", request), Resume::Read)
+                Flow::Await(Await::Shape(request), Resume::Read)
             }
             Task::AddFile(file) => {
                 let mut call = file;
@@ -245,11 +238,7 @@ impl Session {
                         return Flow::Fail(Failure::Own(Raise::Value, error.into()));
                     }
                     return Flow::Await(
-                        tagged(
-                            "batch",
-                            json!({"member": answer["member"], "server": answer["server"],
-                                "steps": answer.get("steps").cloned().unwrap_or(json!([]))}),
-                        ),
+                        Await::Steps(answer.get("steps").cloned().unwrap_or(json!([]))),
                         Resume::Batch {
                             ticket: answer["ticket"].clone(),
                             batch: answer["batch"].clone(),
@@ -261,22 +250,9 @@ impl Session {
                         },
                     );
                 }
+                // the audio editor's work leaves nothing to recover: a
+                // refused operation is repaired at once
                 if has(&answer, "repair") {
-                    let recoveries = answer["recoveries"].as_array().cloned().unwrap_or_default();
-                    if let Some((first, rest)) = recoveries.split_first() {
-                        return Flow::Await(
-                            tagged(
-                                "batch",
-                                json!({"member": first["member"], "server": first["server"],
-                                    "steps": first["steps"]}),
-                            ),
-                            Resume::Recovery {
-                                ticket: answer["repair"].clone(),
-                                rest: rest.to_vec(),
-                                repairing,
-                            },
-                        );
-                    }
                     let answer = door(
                         editing,
                         json!({"verb": "operation", "action": "repaired", "ticket": answer["repair"]}),
@@ -407,11 +383,7 @@ impl Session {
                     Err(error) => Flow::Fail(Failure::Own(Raise::Runtime, error)),
                     Ok(steps) if steps.is_empty() => Flow::Next,
                     Ok(steps) => Flow::Await(
-                        tagged(
-                            "steps",
-                            json!({"via": "service",
-                                "steps": clausters_editing::apply::steps_json(&steps)}),
-                        ),
+                        Await::Steps(clausters_editing::apply::steps_json(&steps)),
                         Resume::Steps,
                     ),
                 }

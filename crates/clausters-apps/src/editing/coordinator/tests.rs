@@ -153,7 +153,7 @@ impl Client {
 
     fn query(&mut self, editing: &mut Editing, member: MemberId, query: &str) -> Value {
         self.hold(editing);
-        editing.audio_query(member, query, &mut self.ids)
+        editing.audio_query(member, query)
     }
 
     /// Run one action to its end, its renders landed as they come.

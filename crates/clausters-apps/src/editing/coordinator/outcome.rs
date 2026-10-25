@@ -57,10 +57,7 @@ impl Session {
         }
         if outcome.get("binding").is_some() {
             if truthy(&outcome["steps"]) {
-                tasks.push(Task::Steps {
-                    via: "join",
-                    steps: outcome["steps"].clone(),
-                });
+                tasks.push(Task::Steps(outcome["steps"].clone()));
             }
             tasks.push(Task::Bound {
                 outcome,
@@ -96,16 +93,12 @@ impl Session {
         if let Some(run) = self.runs.get_mut(&id) {
             run.changed = outcome["changed"] == true;
         }
-        // **The steps are the client's to carry out**: a new take made where
-        // the turn needed one and the join stitched over the list -- or, for a
-        // save from the window, the file written.
+        // **The steps are the caller's to carry out**: the renders that make
+        // the files the turn's list reads.
         let steps = outcome.get("steps").cloned().unwrap_or(json!([]));
         let copied = has(&outcome, "clipboard");
         if truthy(&steps) {
-            tasks.push(Task::Steps {
-                via: if copied || lease { "plain" } else { "join" },
-                steps,
-            });
+            tasks.push(Task::Steps(steps));
         }
         if copied {
             tasks.push(Task::PublishClipboard(outcome.clone()));

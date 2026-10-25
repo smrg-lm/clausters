@@ -16,7 +16,7 @@ impl Session {
         member: MemberId,
         action: &Value,
         ids: &mut IdSpaces,
-    ) -> Value {
+    ) -> Answer {
         let id = self.next;
         self.next += 1;
         let mut run = Run {
@@ -25,14 +25,14 @@ impl Session {
         };
         let verb = action["verb"].as_str().unwrap_or_default();
         if TRANSPORT.contains(&verb) && file_id(editing, member).is_none() {
-            return finished(id, Raise::Value, NO_FILE);
+            return Answer::refused(id, Raise::Value, NO_FILE);
         }
         let tasks: Vec<Task> = match verb {
             "open" => {
                 if self.playback.transport().is_none()
                     && let Err(error) = self.playback.alloc_transport(ids)
                 {
-                    return finished(id, Raise::Runtime, &error.to_string());
+                    return Answer::refused(id, Raise::Runtime, &error.to_string());
                 }
                 let mut tasks = Vec::new();
                 if action["empty"] != true {
@@ -84,7 +84,7 @@ impl Session {
             "verb" => {
                 let answer = member_call(editing, member, action["call"].clone());
                 if answer["error"] == NO_FILE {
-                    return finished(id, Raise::Value, NO_FILE);
+                    return Answer::refused(id, Raise::Value, NO_FILE);
                 }
                 run.changed = answer["changed"] == true;
                 run.reason = Some(answer["answer"]["reason"].clone());
@@ -148,7 +148,7 @@ impl Session {
                     json!({"verb": "open_file", "paths": action["paths"]}),
                 );
                 if let Some(error) = answer["error"].as_str() {
-                    return finished(id, Raise::Value, error);
+                    return Answer::refused(id, Raise::Value, error);
                 }
                 vec![Task::Read(paths(&answer["openFile"]["paths"]))]
             }
@@ -207,19 +207,11 @@ impl Session {
                 tasks.push(effect("looping", json!({"on": on})));
                 tasks
             }
-            other => return finished(id, Raise::Value, &format!("no audio verb {other:?}")),
+            other => return Answer::refused(id, Raise::Value, &format!("no audio verb {other:?}")),
         };
         run.tasks.extend(tasks);
-        let changed = run.changed;
-        let reason = run.reason.take();
         self.runs.insert(id, run);
-        let mut answer = self.drive(editing, member, id, ids);
-        // known before any await: what a client answers at once
-        answer["changed"] = json!(changed);
-        if let Some(reason) = reason {
-            answer["reason"] = reason;
-        }
-        answer
+        self.drive(editing, member, id, ids)
     }
 
     /// What a message to the member came to, as the event handling did.

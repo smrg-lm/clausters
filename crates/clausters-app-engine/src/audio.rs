@@ -175,7 +175,7 @@ impl AudioApp {
     /// **What a script reads of audio member `member`**: `transport` or
     /// `output` (`Editing::audio_query`).
     pub fn query(&mut self, editing: &mut Editing, member: MemberId, query: &str) -> Value {
-        editing.audio_query(member, query, &mut self.ids)
+        editing.audio_query(member, query)
     }
 
     /// **Starts `action` on audio member `member`** and carries it as far as

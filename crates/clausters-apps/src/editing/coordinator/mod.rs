@@ -58,13 +58,10 @@
 //! `operationEcho`, `lease` (the event's clipboard lease), `closeWindow` and
 //! `closedWindow`.
 //!
-//! Awaits, each `{"kind", ...}`: `steps` (`via` `join`, `plain` or
-//! `service`), `shape` (a `path`, whose header the caller reads, or a new
-//! file's `shape`), `batch` (an operation's batch on the member's engine),
-//! `stepped`, `clipboard`. A result is `{}` on success, `{"failed": reason}`
-//! on failure, and carries what the await asked for: the file's facts
-//! (`frames`, `channels`, `rate`, `path`, `untitled`, `codec`,
-//! `sample_format`), `changed`.
+//! Awaits ([`run::Await`]): steps to carry out, a file to add (its header
+//! read, or a new file's shape), the files on disk, a history step, a
+//! clipboard document to publish. The driver answers each in place through
+//! the caller's [`Services`], and hands back a batch that renders.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -84,7 +81,7 @@ mod step;
 mod tests;
 
 pub use driver::{Header, Raised, Ran, Render, Services};
-use run::{Raise, Run, Task};
+use run::{Answer, Run, Task};
 
 /// Why a verb that acts on a file is refused by an editor with none open.
 const NO_FILE: &str = "no file is open";
@@ -172,45 +169,65 @@ fn take_rate(editing: &Editing, member: MemberId, file: u64) -> f64 {
     }
 }
 
-/// **The coordinator's own door**, which its driver ([`Editing::audio_act`])
-/// speaks: `do` starts a run, `run` with `result` resumes one, `query`
-/// answers what a script reads of the transport.
-fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -> Value {
-    let Some(member) = request["member"]
-        .as_u64()
-        .and_then(|m| MemberId::try_from(m).ok())
-        .filter(|m| matches!(editing.member(*m), Some(Member::Audio(_))))
-    else {
-        return json!({"error": "the member is not an audio application"});
-    };
-    if let Some(action) = request.get("do") {
-        // a verb before the open finds a session to run in
-        let Some(mut session) = editing
-            .sessions
-            .remove(&member)
-            .or_else(|| Session::new(editing))
-        else {
-            return json!({"error": "the audio editor has no engine"});
-        };
-        editing.note_playing(member, session.playback.playing());
-        let answer = session.start(editing, member, action, ids);
-        editing.note_playing(member, session.playback.playing());
-        editing.sessions.insert(member, session);
-        return answer;
+/// The audio member `member`, or why it is not one.
+fn audio_member(editing: &Editing, member: MemberId) -> Result<(), String> {
+    match editing.member(member) {
+        Some(Member::Audio(_)) => Ok(()),
+        _ => Err("the member is not an audio application".into()),
     }
-    if let Some(run) = request["run"].as_u64() {
-        let Some(mut session) = editing.sessions.remove(&member) else {
-            return json!({"error": "the audio editor has no session"});
-        };
-        editing.note_playing(member, session.playback.playing());
-        let answer = session.resume(editing, member, run, &request["result"], ids);
-        editing.note_playing(member, session.playback.playing());
-        editing.sessions.insert(member, session);
-        return answer;
+}
+
+/// **Starts `action` on member `member`'s session** -- made over the
+/// context's engine the first time -- and carries it to its first await or
+/// its end.
+fn begin(
+    editing: &mut Editing,
+    member: MemberId,
+    action: &Value,
+    ids: &mut IdSpaces,
+) -> Result<Answer, String> {
+    audio_member(editing, member)?;
+    // a verb before the open finds a session to run in
+    let mut session = editing
+        .sessions
+        .remove(&member)
+        .or_else(|| Session::new(editing))
+        .ok_or("the audio editor has no engine")?;
+    editing.note_playing(member, session.playback.playing());
+    let answer = session.start(editing, member, action, ids);
+    editing.note_playing(member, session.playback.playing());
+    editing.sessions.insert(member, session);
+    Ok(answer)
+}
+
+/// **Resumes run `run` of member `member`** with what its await came to.
+fn resume(
+    editing: &mut Editing,
+    member: MemberId,
+    run: u64,
+    result: Result<Value, String>,
+    ids: &mut IdSpaces,
+) -> Result<Answer, String> {
+    audio_member(editing, member)?;
+    let mut session = editing
+        .sessions
+        .remove(&member)
+        .ok_or("the audio editor has no session")?;
+    editing.note_playing(member, session.playback.playing());
+    let answer = session.resume(editing, member, run, result, ids);
+    editing.note_playing(member, session.playback.playing());
+    editing.sessions.insert(member, session);
+    Ok(answer)
+}
+
+/// **What a script reads of member `member`**: `transport` or `output`.
+fn query(editing: &mut Editing, member: MemberId, query: &str) -> Value {
+    if let Err(error) = audio_member(editing, member) {
+        return json!({ "error": error });
     }
     let binding = member_call(editing, member, json!({"verb": "binding"}));
-    match (editing.sessions.get(&member), request["query"].as_str()) {
-        (Some(session), Some("transport")) => json!({
+    match (editing.sessions.get(&member), query) {
+        (Some(session), "transport") => json!({
             "transport": session.playback.transport(),
             "span": binding["span"],
             "looping": binding["looping"] == true,
@@ -222,7 +239,7 @@ fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -> Value {
         // each channel of the file shown (none while that file is still),
         // and the samples played as silence for want of a frame read in
         // time since the engine opened.
-        (Some(session), Some("output")) => {
+        (Some(session), "output") => {
             let engine = editing.engine.as_ref();
             let levels: Vec<f32> = match session.playback.meters() {
                 Some((bus, channels)) if bus >= 0 => (0..channels)
@@ -316,11 +333,6 @@ fn truthy(value: &Value) -> bool {
 /// A release of what nothing reaches, when there is anything in it.
 fn release(freed: &Value) -> Option<Task> {
     truthy(freed).then(|| effect("release", json!({"freed": freed.clone()})))
-}
-
-fn finished(id: u64, raise: Raise, message: &str) -> Value {
-    json!({"run": id, "done": true, "effects": [],
-        "error": {"type": raise.name(), "message": message}})
 }
 
 /// The paths of an open request, each one file to read.

@@ -13,6 +13,7 @@
 
 use clausters_editing::apply::{Step, steps_from_json};
 
+use super::run::{Await, End, Failure};
 use super::*;
 
 /// **What the caller does for a run**, at once: the I/O and the threads are
@@ -119,11 +120,7 @@ impl Editing {
         ids: &mut IdSpaces,
     ) -> Ran {
         let mut ran = Ran::default();
-        let answer = call(
-            self,
-            &json!({"member": member, "run": run, "result": carried(result)}),
-            ids,
-        );
+        let answer = resume(self, member, run, result.map(|()| json!({})), ids);
         self.audio_drive(member, answer, lease, false, services, ids, &mut ran);
         ran
     }
@@ -131,8 +128,8 @@ impl Editing {
     /// **What a script reads of an audio member**: `transport` (its
     /// transport, span, loop switch and state) or `output` (its meter's
     /// levels and the samples played as silence).
-    pub fn audio_query(&mut self, member: MemberId, query: &str, ids: &mut IdSpaces) -> Value {
-        call(self, &json!({"member": member, "query": query}), ids)
+    pub fn audio_query(&mut self, member: MemberId, query: &str) -> Value {
+        super::query(self, member, query)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -146,7 +143,7 @@ impl Editing {
         ids: &mut IdSpaces,
         ran: &mut Ran,
     ) {
-        let answer = call(self, &json!({"member": member, "do": action}), ids);
+        let answer = begin(self, member, action, ids);
         self.audio_drive(member, answer, lease, inline, services, ids, ran);
     }
 
@@ -156,7 +153,7 @@ impl Editing {
     fn audio_drive(
         &mut self,
         member: MemberId,
-        mut answer: Value,
+        mut answer: Result<Answer, String>,
         lease: bool,
         inline: bool,
         services: &mut dyn Services,
@@ -164,53 +161,50 @@ impl Editing {
         ran: &mut Ran,
     ) {
         loop {
-            let Some(run) = answer["run"].as_u64() else {
-                ran.end = Some(Err(Raised {
-                    kind: "runtime".into(),
-                    message: answer["error"]
-                        .as_str()
-                        .unwrap_or("the audio editor did not answer")
-                        .into(),
-                }));
-                return;
+            let Answer { run, effects, end } = match answer {
+                Ok(answer) => answer,
+                Err(message) => {
+                    ran.end = Some(Err(Raised {
+                        kind: "runtime".into(),
+                        message,
+                    }));
+                    return;
+                }
             };
-            for effect in answer["effects"].as_array().cloned().unwrap_or_default() {
+            for effect in effects {
                 self.audio_effect(member, effect, lease, services, ran);
             }
-            if answer["done"] == true {
-                ran.end = Some(end_of(&answer));
-                return;
-            }
-            let wait = answer["await"].clone();
-            let result = match wait["kind"].as_str().unwrap_or_default() {
-                "steps" | "batch" => {
-                    let steps = steps_from_json(&wait["steps"]);
+            let wait = match end {
+                End::Done(result) => {
+                    ran.end = Some(Ok(result));
+                    return;
+                }
+                End::Failed(failure) => {
+                    ran.end = Some(Err(raised(failure)));
+                    return;
+                }
+                End::Waits(wait) => wait,
+            };
+            let result = match wait {
+                Await::Steps(steps) => {
+                    let steps = steps_from_json(&steps);
                     let renders = steps.iter().any(|s| matches!(s, Step::Render(_)));
                     if renders && !inline {
                         ran.render = Some(Render { run, steps });
                         return;
                     }
-                    carried(services.carry(&steps))
+                    services.carry(&steps).map(|()| json!({}))
                 }
-                "shape" => shape(&wait, services),
-                "stat" => {
-                    let paths: Vec<String> = wait["paths"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|p| p.as_str().map(str::to_string))
-                        .collect();
-                    json!({"stamps": services.stamps(&paths)})
+                Await::Shape(file) => shape(&file, services),
+                Await::Stat(paths) => Ok(json!({"stamps": services.stamps(&strings(&paths))})),
+                Await::Stepped(stepped) => {
+                    Ok(self.audio_stepped(member, &stepped, services, ids, ran))
                 }
-                "stepped" => self.audio_stepped(member, &wait["stepped"], services, ids, ran),
-                "clipboard" => self.audio_clipboard(member, &wait, ran),
-                other => json!({"failed": format!("the audio editor cannot wait on {other:?}")}),
+                Await::Clipboard { document, ready } => {
+                    self.audio_clipboard(member, document, ready, ran)
+                }
             };
-            answer = call(
-                self,
-                &json!({"member": member, "run": run, "result": result}),
-                ids,
-            );
+            answer = resume(self, member, run, result, ids);
         }
     }
 
@@ -315,20 +309,25 @@ impl Editing {
 
     /// **A copy published**: the clipboard names the spans of files it is
     /// of, and the window's clipboard holds the document.
-    fn audio_clipboard(&mut self, member: MemberId, wait: &Value, ran: &mut Ran) -> Value {
-        let mut document = wait["document"].clone();
-        if wait["ready"] != true {
+    fn audio_clipboard(
+        &mut self,
+        member: MemberId,
+        mut document: Value,
+        ready: bool,
+        ran: &mut Ran,
+    ) -> Result<Value, String> {
+        if !ready {
             let published = self.exchange_json(
                 &json!({"action": "publish", "member": member, "document": document}),
             );
             if let Some(error) = published["error"].as_str() {
-                return json!({ "failed": error });
+                return Err(error.into());
             }
             document = published["document"].clone();
         }
         ran.effects
             .push(json!({"kind": "clipboard", "document": document}));
-        json!({})
+        Ok(json!({}))
     }
 }
 
@@ -340,51 +339,45 @@ fn member_of(value: &Value, member: MemberId) -> MemberId {
         .unwrap_or(member)
 }
 
-/// How a run ended: its result, or what it raised.
-fn end_of(answer: &Value) -> Result<Value, Raised> {
-    if answer["rethrow"] == true {
-        return Err(Raised {
+/// What a run that failed raises: a failure of its caller's as an
+/// operation refused, one of the coordinator's as it names it.
+fn raised(failure: Failure) -> Raised {
+    match failure {
+        Failure::Client(message) => Raised {
             kind: "command".into(),
-            message: answer["reason"].as_str().unwrap_or_default().into(),
-        });
-    }
-    match answer.get("error").filter(|e| !e.is_null()) {
-        Some(error) => Err(Raised {
-            kind: error["type"].as_str().unwrap_or("runtime").into(),
-            message: error["message"].as_str().unwrap_or_default().into(),
-        }),
-        None => Ok(answer.get("result").cloned().unwrap_or(Value::Null)),
-    }
-}
-
-/// Carried steps as an await's result.
-fn carried(outcome: Result<(), String>) -> Value {
-    match outcome {
-        Ok(()) => json!({}),
-        Err(failed) => json!({ "failed": failed }),
+            message,
+        },
+        Failure::Own(raise, message) => Raised {
+            kind: raise.name().into(),
+            message,
+        },
     }
 }
 
 /// **A file asked for**, by the window or a script: its header read (a new
 /// file is the shape it is asked as), and refused where a part could not
 /// read it in place.
-fn shape(wait: &Value, services: &mut dyn Services) -> Value {
-    if let Some(shape) = wait.get("shape").filter(|s| !s.is_null()) {
-        return json!({"frames": shape["frames"], "channels": shape["channels"],
+fn shape(file: &Value, services: &mut dyn Services) -> Result<Value, String> {
+    if let Some(shape) = file.get("shape").filter(|s| !s.is_null()) {
+        return Ok(
+            json!({"frames": shape["frames"], "channels": shape["channels"],
             "rate": shape["rate"], "path": null, "untitled": true,
-            "codec": null, "sample_format": null});
+            "codec": null, "sample_format": null}),
+        );
     }
-    let path = wait["path"].as_str().unwrap_or_default();
-    match services.header(path) {
-        Ok(info) if IN_PLACE.contains(&info.codec.as_str()) => json!({
-            "frames": info.frames, "channels": info.channels,
-            "rate": info.rate, "path": path, "untitled": false,
-            "codec": info.codec, "sample_format": info.sample_format,
-        }),
-        Ok(info) => json!({"failed": format!(
-            "{path} is a {} file, which the audio editor does not read in place", info.codec)}),
-        Err(e) => json!({ "failed": e }),
+    let path = file["path"].as_str().unwrap_or_default();
+    let info = services.header(path)?;
+    if !IN_PLACE.contains(&info.codec.as_str()) {
+        return Err(format!(
+            "{path} is a {} file, which the audio editor does not read in place",
+            info.codec
+        ));
     }
+    Ok(json!({
+        "frames": info.frames, "channels": info.channels,
+        "rate": info.rate, "path": path, "untitled": false,
+        "codec": info.codec, "sample_format": info.sample_format,
+    }))
 }
 
 /// The strings of a JSON array.
