@@ -1423,3 +1423,75 @@ fn a_long_span_is_reversed_in_pieces_from_its_end() {
         .collect();
     assert_eq!(labels, vec![json!("Reverse"); 3]);
 }
+
+/// **The spectrogram's settings panel stands beside the take**, its widgets
+/// numbered with the dialogs': the View menu's entry shows it and redraws
+/// the window, a report from one of its widgets tells the take's pictures
+/// their props, and a script's `set_spectrogram` changes the settings and
+/// tells the panel what it shows. A value none takes changes nothing.
+#[test]
+fn the_spectrogram_settings_panel_sets_the_pictures_props() {
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    assert!(
+        ids.contains_key("settings:window"),
+        "numbered with the dialogs"
+    );
+    let window = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "dialogs": ids}),
+    );
+    assert!(
+        !window.to_string().contains("Window size"),
+        "hidden at first"
+    );
+    assert!(
+        window.to_string().contains("\"window_size\":1024"),
+        "the picture carries the settings"
+    );
+    let shown = event(&mut editor, json!([900, 1, 0, "spectrogram_settings"]));
+    assert_eq!(shown["restructure"], true, "the window is drawn again");
+    let window = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "dialogs": ids}),
+    );
+    let text = window.to_string();
+    assert!(text.contains("Window size") && text.contains("Normalize bands"));
+    // a choice reports its index: 2048 frames
+    let chosen = event(&mut editor, json!([ids["settings:window"], 2, 0, 3]));
+    let corrections = &chosen["answer"]["corrections"];
+    assert_eq!(corrections[0]["widget"], 12);
+    assert_eq!(corrections[0]["props"]["window_size"], 2048);
+    assert_eq!(corrections[0]["props"]["hop"], 1024);
+    // the overlap reports its percent
+    event(&mut editor, json!([ids["settings:overlap"], 3, 0, 75.0]));
+    assert_eq!(
+        call(&mut editor, json!({"verb": "spectrogram"}))["spectrogram"]["overlap"],
+        0.75
+    );
+    let set = call(
+        &mut editor,
+        json!({"verb": "set_spectrogram", "version": 0, "scale": "note", "tuning": 432.0}),
+    );
+    let corrections = set["answer"]["corrections"].to_string();
+    assert!(
+        corrections.contains("\"freq_scale\":\"note\""),
+        "{corrections}"
+    );
+    assert!(
+        corrections.contains(&format!("\"widget\":{}", ids["settings:tuning"])),
+        "the panel shows it: {corrections}"
+    );
+    let refused = call(
+        &mut editor,
+        json!({"verb": "set_spectrogram", "version": 0, "window": 3000}),
+    );
+    assert!(refused["answer"]["reason"].is_string());
+    let settings = &call(&mut editor, json!({"verb": "spectrogram"}))["spectrogram"];
+    assert_eq!(
+        (&settings["window"], &settings["scale"], &settings["tuning"]),
+        (&json!(2048), &json!("note"), &json!(432.0))
+    );
+    // the menu's entry reads checked while it is up
+    let actions = editor.actions(0, Default::default(), false, false, false, false);
+    assert_eq!(actions["spectrogram_settings"].checked, Some(true));
+}

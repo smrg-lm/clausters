@@ -47,7 +47,10 @@ count is refused; Paste preserves a different rate, while Paste mixed refuses
 it.
 
 The View menu chooses waveform (W), spectrogram (S) or both (B). The three buttons below
-call the same verbs as the menu.
+call the same verbs as the menu. View -&gt; Spectrogram settings opens a panel beside
+the take: the window's size and shape, the overlap, the frequency scale (Notes names
+them at the A4 below it), the colours and Normalize bands;
+<code>editor.setSpectrogram(...)</code> sets the same from the console.
 
 Process -&gt; Edit gain envelope selects the curve body, and the vertical ruler reads gain while it is in hand. Drag points, bend a segment,
 or double-click to add a point. Curve edits keep samples intact. The gain envelope

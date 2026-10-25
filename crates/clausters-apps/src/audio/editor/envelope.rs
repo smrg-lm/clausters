@@ -172,6 +172,7 @@ impl AudioEditor {
             "fold_channel" => self.fold_channel(request.get("channel").and_then(Value::as_u64)),
             "solo_channel" => self.solo_channel(request.get("channel").and_then(Value::as_u64)),
             "show_all_channels" => self.show_all_channels(),
+            "set_spectrogram" => self.set_spectrogram(request),
             _ => (Some("unknown audio editor action".into()), Vec::new()),
         };
         out.answer = Some(if reason.is_some() && corrections.is_empty() {

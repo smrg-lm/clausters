@@ -875,10 +875,6 @@ pub fn codes() -> Vec<&'static str> {
 /// How wide the column of palettes is.
 pub const WIDTH: f64 = 204.0;
 
-/// The room around the palettes in their column, which is also where the
-/// column's scroll bar runs: wide enough that the bar covers no section.
-const MARGIN: f64 = 10.0;
-
 /// **The size an entry's symbol is drawn at**, as its `text_size`: a step over
 /// a tool's ([`super::tools::SYMBOL_SIZE`]), since a palette is where a symbol
 /// is looked for among others like it. The em comes to 30 logical pixels.
@@ -931,36 +927,16 @@ pub fn column(ids: &Ids, outlines: &Outlines) -> Option<Value> {
                 })
                 .collect();
             (!buttons.is_empty()).then(|| {
-                json!({
-                    "type": "layout",
-                    "title": group.title,
-                    "frame": true,
-                    "collapsed": group.folded,
-                    "flow": "grid",
-                    "cols": cols_of(group.name),
-                    "hug": true,
-                    "children": buttons,
-                })
+                let mut section = crate::panels::section(group.title, group.folded, buttons);
+                section.insert("flow".into(), json!("grid"));
+                section.insert("cols".into(), json!(cols_of(group.name)));
+                Value::Object(section)
             })
         })
         .collect();
     // **The column scrolls**: how tall it is depends on which sections are
-    // open, which is the host's to know, so it is a plane that flows them and
-    // is as long as they are -- past the window's foot it is reached by the
-    // wheel, where a plain column put its last sections out of reach.
-    (!sections.is_empty()).then(|| {
-        json!({
-            "type": "plane",
-            "flow": "col",
-            "axis": "y",
-            "zoom": false,
-            "bars": true,
-            "w": WIDTH,
-            "margin": MARGIN,
-            "pack": true,
-            "children": sections,
-        })
-    })
+    // open, which is the host's to know (`crate::panels`).
+    crate::panels::column(sections, WIDTH)
 }
 
 /// **The editor's verb the entry `name` asks for when it reports `tag`** --

@@ -220,6 +220,11 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///   Closing the last one leaves the editor open with none (`"empty": true`,
 ///   `binding` null); the window is drawn again and offers adding a file.
 /// - `show_files`, `hide_files`, `toggle_files` -- the independent left list.
+/// - `spectrogram`: the spectrogram's settings. `set_spectrogram`: the
+///   settings a request names (`window`, `shape`, `overlap`, `scale`,
+///   `tuning`, `colormap`, `normalize`), as an action.
+///   `show_spectrogram_settings`, `hide_spectrogram_settings` and
+///   `toggle_spectrogram_settings`: their panel beside the take.
 /// - `span` -- `span`: `[start, end]` in seconds, or `null`: the time range
 ///   the space bar plays, as a sweep leaves it. Answers `{"sel_start",
 ///   "sel_len"}`, the band the window draws, in frames.
@@ -343,7 +348,23 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
             editor.window_state.binding_generation += 1;
             json!({})
         }
-        "dialogs" => json!({"dialogs": dialogs::names()}),
+        // the panel's widgets are numbered with the dialogs'
+        "dialogs" => {
+            let mut names = dialogs::names();
+            names.extend(crate::audio::settings::names());
+            json!({"dialogs": names})
+        }
+        "spectrogram" => json!({"spectrogram": editor.spectrogram()}),
+        "show_spectrogram_settings"
+        | "hide_spectrogram_settings"
+        | "toggle_spectrogram_settings" => {
+            editor.window_state.settings_visible = match request["verb"].as_str().unwrap() {
+                "show_spectrogram_settings" => true,
+                "hide_spectrogram_settings" => false,
+                _ => !editor.window_state.settings_visible,
+            };
+            json!({"turn": "route", "restructure": true})
+        }
         "folded" => json!({"folded": editor.folded()}),
         "file" if !editor.open_files.open => json!({"empty": true}),
         "file" => editor.file(),
@@ -457,7 +478,7 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
         }
         "envelope" => json!({"points": editor.envelope_quads(false)}),
         "show_envelope" | "setautomation" | "apply_envelope" | "fold_channel" | "solo_channel"
-        | "show_all_channels" => {
+        | "show_all_channels" | "set_spectrogram" => {
             serde_json::to_value(editor.act(&request, version)).unwrap_or_default()
         }
         "props" if editor.window_state.envelope_widget == Some(widget) => editor

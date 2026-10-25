@@ -30,6 +30,10 @@ it.
 
 The View menu chooses waveform (W), spectrogram (S) or both (B). Call ``wave()``,
 ``spectrogram()`` and ``both()`` from a cell to make the same changes.
+View -> Spectrogram settings opens a panel beside the take: the window's size
+and shape, the overlap, the frequency scale (Notes names them at the A4 below
+it), the colours and Normalize bands. ``editor.set_spectrogram(...)`` sets
+the same from a cell.
 
 What to do in the window: **drag** to select, then **Ctrl+X** to cut,
 **Ctrl+C** to copy, **Ctrl+V** to paste at the cursor and

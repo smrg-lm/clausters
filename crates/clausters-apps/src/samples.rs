@@ -97,6 +97,9 @@ pub struct Window<'a> {
     /// **The take as a list of segments over files**, which the picture
     /// draws from its files: an audio editor's take lives on disk.
     pub segments: &'a Value,
+    /// **The spectrogram's props**: how it analyzes and draws the take,
+    /// given to every picture of it.
+    pub spectrogram: Option<&'a Value>,
 }
 
 /// What a window with no file open says where the take would be.
@@ -149,6 +152,12 @@ pub fn window(w: &Window<'_>) -> Value {
     if !w.folded.is_empty() {
         picture.insert("folded".into(), json!(w.folded));
     }
+    let spectrogram = |node: &mut serde_json::Map<String, Value>| {
+        if let Some(props) = w.spectrogram.and_then(Value::as_object) {
+            node.extend(props.clone());
+        }
+    };
+    spectrogram(&mut picture);
     // **The spectrogram's lane**, stacked under the take's: another view of the
     // same samples, a member of the take's axis (its selection, its cursor,
     // its play cursor) with a vertical of its own. It carries the time ruler,
@@ -170,6 +179,7 @@ pub fn window(w: &Window<'_>) -> Value {
         if !w.folded.is_empty() {
             lane.insert("folded".into(), json!(w.folded));
         }
+        spectrogram(&mut lane);
         Value::Object(lane)
     });
     let ruled = lane.is_none();
@@ -318,6 +328,7 @@ mod tests {
             lane: None,
             empty: false,
             segments: &json!({"shared": 1}),
+            spectrogram: None,
         })
     }
 

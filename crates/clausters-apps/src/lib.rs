@@ -39,6 +39,7 @@ pub mod editing;
 pub mod forms;
 pub mod multitrack;
 pub mod notes;
+pub mod panels;
 pub mod points;
 pub mod samples;
 #[cfg(feature = "notation")]

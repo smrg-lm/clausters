@@ -170,6 +170,7 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "view_spectrogram"),
             entry(app, "view_both"),
             entry(app, "toggle_files"),
+            entry(app, "spectrogram_settings"),
         ]);
     }
     if app != App::Audio {

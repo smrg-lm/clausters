@@ -3492,7 +3492,13 @@ Every entry carries a checkbox.
   actions read as the application's verbs both clients call, and what
   leaving the view without applying keeps. It also settles the Process
   menu's open question of one Apply per kind of edit (*The audio editor's
-  Edit menu names one entry per kind of edit*, below).
+  Edit menu names one entry per kind of edit*, below). Part of the answer
+  exists since 2026-10-25: a panel is a column of titled sections beside
+  the work (`crate::panels`, shared by the score editor's palettes and the
+  audio editor's spectrogram settings), its widgets named by the
+  application, numbered by the caller with the dialogs' and read as the
+  application's verbs; the spectrogram settings are the first one the
+  View menu shows and hides.
 
 - ⬜ **Persist an application's multi-file workspace** *(ownership audit,
   2026-10-18)*. Saving an audio file is not saving the open-file set. Define

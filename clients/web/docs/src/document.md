@@ -219,6 +219,17 @@ files restores its cursor on the same transport; only the focused file plays.
 View -> Files toggles the list; `editor.hideFiles()` and `editor.showFiles()`
 do the same from a script.
 
+**The spectrogram's settings** are in a panel to the right of the take,
+which View -> Spectrogram settings shows and hides (as
+`editor.showSpectrogramSettings()` and `editor.hideSpectrogramSettings()` do):
+the analysis window's size and shape and how much one window overlaps the
+next, the frequency scale (a note axis at a reference A4 among them), the
+colours, and whether each band is drawn at its own scale.
+`await editor.spectrogram()` reads them and `await editor.setSpectrogram({
+window: 2048, scale: "note", tuning: 432 })` changes the ones it names. They
+are the window's whichever file is in focus, and a view state outside the
+history.
+
 **The editor opens without a file.** `await new gui.editing.AudioEditor().open()`
 is the application on its own: its window keeps the menu bar and the file list,
 says where the take would be that no file is open, and offers File -> New file

@@ -277,6 +277,7 @@ pub const AUDIO: &[Verb] = &[
     choice("views", "view_spectrogram", &["S"], "Spectrogram"),
     choice("views", "view_both", &["B"], "Waveform and spectrogram"),
     toggle("toggle_files", &[], "Files"),
+    toggle("spectrogram_settings", &[], "Spectrogram settings"),
     verb("close_file", &[], "Close file"),
 ];
 

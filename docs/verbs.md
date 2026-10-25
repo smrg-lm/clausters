@@ -66,6 +66,7 @@ The verdict is one of three:
 | `audio` | `open_file` | `AudioEditor.open_file` | `AudioEditor.openFile` | **api** — a path or a list of them, chosen in the host's chooser from the window, each added to this editor |
 | `audio` | `close_file` | `AudioEditor.close_file` | `AudioEditor.closeFile` | **api** — the file in focus, or one by its index in the list; `focus_file` focuses one. The last one closed leaves the editor open with no file |
 | `audio` | `toggle_files` | `AudioEditor.show_files` `AudioEditor.hide_files` | `AudioEditor.showFiles` `AudioEditor.hideFiles` | **api** — the file list beside the editing view |
+| `audio` | `spectrogram_settings` | `AudioEditor.show_spectrogram_settings` `AudioEditor.hide_spectrogram_settings` | `AudioEditor.showSpectrogramSettings` `AudioEditor.hideSpectrogramSettings` | **api** — the spectrogram's settings panel beside the take; the settings themselves are `AudioEditor.spectrogram` and `set_spectrogram` (`spectrogram()`, `setSpectrogram`) |
 | `audio` | `save_as` | `AudioEditor.save` | `AudioEditor.save` | **api** — `save(path)` |
 | `audio` | `show_all_channels` | `AudioEditor.show_all_channels` | `AudioEditor.showAllChannels` | **api** — beside `fold_channel` and `solo_channel`, which the menu reaches per channel |
 | `audio` | `view_wave` | `AudioEditor.view_wave` | `AudioEditor.viewWave` | **api** |

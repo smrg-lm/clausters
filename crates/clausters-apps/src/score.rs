@@ -224,14 +224,7 @@ pub fn window(w: Window<'_>) -> Value {
     // **The palettes stand beside the page**, with a divider a drag moves
     // between them; a window without them gives the page the whole width.
     let work = match palettes {
-        Some(palettes) => json!({
-            "type": "layout",
-            "flow": "row",
-            "margin": 0,
-            "split": true,
-            "weight": 1,
-            "children": [palettes, scroll],
-        }),
+        Some(palettes) => crate::panels::beside(scroll, palettes, crate::panels::Side::Left),
         None => scroll,
     };
     let children: Vec<Value> = toolbar

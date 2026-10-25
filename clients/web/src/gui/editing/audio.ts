@@ -137,6 +137,24 @@ export class AudioTransport {
 }
 
 /** How an {@link AudioEditor} opens. */
+/** **How the audio editor's spectrogram analyzes and draws the take**: see {@link AudioEditor.spectrogram}. */
+export interface SpectrogramSettings {
+    /** The window, in frames: 256, 512, 1024, 2048 or 4096. */
+    window: number;
+    /** The window's shape: `"hann"`, `"hamming"`, `"blackman"`, `"sine"`, `"welch"` or `"rectangular"`. */
+    shape: string;
+    /** How much a window overlaps the next, from 0 to 1. */
+    overlap: number;
+    /** The frequency axis: `"linear"`, `"log"`, `"mel"`, `"bark"` or `"note"`. */
+    scale: string;
+    /** The A4 of a note axis, in hertz. */
+    tuning: number;
+    /** The colours: `"viridis"`, `"magma"` or `"gray"`. */
+    colormap: string;
+    /** Each frequency band at its own scale. */
+    normalize: boolean;
+}
+
 export interface AudioEditorOptions {
     /** The window's title. */
     title?: string;
@@ -565,6 +583,43 @@ export class AudioEditor {
     /** Hide the file list. */
     async hideFiles(): Promise<void> {
         await this.act("verb", { call: { verb: "hide_files" } });
+    }
+
+    // ---- the spectrogram's settings ----
+
+    /**
+     * **How the spectrogram analyzes and draws the take**: `window` (frames:
+     * 256, 512, 1024, 2048 or 4096), `shape` (the window's: `"hann"`,
+     * `"hamming"`, `"blackman"`, `"sine"`, `"welch"` or `"rectangular"`),
+     * `overlap` (from 0, windows end to end, to 1, a window a frame), `scale`
+     * (`"linear"`, `"log"`, `"mel"`, `"bark"` or `"note"`), `tuning` (the A4
+     * of a note axis, in hertz), `colormap` (`"viridis"`, `"magma"` or
+     * `"gray"`) and `normalize` (each frequency band at its own scale). The
+     * window's, whichever file is in focus; a view state, outside the history.
+     */
+    async spectrogram(): Promise<SpectrogramSettings> {
+        return { ...((await this.member("spectrogram")).spectrogram as SpectrogramSettings) };
+    }
+
+    /**
+     * Change the settings named ({@link spectrogram}), the others kept. Rejects
+     * with a `RangeError` naming a value none of them takes, and then nothing
+     * changes.
+     */
+    async setSpectrogram(settings: Partial<SpectrogramSettings>): Promise<void> {
+        const result = await this.view("set_spectrogram", { ...settings });
+        const reason = result !== null && typeof result === "object" ? result.reason : null;
+        if (reason) throw new RangeError(String(reason));
+    }
+
+    /** Show the spectrogram's settings panel to the right of the take. */
+    async showSpectrogramSettings(): Promise<void> {
+        await this.act("verb", { call: { verb: "show_spectrogram_settings" } });
+    }
+
+    /** Hide the spectrogram's settings panel. */
+    async hideSpectrogramSettings(): Promise<void> {
+        await this.act("verb", { call: { verb: "hide_spectrogram_settings" } });
     }
 
     /**

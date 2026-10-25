@@ -60,7 +60,7 @@ export { ScoreDomain, ScoreEditor, ScoreView, isScore } from "./score.ts";
 export type {
     PageInfo, PageOptions, PageSetup, ScoreEditorOptions, TextOptions,
 } from "./score.ts";
-export type { AudioEditorOptions } from "./audio.ts";
+export type { AudioEditorOptions, SpectrogramSettings } from "./audio.ts";
 export type { Drawing } from "./application.ts";
 export { Editing, FIRST_VERSION, contexts } from "../../history.ts";
 export type {

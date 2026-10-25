@@ -511,6 +511,38 @@ class AudioEditor:
         """Hide the file list."""
         self._do("verb", call={"verb": "hide_files"})
 
+    # ---- the spectrogram's settings ----
+
+    @property
+    def spectrogram(self) -> dict:
+        """**How the spectrogram analyzes and draws the take**: ``window``
+        (frames: 256, 512, 1024, 2048 or 4096), ``shape`` (the window's:
+        ``"hann"``, ``"hamming"``, ``"blackman"``, ``"sine"``, ``"welch"`` or
+        ``"rectangular"``), ``overlap`` (from 0, windows end to end, to 1, a
+        window a frame), ``scale`` (``"linear"``, ``"log"``, ``"mel"``,
+        ``"bark"`` or ``"note"``), ``tuning`` (the A4 of a note axis, in
+        hertz), ``colormap`` (``"viridis"``, ``"magma"`` or ``"gray"``) and
+        ``normalize`` (each frequency band at its own scale). The window's,
+        whichever file is in focus; a view state, outside the history."""
+        return dict(self._member("spectrogram")["spectrogram"])
+
+    def set_spectrogram(self, **settings) -> None:
+        """Change the settings named (`spectrogram`), the others kept.
+        ``ValueError`` names a value none of them takes, and then nothing
+        changes."""
+        result = self._view("set_spectrogram", **settings)
+        reason = (result or {}).get("reason") if isinstance(result, dict) else None
+        if reason:
+            raise ValueError(reason)
+
+    def show_spectrogram_settings(self) -> None:
+        """Show the spectrogram's settings panel to the right of the take."""
+        self._do("verb", call={"verb": "show_spectrogram_settings"})
+
+    def hide_spectrogram_settings(self) -> None:
+        """Hide the spectrogram's settings panel."""
+        self._do("verb", call={"verb": "hide_spectrogram_settings"})
+
     def retry_pending(self) -> None:
         """Retry failed repairs of this editor's files without repeating edits.
 

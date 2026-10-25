@@ -59,6 +59,7 @@ impl AudioEditor {
                 state.checked = match name {
                     "loop" => Some(view.looping),
                     "toggle_files" => Some(self.window_state.files_visible),
+                    "spectrogram_settings" => Some(self.window_state.settings_visible),
                     _ => state.value.as_deref().map(|on| on == name),
                 };
                 if !window && !self.open_files.open {

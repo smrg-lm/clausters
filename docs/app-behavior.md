@@ -296,7 +296,9 @@ code that keeps it lives.
   lands on the file it clicked last.
 - **An edit is in the history; a view state is not.** Cuts, pastes, strokes,
   curve points and Apply are history entries; which layer is shown, which
-  channels are folded, the scroll and the zoom are not.
+  channels are folded, the scroll and the zoom are not, nor the
+  spectrogram's settings, which are the window's whichever file is in
+  focus.
 - **An application is an API; a menu is a caller.** Every action is a verb
   of the application in the shared crate, which both clients call by the same
   name; a menu entry, a key and a tool only call it and hold no state.

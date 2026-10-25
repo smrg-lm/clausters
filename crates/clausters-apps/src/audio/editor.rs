@@ -58,6 +58,7 @@ use clausters_editing::verbs::{self, ActionState, ActionTarget, PasteTarget};
 use crate::application::resources::ServerInstance;
 use crate::audio::dialogs;
 use crate::audio::renders;
+use crate::audio::settings;
 use crate::audio::shared;
 use crate::samples::{MEASURES, MeterAt, Window, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, number, text};
@@ -290,6 +291,10 @@ impl Converse for AudioEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         if let Some(name) = self.dialog_name(widget) {
+            if name.starts_with(settings::PREFIX) {
+                let value = values.first().cloned().unwrap_or_else(|| json!(tag));
+                return self.settings_event(&name, &value);
+            }
             return self.form_event(&name, tag, values, out);
         }
         if !self.open_files.open {
@@ -361,10 +366,16 @@ impl Converse for AudioEditor {
             ));
             return true;
         }
-        if matches!(message.tag.as_str(), "toggle_files" | "close_file") {
+        if matches!(
+            message.tag.as_str(),
+            "toggle_files" | "spectrogram_settings" | "close_file"
+        ) {
             out.turn = Kind::Route;
             if message.tag == "toggle_files" {
                 self.window_state.files_visible = !self.window_state.files_visible;
+                out.restructure = true;
+            } else if message.tag == "spectrogram_settings" {
+                self.window_state.settings_visible = !self.window_state.settings_visible;
                 out.restructure = true;
             } else {
                 out.file_action = Some(json!({"verb": "close_file", "file": self.file.id.0}));
@@ -497,6 +508,7 @@ const WINDOW_LEVEL: &[&str] = &[
     "open_file",
     "keys",
     "toggle_files",
+    "spectrogram_settings",
     "close",
     "activated",
 ];
@@ -519,6 +531,11 @@ const EMPTY_VERBS: &[&str] = &[
     "show_files",
     "hide_files",
     "toggle_files",
+    "spectrogram",
+    "set_spectrogram",
+    "show_spectrogram_settings",
+    "hide_spectrogram_settings",
+    "toggle_spectrogram_settings",
     "playing",
     "props",
     "event",
@@ -627,6 +644,10 @@ struct AudioWindowState {
     conversation: Conversation,
     files_widget: Option<i32>,
     files_visible: bool,
+    /// **The spectrogram's settings**, the window's whatever file is in focus,
+    /// and whether their panel stands beside the take.
+    settings: settings::Settings,
+    settings_visible: bool,
     playing: Option<i64>,
     // What its lists, copies and history entries are kept under: its
     // context's, once a context holds it.
@@ -724,6 +745,8 @@ impl AudioEditor {
                 conversation: Conversation::new(version),
                 files_widget: None,
                 files_visible: true,
+                settings: settings::Settings::default(),
+                settings_visible: false,
                 playing: None,
                 shared: shared::Shared::default(),
             },
@@ -1269,6 +1292,7 @@ impl AudioEditor {
         self.window_state.meter_widget = meter.map(|m| m.widget);
         let label = self.pane_label();
         let segments = self.segments();
+        let spectrogram = self.window_state.settings.props();
         let mut tree = window(&Window {
             channels: self.file.channels,
             name: Some(&label),
@@ -1290,11 +1314,107 @@ impl AudioEditor {
                 .filter(|_| self.file.presentation.views == Views::Stacked),
             empty: !self.open_files.open,
             segments: &segments,
+            spectrogram: Some(&spectrogram),
         });
         self.compose_envelope(&mut tree);
+        self.compose_settings(&mut tree);
         self.refresh_files();
         self.compose_files(&mut tree);
         tree
+    }
+
+    /// **The spectrogram's settings panel, beside the take**, when it is
+    /// shown and the window numbered its widgets.
+    fn compose_settings(&self, tree: &mut Value) {
+        if !self.window_state.settings_visible || !self.open_files.open {
+            return;
+        }
+        let Some(panel) = self
+            .window_state
+            .settings
+            .panel(&self.window_state.dialogs.ids)
+        else {
+            return;
+        };
+        let Some(children) = tree.get_mut("children").and_then(Value::as_array_mut) else {
+            return;
+        };
+        if let Some(index) = children
+            .iter()
+            .position(|c| c["weight"].as_f64().is_some_and(|w| w > 0.0))
+        {
+            let work = children.remove(index);
+            children.insert(
+                index,
+                crate::panels::beside(work, panel, crate::panels::Side::Right),
+            );
+        }
+    }
+
+    /// The spectrogram's settings.
+    pub fn spectrogram(&self) -> &settings::Settings {
+        &self.window_state.settings
+    }
+
+    /// **Changes the spectrogram's settings** a request names: the pictures
+    /// of the take are told their props, and the panel, when it is up, what
+    /// it shows.
+    pub(super) fn set_spectrogram(&mut self, request: &Value) -> (Option<String>, Vec<Correction>) {
+        if let Err(why) = self.window_state.settings.set(request) {
+            return (Some(why), Vec::new());
+        }
+        (None, self.settings_corrections(true))
+    }
+
+    /// **A report from the settings panel**: the setting it changes, and the
+    /// pictures told. The panel already shows what the hand did.
+    fn settings_event(&mut self, name: &str, value: &Value) -> (Option<String>, Vec<Correction>) {
+        let Some(request) = settings::Settings::read(name, value) else {
+            return (None, Vec::new());
+        };
+        if let Err(why) = self.window_state.settings.set(&request) {
+            return (Some(why), self.settings_corrections(true));
+        }
+        (None, self.settings_corrections(false))
+    }
+
+    /// What the take's pictures, and the panel when `panel`, are told of the
+    /// settings.
+    fn settings_corrections(&self, panel: bool) -> Vec<Correction> {
+        let props = self.window_state.settings.props();
+        let mut corrections: Vec<Correction> = self
+            .pictures()
+            .map(|widget| Correction {
+                widget: i64::from(widget),
+                props: props.clone(),
+            })
+            .collect();
+        if panel
+            && self.window_state.settings_visible
+            && let Some(column) = self
+                .window_state
+                .settings
+                .panel(&self.window_state.dialogs.ids)
+        {
+            let mut stack = vec![column];
+            while let Some(node) = stack.pop() {
+                if let Some(children) = node["children"].as_array() {
+                    stack.extend(children.iter().cloned());
+                }
+                let Some(id) = node["id"].as_i64() else {
+                    continue;
+                };
+                let shown = ["index", "value"]
+                    .iter()
+                    .filter_map(|k| node.get(*k).map(|v| (k.to_string(), v.clone())))
+                    .collect::<serde_json::Map<_, _>>();
+                corrections.push(Correction {
+                    widget: id,
+                    props: Value::Object(shown),
+                });
+            }
+        }
+        corrections
     }
 
     fn playhead_anchor(&self) -> f64 {
