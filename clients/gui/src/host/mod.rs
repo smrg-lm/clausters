@@ -1023,7 +1023,7 @@ pub struct Host {
     /// What wakes the front's loop when an application's thread has said
     /// something ([`Host::set_app_wake`]).
     #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-    app_wake: Option<audio_app::Wake>,
+    app_wake: audio_app::WakeSlot,
     /// **What a window's meters and play cursors read** where it is not the
     /// segment of the server this host is attached to: an application's
     /// window reads the engine the application holds.
@@ -1181,7 +1181,7 @@ impl Host {
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             audio: None,
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-            app_wake: None,
+            app_wake: Default::default(),
             window_sources: HashMap::new(),
             clock_shown: None,
             #[cfg(test)]

@@ -19,7 +19,7 @@ use clausters_app_engine::AppEngine;
 use clausters_editing::conversation::Answer;
 use serde_json::{Value, json};
 
-use super::audio_app::{FromApp, MakeEngine, Reply, Said, ToApp, Wake};
+use super::audio_app::{FromApp, MakeEngine, Reply, Said, ToApp, Wake, WakeSlot};
 use super::*;
 
 /// The role an audio editor's widgets play, in the names the host's own
@@ -115,7 +115,7 @@ impl BusSource for EngineSource {
 impl AudioHost {
     /// The application, its engine made by `make` when its first window
     /// opens.
-    fn new(make: MakeEngine, wake: Option<Wake>) -> AudioHost {
+    fn new(make: MakeEngine, wake: WakeSlot) -> AudioHost {
         let (out, from_app) = channel();
         let out = Said::new(out, wake);
         AudioHost {
@@ -155,7 +155,8 @@ impl Host {
     /// **What wakes this host's loop when an application it holds has said
     /// something**: the front's, set before the first application opens.
     pub fn set_app_wake(&mut self, wake: Wake) {
-        self.app_wake = Some(wake);
+        // set once, and seen by an application opened before it
+        let _ = self.app_wake.set(wake);
     }
 
     /// **Holds `engine` as the audio editor's**, for a caller that brings its
@@ -729,6 +730,23 @@ mod tests {
         assert_eq!(after[0]["start"], 12_000, "{after:?}");
         assert_eq!(after[0]["frames"], 12_000, "{after:?}");
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// **An editor opened before the front runs wakes it**: `--audio` opens
+    /// its window before the loop sets its wake, and the window is drawn on
+    /// the turn the application wakes, so a wake set later must still reach
+    /// the editor's thread -- else the window never appears.
+    #[test]
+    fn an_editor_opened_before_the_wake_is_set_still_wakes_the_loop() {
+        let mut host = host();
+        host.open_audio(None, "Audio").expect("opened");
+        let (tx, rx) = channel();
+        let tx = Mutex::new(tx);
+        host.set_app_wake(Arc::new(move || {
+            let _ = tx.lock().unwrap().send(());
+        }));
+        rx.recv_timeout(std::time::Duration::from_secs(20))
+            .expect("the application woke the loop");
     }
 
     /// **A copy is held by the application, and a paste reads it there**: the

@@ -164,16 +164,21 @@ struct App {
 /// only when the pointer happens to move.
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 
+/// **Where the host's [`Wake`] is set**, shared with an application made
+/// before it: a host opened over a file opens its editor before its front
+/// runs, and the front's wake reaches that editor's thread through here.
+pub type WakeSlot = Arc<std::sync::OnceLock<Wake>>;
+
 /// **Where the application's answers go**: the host's channel, and its loop
 /// woken to read them.
 #[derive(Clone)]
 pub(super) struct Said {
     tx: Sender<FromApp>,
-    wake: Option<Wake>,
+    wake: WakeSlot,
 }
 
 impl Said {
-    pub(super) fn new(tx: Sender<FromApp>, wake: Option<Wake>) -> Said {
+    pub(super) fn new(tx: Sender<FromApp>, wake: WakeSlot) -> Said {
         Said { tx, wake }
     }
 
@@ -184,7 +189,7 @@ impl Said {
             let _ = self.tx.send(FromApp::Lists(lists));
         }
         if self.tx.send(said).is_ok()
-            && let Some(wake) = &self.wake
+            && let Some(wake) = self.wake.get()
         {
             wake();
         }
