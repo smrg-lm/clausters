@@ -57,6 +57,11 @@ pub struct Axes {
     pub lo: f32,
     pub hi: f32,
     pub exp: bool,
+    /// **Pixels kept free above `hi` and below `lo`**: the range is laid
+    /// over the field inset by this much, so a point at either end of it is
+    /// drawn whole rather than cut in half by the field's edge. A fresh gain
+    /// envelope is unity at both ends, in the field's two top corners.
+    pub pad: f32,
 }
 
 impl Axes {
@@ -72,7 +77,20 @@ impl Axes {
             lo,
             hi,
             exp,
+            pad: 0.0,
         }
+    }
+
+    /// **The band the value range is laid over**: the field, inset by
+    /// [`pad`](Self::pad) above and below. A value ruler is ruled over it.
+    pub fn span(&self) -> Rect {
+        let pad = self.pad.min(self.body.h / 4.0).max(0.0);
+        Rect::new(
+            self.body.x,
+            self.body.y + pad,
+            self.body.w,
+            self.body.h - 2.0 * pad,
+        )
     }
 
     /// The x pixel time `t` falls on.
@@ -88,13 +106,15 @@ impl Axes {
 
     /// The y pixel `value` falls on.
     pub fn y(&self, value: f32) -> f32 {
-        self.body.y + self.body.h * (1.0 - value_fraction(value, self.lo, self.hi, self.exp))
+        let span = self.span();
+        span.y + span.h * (1.0 - value_fraction(value, self.lo, self.hi, self.exp))
     }
 
     /// The value y pixel `y` falls on, clamped into the field -- the inverse of
     /// [`Self::y`].
     pub fn value(&self, y: f64) -> f32 {
-        let frac = 1.0 - ((y - self.body.y as f64) / self.body.h.max(1.0) as f64).clamp(0.0, 1.0);
+        let span = self.span();
+        let frac = 1.0 - ((y - span.y as f64) / span.h.max(1.0) as f64).clamp(0.0, 1.0);
         fraction_to_value(frac as f32, self.lo, self.hi, self.exp)
     }
 
@@ -338,6 +358,7 @@ mod tests {
             lo: 0.0,
             hi: 1.0,
             exp: false,
+            pad: 0.0,
         };
         assert_eq!(ax.x(2.0), 100.0);
         assert_eq!(

@@ -238,7 +238,7 @@ impl Curve {
         } else {
             self.regions(rect, indent, m).field
         };
-        match time {
+        let mut axes = match time {
             Some(t) => Axes {
                 body: field,
                 view: t.view,
@@ -246,6 +246,7 @@ impl Curve {
                 lo: self.min,
                 hi: self.max,
                 exp: self.exp,
+                pad: 0.0,
             },
             None => Axes::spanning(
                 field,
@@ -254,7 +255,12 @@ impl Curve {
                 self.max,
                 self.exp,
             ),
-        }
+        };
+        // **A point at either end of the range is drawn whole**: the range is
+        // laid a point's radius in from the field's top and bottom, and the
+        // ruler with it.
+        axes.pad = m.point_radius;
+        axes
     }
 
     /// **The three rectangles a curve standing on its own is made of**: the
@@ -348,13 +354,12 @@ impl Curve {
             ruler::draw_ticks_h(d, strip, &ticks, self.editor.dir);
         }
         if let Some(strip_x) = r.value {
-            let ticks = ruler::value_ticks(
-                self.min as f64,
-                self.max as f64,
-                r.field.h as f64,
-                ctx.metrics,
-            );
-            ruler::draw_ticks_v(d, r.field.x, strip_x, r.field, &ticks);
+            let span = self
+                .axes(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
+                .span();
+            let ticks =
+                ruler::value_ticks(self.min as f64, self.max as f64, span.h as f64, ctx.metrics);
+            ruler::draw_ticks_v(d, r.field.x, strip_x, span, &ticks);
         }
     }
 
@@ -367,13 +372,10 @@ impl Curve {
         if ax.body.x - ctx.rect.x < 1.0 || ax.body.h <= 0.0 {
             return;
         }
-        let ticks = ruler::value_ticks(
-            self.min as f64,
-            self.max as f64,
-            ax.body.h as f64,
-            ctx.metrics,
-        );
-        ruler::draw_ticks_v(d, ax.body.x, ctx.rect.x, ax.body, &ticks);
+        let span = ax.span();
+        let ticks =
+            ruler::value_ticks(self.min as f64, self.max as f64, span.h as f64, ctx.metrics);
+        ruler::draw_ticks_v(d, ax.body.x, ctx.rect.x, span, &ticks);
     }
 
     /// The break-points as they now stand -- what a container holding this as
@@ -956,7 +958,46 @@ mod tests {
             },
             100.0,
         ));
-        let at = (rect.w as f64, rect.y as f64);
+        // the last point sits at the field's right edge, a point's radius
+        // below its top, where the range is laid
+        let ax = c.axes(rect, 0.0, &m, time);
+        assert_eq!(ax.x(100.0), ax.body.x + ax.body.w);
+        let at = (rect.w as f64, f64::from(ax.y(1.0)));
+        assert!(matches!(
+            c.press(at, &input(&m, rect, time)),
+            Claim::Take(_)
+        ));
+        assert!(matches!(c.grab, Some(Grab::Point(1))));
+    }
+
+    /// **A point at either end of the range is drawn whole**: the range is
+    /// laid a point's radius in from the field's top and bottom, so a fresh
+    /// gain envelope, unity at both ends, does not sit in the field's top
+    /// corners cut by its edge. Pressed where it is drawn, the point is
+    /// grabbed, and the value read back there is the end of the range.
+    #[test]
+    fn the_ends_of_the_range_are_drawn_whole() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 120.0, 120.0);
+        let mut c = ramp();
+        let time = Some(TimeSpace::of(
+            View {
+                start: 0.0,
+                len: 100.0,
+            },
+            100.0,
+        ));
+        let ax = c.axes(rect, 0.0, &m, time);
+        let r = m.point_radius;
+        assert_eq!(ax.y(1.0), ax.body.y + r, "the top point below the edge");
+        assert_eq!(ax.y(0.0), ax.body.y + ax.body.h - r, "the bottom one above");
+        assert_eq!(ax.value(f64::from(ax.y(1.0))), 1.0);
+        assert_eq!(
+            ax.value(f64::from(ax.body.y)),
+            1.0,
+            "the pad reads as the end"
+        );
+        let at = (f64::from(ax.x(100.0)), f64::from(ax.y(1.0)));
         assert!(matches!(
             c.press(at, &input(&m, rect, time)),
             Claim::Take(_)
