@@ -3394,7 +3394,33 @@ over the opened file) carries over.
   (sessions of hour-long takes opening in the time of their peaks, a comping
   pass of quarter-second parts with no click or underrun), on the modules of
   `X30` to `X32`, regions with their fades and crossfades read by the
-  application's reader.
+  application's reader. **First, the modules made shareable** *(a review of
+  the audio editor's code with the user, 2026-10-25, before the multitrack
+  is put on it)*. The audio editor's coordinator, its editing context and
+  the editor itself still speak to each other in JSON inside one process,
+  four strings deep for one gesture, a vocabulary chosen when two client
+  languages ran the coordinator and kept after `X30` made its caller Rust;
+  most of its awaits are answered at once by that same caller, and the path
+  over a client's server the clients no longer take is still whole. The
+  multitrack would copy all of it. The parts, in order:
+  - ⬜ **The path over a server goes**: the coordinator's endpoint medium,
+    the join and its stitch, the `display` buffer, an editor opened over a
+    buffer or saving into one, the awaits only a server needed, the
+    recoveries that free server buffers, and the context's door with id
+    spaces in both bindings, which no client calls.
+  - ⬜ **The coordinator is typed**: effects and awaits are Rust types, the
+    context and the editor are called by their methods, and JSON is written
+    only at a client's door and the C ABI; an await the application answers
+    in place becomes a call, and only a render suspends a run. The takes a
+    history or a clipboard names are held by the context, not by
+    process-wide registries.
+  - ⬜ **The files split by what they do**: the context's door, the
+    coordinator's runs and the outcome it carries out, and the editor's
+    edits, door and actions, each a module of its own.
+  - ⬜ **The seam the multitrack plugs into**: the engine reads a take per
+    reader rather than per audio file, and the driver of an application's
+    runs and its thread in the host are written over an application, not
+    over the audio editor.
 
 ## Definition of done (per milestone)
 
@@ -5326,3 +5352,20 @@ wrong.
   both channels and draws on one. Two rules for one map, in two places; the
   map a part reads should be one function the drawing and the reading both
   call.
+
+- ⬜ **A window closing answers every window's pending action** *(found
+  2026-10-25, reviewing the audio editor's code before `X34`)*. The host's
+  application thread forgets a closed window by answering every action
+  still waiting on a render with "the window closed", whichever window it
+  was asked through (`clients/gui/src/host/audio_app.rs`, `forget`): with
+  two editors open, closing one while the other saves raises in the other's
+  client, and the save lands anyway. Only that window's actions should be
+  answered.
+
+- ⬜ **A closed audio window stays in the editing context** *(found
+  2026-10-25, the same review)*. A window that closes detaches its view and
+  stops its playback, but its member keeps its seat with its files, their
+  histories and the takes those name, the last in a registry of the whole
+  process (`audio/shared.rs`), so the application's memory grows with every
+  window opened and closed over its life. A member whose window is gone
+  should leave the context and let go of what only it named.
