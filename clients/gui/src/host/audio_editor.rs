@@ -876,6 +876,21 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// **The window has its meter from the start**: it is drawn before the
+    /// playback says where it writes, and a meter cannot be corrected into
+    /// being, so the window is drawn again once it has said, with nothing
+    /// asked of it in between.
+    #[test]
+    fn an_opened_window_draws_its_meter() {
+        let path = take("meter", 24_000);
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        until(&mut host, "the window never drew its meter", |h| {
+            h.window_def(def_id).is_some() && h.registry.kinds().values().any(|k| k == "meter")
+        });
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// **A copy is held by the application, and a paste reads it there**: the
     /// window's copy puts on the host's clipboard a document that names the
     /// copy the application keeps, and a paste carrying that document puts

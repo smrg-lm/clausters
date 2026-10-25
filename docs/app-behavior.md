@@ -379,7 +379,9 @@ code that keeps it lives.
   turn -- the play cursor, the level meter -- names a widget of the window as
   it was last drawn; a widget the window was asked for and did not draw (the
   meter before a playback says where it writes, anything of an empty window)
-  is not corrected until a redraw carries it. And a window drawn after the
+  is not corrected until a redraw carries it. The meter does not wait for an
+  unrelated redraw: once the playback says where it writes, a window drawn
+  without its meter is drawn again with it. And a window drawn after the
   focused file changed reads the meter of the file it now shows: the playback
   is told which file is viewed before the window asks where its level is.
 - **A settled window does nothing on a period.** Stopped, an editor's meter

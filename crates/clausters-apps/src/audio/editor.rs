@@ -605,6 +605,9 @@ struct AudioWindowState {
     // version and Conversation, not a second wire staleness mechanism.
     binding_generation: u64,
     meter_widget: Option<i32>,
+    // The id the window numbered the meter with, drawn or not: a window
+    // defined before the playback said where it writes has no meter yet.
+    meter_slot: Option<i32>,
     envelope_widget: Option<i32>,
     // The working folder the editor's renders and the peaks of what it
     // opened are written to; the client's, made when the editor opens.
@@ -704,6 +707,7 @@ impl AudioEditor {
                 active: true,
                 binding_generation: 0,
                 meter_widget: None,
+                meter_slot: None,
                 envelope_widget: None,
                 workspace: None,
                 server: Default::default(),
@@ -1249,6 +1253,7 @@ impl AudioEditor {
     /// once a playback has said where it writes ([`Self::set_meters`]).
     pub fn window(&mut self, widget: i32, meter: Option<i32>) -> Value {
         self.window_state.widget = Some(widget);
+        self.window_state.meter_slot = meter;
         let meter = meter
             .zip(self.window_state.meters)
             .filter(|_| self.open_files.open)
@@ -1305,6 +1310,17 @@ impl AudioEditor {
     /// playback's meter writes and how many there are, or `None`.
     pub fn set_meters(&mut self, meters: Option<(i32, usize)>) {
         self.window_state.meters = meters;
+    }
+
+    /// **Whether the window is owed its meter**: it numbered one, a file is
+    /// open, and the playback has said where it writes since the window was
+    /// drawn without it. The meter cannot be corrected into being, so the
+    /// window is drawn again.
+    pub(super) fn owes_meter(&self) -> bool {
+        self.open_files.open
+            && self.window_state.meters.is_some()
+            && self.window_state.meter_slot.is_some()
+            && self.window_state.meter_widget.is_none()
     }
 
     /// **What the space bar plays**, with the loop switch `looping`: from the

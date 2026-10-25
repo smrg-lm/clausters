@@ -310,7 +310,13 @@ impl Session {
             }
             Task::TellMeters => {
                 let meters = self.meters();
-                member_call(editing, member, json!({"verb": "sync", "meters": meters}));
+                let answer =
+                    member_call(editing, member, json!({"verb": "sync", "meters": meters}));
+                // a window drawn before the playback said where it writes
+                // gets its meter: drawn again, now with it
+                if answer["publish"] == true && window {
+                    effects.push(tagged("publish", json!({})));
+                }
                 Flow::Next
             }
             Task::ShowTransport => {
@@ -328,6 +334,9 @@ impl Session {
                         "set",
                         json!({"widget": correction["widget"], "props": correction["props"]}),
                     ));
+                }
+                if answer["publish"] == true {
+                    effects.push(tagged("publish", json!({})));
                 }
                 Flow::Next
             }

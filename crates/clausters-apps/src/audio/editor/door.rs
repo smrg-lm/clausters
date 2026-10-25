@@ -266,7 +266,7 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
                     ..facts
                 });
             }
-            json!({})
+            json!({"publish": editor.owes_meter()})
         }
         verb @ ("layers" | "show_layer" | "hide_layer" | "solo_layer" | "layer_alpha"
         | "view_wave" | "view_spectrogram" | "view_both") => {
@@ -445,7 +445,7 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
                     props: json!({"bus": bus, "channels": channels}),
                 });
             }
-            json!({"corrections": corrections})
+            json!({"corrections": corrections, "publish": editor.owes_meter()})
         }
         "show_files" | "hide_files" | "toggle_files" => {
             editor.window_state.files_visible = match request["verb"].as_str().unwrap() {
