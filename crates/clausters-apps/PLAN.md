@@ -2943,8 +2943,9 @@ written; none is left open:
    left, its ring size and how far ahead of a seam it reads, is measured
    there against comping parts a quarter second long from different files.
 7. ✅ **The audio editor has no session** *(decided 2026-10-23 by the
-   user; superseded the same day by the second turn below, where it has a
-   session file per file being worked on)*. Each file is independent: an audio editor edits a file, as a
+   user; superseded the same day by the second turn below, where it had a
+   session file per file being worked on, and holding again since that file
+   was withdrawn on 2026-10-25)*. Each file is independent: an audio editor edits a file, as a
    text editor does, and a multitrack mixes many files into one, so the two
    are not compatible applications and the audio editor's takes do not live
    in a multitrack's session. Saving with edits half done means nothing
@@ -2967,7 +2968,7 @@ editors and should port this one.
 
 - ⬜ **X28 - The audio editor edits files on disk.** *(Its model is
   revised by the second turn below, measured 2026-10-23: what it built that
-  the model keeps carries over to `X30` to `X33`.)* After `S21`, `S22`,
+  the model keeps carries over to `X30` to `X32`.)* After `S21`, `S22`,
   `O34` and `G45`. Opening a file reads its header and its peaks (measured
   once if it has none) and nothing else; every edit is a list; the clipboard
   holds segments; processing (gain, reverse, mix, a stroke,
@@ -3086,7 +3087,7 @@ what belongs to an application's domain.
 - **An application holds its engine.** An editing application is one
   program, natively and in a page: the host (its windows and drawing), the
   application's domain (`clausters-apps`, the document, the take's
-  structure, undo, peaks, the disk reader, the session file) and the engine
+  structure, undo, peaks, the disk reader, a multitrack's session file) and the engine
   (the node tree, the DSP, the transport, the effects), embedded and spoken
   to by direct calls: built commands through the engine's lock-free FIFO,
   garbage back through its FIFO, the transport read from atomics. No OSC
@@ -3113,7 +3114,7 @@ what belongs to an application's domain.
   application needs (a gain, a mix, a stroke, a consolidation, peaks) runs on
   the core's offline render in the application's own threads.
 - **Written once, for both applications.** The take's structure, the reader,
-  the rings, the peaks and the session file are modules the audio editor and
+  the rings and the peaks are modules the audio editor and
   the multitrack share, with no code duplicated between them or between the
   native host and the page.
 - **An effect is added to the application, not to the engine** *(the
@@ -3121,11 +3122,15 @@ what belongs to an application's domain.
   context: where the application has a list of effects or plugins, sending
   it a def adds one to that list, and the application loads it into its
   engine and inserts it where it belongs.
-- **The audio editor has a session file** *(the user; it supersedes the
-  first turn's seventh decision)*. Ephemeral if need be, one per file being
-  worked on, holding the state of its edit and the information related to
-  it. What it holds beyond that, and where it lives, is decided with the user
-  when its milestone opens.
+- **The audio editor has no session file** *(the user, 2026-10-25,
+  withdrawing the session file this turn first gave it, so the first turn's
+  seventh decision holds again)*. A save consolidates the take into its
+  file and the working folder goes when the editor closes, so an edit in
+  progress is nothing a file would keep for later. What would need a file
+  of the editor's own is one entry of Future directions ("Application crash
+  recovery and persistent undo"): recovery after a crash, undo past a
+  close, state that is not in the audio, and the peaks of a file kept
+  across opens.
 - **The server's transports keep their role** *(the user)*: patterns and
   sound generated in real time, sample-synchronous playback of files, and OSC
   and MIDI messages (messages, not buffers of samples). Optimizations of
@@ -3143,8 +3148,7 @@ through, for both applications. What the client keeps is data it can use.
   reach.
 - **The multitrack** opens from its session file: `edit` of a
   `clausters.multitrack.Session` (the file, not `clausters.Session`, the
-  client's connection to a server, and not the audio editor's session file:
-  three things, kept apart by name) has the application resolve its
+  client's connection to a server: two things, kept apart by name) has the application resolve its
   sources, read its takes and play them on its engine. The `Multitrack`
   object stays a live handle: while the application has it open, a read or
   a write through it (`region.position = 2.0`) goes through the handler to
@@ -3381,8 +3385,11 @@ over the opened file) carries over.
     (`tests/rt_safety.rs`) and takes no lock. In a page
     (`audio-editor.html?isolated`): a loop across the seams of three files
     reads the take on the editor's meter with no sample missing.
-- ⬜ **X33 - The audio editor's session file.** Contents and place decided
-  with the user when it opens. **Acceptance:** written with it.
+- **X33 - The audio editor's session file.** *Withdrawn 2026-10-25 by the
+  user*: with a save that consolidates and a working folder that goes with
+  the editor, a file that only keeps an edit in progress adds nothing. What
+  a file of the editor's own would be for is in Future directions
+  ("Application crash recovery and persistent undo").
 - ⬜ **X34 - The multitrack over the same modules.** What `X29` asked
   (sessions of hour-long takes opening in the time of their peaks, a comping
   pass of quarter-second parts with no click or underrun), on the modules of
@@ -3423,11 +3430,25 @@ Every entry carries a checkbox.
   application-state track keeps this state transient.
 
 - ⬜ **Application crash recovery and persistent undo** *(ownership audit,
-  2026-10-18)*. Define recovery checkpoints, ownership of retained sample
-  storage, cleanup after abnormal exit and format/version compatibility
-  before treating spill files or the edit log as a recovery format. A
-  successful file save and temporary history spill provide neither durable
-  workspace recovery nor a promise of undo after restart.
+  2026-10-18; widened by the user, 2026-10-25, withdrawing the audio
+  editor's session file, `X33`)*. Define recovery checkpoints, ownership of
+  retained sample storage, cleanup after abnormal exit and format/version
+  compatibility before treating spill files or the edit log as a recovery
+  format. A successful file save and temporary history spill provide
+  neither durable workspace recovery nor a promise of undo after restart.
+  The audio editor's renders live in a working folder that goes when it
+  closes, so recovering an edit or undoing past a close means keeping them,
+  which that folder's rule does not. Decided with it, as the only reasons
+  the audio editor would keep a file of its own:
+  - **Recovery after a crash, and undo past a close**: the take's list, its
+    history and the renders they name, kept until the editor reopens.
+  - **State that is not in the audio**: an envelope not applied yet, the
+    views and layers, the files open and in focus (with "Persist an
+    application's multi-file workspace").
+  - **The peaks of a file kept across opens**, so a long file opened again
+    is not measured again: a cache of peaks, which needs no session, beside
+    the file or in a tree of its own, and is what the multitrack's peaks
+    ask too (`X29`, `X34`).
 
 - ⬜ **The audio editor's Edit menu names one entry per kind of edit**
   *(the user, 2026-10-17, reading the menu after the gain envelope and its

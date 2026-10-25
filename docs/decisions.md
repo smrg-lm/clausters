@@ -10931,7 +10931,9 @@ application's domain and the engine, embedded and spoken to by direct calls
 (built commands through the engine's FIFO, the transport read from
 atomics), with no OSC and no external channel between them. The
 application owns the take's structure, its reading into rings an engine node
-consumes, its peaks and its session file, all through the core's functions,
+consumes, its peaks and a multitrack's session file (the audio editor's
+was withdrawn on 2026-10-25: a save consolidates its take, so it keeps an
+edit in progress for nothing), all through the core's functions,
 identical bit for bit in both places, and written once for both
 applications. A client drives the application by its handler's verbs, and
 an effect a client sends is added to the application's own list of effects,
