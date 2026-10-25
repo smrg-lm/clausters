@@ -136,18 +136,57 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     // Texture row 0 is bin 0 (low frequency), so the bottom shows the lowest.
     let v = clamp(bin_norm, 0.0, 1.0);
-    // **Where a bin is taller than a pixel, the rows are interpolated with a
-    // curve.** A log axis spreads its lowest bins over tens of pixels each,
-    // and the sampler's straight line between two rows draws every bin as a
-    // ramp with a corner at its centre -- bands with visible creases. A
-    // Catmull-Rom through four rows goes through the same magnitudes with no
-    // crease. Where a pixel covers a bin or more there is nothing to smooth,
-    // and the one tap stands.
-    let bins = f32(textureDimensions(tex).y);
-    let rows_per_px = abs(dpdy(v)) * bins;
+    // **Where a pixel covers more than one texel, it shows the largest of
+    // them**, along either axis: the bins a pixel row spans on a log axis's
+    // upper octaves or in a short row, and the columns a pixel spans when
+    // the texture is finer in time than the screen. A sampler would draw the
+    // two texels nearest the pixel's middle, and a narrow line between them
+    // would not be there at all. It is the reading a waveform's pixel makes
+    // of its samples, made of the magnitudes. Where a bin is taller than a
+    // pixel the rows are interpolated with a curve instead: a log axis
+    // spreads its lowest bins over tens of pixels each, and the sampler's
+    // straight line between two rows draws every bin as a ramp with a
+    // corner at its centre. A Catmull-Rom through four rows goes through the
+    // same magnitudes with no crease.
+    let dims = vec2<f32>(textureDimensions(tex));
+    let bins = dims.y;
+    let half_t = abs(dpdx(t)) * 0.5;
+    let half_v = abs(dpdy(v)) * 0.5;
+    let cols_per_px = 2.0 * half_t * dims.x;
+    let rows_per_px = 2.0 * half_v * bins;
     var mag: f32;
-    if rows_per_px >= 1.0 {
-        mag = textureSampleLevel(tex, samp, vec2<f32>(t, v), 0.0).r;
+    if cols_per_px > 1.0 || rows_per_px > 1.0 {
+        // The texels under the pixel, a few dozen at most: past that a
+        // stride, which the level the view holds keeps from being needed in
+        // time.
+        let x0 = clamp(floor((t - half_t) * dims.x), 0.0, dims.x - 1.0);
+        let x1 = clamp(floor((t + half_t) * dims.x), x0, dims.x - 1.0);
+        let y0 = clamp(floor((v - half_v) * bins), 0.0, bins - 1.0);
+        let y1 = clamp(floor((v + half_v) * bins), y0, bins - 1.0);
+        var nx = 1u;
+        if cols_per_px > 1.0 {
+            nx = min(u32(x1 - x0) + 1u, 8u);
+        }
+        var ny = 1u;
+        if rows_per_px > 1.0 {
+            ny = min(u32(y1 - y0) + 1u, 64u);
+        }
+        mag = 0.0;
+        for (var i = 0u; i < nx; i++) {
+            // A column's middle, or the pixel's own place where a column is
+            // wider than it, so time stays interpolated.
+            var x = t;
+            if nx > 1u {
+                x = (x0 + floor(f32(i) * (x1 - x0 + 1.0) / f32(nx)) + 0.5) / dims.x;
+            }
+            for (var j = 0u; j < ny; j++) {
+                var y = v;
+                if ny > 1u {
+                    y = (y0 + floor(f32(j) * (y1 - y0 + 1.0) / f32(ny)) + 0.5) / bins;
+                }
+                mag = max(mag, textureSampleLevel(tex, samp, vec2<f32>(x, y), 0.0).r);
+            }
+        }
     } else {
         // Row centres are at (k + 0.5) / bins: the row under this pixel, and
         // how far past its centre the pixel is.
