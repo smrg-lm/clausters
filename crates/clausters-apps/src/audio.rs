@@ -1,22 +1,21 @@
-//! **The audio editor**: a take edited as a list of parts over immutable takes.
+//! **The audio editor**: a take edited as a list of parts over immutable files.
 //!
-//! What it opens is **a file or a server buffer**, and it never writes a buffer
-//! that exists while it edits: the window draws a **join** the editor owns
-//! the recipe of, and every edit leaves a new recipe --
-//! [`clausters_document::parts`] over the takes it names. A cut takes a span
-//! out of the list; a paste puts a new take in; a pencil stroke writes **a new
-//! take the size of the stroke** and splices it over the frames it was drawn
-//! on. Nothing that a history entry names is ever written again, so an undo is
-//! the list before, stitched, and costs the list and not the samples.
+//! What it opens is **a file**, read where it is, and it never writes a file
+//! a list reads: every edit leaves a new list -- [`clausters_document::parts`]
+//! over the files it names. A cut takes a span out of the list; a paste puts
+//! the copy's parts in; a pencil stroke, a mix, a gain and a reverse render
+//! **a new file** into the editor's working folder and splice it over the
+//! frames they changed. Nothing that a history entry names is ever written
+//! again, so an undo is the list before.
 //!
 //! # What a take is here
 //!
-//! A server buffer, and its source id is its number. The buffers the editor
-//! writes new takes into are the caller's, handed over in advance (`sync`'s
-//! `buffers`): a turn that needs one takes the next, and one that finds none is
-//! refused with the reason rather than inventing a number some other part of
-//! the program owns. What the history lets go of comes back to the caller as
-//! buffers to free, through the editing context ([`crate::editing`]).
+//! The list held as a tree of shared nodes ([`clausters_document::parts::Tree`]),
+//! so an edit makes the nodes on the paths to its seams and shares the rest.
+//! What holds a take holds a reference to it ([`shared`]): the clipboard names
+//! a copy the editor keeps, a history entry names the take before and after
+//! by number, and the window is handed the tree. A take of tens of thousands
+//! of parts is edited, copied, undone and drawn in what a short one is.
 //!
 //! # A pasted block keeps its own rate
 //!
@@ -29,3 +28,4 @@
 pub mod dialogs;
 pub mod editor;
 pub mod renders;
+pub mod shared;

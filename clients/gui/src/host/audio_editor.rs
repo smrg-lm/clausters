@@ -310,6 +310,7 @@ impl Host {
         let said: Vec<FromApp> = audio.from_app.try_iter().collect();
         for one in said {
             match one {
+                FromApp::Lists(lists) => super::disk::receive(lists),
                 FromApp::Engine(reading) => {
                     if let Some(audio) = self.audio.as_mut() {
                         audio.source = Some(Arc::new(EngineSource(reading)));

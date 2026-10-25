@@ -34,11 +34,22 @@
 //! map and no fade between them -- are one part again. The second rule is what
 //! makes a list come back to itself: cutting a span and pasting it back where
 //! it was leaves the list it started from, not three parts over one take.
+//!
+//! # A list that is edited is held as a tree
+//!
+//! The functions here take and give flat lists, which is what a list is on
+//! the wire and in a file. An editor that edits one holds it as a [`Tree`]
+//! instead, with the same arithmetic: its nodes are shared by every take,
+//! copy and history entry that holds them, so an edit costs the tree's
+//! height and not the list's length ([`tree`]).
 
 use serde_json::json;
 
 use crate::session::{Part, SeamShape};
 use crate::{Opaque, Range, SourceId};
+
+pub mod tree;
+pub use tree::Tree;
 
 /// **The domain name a take made of parts is registered under** in a history.
 ///
@@ -50,10 +61,13 @@ pub const PARTS: &str = "parts";
 
 /// An edited take: its immutable sample spans and its non-destructive curves.
 /// Automation uses seconds, exactly as a region's automation does.
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+///
+/// Cloning one shares its parts ([`Tree`]), which is what a history entry,
+/// a clipboard and a draft of an edit hold.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Take {
     /// The sample spans, in reading order.
-    pub parts: Vec<Part>,
+    pub parts: Tree,
     /// Curves over the take, from its origin.
     #[serde(default)]
     pub automation: Vec<crate::multitrack::Automation<crate::timebase::Second>>,
@@ -65,10 +79,11 @@ impl Take {
         Opaque(json!({"intent": PARTS, "parts": self.parts, "automation": self.automation}))
     }
 
-    /// Read a snapshot; older parts-only payloads have no curves.
-    pub fn read(value: &Opaque) -> Option<Self> {
+    /// Read a snapshot, its parts counted at `rates`; older parts-only
+    /// payloads have no curves.
+    pub fn read(value: &Opaque, rates: &Rates) -> Option<Self> {
         Some(Self {
-            parts: read(value)?,
+            parts: Tree::from_parts(&read(value)?, rates).ok()?,
             automation: serde_json::from_value(
                 value
                     .0
@@ -100,6 +115,40 @@ impl Take {
         }
         curve.points.clone_from(points);
         Ok(true)
+    }
+}
+
+/// **One file a take's parts read**, as a reader of the take needs it:
+/// where it is, where its peaks are, and its shape.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TakeFile {
+    pub path: std::sync::Arc<str>,
+    /// Its peaks (the CLPK format), when it has them.
+    pub peaks: Option<std::sync::Arc<str>>,
+    pub channels: u32,
+    pub frames: u64,
+    pub rate: f64,
+}
+
+/// **A take as its readers read it**: its parts, shared, and the files they
+/// name -- what an editor hands the window that draws the take, the
+/// clipboard a copy of it is on and the reader that plays it, each a
+/// reference whatever the take's length.
+#[derive(Clone, Debug)]
+pub struct FileList {
+    /// How many channels the take is.
+    pub channels: u32,
+    /// The rate its parts are counted at: the take's.
+    pub rate: f64,
+    pub tree: Tree,
+    /// The files, by the id the parts name them with.
+    pub files: std::sync::Arc<std::collections::BTreeMap<SourceId, TakeFile>>,
+}
+
+impl FileList {
+    /// The file a part reads.
+    pub fn file(&self, part: &Part) -> Option<&TakeFile> {
+        self.files.get(&part.source.source)
     }
 }
 

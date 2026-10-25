@@ -181,7 +181,6 @@ pub(crate) fn signal_element(
         crate::host::disk::List::parse(v)
             .map_err(|_e| crate::host::diag::warn!("signal {id:?}: {_e}"))
             .ok()
-            .map(std::sync::Arc::new)
     });
     let channels = segments.as_ref().map(|l| l.channels).unwrap_or_else(|| {
         props

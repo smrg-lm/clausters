@@ -1,40 +1,49 @@
 //! **The audio editor's coordinator**: every action of an audio member --
 //! a gesture, a script's verb, a menu entry, the transport, a save -- enters
-//! here and leaves as one ordered list of effects for the client to carry out.
+//! here and leaves as one ordered list of effects for its caller to carry
+//! out.
 //!
-//! A client used to assemble this itself: which playback verb follows a
-//! focus change, when the meter is read, when the clipboard is published and
-//! the cut is committed, when the takes a turn let go of are freed. Two
-//! clients assembling it is two policies; this is the one.
+//! The caller is the application that holds the editor's engine
+//! (`clausters_app_engine::audio::AudioApp`, on the GUI host's application
+//! thread, natively and in a page). The clients are the editor's handler and
+//! carry nothing out: their verbs reach the application through the host's
+//! door, and it runs them here. Which playback verb follows a focus change,
+//! when the meter is read, when the clipboard is published and the cut is
+//! committed, when the takes a turn let go of are freed: this is the one
+//! place that decides it.
 //!
 //! # Runs, effects and awaits
 //!
 //! An action starts a **run** (`do`). The run answers the **effects** it
 //! has decided so far, in order, and stops on an **await** when what comes
-//! next depends on something only the client can do: carry steps out on the
-//! server, say whether the transport rolls, read a file into a buffer, carry
-//! a history step out, publish a clipboard document. The client performs the
+//! next depends on something only its caller can do: carry steps out on the
+//! engine, say whether the transport rolls, read a file's header, carry a
+//! history step out, publish a clipboard document. The caller performs the
 //! effects, then the await, and hands its result back (`run`, `result`),
 //! which resumes the run where it stopped. A failed await unwinds the run as
 //! an exception unwinds a call: through the cleanups it passed and into the
-//! handler that catches it, or out to the client, which raises what failed.
+//! handler that catches it, or out to the caller, which raises what failed.
 //!
-//! Runs stack: a run waiting on the client can see the client start another
-//! (a release that stores a take, a history step that restores one), and the
-//! second runs to its end before the first is resumed. A run waiting on a
-//! render is the exception: a client carries the render out beside its other
-//! work, so runs over other files start and end meanwhile, and each run is
-//! resumed by its number, in whichever order its render lands. The file it
-//! edits has pending work until then, which refuses another edit of it.
+//! Runs stack: a run waiting on its caller can see it start another (a
+//! history step that restores a take), and the second runs to its end
+//! before the first is resumed. A run waiting on a render is the exception:
+//! the application hands the render to a thread of its own, so runs over
+//! other files start and end meanwhile, and each run is resumed by its
+//! number, in whichever order its render lands. The file it edits has
+//! pending work until then, which refuses another edit of it.
 //!
-//! # What is the client's
+//! # What is the caller's
 //!
-//! Sockets and waiting, reading a `SoundFile`, the buffer numbers it
-//! allocates, and the language objects a projection effect names (the take's
-//! `Buffer`, the cursor, the layers). Whether a file is dirty is never one
-//! of them: a client reads it from the editor when asked. Everything this module
-//! decides it decides through the doors the clients called before, so the
-//! editor's own rules stay where they were.
+//! The engine and the threads: the steps carried out on the engine it holds,
+//! the renders run on its threads, the headers read through the core's file
+//! layer, the ids it allocates its nodes and buffers from, and the window it
+//! draws (the props an effect sets, the tree a `publish` draws again). A
+//! take, a copy and a history entry cross as references -- the editor keeps
+//! them and the JSON names them by number (`crate::audio::shared`) -- so
+//! nothing here grows with a take's parts. Whether a file is dirty is never
+//! the caller's: it reads it from the editor when asked. Everything this
+//! module decides it decides through the editor's own doors, so its rules
+//! stay where they are.
 //!
 //! # The vocabulary
 //!
@@ -52,13 +61,13 @@
 //! `closeWindow` and `closedWindow`.
 //!
 //! Awaits, each `{"kind", ...}`: `steps` (`via` `join`, `plain` or
-//! `service`), `rolling`, `shape` (a `path`, whose header the client reads,
-//! or a new file's `shape`), `batch` (an operation's batch on a member's
-//! server), `stepped`, `clipboard`. A result is `{}` on success,
+//! `service`), `rolling`, `shape` (a `path`, whose header the caller reads,
+//! or a new file's `shape`), `batch` (an operation's batch on the member's
+//! engine), `stepped`, `clipboard`. A result is `{}` on success,
 //! `{"failed": reason}` on failure, and carries what the await asked for:
 //! `rolling`, the file's facts (`frames`, `channels`, `rate`, `path`,
-//! `untitled`, `codec`, `sample_format` and the `display` buffer its join is
-//! stitched into), `changed`.
+//! `untitled`, `codec`, `sample_format`, and over a server the `display`
+//! buffer its join is stitched into), `changed`.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -339,20 +348,17 @@ fn retake(
         return;
     };
     let rate = if rate > 0.0 { rate } else { engine.rate() };
+    // only the files the engine reads, at a revision it does not
     let takes = match editing.member(member) {
-        Some(Member::Audio(editor)) => editor.held_takes(rate),
+        Some(Member::Audio(editor)) => editor.held_takes(rate, |file, revision| {
+            engine.revision(file).is_some_and(|r| r != revision)
+        }),
         _ => return,
     };
     for take in takes {
         let Some(engine) = editing.engine.as_mut() else {
             return;
         };
-        if engine
-            .revision(take.file)
-            .is_none_or(|r| r == take.revision)
-        {
-            continue;
-        }
         // A list the engine cannot read is the engine's to say (it plays the
         // parts it can); the readers keep the length they had.
         if let Ok(buffers) = engine.take(&take, ids) {
@@ -1015,9 +1021,9 @@ impl Session {
         let wanted = file["id"].as_u64()?;
         let take = match editing.member(member) {
             Some(Member::Audio(editor)) => editor
-                .held_takes(rate)
+                .held_takes(rate, |file, _| file == wanted)
                 .into_iter()
-                .find(|take| take.file == wanted)?,
+                .next()?,
             _ => return None,
         };
         let engine = editing.engine.as_mut()?;

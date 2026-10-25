@@ -3324,13 +3324,28 @@ over the opened file) carries over.
   locates with no OSC between application and engine, natively and in a
   page; a client's verbs and the application's answers are unchanged in both
   clients; a live server a client boots beside it plays on undisturbed.
-- ⬜ **X31 - A take is shared blocks.** The take's structure, the clipboard
+- ✅ **X31 - A take is shared blocks.** The take's structure, the clipboard
   and the history share what they hold; copy, paste, cut, undo and redo cost
   the span edited. **Acceptance:** the pattern above run to more than a
   hundred hours, each paste answering in a time that does not grow with the
   length or with the pastes before it, the window's update bounded by what it
   draws, and memory bounded by the structure's size, measured in release in
   `tests/`.
+  *Done 2026-10-24* (`docs/decisions.md`, "A take is a tree of shared parts,
+  held by reference"). The structure is a tree of the parts the list
+  already has, regions over files, balanced and with shared immutable
+  nodes (`clausters_document::parts::Tree`), not bounded blocks, which
+  would render the edges of every copy. The clipboard names a copy the
+  application keeps, a history entry names its takes by number and lets
+  them go with the entry, the window is handed the tree by reference and
+  composes a column from the nodes it holds whole, and the application's
+  reader reads the tree from the frame asked. Measured over the pattern
+  to 190 hours and 58,800 parts (`clients/gui/tests/shared_blocks.rs`):
+  0.01 ms a paste from the first to the last, microseconds an undo or a
+  redo, about 830 bytes told to the window, a whole picture in a few
+  milliseconds, and memory grown under a megabyte. Left for `X32`: a take
+  read at a rate other than its file's is counted again part by part when
+  it is handed to the engine.
 - ⬜ **X32 - The application reads its takes, and draws them.** The
   application's reader thread fills the rings an engine node consumes,
   following the transport and its loop, pre-rolled before a play; the peaks
@@ -5252,3 +5267,13 @@ wrong.
   NotFoundError` as the read lands. The window is gone, so nothing is
   drawn wrong; the host should forget a file's pending reads with the last
   window reading it rather than warn about them.
+
+- ⬜ **A file of fewer channels is drawn silent where it is played**
+  *(found 2026-10-24, moving the take onto a tree)*. A part with no channel
+  map over a file narrower than the take is drawn by the host with the
+  file's channels in order and silence past them, and played by the
+  application's reader (and the server's stitch) with the file's channels
+  repeated (`c % channels`): a mono file pasted into a stereo take sounds on
+  both channels and draws on one. Two rules for one map, in two places; the
+  map a part reads should be one function the drawing and the reading both
+  call.

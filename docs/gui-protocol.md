@@ -1433,6 +1433,13 @@ wrong width, a span past its file) is said in the log and left out. A
 widget is **the same take edited**: the view keeps the picture it holds until
 the new one has come whole, as a buffer told to `reload` does.
 
+**An application the host holds hands its list over by reference.** The audio
+editor runs in the host's process, and its take may be tens of thousands of
+parts; so the `segments` it sets is `{"shared": n, "channels", "sample_rate",
+"frames"}`, naming a list its thread handed the host with the same answer,
+whose parts the host reads where the application keeps them. Only a list a
+client sends is written out.
+
 **The picture is the files'.** The host reads each file's header and the
 levels of its peaks its window resolves, and a span of its samples only
 under a zoom, natively from the disk and in a page from the page's storage;

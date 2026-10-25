@@ -269,9 +269,9 @@ impl SignalElement {
             // one, as a server buffer told to read again is.
             "segments" => match (self.source.data_mut(), crate::host::disk::List::parse(v)) {
                 (Some(data), Ok(list)) => {
-                    if data.segments.as_deref() != Some(&list) {
+                    if data.segments.as_deref() != Some(&*list) {
                         data.channels = list.channels;
-                        data.segments = Some(std::sync::Arc::new(list));
+                        data.segments = Some(list);
                         self.reread();
                     }
                     true

@@ -52,13 +52,20 @@ impl AudioEditor {
     }
 
     /// **Each open file's take, as an engine the application holds reads
-    /// it**: its parts at `rate`, the engine's, and the revision they are of.
-    pub(crate) fn held_takes(&self, rate: f64) -> Vec<crate::editing::held::HeldTake> {
+    /// it**: its parts at `rate`, the engine's, and the revision they are of
+    /// -- of the files `wanted` names by id and revision, so a file the
+    /// engine reads as it is now costs nothing to look at.
+    pub(crate) fn held_takes(
+        &self,
+        rate: f64,
+        wanted: impl Fn(u64, u64) -> bool,
+    ) -> Vec<crate::editing::held::HeldTake> {
         if !self.open_files.open {
             return Vec::new();
         }
         std::iter::once(&self.file)
             .chain(self.open_files.parked.values())
+            .filter(|file| wanted(file.id.0 as u64, file.revision))
             .map(|file| file.held_take(rate))
             .collect()
     }
@@ -679,25 +686,37 @@ impl AudioFileState {
     }
     fn held_take(&self, rate: f64) -> crate::editing::held::HeldTake {
         let rate = if rate > 0.0 { rate } else { self.rate };
-        let list = sources::list(&self.contents.parts, &self.sources, self.channels, rate);
+        let list = sources::file_list(
+            &self.contents.parts,
+            &self.sources,
+            self.channels,
+            self.rate,
+        );
+        // At the file's own rate the take's frames are its tree's; at
+        // another each part's span fills its share of them.
+        let frames = if rate == self.rate {
+            list.tree.frames()
+        } else {
+            list.tree
+                .iter()
+                .map(|placed| {
+                    let span = placed.part.source.range.map_or(0, |r| r.len());
+                    let from = list.file(placed.part).map_or(rate, |f| f.rate);
+                    parts::contributed(span, from, rate)
+                })
+                .sum()
+        };
         crate::editing::held::HeldTake {
             file: self.id.0 as u64,
             revision: self.revision,
-            frames: list.parts.iter().map(|p| p.frames).sum(),
-            parts: list.parts,
+            frames,
+            list,
             channels: self.channels,
             rate,
         }
     }
     fn length(&self) -> u64 {
-        parts::length(
-            &self.contents.parts,
-            &parts::Rates {
-                join: self.rate,
-                of: &self.rates,
-            },
-        )
-        .unwrap_or(0)
+        self.contents.parts.frames()
     }
     fn description(&self) -> Value {
         json!({"id": self.id, "label": self.take_name().unwrap_or_else(|| format!("buffer {}", self.display)), "file": self.file()})
@@ -705,7 +724,7 @@ impl AudioFileState {
     /// The files this one cannot let go of: the one it was opened from, and
     /// every file its list reads now.
     pub(super) fn rooted(&self) -> Vec<SourceId> {
-        let mut roots = parts::sources(&self.contents.parts);
+        let mut roots = self.contents.parts.sources().to_vec();
         if let Some(opened) = self.opened
             && !roots.contains(&opened)
         {

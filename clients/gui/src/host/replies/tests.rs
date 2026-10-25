@@ -585,10 +585,7 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     // **Each column is the analysis of what plays there**: the list's
     // samples through its parts and fades, analyzed as a whole signal is.
     let played = |f: usize| {
-        let part = parsed
-            .parts
-            .iter()
-            .find(|p| p.span.start() <= f && f < p.span.end());
+        let part = parsed.part_at(f);
         part.map_or(0.0, |p| {
             let src = if p.path.as_ref() == a {
                 &a_samples

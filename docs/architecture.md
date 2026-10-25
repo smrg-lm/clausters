@@ -1113,12 +1113,20 @@ The audio application owns its visual stack in `clausters_document::view::layers
 The **audio editor** is the second application (`clausters_apps::audio`), and
 what it opens is a file -- read where it is -- or a server buffer, which the open
 writes to the editor's working folder (`/buffer_write`); nothing it was handed is
-written but by a save. The take is a flat list of parts over immutable files
+written but by a save. The take is a list of parts over immutable files
 (`clausters_document::parts`, the arithmetic a multitrack's join is minted with
 too), the files in a table of the editor's own (`audio::editor::sources`: path,
-shape, peaks, and whether the file is a render) keyed by a hash of the path. A
-cut is a new list and a copy names the span's parts (`Clipboard::segments`); a
-paste of a block, a mix, a pencil stroke, a gain apply and a reverse each are an
+shape, peaks, and whether the file is a render) keyed by a hash of the path.
+**The list is held as a tree whose nodes are shared** (`parts::Tree`, a
+balanced tree of parts): a span, a paste and a cut make the nodes on the paths
+to their seams and share the rest, so a copy pasted many times is the same
+nodes many times, and an edit costs the tree's height rather than its parts.
+What holds a take holds a reference to it: a copy is kept by the application
+and its clipboard document names it by number (`HeldCopy`), a history entry
+names the take before and after by number (`audio::shared`, let go of when the
+history lets go of the entry, as it lets go of a render), and the window is
+handed the tree itself (below). A cut is a new list and a copy is the span's
+tree; a paste of a block, a mix, a pencil stroke, a gain apply and a reverse each are an
 **offline render** (`Step::Render`, scored by `audio::renders`) into a new file of
 the working folder, which reads the list with `TransportDiskIn` and writes with
 `DiskOut` beside a `PeaksOut`, so a file a history entry names is never written
@@ -1135,7 +1143,10 @@ layer), swept when no tab holds it. A batch that fails deletes the renders it ha
 there (the editor's `scratch` verb names which are its own). A turn answers the renders and the `/buffer_stitch` that
 puts the join -- the RT buffer the take plays through, its parts naming file
 spans -- over the new list, and the window draws the list itself, from its
-files (`segments`). The editing context gives back what nothing reaches: after
+files (`segments`): the application hands the host its tree with the answer
+that names it (`FromApp::Lists`, `host::disk::receive`), and the host composes
+a column from the nodes the column holds whole, each one's summary kept by the
+node's identity, so a picture costs its columns and not the take's parts. The editing context gives back what nothing reaches: after
 every turn and step, the renders no entry, no member and no clipboard names, as
 files to delete (`Freed::files`). A save renders the list into its target; over
 the file the list reads, the render lands beside it, the file is moved into the

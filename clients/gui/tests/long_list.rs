@@ -10,7 +10,6 @@
 //! cargo test --release --test long_list -- --ignored --nocapture
 //! ```
 
-use std::sync::Arc;
 use std::time::Instant;
 
 use clausters_core::osc::{OscMessage, OscType};
@@ -169,7 +168,7 @@ fn an_hour_is_opened_edited_and_zoomed_by_what_its_window_resolves() {
     // **Open**: the list is the file whole.
     let whole = json!({"channels": CHANNELS, "sample_rate": SR,
                        "parts": [part(&path, &peaks, 0, FRAMES, 0)]});
-    answerer.define(-2, Arc::new(List::parse(&whole).unwrap()));
+    answerer.define(-2, List::parse(&whole).unwrap());
     let mut open = Cost::default();
     let t = Instant::now();
     let query = OscMessage {
@@ -226,7 +225,7 @@ fn an_hour_is_opened_edited_and_zoomed_by_what_its_window_resolves() {
         let list = List::parse(&list).unwrap();
         let frames = list.frames;
         bound += parts.len() * 2 * (fade + 256) * CHANNELS;
-        answerer.define(-2, Arc::new(list));
+        answerer.define(-2, list);
         summary(&mut answerer, &mut disk, -2, level(frames), &mut edits);
     }
     let edited = t.elapsed();

@@ -131,6 +131,10 @@ already carry it.
   editor closes while its picture is still being read; nothing is drawn
   wrong.
 
+- ⬜ **A file of fewer channels is drawn silent where it is played**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A part with no channel
+  map is drawn and played by two rules; one function should say it.
+
 - ⬜ **The other applications that open files open without one and outlive
   their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
   editor keeps the rule; the score editor and the multitrack with a session
@@ -300,7 +304,7 @@ its plan; the plan is where its acceptance is read.
 ### The near work
 
 - ⬜ **The second turn: an editing application holds its engine**,
-  milestones `X31` to `X34`, then `S23` *(`crates/clausters-apps/PLAN.md`,
+  milestones `X32` to `X34`, then `S23` *(`crates/clausters-apps/PLAN.md`,
   "The second turn: an editing application holds its engine"; `S23` in root
   `PLAN.md`)*. **Taken next**, on the user's word: a copy and paste pattern
   that reaches hours hangs the audio editor, because each paste flattens the
@@ -308,9 +312,9 @@ its plan; the plan is where its acceptance is read.
   message that outgrows a packet. It revises the first turn
   ("The turn: an application's takes live on disk", `X28` and `X29`), whose
   surviving work carries over. In that order, now that the application
-  holds its engine: the shared blocks, measured against the pattern; the
-  application's reader and peaks; the audio editor's session file; the
-  multitrack on the same modules; and the server's cleaning last, once
+  holds its engine and its take is shared blocks: the application's reader
+  and peaks; the audio editor's session file; the multitrack on the same
+  modules; and the server's cleaning last, once
   nothing calls what it removes. Before `X25`, which should port this
   lifecycle.
   **Related:** found moving the editor onto files, and taken
@@ -321,11 +325,10 @@ its plan; the plan is where its acceptance is read.
 
   | Order | Milestone | Plan |
   |---|---|---|
-  | 1 | `X31` — A take is shared blocks | `crates/clausters-apps/PLAN.md` |
-  | 2 | `X32` — The application reads its takes, and draws them | `crates/clausters-apps/PLAN.md` |
-  | 3 | `X33` — The audio editor's session file | `crates/clausters-apps/PLAN.md` |
-  | 4 | `X34` — The multitrack over the same modules | `crates/clausters-apps/PLAN.md` |
-  | 5 | `S23` — The server keeps no editing commands, widened | root `PLAN.md` |
+  | 1 | `X32` — The application reads its takes, and draws them | `crates/clausters-apps/PLAN.md` |
+  | 2 | `X33` — The audio editor's session file | `crates/clausters-apps/PLAN.md` |
+  | 3 | `X34` — The multitrack over the same modules | `crates/clausters-apps/PLAN.md` |
+  | 4 | `S23` — The server keeps no editing commands, widened | root `PLAN.md` |
 
 - ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
   summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A

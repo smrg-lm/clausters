@@ -165,16 +165,11 @@ fn opening_measures_the_file_and_stitches_the_join_over_it() {
     assert_eq!(stitched[3], json!({"s": "/in/take3.wav"}), "reads the file");
     assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
     let def = call(&mut editor, json!({"verb": "window", "widget": 12}));
-    let list = &def["children"][1]["segments"];
-    assert_eq!(
-        list["parts"][0]["path"], "/in/take3.wav",
-        "the window draws the list"
-    );
+    let list = shared::told(&def["children"][1]["segments"]).expect("a list by reference");
+    let file = list.file(list.tree.iter().next().unwrap().part).unwrap();
+    assert_eq!(&*file.path, "/in/take3.wav", "the window draws the list");
     assert!(
-        list["parts"][0]["peaks"]
-            .as_str()
-            .unwrap()
-            .starts_with("/work/take3-"),
+        file.peaks.as_deref().unwrap().starts_with("/work/take3-"),
         "the peaks are the working folder's"
     );
     assert!(def["children"][1].get("buffer").is_none());
@@ -277,13 +272,15 @@ fn a_stroke_is_a_new_take_the_size_of_the_stroke_spliced_over_its_frames() {
     );
     let leg = &out["record"]["legs"][0];
     assert_eq!(leg["forward"]["edit"]["intent"], "parts");
+    let before = shared::take(leg["backward"]["take"].as_u64().unwrap()).unwrap();
     assert_eq!(
-        leg["backward"]["parts"].as_array().unwrap().len(),
+        before.parts.count(),
         1,
-        "the list before"
+        "the list before, named by its number"
     );
-    assert_eq!(leg["holdsForward"].as_array().unwrap().len(), 2);
-    assert_eq!(leg["holdsBackward"].as_array().unwrap().len(), 1);
+    // the files each half reads, and the take it names
+    assert_eq!(leg["holdsForward"].as_array().unwrap().len(), 3);
+    assert_eq!(leg["holdsBackward"].as_array().unwrap().len(), 2);
 }
 
 #[test]
@@ -332,14 +329,16 @@ fn a_cut_takes_the_span_out_and_writes_no_samples() {
         [span("take3", 0, 10), span("take3", 30, 100)]
     );
     assert_eq!(out["record"]["label"], "cut");
+    let corrections = &out["answer"]["corrections"];
+    let told = shared::told(&corrections[0]["props"]["segments"]).expect("the new list");
+    assert!(
+        told.tree.same(&editor.file.contents.parts),
+        "the picture is told the new list, the take's own"
+    );
     assert_eq!(
-        out["answer"]["corrections"],
-        json!([
-            {"widget": 12, "props": {"segments": editor.segments()}},
-            {"widget": 12, "props": {"cursor": 10, "sel_start": 10, "sel_len": 0}}
-        ]),
-        "the picture is told the new list; and the selection is gone, the \
-         cursor where the span was"
+        corrections[1],
+        json!({"widget": 12, "props": {"cursor": 10, "sel_start": 10, "sel_len": 0}}),
+        "the selection is gone, the cursor where the span was"
     );
     assert_eq!(out["selection"]["len"], 0.0);
     assert_eq!(out["cue"], 10);
@@ -1340,8 +1339,11 @@ fn a_copy_names_the_span_s_files_and_a_paste_elsewhere_reads_them() {
     let clip: Value = serde_json::from_str(&doc).unwrap();
     assert_eq!(clip["content"]["kind"], "segments");
     assert_eq!(clip["content"]["frames"], 20);
-    assert_eq!(clip["content"]["parts"][0]["path"], "/in/take3.wav");
-    assert_eq!(clip["content"]["parts"][0]["start"], 10);
+    // the copy is held by reference, and names the files it reads
+    assert_eq!(clip["content"]["held"]["files"], json!(["/in/take3.wav"]));
+    let held = shared::copy(clip["content"]["held"]["id"].as_u64().unwrap()).unwrap();
+    let first = held.tree.iter().next().unwrap().part;
+    assert_eq!(first.source.range.unwrap().start, 10);
     assert!(copied.get("record").is_none(), "a copy is not an edit");
     assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
 

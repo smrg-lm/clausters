@@ -289,7 +289,7 @@ impl AudioEditor {
         let mut steps = vec![renders::gain(&list, &curve, &output)];
         let before = self.file.contents.clone();
         let id = self.rendered(&output, frames, self.file.rate);
-        self.file.contents.parts = vec![part(id, 0, frames)];
+        self.file.contents.parts = self.tree_of(&[part(id, 0, frames)]);
         self.file.contents.automation[0].points = vec![
             points::point(Second(0.0), 1.0, 1.0, 0.0),
             points::point(Second(frames as f64 / self.file.rate), 1.0, 1.0, 0.0),
@@ -399,11 +399,15 @@ mod tests {
         );
         let wire = steps.to_string();
         assert!(!wire.contains("/buffer_gain") && !wire.contains("/buffer_setRange"));
+        // the take before, named by its number, carries its curve
+        let before = out.record.unwrap().legs[0].backward["take"]
+            .as_u64()
+            .unwrap();
         assert!(
-            out.record.unwrap().legs[0]
-                .backward
-                .get("automation")
-                .is_some()
+            !crate::audio::shared::take(before)
+                .unwrap()
+                .automation
+                .is_empty()
         );
         assert_eq!(editing.undo_label(), Some("apply gain envelope".into()));
         assert!(editing.step(Direction::Undo).stepped);

@@ -370,7 +370,8 @@ impl Application for AudioEditor {
                         outcome.planned_steps.clone()
                     }
                     Command::Restore(payload) => {
-                        let mut next = parts::Take::read(&payload)
+                        let mut next = self
+                            .take_named(&payload.0)
                             .ok_or("the history payload is not a take")?;
                         self.keep_visibility(&mut next);
                         draft.file.contents = next;

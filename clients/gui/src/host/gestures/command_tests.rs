@@ -506,6 +506,7 @@ fn a_paste_is_read_against_the_clipboard_and_its_destination() {
         frames: 10,
         sample_rate: 48000.0,
         parts: Vec::new(),
+        held: None,
     };
     host.clipboard.put(spans, Vec::new());
     assert!(enabled(&host, "paste").enabled, "segments paste");

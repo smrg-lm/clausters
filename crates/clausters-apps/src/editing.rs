@@ -2805,9 +2805,25 @@ mod tests {
     /// the edit after it lets it go.
     #[test]
     fn a_stroke_s_take_is_freed_when_no_entry_can_reach_it() {
+        // the takes an entry names by number, as the history holds them
+        let named = |editing: &Editing| -> Vec<u64> {
+            let take = |id: u64| id & (1 << 61) != 0 && id & (1 << 62) == 0;
+            let held = editing.services.histories.held_sources();
+            held.into_iter()
+                .map(|s| s.0)
+                .filter(|id| take(*id))
+                .collect()
+        };
         let mut editing = Editing::default();
         let take = an_audio_take(&mut editing);
         let first = draw(&mut editing, take, 1, 10);
+        let before = named(&editing);
+        assert_eq!(before.len(), 2, "the take before the stroke and after it");
+        assert!(
+            before
+                .iter()
+                .all(|id| crate::audio::shared::take(*id).is_some())
+        );
         assert!(first.get("freed").is_none());
         let undone = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
         assert_eq!(undone["effects"][0]["kind"], "audio");
@@ -2817,6 +2833,19 @@ mod tests {
             second["freed"],
             json!([{"member": take, "files": ["/work/1-2-stroke.w64", "/work/1-2-stroke.peaks"]}]),
             "the redo is gone, and the stroke's render with it"
+        );
+        // and so are the takes its entry named, while the new entry's stay
+        assert!(
+            before
+                .iter()
+                .all(|id| crate::audio::shared::take(*id).is_none())
+        );
+        let after = named(&editing);
+        assert_eq!(after.len(), 2);
+        assert!(
+            after
+                .iter()
+                .all(|id| crate::audio::shared::take(*id).is_some())
         );
     }
 

@@ -1,6 +1,8 @@
 //! **The files a take is made of**: the table an open file's list reads, and
-//! what is made of it -- the list a window draws, the join the server plays,
-//! the list a render reads, a copy by location.
+//! what is made of it -- the take as its readers read it (the window, the
+//! clipboard, the application's reader: [`file_list`], a reference), the list
+//! a render reads, the list written out for a caller that reads it as data,
+//! and the join a server plays.
 //!
 //! A take lives on disk: its list's parts are spans of files that never
 //! change, the one it was opened from and the renders its edits wrote into
@@ -11,9 +13,9 @@
 use std::collections::BTreeMap;
 
 use clausters_core::osc::{OscMessage, OscType};
-use clausters_document::SourceId;
 use clausters_document::clipboard::SegmentPart;
 use clausters_document::session::Part;
+use clausters_document::{SourceId, parts};
 use serde_json::{Value, json};
 
 use crate::audio::renders;
@@ -118,17 +120,56 @@ pub(crate) fn list(parts: &[Part], sources: &Sources, channels: u32, rate: f64) 
     }
 }
 
-/// **The list a window draws** (`segments`): the parts by location, each
-/// with its file's peaks.
+/// **`tree` as its readers read it**: the parts, shared, and the files of
+/// `sources` they name, `channels` wide at `rate`. The files are the ones
+/// the tree reads, so the cost is how many files and not how many parts.
+pub(crate) fn file_list(
+    tree: &parts::Tree,
+    sources: &Sources,
+    channels: u32,
+    rate: f64,
+) -> parts::FileList {
+    let files = tree
+        .sources()
+        .iter()
+        .filter_map(|id| {
+            let source = sources.get(id)?;
+            Some((
+                *id,
+                parts::TakeFile {
+                    path: source.path.as_str().into(),
+                    peaks: Some(source.peaks.as_str().into()),
+                    channels: source.channels,
+                    frames: source.frames,
+                    rate: source.rate,
+                },
+            ))
+        })
+        .collect();
+    parts::FileList {
+        channels,
+        rate,
+        tree: tree.clone(),
+        files: std::sync::Arc::new(files),
+    }
+}
+
+/// **The list by location, written out** (`segments`'s query): the parts
+/// at `rate`, each with its file's peaks. What a caller that reads the list
+/// as data asks for; the window is handed the list itself ([`file_list`]).
 pub(crate) fn wire_list(parts: &[Part], sources: &Sources, channels: u32, rate: f64) -> Value {
     let list = list(parts, sources, channels, rate);
+    let peaks: BTreeMap<&str, &str> = sources
+        .values()
+        .map(|s| (s.path.as_str(), s.peaks.as_str()))
+        .collect();
     let parts: Vec<Value> = list
         .parts
         .iter()
         .map(|part| {
             let mut value = serde_json::to_value(part).unwrap_or(Value::Null);
-            if let Some(source) = sources.values().find(|s| s.path == part.path) {
-                value["peaks"] = json!(source.peaks);
+            if let Some(peaks) = peaks.get(part.path.as_str()) {
+                value["peaks"] = json!(peaks);
             }
             value
         })

@@ -74,10 +74,7 @@ fn part(
 }
 
 fn list(channels: usize, parts: Vec<serde_json::Value>) -> Arc<List> {
-    Arc::new(
-        List::parse(&json!({"channels": channels, "sample_rate": 48000.0, "parts": parts}))
-            .unwrap(),
-    )
+    List::parse(&json!({"channels": channels, "sample_rate": 48000.0, "parts": parts})).unwrap()
 }
 
 fn ask(answerer: &mut Answerer, io: &mut Disk, addr: &str, args: Vec<OscType>) -> OscMessage {
@@ -137,11 +134,12 @@ fn direct(
     a: usize,
     b: usize,
 ) -> SpanStats {
-    let paths: Vec<_> = list.parts.iter().map(|p| p.path.clone()).collect();
+    let parts = list.parts();
+    let paths: Vec<_> = parts.iter().map(|p| p.path.clone()).collect();
     let values: Vec<f32> = (a..b.min(list.frames))
         .map(|f| {
-            let i = clausters_core::segments::part_at(&list.parts, f).unwrap();
-            let p = &list.parts[i];
+            let i = clausters_core::segments::part_at(&parts, f).unwrap();
+            let p = &parts[i];
             let src = paths.iter().position(|q| *q == p.path).unwrap();
             p.span.read_with(f - p.span.start(), ch, |sf, sc| {
                 data[src.min(data.len() - 1)][sf * channels + sc]
@@ -294,7 +292,7 @@ fn a_zoom_reads_only_its_span() {
     for (i, v) in got.iter().enumerate() {
         let flat = start + i;
         let (f, ch) = (flat / 2, flat % 2);
-        let p = &l.parts[clausters_core::segments::part_at(&l.parts, f).unwrap()];
+        let p = l.part_at(f).unwrap();
         let want = if f < 50_000 {
             p.span.read_with(f, ch, |sf, sc| a[sf * 2 + sc])
         } else {

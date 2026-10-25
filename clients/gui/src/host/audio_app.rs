@@ -12,8 +12,9 @@
 //! (`super::audio_editor`) keeps the windows, their widget ids and their
 //! drawing; what it asks crosses as a [`ToApp`], and what comes back as a
 //! [`FromApp`], already carrying what drawing it needs (a window's tree, a
-//! widget's props, the actions' readings), so the host never asks the
-//! application anything synchronously.
+//! widget's props, the actions' readings, and the takes those name, handed
+//! over by reference ahead of them), so the host never asks the application
+//! anything synchronously.
 
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
@@ -97,6 +98,10 @@ pub(super) enum ToApp {
 
 /// What the application says back to the host.
 pub(super) enum FromApp {
+    /// The takes what follows names by number, handed over by reference
+    /// (`clausters_apps::audio::shared`): sent before the answer that names
+    /// them, so the host holds each one when it reads its number.
+    Lists(Vec<(u64, clausters_document::parts::FileList)>),
     /// The engine is open: what its windows' meters and play cursors read.
     Engine(clausters_app_engine::EngineReading),
     /// Window `def_id`'s editor opened, and the dialogs whose widget ids it
@@ -172,6 +177,11 @@ impl Said {
     }
 
     fn send(&self, said: FromApp) {
+        // the lists what is said names go first, from the thread that named them
+        let lists = clausters_apps::audio::shared::said();
+        if !lists.is_empty() {
+            let _ = self.tx.send(FromApp::Lists(lists));
+        }
         if self.tx.send(said).is_ok()
             && let Some(wake) = &self.wake
         {

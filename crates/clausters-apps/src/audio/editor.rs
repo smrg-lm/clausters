@@ -1,14 +1,16 @@
 //! **The audio editor's turns**: the window over a take made of parts, what one
-//! message from the host does to the list, and the steps that make the server
-//! draw and play what the list now is.
+//! message from the host does to the list, and the steps that make what the
+//! list now names.
 //!
 //! The shape is the samples editor's -- a message read by the conversation, a
 //! gesture read in its vocabulary, an acknowledgement, and an entry for the
 //! history the caller keeps -- with one difference in what comes back: not a
-//! write into the take, but the **steps** that make a new take where a turn
-//! needs one and stitch the drawn join over the new list ([`Outcome::steps`]).
-//! Each entry states the takes its two lists read, so the history holds them
-//! for as long as it can walk to them.
+//! write into the take, but the **steps** that render a new file where a turn
+//! needs one ([`Outcome::steps`]), and over a server the stitch of the join it
+//! plays. The window is told the new list by reference (`segments`, through
+//! [`crate::audio::shared`]). Each entry names the takes before and after it
+//! by number and states the files each reads, so the history holds them for
+//! as long as it can walk to them.
 //!
 //! **How the window shows the take: views, and the layers of each.** Four
 //! words, kept apart because each answers a different question:
@@ -42,7 +44,7 @@ use serde_json::{Value, json};
 
 use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::tempoclock::{samples_to_secs, secs_to_samples};
-use clausters_document::clipboard::{Clipboard, Content, SegmentPart};
+use clausters_document::clipboard::{Clipboard, Content, HeldCopy, SegmentPart};
 use clausters_document::parts::{self, PARTS};
 use clausters_document::session::Part;
 use clausters_document::view::NOT_AN_EDIT;
@@ -57,6 +59,7 @@ use clausters_editing::verbs::{self, ActionState, ActionTarget, PasteTarget};
 use crate::application::resources::ServerInstance;
 use crate::audio::dialogs;
 use crate::audio::renders;
+use crate::audio::shared;
 use crate::samples::{MEASURES, MeterAt, Window, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, number, text};
 use sources::{FileSource, Sources};
@@ -677,7 +680,7 @@ fn send(addr: &str, args: Vec<OscType>) -> Step {
 
 /// What a paste or a mix carries in: the parts it puts in, and the steps
 /// that make the file they read when the clipboard held samples.
-type Carried = (Vec<Part>, Vec<Step>);
+type Carried = (parts::Tree, Vec<Step>);
 
 impl AudioEditor {
     /// **The window's actions as they read now**, by verb: what each
@@ -886,11 +889,7 @@ impl AudioEditor {
         let id = self.add_source(file);
         let frames = self.file.sources[&id].frames;
         self.file.opened = Some(id);
-        self.file.contents.parts = if frames > 0 {
-            vec![part(id, 0, frames)]
-        } else {
-            Vec::new()
-        };
+        self.file.contents.parts = self.tree_of(&[part(id, 0, frames)]);
     }
 
     /// **A file the list may read**, added to the table under its id: what
@@ -933,9 +932,9 @@ impl AudioEditor {
 
     /// The list a render reads: the span `from..to` of the take, at its rate.
     fn render_list(&self, from: u64, to: u64) -> Result<renders::List, String> {
-        let span = parts::span(&self.file.contents.parts, from, to, &self.rates_of())?;
+        let span = self.file.contents.parts.span(from, to, &self.rates_of())?;
         Ok(sources::list(
-            &span,
+            &span.to_vec(),
             &self.file.sources,
             self.file.channels,
             self.file.rate,
@@ -955,9 +954,14 @@ impl AudioEditor {
         })
     }
 
-    /// The list the take is now.
-    pub fn list(&self) -> &[Part] {
-        &self.file.contents.parts
+    /// The list the take is now, flat.
+    pub fn list(&self) -> Vec<Part> {
+        self.file.contents.parts.to_vec()
+    }
+
+    /// The take's parts as they are held: a tree, shared.
+    pub(crate) fn tree_of(&self, parts: &[Part]) -> parts::Tree {
+        parts::Tree::from_parts(parts, &self.rates_of()).unwrap_or_default()
     }
 
     /// **The file each part of the list reads**, by the stem of its path:
@@ -968,7 +972,7 @@ impl AudioEditor {
             .contents
             .parts
             .iter()
-            .filter_map(|part| self.file.sources.get(&part.source.source))
+            .filter_map(|placed| self.file.sources.get(&placed.part.source.source))
             .map(|source| {
                 std::path::Path::new(&source.path)
                     .file_stem()
@@ -1067,7 +1071,7 @@ impl AudioEditor {
 
     /// How many frames the take is now.
     pub fn length(&self) -> u64 {
-        parts::length(&self.file.contents.parts, &self.rates_of()).unwrap_or(0)
+        self.file.contents.parts.frames()
     }
 
     /// How the list counts its takes: at the editor's rate, and each take
@@ -1188,6 +1192,10 @@ impl AudioEditor {
     /// that let go of it said so), and its peaks. Nothing for a file the user
     /// owns, or one a list still reads.
     pub(crate) fn release(&mut self, source: SourceId) -> Vec<String> {
+        // a take a history entry named, kept for it
+        if shared::let_go_take(source.0) {
+            return Vec::new();
+        }
         if self.rooted().contains(&source) {
             return Vec::new();
         }
@@ -1409,7 +1417,7 @@ impl AudioEditor {
             self.file.rate
         };
         let list = sources::list(
-            &self.file.contents.parts,
+            &self.file.contents.parts.to_vec(),
             &self.file.sources,
             self.file.channels,
             rate,
@@ -1427,15 +1435,21 @@ impl AudioEditor {
         ]
     }
 
-    /// **The list the window draws**: the parts by location, at the file's
-    /// rate, each with its file's peaks.
+    /// **The list the window draws**: the take's parts as they are held,
+    /// handed to the host by reference ([`shared::say`]) and named here by
+    /// the number it is kept under, with its shape -- so what an edit tells
+    /// the window is the same few bytes whatever the take's length.
     pub(crate) fn segments(&self) -> Value {
-        sources::wire_list(
-            &self.file.contents.parts,
-            &self.file.sources,
-            self.file.channels,
-            self.file.rate,
-        )
+        let list = self.file_list(&self.file.contents.parts);
+        let frames = list.tree.frames();
+        json!({"shared": shared::say(list), "channels": self.file.channels,
+               "sample_rate": self.file.rate, "frames": frames})
+    }
+
+    /// **`tree` as its readers read it**, over the files of this file's
+    /// table it names.
+    pub(crate) fn file_list(&self, tree: &parts::Tree) -> parts::FileList {
+        sources::file_list(tree, &self.file.sources, self.file.channels, self.file.rate)
     }
 
     /// **The window**, numbered with the take widget's id, drawing the join.
@@ -1549,6 +1563,15 @@ impl AudioEditor {
         self.file.dirty = self.file.revision != self.file.saved_revision;
     }
 
+    /// **The take a history payload names**: by its revision, kept by the
+    /// file; or, from a payload that carries its parts, read from them.
+    pub(crate) fn take_named(&self, payload: &Value) -> Option<parts::Take> {
+        if let Some(take) = payload.get("take").and_then(Value::as_u64) {
+            return shared::take(take);
+        }
+        parts::Take::read(&Opaque(payload.clone()), &self.rates_of())
+    }
+
     fn keep_visibility(&self, next: &mut parts::Take) {
         // Visibility is view state: walking the edit order restores the curve,
         // not which body the user has chosen to look at since the edit.
@@ -1569,7 +1592,7 @@ impl AudioEditor {
     /// the take, and the answer is the steps that stitch it. Nothing when the
     /// payload is not a list.
     pub fn apply(&mut self, payload: &Value) -> Option<Value> {
-        let mut next = parts::Take::read(&Opaque(payload.clone()))?;
+        let mut next = self.take_named(payload)?;
         self.keep_visibility(&mut next);
         self.file.contents = next;
         if let Some(revision) = payload["contentRevision"].as_u64() {
@@ -1777,7 +1800,7 @@ impl AudioEditor {
                 if matches!(tag, "cut" | "delete" | "paste") {
                     let at = values.first().map_or(0.0, number).round().max(0.0) as u64;
                     if tag == "paste" {
-                        let was = parts::length(&before.parts, &self.rates_of()).unwrap_or(0);
+                        let was = before.parts.frames();
                         let pasted = self.length().saturating_sub(was);
                         // a paste past the end went in at the end
                         let at = at.min(was);
@@ -1801,19 +1824,23 @@ impl AudioEditor {
         self.file.next_revision += 1;
         self.file.revision = self.file.next_revision;
         self.file.dirty = self.file.revision != self.file.saved_revision;
-        let mut forward = self.file.contents.payload().0;
-        forward["contentRevision"] = json!(self.file.revision);
-        let mut backward = before.payload().0;
-        backward["contentRevision"] = json!(previous);
-        let ids = |list: &[Part]| parts::sources(list).iter().map(|s| s.0).collect();
+        let after = shared::keep_take(&self.file.contents);
+        let was = shared::keep_take(before);
+        let forward = take_payload(after, self.file.revision);
+        let backward = take_payload(was, previous);
+        let ids = |list: &parts::Tree, take: u64| {
+            let mut ids: Vec<u64> = list.sources().iter().map(|s| s.0).collect();
+            ids.push(take);
+            ids
+        };
         Record {
             label: label.into(),
             legs: vec![Leg {
                 forward: json!({ "edit": forward }),
                 backward,
                 key: String::new(),
-                holds_forward: ids(&self.file.contents.parts),
-                holds_backward: ids(&before.parts),
+                holds_forward: ids(&self.file.contents.parts, after),
+                holds_backward: ids(&before.parts, was),
             }],
         }
     }
@@ -1849,11 +1876,10 @@ impl AudioEditor {
         let out = self.render_output("stroke", "draw")?;
         let step = renders::stroke(&over, channel, &drawn, &out);
         let id = self.rendered(&out, frames, self.file.rate);
-        let list = parts::replace(
-            &self.file.contents.parts,
+        let list = self.file.contents.parts.replace(
             start,
             start + frames,
-            &[part(id, 0, frames)],
+            &self.tree_of(&[part(id, 0, frames)]),
             &self.rates_of(),
         )?;
         Ok(Some((taken.label, list, vec![step])))
@@ -1868,16 +1894,21 @@ impl AudioEditor {
         if len == 0 {
             return Ok(());
         }
-        let span = parts::span(
-            &self.file.contents.parts,
-            start,
-            start + len,
-            &self.rates_of(),
-        )?;
-        let clip = Clipboard::segments(
+        let span = self
+            .file
+            .contents
+            .parts
+            .span(start, start + len, &self.rates_of())?;
+        let list = self.file_list(&span);
+        let files = list.files.values().map(|f| f.path.to_string()).collect();
+        let clip = Clipboard::held_segments(
             self.file.channels,
+            span.frames(),
             self.file.rate,
-            sources::segment_parts(&span, &self.file.sources),
+            HeldCopy {
+                id: shared::keep_copy(list),
+                files,
+            },
         );
         out.clipboard = Some(clip.to_json());
         Ok(())
@@ -1893,12 +1924,11 @@ impl AudioEditor {
         if len == 0 {
             return Ok(None);
         }
-        let list = parts::remove(
-            &self.file.contents.parts,
-            start,
-            start + len,
-            &self.rates_of(),
-        )?;
+        let list = self
+            .file
+            .contents
+            .parts
+            .remove(start, start + len, &self.rates_of())?;
         // a take may be cut down to nothing: an empty file is a header
         Ok(Some((tag.into(), list, Vec::new())))
     }
@@ -1923,6 +1953,40 @@ impl AudioEditor {
             }
         };
         match clip.content {
+            Content::Segments {
+                channels,
+                held: Some(held),
+                ..
+            } => {
+                fits(channels, self.file.channels)?;
+                let copy =
+                    shared::copy(held.id).ok_or("the copy is no longer held: copy it again")?;
+                for (id, file) in copy.files.iter() {
+                    let peaks = match &file.peaks {
+                        Some(peaks) => peaks.to_string(),
+                        None => sources::peaks_beside(&file.path),
+                    };
+                    let added = self.add_source(FileSource {
+                        path: file.path.to_string(),
+                        peaks,
+                        frames: file.frames,
+                        channels: file.channels,
+                        rate: file.rate,
+                        // a file another editor wrote is that editor's to delete
+                        render: false,
+                    });
+                    debug_assert_eq!(added, *id, "a file has one id wherever it is named");
+                }
+                // **The copy's parts are shared** where they are counted as
+                // this take counts them, which is at the same rate: a copy
+                // pasted any number of times is then the same nodes.
+                let tree = if copy.rate == self.file.rate {
+                    copy.tree
+                } else {
+                    self.tree_of(&copy.tree.to_vec())
+                };
+                Ok((!tree.is_empty()).then_some((tree, Vec::new())))
+            }
             Content::Segments {
                 channels, parts, ..
             } => {
@@ -1952,7 +2016,8 @@ impl AudioEditor {
                     piece.channels = segment.channels.clone();
                     list.push(piece);
                 }
-                Ok((!list.is_empty()).then_some((list, Vec::new())))
+                let tree = self.tree_of(&list);
+                Ok((!tree.is_empty()).then_some((tree, Vec::new())))
             }
             Content::Buffer {
                 channels,
@@ -2001,7 +2066,7 @@ impl AudioEditor {
                 };
                 let mut steps = written;
                 steps.push(renders::measure(&whole, &out.peaks, &out.label));
-                Ok(Some((vec![part(id, 0, frames)], steps)))
+                Ok(Some((self.tree_of(&[part(id, 0, frames)]), steps)))
             }
             Content::Samples { .. } => {
                 let (_, samples, rate) = self.block(values)?;
@@ -2012,7 +2077,7 @@ impl AudioEditor {
                 let out = self.render_output("pasted", "paste")?;
                 let step = renders::block_file(&samples, self.file.channels, rate, &out);
                 let id = self.rendered(&out, frames, rate);
-                Ok(Some((vec![part(id, 0, frames)], vec![step])))
+                Ok(Some((self.tree_of(&[part(id, 0, frames)]), vec![step])))
             }
             other => Err(format!(
                 "a take takes samples, and the clipboard holds {}",
@@ -2030,12 +2095,11 @@ impl AudioEditor {
         let Some((carried, steps)) = self.carried(values)? else {
             return Ok(None);
         };
-        let list = parts::insert(
-            &self.file.contents.parts,
-            position,
-            &carried,
-            &self.rates_of(),
-        )?;
+        let list = self
+            .file
+            .contents
+            .parts
+            .insert(position, &carried, &self.rates_of())?;
         Ok(Some(("paste".into(), list, steps)))
     }
 
@@ -2077,12 +2141,12 @@ impl AudioEditor {
                 return Ok(None);
             };
             let rates = self.rates_of();
-            let frames = parts::length(&carried, &rates)?.min(total - position);
+            let frames = carried.frames().min(total - position);
             if frames == 0 {
                 return Ok(None);
             }
             let added = sources::list(
-                &parts::span(&carried, 0, frames, &rates)?,
+                &carried.span(0, frames, &rates)?.to_vec(),
                 &self.file.sources,
                 self.file.channels,
                 self.file.rate,
@@ -2093,11 +2157,10 @@ impl AudioEditor {
             (frames, made)
         };
         let id = self.rendered(&out, frames, self.file.rate);
-        let list = parts::replace(
-            &self.file.contents.parts,
+        let list = self.file.contents.parts.replace(
             position,
             position + frames,
-            &[part(id, 0, frames)],
+            &self.tree_of(&[part(id, 0, frames)]),
             &self.rates_of(),
         )?;
         Ok(Some(("mix".into(), list, made)))
@@ -2133,11 +2196,10 @@ impl AudioEditor {
             pieces.push(part(id, 0, end - from));
             end = from;
         }
-        let list = parts::replace(
-            &self.file.contents.parts,
+        let list = self.file.contents.parts.replace(
             start,
             start + len,
-            &pieces,
+            &self.tree_of(&pieces),
             &self.rates_of(),
         )?;
         Ok(Some(("reverse".into(), list, steps)))
@@ -2296,7 +2358,15 @@ pub enum Target {
 
 /// What a gesture made: its label, the list after it and the steps that make
 /// its new takes -- or nothing at all.
-type Edited = Option<(String, Vec<Part>, Vec<Step>)>;
+type Edited = Option<(String, parts::Tree, Vec<Step>)>;
+
+/// **A history entry's half**: the take kept under `take`
+/// ([`shared::keep_take`]), which is the file's content revision `revision`.
+/// The entry holds the take's number as it holds the files the take reads,
+/// so the take is let go of when the entry is ([`AudioEditor::release`]).
+fn take_payload(take: u64, revision: u64) -> Value {
+    json!({"intent": parts::PARTS, "take": take, "contentRevision": revision})
+}
 
 /// What `widget` should be drawing: read the take again.
 fn resync(widget: i64) -> Vec<Correction> {
@@ -2792,7 +2862,14 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         }
         "playback" => editor.playback_file().to_string(),
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
-        "segments" => editor.segments().to_string(),
+        // the list as data, written out: a query, which costs the list
+        "segments" => sources::wire_list(
+            &editor.list(),
+            &editor.file.sources,
+            editor.file.channels,
+            editor.file.rate,
+        )
+        .to_string(),
         // **What of `files` is this editor's scratch**: the ones in its
         // working folder, which a failed render may take away; nothing else,
         // a file the user named least of all.

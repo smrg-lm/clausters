@@ -11065,3 +11065,41 @@ the engine in the worklet, which would put a wire back where the second
 turn removed one; and moving every build to nightly, which would put the
 whole project on a toolchain only one artifact needs. The pin is moved by
 hand, when a nightly is needed or a bug asks for it.
+
+## A take is a tree of shared parts, held by reference (2026-10-24)
+
+Context: a copy and paste pattern that reaches hours (ten seconds copied and
+pasted five times, the minute that makes copied whole and pasted nine
+times, and so on) made the audio editor's take a flat list of 49,001 parts
+at 163 hours. Each paste wrote the clipboard's parts into a new list as long
+as the take, the clipboard and every history entry carried the list as
+JSON, and the window was sent it whole: the work of an edit followed the
+product of the pastes before it, and the last ones took most of a second.
+The second turn left the structure to this milestone: bounded blocks of
+samples shared between the take, the clipboard and the history, or regions
+over files, or a tree of either.
+
+Decision: **a tree of the parts the list already has** (regions over files),
+balanced by height and with immutable nodes shared by every take that holds
+them (`clausters_document::parts::Tree`). A span, an insertion and a
+removal make the nodes on the paths to their seams and share the rest, with
+the flat list's arithmetic and its merge rule at the seams, checked against
+it. Whatever holds a take holds a reference: the clipboard document names a
+copy the application keeps (`HeldCopy`), a history entry names the take
+before and after by a number held beside the files it reads and let go of
+with them, and the window is handed the tree in the same process
+(`{"shared": n}`), whose picture the host composes from the nodes a column
+holds whole, each node's summary kept by its identity. Measured in release
+over the pattern carried to 190 hours and 58,800 parts
+(`clients/gui/tests/shared_blocks.rs`): a paste answers in 0.01 ms from the
+first to the last, an undo or a redo in microseconds, the window is told
+about 830 bytes, a whole picture is drawn in a few milliseconds reading a
+few thousand parts, and memory grows under a megabyte.
+
+Rejected: bounded blocks of samples. A copy of a span would render its two
+partial blocks into new ones, so a paste writes samples, and an ordered
+array of blocks still costs a paste the take's length, which only a tree
+avoids. The parts already name immutable files, so the tree shares them
+with nothing written. Also rejected: keeping the JSON forms and making
+them faster, since a list written out per edit costs the list however fast
+it is written.

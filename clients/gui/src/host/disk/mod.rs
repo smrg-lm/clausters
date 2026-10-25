@@ -9,6 +9,11 @@
 //! under a zoom are read from the files, by the host itself -- natively from
 //! the disk, in a page from its own storage (OPFS).
 //!
+//! **A list is a tree of shared parts** ([`List`]): what an application the
+//! host holds hands its window by reference ([`receive`]), and a client's
+//! list written out and read into one. A picture is composed from the nodes
+//! each column holds whole, so it costs the columns and not the parts.
+//!
 //! **It goes through the fetch machine the host already has.** A list gets a
 //! **take key** ([`is_list_key`]), a buffer number in a range no server
 //! allocates, and the views over it ask for its shape, its summary at the
@@ -27,8 +32,14 @@
 
 use std::sync::Arc;
 
+use std::collections::BTreeMap;
+
 use clausters_core::osc::{OscMessage, OscType};
-use clausters_core::segments::{Cut, FadeShape, PartSpan, place, rate_between};
+use clausters_core::segments::{Cut, FadeShape, PartSpan, rate_between};
+use clausters_document::parts::tree::Placed;
+use clausters_document::parts::{FileList, TakeFile, Tree};
+use clausters_document::session::Part;
+use clausters_document::{Lifetime, Range, SourceId, SourceRef};
 use serde::Deserialize;
 
 pub mod answer;
@@ -98,39 +109,106 @@ impl AsRef<PartSpan> for ListPart {
     }
 }
 
-/// **A take as a list of segments over files**: its shape and its parts,
-/// placed end to end.
+/// **A take as a list of segments over files**: its shape, its parts as a
+/// tree whose nodes are shared ([`Tree`]), and the files they read.
+///
+/// What an application hands its window is its own take's tree, by
+/// reference ([`receive`]), so a list of any number of parts is named and
+/// compared in the same few steps, and a picture of it is composed from the
+/// nodes a column holds whole ([`answer`]).
 #[derive(Debug, Clone)]
 pub struct List {
     pub channels: usize,
     pub sample_rate: f64,
     pub frames: usize,
-    pub parts: Vec<ListPart>,
-    /// What it was parsed from, which is what says two lists are the same.
-    wire: WireList,
+    pub tree: Tree,
+    pub files: Arc<BTreeMap<SourceId, TakeFile>>,
+    /// What a client's list was parsed from, which is what says two of
+    /// those are the same.
+    wire: Option<WireList>,
 }
 
 impl PartialEq for List {
     fn eq(&self, other: &Self) -> bool {
-        self.wire == other.wire
+        match (&self.wire, &other.wire) {
+            (Some(a), Some(b)) => a == b,
+            (None, None) => {
+                self.tree.same(&other.tree)
+                    && self.channels == other.channels
+                    && self.sample_rate == other.sample_rate
+                    && self.files == other.files
+            }
+            _ => false,
+        }
     }
+}
+
+thread_local! {
+    /// The lists an application handed over, by the number its JSON names
+    /// each with: read where a `segments` prop names one.
+    static RECEIVED: std::cell::RefCell<std::collections::VecDeque<(u64, Arc<List>)>> =
+        const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+/// How many handed-over lists are kept for a prop to name: an answer names
+/// one per picture, read before the next answer comes.
+const RECEIVED_AT_MOST: usize = 64;
+
+/// **Lists an application hands its windows by reference**, under the
+/// numbers what it answers names them by (`{"shared": n, ...}`): kept for the
+/// `segments` props that follow on this thread.
+pub fn receive(lists: impl IntoIterator<Item = (u64, FileList)>) {
+    RECEIVED.with(|r| {
+        let mut r = r.borrow_mut();
+        for (id, list) in lists {
+            r.push_back((id, Arc::new(List::over(list))));
+        }
+        while r.len() > RECEIVED_AT_MOST {
+            r.pop_front();
+        }
+    });
 }
 
 impl List {
     /// Reads a `segments` prop, refusing what cannot be drawn: a part of no
     /// frames, a rate that is not a positive number, a map of the wrong
     /// width, or a span past the end of its file. A list of no parts is an
-    /// empty take, drawn as one.
+    /// empty take, drawn as one. One an application handed over names it by
+    /// number ([`receive`]).
     ///
     /// A def carries the list as JSON; a `/gui_set` carries it as its JSON
     /// text, since an OSC key/value is a scalar.
-    pub fn parse(value: &serde_json::Value) -> Result<Self, String> {
-        let wire: WireList = match value {
-            serde_json::Value::String(text) => serde_json::from_str(text),
-            other => serde_json::from_value(other.clone()),
+    pub fn parse(value: &serde_json::Value) -> Result<Arc<Self>, String> {
+        let value = match value {
+            serde_json::Value::String(text) => {
+                serde_json::from_str(text).map_err(|e| format!("segments: {e}"))?
+            }
+            other => other.clone(),
+        };
+        if let Some(id) = value.get("shared").and_then(serde_json::Value::as_u64) {
+            return RECEIVED
+                .with(|r| {
+                    r.borrow()
+                        .iter()
+                        .find(|(said, _)| *said == id)
+                        .map(|(_, list)| Arc::clone(list))
+                })
+                .ok_or_else(|| format!("segments: no list was handed over as {id}"));
         }
-        .map_err(|e| format!("segments: {e}"))?;
-        Self::from_wire(wire)
+        let wire: WireList = serde_json::from_value(value).map_err(|e| format!("segments: {e}"))?;
+        Self::from_wire(wire).map(Arc::new)
+    }
+
+    /// **The list an application holds**, as its window draws it.
+    pub fn over(list: FileList) -> Self {
+        Self {
+            channels: list.channels.max(1) as usize,
+            sample_rate: list.rate,
+            frames: list.tree.frames() as usize,
+            tree: list.tree,
+            files: list.files,
+            wire: None,
+        }
     }
 
     pub fn from_wire(wire: WireList) -> Result<Self, String> {
@@ -139,74 +217,123 @@ impl List {
             return Err("segments: a list has at least one channel".into());
         }
         // a list of no parts is an empty take: a file that is a header
-        let mut cuts = Vec::with_capacity(wire.parts.len());
+        let mut files: BTreeMap<SourceId, TakeFile> = BTreeMap::new();
+        let mut ids: std::collections::HashMap<&str, SourceId> = std::collections::HashMap::new();
+        let mut counted = Vec::with_capacity(wire.parts.len());
         for (n, w) in wire.parts.iter().enumerate() {
             let p = &w.part;
             let rate = rate_between(p.source_rate, wire.sample_rate)
                 .ok_or_else(|| format!("segments: part {n}: a rate of zero is no axis"))?;
-            let frames = usize::try_from(p.frames).map_err(|e| format!("part {n}: {e}"))?;
-            if frames == 0 {
+            if p.frames == 0 {
                 return Err(format!("segments: part {n} has no frames"));
             }
-            let start = usize::try_from(p.start).map_err(|e| format!("part {n}: {e}"))?;
-            let source_frames =
-                usize::try_from(p.source_frames).map_err(|e| format!("part {n}: {e}"))?;
-            let reads = start as f64 + frames as f64 * rate;
-            if reads > source_frames as f64 + 1.0 {
+            let reads = p.start as f64 + p.frames as f64 * rate;
+            if reads > p.source_frames as f64 + 1.0 {
                 return Err(format!(
-                    "segments: part {n} reads to frame {reads} of {}, which has {source_frames}",
-                    p.path
+                    "segments: part {n} reads to frame {reads} of {}, which has {}",
+                    p.path, p.source_frames
                 ));
             }
-            let source_channels = p.source_channels as usize;
-            let map: Vec<i32> = match &p.channels {
-                Some(map) if map.len() != channels => {
-                    return Err(format!(
-                        "segments: part {n}: the map has {} entries and the list {channels} channels",
-                        map.len()
-                    ));
-                }
-                Some(map) => map
-                    .iter()
-                    .map(|&c| if c >= source_channels as i32 { -1 } else { c })
-                    .collect(),
-                None => (0..channels as i32)
-                    .map(|c| if c < source_channels as i32 { c } else { -1 })
-                    .collect(),
-            };
-            let shape = |s: &clausters_document::session::SeamShape| FadeShape {
-                shape: s.shape,
-                curve: s.curve as f32,
-            };
-            let cut = Cut {
-                src_start: start,
-                frames,
-                fade_in: p.fade_in as usize,
-                fade_out: p.fade_out as usize,
-                fade_in_shape: shape(&p.fade_in_shape),
-                fade_out_shape: shape(&p.fade_out_shape),
-                map,
-            };
-            cuts.push((cut, source_frames, rate));
-        }
-        let (spans, frames) = place(cuts);
-        let parts = spans
-            .into_iter()
-            .zip(&wire.parts)
-            .map(|(span, w)| ListPart {
-                path: Arc::from(w.part.path.as_str()),
+            if let Some(map) = &p.channels
+                && map.len() != channels
+            {
+                return Err(format!(
+                    "segments: part {n}: the map has {} entries and the list {channels} channels",
+                    map.len()
+                ));
+            }
+            let next = SourceId(ids.len() as u64);
+            let id = *ids.entry(p.path.as_str()).or_insert(next);
+            files.entry(id).or_insert_with(|| TakeFile {
+                path: p.path.as_str().into(),
                 peaks: w.peaks.as_deref().map(Arc::from),
-                source_channels: w.part.source_channels as usize,
-                span,
-            })
-            .collect();
+                channels: p.source_channels,
+                frames: p.source_frames,
+                rate: p.source_rate,
+            });
+            let part = Part {
+                source: SourceRef {
+                    source: id,
+                    lifetime: Lifetime::Temporary,
+                    generation: 0,
+                    range: Some(Range {
+                        start: p.start,
+                        end: p.start + p.frames,
+                    }),
+                },
+                fade_in: p.fade_in,
+                fade_out: p.fade_out,
+                fade_in_shape: p.fade_in_shape,
+                fade_out_shape: p.fade_out_shape,
+                channels: p.channels.clone(),
+            };
+            // the wire counts a part in the list's frames already
+            counted.push((part, p.frames));
+        }
+        let tree = Tree::from_counted(counted);
         Ok(Self {
             channels,
             sample_rate: wire.sample_rate,
-            frames,
-            parts,
-            wire,
+            frames: tree.frames() as usize,
+            tree,
+            files: Arc::new(files),
+            wire: Some(wire),
         })
+    }
+
+    /// **One part where the list reads it**, as the views draw it: its span
+    /// over its file at the list's rate, a channel past the file's silent.
+    pub fn placed(&self, placed: Placed) -> Option<ListPart> {
+        let file = self.files.get(&placed.part.source.source)?;
+        let part = placed.part;
+        let range = part.source.range?;
+        let source_channels = file.channels as i32;
+        let map: Vec<i32> = match &part.channels {
+            Some(map) => (0..self.channels)
+                .map(|c| {
+                    map.get(c)
+                        .copied()
+                        .filter(|&s| s < source_channels)
+                        .unwrap_or(-1)
+                })
+                .collect(),
+            None => (0..self.channels as i32)
+                .map(|c| if c < source_channels { c } else { -1 })
+                .collect(),
+        };
+        let shape = |s: &clausters_document::session::SeamShape| FadeShape {
+            shape: s.shape,
+            curve: s.curve as f32,
+        };
+        let cut = Cut {
+            src_start: range.start as usize,
+            frames: placed.frames as usize,
+            fade_in: part.fade_in as usize,
+            fade_out: part.fade_out as usize,
+            fade_in_shape: shape(&part.fade_in_shape),
+            fade_out_shape: shape(&part.fade_out_shape),
+            map,
+        };
+        let rate = rate_between(file.rate, self.sample_rate).unwrap_or(1.0);
+        Some(ListPart {
+            path: Arc::clone(&file.path),
+            peaks: file.peaks.clone(),
+            source_channels: file.channels as usize,
+            span: PartSpan::new(cut, file.frames as usize, rate, placed.start as usize),
+        })
+    }
+
+    /// **The part under frame `frame`**, found by descending the tree.
+    pub fn part_at(&self, frame: usize) -> Option<ListPart> {
+        self.tree
+            .iter_from(frame as u64)
+            .next()
+            .and_then(|p| self.placed(p))
+    }
+
+    /// The parts in order, placed: what a test reads of a list.
+    pub fn parts(&self) -> Vec<ListPart> {
+        self.tree.iter().filter_map(|p| self.placed(p)).collect()
     }
 }
 

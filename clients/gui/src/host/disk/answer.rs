@@ -35,6 +35,8 @@ use clausters_core::pcm::Layout;
 use clausters_core::peaks::SpanStats;
 use clausters_core::peaks::compose::{Ends, PartSamples, list_span};
 
+use clausters_document::parts::tree::{Node, Placed};
+
 use super::{List, ListPart};
 
 /// Frames per block of samples held: 4096, under a tenth of a second -- a
@@ -272,18 +274,31 @@ pub struct Answerer {
     peaks: HashMap<Arc<str>, Peaks>,
     clock: u64,
     held: usize,
+    /// **What each node of a list's tree comes to**, by its identity and the
+    /// list's channel: kept once a node's every part was answered from what
+    /// is held, and found again wherever the node is shared -- in the next
+    /// list an edit makes, in a part pasted many times. So a column that
+    /// holds thousands of parts whole is the few nodes over them.
+    nodes: HashMap<(u64, usize), SpanStats>,
     /// Samples read from what is held, over the answerer's life -- what a
     /// test reads to know an answer folded peaks rather than samples.
     pub samples_read: usize,
+    /// Parts summarized from their file, over the answerer's life -- what a
+    /// test reads to know a picture was composed from the nodes it holds.
+    pub parts_read: usize,
 }
+
+/// Nodes whose summary is kept at most; past it they are let go of and
+/// found again. A node's summary is 32 bytes.
+const NODES_HELD: usize = 1 << 18;
 
 impl Answerer {
     /// Take key `key` names `list`.
     pub fn define(&mut self, key: i32, list: Arc<List>) {
-        for part in &list.parts {
-            let file = self.files.entry(Arc::clone(&part.path)).or_default();
+        for taken in list.files.values() {
+            let file = self.files.entry(Arc::clone(&taken.path)).or_default();
             if file.peaks.is_none() {
-                file.peaks.clone_from(&part.peaks);
+                file.peaks.clone_from(&taken.peaks);
             }
         }
         self.lists.insert(key, list);
@@ -494,11 +509,11 @@ impl Answerer {
     /// What every file of `list` needs before anything about it can be
     /// answered: its size and age, its header, and its peaks file's.
     fn shapes(&mut self, list: &List, needs: &mut Vec<Need>) {
-        for part in &list.parts {
-            let file = self.files.entry(Arc::clone(&part.path)).or_default();
+        for taken in list.files.values() {
+            let file = self.files.entry(Arc::clone(&taken.path)).or_default();
             match &file.stat {
                 None => needs.push(Need::Stat {
-                    path: Arc::clone(&part.path),
+                    path: Arc::clone(&taken.path),
                 }),
                 Some(Err(_)) => {}
                 Some(Ok(stat)) => {
@@ -506,7 +521,7 @@ impl Answerer {
                         let len = stat.len.min(file.head_asked.max(HEAD_BYTES) as u64) as usize;
                         file.head_asked = file.head_asked.max(HEAD_BYTES);
                         needs.push(Need::Read {
-                            path: Arc::clone(&part.path),
+                            path: Arc::clone(&taken.path),
                             offset: 0,
                             len,
                             what: What::Head,
@@ -576,7 +591,12 @@ impl Answerer {
             for b in 0..buckets {
                 let at = first + b * bucket;
                 for ch in 0..channels {
-                    let s = list_span(&list.parts, &mut samples, ch, at, at + bucket, &mut read);
+                    let s = match list.tree.root() {
+                        Some(root) => {
+                            samples.node_span(list, root, 0, ch, (at, at + bucket), &mut read)
+                        }
+                        None => SpanStats::EMPTY,
+                    };
                     stats.extend_from_slice(&s.bucket());
                 }
                 if read >= READ_BUDGET {
@@ -617,16 +637,19 @@ impl Answerer {
                 hot: None,
                 cold: None,
             };
-            let mut at = 0;
+            let mut at: Option<ListPart> = None;
             for flat in start..end {
                 let (frame, ch) = (flat / channels, flat % channels);
-                while at + 1 < list.parts.len() && list.parts[at].span.end() <= frame {
-                    at += 1;
+                if !at
+                    .as_ref()
+                    .is_some_and(|p| p.span.start() <= frame && frame < p.span.end())
+                {
+                    at = list.part_at(frame);
                 }
-                while at > 0 && list.parts[at].span.start() > frame {
-                    at -= 1;
-                }
-                let part = &list.parts[at];
+                let Some(part) = &at else {
+                    values.push(0.0);
+                    continue;
+                };
                 let inner = frame - part.span.start();
                 values.push(
                     part.span
@@ -693,16 +716,21 @@ impl Answerer {
                     hot: None,
                     cold: None,
                 };
-                let mut at = 0;
+                let mut at: Option<ListPart> = None;
                 for i in 0..window {
                     let f = first + i;
                     if f >= list.frames {
                         break;
                     }
-                    while at + 1 < list.parts.len() && list.parts[at].span.end() <= f {
-                        at += 1;
+                    if !at
+                        .as_ref()
+                        .is_some_and(|p| p.span.start() <= f && f < p.span.end())
+                    {
+                        at = list.part_at(f);
                     }
-                    let part = &list.parts[at];
+                    let Some(part) = &at else {
+                        continue;
+                    };
                     let inner = f - part.span.start();
                     for ch in 0..channels {
                         values[i * channels + ch] = part
@@ -1007,6 +1035,63 @@ impl FileSamples<'_> {
         stats.merge(self.sample_stats(path, ch, inner.1.max(a), b, read));
         if missing {
             return SpanStats::EMPTY;
+        }
+        stats
+    }
+}
+
+impl FileSamples<'_> {
+    /// **The list's `channel` over frames `a..b`, from `node`**, which
+    /// starts at frame `start`: a node the span holds whole is its kept
+    /// summary, or its children's folded and then kept; one it crosses is
+    /// its children's, down to the parts it cuts, which are read as a list
+    /// of one.
+    fn node_span(
+        &mut self,
+        list: &List,
+        node: &Node,
+        start: usize,
+        channel: usize,
+        (a, b): (usize, usize),
+        read: &mut usize,
+    ) -> SpanStats {
+        let end = start + node.frames() as usize;
+        if end <= a || start >= b {
+            return SpanStats::EMPTY;
+        }
+        let whole = a <= start && end <= b;
+        let key = (node.id(), channel);
+        if whole && let Some(kept) = self.answerer.nodes.get(&key) {
+            return *kept;
+        }
+        let asked = self.needs.len();
+        let stats = match node.children() {
+            Some((l, r)) => {
+                let mid = start + l.frames() as usize;
+                let mut stats = self.node_span(list, l, start, channel, (a, b), read);
+                stats.merge(self.node_span(list, r, mid, channel, (a, b), read));
+                stats
+            }
+            None => {
+                let Some(part) = node.part().and_then(|part| {
+                    list.placed(Placed {
+                        start: start as u64,
+                        frames: node.frames(),
+                        part,
+                    })
+                }) else {
+                    return SpanStats::silence(end.min(b) - start.max(a));
+                };
+                self.answerer.parts_read += 1;
+                list_span(std::slice::from_ref(&part), self, channel, a, b, read)
+            }
+        };
+        // kept only once every part under it answered from what is held
+        if whole && self.needs.len() == asked {
+            if self.answerer.nodes.len() >= NODES_HELD {
+                self.answerer.nodes.clear();
+            }
+            self.answerer.nodes.insert(key, stats);
         }
         stats
     }

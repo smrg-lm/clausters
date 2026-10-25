@@ -1,9 +1,9 @@
 //! **The application reads its takes**: a take's parts over files, rendered
 //! into the rings of the engine's fed streams as the readers ask.
 //!
-//! The take is the application's, as the document says it (the parts of a
-//! [`SegmentPart`] list: a file's span, its fades, its channel map, its rate),
-//! and so is its reading: the engine plays frames it is handed through a fed
+//! The take is the application's, as the editor holds it (a [`FileList`]: its
+//! tree of parts, each a file's span with its fades and its channel map, and
+//! the files they read, shared with the editor), and so is its reading: the engine plays frames it is handed through a fed
 //! stream (`clausters::dsp::fed`) and knows nothing of parts or files. What
 //! a part *is* when read is the core's, the one every reader of a list binds:
 //! [`PartSpan::read_with`] composes a frame from its source through the
@@ -17,7 +17,7 @@
 //! protocol `clausters::dsp::fed` states. [`TakeFeed::set`] puts a new list
 //! in place after an edit, and every reader fades into it from where it is.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::time::Duration;
@@ -27,8 +27,12 @@ use clausters_core::threads::Spawned;
 use clausters::dsp::ListWrap;
 use clausters::dsp::fed::{Fed, Feeder, feed};
 use clausters_core::pcm::{Layout, Reader};
-use clausters_core::segments::{Cut, FadeShape, PartSpan, part_at, place, rate_between};
+use clausters_core::segments::{Cut, FadeShape, PartSpan, rate_between};
 use clausters_document::clipboard::SegmentPart;
+use clausters_document::parts::tree::Placed;
+use clausters_document::parts::{FileList, TakeFile, Tree, contributed};
+use clausters_document::session::Part;
+use clausters_document::{Lifetime, Range, SourceId, SourceRef};
 
 /// The frames rendered in one turn for a channel.
 const CHUNK: usize = 4096;
@@ -43,13 +47,20 @@ const PARK: Duration = Duration::from_millis(2);
 /// How many files the thread keeps open.
 const OPEN_FILES: usize = 8;
 
-/// **A take as it is read**: its parts placed end to end at the take's rate,
-/// each over the layout of its file.
+/// **A take as it is read**: its parts, shared with the take the editor
+/// holds ([`Tree`]), counted at the rate it is read at, and the layout of
+/// each file they name.
+///
+/// A part is placed where it is read by descending the tree from the frame
+/// asked, so making one costs the files the take names and reading from any
+/// frame costs the tree's height: an edit of a take of thousands of parts
+/// hands the reader a new tree and nothing is placed again.
 #[derive(Debug)]
 pub struct ReadList {
-    parts: Vec<PartSpan>,
-    layouts: Vec<Arc<Layout>>,
-    frames: u64,
+    tree: Tree,
+    files: Arc<BTreeMap<SourceId, TakeFile>>,
+    layouts: HashMap<SourceId, Arc<Layout>>,
+    rate: f64,
     channels: usize,
 }
 
@@ -63,53 +74,120 @@ impl ReadList {
         rate: f64,
         headers: &mut Headers,
     ) -> Result<ReadList, String> {
-        let channels = channels.max(1);
-        let mut layouts = Vec::with_capacity(parts.len());
-        let mut cuts = Vec::with_capacity(parts.len());
-        for part in parts {
-            let layout = headers.layout(&part.path)?;
-            let map = (0..channels)
-                .map(|c| match &part.channels {
-                    Some(map) => map.get(c).copied().unwrap_or(-1),
-                    None => (c % part.source_channels.max(1) as usize) as i32,
-                })
-                .collect();
-            let cut = Cut {
-                src_start: part.start as usize,
-                frames: part.frames as usize,
-                fade_in: part.fade_in as usize,
-                fade_out: part.fade_out as usize,
-                fade_in_shape: FadeShape {
-                    shape: part.fade_in_shape.shape,
-                    curve: part.fade_in_shape.curve as f32,
+        let mut files: BTreeMap<SourceId, TakeFile> = BTreeMap::new();
+        let mut ids: HashMap<&str, SourceId> = HashMap::new();
+        let counted = parts.iter().map(|part| {
+            let next = SourceId(ids.len() as u64);
+            let id = *ids.entry(part.path.as_str()).or_insert(next);
+            files.entry(id).or_insert_with(|| TakeFile {
+                path: part.path.as_str().into(),
+                peaks: None,
+                channels: part.source_channels,
+                frames: part.source_frames,
+                rate: part.source_rate,
+            });
+            let read = Part {
+                source: SourceRef {
+                    source: id,
+                    lifetime: Lifetime::Temporary,
+                    generation: 0,
+                    range: Some(Range {
+                        start: part.start,
+                        end: part.start + part.frames,
+                    }),
                 },
-                fade_out_shape: FadeShape {
-                    shape: part.fade_out_shape.shape,
-                    curve: part.fade_out_shape.curve as f32,
-                },
-                map,
+                fade_in: part.fade_in,
+                fade_out: part.fade_out,
+                fade_in_shape: part.fade_in_shape,
+                fade_out_shape: part.fade_out_shape,
+                channels: part.channels.clone(),
             };
-            let ratio = rate_between(part.source_rate, rate).unwrap_or(1.0);
-            cuts.push((cut, layout.frames as usize, ratio));
-            layouts.push(layout);
+            // a segment part's frames are the list's already
+            (read, part.frames)
+        });
+        let tree = Tree::from_counted(counted.collect::<Vec<_>>());
+        let list = FileList {
+            channels: channels as u32,
+            rate,
+            tree,
+            files: Arc::new(files),
+        };
+        ReadList::over(&list, rate, headers)
+    }
+
+    /// **`list` read at `rate`**, each file's header read once through
+    /// `headers`. At the list's own rate its tree is read as it is; at
+    /// another each part fills the frames of `rate` its span does, so the
+    /// tree is counted again, part by part.
+    pub fn over(list: &FileList, rate: f64, headers: &mut Headers) -> Result<ReadList, String> {
+        let mut layouts = HashMap::new();
+        for (id, file) in list.files.iter() {
+            layouts.insert(*id, headers.layout(&file.path)?);
         }
-        let (parts, frames) = place(cuts);
+        let tree = if rate == list.rate {
+            list.tree.clone()
+        } else {
+            Tree::from_counted(
+                list.tree
+                    .iter()
+                    .map(|placed| {
+                        let span = placed.part.source.range.map_or(0, |r| r.len());
+                        let from = list.file(placed.part).map_or(rate, |f| f.rate);
+                        (placed.part.clone(), contributed(span, from, rate))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        };
         Ok(ReadList {
-            parts,
+            tree,
+            files: Arc::clone(&list.files),
             layouts,
-            frames: frames as u64,
-            channels,
+            rate,
+            channels: list.channels.max(1) as usize,
         })
     }
 
     /// How many frames the take comes to.
     pub fn frames(&self) -> u64 {
-        self.frames
+        self.tree.frames()
     }
 
     /// How many channels it is.
     pub fn channels(&self) -> usize {
         self.channels
+    }
+
+    /// One part where it is read: its span over its file, and the file's
+    /// layout.
+    fn placed(&self, placed: Placed) -> Option<(PartSpan, &Arc<Layout>)> {
+        let id = placed.part.source.source;
+        let (file, layout) = (self.files.get(&id)?, self.layouts.get(&id)?);
+        let part = placed.part;
+        let range = part.source.range?;
+        let map = (0..self.channels)
+            .map(|c| match &part.channels {
+                Some(map) => map.get(c).copied().unwrap_or(-1),
+                None => (c % file.channels.max(1) as usize) as i32,
+            })
+            .collect();
+        let cut = Cut {
+            src_start: range.start as usize,
+            frames: placed.frames as usize,
+            fade_in: part.fade_in as usize,
+            fade_out: part.fade_out as usize,
+            fade_in_shape: FadeShape {
+                shape: part.fade_in_shape.shape,
+                curve: part.fade_in_shape.curve as f32,
+            },
+            fade_out_shape: FadeShape {
+                shape: part.fade_out_shape.shape,
+                curve: part.fade_out_shape.curve as f32,
+            },
+            map,
+        };
+        let ratio = rate_between(file.rate, self.rate).unwrap_or(1.0);
+        let span = PartSpan::new(cut, layout.frames as usize, ratio, placed.start as usize);
+        Some((span, layout))
     }
 
     /// Renders `n` frames of channel `channel` from `at` into `out`; a span
@@ -118,15 +196,17 @@ impl ReadList {
         out.clear();
         out.resize(n, 0.0);
         let at = at as usize;
-        let mut k = 0;
-        while k < n {
-            let Some(i) = part_at(&self.parts, at + k) else {
+        for placed in self.tree.iter_from(at as u64) {
+            let from = (placed.start as usize).max(at);
+            if from >= at + n {
                 break;
+            }
+            let Some((part, layout)) = self.placed(placed) else {
+                continue;
             };
-            let part = &self.parts[i];
-            let inner = at + k - part.start();
-            let len = (part.end() - (at + k)).min(n - k);
-            let layout = &self.layouts[i];
+            let k = from - at;
+            let inner = from - part.start();
+            let len = (part.end() - from).min(n - k);
             let (first, end) = part.source_span(inner, inner + len);
             let width = layout.channels.max(1);
             let span = files.read(layout, first as u64, end - first);
@@ -138,7 +218,6 @@ impl ReadList {
                         .unwrap_or(0.0)
                 });
             }
-            k += len;
         }
     }
 }
@@ -210,9 +289,9 @@ struct Served {
 /// application's turn may be a page's main thread, which cannot wait on one
 /// the reader holds. The newest list placed wins; the reader takes it once.
 #[derive(Debug, Default)]
-struct Placed(AtomicPtr<ReadList>);
+struct Handed(AtomicPtr<ReadList>);
 
-impl Placed {
+impl Handed {
     /// Places `list`, dropping one the reader had not taken yet.
     fn put(&self, list: Arc<ReadList>) {
         let old = self
@@ -233,7 +312,7 @@ impl Placed {
     }
 }
 
-impl Drop for Placed {
+impl Drop for Handed {
     fn drop(&mut self) {
         drop(self.take());
     }
@@ -243,7 +322,7 @@ impl Drop for Placed {
 /// the application that renders the take into them.
 pub struct TakeFeed {
     streams: Vec<Arc<Fed>>,
-    placed: Arc<Placed>,
+    placed: Arc<Handed>,
     stop: Arc<AtomicBool>,
     reader: Option<Spawned>,
     shared: Vec<Arc<clausters::dsp::fed::FeedShared>>,
@@ -260,7 +339,7 @@ impl TakeFeed {
             })
             .unzip();
         let shared = feeders.iter().map(|f| Arc::clone(f.shared())).collect();
-        let placed = Arc::new(Placed::default());
+        let placed = Arc::new(Handed::default());
         let stop = Arc::new(AtomicBool::new(false));
         let reader = {
             let (placed, stop) = (Arc::clone(&placed), Arc::clone(&stop));
@@ -312,7 +391,7 @@ impl Drop for TakeFeed {
 
 /// The reading thread: each turn, every channel's latest request taken and a
 /// chunk rendered from where it left off, until nothing is left to do.
-fn serve(mut feeders: Vec<Feeder>, placed: Arc<Placed>, stop: Arc<AtomicBool>) {
+fn serve(mut feeders: Vec<Feeder>, placed: Arc<Handed>, stop: Arc<AtomicBool>) {
     for feeder in &feeders {
         feeder.wake_me();
     }

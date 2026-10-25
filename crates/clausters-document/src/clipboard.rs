@@ -87,6 +87,15 @@ pub struct SegmentPart {
     pub source_rate: f64,
 }
 
+/// **A copy of segments an application keeps**: the number it keeps it
+/// under, and the files it reads, each once -- what keeps a render the copy
+/// reads from being deleted while the copy is on the clipboard.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HeldCopy {
+    pub id: u64,
+    pub files: Vec<String>,
+}
+
 fn is_zero(n: &u64) -> bool {
     *n == 0
 }
@@ -156,8 +165,16 @@ pub enum Content {
         frames: u64,
         /// The rate it was taken at. Carried, never acted on.
         sample_rate: f64,
-        /// The spans, in reading order.
+        /// The spans, in reading order; none for a copy the application
+        /// that made it holds (`held`).
+        #[serde(default)]
         parts: Vec<SegmentPart>,
+        /// **A copy held by the application that made it**, by reference:
+        /// its parts are shared with the take they were copied from, so a
+        /// copy of a span pasted many times costs what any other does, and
+        /// a paste in that application reads them from where they are kept.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        held: Option<HeldCopy>,
     },
     /// **A block a server holds**, named rather than carried: what an editor
     /// copies when its samples are the server's (a take of minutes, drawn
@@ -264,6 +281,19 @@ impl Clipboard {
             frames,
             sample_rate,
             parts,
+            held: None,
+        })
+    }
+
+    /// **A copy of segments an application keeps**, `frames` long, `channels`
+    /// wide at `sample_rate`: [`HeldCopy`].
+    pub fn held_segments(channels: u32, frames: u64, sample_rate: f64, held: HeldCopy) -> Self {
+        Self::of(Content::Segments {
+            channels,
+            frames,
+            sample_rate,
+            parts: Vec::new(),
+            held: Some(held),
         })
     }
 
@@ -271,10 +301,11 @@ impl Clipboard {
     /// a render alive ([`crate::session::Session::release_renders`]).
     pub fn files(&self) -> Vec<&str> {
         let mut out: Vec<&str> = Vec::new();
-        if let Content::Segments { parts, .. } = &self.content {
-            for part in parts {
-                if !out.contains(&part.path.as_str()) {
-                    out.push(&part.path);
+        if let Content::Segments { parts, held, .. } = &self.content {
+            let held = held.iter().flat_map(|h| h.files.iter());
+            for path in parts.iter().map(|p| &p.path).chain(held) {
+                if !out.contains(&path.as_str()) {
+                    out.push(path);
                 }
             }
         }

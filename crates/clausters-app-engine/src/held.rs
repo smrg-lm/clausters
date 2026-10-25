@@ -97,7 +97,7 @@ impl HeldEngine for HeldAudio {
         {
             self.free(was, ids);
         }
-        let list = ReadList::of(&take.parts, channels, take.rate, &mut self.headers)
+        let list = ReadList::over(&take.list, take.rate, &mut self.headers)
             .inspect_err(|e| tracing::warn!("the audio editor's take: {e}"))?;
         let new = !self.readings.contains_key(&take.file);
         if new {

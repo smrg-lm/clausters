@@ -9,23 +9,25 @@
 //! editor stitches its list into a join the server reads from disk; over an
 //! engine it holds, the application reads its takes itself and the engine
 //! plays what it is handed, so the coordinator gives the engine each file's
-//! list as the document says it ([`HeldTake`]) and plays the buffers the
-//! engine answers, one per channel.
+//! take as the editor holds it -- its tree of parts, shared, and the files
+//! they read ([`HeldTake`]) -- and plays the buffers the engine answers, one
+//! per channel. Handing a take over again after an edit is a reference.
 
 use clausters_core::ids::IdSpaces;
-use clausters_document::clipboard::SegmentPart;
+use clausters_document::parts::FileList;
 use clausters_editing::apply::Medium;
 
 /// **A file's take, as an engine the application holds reads it**: its
 /// parts over files, at the engine's rate, and the revision they are of.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct HeldTake {
     /// The file's identity in the editor, as its playback names it.
     pub file: u64,
     /// The file's contents revision: the same number is the same list.
     pub revision: u64,
-    /// The parts, each a span of a file, its frames the engine's.
-    pub parts: Vec<SegmentPart>,
+    /// The take's parts and the files they read, shared with the editor's
+    /// take and counted at the file's rate.
+    pub list: FileList,
     /// How many channels the take is.
     pub channels: u32,
     /// How many frames it comes to at `rate`.
