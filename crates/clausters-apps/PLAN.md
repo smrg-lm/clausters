@@ -5364,6 +5364,14 @@ wrong.
   *Fixed 2026-10-25:* each action waiting on a render is held with the
   window it was asked through, and a closing window answers only its own.
 
+- ✅ **Two new files in one window are one file** *(found 2026-10-25,
+  the same review)*. A file the editor makes was named after the buffer
+  it was played through, which the application's engine does not have, so
+  every new file of a window was the same file of its working folder:
+  writing the second overwrote the first, and closing either deleted what
+  the other read. *Fixed 2026-10-25:* a made file is named after the
+  number it is open under in its editor.
+
 - ⬜ **A closed audio window stays in the editing context** *(found
   2026-10-25, the same review)*. A window that closes detaches its view and
   stops its playback, but its member keeps its seat with its files, their

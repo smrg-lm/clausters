@@ -190,7 +190,7 @@ fn a_compressed_file_opens_through_its_buffer_and_saves_to_its_path() {
     call(&mut editor, json!({"verb": "window", "widget": 12}));
     let opened = open(&mut editor)["steps"].clone();
     assert_eq!(walk(&opened)[0], "/buffer_write");
-    assert_eq!(spans(&mut editor), [span("9-opened", 0, 100)]);
+    assert_eq!(spans(&mut editor), [span("1-opened", 0, 100)]);
     assert_eq!(
         call(&mut editor, json!({"verb": "file"}))["path"],
         "/in/song.mp3"
@@ -222,7 +222,7 @@ fn a_save_over_a_buffer_fills_it_from_a_render_of_the_take() {
     );
     assert_eq!(
         args(&opened, "/buffer_write")[1],
-        json!({"s": "/work/9-opened.w64"})
+        json!({"s": "/work/1-opened.w64"})
     );
     event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
     let saved = save(&mut editor, json!({}));

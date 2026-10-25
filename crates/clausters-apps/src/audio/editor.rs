@@ -1057,7 +1057,8 @@ impl AudioEditor {
 
     /// **A request for a file to add, in this editor's folder**: a file
     /// added writes its renders where the editor's do, at the engine's rate
-    /// it plays at, unless the request names its own.
+    /// it plays at, unless the request names its own, and a file it makes is
+    /// named after the number it will be open under.
     pub(crate) fn with_folder(&self, request: &Value) -> Value {
         let mut request = request.clone();
         if request.get("workspace").is_none_or(Value::is_null) {
@@ -1066,6 +1067,8 @@ impl AudioEditor {
         if request.get("engine_rate").is_none_or(Value::is_null) {
             request["engine_rate"] = json!(self.window_state.engine_rate);
         }
+        // the number the file will be open under, which names a file it makes
+        request["serial"] = json!(self.open_files.next_id);
         request
     }
 
@@ -2393,6 +2396,9 @@ struct Facts {
     channels: Option<u32>,
     rate: Option<f64>,
     display: Option<i64>,
+    /// The number the file is open under in its editor, which names a file
+    /// the editor makes for it: two new files are two files.
+    serial: Option<i64>,
     chunk: Option<usize>,
     /// The file the take was opened from.
     path: Option<String>,
@@ -2518,13 +2524,14 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     let workspace = facts.workspace.clone().filter(|w| !w.is_empty());
     let path = facts.path.clone().filter(|p| !p.is_empty());
     let display = facts.display.unwrap_or(0);
+    let serial = facts.serial.unwrap_or(1);
     // What the take is a file of: the user's, or one this editor makes in
     // its working folder -- a buffer's, or silence.
     let made = |what: &str| -> Result<String, String> {
         let folder = workspace
             .as_deref()
             .ok_or("an editor that makes its file needs a working folder")?;
-        Ok(format!("{folder}/{display}-{what}.w64"))
+        Ok(format!("{folder}/{serial}-{what}.w64"))
     };
     let (opened, written) = if empty {
         (None, None)

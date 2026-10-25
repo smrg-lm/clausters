@@ -1177,4 +1177,37 @@ mod tests {
         }
         let _ = std::fs::remove_file(&out);
     }
+
+    /// **Two new files are two files**: each a file of its own in the
+    /// working folder, so writing the second leaves the first as it was.
+    #[test]
+    fn two_new_files_in_one_window_are_two_files() {
+        let mut host = host();
+        let def_id = host.open_audio(None, "new").expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let path_of = |host: &mut Host| {
+            parts(host, def_id)[0]["path"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        };
+        let made = |host: &mut Host, channels: u32| {
+            let made = ask(
+                host,
+                def_id,
+                json!({"do": {"verb": "newFile",
+                    "shape": {"channels": channels, "frames": 4_800, "rate": 48_000.0}}}),
+            );
+            assert!(made.get("raised").is_none(), "{made}");
+            settled(host, def_id);
+        };
+        made(&mut host, 1);
+        let first = path_of(&mut host);
+        made(&mut host, 2);
+        let second = path_of(&mut host);
+        assert!(!first.is_empty() && !second.is_empty(), "{first} {second}");
+        assert_ne!(first, second, "each new file is a file of its own");
+    }
 }
