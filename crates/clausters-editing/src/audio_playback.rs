@@ -42,7 +42,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use clausters_core::audio_editor as ae;
 use clausters_core::ids::{IdError, IdSpaces, Space};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
 use crate::apply::{Applier, Endpoint, Medium, Step};
 use crate::instance::{Op, Port, Ports};
@@ -883,136 +882,12 @@ fn out_ports(outs: usize) -> Ports {
         .collect()
 }
 
-/// **The playback's verbs as JSON**, one door for every binding: a request
-/// `{"verb": ...}` answers `{"steps": [...]}`, a query's own object, or
-/// `{"error": ...}`.
-///
-/// - `sync` -- `file`, `buffer`, `channels`, `frames`, `takeRate`, `rate`
-/// - `closeFile` -- `file`
-/// - `view` -- `file`, `frame`: the window shows `file`; stopped, its reader
-///   comes into focus at its cursor, and a pass in progress goes on
-/// - `play` -- `file`, `start`, `pass` (`{"kind": "loop", "from", "to"}` or
-///   `{"kind": "until", "end", "back"}`)
-/// - `pass` -- `pass`, as for `play`: the loop switch changed while it plays
-/// - `follow` -- `file`, `from`, `to`, `place`: the selection of `file` was
-///   redrawn while it loops, and with `place` the head goes to its start
-/// - `resume`, `pause`, `stop` (`back`, and `file`: the file the window
-///   shows, which comes into focus), `locate` (`frame`), `cue` (`frame`: a
-///   locate while stopped, nothing while rolling), `close`
-/// - `setRolling` -- `rolling`
-/// - `open` -- allocates the transport it plays on, when it has none, and
-///   answers `{"transport"}`; refused when the server has none left
-/// - `state` -- answers `{"transport", "rolling", "focus", "playing",
-///   "follows", "meters", "nodes"}`: `playing` the file a pass plays or
-///   `null`, `follows` whether the window draws the transport's line over the
-///   file it shows; `meters` being `{"bus", "channels"}` or `null`, and
-///   `transport` `null` before it has one
-/// - `space` -- `looping`, `selection` (`[from, to]` or `null`), `cursor`,
-///   `frames`: answers `{"start", "pass"}`
-pub fn call_json<M: Medium>(
-    playback: &mut AudioEditorPlayback<M>,
-    request: &str,
-    ids: &mut IdSpaces,
-) -> String {
-    let Ok(request) = serde_json::from_str::<Value>(request) else {
-        return json!({"error": "not a request"}).to_string();
-    };
-    let int = |key: &str| request.get(key).and_then(Value::as_u64).unwrap_or(0);
-    let answer = |steps: Result<Vec<Step>, IdError>| crate::playback::answer_json(steps);
-    match request.get("verb").and_then(Value::as_str).unwrap_or("") {
-        "sync" => answer(playback.sync(
-            int("file"),
-            int("buffer") as i32,
-            int("channels") as usize,
-            int("frames"),
-            request.get("takeRate").and_then(Value::as_f64).unwrap_or(0.0),
-            request.get("rate").and_then(Value::as_f64).unwrap_or(0.0),
-            ids,
-        )),
-        "closeFile" => answer(playback.close_file(int("file"), ids)),
-        "view" => answer(Ok(playback.view(int("file"), int("frame")))),
-        "play" => match request
-            .get("pass")
-            .cloned()
-            .map(serde_json::from_value::<Pass>)
-        {
-            Some(Ok(pass)) => answer(Ok(playback.play(int("file"), int("start"), pass))),
-            _ => json!({"error": "a play needs a pass"}).to_string(),
-        },
-        "pass" => match request
-            .get("pass")
-            .cloned()
-            .map(serde_json::from_value::<Pass>)
-        {
-            Some(Ok(pass)) => answer(Ok(playback.set_pass(pass))),
-            _ => json!({"error": "a pass is a loop or an end"}).to_string(),
-        },
-        "follow" => answer(Ok(playback.follow(
-            int("file"),
-            int("from"),
-            int("to"),
-            request
-                .get("place")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        ))),
-        "resume" => answer(Ok(playback.resume())),
-        "pause" => answer(Ok(playback.pause())),
-        "stop" => match request.get("file").and_then(Value::as_u64) {
-            Some(file) => answer(Ok(playback.stop_viewing(file, int("back")))),
-            None => answer(Ok(playback.stop(int("back")))),
-        },
-        "locate" => answer(Ok(playback.locate(int("frame")))),
-        "cue" => answer(Ok(playback.cue(int("frame")))),
-        "close" => answer(playback.close(ids)),
-        "setRolling" => {
-            playback.set_rolling(
-                request
-                    .get("rolling")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            );
-            answer(Ok(Vec::new()))
-        }
-        "open" => match playback.alloc_transport(ids) {
-            Ok(transport) => json!({"transport": transport}).to_string(),
-            Err(e) => json!({"error": e.to_string()}).to_string(),
-        },
-        "state" => json!({
-            "transport": playback.transport(),
-            "rolling": playback.rolling(),
-            "focus": playback.focus(),
-            "playing": playback.playing(),
-            "follows": playback.follows(),
-            "meters": playback.meters().map(|(bus, channels)| json!({"bus": bus, "channels": channels})),
-            "nodes": playback.node_count(),
-        })
-        .to_string(),
-        "space" => {
-            let selection = request
-                .get("selection")
-                .and_then(Value::as_array)
-                .and_then(|s| Some((s.first()?.as_u64()?, s.get(1)?.as_u64()?)));
-            let (start, pass) = space(
-                request
-                    .get("looping")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-                selection,
-                request.get("cursor").and_then(Value::as_u64),
-                int("frames"),
-            );
-            json!({"start": start, "pass": pass}).to_string()
-        }
-        other => json!({"error": format!("no verb {other:?}")}).to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use clausters_core::ids::{IdShare, ServerShape};
     use clausters_core::osc::OscType;
+    use serde_json::json;
 
     fn spaces() -> IdSpaces {
         IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE)
@@ -1239,18 +1114,10 @@ mod tests {
         // A pass that runs to its end keeps the end it was played with.
         playback.set_pass(Pass::Until { end: 200, back: 0 });
         assert!(playback.follow(1, 0, 100, true).is_empty());
-        let door = call_json(
-            &mut playback,
-            r#"{"verb": "pass", "pass": {"kind": "loop", "from": 0, "to": 100}}"#,
-            &mut ids,
-        );
-        assert!(door.contains("/transport_loop"));
-        let door = call_json(
-            &mut playback,
-            r#"{"verb": "follow", "file": 1, "from": 441, "to": 882, "place": true}"#,
-            &mut ids,
-        );
-        assert!(door.contains("/transport_locateSample"), "{door}");
+        let looped = playback.set_pass(Pass::Loop { from: 0, to: 100 });
+        assert!(!sent(&looped, "/transport_loop").is_empty());
+        let placed = playback.follow(1, 441, 882, true);
+        assert!(!sent(&placed, "/transport_locateSample").is_empty());
     }
 
     /// **A loop set while playing is converted as a locate is**: a selection
@@ -1344,43 +1211,6 @@ mod tests {
         );
     }
 
-    /// The JSON door answers steps, the state, and an error for an unknown
-    /// verb.
-    #[test]
-    fn the_json_door_answers() {
-        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
-        let mut ids = spaces();
-        let synced: Value = serde_json::from_str(&call_json(
-            &mut playback,
-            r#"{"verb": "sync", "file": 3, "buffer": 4, "channels": 1, "frames": 10,
-                "takeRate": 48000, "rate": 48000}"#,
-            &mut ids,
-        ))
-        .unwrap();
-        assert!(synced["steps"].is_array());
-        let state: Value =
-            serde_json::from_str(&call_json(&mut playback, r#"{"verb": "state"}"#, &mut ids))
-                .unwrap();
-        assert_eq!(state["focus"], 3);
-        assert_eq!(state["meters"]["channels"], 1);
-        let space: Value = serde_json::from_str(&call_json(
-            &mut playback,
-            r#"{"verb": "space", "looping": true, "selection": [2, 5], "frames": 10}"#,
-            &mut ids,
-        ))
-        .unwrap();
-        assert_eq!(space["pass"], json!({"kind": "loop", "from": 2, "to": 5}));
-        let played: Value = serde_json::from_str(&call_json(
-            &mut playback,
-            r#"{"verb": "play", "file": 3, "start": 0, "pass": {"kind": "until", "end": 10, "back": 0}}"#,
-            &mut ids,
-        ))
-        .unwrap();
-        assert!(played["steps"].is_array());
-        let unknown: Value =
-            serde_json::from_str(&call_json(&mut playback, r#"{"verb": "no"}"#, &mut ids)).unwrap();
-        assert!(unknown["error"].is_string());
-    }
     #[test]
     fn a_pass_goes_on_while_the_window_shows_another_file() {
         let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
@@ -1393,27 +1223,14 @@ mod tests {
             .unwrap();
         playback.view(1, 0);
         playback.play(1, 0, Pass::Loop { from: 0, to: 48000 });
-        let call = |playback: &mut AudioEditorPlayback, ids: &mut IdSpaces, request: Value| {
-            serde_json::from_str::<Value>(&call_json(playback, &request.to_string(), ids)).unwrap()
-        };
-        let viewed = call(
-            &mut playback,
-            &mut ids,
-            json!({"verb": "view", "file": 2, "frame": 22050}),
-        );
-        assert_eq!(viewed["steps"], json!([]), "the pass goes on");
-        let state = call(&mut playback, &mut ids, json!({"verb": "state"}));
-        assert_eq!(state["playing"], 1);
-        assert_eq!(state["follows"], false, "the line is the other file's");
+        assert!(playback.view(2, 22050).is_empty(), "the pass goes on");
+        assert_eq!(playback.playing(), Some(1));
+        assert!(!playback.follows(), "the line is the other file's");
 
         // Stopped from the window showing the other file: that one comes into
         // focus at its cursor, in its own frames.
-        let stopped = call(
-            &mut playback,
-            &mut ids,
-            json!({"verb": "stop", "file": 2, "back": 22050}),
-        );
-        let messages: Vec<_> = stopped["steps"]
+        let stopped = crate::apply::steps_json(&playback.stop_viewing(2, 22050));
+        let messages: Vec<_> = stopped
             .as_array()
             .unwrap()
             .iter()
@@ -1427,19 +1244,14 @@ mod tests {
         assert_eq!(runs.len(), 2);
         assert_eq!(messages.last().unwrap()["addr"], "/transport_locateSample");
         assert_eq!(messages.last().unwrap()["args"][1], json!({"h": 24000}));
-        let state = call(&mut playback, &mut ids, json!({"verb": "state"}));
-        assert_eq!(state["playing"], Value::Null);
-        assert_eq!(state["follows"], true);
+        assert_eq!(playback.playing(), None);
+        assert!(playback.follows());
         assert_eq!(playback.focus(), Some(2));
 
         // Stopped, showing a file focuses it at its cursor.
-        let viewed = call(
-            &mut playback,
-            &mut ids,
-            json!({"verb": "view", "file": 1, "frame": 100}),
-        );
+        let viewed = playback.view(1, 100);
         assert_eq!(playback.focus(), Some(1));
-        assert!(!viewed["steps"].as_array().unwrap().is_empty());
+        assert!(!viewed.is_empty());
     }
     #[test]
     fn meters_follow_the_viewed_file_and_only_read_its_playback() {

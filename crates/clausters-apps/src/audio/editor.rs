@@ -1305,6 +1305,11 @@ impl AudioEditor {
         }
     }
 
+    /// [`Self::play`] under the file's own loop switch.
+    pub fn space(&self) -> Play {
+        self.play(self.file.presentation.looping)
+    }
+
     /// The span a loop repeats over, as the view stands: the selection, or
     /// the take with none -- what [`space`] says a looping pass covers.
     fn follow(&self, place: bool) -> Option<Follow> {
@@ -1482,6 +1487,7 @@ mod files;
 /// Typed two-phase audio operations.
 pub mod operations;
 mod sources;
+pub(crate) use door::call_value;
 pub use door::{call_json, new_json};
 pub(crate) use sources::peaks_beside;
 

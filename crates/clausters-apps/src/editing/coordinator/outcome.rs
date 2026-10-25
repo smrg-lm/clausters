@@ -51,10 +51,9 @@ impl Session {
         let close_file = action["verb"] == "close_file";
         let mut tasks = Vec::new();
         if close_file {
-            tasks.push(Task::Playback {
-                verb: "closeFile",
-                args: json!({"file": action["file"]}),
-            });
+            tasks.push(Task::Playback(Op::CloseFile(
+                action["file"].as_u64().unwrap_or(0),
+            )));
         }
         if outcome.get("binding").is_some() {
             if truthy(&outcome["steps"]) {
@@ -172,22 +171,20 @@ impl Session {
         if has(&outcome, "pass") {
             // `L`: the pass in progress ends as the switch now says; a stopped
             // playback reads it on its next play.
-            tasks.push(Task::Playback {
-                verb: "pass",
-                args: json!({"pass": outcome["pass"]}),
-            });
+            tasks.push(Task::Playback(Op::pass(&outcome["pass"])));
         }
         if has(&outcome, "follow") {
             // A selection redrawn while this take loops: the loop is over the
             // new span, and the head goes into it once the sweep is let go.
             // Whether it loops, and whether it is this take, is the playback's
             // to say.
-            let mut args = outcome["follow"].clone();
-            args["file"] = json!(file_id(editing, member));
-            tasks.push(Task::Playback {
-                verb: "follow",
-                args,
-            });
+            let follow = &outcome["follow"];
+            tasks.push(Task::Playback(Op::Follow {
+                file: file_id(editing, member).map_or(0, |f| f as u64),
+                from: follow["from"].as_u64().unwrap_or(0),
+                to: follow["to"].as_u64().unwrap_or(0),
+                place: follow["place"] == true,
+            }));
         }
         if let Some(cue) = outcome["cue"].as_u64() {
             tasks.push(Task::Rolling(Rolled::Cue(cue)));

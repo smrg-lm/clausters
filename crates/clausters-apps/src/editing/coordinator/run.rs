@@ -3,6 +3,7 @@
 //! resumed with its caller's result.
 
 use super::*;
+use clausters_editing::audio_playback::Pass;
 
 /// What a client raises when a run ends in an error of the coordinator's.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -155,7 +156,7 @@ pub(super) enum Task {
     /// The engine asked whether the transport rolls.
     Rolling(Rolled),
     /// A playback verb, its steps carried out.
-    Playback { verb: &'static str, args: Value },
+    Playback(Op),
     /// The member's playback root retained.
     RetainPlayback,
     /// The member's playback root dropped.
@@ -420,4 +421,75 @@ impl Session {
         }
         Some(answer)
     }
+}
+
+/// **A verb of the member's playback**, as a run asks it.
+#[derive(Clone, Debug)]
+pub(super) enum Op {
+    /// The window shows `file`, at `frame`: it comes into focus.
+    View {
+        file: u64,
+        frame: u64,
+    },
+    /// `file` plays from `start` for `pass`; `None` for a pass that did not
+    /// read.
+    Play {
+        file: u64,
+        start: u64,
+        pass: Option<Pass>,
+    },
+    /// The pass in progress ends as this says.
+    Pass(Option<Pass>),
+    /// A loop in progress over `file` repeats over `from..to`, the head
+    /// placed into it when `place` says.
+    Follow {
+        file: u64,
+        from: u64,
+        to: u64,
+        place: bool,
+    },
+    Resume,
+    Pause,
+    /// What plays stops, going back to `back`, or only when it is `file`.
+    Stop {
+        file: Option<u64>,
+        back: u64,
+    },
+    /// The playing head moves to the frame.
+    Locate(u64),
+    /// The stopped transport stands on the frame.
+    Cue(u64),
+    /// The playback goes, with its nodes.
+    Close,
+    /// `file` is closed: its readers go.
+    CloseFile(u64),
+}
+
+impl Op {
+    /// What the space bar asks, `play` as the editor reads it: a play of
+    /// `file` from where it starts.
+    pub(super) fn play(file: Option<i64>, play: &Value) -> Op {
+        Op::Play {
+            file: file.map_or(0, |f| f as u64),
+            start: play["start"].as_u64().unwrap_or(0),
+            pass: pass_of(&play["pass"]),
+        }
+    }
+
+    /// A stop going back to where `play` says.
+    pub(super) fn stop(file: Option<i64>, play: &Value) -> Op {
+        Op::Stop {
+            file: file.map(|f| f as u64),
+            back: play["back"].as_u64().unwrap_or(0),
+        }
+    }
+
+    /// The pass `pass` says.
+    pub(super) fn pass(pass: &Value) -> Op {
+        Op::Pass(pass_of(pass))
+    }
+}
+
+fn pass_of(pass: &Value) -> Option<Pass> {
+    serde_json::from_value(pass.clone()).ok()
 }

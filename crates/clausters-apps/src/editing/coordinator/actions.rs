@@ -166,10 +166,7 @@ impl Session {
             "pause" => {
                 let mut tasks = Vec::new();
                 if self.focused(editing, member) {
-                    tasks.push(Task::Playback {
-                        verb: "pause",
-                        args: json!({}),
-                    });
+                    tasks.push(Task::Playback(Op::Pause));
                     self.paused = true;
                     tasks.push(Task::ShowTransport);
                 }
@@ -262,35 +259,23 @@ impl Session {
     ) -> Vec<Task> {
         if at.is_none() && self.paused && self.focused(editing, member) {
             self.paused = false;
-            return vec![
-                Task::Playback {
-                    verb: "resume",
-                    args: json!({}),
-                },
-                Task::ShowTransport,
-            ];
+            return vec![Task::Playback(Op::Resume), Task::ShowTransport];
         }
         self.paused = false;
         let mut tasks = Vec::new();
         if let Some(at) = at {
             tasks.extend(self.script_locate(editing, member, at));
         }
-        let play = member_call(editing, member, json!({"verb": "play"}));
-        tasks.push(Task::Playback {
-            verb: "play",
-            args: json!({"file": file_id(editing, member), "start": play["start"], "pass": play["pass"]}),
-        });
+        let play = space(editing, member);
+        tasks.push(Task::Playback(Op::play(file_id(editing, member), &play)));
         tasks.push(Task::ShowTransport);
         tasks
     }
 
     pub(super) fn script_stop(&mut self, editing: &mut Editing, member: MemberId) -> Vec<Task> {
-        let play = member_call(editing, member, json!({"verb": "play"}));
+        let play = space(editing, member);
         vec![
-            Task::Playback {
-                verb: "stop",
-                args: json!({"back": play["back"], "file": file_id(editing, member)}),
-            },
+            Task::Playback(Op::stop(file_id(editing, member), &play)),
             Task::ShowTransport,
         ]
     }
@@ -301,9 +286,10 @@ impl Session {
         member: MemberId,
         at: f64,
     ) -> Vec<Task> {
-        let frame = member_call(editing, member, json!({"verb": "locate", "at": at}))["cue"]
-            .as_u64()
-            .unwrap_or(0);
+        let frame = match editing.member_mut(member) {
+            Some(Member::Audio(editor)) => editor.set_cursor(at),
+            _ => 0,
+        };
         vec![
             effect("cursor", json!({"at": at})),
             Task::Rolling(Rolled::Locate(frame)),
@@ -315,11 +301,8 @@ impl Session {
         if !self.focused(editing, member) {
             return Vec::new();
         }
-        let play = member_call(editing, member, json!({"verb": "play"}));
-        vec![Task::Playback {
-            verb: "pass",
-            args: json!({"pass": play["pass"]}),
-        }]
+        let play = space(editing, member);
+        vec![Task::Playback(Op::pass(&play["pass"]))]
     }
 
     /// **The file in focus sounds on the engine**: its list handed to the
@@ -374,25 +357,19 @@ impl Session {
         let file = file_id(editing, member);
         match rolled {
             Rolled::View { frame } => vec![
-                Task::Playback {
-                    verb: "view",
-                    args: json!({"file": file, "frame": frame}),
-                },
+                Task::Playback(Op::View {
+                    file: file.map_or(0, |f| f as u64),
+                    frame,
+                }),
                 // the meter follows the file now viewed, before the window is drawn
                 Task::TellMeters,
             ],
             Rolled::Space(play) => vec![
                 // whichever file plays stops, and the one shown comes into focus
                 if rolling {
-                    Task::Playback {
-                        verb: "stop",
-                        args: json!({"back": play["back"], "file": file}),
-                    }
+                    Task::Playback(Op::stop(file, &play))
                 } else {
-                    Task::Playback {
-                        verb: "play",
-                        args: json!({"file": file, "start": play["start"], "pass": play["pass"]}),
-                    }
+                    Task::Playback(Op::play(file, &play))
                 },
                 Task::ShowTransport,
             ],
@@ -400,27 +377,15 @@ impl Session {
             // focus rolling goes on from the cursor, its pass ending as the
             // switch says from there; stopped, the transport stands on it.
             Rolled::Cue(frame) if rolling && self.focused(editing, member) => {
-                let play = member_call(editing, member, json!({"verb": "play"}));
-                let mut tasks = vec![Task::Playback {
-                    verb: "locate",
-                    args: json!({"frame": frame}),
-                }];
+                let play = space(editing, member);
+                let mut tasks = vec![Task::Playback(Op::Locate(frame))];
                 if play["pass"].is_object() {
-                    tasks.push(Task::Playback {
-                        verb: "pass",
-                        args: json!({"pass": play["pass"]}),
-                    });
+                    tasks.push(Task::Playback(Op::pass(&play["pass"])));
                 }
                 tasks.push(Task::ShowTransport);
                 tasks
             }
-            Rolled::Cue(frame) => vec![
-                Task::Playback {
-                    verb: "cue",
-                    args: json!({"frame": frame}),
-                },
-                Task::ShowTransport,
-            ],
+            Rolled::Cue(frame) => vec![Task::Playback(Op::Cue(frame)), Task::ShowTransport],
             Rolled::Playing { was } => {
                 let mut tasks = Vec::new();
                 if was != rolling {
@@ -433,14 +398,13 @@ impl Session {
             }
             Rolled::Stop if rolling => self.script_stop(editing, member),
             Rolled::Stop => Vec::new(),
-            Rolled::Locate(frame) => vec![Task::Playback {
-                verb: if rolling && self.focused(editing, member) {
-                    "locate"
+            Rolled::Locate(frame) => vec![Task::Playback(
+                if rolling && self.focused(editing, member) {
+                    Op::Locate(frame)
                 } else {
-                    "cue"
+                    Op::Cue(frame)
                 },
-                args: json!({"frame": frame}),
-            }],
+            )],
         }
     }
 }

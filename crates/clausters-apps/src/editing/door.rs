@@ -66,9 +66,15 @@ struct RecordedLeg {
 ///
 /// An unknown verb answers `{}`.
 pub fn call_json(editing: &mut Editing, request: &str) -> String {
-    let Ok(mut request) = serde_json::from_str::<Value>(request) else {
-        return "{}".into();
-    };
+    match serde_json::from_str::<Value>(request) {
+        Ok(request) => call_value(editing, request).to_string(),
+        Err(_) => "{}".into(),
+    }
+}
+
+/// **[`call_json`], over a request already read**: what the context's own
+/// callers in this crate speak, with no text in between.
+pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
     let get = |request: &Value, key: &str| request.get(key).cloned().unwrap_or(Value::Null);
     let member = int(&get(&request, "member")) as MemberId;
     let key = get(&request, "key")
@@ -86,7 +92,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
     match verb.as_str() {
         "openMultitrack" => match multitrack::new_json(&request.to_string()) {
             Some(editor) => joined(editing, &key, Member::Multitrack(Box::new(editor))),
-            None => json!({ "error": "the request names no multitrack" }).to_string(),
+            None => json!({ "error": "the request names no multitrack" }),
         },
         "openAudio" => match audio::new_json(&request.to_string()) {
             Ok(editor) => {
@@ -103,9 +109,9 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 {
                     editing.set_server(member, server);
                 }
-                json!({"member": member, "structure": editing.structure(member)}).to_string()
+                json!({"member": member, "structure": editing.structure(member)})
             }
-            Err(error) => json!({ "error": error }).to_string(),
+            Err(error) => json!({ "error": error }),
         },
         "openNotes" => {
             let request = request.to_string();
@@ -119,18 +125,18 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             let editor = points::new_json(curve, &request.to_string());
             joined(editing, &key, Member::Points(Box::new(editor)))
         }
-        "operation" => editing.audio_operation_json(&request).to_string(),
-        "cleanup" => {
-            let value = match request["action"].as_str().unwrap_or_default() {
-                "prepare" => serde_json::from_value::<ResourceId>(get(&request, "resource"))
-                    .ok()
-                    .and_then(|id| editing.services.resources.begin_release(id))
-                    .map(|release| serde_json::to_value(release).unwrap())
-                    .unwrap_or_else(|| json!({"accepted":false})),
-                "complete" => {
-                    let accepted = serde_json::from_value::<
-                        crate::application::resources::ReleaseTicket,
-                    >(get(&request, "ticket"))
+        "operation" => editing.audio_operation_json(&request),
+        "cleanup" => match request["action"].as_str().unwrap_or_default() {
+            "prepare" => serde_json::from_value::<ResourceId>(get(&request, "resource"))
+                .ok()
+                .and_then(|id| editing.services.resources.begin_release(id))
+                .map(|release| serde_json::to_value(release).unwrap())
+                .unwrap_or_else(|| json!({"accepted":false})),
+            "complete" => {
+                let accepted =
+                    serde_json::from_value::<crate::application::resources::ReleaseTicket>(get(
+                        &request, "ticket",
+                    ))
                     .is_ok_and(|ticket| {
                         editing.services.resources.finish_release(
                             ticket,
@@ -144,19 +150,17 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                             },
                         )
                     });
-                    json!({"accepted":accepted})
-                }
-                "pending" => {
-                    json!({"tickets":editing.services.resources.pending_releases().into_iter().map(|ticket|json!({"ticket":ticket,"reason":editing.services.resources.release_error(ticket)})).collect::<Vec<_>>()})
-                }
-                _ => json!({"error":"unknown cleanup action"}),
-            };
-            value.to_string()
-        }
-        "exchange" => editing.exchange_json(&request).to_string(),
+                json!({"accepted":accepted})
+            }
+            "pending" => {
+                json!({"tickets":editing.services.resources.pending_releases().into_iter().map(|ticket|json!({"ticket":ticket,"reason":editing.services.resources.release_error(ticket)})).collect::<Vec<_>>()})
+            }
+            _ => json!({"error":"unknown cleanup action"}),
+        },
+        "exchange" => editing.exchange_json(&request),
         "resources" => {
             editing.sync_resources();
-            serde_json::to_string(&editing.services.resources.sources()).unwrap()
+            serde_json::to_value(editing.services.resources.sources()).unwrap_or_default()
         }
         "retainMember" => {
             editing.sync_resources();
@@ -179,7 +183,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 false
             };
             let freed = editing.release();
-            json!({"retained": retained, "freed": freed}).to_string()
+            json!({"retained": retained, "freed": freed})
         }
         "retain" => {
             editing.sync_resources();
@@ -189,24 +193,24 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 (Ok(root), Ok(sources)) => editing.services.resources.retain(root, sources),
                 _ => false,
             };
-            json!({"retained": retained}).to_string()
+            json!({"retained": retained})
         }
         "dropRoot" => {
             if let Ok(root) = serde_json::from_value::<Root>(get(&request, "root")) {
                 editing.services.resources.drop_root(root);
             }
             let freed = editing.release();
-            json!({"freed": freed}).to_string()
+            json!({"freed": freed})
         }
         "invalidate" => {
             let invalidated = serde_json::from_value::<ServerInstance>(get(&request, "server"))
                 .map(|server| editing.invalidate_server(server))
                 .unwrap_or_default();
-            json!({"invalidated": invalidated}).to_string()
+            json!({"invalidated": invalidated})
         }
         "bytes" => {
             editing.set_bytes(get(&request, "bytes").as_u64());
-            "{}".into()
+            json!({})
         }
         "external" => {
             let domain = get(&request, "domain")
@@ -218,12 +222,12 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
             let prepared = editing.prepare_audio_event(member, &event);
-            to_json(&prepared.or_else(|| editing.event(member, &event)))
+            to_value(&prepared.or_else(|| editing.event(member, &event)))
         }
         "act" => {
             let call = get(&request, "call");
             let prepared = editing.prepare_audio_action(member, &call);
-            to_json(&prepared.or_else(|| editing.act(member, &call)))
+            to_value(&prepared.or_else(|| editing.act(member, &call)))
         }
         "step" => {
             let target = match request.get("member") {
@@ -234,7 +238,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                         .and_then(|id| MemberId::try_from(id).ok())
                         .filter(|id| editing.member(*id).is_some());
                     let Some(target) = target else {
-                        return to_json(&Stepped {
+                        return to_value(&Stepped {
                             stepped: false,
                             operation: None,
                             reason: Some("the history step member is invalid".into()),
@@ -253,7 +257,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 .and_then(Direction::parse)
                 .unwrap_or(Direction::Undo);
             let prepared = editing.prepare_audio_walk(direction);
-            to_json(&prepared.unwrap_or_else(|| editing.step(direction)))
+            to_value(&prepared.unwrap_or_else(|| editing.step(direction)))
         }
         "record" => {
             let coalesce = get(&request, "coalesce").as_bool().unwrap_or(false);
@@ -275,7 +279,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 };
                 editing.record(member, &record, coalesce)
             });
-            json!({ "recorded": taken, "version": editing.version() }).to_string()
+            json!({ "recorded": taken, "version": editing.version() })
         }
         "member" => {
             editing.select_member(member);
@@ -312,17 +316,14 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                             server: seat.server,
                         })
                 }) {
-                    return json!({"error":"the file has pending work; close after it completes"})
-                        .to_string();
+                    return json!({"error":"the file has pending work; close after it completes"});
                 }
             }
             if inner == "add_file" && matches!(editing.member(member), Some(Member::Audio(_))) {
-                return editing
-                    .prepare_add_file(member, &get(&request, "call"))
-                    .to_string();
+                return editing.prepare_add_file(member, &get(&request, "call"));
             }
             if matches!(inner.as_str(), "event" | "apply") {
-                return "{}".into();
+                return json!({});
             }
             let mut call = get(&request, "call");
             if let Some(map) = call.as_object_mut() {
@@ -330,14 +331,16 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             }
             let answer = match editing.member_mut(member) {
                 Some(Member::Multitrack(editor)) => {
-                    multitrack::call_json(editor, &call.to_string())
+                    parsed(&multitrack::call_json(editor, &call.to_string()))
                 }
-                Some(Member::Audio(editor)) => audio::call_json(editor, &call.to_string()),
-                Some(Member::Notes(editor)) => notes::call_json(editor, &call.to_string()),
-                Some(Member::Points(editor)) => points::call_json(editor, &call.to_string()),
+                Some(Member::Audio(editor)) => audio::call_value(editor, call),
+                Some(Member::Notes(editor)) => parsed(&notes::call_json(editor, &call.to_string())),
+                Some(Member::Points(editor)) => {
+                    parsed(&points::call_json(editor, &call.to_string()))
+                }
                 #[cfg(feature = "notation")]
-                Some(Member::Score(editor)) => score::call_json(editor, &call.to_string()),
-                _ => "{}".into(),
+                Some(Member::Score(editor)) => parsed(&score::call_json(editor, &call.to_string())),
+                _ => json!({}),
             };
             editing.select_member(member);
             let after = match editing.member(member) {
@@ -347,7 +350,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             if before != after {
                 editing.version += 1;
             }
-            let mut value: Value = serde_json::from_str(&answer).unwrap_or_default();
+            let mut value = answer;
             if inner == "window" {
                 value["actions"] = editing.action_states(member);
             }
@@ -370,17 +373,17 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                     editing.select_member(member);
                 }
             }
-            value.to_string()
+            value
         }
-        "moved" => json!({ "version": editing.moved() }).to_string(),
+        "moved" => json!({ "version": editing.moved() }),
         "actions" => match request
             .get("member")
             .and_then(Value::as_u64)
             .and_then(|id| MemberId::try_from(id).ok())
             .filter(|id| editing.member(*id).is_some())
         {
-            Some(member) => editing.action_states(member).to_string(),
-            None => json!({"error": "the action member is invalid"}).to_string(),
+            Some(member) => editing.action_states(member),
+            None => json!({"error": "the action member is invalid"}),
         },
         "state" => {
             editing.select(
@@ -396,9 +399,8 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             "undoLabel": editing.undo_label(),
             "redoLabel": editing.redo_label(),
             })
-            .to_string()
         }
-        _ => "{}".into(),
+        _ => json!({}),
     }
 }
 
@@ -413,7 +415,7 @@ impl Editing {
             map.insert("version".into(), json!(self.version));
         }
         let editor = notes::new_json(sequence, &request.to_string());
-        joined(self, key, Member::Notes(Box::new(editor)))
+        joined(self, key, Member::Notes(Box::new(editor))).to_string()
     }
 }
 
@@ -429,7 +431,7 @@ impl Editing {
             map.insert("version".into(), json!(self.version));
         }
         let editor = score::new_json(shared, &request.to_string());
-        joined(self, key, Member::Score(Box::new(editor)))
+        joined(self, key, Member::Score(Box::new(editor))).to_string()
     }
 
     /// **Opens a score editor over `sequence`**, on the page it is read
@@ -451,7 +453,7 @@ impl Editing {
             map.insert("version".into(), json!(self.version));
         }
         match score::over_json(shared, sequence, &request.to_string()) {
-            Ok(editor) => joined(self, key, Member::Score(Box::new(editor))),
+            Ok(editor) => joined(self, key, Member::Score(Box::new(editor))).to_string(),
             Err(error) => json!({ "error": error }).to_string(),
         }
     }
@@ -473,7 +475,7 @@ impl Editing {
             map.insert("version".into(), json!(self.version));
         }
         match multitrack::over_json(multitrack, &request.to_string()) {
-            Some(editor) => joined(self, key, Member::Multitrack(Box::new(editor))),
+            Some(editor) => joined(self, key, Member::Multitrack(Box::new(editor))).to_string(),
             None => json!({ "error": "the request does not read" }).to_string(),
         }
     }
@@ -546,13 +548,23 @@ impl Editing {
 
 /// A member taken in, as the door answers it: its number and the structure it
 /// is in the order.
-fn joined(editing: &mut Editing, key: &str, member: Member) -> String {
+fn joined(editing: &mut Editing, key: &str, member: Member) -> Value {
     let member = editing.join(key, member);
     let structure = editing.structure(member).map(|s| s.0);
-    json!({ "member": member, "structure": structure }).to_string()
+    json!({ "member": member, "structure": structure })
 }
 
 /// A turn's answer as JSON.
 fn to_json<T: Serialize>(value: &T) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "{}".into())
+}
+
+/// A turn's answer as a value.
+fn to_value<T: Serialize>(value: &T) -> Value {
+    serde_json::to_value(value).unwrap_or_else(|_| json!({}))
+}
+
+/// What a member's text door answered, read.
+fn parsed(answer: &str) -> Value {
+    serde_json::from_str(answer).unwrap_or_default()
 }

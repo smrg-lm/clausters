@@ -368,30 +368,52 @@ impl Session {
                 self.push(id, tasks);
                 Flow::Next
             }
-            Task::Playback { verb, args } => {
-                if verb == "closeFile"
-                    && let (Some(engine), Some(file)) =
-                        (editing.engine.as_mut(), args["file"].as_u64())
-                {
-                    engine.close(file, ids);
-                }
-                let mut request = args;
-                request["verb"] = json!(verb);
-                let answer: Value = serde_json::from_str(&audio_playback::call_json(
-                    &mut self.playback,
-                    &request.to_string(),
-                    ids,
-                ))
-                .unwrap_or(Value::Null);
-                if let Some(error) = answer["error"].as_str() {
-                    return Flow::Fail(Failure::Own(Raise::Runtime, error.into()));
-                }
-                match answer.get("steps") {
-                    Some(steps) if truthy(steps) => Flow::Await(
-                        tagged("steps", json!({"via": "service", "steps": steps})),
+            Task::Playback(op) => {
+                let playback = &mut self.playback;
+                let steps = match op {
+                    Op::View { file, frame } => Ok(playback.view(file, frame)),
+                    Op::Play {
+                        file,
+                        start,
+                        pass: Some(pass),
+                    } => Ok(playback.play(file, start, pass)),
+                    Op::Play { pass: None, .. } => Err("a play needs a pass".to_string()),
+                    Op::Pass(Some(pass)) => Ok(playback.set_pass(pass)),
+                    Op::Pass(None) => Err("a pass is a loop or an end".to_string()),
+                    Op::Follow {
+                        file,
+                        from,
+                        to,
+                        place,
+                    } => Ok(playback.follow(file, from, to, place)),
+                    Op::Resume => Ok(playback.resume()),
+                    Op::Pause => Ok(playback.pause()),
+                    Op::Stop {
+                        file: Some(file),
+                        back,
+                    } => Ok(playback.stop_viewing(file, back)),
+                    Op::Stop { file: None, back } => Ok(playback.stop(back)),
+                    Op::Locate(frame) => Ok(playback.locate(frame)),
+                    Op::Cue(frame) => Ok(playback.cue(frame)),
+                    Op::Close => playback.close(ids).map_err(|e| e.to_string()),
+                    Op::CloseFile(file) => {
+                        if let Some(engine) = editing.engine.as_mut() {
+                            engine.close(file, ids);
+                        }
+                        playback.close_file(file, ids).map_err(|e| e.to_string())
+                    }
+                };
+                match steps {
+                    Err(error) => Flow::Fail(Failure::Own(Raise::Runtime, error)),
+                    Ok(steps) if steps.is_empty() => Flow::Next,
+                    Ok(steps) => Flow::Await(
+                        tagged(
+                            "steps",
+                            json!({"via": "service",
+                                "steps": clausters_editing::apply::steps_json(&steps)}),
+                        ),
                         Resume::Steps,
                     ),
-                    _ => Flow::Next,
                 }
             }
             Task::RetainPlayback => {
@@ -415,10 +437,7 @@ impl Session {
                 self.push(
                     id,
                     vec![
-                        Task::Playback {
-                            verb: "close",
-                            args: json!({}),
-                        },
+                        Task::Playback(Op::Close),
                         Task::DropPlayback,
                         effect(
                             if closed {

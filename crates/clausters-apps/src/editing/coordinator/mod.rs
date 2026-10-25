@@ -70,10 +70,10 @@ use std::collections::{BTreeMap, VecDeque};
 
 use clausters_core::ids::IdSpaces;
 use clausters_editing::apply::Medium;
-use clausters_editing::audio_playback::{self, AudioEditorPlayback};
+use clausters_editing::audio_playback::AudioEditorPlayback;
 use serde_json::{Value, json};
 
-use super::{Editing, Member, MemberId, call_json};
+use super::{Editing, Member, MemberId};
 
 mod actions;
 mod driver;
@@ -237,6 +237,16 @@ fn call(editing: &mut Editing, request: &Value, ids: &mut IdSpaces) -> Value {
     }
 }
 
+/// **What the space bar plays** in the file in focus, under its own loop
+/// switch: where a pass starts, how it ends and where a stop goes back to;
+/// `null` with no file open.
+fn space(editing: &Editing, member: MemberId) -> Value {
+    match editing.member(member) {
+        Some(Member::Audio(editor)) if editor.has_file() => json!(editor.space()),
+        _ => Value::Null,
+    }
+}
+
 /// The focused file's identity, or `None` with no file open.
 fn file_id(editing: &Editing, member: MemberId) -> Option<i64> {
     match editing.member(member) {
@@ -263,7 +273,7 @@ fn rendered_files(steps: &Value) -> Vec<String> {
     out
 }
 
-/// One verb of the member's own door, as a client calls it.
+/// One verb of the member's own door, through the context's.
 fn member_call(editing: &mut Editing, member: MemberId, call: Value) -> Value {
     door(
         editing,
@@ -271,9 +281,9 @@ fn member_call(editing: &mut Editing, member: MemberId, call: Value) -> Value {
     )
 }
 
-/// One verb of the context's door, as a client calls it.
+/// One verb of the context's door, read as a value.
 fn door(editing: &mut Editing, request: Value) -> Value {
-    serde_json::from_str(&call_json(editing, &request.to_string())).unwrap_or(Value::Null)
+    super::door::call_value(editing, request)
 }
 
 fn tagged(kind: &str, fields: Value) -> Value {

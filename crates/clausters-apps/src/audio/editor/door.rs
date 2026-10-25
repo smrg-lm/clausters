@@ -234,9 +234,15 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///
 /// An unknown verb answers `{}`.
 pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
-    let Ok(request) = serde_json::from_str::<Value>(request) else {
-        return "{}".into();
-    };
+    match serde_json::from_str::<Value>(request) {
+        Ok(request) => call_value(editor, request).to_string(),
+        Err(_) => "{}".into(),
+    }
+}
+
+/// **[`call_json`], over a request already read**: what the editing
+/// context calls its audio members with, with no text in between.
+pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
     let get = |key: &str| request.get(key).cloned().unwrap_or(Value::Null);
     let widget = int(&get("widget")) as i32;
     let version = int(&get("version"));
@@ -247,7 +253,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
     // **A verb that acts on a file needs one open**; the editor's own -- its
     // window, its file list, adding a file, the conversation -- do not.
     if !editor.open_files.open && !EMPTY_VERBS.contains(&verb) {
-        return json!({ "error": NO_FILE_OPEN }).to_string();
+        return json!({ "error": NO_FILE_OPEN });
     }
     match verb {
         "sync" => {
@@ -260,7 +266,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                     ..facts
                 });
             }
-            "{}".into()
+            json!({})
         }
         verb @ ("layers" | "show_layer" | "hide_layer" | "solo_layer" | "layer_alpha"
         | "view_wave" | "view_spectrogram" | "view_both") => {
@@ -275,9 +281,9 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                     ));
                     let mut value = serde_json::to_value(outcome).unwrap();
                     value["measure"] = json!(editor.file.presentation.layers.to_wire());
-                    value.to_string()
+                    value
                 }
-                Err(error) => json!({"error": error}).to_string(),
+                Err(error) => json!({"error": error}),
             }
         }
         verb @ ("layer" | "layer_take") => {
@@ -287,13 +293,18 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 request.get("name").and_then(Value::as_str)
             };
             match name.map(|name| editor.edit_layer(name)).transpose() {
-                Ok(corrections) => json!({"turn": "route", "layer": editor.file.presentation.edit_layer,
-                    "answer": conversation::answer(0, version, None, corrections.unwrap_or_default())}).to_string(),
-                Err(error) => json!({"error": error}).to_string(),
+                Ok(corrections) => {
+                    json!({"turn": "route", "layer": editor.file.presentation.edit_layer,
+                    "answer": conversation::answer(0, version, None, corrections.unwrap_or_default())})
+                }
+                Err(error) => json!({"error": error}),
             }
         }
         "window" => {
-            editor.window_state.files_widget = request.get("filesWidget").and_then(Value::as_i64).map(|n| n as i32);
+            editor.window_state.files_widget = request
+                .get("filesWidget")
+                .and_then(Value::as_i64)
+                .map(|n| n as i32);
             if let Some(ids) = request.get("dialogs").and_then(Value::as_object) {
                 editor.window_state.dialogs.ids = ids
                     .iter()
@@ -313,49 +324,73 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                 .get("lane")
                 .and_then(Value::as_i64)
                 .map(|n| n as i32);
-            editor
-                .window(
-                    widget,
-                    request
-                        .get("meter")
-                        .and_then(Value::as_i64)
-                        .map(|m| m as i32),
-                )
-                .to_string()
+            editor.window(
+                widget,
+                request
+                    .get("meter")
+                    .and_then(Value::as_i64)
+                    .map(|m| m as i32),
+            )
         }
-        "attach_view"=>{editor.window_state.active=true;editor.window_state.binding_generation+=1;"{}".into()},
-        "detach_view"=>{editor.window_state.active=false;editor.window_state.window=None;editor.window_state.binding_generation+=1;"{}".into()},
-        "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
-        "folded" => json!({"folded": editor.folded()}).to_string(),
-        "file" if !editor.open_files.open => json!({"empty": true}).to_string(),
-        "file" => editor.file().to_string(),
-        "files" => { editor.refresh_files(); json!({"files": editor.open_files.rows, "visible": editor.window_state.files_visible}).to_string() },
+        "attach_view" => {
+            editor.window_state.active = true;
+            editor.window_state.binding_generation += 1;
+            json!({})
+        }
+        "detach_view" => {
+            editor.window_state.active = false;
+            editor.window_state.window = None;
+            editor.window_state.binding_generation += 1;
+            json!({})
+        }
+        "dialogs" => json!({"dialogs": dialogs::names()}),
+        "folded" => json!({"folded": editor.folded()}),
+        "file" if !editor.open_files.open => json!({"empty": true}),
+        "file" => editor.file(),
+        "files" => {
+            editor.refresh_files();
+            json!({"files": editor.open_files.rows, "visible": editor.window_state.files_visible})
+        }
         // with no file open, a binding says so rather than naming one
-        "binding" if !editor.open_files.open => json!({"empty": true}).to_string(),
-        "binding" => editor.binding().to_string(),
-        "add_file" => match new_json(&editor.with_folder(&request).to_string())
-        .and_then(|mut file| {
-            let steps = file.open()?;
-            editor.add_file(file);
-            Ok(steps)
-        }) {
-            Ok(steps) => json!({"turn": "route", "steps": steps, "binding": editor.binding(), "focusChanged": true, "restructure": true,
-                "answer": conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections())}).to_string(),
-            Err(error) => json!({"error": error}).to_string(),
-        },
+        "binding" if !editor.open_files.open => json!({"empty": true}),
+        "binding" => editor.binding(),
+        "add_file" => {
+            match new_json(&editor.with_folder(&request).to_string()).and_then(|mut file| {
+                let steps = file.open()?;
+                editor.add_file(file);
+                Ok(steps)
+            }) {
+                Ok(steps) => {
+                    json!({"turn": "route", "steps": steps, "binding": editor.binding(), "focusChanged": true, "restructure": true,
+                "answer": conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections())})
+                }
+                Err(error) => json!({"error": error}),
+            }
+        }
         "focus_file" | "close_file" => {
             let verb = request["verb"].as_str().unwrap();
             editor.refresh_files();
             let file = if let Some(index) = request.get("index") {
-                match index.as_u64().and_then(|i| editor.open_files.rows.get(i as usize)).and_then(|f| f["id"].as_i64()) {
+                match index
+                    .as_u64()
+                    .and_then(|i| editor.open_files.rows.get(i as usize))
+                    .and_then(|f| f["id"].as_i64())
+                {
                     Some(id) => id,
-                    None => return json!({"error": "the file index is outside the open files"}).to_string(),
+                    None => return json!({"error": "the file index is outside the open files"}),
                 }
-            } else { request.get("file").and_then(Value::as_i64).unwrap_or(editor.file.id.0) };
+            } else {
+                request
+                    .get("file")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(editor.file.id.0)
+            };
             let before = editor.file.id.0;
             let result = if verb == "focus_file" {
                 editor.focus_file(file).map(|()| Vec::<String>::new())
-            } else { editor.close_file(file).map(|closed| closed.files) };
+            } else {
+                editor.close_file(file).map(|closed| closed.files)
+            };
             match result {
                 // The last file closed leaves the editor open with none:
                 // `binding` is null and the window is drawn again empty.
@@ -364,111 +399,135 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                     let moved = before != editor.file.id.0;
                     json!({"turn": "route", "deleteFiles": files, "binding": editor.binding(), "focusChanged": moved || empty,
                     "restructure": true, "fileAction": {"verb": verb, "file": file}, "empty": empty,
-                    "answer": moved.then(|| conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections()))}).to_string()
+                    "answer": moved.then(|| conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections()))})
                 }
-                Err(error) => json!({"error": error}).to_string(),
+                Err(error) => json!({"error": error}),
             }
         }
         "open_file" => {
             let paths = request.get("paths").or_else(|| request.get("path"));
             let paths = match paths {
                 Some(Value::String(path)) if !path.is_empty() => vec![json!(path)],
-                Some(Value::Array(paths)) if paths.iter().all(|p| p.as_str().is_some_and(|p| !p.is_empty())) => paths.clone(),
-                _ => return json!({"error": "open_file needs a path or an array of paths"}).to_string(),
+                Some(Value::Array(paths))
+                    if paths
+                        .iter()
+                        .all(|p| p.as_str().is_some_and(|p| !p.is_empty())) =>
+                {
+                    paths.clone()
+                }
+                _ => return json!({"error": "open_file needs a path or an array of paths"}),
             };
-            json!({"turn": "route", "openFile": {"paths": paths}}).to_string()
+            json!({"turn": "route", "openFile": {"paths": paths}})
         }
         "playing" => {
             editor.window_state.playing = request.get("file").and_then(Value::as_i64);
             if let Ok(facts) = serde_json::from_value::<Facts>(request.clone())
-                && let Some(meters) = facts.meters {
+                && let Some(meters) = facts.meters
+            {
                 editor.set_meters(meters.map(|m| (m.bus, m.channels)));
             }
             let mut corrections = editor.files_corrections();
             // with no file open the window draws no take, pane or meter
             if !editor.open_files.open {
-                return json!({"corrections": corrections}).to_string();
+                return json!({"corrections": corrections});
             }
             let anchor = editor.playhead_anchor();
             let targets: BTreeSet<_> = editor.pictures().chain(editor.window_state.pane).collect();
             corrections.extend(targets.into_iter().map(|widget| Correction {
-                widget: i64::from(widget), props: json!({"playhead_at": anchor})
+                widget: i64::from(widget),
+                props: json!({"playhead_at": anchor}),
             }));
-            if let (Some(widget), Some((bus, channels))) = (editor.window_state.meter_widget, editor.window_state.meters) {
-                corrections.push(Correction { widget: i64::from(widget), props: json!({"bus": bus, "channels": channels}) });
+            if let (Some(widget), Some((bus, channels))) =
+                (editor.window_state.meter_widget, editor.window_state.meters)
+            {
+                corrections.push(Correction {
+                    widget: i64::from(widget),
+                    props: json!({"bus": bus, "channels": channels}),
+                });
             }
-            json!({"corrections": corrections}).to_string()
+            json!({"corrections": corrections})
         }
         "show_files" | "hide_files" | "toggle_files" => {
             editor.window_state.files_visible = match request["verb"].as_str().unwrap() {
-                "show_files" => true, "hide_files" => false, _ => !editor.window_state.files_visible,
+                "show_files" => true,
+                "hide_files" => false,
+                _ => !editor.window_state.files_visible,
             };
-            json!({"turn": "route", "restructure": true}).to_string()
+            json!({"turn": "route", "restructure": true})
         }
-        "envelope" => json!({"points": editor.envelope_quads(false)}).to_string(),
+        "envelope" => json!({"points": editor.envelope_quads(false)}),
         "show_envelope" | "setautomation" | "apply_envelope" | "fold_channel" | "solo_channel"
         | "show_all_channels" => {
-            serde_json::to_string(&editor.act(&request, version)).unwrap()
+            serde_json::to_value(editor.act(&request, version)).unwrap_or_default()
         }
         "props" if editor.window_state.envelope_widget == Some(widget) => editor
             .envelope_corrections()
             .first()
-            .map_or_else(|| "{}".into(), |c| c.props.to_string()),
+            .map_or_else(|| json!({}), |c| c.props.clone()),
         // the picture is told the list again, which it draws from its files,
         // and the band a history step may have moved onto the take
         "props" if editor.open_files.open => {
             let mut props = editor.band_of(widget).unwrap_or_default();
             props.insert("segments".into(), editor.segments());
-            Value::Object(props).to_string()
+            Value::Object(props)
         }
-        "props" => Value::Object(props(widget)).to_string(),
+        "props" => Value::Object(props(widget)),
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
-            serde_json::to_string(&editor.event(&event, version)).unwrap_or_else(|_| "{}".into())
+            serde_json::to_value(editor.event(&event, version)).unwrap_or_default()
         }
-        "playback" => editor.playback_file().to_string(),
-        "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
+        "playback" => editor.playback_file(),
+        "parts" => json!({ "parts": editor.list(), "frames": editor.length() }),
         // the list as data, written out: a query, which costs the list
         "segments" => sources::wire_list(
             &editor.list(),
             &editor.file.sources,
             editor.file.channels,
             editor.file.rate,
-        )
-        .to_string(),
+        ),
         // **What of `files` is this editor's scratch**: the ones in its
         // working folder, which a failed render may take away; nothing else,
         // a file the user named least of all.
         "scratch" => {
-            let folder = editor.window_state.workspace.as_deref().map(|w| format!("{}/", w.trim_end_matches('/')));
-            let files: Vec<&str> = request["files"].as_array().into_iter().flatten()
+            let folder = editor
+                .window_state
+                .workspace
+                .as_deref()
+                .map(|w| format!("{}/", w.trim_end_matches('/')));
+            let files: Vec<&str> = request["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
                 .filter_map(Value::as_str)
-                .filter(|f| folder.as_deref().is_some_and(|w| f.starts_with(w) && !f[w.len()..].contains("..")))
+                .filter(|f| {
+                    folder
+                        .as_deref()
+                        .is_some_and(|w| f.starts_with(w) && !f[w.len()..].contains(".."))
+                })
                 .collect();
-            json!({"files": files}).to_string()
+            json!({"files": files})
         }
         "on_disk" => {
             let reason = editor.on_disk(&request["stamps"]);
             let seq = request["seq"].as_i64().unwrap_or(0);
             json!({"turn": "route",
                 "answer": conversation::answer(seq, version, reason, Vec::new())})
-            .to_string()
         }
         "span" => {
             let span = get("span")
                 .as_array()
                 .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
             let (start, len) = editor.set_span(span);
-            json!({ "sel_start": start, "sel_len": len }).to_string()
+            json!({ "sel_start": start, "sel_len": len })
         }
         "locate" => {
-            json!({ "cue": editor.set_cursor(get("at").as_f64().unwrap_or(0.0)) }).to_string()
+            json!({ "cue": editor.set_cursor(get("at").as_f64().unwrap_or(0.0)) })
         }
-        "play" => json!(editor.play(editor.file.presentation.looping)).to_string(),
+        "play" => json!(editor.space()),
         "looping" => {
             editor.file.presentation.looping = get("on").as_bool().unwrap_or(false);
-            "{}".into()
+            json!({})
         }
-        _ => "{}".into(),
+        _ => json!({}),
     }
 }
