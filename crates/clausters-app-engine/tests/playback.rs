@@ -1022,12 +1022,33 @@ fn a_pass_that_ends_on_its_own_is_taken_in() {
         app.query(editing, member, "transport")["state"].clone()
     };
     assert_eq!(state(&mut app, &mut editing)["rolling"], true);
-    blocks(&mut engine, &app_engine, 600);
-    let told: Vec<_> = app
-        .landed(&mut editing)
-        .into_iter()
-        .filter(|ran| ran.member == member)
-        .collect();
+    // the application's turn after every block, as its thread takes one: the
+    // stop is heard once, at the end, and never while the pass sounds
+    let mut told = Vec::new();
+    let mut heard_at = None;
+    for block in 0..600 {
+        let left = blocks(&mut engine, &app_engine, 1);
+        let ran: Vec<_> = app
+            .landed(&mut editing)
+            .into_iter()
+            .filter(|ran| ran.member == member)
+            .collect();
+        if !ran.is_empty() {
+            assert!(
+                heard_at.is_none(),
+                "heard twice, at {heard_at:?} and {block}"
+            );
+            heard_at = Some(block);
+            told.extend(ran);
+        } else if heard_at.is_none() {
+            assert_eq!(
+                state(&mut app, &mut editing)["rolling"],
+                true,
+                "block {block}: still playing, {left:?}"
+            );
+        }
+    }
+    assert!(heard_at.is_some_and(|b| b > 10), "heard at {heard_at:?}");
     assert!(
         told.iter()
             .any(|ran| ran.effects.iter().any(|e| e["kind"] == "set")),
