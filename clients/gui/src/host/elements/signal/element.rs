@@ -119,6 +119,7 @@ impl SignalElement {
                     db_floor: self.spectral.db_floor,
                     db_ceil: self.spectral.db_ceil,
                     freq_scale: self.spectral.freq_scale,
+                    tuning: self.spectral.tuning,
                     peak_hold: self.spectral.peak_hold,
                     ruler: self.editor.ruler != crate::host::widget::Ruler::Off,
                     ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
@@ -741,6 +742,7 @@ impl SignalElement {
             db_floor: self.spectral.db_floor,
             db_ceil: self.spectral.db_ceil,
             freq_scale: self.spectral.freq_scale,
+            tuning: self.spectral.tuning,
             // What the axis can show, not what was asked of it.
             x_view: self.freq_window(sample_rate),
             label: self.display.label.as_deref(),

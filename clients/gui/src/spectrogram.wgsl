@@ -11,8 +11,8 @@ struct Uniforms {
     // (the mel/bark mappings need the absolute frequency axis).
     time: vec4<f32>,
     // x = d0, y = d1 of the visible frequency window in display coords [0,1];
-    // z = scale index (0 linear, 1 log, 2 mel, 3 bark); w = normalized
-    // log-axis floor (e.g. 20 Hz / Nyquist).
+    // z = scale index (0 linear, 1 log, 2 mel, 3 bark, 4 notes); w = the
+    // normalized axis floor (20 Hz / Nyquist, MIDI note 0 / Nyquist on notes).
     freq: vec4<f32>,
     // x = lo_frac, y = hi_frac of the display dB window; z = colormap index;
     // w = the layer's own alpha (1 where it is the only picture on the body).
@@ -147,15 +147,21 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     } else if u.freq.z < 2.5 {
         // Mel axis: even display steps are even mel steps (mel(0) = 0).
         bin_norm = mel_to_hz(d * hz_to_mel(nyq)) / nyq;
-    } else {
+    } else if u.freq.z < 3.5 {
         // Bark axis, normalized from the formula's own floor at 0 Hz.
         let z0 = hz_to_bark(0.0);
         bin_norm = bark_to_hz(mix(z0, hz_to_bark(nyq), d)) / nyq;
+    } else {
+        // Note axis: MIDI 0 at the floor (freq.w) to 127 at the top, an even
+        // step a semitone.
+        bin_norm = u.freq.w * exp2(127.0 * d / 12.0);
     }
     // Texture row 0 is bin 0 (low frequency), so the bottom shows the lowest.
     // Row k is centred on (k + 0.5) / rows and bin k measures k / rows of
     // Nyquist, so a frequency is read half a row up: each bin is drawn
-    // centred on its own frequency, not from it up to the next one's.
+    // centred on its own frequency, not from it up to the next one's. A row
+    // over Nyquist (a note axis at a low rate) measured nothing.
+    let past = bin_norm > 1.0;
     let rows_n = f32(textureDimensions(tex).y);
     let v = clamp(bin_norm + 0.5 / rows_n, 0.0, 1.0);
     // **Every pixel shows a magnitude the analysis measured.** Where a pixel
@@ -214,6 +220,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         mag = level(t, v);
     }
 
+    if past {
+        mag = 0.0;
+    }
     // Remap the stored magnitude into the display dB window for contrast.
     let c = clamp((mag - u.db.x) / max(u.db.y - u.db.x, 1e-5), 0.0, 1.0);
     // Last, so the derivatives above are taken in uniform control flow.

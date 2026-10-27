@@ -2186,9 +2186,10 @@ def spectrogram(*, autofit: bool | None = None,
     ``freq_scale`` picks the frequency axis, ``"log"`` (the default),
     ``"linear"``, ``"mel"``, ``"bark"`` or ``"note"`` (``log_freq`` is the
     legacy boolean alias for the first two), and ``colormap`` picks 0
-    viridis / 1 magma / 2 grayscale. ``"note"`` is the log axis from C0,
-    its ruler naming the equal-tempered notes at ``tuning``, the reference
-    A4 in hertz (default 440). ``wintype`` is the analysis window's shape, as
+    viridis / 1 magma / 2 grayscale. ``"note"`` spans the MIDI notes 0 to
+    127 with an even step a semitone (about 8 Hz to 12.5 kHz), its ruler
+    naming the equal-tempered notes at ``tuning``, the reference A4 in hertz
+    (default 440). ``wintype`` is the analysis window's shape, as
     an FFT's: ``0`` Hann (the default), ``-1`` rectangular, ``1`` sine, ``2``
     Welch, ``3`` Hamming, ``4`` Blackman. ``normalize`` draws each frequency
     band at its own scale, its loudest at the top of the colours, so a band

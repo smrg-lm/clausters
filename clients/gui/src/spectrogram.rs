@@ -38,9 +38,10 @@ pub enum FreqScale {
     Log,
     Mel,
     Bark,
-    /// **Equal-tempered notes**: the log axis, from C0 at the view's
-    /// reference tuning, its ruler naming the notes. The floor is the only
-    /// thing that differs, and it carries the tuning (`clausters_core::scale::c0_hz`).
+    /// **Equal-tempered notes**: MIDI note 0 at the bottom and 127 at the top
+    /// at the view's reference tuning, an even step a semitone, its ruler
+    /// naming the notes. The floor is note 0, and it carries the tuning
+    /// (`ruler::axis_floor`).
     Note,
 }
 
@@ -49,9 +50,10 @@ impl FreqScale {
     pub(crate) fn index(self) -> u32 {
         match self {
             FreqScale::Linear => 0,
-            FreqScale::Log | FreqScale::Note => 1,
+            FreqScale::Log => 1,
             FreqScale::Mel => 2,
             FreqScale::Bark => 3,
+            FreqScale::Note => 4,
         }
     }
 
@@ -722,15 +724,16 @@ impl SpectrogramView {
         self.colormap = colormap % 3;
     }
 
-    /// The normalized bottom of the log frequency axis (~20 Hz / Nyquist) -- the
-    /// same `f_lo` the shader's display->bin mapping uses, exposed so a ruler
-    /// places its ticks with the identical geometry.
+    /// The normalized bottom of the frequency axis (~20 Hz / Nyquist, MIDI
+    /// note 0 on a note axis) -- the same `f_lo` the shader's display->bin
+    /// mapping uses, exposed so a ruler places its ticks with the identical
+    /// geometry.
     pub fn log_floor(&self) -> f32 {
-        let floor = match self.scale {
-            FreqScale::Note => clausters_core::scale::c0_hz(f64::from(self.tuning)) as f32,
-            _ => 20.0,
-        };
-        (floor / self.stft.nyquist()).clamp(1e-5, 0.5)
+        crate::host::ruler::axis_floor(
+            self.scale,
+            f64::from(self.tuning),
+            f64::from(self.stft.nyquist()),
+        ) as f32
     }
 
     /// Sets the visible frequency window from normalized display coordinates

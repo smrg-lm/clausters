@@ -1052,8 +1052,11 @@ impl SignalElement {
         if self.presentation != Presentation::Spectrum {
             return (start, len);
         }
-        let (nyquist, f_lo_norm) =
-            crate::host::graphics::signal::spectrum::axis_geometry(self.freq_rate(server_rate));
+        let (nyquist, f_lo_norm) = crate::host::graphics::signal::spectrum::axis_geometry(
+            self.freq_rate(server_rate),
+            self.spectral.freq_scale,
+            self.spectral.tuning,
+        );
         let floor = crate::host::graphics::signal::spectrum::min_display_span(
             self.spectral.fft_size,
             nyquist * 2.0,

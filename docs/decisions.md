@@ -9919,6 +9919,19 @@ since one more window a few frames from the last measures nothing the grid
 did not, and a column is drawn centred on the windows it was measured from
 -- drawn from where they start, a click lit the block before its own.
 
+**A note axis spans the notes, not a log axis's range.** *(2026-10-27.)* It
+was the log axis with its floor at C0 of the tuning, so it reached from
+16 Hz up to Nyquist like any log axis. A note axis is read in notes, so it
+spans the MIDI notes 0 to 127 at an even step a semitone -- about 8 Hz to
+12.5 kHz at A4 = 440 -- and what lies above note 127 is not on it. The
+floor is note 0 at the tuning and is the one number every reader of the
+axis takes (`ruler::axis_floor`: the texture, the spectrum curve, the
+ruler, the gesture). The mapping of a bin onto it is the rule every scale
+follows: a bin wider than a note is one block as tall as its band, many
+bins under a pixel show the largest, and nothing is interpolated -- the
+low octaves show the analysis's real resolution, which a longer window is
+what improves.
+
 **The analysis moved to the shared core, because a client has to write what
 the host reads.** The host has always accepted a spectrogram cache and only
 its own crate could make one. The window, the normalization, the pyramid and

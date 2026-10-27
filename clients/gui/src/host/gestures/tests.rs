@@ -2733,7 +2733,11 @@ fn the_frequency_zoom_stops_at_the_analysis_resolution() {
     }
     let (start, len) = x_window(&host, 80);
     // The window in bins, through the geometry the curve is drawn with.
-    let (nyquist, f_lo) = crate::host::graphics::signal::spectrum::axis_geometry(48_000.0);
+    let (nyquist, f_lo) = crate::host::graphics::signal::spectrum::axis_geometry(
+        48_000.0,
+        crate::spectrogram::FreqScale::Log,
+        440.0,
+    );
     let bins = |d: f64| {
         crate::host::ruler::display_to_hz(d, nyquist, crate::spectrogram::FreqScale::Log, f_lo)
             * 2048.0
@@ -2839,7 +2843,12 @@ fn a_pan_past_the_axis_end_stops_at_its_floor() {
         2048,
         48_000.0,
         crate::spectrogram::FreqScale::Log,
-        crate::host::graphics::signal::spectrum::axis_geometry(48_000.0).1,
+        crate::host::graphics::signal::spectrum::axis_geometry(
+            48_000.0,
+            crate::spectrogram::FreqScale::Log,
+            440.0,
+        )
+        .1,
         0.0,
     );
     let (start, len) = *seen.last().unwrap();

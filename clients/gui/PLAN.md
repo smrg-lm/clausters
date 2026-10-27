@@ -8885,7 +8885,7 @@ module of its own.
   reach, and after an edit asks for the whole take again first, at its new
   length (`frame::columns_owed`, `docs/app-behavior.md`).
 
-- ⬜ **The note axis is a log axis, not one over the notes' range**
+- ✅ **The note axis is a log axis, not one over the notes' range**
   *(found 2026-10-26 by the user, looking at the audio editor's
   spectrogram on its note scale)*. The note scale maps like the log scale,
   with its floor at C0 of the tuning, so it spans the log axis's range and
@@ -8898,6 +8898,9 @@ module of its own.
   are drawn), chosen among mathematical options the user asked for,
   before the shader and the ruler (`spectrogram.wgsl`, `host::ruler`
   `note_ticks`) are changed.
+  *(Closed 2026-10-27: the axis spans MIDI 0 to 127 at an even step
+  (`ruler::axis_floor`, the shader's fifth scale), and a bin is drawn as
+  the block it measured, the rule every scale now follows.)*
 
 - ⬜ **A number field's drag crosses its whole range in a few dozen
   pixels** *(found 2026-10-26, dragging the spectrogram's tuning field)*.

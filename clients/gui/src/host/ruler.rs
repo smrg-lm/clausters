@@ -467,10 +467,28 @@ fn fmt_samples(v: f64) -> String {
     }
 }
 
-/// **The reference tuning a note axis was laid out at**: its floor is C0 at
-/// that tuning, 57 semitones under A4.
+/// **The notes a note axis spans**: MIDI note 0 at its bottom and 127 at its
+/// top, an even step apiece -- the range a note has, about 8 Hz to 12.5 kHz
+/// at A4 = 440, rather than a log axis's floor up to Nyquist.
+pub(crate) const NOTE_SPAN: f64 = 127.0;
+
+/// **The normalized floor of a frequency axis** -- the `f_lo` its display
+/// mapping starts from, over a Nyquist of `nyquist`: MIDI note 0 at the
+/// reference tuning `a4` for a note axis, 20 Hz for every other. One
+/// function, because the texture, the curve, the ruler and the gesture must
+/// not disagree about where a hertz sits.
+pub(crate) fn axis_floor(scale: FreqScale, a4: f64, nyquist: f64) -> f64 {
+    let floor = match scale {
+        FreqScale::Note => clausters_core::scale::midi_to_hz_tuned(0.0, a4),
+        _ => 20.0f64.min(nyquist * 0.5).max(1.0),
+    };
+    (floor / nyquist.max(1.0)).clamp(1e-5, 0.5)
+}
+
+/// **The reference tuning a note axis was laid out at**: its floor is MIDI
+/// note 0 at that tuning, 69 semitones under A4.
 pub(crate) fn tuning_of(nyquist: f64, f_lo_norm: f64) -> f64 {
-    f_lo_norm.clamp(1e-5, 0.5) * nyquist * 2f64.powf(57.0 / 12.0)
+    f_lo_norm.clamp(1e-5, 0.5) * nyquist * 2f64.powf(69.0 / 12.0)
 }
 
 /// **A frequency as the note it is nearest** at reference `a4`, and the cents
@@ -855,7 +873,8 @@ pub(crate) fn readout_value(v: f64, span: f64) -> String {
 pub(crate) fn display_to_hz(d: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f64) -> f64 {
     match scale {
         FreqScale::Linear => nyquist * d,
-        FreqScale::Log | FreqScale::Note => nyquist * f_lo_norm.clamp(1e-5, 0.5).powf(1.0 - d),
+        FreqScale::Log => nyquist * f_lo_norm.clamp(1e-5, 0.5).powf(1.0 - d),
+        FreqScale::Note => nyquist * f_lo_norm.clamp(1e-5, 0.5) * 2f64.powf(NOTE_SPAN * d / 12.0),
         FreqScale::Mel => mel_to_hz(d * hz_to_mel(nyquist)),
         FreqScale::Bark => {
             let z0 = hz_to_bark(0.0);
@@ -869,9 +888,13 @@ pub(crate) fn display_to_hz(d: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f
 pub(crate) fn hz_to_display(f: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f64) -> f64 {
     match scale {
         FreqScale::Linear => f / nyquist,
-        FreqScale::Log | FreqScale::Note => {
+        FreqScale::Log => {
             let f_lo = f_lo_norm.clamp(1e-5, 0.5);
             1.0 - (f / nyquist).ln() / f_lo.ln()
+        }
+        FreqScale::Note => {
+            let f_lo = f_lo_norm.clamp(1e-5, 0.5) * nyquist;
+            12.0 * (f / f_lo).log2() / NOTE_SPAN
         }
         FreqScale::Mel => hz_to_mel(f) / hz_to_mel(nyquist),
         FreqScale::Bark => {
@@ -2050,8 +2073,14 @@ mod tests {
     fn a_note_axis_names_the_notes_at_its_tuning() {
         let nyq = 24_000.0;
         for a4 in [440.0, 415.0] {
-            let floor = clausters_core::scale::c0_hz(a4) / nyq;
+            let floor = axis_floor(FreqScale::Note, a4, nyq);
             assert!((tuning_of(nyq, floor) - a4).abs() < 1e-6);
+            // **MIDI 0 at the bottom, 127 at the top, an even step apiece**
+            for (m, d) in [(0.0, 0.0), (69.0, 69.0 / 127.0), (127.0, 1.0)] {
+                let f = clausters_core::scale::midi_to_hz_tuned(m, a4);
+                assert!((hz_to_display(f, nyq, FreqScale::Note, floor) - d).abs() < 1e-9);
+                assert!((display_to_hz(d, nyq, FreqScale::Note, floor) - f).abs() < 1e-6);
+            }
             let whole = hz_ticks(
                 nyq,
                 FreqScale::Note,

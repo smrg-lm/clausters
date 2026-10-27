@@ -46,8 +46,6 @@ use crate::host::widget::{Ruler, RulerDir};
 /// Sample rate assumed for the spectrum axis when the source brings none,
 /// matching the live views' fallback.
 const FALLBACK_SR: f64 = 48_000.0;
-/// The log axis floor of the spectral view, matching the spectrogram (~20 Hz).
-const F_LO_HZ: f64 = 20.0;
 /// The normalized-magnitude floor `Stft` maps from, in dB (its `REF_FLOOR`).
 const STFT_FLOOR: f32 = -120.0;
 /// Headroom added to an auto-fitted value range, as a fraction of the span.
@@ -159,6 +157,8 @@ pub struct PlotParams<'a> {
     pub db_floor: f32,
     pub db_ceil: f32,
     pub freq_scale: FreqScale,
+    /// The reference tuning a note axis is laid out at.
+    pub tuning: f32,
     /// The visible slice of the frequency display axis, normalized (`0, 1` =
     /// the whole axis) -- a navigable stored spectrum's own x window, read the
     /// same way the live one reads it.
@@ -354,7 +354,7 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
     let tag = format!("{:>4} {}", spec.fft_size, ruler::scale_tag(p.freq_scale));
     crate::host::graphics::corner_text(&mut Draw::new(mesh, m, theme), &tag, g.body);
     let nyquist = spec.nyquist.max(1.0);
-    let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
+    let f_lo = ruler::axis_floor(p.freq_scale, f64::from(p.tuning), nyquist);
     if let Some(strip) = g.x_strip {
         let ticks = ruler::hz_ticks_h(
             nyquist,
@@ -464,7 +464,7 @@ pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)
                 return;
             };
             let nyquist = spec.nyquist.max(1.0);
-            let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
+            let f_lo = ruler::axis_floor(p.freq_scale, f64::from(p.tuning), nyquist);
             let hz =
                 ruler::display_to_hz(p.x_view.0 + frac * p.x_view.1, nyquist, p.freq_scale, f_lo);
             let ch = if p.overlay {
@@ -603,6 +603,7 @@ mod tests {
             db_floor: -100.0,
             db_ceil: 0.0,
             freq_scale: FreqScale::Log,
+            tuning: 440.0,
             x_view: (0.0, 1.0),
             label: None,
             layers: plain(),

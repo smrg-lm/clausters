@@ -31,9 +31,8 @@ use crate::host::widget::RulerDir;
 
 /// The dB reference the magnitudes are floored at internally: the core's, so
 /// the analysis agrees with the spectrogram before the display dB window is
-/// applied. The lowest bin at 20 Hz on the log axis.
+/// applied.
 const REF_FLOOR: f32 = analysis::REF_FLOOR;
-const F_LO_HZ: f32 = 20.0;
 /// Sample rate assumed before the server publishes one (the browser has no
 /// segment to read it from), matching the oscilloscope's fallback.
 const FALLBACK_SR: f64 = 48_000.0;
@@ -134,6 +133,8 @@ pub(crate) struct SpectrumParams<'a> {
     pub db_floor: f32,
     pub db_ceil: f32,
     pub freq_scale: FreqScale,
+    /// The reference tuning a note axis is laid out at.
+    pub tuning: f32,
     pub peak_hold: bool,
     pub ruler: bool,
     pub ruler_y: bool,
@@ -161,15 +162,17 @@ pub(crate) struct SpectrumRegions {
 /// and the normalized floor the log axis starts at. One function, because the
 /// curve, the ruler and the gesture must not disagree about where a hertz sits;
 /// an unknown rate falls back to 48 kHz so the axis is still drawable.
-pub(crate) fn axis_geometry(sample_rate: f64) -> (f64, f64) {
+pub(crate) fn axis_geometry(sample_rate: f64, scale: FreqScale, tuning: f32) -> (f64, f64) {
     let sr = if sample_rate > 0.0 {
         sample_rate
     } else {
         FALLBACK_SR
     };
     let nyquist = sr * 0.5;
-    let f_lo = (F_LO_HZ as f64).min(nyquist * 0.5).max(1.0);
-    (nyquist, (f_lo / nyquist).clamp(1e-5, 0.5))
+    (
+        nyquist,
+        ruler::axis_floor(scale, f64::from(tuning), nyquist),
+    )
 }
 
 /// The fewest analysis bins a navigable frequency axis will show across its
@@ -302,7 +305,7 @@ pub(crate) fn draw_spectrum(
     let tag = format!("{:>4} {}", p.fft_size, ruler::scale_tag(p.freq_scale));
     crate::host::graphics::corner_text(&mut Draw::new(mesh, m, theme), &tag, body);
 
-    let (nyquist, f_lo_norm) = axis_geometry(p.sample_rate);
+    let (nyquist, f_lo_norm) = axis_geometry(p.sample_rate, p.freq_scale, p.tuning);
     let (nyquist, sr) = (nyquist as f32, nyquist as f32 * 2.0);
     let (x0, x_len) = p.x_view;
     if let Some(strip) = x_strip {
