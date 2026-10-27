@@ -2086,7 +2086,11 @@ export interface NumberOptions extends RangeOptions {
     stepper?: boolean;
 }
 
-/** A draggable numeric read-out over a range. Takes a control, like {@link knob}. */
+/**
+ * A draggable numeric read-out over a range. Takes a control, like
+ * {@link knob}. A vertical drag moves it one `step` a pixel (a thousandth of
+ * the range without one), ten with Shift and a tenth with Alt.
+ */
 export function number(
     control?: ControlLike | NumberOptions,
     options?: NumberOptions,

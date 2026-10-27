@@ -122,11 +122,6 @@ already carry it.
   editor's layout: the clip's half of the folded channels, a ruler detail,
   and the meter's width.
 
-- ⬜ **A number field's drag crosses its whole range in a few dozen
-  pixels** *(`clients/gui/PLAN.md`, Found by use)*. From the audio
-  editor's spectrogram settings; it takes a look at how scrubbable fields
-  drag.
-
 - ⬜ **The audio editor's switches are menu entries, not checks**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.

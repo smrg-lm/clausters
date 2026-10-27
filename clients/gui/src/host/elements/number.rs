@@ -1,8 +1,8 @@
 //! `number` -- the same value a `knob` holds, read as a figure in a field.
 //!
-//! Its drag is a knob's, verbatim ([`super::control::Dial`]): the two differ in
-//! the picture and in the height they ask for, which is the whole of what a
-//! catalog entry is once the interaction lives in one place.
+//! Its drag is a field's ([`super::control::Scrub`]): a step a pixel of
+//! travel, Shift for ten and Alt for a tenth, since a knob's drag spreads the
+//! range over a few heights of a body that here is one line tall.
 //!
 //! **And it is typed into**, as a numeric field is: with the focus, a digit,
 //! a point or a minus starts a figure in place of the value shown, Backspace
@@ -23,7 +23,7 @@ use crate::host::widget::Range;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
 use crate::host::widget::size::Natural;
 
-use super::control::{self, Dial};
+use super::control::{self, Scrub};
 
 /// A continuous value over `min`..`max`, shown as a number and dragged
 /// vertically.
@@ -33,7 +33,7 @@ pub struct Number {
     /// The `stepper` prop: a pair of arrows at the field's right edge that
     /// move the value one step each.
     pub stepper: bool,
-    drag: Dial,
+    drag: Scrub,
     /// The figure being typed, until Enter or the focus going elsewhere
     /// sets it.
     typed: Option<String>,
@@ -53,7 +53,7 @@ fn from_props(props: &Map<String, Value>) -> Number {
             .get("stepper")
             .and_then(crate::host::widget::parse::truthy)
             .unwrap_or(false),
-        drag: Dial::default(),
+        drag: Scrub::default(),
         typed: None,
     }
 }
@@ -151,11 +151,11 @@ impl Element for Number {
                 );
             }
         }
-        self.drag.press(&self.range, body.h, at)
+        self.drag.press(&self.range, at, input.mods)
     }
 
-    fn drag(&mut self, at: (f64, f64), _input: &Input) -> Events {
-        self.drag.drag(&mut self.range, at)
+    fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        self.drag.drag(&mut self.range, at, input.scale, input.mods)
     }
 
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
@@ -222,8 +222,8 @@ mod tests {
         serde_json::from_str(json).unwrap()
     }
 
-    /// The props and the drag are a knob's; what a `number` declares for itself
-    /// is the field's height and the figure in it.
+    /// The props are a knob's; what a `number` declares for itself is the
+    /// field's height and the figure in it.
     #[test]
     fn it_is_a_knob_in_a_field() {
         let m = Metrics::default();
@@ -244,6 +244,52 @@ mod tests {
         n.drag((40.0, -8.0), &input);
         assert!(n.range.value > 5.0, "up is more: {}", n.range.value);
         assert_eq!(n.value(), Some(OscType::Float(n.range.value)));
+    }
+
+    /// **A field drags a step a pixel**: ten pixels up take a tuning a
+    /// hertz at a step of a tenth, Shift ten steps a pixel and Alt a tenth
+    /// of one, and a modifier pressed mid-drag goes on from where the value
+    /// is rather than jumping.
+    #[test]
+    fn a_field_drags_a_step_a_pixel() {
+        let m = Metrics::default();
+        let mut n = from_props(&props(r#"{"min":200,"max":1000,"step":0.1,"value":440}"#));
+        let mut input = Input {
+            metrics: &m,
+            indent: 0.0,
+            rect: Rect::new(0.0, 0.0, 80.0, 24.0),
+            scale: 1.0,
+            mods: Mods::default(),
+            viewport: (400.0, 300.0),
+            clicks: 1,
+            time: None,
+        };
+        n.press((40.0, 12.0), &input);
+        n.drag((40.0, 2.0), &input);
+        assert!((n.range.value - 441.0).abs() < 1e-3, "{}", n.range.value);
+        input.mods.shift = true;
+        n.drag((40.0, 2.0), &input);
+        assert!(
+            (n.range.value - 441.0).abs() < 1e-3,
+            "no jump: {}",
+            n.range.value
+        );
+        n.drag((40.0, -8.0), &input);
+        assert!((n.range.value - 451.0).abs() < 1e-3, "{}", n.range.value);
+        input.mods = Mods {
+            alt: true,
+            ..Mods::default()
+        };
+        n.drag((40.0, -8.0), &input);
+        n.drag((40.0, -18.0), &input);
+        assert!((n.range.value - 451.1).abs() < 1e-3, "{}", n.range.value);
+        n.release((40.0, -18.0), true, &input);
+        // at twice the scale, a logical pixel is two device ones
+        input.mods = Mods::default();
+        input.scale = 2.0;
+        n.press((40.0, 12.0), &input);
+        n.drag((40.0, -8.0), &input);
+        assert!((n.range.value - 452.1).abs() < 1e-3, "{}", n.range.value);
     }
 
     /// **A number is typed into**: a figure replaces the value shown, Enter

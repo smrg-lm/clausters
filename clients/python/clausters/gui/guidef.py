@@ -1522,7 +1522,9 @@ def number(control=None, *, label: str | None = None, min: float | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A draggable numeric read-out over a range. ``text_size`` scales its
-    label and value.
+    label and value. A vertical drag moves it one ``step`` a pixel (a
+    thousandth of the range without one), ten with Shift and a tenth with
+    Alt.
 
     Takes a def's control positionally, like `knob`. ``step=1.0`` is what makes
     it a whole-number entry; ``curve`` bends its drag, as on `slider`.

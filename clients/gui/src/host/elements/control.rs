@@ -152,6 +152,59 @@ impl Dial {
     }
 }
 
+/// **A field's drag, a step a pixel**: where the cursor went down, the fraction
+/// the value stood at there, and the modifiers it is read with. `None` when
+/// nothing is being dragged.
+///
+/// A knob's drag spreads the range over a few heights of its body, and a
+/// field's body is one line: forty pixels crossed a tuning's whole range.
+/// A field is read to its step, so its drag moves one step a pixel of travel
+/// up or down -- a thousandth of the range where it has no step -- with
+/// Shift for ten and Alt for a tenth, the scrubbing fields' convention. The
+/// value is read from the cursor's place, as a knob's is, so a fine drag
+/// under a step does not stall; a modifier pressed or let go mid-drag
+/// anchors again where the hand is, so the value does not jump.
+#[derive(Debug, Clone, Default)]
+pub(super) struct Scrub(Option<(f64, f32, Mods)>);
+
+impl Scrub {
+    pub(super) fn press(&mut self, r: &Range, at: (f64, f64), mods: Mods) -> Claim {
+        self.0 = Some((at.1, r.fraction(), mods));
+        Claim::take()
+    }
+
+    /// One step of the drag at `at`, `scale` device pixels a logical one.
+    pub(super) fn drag(&mut self, r: &mut Range, at: (f64, f64), scale: f32, mods: Mods) -> Events {
+        let Some((y, t, held)) = self.0 else {
+            return Events::none();
+        };
+        let (y, t) = if held == mods {
+            (y, t)
+        } else {
+            (at.1, r.fraction())
+        };
+        self.0 = Some((y, t, mods));
+        let span = (r.max - r.min).abs();
+        let unit = if r.step > 0.0 && span > 0.0 {
+            (r.step / span).min(1.0)
+        } else {
+            0.001
+        };
+        let rate = match (mods.shift, mods.alt) {
+            (true, false) => 10.0,
+            (false, true) => 0.1,
+            _ => 1.0,
+        };
+        let pixels = (y - at.1) / f64::from(scale.max(f32::MIN_POSITIVE));
+        r.set_fraction((t + pixels as f32 * unit * rate).clamp(0.0, 1.0));
+        Events::value(OscType::Float(r.value))
+    }
+
+    pub(super) fn release(&mut self) {
+        self.0 = None;
+    }
+}
+
 /// **The keys a focused ranged control answers**: the arrows step it, Home and
 /// End take it to its ends. `None` for any other key, which then goes on to
 /// the host's key table.

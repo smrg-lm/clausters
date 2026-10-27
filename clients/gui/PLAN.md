@@ -8902,7 +8902,7 @@ module of its own.
   (`ruler::axis_floor`, the shader's fifth scale), and a bin is drawn as
   the block it measured, the rule every scale now follows.)*
 
-- ⬜ **A number field's drag crosses its whole range in a few dozen
+- ✅ **A number field's drag crosses its whole range in a few dozen
   pixels** *(found 2026-10-26, dragging the spectrogram's tuning field)*.
   A `number`'s drag is a knob's (`control::Dial`), which spreads the range
   over a few heights of the body, and a field's body is one line tall: 40
@@ -8910,3 +8910,5 @@ module of its own.
   so its drag wants a rate a hand can stop on (the step per pixel, or a
   fixed run of pixels for the range, with a modifier for fine), looked up
   in how scrubbable fields behave before it is chosen.
+  *(Closed 2026-10-27: a step a pixel, Shift ten and Alt a tenth, the
+  scrubbing fields' convention (`control::Scrub`).)*
