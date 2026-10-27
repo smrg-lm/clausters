@@ -210,15 +210,19 @@ impl SignalElement {
                         // analysis and a pyramid) and is read again.
                         //
                         // **And except a list**, which is two resources too: its
-                        // summary is a pyramid and its spectrogram is columns, so
-                        // the picture held is forgotten and the other one asked.
+                        // summary is a pyramid and its spectrogram is columns.
+                        // Both are kept while the other is shown -- the pyramid
+                        // here, with the finer grid a zoom grew in it, and the
+                        // columns in the frame's texture slot -- so a switch
+                        // back draws what it held at once, and only a picture
+                        // never resolved is asked for.
                         if (self.is_texture_view() && !texture) || (self.draws_traces() && !traces)
                         {
                             if self.reads_list() {
-                                if let Some(data) = self.source.data_mut() {
-                                    data.body = None;
+                                let held = self.source.data().is_some_and(|d| d.body.is_some());
+                                if !(self.draws_traces() && held) {
+                                    self.reload_asked = true;
                                 }
-                                self.reread();
                             } else if self.holds_resolved_buffer() {
                                 self.refresh_analysis();
                             } else {

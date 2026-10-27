@@ -931,8 +931,8 @@ mod tests {
     /// resource every form is rebuilt from, but a list of segments is read
     /// as a pyramid for a trace and as columns for a texture, so a take that
     /// moves to the spectrogram alone asks for it under the take key it
-    /// keeps -- on a live set, and on a def that rebuilds it -- instead of
-    /// holding the peaks it can never draw.
+    /// keeps -- on a live set, and on a def that rebuilds it. On a live set
+    /// the peaks are kept for the trace to come back to.
     #[test]
     fn a_list_moved_to_the_spectrogram_asks_for_it() {
         use crate::host::widget::element::{Bulk, Element, Samples};
@@ -960,6 +960,23 @@ mod tests {
         assert!(live.set("layers", &serde_json::json!("spectrogram")));
         assert!(matches!(live.take_reload(), Some(Bulk::Buffer(-2))));
         assert!(matches!(live.want(), Some(Bulk::Buffer(-2))));
+        // **The pyramid is kept while the spectrogram is shown**, with the
+        // grid a zoom grew in it, and is drawn again with nothing asked; it
+        // is never analyzed as if it were the list's samples.
+        assert!(
+            live.analyzable().is_none(),
+            "a list's columns are the list's"
+        );
+        assert!(live.source.data().unwrap().body.is_some());
+        assert!(live.set("layers", &serde_json::json!("peak rms")));
+        assert_eq!(live.take_reload(), None, "the trace has its picture");
+        assert!(live.slot_dirty, "and draws it again");
+        // An edit while the spectrogram is shown leaves the pyramid of the
+        // samples as they were, so it is forgotten and asked again.
+        assert!(live.set("layers", &serde_json::json!("spectrogram")));
+        live.take_reload();
+        live.reread();
+        assert!(live.source.data().unwrap().body.is_none());
 
         let was = summarized();
         let mut rebuilt = def("spectrogram");

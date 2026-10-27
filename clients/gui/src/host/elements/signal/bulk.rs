@@ -37,6 +37,9 @@ impl SignalElement {
     /// buffer) is left alone: it has nothing to re-read, and clearing it would
     /// erase the samples instead of refreshing it.
     pub fn reread(&mut self) {
+        // a list's pyramid kept while its spectrogram is shown is not on
+        // screen, and is of the samples as they were
+        let unseen = self.reads_list() && !self.draws_traces();
         let Source::Data(data) = &mut self.source else {
             return;
         };
@@ -49,7 +52,7 @@ impl SignalElement {
         // filling in from the left. A file or a cache is read again at once,
         // and forgets.
         let keeps = data.buffer.is_some() && data.path.is_none() && data.cache.is_none();
-        if !keeps {
+        if !keeps || unseen {
             data.body = None;
         }
         // **The ask a loader answers.** The comment on the `reload` prop says
@@ -142,7 +145,13 @@ impl SignalElement {
                     sample_rate: self.editor.sample_rate,
                 });
             }
-            return data.buffer.filter(|_| data.is_empty()).map(Bulk::Buffer);
+            // a list's columns are asked of the list whatever pyramid it
+            // keeps for its trace, as a file's analysis is asked of the file
+            let list = data.segments.is_some();
+            return data
+                .buffer
+                .filter(|_| data.is_empty() || list)
+                .map(Bulk::Buffer);
         }
         if !data.bulk {
             // A sequence: whole samples, and only when it has none yet.

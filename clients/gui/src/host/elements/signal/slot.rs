@@ -107,15 +107,19 @@ impl SignalElement {
     }
 
     /// **The samples an analysis can be run over**, interleaved.
-    fn analyzable(&self) -> Option<(Vec<f32>, usize)> {
+    pub(super) fn analyzable(&self) -> Option<(Vec<f32>, usize)> {
         self.own_analyzable()
     }
 
     /// The samples of this element's own source: the inline run, else the
     /// ones a mapped pyramid holds. `None` for a source that is a summary and
-    /// nothing else.
+    /// nothing else, and for a list, whose columns are asked of the list over
+    /// the span shown whatever pyramid it keeps for its trace.
     fn own_analyzable(&self) -> Option<(Vec<f32>, usize)> {
         let data = self.source.data()?;
+        if data.segments.is_some() {
+            return None;
+        }
         if !data.samples.is_empty() {
             return Some((data.samples.to_vec(), data.channels.max(1)));
         }

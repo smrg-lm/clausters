@@ -173,9 +173,19 @@ code that keeps it lives.
   that resolves. A view draws the span where its columns reach and the whole
   take everywhere else, so a zoom out, or a pan past what is held, shows the
   whole take coarser at once and never stretches the span's first or last
-  column over the rest. After an edit the whole take is asked again first,
+  column over the rest. The span reaches half a view past either edge and the
+  next is asked within a quarter of a view of what is held, as a waveform's
+  detail is. The whole take, analyzed as the file's spectral summary, is read
+  from the summary. After an edit the whole take is asked again first,
   at the length the take has now, and the picture before the edit is drawn
   only where its columns reach.
+- **A view switch draws what the other view left.** Moving between the
+  waveform and the spectrogram keeps both pictures of a take: the summary
+  with the finer grid a zoom grew in it, and the columns, whole take and
+  span. Switching back draws what was held at once, at the zoom the window
+  has, and only a picture never resolved is asked for; an edit made while
+  the other view is shown forgets the hidden summary, which is of the take
+  as it was.
 - **A time is never narrowed.** A group holds its times as NTP ticks
   (`clausters_core::time::Time`, an `i64` of 2^-32 s) at the rate its
   members speak; on the wire a whole frame crosses as an `int64` and a
