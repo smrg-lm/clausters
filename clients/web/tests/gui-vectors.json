@@ -220,7 +220,8 @@
               "unit": "hz"
             }
           },
-          "normalize": 1
+          "normalize": 1,
+          "interpolate": 1
         },
         {
           "type": "signal",

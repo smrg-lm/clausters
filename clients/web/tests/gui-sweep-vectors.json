@@ -3287,6 +3287,16 @@
  },
  {
   "builder": "spectrogram",
+  "option": "interpolate",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "interpolate": 1
+  }
+ },
+ {
+  "builder": "spectrogram",
   "option": "tuning",
   "value": 3.5,
   "tree": {

@@ -221,9 +221,14 @@ pub(crate) trait Front {
     }
 
     /// **A view's columns, whole**: the texture of the span it asked for, in
-    /// place of the one it drew.
+    /// place of the one it drew. None is an ask let go: the view is drawn
+    /// again, which asks for what it shows now.
     fn place_columns(&mut self, done: crate::host::columns::ColumnsDone) {
-        if !self.window_open(done.def_id) || done.stfts.is_empty() {
+        if !self.window_open(done.def_id) {
+            return;
+        }
+        if done.stfts.is_empty() {
+            self.redraw_window(done.def_id);
             return;
         }
         let first = &done.stfts[0];

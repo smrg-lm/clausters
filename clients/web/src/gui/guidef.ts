@@ -2826,6 +2826,10 @@ export function waveform(
  * rectangular, `1` sine, `2` Welch, `3` Hamming, `4` Blackman. `normalize`
  * draws each frequency band at its own scale, its loudest at the top of the
  * colours, so a band with little energy is not left dim beside a loud one.
+ * Every pixel shows a magnitude the analysis measured, a bin or a column
+ * larger than a pixel drawn as a block; `interpolate` draws it smooth
+ * instead, a curve through the bins and a line between the columns, which
+ * shows between them values nothing measured.
  */
 export function spectrogram(
     options: SourceOptions & SegmentsOptions & TimelineOptions & {
@@ -2841,6 +2845,8 @@ export function spectrogram(
         wintype?: number;
         /** Each frequency band at its own scale. */
         normalize?: boolean;
+        /** Drawn smooth between the bins and the columns, rather than in blocks. */
+        interpolate?: boolean;
         /** The reference A4 of a `"note"` axis, in hertz. */
         tuning?: number;
         /**
@@ -2860,8 +2866,8 @@ export function spectrogram(
 ): GuiNode {
     const {
         cache, path, buffer, segments, data, blob, channels, folded, windowSize,
-        hop, dbFloor, dbCeil, freqScale, logFreq, colormap, wintype, normalize, tuning,
-        layers, rulerY, ...timeline
+        hop, dbFloor, dbCeil, freqScale, logFreq, colormap, wintype, normalize,
+        interpolate, tuning, layers, rulerY, ...timeline
     } = options;
     return node("signal", {
         view: "spectrogram",
@@ -2878,6 +2884,7 @@ export function spectrogram(
             ["colormap", colormap],
             ["wintype", wintype],
             ["normalize", flag(normalize)],
+            ["interpolate", flag(interpolate)],
             ["tuning", tuning],
             ["layers", layers],
         ]),

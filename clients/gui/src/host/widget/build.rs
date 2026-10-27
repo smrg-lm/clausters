@@ -153,6 +153,10 @@ fn spectral_props(
             .get("normalize")
             .and_then(truthy)
             .unwrap_or(base.normalize),
+        interpolate: props
+            .get("interpolate")
+            .and_then(truthy)
+            .unwrap_or(base.interpolate),
         tuning: signal::tuning_of(number(props, "tuning", base.tuning)),
     }
 }

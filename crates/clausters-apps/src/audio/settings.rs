@@ -4,11 +4,13 @@
 //!
 //! The analysis is a window of a size and a shape every so many frames,
 //! which the panel says as an overlap, as a phase vocoder's FFT does: `0` is
-//! windows laid end to end, and the overlap rises to the most there can be,
-//! a window a frame. The display is the frequency axis (a note axis at a
-//! reference tuning among them), the colours, and whether each band is drawn
-//! at its own scale. All of it is a view state, outside the history, and it
-//! reaches the picture as the spectrogram's own props.
+//! windows laid end to end, and each step after it halves the hop, to a
+//! sixteenth of the window. The display is the frequency axis (a note axis at
+//! a reference tuning among them), the colours and the levels they span (a
+//! gain and a range in decibels), whether the picture is drawn smooth rather
+//! than in blocks, and whether each band is drawn at its own scale. All of it
+//! is a view state, outside the history, and it reaches the picture as the
+//! spectrogram's own props.
 //!
 //! The panel's widgets are named here ([`names`]) and numbered by the caller
 //! with the dialogs', so a window composed without them has no panel, and a
@@ -36,6 +38,27 @@ pub const SHAPES: &[(&str, &str, i32)] = &[
     ("rectangular", "Rectangular", -1),
 ];
 
+/// **The overlaps offered**, as fractions of the window and as the panel
+/// says them: each halves the hop of the one before. A hop that is the
+/// window over a power of two lies on the grid of every coarser one and of
+/// the power-of-two columns a view asks for, so the windows a zoom draws are
+/// the ones already analyzed; a percent of a window lands on neither, and
+/// past a sixteenth of the window a closer one shows nothing a pixel can.
+pub const OVERLAPS: &[(f64, &str)] = &[
+    (0.0, "0%"),
+    (0.5, "50%"),
+    (0.75, "75%"),
+    (0.875, "87.5%"),
+    (0.9375, "93.75%"),
+];
+
+/// The levels the colours span, in decibels, from the most contrast to the
+/// least.
+pub const RANGE_DB: (f64, f64) = (20.0, 120.0);
+
+/// How far the top of the colours is lowered below full scale, in decibels.
+pub const GAIN_DB: (f64, f64) = (0.0, 60.0);
+
 /// The frequency axes, by name, in the order offered.
 pub const SCALES: &[(&str, &str)] = &[
     ("linear", "Linear"),
@@ -60,7 +83,7 @@ pub struct Settings {
     pub window: usize,
     /// The window's shape, by name ([`SHAPES`]).
     pub shape: String,
-    /// How much a window overlaps the next, in `0..=1`.
+    /// How much a window overlaps the next, one of [`OVERLAPS`].
     pub overlap: f64,
     /// The frequency axis, by name ([`SCALES`]).
     pub scale: String,
@@ -68,6 +91,13 @@ pub struct Settings {
     pub tuning: f64,
     /// The colours, by name ([`COLORMAPS`]).
     pub colormap: String,
+    /// The levels the colours span below their top, in decibels.
+    pub range: f64,
+    /// How far the top of the colours is below full scale, in decibels: a
+    /// quiet take raised to the colours a loud one is drawn in.
+    pub gain: f64,
+    /// Drawn smooth between the bins and the columns, rather than in blocks.
+    pub interpolate: bool,
     /// Each frequency band drawn at its own scale.
     pub normalize: bool,
 }
@@ -81,6 +111,9 @@ impl Default for Settings {
             scale: "linear".into(),
             tuning: 440.0,
             colormap: "viridis".into(),
+            range: 90.0,
+            gain: 0.0,
+            interpolate: false,
             normalize: false,
         }
     }
@@ -95,6 +128,9 @@ pub fn names() -> Vec<String> {
         "scale",
         "tuning",
         "colormap",
+        "range",
+        "gain",
+        "interpolate",
         "normalize",
     ]
     .iter()
@@ -120,6 +156,16 @@ impl Settings {
             .map_or(0, |(.., w)| *w)
     }
 
+    fn overlap_index(&self) -> usize {
+        (0..OVERLAPS.len())
+            .min_by(|&a, &b| {
+                (OVERLAPS[a].0 - self.overlap)
+                    .abs()
+                    .total_cmp(&(OVERLAPS[b].0 - self.overlap).abs())
+            })
+            .unwrap_or(1)
+    }
+
     fn colormap_index(&self) -> usize {
         COLORMAPS
             .iter()
@@ -136,6 +182,9 @@ impl Settings {
             "freq_scale": self.scale,
             "tuning": self.tuning,
             "colormap": self.colormap_index(),
+            "db_ceil": -self.gain,
+            "db_floor": -self.gain - self.range,
+            "interpolate": u8::from(self.interpolate),
             "normalize": u8::from(self.normalize),
         })
     }
@@ -157,8 +206,11 @@ impl Settings {
         if let Some(overlap) = request.get("overlap") {
             next.overlap = overlap
                 .as_f64()
-                .filter(|o| (0.0..=1.0).contains(o))
-                .ok_or("an overlap is a fraction from 0 to 1")?;
+                .filter(|o| OVERLAPS.iter().any(|(f, _)| (f - o).abs() < 1e-9))
+                .ok_or_else(|| {
+                    let offered: Vec<f64> = OVERLAPS.iter().map(|(f, _)| *f).collect();
+                    format!("an overlap is one of {offered:?}")
+                })?;
         }
         if let Some(scale) = request.get("scale") {
             next.scale = named(scale, SCALES.iter().map(|(n, _)| *n), "frequency axis")?;
@@ -172,6 +224,24 @@ impl Settings {
         if let Some(colormap) = request.get("colormap") {
             next.colormap = named(colormap, COLORMAPS.iter().map(|(n, _)| *n), "colormap")?;
         }
+        if let Some(range) = request.get("range") {
+            next.range = range
+                .as_f64()
+                .filter(|r| (RANGE_DB.0..=RANGE_DB.1).contains(r))
+                .ok_or_else(|| format!("a range is {RANGE_DB:?} dB"))?;
+        }
+        if let Some(gain) = request.get("gain") {
+            next.gain = gain
+                .as_f64()
+                .filter(|g| (GAIN_DB.0..=GAIN_DB.1).contains(g))
+                .ok_or_else(|| format!("a gain is {GAIN_DB:?} dB"))?;
+        }
+        if let Some(interpolate) = request.get("interpolate") {
+            next.interpolate = interpolate
+                .as_bool()
+                .or_else(|| interpolate.as_f64().map(|n| n != 0.0))
+                .ok_or("interpolate is on or off")?;
+        }
         if let Some(normalize) = request.get("normalize") {
             next.normalize = normalize
                 .as_bool()
@@ -184,8 +254,8 @@ impl Settings {
 
     /// **What a report from the panel's widget `name` changes**, read as the
     /// request [`Settings::set`] takes: a choice reports the index of what was
-    /// chosen, the overlap its percent, the tuning its hertz and the switch
-    /// its state. `None` for a report that is not a value.
+    /// chosen, a field its figure and a switch its state. `None` for a report
+    /// that is not a value.
     pub fn read(name: &str, value: &Value) -> Option<Value> {
         let part = name.strip_prefix(PREFIX)?.strip_prefix(':')?;
         let number = value
@@ -195,10 +265,13 @@ impl Settings {
         Some(match part {
             "window" => json!({"window": WINDOWS.get(index)?}),
             "shape" => json!({"shape": SHAPES.get(index)?.0}),
-            "overlap" => json!({"overlap": (number / 100.0).clamp(0.0, 1.0)}),
+            "overlap" => json!({"overlap": OVERLAPS.get(index)?.0}),
             "scale" => json!({"scale": SCALES.get(index)?.0}),
             "tuning" => json!({"tuning": number}),
             "colormap" => json!({"colormap": COLORMAPS.get(index)?.0}),
+            "range" => json!({"range": number.clamp(RANGE_DB.0, RANGE_DB.1)}),
+            "gain" => json!({"gain": number.clamp(GAIN_DB.0, GAIN_DB.1)}),
+            "interpolate" => json!({"interpolate": number != 0.0}),
             "normalize" => json!({"normalize": number != 0.0}),
             _ => return None,
         })
@@ -223,7 +296,18 @@ impl Settings {
             .iter()
             .position(|(n, _)| *n == self.scale)
             .unwrap_or(0);
-        let settings: Vec<Value> = [
+        let field = |name: &str, label: &str, (min, max): (f64, f64), step: f64, value: f64| {
+            id(name).map(|id| {
+                json!({"type": "number", "id": id, "label": label, "stepper": true,
+                    "min": min, "max": max, "step": step, "value": value})
+            })
+        };
+        let toggle = |name: &str, label: &str, on: bool| {
+            id(name).map(
+                |id| json!({"type": "toggle", "id": id, "label": label, "value": u8::from(on)}),
+            )
+        };
+        let analysis = vec![
             choice(
                 "window",
                 "Window size",
@@ -236,43 +320,50 @@ impl Settings {
                 SHAPES.iter().map(|(_, l, _)| *l).collect(),
                 shape,
             ),
-            id("overlap").map(|id| {
-                json!({"type": "slider", "id": id, "label": "Overlap %",
-                    "min": 0, "max": 100, "step": 1,
-                    "value": (self.overlap * 100.0).round()})
-            }),
+            choice(
+                "overlap",
+                "Overlap",
+                OVERLAPS.iter().map(|(_, l)| *l).collect(),
+                self.overlap_index(),
+            ),
+        ];
+        let display = vec![
             choice(
                 "scale",
                 "Frequency scale",
                 SCALES.iter().map(|(_, l)| *l).collect(),
                 scale,
             ),
-            id("tuning").map(|id| {
-                json!({"type": "number", "id": id, "label": "Tuning (A\u{2084}, Hz)", "stepper": true,
-                    "min": 200, "max": 1000, "step": 0.1, "value": self.tuning})
-            }),
+            field(
+                "tuning",
+                "Tuning (A\u{2084}, Hz)",
+                (200.0, 1000.0),
+                0.1,
+                self.tuning,
+            ),
             choice(
                 "colormap",
                 "Colors",
                 COLORMAPS.iter().map(|(_, l)| *l).collect(),
                 self.colormap_index(),
             ),
-            id("normalize").map(|id| {
-                json!({"type": "toggle", "id": id, "label": "Normalize bands",
-                    "value": u8::from(self.normalize)})
-            }),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        // one section, the spectrogram's, folded and unfolded whole
-        let sections: Vec<Value> = (!settings.is_empty())
-            .then(|| {
-                let mut section = crate::panels::section("Spectrogram", false, settings);
-                section.insert("flow".into(), json!("col"));
-                Value::Object(section)
-            })
+            field("range", "Range (dB)", RANGE_DB, 1.0, self.range),
+            field("gain", "Gain (dB)", GAIN_DB, 1.0, self.gain),
+            toggle("interpolate", "Interpolate", self.interpolate),
+            toggle("normalize", "Normalize bands", self.normalize),
+        ];
+        // two sections, what is measured and how it is drawn, each folded
+        // and unfolded whole
+        let sections: Vec<Value> = [("Analysis", analysis), ("Display", display)]
             .into_iter()
+            .filter_map(|(title, widgets)| {
+                let widgets: Vec<Value> = widgets.into_iter().flatten().collect();
+                (!widgets.is_empty()).then(|| {
+                    let mut section = crate::panels::section(title, false, widgets);
+                    section.insert("flow".into(), json!("col"));
+                    Value::Object(section)
+                })
+            })
             .collect();
         crate::panels::column(sections, WIDTH)
     }
@@ -303,18 +394,24 @@ mod tests {
             .collect()
     }
 
-    /// **The overlap is a phase vocoder's**: windows end to end at none, half
-    /// a window apart at a half, a window a frame at the most.
+    /// **The overlap is a phase vocoder's**: windows end to end at none, and
+    /// each overlap offered halves the hop, to a sixteenth of the window. One
+    /// of none of them is refused.
     #[test]
     fn an_overlap_is_the_window_less_its_hop() {
         let mut s = Settings::default();
         assert_eq!(s.hop(), 512);
-        s.overlap = 0.0;
-        assert_eq!(s.hop(), 1024);
-        s.overlap = 0.75;
-        assert_eq!(s.hop(), 256);
-        s.overlap = 1.0;
-        assert_eq!(s.hop(), 1);
+        let hops: Vec<usize> = OVERLAPS
+            .iter()
+            .map(|(o, _)| {
+                s.set(&json!({ "overlap": o })).unwrap();
+                s.hop()
+            })
+            .collect();
+        assert_eq!(hops, [1024, 512, 256, 128, 64]);
+        assert!(s.set(&json!({"overlap": 0.6})).is_err());
+        assert!(s.set(&json!({"overlap": 1.0})).is_err());
+        assert_eq!(s.hop(), 64);
     }
 
     /// **The props are the spectrogram's own**, and a request is read whole or
@@ -324,13 +421,15 @@ mod tests {
         let mut s = Settings::default();
         s.set(
             &json!({"window": 2048, "shape": "blackman", "overlap": 0.75,
-            "scale": "note", "tuning": 432.0, "colormap": "magma", "normalize": true}),
+            "scale": "note", "tuning": 432.0, "colormap": "magma", "range": 60.0,
+            "gain": 20.0, "interpolate": true, "normalize": true}),
         )
         .unwrap();
         assert_eq!(
             s.props(),
             json!({"window_size": 2048, "hop": 512, "wintype": 4, "freq_scale": "note",
-                "tuning": 432.0, "colormap": 1, "normalize": 1})
+                "tuning": 432.0, "colormap": 1, "db_ceil": -20.0, "db_floor": -80.0,
+                "interpolate": 1, "normalize": 1})
         );
         let before = s.clone();
         assert!(
@@ -339,6 +438,8 @@ mod tests {
         );
         assert!(s.set(&json!({"window": 3000})).is_err());
         assert!(s.set(&json!({"tuning": 50.0})).is_err());
+        assert!(s.set(&json!({"range": 5.0})).is_err());
+        assert!(s.set(&json!({"gain": -10.0})).is_err());
         assert_eq!(s, before);
     }
 
@@ -350,19 +451,32 @@ mod tests {
         let panel = s.panel(&ids()).expect("a panel");
         assert_eq!(panel["type"], "plane");
         let sections = panel["children"].as_array().unwrap();
-        assert_eq!(sections.len(), 1, "every setting in one section");
-        assert_eq!(sections[0]["title"], "Spectrogram");
-        assert_eq!(sections[0]["children"].as_array().unwrap().len(), 7);
-        assert_eq!(sections[0]["children"][3]["index"], 0, "a linear scale");
-        assert_eq!(sections[0]["children"][0]["index"], 2, "1024 frames");
-        assert_eq!(sections[0]["children"][2]["value"], 50.0, "half");
+        let titles: Vec<&Value> = sections.iter().map(|s| &s["title"]).collect();
+        assert_eq!(titles, ["Analysis", "Display"]);
+        let analysis = &sections[0]["children"];
+        let display = &sections[1]["children"];
+        assert_eq!(analysis.as_array().unwrap().len(), 3);
+        assert_eq!(display.as_array().unwrap().len(), 7);
+        assert_eq!(analysis[0]["index"], 2, "1024 frames");
+        assert_eq!(analysis[2]["index"], 1, "half");
+        assert_eq!(display[0]["index"], 0, "a linear scale");
+        assert_eq!(display[3]["value"], 90.0, "the range");
         assert_eq!(
             Settings::read("settings:window", &json!(3)),
             Some(json!({"window": 2048}))
         );
         assert_eq!(
-            Settings::read("settings:overlap", &json!(75.0)),
+            Settings::read("settings:overlap", &json!(2)),
             Some(json!({"overlap": 0.75}))
+        );
+        assert_eq!(Settings::read("settings:overlap", &json!(5)), None);
+        assert_eq!(
+            Settings::read("settings:range", &json!(60.0)),
+            Some(json!({"range": 60.0}))
+        );
+        assert_eq!(
+            Settings::read("settings:interpolate", &json!(1)),
+            Some(json!({"interpolate": true}))
         );
         assert_eq!(
             Settings::read("settings:scale", &json!("4")),

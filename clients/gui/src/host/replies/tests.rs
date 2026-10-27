@@ -791,8 +791,10 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         whole.hop >= clausters_core::spectra::COLUMN_FRAMES,
         "{whole:?}"
     );
-    // **Another analysis owes the whole take again**: a window, a hop or a
-    // shape the held columns are not of.
+    // **Another analysis owes what is shown again**: a window, a hop or a
+    // shape the held columns are not of. Zoomed in, that is the span on
+    // screen and not the whole take, which would read and analyze every
+    // frame of it before the view saw anything.
     for analysis in [(2048, 1024, 0), (512, 128, 0), (512, 256, 4)] {
         let owed =
             crate::host::frame::columns_owed_of(stft, Some(stft), None, &nav, 200.0, analysis)
@@ -801,6 +803,21 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
             panic!("{owed:?}")
         };
         assert_eq!((again.start, again.window), (0, analysis.0), "{analysis:?}");
+        let owed =
+            crate::host::frame::columns_owed_of(&held, Some(stft), None, &near, 200.0, analysis)
+                .expect("the span's columns of the analysis asked for");
+        let crate::host::frame::Owed::Columns(shown) = owed else {
+            panic!("{owed:?}")
+        };
+        assert_eq!(shown.window, analysis.0, "{analysis:?}");
+        assert!(
+            shown.start <= frames && shown.start + 2 * analysis.1 > frames,
+            "the view, from where it starts: {shown:?}"
+        );
+        assert!(
+            shown.hop * shown.columns < 2 * near.len as usize,
+            "the view alone: {shown:?}"
+        );
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

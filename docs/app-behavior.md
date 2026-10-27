@@ -179,7 +179,11 @@ code that keeps it lives.
   waveform's detail is. The whole take, analyzed as the file's spectral summary, is read
   from the summary. After an edit the whole take is asked again first,
   at the length the take has now, and the picture before the edit is drawn
-  only where its columns reach.
+  only where its columns reach. After a change of analysis (a window, an
+  overlap, a shape) the span shown is asked first, and the whole take only
+  when a view shows it, unless the summary answers it; an ask of the
+  analysis before is let go at its next answer, so changing a setting many
+  times analyzes only the last.
 - **A redefine keeps what has not changed.** A window redefined in place (a
   panel shown or hidden beside a view) keeps the pictures of every view that
   reads the buffer it read: the view does not empty and is not asked for
@@ -189,7 +193,9 @@ code that keeps it lives.
   inside one bin or one column shows that value, so a bin taller than a pixel
   is a block as tall as its band and a column wider than a pixel a block as
   wide as its hop; a pixel over several shows the largest. Nothing is
-  interpolated between two values. No column is finer than the hop between
+  interpolated between two values unless the view asks to be drawn smooth
+  (`interpolate`), a look the settings offer beside the colours and the
+  range of levels they span. No column is finer than the hop between
   the analysis's windows, so a zoom past it draws the same windows wider and
   analyzes nothing; and a column is drawn centred on the windows it was
   measured from, so a click lights the block it is in.

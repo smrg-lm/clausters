@@ -127,6 +127,7 @@ impl SignalElement {
                 .map(|n| self.spectral.wintype = n as i32)
                 .is_some(),
             "normalize" => truthy(v).map(|b| self.spectral.normalize = b).is_some(),
+            "interpolate" => truthy(v).map(|b| self.spectral.interpolate = b).is_some(),
             "tuning" => v
                 .as_f64()
                 .map(|x| self.spectral.tuning = super::tuning_of(x as f32))
@@ -395,6 +396,7 @@ mod data_tests {
         assert!(e.set("wintype", &serde_json::json!(4)));
         assert!(e.slot_dirty, "and so is another window");
         assert!(e.set("normalize", &serde_json::json!(1)));
+        assert!(e.set("interpolate", &serde_json::json!(true)));
         assert!(e.set("freq_scale", &serde_json::json!("note")));
         assert!(e.set("tuning", &serde_json::json!(432.0)));
         let look = e.look();

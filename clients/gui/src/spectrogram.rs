@@ -540,6 +540,8 @@ pub struct SpectrogramView {
     hole: Option<(f64, f64)>,
     /// Each frequency band drawn at its own scale.
     normalize: bool,
+    /// Drawn smooth between the bins and the columns, rather than in blocks.
+    interpolate: bool,
     /// The reference A4 of a note axis, in hertz.
     tuning: f32,
     /// **The loudest each row is in what this view holds**, and what the
@@ -580,6 +582,7 @@ impl SpectrogramView {
             overview: None,
             hole: None,
             normalize: false,
+            interpolate: false,
             tuning: 440.0,
             rows: Vec::new(),
             rows_on_card: Vec::new(),
@@ -710,10 +713,12 @@ impl SpectrogramView {
     }
 
     /// **How the magnitudes are shaped** before the colours: each band at
-    /// its own scale (`normalize`), and the reference A4 a note axis is laid
-    /// out at (`tuning`). Uniform writes, like the display.
-    pub fn set_shaping(&mut self, normalize: bool, tuning: f32) {
+    /// its own scale (`normalize`), drawn smooth rather than in blocks
+    /// (`interpolate`), and the reference A4 a note axis is laid out at
+    /// (`tuning`). Uniform writes, like the display.
+    pub fn set_shaping(&mut self, normalize: bool, interpolate: bool, tuning: f32) {
         self.normalize = normalize;
+        self.interpolate = interpolate;
         self.tuning = tuning;
     }
 
@@ -886,7 +891,12 @@ impl SpectrogramView {
                 self.framing.offset[1],
             ],
             cover: [across(a), across(b), hole_a, hole_b],
-            shape: [f32::from(u8::from(self.normalize)), 0.0, 0.0, 0.0],
+            shape: [
+                f32::from(u8::from(self.normalize)),
+                f32::from(u8::from(self.interpolate)),
+                0.0,
+                0.0,
+            ],
         }
     }
 }
@@ -914,6 +924,7 @@ impl TimelineView for SpectrogramView {
             overview.alpha = self.alpha;
             overview.framing = self.framing;
             overview.normalize = self.normalize;
+            overview.interpolate = self.interpolate;
             overview.tuning = self.tuning;
             overview.hole = Some(self.covers());
             overview.upload(device, queue, renderers, view, render_width_px);

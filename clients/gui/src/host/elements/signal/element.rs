@@ -680,6 +680,7 @@ impl SignalElement {
             freq_scale: self.spectral.freq_scale,
             colormap: self.spectral.colormap,
             normalize: self.spectral.normalize,
+            interpolate: self.spectral.interpolate,
             tuning: self.spectral.tuning,
             analysis: (
                 self.spectral.fft_size,

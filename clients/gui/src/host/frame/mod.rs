@@ -820,13 +820,17 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
 /// A picture of a list is two: **the whole take**, about a column to the
 /// pixel when the view shows all of it, which is drawn wherever nothing finer
 /// is held, and **the span shown**, asked when the view is narrower than the
-/// whole take's columns resolve. The whole take is owed first, and again
-/// whenever the list changes, at the length the take has now, and whenever
-/// the view is told to analyze otherwise (`analysis`: the window, the hop
-/// between windows and their shape). A whole take analyzed as the file's
-/// spectral summary is asked at least a column of the summary apart
+/// whole take's columns resolve. A whole take analyzed as the file's
+/// spectral summary is owed first, and again whenever the list changes, at
+/// the length the take has now, and whenever the view is told to analyze
+/// that way again (`analysis`: the window, the hop between windows and their
+/// shape): it is asked at least a column of the summary apart
 /// (`clausters_core::spectra`), so it is read from the summary with no
-/// sample, and a view finer than that asks for its span. The span asked
+/// sample, and a view finer than that asks for its span. A whole take of any
+/// other analysis is asked ahead of the view only after an edit: it reads
+/// and analyzes every frame of the take, so after a change of analysis the
+/// span shown comes first and the whole take is asked only by a view that
+/// shows it. The span asked
 /// reaches half a view past either edge ([`OWED_REACH`]), once the view
 /// itself is held (a span comes whole, so what is on screen is asked alone
 /// first when nothing held draws it), and is asked again
@@ -900,27 +904,21 @@ pub(crate) fn columns_owed_of(
     };
     // a picture of another analysis than the one asked for is no picture
     let analyzed = |s: &Stft| s.window_size() == window && s.analysis() == (hop.max(1), wintype);
-    let overview = match overview {
-        Some(o)
-            if stale.is_none() && o.total_samples() == total && o.n_frames() > 1 && analyzed(o) =>
-        {
-            o
-        }
-        _ => {
-            let summarized =
-                window == spectra::WINDOW && (hop == spectra::HOP || hop == 0) && wintype == 0;
-            let hop = power_hop(total as f64 / width);
-            return Some(span(
-                0,
-                total,
-                if summarized {
-                    hop.max(spectra::COLUMN_FRAMES)
-                } else {
-                    hop
-                },
-            ));
-        }
-    };
+    let overview = overview.filter(|o| {
+        stale.is_none() && o.total_samples() == total && o.n_frames() > 1 && analyzed(o)
+    });
+    // With no picture of the whole take of this analysis, the whole take is
+    // asked first where the file's spectral summary answers it, in a few
+    // milliseconds, and after an edit, whose windows the answerer mostly
+    // holds already and whose old picture would be drawn at the old length.
+    // Another analysis reads and analyzes the whole take for it, a second or
+    // more of a long one, so what is on screen comes first and the rest only
+    // when a view shows it.
+    let summarized = window == spectra::WINDOW && (hop == spectra::HOP || hop == 0) && wintype == 0;
+    if overview.is_none() && (summarized || stale.is_some()) {
+        let hop = power_hop(total as f64 / width);
+        return Some(span(0, total, hop.max(spectra::COLUMN_FRAMES)));
+    }
     let want = power_hop(nav.len / width).max(finest);
     // the view and `reach` frames past either edge, clamped to the take
     let span_of = |reach: f64| {
@@ -940,7 +938,7 @@ pub(crate) fn columns_owed_of(
             && b.min(total.saturating_sub(1)) <= last
     };
     let near = span_of(nav.len * OWED_NEAR);
-    if analyzed(held) && covers(held, near) || covers(overview, near) {
+    if analyzed(held) && covers(held, near) || overview.is_some_and(|o| covers(o, near)) {
         return None;
     }
     // what is on screen first, when nothing held draws it: a span comes
@@ -2086,7 +2084,7 @@ fn upload_heavy(
                     look.freq_scale,
                     look.colormap.max(0) as u32,
                 );
-                view.set_shaping(look.normalize, look.tuning);
+                view.set_shaping(look.normalize, look.interpolate, look.tuning);
                 view.set_alpha(alpha);
                 view.set_freq_window(item.look.y.0, item.look.y.1);
                 view.set_framing(framing_of(
@@ -2117,7 +2115,7 @@ fn upload_heavy(
                     item.look.freq_scale,
                     item.look.colormap.max(0) as u32,
                 );
-                view.set_shaping(item.look.normalize, item.look.tuning);
+                view.set_shaping(item.look.normalize, item.look.interpolate, item.look.tuning);
                 view.set_framing(framing_of(
                     channel_rect(item.rect, channels, ch),
                     fb_w,

@@ -136,14 +136,13 @@ export class AudioTransport {
     }
 }
 
-/** How an {@link AudioEditor} opens. */
 /** **How the audio editor's spectrogram analyzes and draws the take**: see {@link AudioEditor.spectrogram}. */
 export interface SpectrogramSettings {
     /** The window, in frames: 256, 512, 1024, 2048 or 4096. */
     window: number;
     /** The window's shape: `"hann"`, `"hamming"`, `"blackman"`, `"sine"`, `"welch"` or `"rectangular"`. */
     shape: string;
-    /** How much a window overlaps the next, from 0 to 1. */
+    /** How much a window overlaps the next: 0, 0.5, 0.75, 0.875 or 0.9375, each halving the hop. */
     overlap: number;
     /** The frequency axis: `"linear"`, `"log"`, `"mel"`, `"bark"` or `"note"`. */
     scale: string;
@@ -151,10 +150,17 @@ export interface SpectrogramSettings {
     tuning: number;
     /** The colours: `"viridis"`, `"magma"` or `"gray"`. */
     colormap: string;
+    /** The levels the colours span below their top, in decibels: 20 to 120. */
+    range: number;
+    /** How far the top of the colours is below full scale, in decibels: 0 to 60. */
+    gain: number;
+    /** Drawn smooth between the bins and the columns, rather than in blocks of measured magnitudes. */
+    interpolate: boolean;
     /** Each frequency band at its own scale. */
     normalize: boolean;
 }
 
+/** How an {@link AudioEditor} opens. */
 export interface AudioEditorOptions {
     /** The window's title. */
     title?: string;
@@ -591,10 +597,13 @@ export class AudioEditor {
      * **How the spectrogram analyzes and draws the take**: `window` (frames:
      * 256, 512, 1024, 2048 or 4096), `shape` (the window's: `"hann"`,
      * `"hamming"`, `"blackman"`, `"sine"`, `"welch"` or `"rectangular"`),
-     * `overlap` (from 0, windows end to end, to 1, a window a frame), `scale`
-     * (`"linear"`, `"log"`, `"mel"`, `"bark"` or `"note"`), `tuning` (the A4
-     * of a note axis, in hertz), `colormap` (`"viridis"`, `"magma"` or
-     * `"gray"`) and `normalize` (each frequency band at its own scale). The
+     * `overlap` (0, windows end to end, then 0.5, 0.75, 0.875 or 0.9375, each
+     * halving the hop), `scale` (`"linear"`, `"log"`, `"mel"`, `"bark"` or
+     * `"note"`), `tuning` (the A4 of a note axis, in hertz), `colormap`
+     * (`"viridis"`, `"magma"` or `"gray"`), `range` (the decibels the colours
+     * span, 20 to 120), `gain` (how far their top is below full scale, 0 to
+     * 60 dB), `interpolate` (drawn smooth rather than in blocks of measured
+     * magnitudes) and `normalize` (each frequency band at its own scale). The
      * window's, whichever file is in focus; a view state, outside the history.
      */
     async spectrogram(): Promise<SpectrogramSettings> {

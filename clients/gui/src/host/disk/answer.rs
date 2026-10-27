@@ -777,8 +777,9 @@ impl Answerer {
     ///   summary's, folded over the levels and read with no sample
     ///   ([`Self::summarized`]), when the view analyzes as the summary does;
     /// - one wider than the view's own hop (`analysis`, half the window when
-    ///   not said) is the largest of the windows every `analysis` frames
-    ///   inside it, at most [`COLUMN_WINDOWS`] of them;
+    ///   not said) is the largest of the windows on the grid of `analysis`
+    ///   frames inside it, a quarter of a window apart at the closest and at
+    ///   most [`COLUMN_WINDOWS`] of them;
     /// - one narrower is the one window at its start.
     ///
     /// A window inside one part is its file's, kept and found again after
@@ -895,10 +896,15 @@ impl Answerer {
             return self.one_window(list, first, shape, hop, channels, needs);
         }
         // The largest of the windows the column stands for, each on the
-        // grid of the view's own hop, which an edit or a zoom finds again;
-        // a hop so fine that a column would analyze more than a few dozen is
-        // widened, since a pixel could not show what it adds.
-        let analysis = analysis.max(hop / COLUMN_WINDOWS);
+        // grid of the view's own hop, which an edit or a zoom finds again.
+        // They are taken a quarter of a window apart at the closest, still on
+        // that grid: a window's taper weighs a frame between two of them at
+        // 85% or more, so a closer one measures nothing a pixel can show,
+        // and at a hop of a few frames a column of a few hundred analyzed a
+        // window every frame. A column so wide it would still analyze more
+        // than a few dozen is spread further.
+        let stride = (window / 4).max(hop / COLUMN_WINDOWS);
+        let analysis = stride.div_ceil(analysis).max(1) * analysis;
         let bins = window / 2;
         let mut largest = vec![vec![0u8; bins]; channels];
         let mut whole = true;

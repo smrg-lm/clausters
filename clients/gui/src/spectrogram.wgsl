@@ -29,7 +29,8 @@ struct Uniforms {
     // stretch the first and the last over the rest of the view.
     cover: vec4<f32>,
     // x = 1 where each frequency band is drawn at its own scale: lifted so
-    // the loudest it is (the rows texture) is the top of the range.
+    // the loudest it is (the rows texture) is the top of the range. y = 1
+    // where the picture is drawn smooth rather than in blocks.
     shape: vec4<f32>,
 };
 
@@ -50,6 +51,47 @@ fn level(x: f32, y: f32) -> f32 {
         }
     }
     return m;
+}
+
+// **The magnitude at (x, y), drawn smooth** along the axes where a texel is
+// larger than a pixel (`along_t`, `along_v`): a line between the two columns
+// whose middles the pixel lies between, and a Catmull-Rom through the four
+// rows around it, which goes through every bin's own magnitude with no
+// crease. What it draws between two bins or two columns nothing measured: a
+// look the view asks for, never the default.
+fn smoothed(x: f32, y: f32, along_t: bool, along_v: bool) -> f32 {
+    if !along_t {
+        return rows_at(x, y, along_v);
+    }
+    let cols = f32(textureDimensions(tex).x);
+    let c = x * cols - 0.5;
+    let k = floor(c);
+    let x0 = (clamp(k, 0.0, cols - 1.0) + 0.5) / cols;
+    let x1 = (clamp(k + 1.0, 0.0, cols - 1.0) + 0.5) / cols;
+    return mix(rows_at(x0, y, along_v), rows_at(x1, y, along_v), c - k);
+}
+
+// The magnitude of column `x` at `y`, through the rows around it where
+// `curve` asks for it: row centres are at (k + 0.5) / rows, and the curve is
+// clamped, since it may overshoot a peak and a magnitude may not.
+fn rows_at(x: f32, y: f32, curve: bool) -> f32 {
+    if !curve {
+        return level(x, y);
+    }
+    let rows = f32(textureDimensions(tex).y);
+    let r = y * rows - 0.5;
+    let k = floor(r);
+    let g = r - k;
+    let row = vec4<f32>(k - 1.0, k, k + 1.0, k + 2.0);
+    let at = (clamp(row, vec4<f32>(0.0), vec4<f32>(rows - 1.0)) + 0.5) / rows;
+    let m0 = level(x, at.x);
+    let m1 = level(x, at.y);
+    let m2 = level(x, at.z);
+    let m3 = level(x, at.w);
+    let c = m1 + 0.5 * g * (m2 - m0
+        + g * (2.0 * m0 - 5.0 * m1 + 4.0 * m2 - m3
+        + g * (3.0 * (m1 - m2) + m3 - m0)));
+    return clamp(c, 0.0, 1.0);
 }
 
 struct VsOut {
@@ -176,13 +218,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // block as tall as its band, a column wider than one a block as wide as
     // its hop. A curve or a ramp between two texels would draw magnitudes
     // nothing measured, and the block's edges are where the analysis's own
-    // resolution ends.
+    // resolution ends. A view that asks to be drawn smooth (`shape.y`) is
+    // drawn so along an axis whose texels are larger than a pixel, and still
+    // as the largest of them along one whose texels are smaller.
     let dims = vec2<f32>(textureDimensions(tex));
     let bins = dims.y;
     let half_t = abs(dpdx(t)) * 0.5;
     let half_v = abs(dpdy(v)) * 0.5;
     let cols_per_px = 2.0 * half_t * dims.x;
     let rows_per_px = 2.0 * half_v * bins;
+    let wants_smooth = u.shape.y > 0.5;
+    let along_t = wants_smooth && cols_per_px <= 1.0;
+    let along_v = wants_smooth && rows_per_px <= 1.0;
     var mag: f32;
     if cols_per_px > 1.0 || rows_per_px > 1.0 {
         // The texels under the pixel, a few dozen at most: past that a
@@ -213,11 +260,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
                 if ny > 1u {
                     y = (y0 + floor(f32(j) * (y1 - y0 + 1.0) / f32(ny)) + 0.5) / bins;
                 }
-                mag = max(mag, level(x, y));
+                mag = max(mag, smoothed(x, y, along_t, along_v));
             }
         }
     } else {
-        mag = level(t, v);
+        mag = smoothed(t, v, along_t, along_v);
     }
 
     if past {

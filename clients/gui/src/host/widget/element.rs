@@ -185,6 +185,8 @@ pub struct TextureLook {
     pub colormap: i32,
     /// Each frequency band drawn at its own scale.
     pub normalize: bool,
+    /// Drawn smooth between the bins and the columns, rather than in blocks.
+    pub interpolate: bool,
     /// The reference A4 of a note axis, in hertz.
     pub tuning: f32,
     /// **The analysis the picture is asked to be of**: the window, the hop

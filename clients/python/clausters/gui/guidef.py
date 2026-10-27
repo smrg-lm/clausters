@@ -2158,7 +2158,7 @@ def spectrogram(*, autofit: bool | None = None,
                 db_ceil: float | None = None, freq_scale: str | None = None,
                 log_freq: bool | None = None, colormap: int | None = None,
                 wintype: int | None = None, normalize: bool | None = None,
-                tuning: float | None = None,
+                interpolate: bool | None = None, tuning: float | None = None,
                 layers=None,
                 ruler: str | None = None, ruler_y: str | None = None, tempo: float | None = None, tempo_map=None,
                 beat_at: float | None = None, quant: float | None = None,
@@ -2195,7 +2195,11 @@ def spectrogram(*, autofit: bool | None = None,
     an FFT's: ``0`` Hann (the default), ``-1`` rectangular, ``1`` sine, ``2``
     Welch, ``3`` Hamming, ``4`` Blackman. ``normalize`` draws each frequency
     band at its own scale, its loudest at the top of the colours, so a band
-    with little energy is not left dim beside a loud one.
+    with little energy is not left dim beside a loud one. Every pixel shows
+    a magnitude the analysis measured, a bin or a column larger than a pixel
+    drawn as a block; ``interpolate`` draws it smooth instead, a curve
+    through the bins and a line between the columns, which shows between
+    them values nothing measured.
 
     The rulers ride their own strips beside the view: ``ruler_y`` (``"hz"``,
     the default, or ``"off"``) draws the frequency ruler, its tick positions
@@ -2241,6 +2245,8 @@ def spectrogram(*, autofit: bool | None = None,
         extra["log_freq"] = 1 if log_freq else 0
     if normalize is not None:
         extra["normalize"] = 1 if normalize else 0
+    if interpolate is not None:
+        extra["interpolate"] = 1 if interpolate else 0
     return node("signal", id=id, view="spectrogram", **extra, **props)
 
 

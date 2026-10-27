@@ -1462,8 +1462,8 @@ fn the_spectrogram_settings_panel_sets_the_pictures_props() {
     assert_eq!(corrections[0]["widget"], 12);
     assert_eq!(corrections[0]["props"]["window_size"], 2048);
     assert_eq!(corrections[0]["props"]["hop"], 1024);
-    // the overlap reports its percent
-    event(&mut editor, json!([ids["settings:overlap"], 3, 0, 75.0]));
+    // the overlap reports the index of the one chosen
+    event(&mut editor, json!([ids["settings:overlap"], 3, 0, 2]));
     assert_eq!(
         call(&mut editor, json!({"verb": "spectrogram"}))["spectrogram"]["overlap"],
         0.75

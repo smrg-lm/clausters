@@ -222,7 +222,8 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// - `show_files`, `hide_files`, `toggle_files` -- the independent left list.
 /// - `spectrogram`: the spectrogram's settings. `set_spectrogram`: the
 ///   settings a request names (`window`, `shape`, `overlap`, `scale`,
-///   `tuning`, `colormap`, `normalize`), as an action.
+///   `tuning`, `colormap`, `range`, `gain`, `interpolate`, `normalize`), as
+///   an action.
 ///   `show_spectrogram_settings`, `hide_spectrogram_settings` and
 ///   `toggle_spectrogram_settings`: their panel beside the take.
 /// - `span` -- `span`: `[start, end]` in seconds, or `null`: the time range

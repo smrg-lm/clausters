@@ -16,6 +16,12 @@
 //! columns were on their way is handed what it asked for, and asks again for
 //! where it is: answers land at the pace they come, never cancelled by a
 //! scroll that would leave nothing landing at all.
+//!
+//! **An analysis changed is the exception.** Columns of another window, hop
+//! or shape are no picture of what the view now shows, so an ask of them is
+//! let go at its next answer instead of being carried to its end: a setting
+//! dragged through a dozen values used to analyze the whole take at each of
+//! them, one after the other, long after the hand had stopped.
 
 use clausters_core::osc::{OscMessage, OscType};
 
@@ -46,6 +52,9 @@ struct ColumnsAsk {
     answered: usize,
     /// Ticks since the request went with no answer.
     stalled: usize,
+    /// The view asked for another analysis since: the answer on its way is
+    /// dropped and nothing more is asked.
+    abandoned: bool,
 }
 
 impl ColumnsAsk {
@@ -97,7 +106,8 @@ pub(crate) struct ColumnSpan {
 
 impl ColumnAsks {
     /// **Asks for a view's columns**, or `None` while that view already has
-    /// an ask on its way: what is wanted is asked again once it lands.
+    /// an ask on its way: what is wanted is asked again once it lands. An ask
+    /// of another analysis than `span`'s is let go at its next answer.
     pub(crate) fn want(
         &mut self,
         key: i32,
@@ -105,12 +115,16 @@ impl ColumnAsks {
         widget_id: i32,
         span: ColumnSpan,
     ) -> Option<OscMessage> {
-        if span.columns == 0
-            || self
-                .asks
-                .iter()
-                .any(|a| a.def_id == def_id && a.widget_id == widget_id)
+        if span.columns == 0 {
+            return None;
+        }
+        if let Some(on_way) = self
+            .asks
+            .iter_mut()
+            .find(|a| a.def_id == def_id && a.widget_id == widget_id)
         {
+            on_way.abandoned |= (on_way.window, on_way.analysis, on_way.wintype)
+                != (span.window, span.analysis, span.wintype);
             return None;
         }
         let ask = ColumnsAsk {
@@ -129,6 +143,7 @@ impl ColumnAsks {
             channels: 0,
             answered: 0,
             stalled: 0,
+            abandoned: false,
         };
         let msg = ask.request();
         self.asks.push(ask);
@@ -137,7 +152,9 @@ impl ColumnAsks {
 
     /// `/buffer_spectrum.reply key start hop window channels blob`: the next
     /// request of the view it answers, and its columns once they are all
-    /// there. A reply nobody is waiting for is dropped.
+    /// there. A reply nobody is waiting for is dropped; one to an ask let go
+    /// is handed over with no transform, for its view to be drawn and ask
+    /// for what it shows now.
     pub(crate) fn on_reply(
         &mut self,
         args: &[OscType],
@@ -159,6 +176,18 @@ impl ColumnAsks {
         }) else {
             return (None, None);
         };
+        if self.asks[i].abandoned {
+            let ask = self.asks.remove(i);
+            return (
+                None,
+                Some(ColumnsDone {
+                    def_id: ask.def_id,
+                    widget_id: ask.widget_id,
+                    key: ask.key,
+                    stfts: Vec::new(),
+                }),
+            );
+        }
         let ask = &mut self.asks[i];
         let channels = channels.max(1) as usize;
         let per_column = channels * (ask.window / 2);
@@ -290,6 +319,30 @@ mod tests {
         assert_eq!(stft.column(4)[0], 0.0);
         // Landed, the view may ask again.
         assert!(asks.want(-2, 1, 7, span(900, 5)).is_some());
+    }
+
+    /// **An ask of an analysis the view no longer wants is let go** at its
+    /// next answer, with nothing more asked: a setting dragged through many
+    /// values used to analyze the take at each of them to the end. A view
+    /// that only moved still gets what it asked for.
+    #[test]
+    fn an_ask_of_another_analysis_is_let_go_at_its_next_answer() {
+        let mut asks = ColumnAsks::default();
+        assert!(asks.want(-2, 1, 7, span(500, 5)).is_some());
+        assert!(asks.want(-2, 1, 7, span(900, 5)).is_none());
+        let (next, _) = asks.on_reply(&reply(500, 1, 9));
+        assert!(next.is_some(), "a view that moved is answered on");
+        let other = ColumnSpan {
+            analysis: 2,
+            ..span(500, 5)
+        };
+        assert!(asks.want(-2, 1, 7, other).is_none(), "one on its way");
+        let (next, done) = asks.on_reply(&reply(600, 1, 9));
+        assert!(next.is_none(), "nothing more asked");
+        let done = done.expect("handed over for a redraw");
+        assert!(done.stfts.is_empty());
+        assert!(!asks.pending());
+        assert!(asks.want(-2, 1, 7, other).is_some());
     }
 
     #[test]

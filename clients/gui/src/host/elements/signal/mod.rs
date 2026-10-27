@@ -422,6 +422,11 @@ pub struct Spectral {
     /// the top of the colours, so a band with little energy is not left
     /// dim beside a loud one.
     pub normalize: bool,
+    /// **Drawn smooth**: each pixel a curve through the magnitudes of the
+    /// bins around it and a line between the columns, rather than the block
+    /// of the one it falls in. A look, which shows between two bins values
+    /// nothing measured; off, every pixel is a measured magnitude.
+    pub interpolate: bool,
     /// The reference A4, in hertz, of a note axis.
     pub tuning: f32,
 }
@@ -450,6 +455,7 @@ impl Default for Spectral {
             colormap: 0,
             wintype: 0,
             normalize: false,
+            interpolate: false,
             tuning: 440.0,
         }
     }

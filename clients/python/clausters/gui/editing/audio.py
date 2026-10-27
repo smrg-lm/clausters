@@ -518,12 +518,16 @@ class AudioEditor:
         """**How the spectrogram analyzes and draws the take**: ``window``
         (frames: 256, 512, 1024, 2048 or 4096), ``shape`` (the window's:
         ``"hann"``, ``"hamming"``, ``"blackman"``, ``"sine"``, ``"welch"`` or
-        ``"rectangular"``), ``overlap`` (from 0, windows end to end, to 1, a
-        window a frame), ``scale`` (``"linear"``, ``"log"``, ``"mel"``,
-        ``"bark"`` or ``"note"``), ``tuning`` (the A4 of a note axis, in
-        hertz), ``colormap`` (``"viridis"``, ``"magma"`` or ``"gray"``) and
-        ``normalize`` (each frequency band at its own scale). The window's,
-        whichever file is in focus; a view state, outside the history."""
+        ``"rectangular"``), ``overlap`` (0, windows end to end, then 0.5,
+        0.75, 0.875 or 0.9375, each halving the hop), ``scale``
+        (``"linear"``, ``"log"``, ``"mel"``, ``"bark"`` or ``"note"``),
+        ``tuning`` (the A4 of a note axis, in hertz), ``colormap``
+        (``"viridis"``, ``"magma"`` or ``"gray"``), ``range`` (the decibels
+        the colours span, 20 to 120), ``gain`` (how far their top is below
+        full scale, 0 to 60 dB), ``interpolate`` (drawn smooth rather than in
+        blocks of measured magnitudes) and ``normalize`` (each frequency band
+        at its own scale). The window's, whichever file is in focus; a view
+        state, outside the history."""
         return dict(self._member("spectrogram")["spectrogram"])
 
     def set_spectrogram(self, **settings) -> None:

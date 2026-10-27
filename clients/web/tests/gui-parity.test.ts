@@ -150,7 +150,7 @@ const trees: Record<string, () => GuiNode> = {
                 id: 2, cache: "take.stft", windowSize: 2048, hop: 512,
                 sampleRate: 48000.0, dbFloor: -90.0, dbCeil: 0.0,
                 freqScale: "note", colormap: 1, wintype: 4, normalize: true,
-                tuning: 432.0, ruler: "time", rulerY: "hz", link: 7,
+                interpolate: true, tuning: 432.0, ruler: "time", rulerY: "hz", link: 7,
             }),
             plot({
                 id: 3, data: [0.0, 0.5, -0.5, 1.0], view: "spectrum",

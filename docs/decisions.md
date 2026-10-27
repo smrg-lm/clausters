@@ -9919,6 +9919,32 @@ since one more window a few frames from the last measures nothing the grid
 did not, and a column is drawn centred on the windows it was measured from
 -- drawn from where they start, a click lit the block before its own.
 
+*Revised again 2026-10-27: drawn smooth on request.* The blocks are the
+default and stay what a reading of the picture is checked against, but the
+curve read better as a picture, and the field offers both: a smoothing a
+view turns on to look and off to measure. So a spectrogram's `interpolate`
+prop draws it smooth -- the Catmull-Rom through the rows around a pixel
+where a bin is taller than it, a line between two columns where a column is
+wider than one -- and nothing else changes: a pixel over several texels
+still shows the largest, the bins are still centred on their frequencies,
+and the analysis is the same. It is a look of the display, like the colours,
+and the documentation of the prop says what it draws between two bins.
+
+**A spectrogram's overlap is a power of two.** *(2026-10-27.)* The audio
+editor offered the overlap as a percent slider, 0 to 100, so a hop was any
+number of frames down to one. Two things went wrong. A hop that is a
+percent of the window lies neither on the grid of the coarser hops nor on
+the power-of-two columns a view asks for, so the windows a pooled column
+took were snapped to the grid, not on it, and every zoom asked for windows
+no other zoom had analyzed. And at 100% a column of a few hundred frames
+was the largest of a window every frame, hundreds of analyses for one
+pixel. The overlaps offered are 0, 50, 75, 87.5 and 93.75%, each halving
+the hop, which is how measuring software offers them (as fractions, since a
+percent of a window is rarely a whole number of frames). Separately, a
+pooled column takes its windows a quarter of a window apart at the closest:
+a window's taper weighs a frame between two such windows at 85% or more, so
+a closer one adds nothing a pixel shows.
+
 **A note axis spans the notes, not a log axis's range.** *(2026-10-27.)* It
 was the log axis with its floor at C0 of the tuning, so it reached from
 16 Hz up to Nyquist like any log axis. A note axis is read in notes, so it
@@ -10945,6 +10971,19 @@ are not obvious:
 The summary is of one analysis. A view analyzing with another window or hop
 draws every column from the samples, pooled the same way; a summary per
 analysis was not worth a file each.
+
+*Revised 2026-10-27: another analysis is asked where it is looked at.* The
+whole take used to be asked first after any change of analysis, as after an
+edit. For the summary's analysis that is a few milliseconds; for any other it
+reads and analyzes every frame of the take, 0.5 to 1.3 s of a four-minute
+stereo take, and a zoomed view waited for it with the old picture on screen.
+A setting dragged through a dozen values queued that whole analysis a dozen
+times, one after the other, for seconds after the hand stopped. Now the span
+shown is asked first and the whole take only by a view that shows it, and an
+ask of an analysis the view no longer wants is let go at its next answer
+(`host::columns`); after an edit the whole take is still asked first, since
+the answerer holds most of its windows and the old picture is of the old
+length.
 
 ## A render's progress is a window prop, not a status line (2026-10-23)
 
