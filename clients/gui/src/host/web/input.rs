@@ -63,7 +63,8 @@ impl WebApp {
             // gesture divides by is the view's, and a box inside a view has
             // rows of its own that mean nothing to the axis around it.
             for ((id, key), view) in &render.waveforms {
-                if *key == SlotKey::SELF {
+                // one whose samples were let go of has no rows to give
+                if *key == SlotKey::SELF && view.view.num_channels() > 0 {
                     ctx.slot_channels.insert(*id, view.view.num_channels());
                 }
             }

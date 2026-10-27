@@ -533,11 +533,14 @@ pub(super) fn draw_timeline_meshes(
         // data has not landed yet (or cannot: a peaks cache holds no spectrum),
         // and then that layer simply draws nothing.
         let wave = waveforms.get(&(item.id, item.key));
+        // A waveform slot whose samples were let go of while another view was
+        // shown resolves nothing: the axis comes from the picture that does.
+        let resolved = wave.filter(|s| s.view.num_channels() > 0);
         let spectro = spectrograms.get(&(item.id, item.key));
         let textured = look.layers.has(Paint::Spectrogram) && spectro.is_some();
         // The axis' extent: whichever resolved picture knows it, and they agree
         // -- both are summaries of the one source this element holds.
-        let Some(total) = wave
+        let Some(total) = resolved
             .map(|s| s.view.total_samples())
             .or_else(|| spectro.map(|s| s.total_samples()))
         else {
@@ -568,11 +571,10 @@ pub(super) fn draw_timeline_meshes(
         // The rows are the lanes and the channels are the data: the count comes
         // from whichever picture resolved, and overlaid traces share one row
         // (and one vertical) however many channels there are.
-        let channels = wave
-            .map(|s| s.view.num_channels())
-            .or_else(|| spectro.map(|s| s.views.len()))
-            .unwrap_or(1)
-            .max(1);
+        let channels = picture_channels(
+            wave.map(|s| s.view.num_channels()),
+            spectro.map(|s| s.views.len()),
+        );
         let rows = if look.overlay { 1 } else { channels };
         // **The y ruler belongs to the layer that claimed the axis**, which is
         // what makes the claim mean something: a stack with a texture on the
@@ -1489,8 +1491,28 @@ pub(crate) fn draw_progress_overlay(
     over.set_clip(None);
 }
 
+/// **How many channels a take's pictures show**: the waveform's, or the
+/// spectrogram's where the waveform has none -- a waveform slot whose samples
+/// were let go of while the spectrogram was shown (`SignalElement::reread`)
+/// stays with no channels, and counted first it ruled a stereo spectrogram as
+/// one row. At least one.
+fn picture_channels(wave: Option<usize>, spectro: Option<usize>) -> usize {
+    wave.filter(|&n| n > 0).or(spectro).unwrap_or(1).max(1)
+}
+
 #[cfg(test)]
 mod tests {
+    /// A waveform slot that let its samples go counts no rows: the
+    /// spectrogram shown instead is ruled per channel.
+    #[test]
+    fn a_picture_with_no_channels_leaves_the_count_to_the_other() {
+        assert_eq!(super::picture_channels(Some(0), Some(2)), 2);
+        assert_eq!(super::picture_channels(Some(2), Some(2)), 2);
+        assert_eq!(super::picture_channels(Some(3), None), 3);
+        assert_eq!(super::picture_channels(Some(0), None), 1);
+        assert_eq!(super::picture_channels(None, None), 1);
+    }
+
     /// A stacked take is one colour; overlaid channels are told apart.
     #[test]
     fn the_channels_of_one_take_are_one_colour_unless_overlaid() {

@@ -185,7 +185,8 @@ code that keeps it lives.
   span. Switching back draws what was held at once, at the zoom the window
   has, and only a picture never resolved is asked for; an edit made while
   the other view is shown forgets the hidden summary, which is of the take
-  as it was.
+  as it was. A hidden waveform that let its samples go counts no channels,
+  so the spectrogram shown instead is ruled one row a channel.
 - **A time is never narrowed.** A group holds its times as NTP ticks
   (`clausters_core::time::Time`, an `i64` of 2^-32 s) at the rate its
   members speak; on the wire a whole frame crosses as an `int64` and a

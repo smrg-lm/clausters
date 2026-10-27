@@ -38,7 +38,8 @@ impl App {
             // gesture divides by is the view's, and a box inside a view has
             // rows of its own that mean nothing to the axis around it.
             for ((id, key), slot) in &ws.waveforms {
-                if *key == SlotKey::SELF {
+                // one whose samples were let go of has no rows to give
+                if *key == SlotKey::SELF && slot.view.num_channels() > 0 {
                     ctx.slot_channels.insert(*id, slot.view.num_channels());
                 }
             }
