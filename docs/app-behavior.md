@@ -356,6 +356,13 @@ code that keeps it lives.
   whose window is out of view and fetches nothing, so a script's `cut()`,
   `copy()`, `delete()` and `paste()` and the Edit menu act on it the same
   (`WidgetKind::holds_samples`).
+- **An ellipsis says the verb asks before it acts.** A menu entry whose verb
+  opens a form that has to be filled before anything happens (New file...,
+  Open file..., Save as...) ends in `...`; one that acts at once does not,
+  whatever it shows -- a switch that shows a panel (Spectrogram settings), a
+  view chosen, a sheet to read. It is the convention of the platforms' menu
+  guidelines, the same in every application; a switch or a choice never ends
+  in one (`verbs` tests), and the audio editor's forms are the verbs that do.
 - **A step tells the window where it left the context once it has landed.**
   Undo or redo from one window of a shared order may restore a file another
   window holds; the asking window learns the new version only after that walk

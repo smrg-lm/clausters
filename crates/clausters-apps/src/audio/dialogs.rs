@@ -165,6 +165,24 @@ mod tests {
             .collect()
     }
 
+    /// **The verbs that open a form end in an ellipsis, and only they**: a
+    /// menu entry says it asks for more before it acts, and one that acts at
+    /// once (a panel shown, a view chosen) does not.
+    #[test]
+    fn the_verbs_that_open_a_form_end_in_an_ellipsis() {
+        use clausters_editing::verbs::{AUDIO, WINDOW};
+        let asks: Vec<&str> = WINDOW
+            .iter()
+            .chain(AUDIO)
+            .filter_map(|v| v.label.strip_suffix("..."))
+            .collect();
+        let titles: Vec<&str> = FORMS.iter().map(|f| f.title()).collect();
+        assert_eq!(asks.len(), titles.len(), "{asks:?}");
+        for title in titles {
+            assert!(asks.contains(&title), "{title} opens a form");
+        }
+    }
+
     #[test]
     fn the_two_forms_are_pages_of_a_stack() {
         let ids = ids();

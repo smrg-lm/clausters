@@ -439,6 +439,18 @@ mod tests {
         }
     }
 
+    /// **An ellipsis says more is asked before the verb acts**, as menus
+    /// write it: a switch or a choice acts at once, whatever it shows, so its
+    /// words never end in one.
+    #[test]
+    fn a_switch_or_a_choice_never_ends_in_an_ellipsis() {
+        for rows in [WINDOW, AUDIO, MULTITRACK, SCORE, NOTE_ENTRY] {
+            for v in rows.iter().filter(|v| v.kind != ActionKind::Command) {
+                assert!(!v.label.ends_with("..."), "{} acts at once", v.name);
+            }
+        }
+    }
+
     /// An application's scope adds verbs and does not rename the window's:
     /// a verb the window has is shown in the window's words wherever it is.
     #[test]
