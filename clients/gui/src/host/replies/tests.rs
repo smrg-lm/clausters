@@ -709,6 +709,23 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         close.start < frames && close.start + close.hop * close.columns > frames + 2 * frames / 10
     );
     assert!(close.hop.is_power_of_two() && close.hop < span.hop);
+    // **A whole take analyzed as the file's spectral summary is asked a
+    // summary column apart at least**, so it is read from the summary.
+    let summary = (
+        clausters_core::spectra::WINDOW,
+        clausters_core::spectra::HOP,
+        0,
+    );
+    let owed = crate::host::frame::columns_owed_of(stft, Some(stft), None, &nav, 200.0, summary)
+        .expect("the summary's columns");
+    let crate::host::frame::Owed::Columns(whole) = owed else {
+        panic!("{owed:?}")
+    };
+    assert_eq!(whole.start, 0);
+    assert!(
+        whole.hop >= clausters_core::spectra::COLUMN_FRAMES,
+        "{whole:?}"
+    );
     // **Another analysis owes the whole take again**: a window, a hop or a
     // shape the held columns are not of.
     for analysis in [(2048, 1024, 0), (512, 128, 0), (512, 256, 4)] {

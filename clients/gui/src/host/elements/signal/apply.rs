@@ -402,6 +402,17 @@ mod data_tests {
         assert_eq!(e.look().tuning, 440.0, "a tuning is a note's frequency");
     }
 
+    /// **The analysis size answers to either name** where a view is built,
+    /// as it does to a set: a trace that will draw a spectrogram names the
+    /// window its spectrogram is analyzed with.
+    #[test]
+    fn a_trace_reads_the_window_its_spectrogram_uses() {
+        let e = el(r#"{"id":1,"type":"signal","view":"trace","window_size":1024,"data":[0.0]}"#);
+        assert_eq!(e.spectral.fft_size, 1024);
+        let e = el(r#"{"id":1,"type":"signal","view":"spectrogram","fft_size":512,"data":[0.0]}"#);
+        assert_eq!(e.spectral.fft_size, 512);
+    }
+
     /// The owner's half of an edit: the samples that now hold are pushed, and
     /// the picture is the document's again. Without this the pending drawing
     /// could never be dropped -- letting go of it would take the edit with it.

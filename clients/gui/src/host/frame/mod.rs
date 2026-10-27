@@ -28,6 +28,7 @@ pub(crate) mod draw;
 mod items;
 
 use crate::host::diag;
+use clausters_core::spectra;
 use draw::*;
 pub(crate) use draw::{draw_time_ruler, marker_at, ruler_strip, ruler_strip_body};
 // The arrow's width is the drawing's own business; a gesture asks `marker_at`
@@ -728,7 +729,10 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
 /// whole take's columns resolve. The whole take is owed first, and again
 /// whenever the list changes, at the length the take has now, and whenever
 /// the view is told to analyze otherwise (`analysis`: the window, the hop
-/// between windows and their shape). The span asked
+/// between windows and their shape). A whole take analyzed as the file's
+/// spectral summary is asked at least a column of the summary apart
+/// (`clausters_core::spectra`), so it is read from the summary with no
+/// sample, and a view finer than that asks for its span. The span asked
 /// runs a quarter of the view past either side, so a pan that small is drawn
 /// from what is held, and both hops are a power of two, so a small zoom and
 /// a pan ask for the columns the answerer already holds.
@@ -792,7 +796,20 @@ pub(crate) fn columns_owed_of(
         {
             o
         }
-        _ => return Some(span(0, total, power_hop(total as f64 / width))),
+        _ => {
+            let summarized =
+                window == spectra::WINDOW && (hop == spectra::HOP || hop == 0) && wintype == 0;
+            let hop = power_hop(total as f64 / width);
+            return Some(span(
+                0,
+                total,
+                if summarized {
+                    hop.max(spectra::COLUMN_FRAMES)
+                } else {
+                    hop
+                },
+            ));
+        }
     };
     let want = power_hop(nav.len / width);
     let a = nav.start.floor().max(0.0) as usize;

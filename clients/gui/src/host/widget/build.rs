@@ -118,6 +118,10 @@ pub(super) fn build_kind(
 /// -- `fft_size` for the spectra, `window_size` for the time-frequency
 /// texture), the hop, and the display. One function for the element and for a
 /// clip's take, so a spectral clip is tuned exactly like a spectral view.
+///
+/// The other name is read too when the presentation's is absent, as a
+/// `/gui_set` reads either: one field is behind them, and a view built as a
+/// trace that will draw a spectrogram names the size its spectrogram uses.
 fn spectral_props(
     props: &Map<String, Value>,
     base: signal::Spectral,
@@ -125,6 +129,8 @@ fn spectral_props(
 ) -> signal::Spectral {
     let size = props
         .get(size_prop)
+        .or_else(|| props.get("fft_size"))
+        .or_else(|| props.get("window_size"))
         .and_then(Value::as_u64)
         .map(|n| n as usize)
         .filter(|n| clausters_core::fft::supports(*n))
