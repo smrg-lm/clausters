@@ -8884,3 +8884,26 @@ module of its own.
   to the pixel, under the span shown, draws each only where its columns
   reach, and after an edit asks for the whole take again first, at its new
   length (`frame::columns_owed`, `docs/app-behavior.md`).
+
+- ⬜ **The note axis is a log axis, not one over the notes' range**
+  *(found 2026-10-26 by the user, looking at the audio editor's
+  spectrogram on its note scale)*. The note scale maps like the log scale,
+  with its floor at C0 of the tuning, so it spans the log axis's range and
+  not the notes'. The user's rule: the vertical in notes is linear in
+  pitch over the MIDI notes 0 to 127 -- each octave the same height --
+  from about 8 Hz (note 0, infrasonic) to about 12.5 kHz (note 127, above
+  the fundamentals music uses), so the bins of the analysis are mapped
+  onto that range. What is open is the mapping a bin takes onto it (how a
+  bin wider than a note at the bottom, and many bins to a note at the top,
+  are drawn), chosen among mathematical options the user asked for,
+  before the shader and the ruler (`spectrogram.wgsl`, `host::ruler`
+  `note_ticks`) are changed.
+
+- ⬜ **A number field's drag crosses its whole range in a few dozen
+  pixels** *(found 2026-10-26, dragging the spectrogram's tuning field)*.
+  A `number`'s drag is a knob's (`control::Dial`), which spreads the range
+  over a few heights of the body, and a field's body is one line tall: 40
+  pixels took the tuning from 440 to 1000 Hz. A field is read to a step,
+  so its drag wants a rate a hand can stop on (the step per pixel, or a
+  fixed run of pixels for the range, with a modifier for fine), looked up
+  in how scrubbable fields behave before it is chosen.
