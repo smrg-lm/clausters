@@ -153,7 +153,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         bin_norm = bark_to_hz(mix(z0, hz_to_bark(nyq), d)) / nyq;
     }
     // Texture row 0 is bin 0 (low frequency), so the bottom shows the lowest.
-    let v = clamp(bin_norm, 0.0, 1.0);
+    // Row k is centred on (k + 0.5) / rows and bin k measures k / rows of
+    // Nyquist, so a frequency is read half a row up: each bin is drawn
+    // centred on its own frequency, not from it up to the next one's.
+    let rows_n = f32(textureDimensions(tex).y);
+    let v = clamp(bin_norm + 0.5 / rows_n, 0.0, 1.0);
     // **Every pixel shows a magnitude the analysis measured.** Where a pixel
     // covers more than one texel, along either axis, it shows the largest of
     // them: the bins a pixel row spans on a log axis's upper octaves or in a
