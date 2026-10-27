@@ -179,6 +179,14 @@ code that keeps it lives.
   from the summary. After an edit the whole take is asked again first,
   at the length the take has now, and the picture before the edit is drawn
   only where its columns reach.
+- **A spectrogram shows only magnitudes the analysis measured.** A pixel
+  inside one bin or one column shows that value, so a bin taller than a pixel
+  is a block as tall as its band and a column wider than a pixel a block as
+  wide as its hop; a pixel over several shows the largest. Nothing is
+  interpolated between two values. No column is finer than the hop between
+  the analysis's windows, so a zoom past it draws the same windows wider and
+  analyzes nothing; and a column is drawn centred on the windows it was
+  measured from, so a click lights the block it is in.
 - **A view switch draws what the other view left.** Moving between the
   waveform and the spectrogram keeps both pictures of a take: the summary
   with the finer grid a zoom grew in it, and the columns, whole take and

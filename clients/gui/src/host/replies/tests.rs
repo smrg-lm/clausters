@@ -740,6 +740,19 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         owes(near.start + near.len * 0.3),
         "within a quarter of a view of the edge held"
     );
+    // **No column is finer than the analysis's own hop**: a view of a few
+    // frames is drawn by the windows on its grid, one a block.
+    let tiny = crate::viewport::View {
+        start: frames as f64,
+        len: 4.0,
+    };
+    let owed =
+        crate::host::frame::columns_owed_of(stft, Some(stft), None, &tiny, 200.0, (512, 256, 0))
+            .expect("the windows under a few frames");
+    let crate::host::frame::Owed::Columns(tiny) = owed else {
+        panic!("{owed:?}")
+    };
+    assert_eq!(tiny.hop, 256, "{tiny:?}");
     // **A whole take analyzed as the file's spectral summary is asked a
     // summary column apart at least**, so it is read from the summary.
     let summary = (

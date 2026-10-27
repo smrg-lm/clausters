@@ -172,10 +172,12 @@ impl SpectrogramTexture {
             view_formats: &[],
         });
         let rows_view = rows.create_view(&wgpu::TextureViewDescriptor::default());
+        // Nearest: a texel is a measured magnitude, and a pixel inside one
+        // shows it as it is, never a blend with its neighbours.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("spectrogram sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -641,21 +643,43 @@ impl SpectrogramView {
         &self.stft
     }
 
+    /// **Where column 0 is drawn from**: the sample its first window starts
+    /// at, moved on by half of what a window reaches past its hop. A column
+    /// stands for `hop` frames, and its windows start there and reach a
+    /// window further, so a column drawn from where they start shows what
+    /// happened up to half a window early -- a click lit the block before
+    /// the one it is in. Centred on what its windows measured, it is drawn
+    /// where that happened. A ring is drawn by its newest column, as it is.
+    pub fn drawn_origin(&self) -> f64 {
+        if self.stft.is_rolling() {
+            return self.stft.origin() as f64;
+        }
+        let reach = self
+            .stft
+            .window_size()
+            .saturating_sub(self.stft.analysis().0.max(1));
+        self.stft.origin() as f64 + reach as f64 * 0.5
+    }
+
     /// **The samples this view's columns cover**: everything for a transform
     /// of a whole signal and for a ring, and for one of a span from where it
-    /// starts to the end of its last column.
+    /// is drawn to the end of its last column.
     pub fn covers(&self) -> (f64, f64) {
         if !self.stft.is_span() {
             return (f64::NEG_INFINITY, f64::INFINITY);
         }
-        let a = self.stft.origin() as f64;
+        let a = self.drawn_origin();
         (a, a + (self.stft.n_frames() * self.stft.hop()) as f64)
     }
 
-    /// Whether its columns cover the whole of the take it is a picture of.
+    /// Whether its columns cover the whole of the take it is a picture of:
+    /// what its windows were analyzed over, wherever they are drawn.
     pub fn is_whole(&self) -> bool {
-        let (a, b) = self.covers();
-        a <= 0.0 && b >= self.stft.total_samples() as f64
+        if !self.stft.is_span() {
+            return true;
+        }
+        let a = self.stft.origin();
+        a == 0 && a + self.stft.n_frames() * self.stft.hop() >= self.stft.total_samples()
     }
 
     /// The picture of the whole take drawn under this one (see the field).
@@ -747,7 +771,7 @@ impl SpectrogramView {
         }
         let hop = self.stft.hop().max(1) as f64;
         // A transform of a span counts its frames from where the span starts.
-        let start = view.start - self.stft.origin() as f64;
+        let start = view.start - self.drawn_origin();
         let view = &View {
             start,
             len: view.len,
@@ -808,13 +832,16 @@ impl SpectrogramView {
             Some(held) if !self.stft.is_rolling() => {
                 let scale = self.stft.hop().max(1) as f64 * (1u64 << held.level) as f64;
                 let width = held.count.max(1) as f64;
-                let start = view.start - self.stft.origin() as f64;
+                let start = view.start - self.drawn_origin();
                 (
                     ((start / scale - held.first as f64) / width) as f32,
                     (view.len / scale / width) as f32,
                 )
             }
-            _ => self.stft.time_fraction(view.start, view.len),
+            _ => self.stft.time_fraction(
+                view.start - (self.drawn_origin() - self.stft.origin() as f64),
+                view.len,
+            ),
         }
     }
 

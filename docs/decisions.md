@@ -9898,11 +9898,26 @@ for the same reason: what a pixel has to show of ten frames is what happened
 in them, a click included. A card's own mip chain could not be used: it halves
 both axes together, and the frequency rows are not what there are too many of.
 
-**The frequency axis is interpolated with a curve where it is stretched.** A
-log axis gives its lowest bins tens of pixels each; between two rows the
-sampler draws a straight line, so each bin was a ramp with a crease at its
-centre. The shader fits a Catmull-Rom through four rows there, and takes the
-one tap where a pixel covers a bin or more.
+**A pixel shows a magnitude the analysis measured, and a texel larger than a
+pixel is a block.** *(Revised 2026-10-27; the axis was interpolated with a
+curve where it is stretched.)* A log axis gives its lowest bins tens of pixels
+each, and the sampler's straight line between two rows drew each bin as a ramp
+with a crease at its centre; a Catmull-Rom through four rows took the crease
+away, and drew between two bins magnitudes nothing measured, its overshoots
+included, with a shape the curve chose and not the signal. Every value on
+screen is now a texel: the sampler is nearest, so a bin taller than a pixel is
+a block as tall as its band and a column wider than one is a block as wide as
+its hop, and a pixel over several texels still shows the largest. The
+blocks' edges are where the analysis's resolution ends, which is what the
+reader of a spectrogram has to see. It is the field's practice where a
+spectrogram is read rather than looked at: a plot of a time-frequency grid
+draws each value as a flat cell, a measuring view switches its smoothing off
+to inspect single bins, and a zoomed-in spectrum is known to interpolate
+the existing bins without resolving anything new. The same reasoning bounds
+the columns: none is finer than the hop between the analysis's windows,
+since one more window a few frames from the last measures nothing the grid
+did not, and a column is drawn centred on the windows it was measured from
+-- drawn from where they start, a click lit the block before its own.
 
 **The analysis moved to the shared core, because a client has to write what
 the host reads.** The host has always accepted a spectrogram cache and only

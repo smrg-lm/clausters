@@ -154,18 +154,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     // Texture row 0 is bin 0 (low frequency), so the bottom shows the lowest.
     let v = clamp(bin_norm, 0.0, 1.0);
-    // **Where a pixel covers more than one texel, it shows the largest of
-    // them**, along either axis: the bins a pixel row spans on a log axis's
-    // upper octaves or in a short row, and the columns a pixel spans when
-    // the texture is finer in time than the screen. A sampler would draw the
-    // two texels nearest the pixel's middle, and a narrow line between them
-    // would not be there at all. It is the reading a waveform's pixel makes
-    // of its samples, made of the magnitudes. Where a bin is taller than a
-    // pixel the rows are interpolated with a curve instead: a log axis
-    // spreads its lowest bins over tens of pixels each, and the sampler's
-    // straight line between two rows draws every bin as a ramp with a
-    // corner at its centre. A Catmull-Rom through four rows goes through the
-    // same magnitudes with no crease.
+    // **Every pixel shows a magnitude the analysis measured.** Where a pixel
+    // covers more than one texel, along either axis, it shows the largest of
+    // them: the bins a pixel row spans on a log axis's upper octaves or in a
+    // short row, and the columns a pixel spans when the texture is finer in
+    // time than the screen. A sampler would draw the two texels nearest the
+    // pixel's middle, and a narrow line between them would not be there at
+    // all. It is the reading a waveform's pixel makes of its samples, made of
+    // the magnitudes. Where a texel is larger than a pixel, the pixel shows
+    // that texel (the sampler is nearest): a bin taller than a pixel is a
+    // block as tall as its band, a column wider than one a block as wide as
+    // its hop. A curve or a ramp between two texels would draw magnitudes
+    // nothing measured, and the block's edges are where the analysis's own
+    // resolution ends.
     let dims = vec2<f32>(textureDimensions(tex));
     let bins = dims.y;
     let half_t = abs(dpdx(t)) * 0.5;
@@ -192,7 +193,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         mag = 0.0;
         for (var i = 0u; i < nx; i++) {
             // A column's middle, or the pixel's own place where a column is
-            // wider than it, so time stays interpolated.
+            // wider than it, which the sampler reads as that column.
             var x = t;
             if nx > 1u {
                 x = (x0 + floor(f32(i) * (x1 - x0 + 1.0) / f32(nx)) + 0.5) / dims.x;
@@ -206,23 +207,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             }
         }
     } else {
-        // Row centres are at (k + 0.5) / bins: the row under this pixel, and
-        // how far past its centre the pixel is.
-        let y = v * bins - 0.5;
-        let k = floor(y);
-        let f = y - k;
-        let row = vec4<f32>(k - 1.0, k, k + 1.0, k + 2.0);
-        let at = (clamp(row, vec4<f32>(0.0), vec4<f32>(bins - 1.0)) + 0.5) / bins;
-        let m0 = level(t, at.x);
-        let m1 = level(t, at.y);
-        let m2 = level(t, at.z);
-        let m3 = level(t, at.w);
-        // Catmull-Rom, clamped: the curve may overshoot a peak, a magnitude
-        // may not.
-        let c = m1 + 0.5 * f * (m2 - m0
-            + f * (2.0 * m0 - 5.0 * m1 + 4.0 * m2 - m3
-            + f * (3.0 * (m1 - m2) + m3 - m0)));
-        mag = clamp(c, 0.0, 1.0);
+        mag = level(t, v);
     }
 
     // Remap the stored magnitude into the display dB window for contrast.

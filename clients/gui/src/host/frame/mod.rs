@@ -739,7 +739,11 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
 /// hand's pace stays inside what is held while the next span comes, instead
 /// of drawing the edges it reveals from the whole take's columns. Both hops
 /// are a power of two, so a small zoom and a pan ask for the columns the
-/// answerer already holds.
+/// answerer already holds, and **neither is finer than the hop between the
+/// analysis's windows**: a column narrower than that would be one more window
+/// a few frames from the last, which measures nothing a window on the
+/// analysis's grid did not, and a view zoomed past it draws each window as a
+/// block as wide as its hop.
 pub(crate) fn columns_owed(
     slot: &SpectrogramSlot,
     nav: &View,
@@ -780,7 +784,13 @@ pub(crate) fn columns_owed_of(
     if total == 0 {
         return None;
     }
+    // the analysis's own hop: no column is finer
+    let finest = if hop == 0 { window / 2 } else { hop }.max(1);
     let span = |start: usize, end: usize, hop: usize| {
+        let hop = hop.max(finest);
+        // on the grid of its own hop, so a column's windows are the ones on
+        // the analysis's grid the answerer finds, not the nearest to it
+        let start = start / hop * hop;
         Owed::Columns(crate::host::columns::ColumnSpan {
             start,
             hop,
@@ -815,23 +825,26 @@ pub(crate) fn columns_owed_of(
             ));
         }
     };
-    let want = power_hop(nav.len / width);
+    let want = power_hop(nav.len / width).max(finest);
     // the view and `reach` frames past either edge, clamped to the take
     let span_of = |reach: f64| {
         let a = ((nav.start - reach).floor().max(0.0) as usize).min(total);
         let b = ((nav.start + nav.len + reach).ceil().max(0.0) as usize).clamp(a, total);
         (a, b)
     };
-    let near = span_of(nav.len * OWED_NEAR);
-    let answers = |stft: &Stft| {
+    // a view at the analysis's own hop is drawn by its windows, one a block,
+    // and no coarser picture stands in for them
+    let coarsest = if want == finest { want } else { want * 2 };
+    let covers = |stft: &Stft, (a, b): (usize, usize)| {
         let first = stft.origin();
         let last = first + stft.n_frames().saturating_sub(1) * stft.hop();
-        stft.hop() <= want * 2
+        stft.hop() <= coarsest
             && (stft.hop() * 2 >= want || stft.origin() == 0 && last + stft.hop() >= total)
-            && first <= near.0
-            && near.1.min(total.saturating_sub(1)) <= last
+            && first <= a
+            && b.min(total.saturating_sub(1)) <= last
     };
-    if analyzed(held) && answers(held) || answers(overview) {
+    let near = span_of(nav.len * OWED_NEAR);
+    if analyzed(held) && covers(held, near) || covers(overview, near) {
         return None;
     }
     let (a, b) = span_of(nav.len * OWED_REACH);
