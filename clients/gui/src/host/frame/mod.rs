@@ -733,9 +733,13 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
 /// spectral summary is asked at least a column of the summary apart
 /// (`clausters_core::spectra`), so it is read from the summary with no
 /// sample, and a view finer than that asks for its span. The span asked
-/// runs a quarter of the view past either side, so a pan that small is drawn
-/// from what is held, and both hops are a power of two, so a small zoom and
-/// a pan ask for the columns the answerer already holds.
+/// reaches half a view past either edge ([`OWED_REACH`]) and is asked again
+/// once the view comes within a quarter of a view of the edge of what is
+/// held ([`OWED_NEAR`]), as a waveform's detail is: a pan or a zoom out at a
+/// hand's pace stays inside what is held while the next span comes, instead
+/// of drawing the edges it reveals from the whole take's columns. Both hops
+/// are a power of two, so a small zoom and a pan ask for the columns the
+/// answerer already holds.
 pub(crate) fn columns_owed(
     slot: &SpectrogramSlot,
     nav: &View,
@@ -812,25 +816,26 @@ pub(crate) fn columns_owed_of(
         }
     };
     let want = power_hop(nav.len / width);
-    let a = nav.start.floor().max(0.0) as usize;
-    let b = ((nav.start + nav.len).ceil().max(0.0) as usize).min(total);
+    // the view and `reach` frames past either edge, clamped to the take
+    let span_of = |reach: f64| {
+        let a = ((nav.start - reach).floor().max(0.0) as usize).min(total);
+        let b = ((nav.start + nav.len + reach).ceil().max(0.0) as usize).clamp(a, total);
+        (a, b)
+    };
+    let near = span_of(nav.len * OWED_NEAR);
     let answers = |stft: &Stft| {
         let first = stft.origin();
         let last = first + stft.n_frames().saturating_sub(1) * stft.hop();
         stft.hop() <= want * 2
             && (stft.hop() * 2 >= want || stft.origin() == 0 && last + stft.hop() >= total)
-            && first <= a
-            && b.min(total.saturating_sub(1)) <= last
+            && first <= near.0
+            && near.1.min(total.saturating_sub(1)) <= last
     };
     if analyzed(held) && answers(held) || answers(overview) {
         return None;
     }
-    let margin = (nav.len / 4.0).ceil() as usize;
-    Some(span(
-        a.saturating_sub(margin),
-        (b + margin).min(total),
-        want,
-    ))
+    let (a, b) = span_of(nav.len * OWED_REACH);
+    Some(span(a, b, want))
 }
 
 /// **The hop for `per_px` frames a pixel**: the largest power of two under
