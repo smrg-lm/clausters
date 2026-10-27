@@ -138,6 +138,13 @@ const fn descending(rows: [u8; GLYPH_H], tail: u8) -> Bitmap {
     ]
 }
 
+/// ...and a **subscript digit**: a figure three columns wide and five rows
+/// tall, its foot hung below the line as a subscript's is (`A\u{2084}`, the
+/// A of the fourth octave).
+const fn subscript(rows: [u8; 5]) -> Bitmap {
+    [0, 0, 0, 0, 0, rows[0], rows[1], rows[2], rows[3], rows[4]]
+}
+
 /// A **mark** a Latin-1 letter is composed with: two rows drawn above the
 /// base's own topmost ink, or -- the cedilla -- one row hung under it.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -385,6 +392,17 @@ fn base(c: char) -> Bitmap {
         '\u{b8}' => body([0, 0, 0, 0, 0, 0, 0x0C]),
         // The single-cell ellipsis clipped text ends in.
         '\u{2026}' => body([0, 0, 0, 0, 0, 0, 0x15]),
+        // The subscript digits, an octave's number on a note's name.
+        '\u{2080}' => subscript([0x0E, 0x0A, 0x0A, 0x0A, 0x0E]),
+        '\u{2081}' => subscript([0x04, 0x0C, 0x04, 0x04, 0x0E]),
+        '\u{2082}' => subscript([0x0E, 0x02, 0x0E, 0x08, 0x0E]),
+        '\u{2083}' => subscript([0x0E, 0x02, 0x06, 0x02, 0x0E]),
+        '\u{2084}' => subscript([0x0A, 0x0A, 0x0E, 0x02, 0x02]),
+        '\u{2085}' => subscript([0x0E, 0x08, 0x0E, 0x02, 0x0E]),
+        '\u{2086}' => subscript([0x0E, 0x08, 0x0E, 0x0A, 0x0E]),
+        '\u{2087}' => subscript([0x0E, 0x02, 0x04, 0x04, 0x04]),
+        '\u{2088}' => subscript([0x0E, 0x0A, 0x0E, 0x0A, 0x0E]),
+        '\u{2089}' => subscript([0x0E, 0x0A, 0x0E, 0x02, 0x0E]),
         _ => body([0x1F, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1F]), // fallback box
     }
 }
@@ -1113,6 +1131,25 @@ mod tests {
             assert_ne!(glyph(c), fallback, "{c:?} falls back to the box");
         }
         assert_ne!(glyph('`'), glyph('\u{b4}'), "grave and acute lean apart");
+    }
+
+    /// **The subscript digits** draw their own small figures, ten of them
+    /// apart, with their foot below the line.
+    #[test]
+    fn a_subscript_digit_has_a_glyph_below_the_line() {
+        let fallback = base('\u{fffd}');
+        let digits: Vec<Bitmap> = ('\u{2080}'..='\u{2089}').map(glyph).collect();
+        for (i, g) in digits.iter().enumerate() {
+            assert_ne!(*g, fallback, "subscript {i} falls back to the box");
+            assert_ne!(g[ROWS - 1], 0, "subscript {i} hangs below the line");
+            assert!(g[..ASCENT + 3].iter().all(|r| *r == 0), "and starts low");
+        }
+        for (i, a) in digits.iter().enumerate() {
+            assert!(
+                digits[i + 1..].iter().all(|b| b != a),
+                "subscript {i} is its own"
+            );
+        }
     }
 
     #[test]

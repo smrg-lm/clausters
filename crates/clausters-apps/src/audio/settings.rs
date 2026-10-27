@@ -248,7 +248,7 @@ impl Settings {
                 scale,
             ),
             id("tuning").map(|id| {
-                json!({"type": "number", "id": id, "label": "A4 (Hz)", "stepper": true,
+                json!({"type": "number", "id": id, "label": "Tuning (A\u{2084}, Hz)", "stepper": true,
                     "min": 200, "max": 1000, "step": 0.1, "value": self.tuning})
             }),
             choice(
