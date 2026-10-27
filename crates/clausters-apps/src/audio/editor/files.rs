@@ -903,18 +903,40 @@ mod ownership_tests {
         assert_eq!(meter["props"], json!({"bus":-1,"channels":1}));
     }
 
+    /// **The meter is drawn before the playback says where it writes**: the
+    /// window holds it from the start, reading no bus, and the answer that
+    /// says where points it there. A window with no file draws no meter, and
+    /// nothing corrects one.
     #[test]
-    fn a_meter_the_window_does_not_draw_is_not_corrected() {
+    fn a_meter_is_drawn_before_the_playback_says_where_it_writes() {
         let mut editor =
             new_json(r#"{"path":"/in/take3.wav","workspace":"/work","frames":100}"#).unwrap();
-        // drawn before a playback said where its meter writes: no meter
-        call(
+        let tree = call(
             &mut editor,
             json!({"verb":"window", "widget":10, "meter":12}),
         );
+        assert!(
+            tree.to_string()
+                .contains(r#""bus":-1,"channels":1,"id":12,"rate":"control""#),
+            "{tree}"
+        );
         let out = call(
             &mut editor,
-            json!({"verb":"playing", "file":null, "meters":{"bus":-1,"channels":1}}),
+            json!({"verb":"sync", "meters":{"bus":7,"channels":1}}),
+        );
+        assert_eq!(
+            out["corrections"],
+            json!([{"widget":12, "props":{"bus":7,"channels":1}}])
+        );
+        let mut empty = new_json(r#"{"empty": true}"#).unwrap();
+        let tree = call(
+            &mut empty,
+            json!({"verb":"window", "widget":10, "meter":12}),
+        );
+        assert!(!tree.to_string().contains(r#""type":"meter""#), "{tree}");
+        let out = call(
+            &mut empty,
+            json!({"verb":"playing", "file":null, "meters":{"bus":7,"channels":1}}),
         );
         assert!(
             out["corrections"]
@@ -923,23 +945,6 @@ mod ownership_tests {
                 .iter()
                 .all(|c| c["widget"] != 12),
             "{out}"
-        );
-        // drawn again, it carries the meter and the meter is corrected
-        let tree = call(
-            &mut editor,
-            json!({"verb":"window", "widget":10, "meter":12}),
-        );
-        assert!(tree.to_string().contains(r#""type":"meter""#));
-        let out = call(
-            &mut editor,
-            json!({"verb":"playing", "file":null, "meters":{"bus":-1,"channels":1}}),
-        );
-        assert!(
-            out["corrections"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|c| c["widget"] == 12)
         );
     }
 }

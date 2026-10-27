@@ -876,18 +876,29 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// **The window has its meter from the start**: it is drawn before the
-    /// playback says where it writes, and a meter cannot be corrected into
-    /// being, so the window is drawn again once it has said, with nothing
-    /// asked of it in between.
+    /// **The window has its meter from the start**: the first window drawn
+    /// holds it, before the file's work is done and before the playback says
+    /// where it writes, and the window keeps that meter once the open has
+    /// settled, so nothing in its layout moves.
     #[test]
     fn an_opened_window_draws_its_meter() {
         let path = take("meter", 24_000);
         let mut host = host();
-        let def_id = opened(&mut host, &path);
-        until(&mut host, "the window never drew its meter", |h| {
-            h.window_def(def_id).is_some() && h.registry.kinds().values().any(|k| k == "meter")
+        let def_id = host.open_audio(Some(&path), "take").expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
         });
+        let meter = |h: &Host| {
+            h.registry
+                .kinds()
+                .into_iter()
+                .find_map(|(id, kind)| (kind == "meter").then_some(id))
+        };
+        let first = meter(&host);
+        assert!(first.is_some(), "the first window draws its meter");
+        settled(&mut host, def_id);
+        host.take_effects();
+        assert_eq!(meter(&host), first, "the same meter, once the open settled");
         let _ = std::fs::remove_file(&path);
     }
 

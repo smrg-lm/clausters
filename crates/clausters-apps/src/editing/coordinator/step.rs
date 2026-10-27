@@ -312,10 +312,15 @@ impl Session {
                 let meters = self.meters();
                 let answer =
                     member_call(editing, member, json!({"verb": "sync", "meters": meters}));
-                // a window drawn before the playback said where it writes
-                // gets its meter: drawn again, now with it
-                if answer["publish"] == true && window {
-                    effects.push(tagged("publish", json!({})));
+                // the window's meter, drawn before the playback said where it
+                // writes, reads there from now on
+                if window {
+                    for correction in answer["corrections"].as_array().into_iter().flatten() {
+                        effects.push(tagged(
+                            "set",
+                            json!({"widget": correction["widget"], "props": correction["props"]}),
+                        ));
+                    }
                 }
                 Flow::Next
             }
@@ -334,9 +339,6 @@ impl Session {
                         "set",
                         json!({"widget": correction["widget"], "props": correction["props"]}),
                     ));
-                }
-                if answer["publish"] == true {
-                    effects.push(tagged("publish", json!({})));
                 }
                 Flow::Next
             }

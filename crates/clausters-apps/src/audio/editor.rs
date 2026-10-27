@@ -622,9 +622,6 @@ struct AudioWindowState {
     // version and Conversation, not a second wire staleness mechanism.
     binding_generation: u64,
     meter_widget: Option<i32>,
-    // The id the window numbered the meter with, drawn or not: a window
-    // defined before the playback said where it writes has no meter yet.
-    meter_slot: Option<i32>,
     envelope_widget: Option<i32>,
     // The working folder the editor's renders and the peaks of what it
     // opened are written to; the client's, made when the editor opens.
@@ -728,7 +725,6 @@ impl AudioEditor {
                 active: true,
                 binding_generation: 0,
                 meter_widget: None,
-                meter_slot: None,
                 envelope_widget: None,
                 workspace: None,
                 server: Default::default(),
@@ -1275,19 +1271,21 @@ impl AudioEditor {
 
     /// **The window**, numbered with the take widget's id, drawing the list.
     ///
-    /// `meter` is the id the level meter is drawn under; the meter is there
-    /// once a playback has said where it writes ([`Self::set_meters`]).
+    /// `meter` is the id the level meter is drawn under. The meter is part
+    /// of the window from the start, whatever the file's work: until a
+    /// playback says where it writes ([`Self::set_meters`]) it reads no bus,
+    /// and the answer that says so corrects it ([`Self::meter_corrections`]).
     pub fn window(&mut self, widget: i32, meter: Option<i32>) -> Value {
         self.window_state.widget = Some(widget);
-        self.window_state.meter_slot = meter;
-        let meter = meter
-            .zip(self.window_state.meters)
-            .filter(|_| self.open_files.open)
-            .map(|(id, (bus, channels))| MeterAt {
-                widget: id,
-                bus,
-                channels,
-            });
+        let (bus, channels) = self
+            .window_state
+            .meters
+            .unwrap_or((-1, self.file.channels as usize));
+        let meter = meter.filter(|_| self.open_files.open).map(|id| MeterAt {
+            widget: id,
+            bus,
+            channels,
+        });
         // only a meter the window draws is corrected afterwards
         self.window_state.meter_widget = meter.map(|m| m.widget);
         let label = self.pane_label();
@@ -1435,15 +1433,19 @@ impl AudioEditor {
         self.window_state.meters = meters;
     }
 
-    /// **Whether the window is owed its meter**: it numbered one, a file is
-    /// open, and the playback has said where it writes since the window was
-    /// drawn without it. The meter cannot be corrected into being, so the
-    /// window is drawn again.
-    pub(super) fn owes_meter(&self) -> bool {
-        self.open_files.open
-            && self.window_state.meters.is_some()
-            && self.window_state.meter_slot.is_some()
-            && self.window_state.meter_widget.is_none()
+    /// **The meter where the playback writes**: the correction of the
+    /// window's meter to the buses it reads, once the playback has said, and
+    /// nothing for a window that draws none.
+    pub(super) fn meter_corrections(&self) -> Vec<Correction> {
+        let (Some(widget), Some((bus, channels))) =
+            (self.window_state.meter_widget, self.window_state.meters)
+        else {
+            return Vec::new();
+        };
+        vec![Correction {
+            widget: i64::from(widget),
+            props: json!({"bus": bus, "channels": channels}),
+        }]
     }
 
     /// **What the space bar plays**, with the loop switch `looping`: from the
