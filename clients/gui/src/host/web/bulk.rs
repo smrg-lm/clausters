@@ -196,8 +196,8 @@ impl WebApp {
     /// Starts the bulk loads of a freshly opened def: server-buffer fetches
     /// over the WS leg, and `fetch`es of every waveform/plot `path`/`cache`
     /// (URLs against the page origin in the browser).
-    pub(super) fn start_bulk(&mut self, def: i32) {
-        self.bulk_pass(def, false);
+    pub(super) fn start_bulk(&mut self, def: i32) -> Vec<(i32, i32, bool)> {
+        self.bulk_pass(def, false)
     }
 
     /// **Serves whatever this def's elements were told to read again** -- a take
@@ -209,15 +209,20 @@ impl WebApp {
         self.bulk_pass(def, true);
     }
 
-    fn bulk_pass(&mut self, def: i32, again: bool) {
+    /// The bulk walk of def `def`, returning the server buffers its views
+    /// read, which the canvas also keeps (`CanvasSlot::reads`).
+    fn bulk_pass(&mut self, def: i32, again: bool) -> Vec<(i32, i32, bool)> {
         let Some(tree) = self.host.window_def_mut(def) else {
-            return;
+            return Vec::new();
         };
         let mut buffer_refs = Vec::new();
         let mut requests = Vec::new();
         collect_bulk(tree, None, again, &mut buffer_refs, &mut requests);
         if buffer_refs.is_empty() && requests.is_empty() {
-            return;
+            return buffer_refs;
+        }
+        if let Some(slot) = self.canvases.get_mut(&def) {
+            slot.reads.extend(frame::reads_of(&buffer_refs));
         }
         // **A page drawing a server buffer registers for notifications.**
         // `/buffer_touched` is how it hears that another peer edited the
@@ -231,7 +236,7 @@ impl WebApp {
                 args: vec![OscType::Int(1)],
             });
         }
-        for (widget_id, bufnum, shape_only) in buffer_refs {
+        for &(widget_id, bufnum, shape_only) in &buffer_refs {
             let query = if shape_only {
                 self.fetches.want_shape(def, widget_id, bufnum)
             } else {
@@ -244,6 +249,7 @@ impl WebApp {
         for (widget_id, request) in requests {
             wasm_bindgen_futures::spawn_local(fetch_bulk(self.id, def, widget_id, request));
         }
+        buffer_refs
     }
 
     /// Places a decoded GPU-bound resource (waveform or spectrogram) on its

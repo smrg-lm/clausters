@@ -151,9 +151,28 @@ pub(crate) struct SpectrogramSlot {
     /// new one over the take as long as it is now, since the columns it holds
     /// measure the take it was.
     pub(crate) stale: std::cell::Cell<Option<usize>>,
+    /// **It was kept across a redefine of its window** ([`carry_spectrograms`])
+    /// and the fetch the new tree makes has not landed yet: that fetch is of
+    /// the take these columns measure, not of an edit, and finds them current.
+    pub(crate) carried: std::cell::Cell<bool>,
 }
 
 impl SpectrogramSlot {
+    /// **Whether a take of `frames` frames placed over this slot keeps its
+    /// columns**, drawn on while the ones it owes come: a transform of a
+    /// span does, and owes the take again at its new length (`stale`)
+    /// unless the placement is the fetch of a redefine it was kept across,
+    /// over a take as long as the one it measures.
+    pub(crate) fn keeps_columns(&self, frames: usize) -> bool {
+        if !self.views.first().is_some_and(|v| v.stft().is_span()) {
+            return false;
+        }
+        if !(self.carried.replace(false) && self.total_samples() == frames) {
+            self.stale.set(Some(frames));
+        }
+        true
+    }
+
     /// The per-channel sample count of this slot's data.
     pub(crate) fn total_samples(&self) -> usize {
         self.views.first().map_or(1, |v| v.total_samples())
@@ -177,6 +196,7 @@ pub(crate) fn spectrogram_slot(
         views,
         owed: std::cell::Cell::new(None),
         stale: std::cell::Cell::new(None),
+        carried: std::cell::Cell::new(false),
     })
 }
 
@@ -219,6 +239,79 @@ fn keep_overviews(slot: &mut SpectrogramSlot, mut held: SpectrogramSlot) {
             overview.filter(|o| o.stft().total_samples() == view.stft().total_samples()),
         );
     }
+}
+
+/// **The server buffer each view of a window reads**, by widget, out of the
+/// references its bulk walk collected: what a redefine compares against to
+/// know which pictures still stand ([`carry_slots`]).
+pub(crate) fn reads_of(refs: &[(i32, i32, bool)]) -> HashMap<i32, i32> {
+    refs.iter()
+        .map(|&(widget, buffer, _)| (widget, buffer))
+        .collect()
+}
+
+/// **What a redefined window keeps of its pictures**: every slot of a view
+/// that reads the buffer it read before (`before`, by widget) and still does
+/// (`now`, the new tree's references), moved from `old` into `into` where the
+/// new tree's own load put nothing.
+///
+/// A redefine rebuilds the tree, and the slots went with it: a panel shown
+/// beside a spectrogram emptied the view and asked for its picture again,
+/// which came back a frame or several later -- a blink over something that
+/// had not changed. The fetch is still made, since the new element has to be
+/// told the take; what it lands in is the picture already on screen.
+pub(crate) fn carry_slots<V>(
+    before: &HashMap<i32, i32>,
+    now: &[(i32, i32, bool)],
+    old: HashMap<SlotAt, V>,
+    into: &mut HashMap<SlotAt, V>,
+) -> Vec<SlotAt> {
+    let mut carried = Vec::new();
+    for (at, slot) in old {
+        let reads = now
+            .iter()
+            .any(|&(widget, buffer, _)| widget == at.0 && before.get(&widget) == Some(&buffer));
+        if reads && !into.contains_key(&at) {
+            into.insert(at, slot);
+            carried.push(at);
+        }
+    }
+    carried
+}
+
+/// [`carry_slots`] for the textures, each kept one marked so the fetch the
+/// new tree makes leaves its columns current ([`SpectrogramSlot::carried`]).
+pub(crate) fn carry_spectrograms(
+    before: &HashMap<i32, i32>,
+    now: &[(i32, i32, bool)],
+    old: HashMap<SlotAt, SpectrogramSlot>,
+    into: &mut HashMap<SlotAt, SpectrogramSlot>,
+) {
+    for at in carry_slots(before, now, old, into) {
+        if let Some(slot) = into.get(&at) {
+            slot.carried.set(true);
+        }
+    }
+}
+
+/// **How long the take of each view's own picture is**, by widget: what a
+/// navigation group spans, set for every view a window's slots draw.
+pub(crate) fn take_totals(
+    waveforms: &HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
+) -> Vec<(i32, usize)> {
+    let own = |at: &SlotAt| at.1 == super::widget::element::SlotKey::SELF;
+    waveforms
+        .iter()
+        .filter(|(at, _)| own(at))
+        .map(|(at, slot)| (at.0, slot.view.total_samples()))
+        .chain(
+            spectrograms
+                .iter()
+                .filter(|(at, _)| own(at))
+                .map(|(at, slot)| (at.0, slot.total_samples())),
+        )
+        .collect()
 }
 
 /// **Puts a resolved bulk resource into the slot its element claimed**, keyed
@@ -321,6 +414,7 @@ fn roll_into_slot(
                 views: vec![view],
                 owed: std::cell::Cell::new(None),
                 stale: std::cell::Cell::new(None),
+                carried: std::cell::Cell::new(false),
             },
         );
     }
@@ -2191,6 +2285,34 @@ pub(crate) fn framing_of(r: Rect, fb_w: u32, fb_h: u32) -> Framing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A redefine keeps the pictures of the views that read what they
+    /// read**: a view on the same buffer keeps every slot it had, a view moved
+    /// to another buffer or gone keeps none, and a slot the new load filled
+    /// is not replaced by the old one.
+    #[test]
+    fn a_redefine_keeps_the_pictures_of_views_on_the_same_buffer() {
+        use crate::host::widget::element::SlotKey;
+        let before = reads_of(&[(1, 7, false), (2, 8, false), (3, 9, false)]);
+        let now = [(1, 7, false), (2, 5, false), (4, 9, false)];
+        let body = SlotKey(0);
+        let old: HashMap<SlotAt, &str> = [
+            ((1, SlotKey::SELF), "one"),
+            ((1, body), "one's body"),
+            ((2, SlotKey::SELF), "two"),
+            ((3, SlotKey::SELF), "three"),
+        ]
+        .into();
+        let mut into: HashMap<SlotAt, &str> = HashMap::new();
+        carry_slots(&before, &now, old.clone(), &mut into);
+        let mut kept: Vec<_> = into.values().copied().collect();
+        kept.sort_unstable();
+        assert_eq!(kept, ["one", "one's body"]);
+        let mut loaded: HashMap<SlotAt, &str> = [((1, SlotKey::SELF), "new")].into();
+        carry_slots(&before, &now, old, &mut loaded);
+        assert_eq!(loaded[&(1, SlotKey::SELF)], "new");
+        assert_eq!(loaded[&(1, body)], "one's body");
+    }
 
     /// **A window drawn offscreen and read back is the window's picture**:
     /// the size of its framebuffer, the theme's background where nothing is

@@ -429,13 +429,9 @@ impl Front for WebApp {
             return false;
         };
         let slots = &render.spectrograms;
-        match slots.get(&(widget_id, SlotKey::SELF)) {
-            Some(slot) if slot.views.first().is_some_and(|v| v.stft().is_span()) => {
-                slot.stale.set(Some(frames));
-                true
-            }
-            _ => false,
-        }
+        slots
+            .get(&(widget_id, SlotKey::SELF))
+            .is_some_and(|slot| slot.keeps_columns(frames))
     }
 
     fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)> {

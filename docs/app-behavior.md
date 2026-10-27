@@ -180,6 +180,11 @@ code that keeps it lives.
   from the summary. After an edit the whole take is asked again first,
   at the length the take has now, and the picture before the edit is drawn
   only where its columns reach.
+- **A redefine keeps what has not changed.** A window redefined in place (a
+  panel shown or hidden beside a view) keeps the pictures of every view that
+  reads the buffer it read: the view does not empty and is not asked for
+  again, and the fetch the new tree makes lands in the picture on screen,
+  without counting as an edit of the take.
 - **A spectrogram shows only magnitudes the analysis measured.** A pixel
   inside one bin or one column shows that value, so a bin taller than a pixel
   is a block as tall as its band and a column wider than a pixel a block as

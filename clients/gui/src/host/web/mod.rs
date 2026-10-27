@@ -416,13 +416,41 @@ impl WebApp {
                     if !self.canvases.contains_key(&id) {
                         self.attach(event_loop, id, None);
                     }
-                    if let Some(slot) = self.canvases.get_mut(&id) {
+                    // What a redefine may keep of the pictures: the slots,
+                    // and what each view read (`frame::carry_slots`).
+                    let pictures = self.canvases.get_mut(&id).map(|slot| {
+                        let reads = std::mem::take(&mut slot.reads);
+                        let slots = slot.render.as_mut().map(|render| {
+                            (
+                                std::mem::take(&mut render.waveforms),
+                                std::mem::take(&mut render.spectrograms),
+                            )
+                        });
                         slot.clear_def_state();
-                    }
+                        (reads, slots)
+                    });
                     self.fetches.drop_def(id); // rebuild semantics on a re-/gui_def
                     self.build_resources(id);
                     self.request_redraw(id);
-                    self.start_bulk(id);
+                    let refs = self.start_bulk(id);
+                    if let Some((before, Some((waveforms, spectrograms)))) = pictures
+                        && let Some(render) =
+                            self.canvases.get_mut(&id).and_then(|s| s.render.as_mut())
+                    {
+                        let _ =
+                            frame::carry_slots(&before, &refs, waveforms, &mut render.waveforms);
+                        frame::carry_spectrograms(
+                            &before,
+                            &refs,
+                            spectrograms,
+                            &mut render.spectrograms,
+                        );
+                        for (wid, total) in
+                            frame::take_totals(&render.waveforms, &render.spectrograms)
+                        {
+                            self.host.set_take_total(wid, total);
+                        }
+                    }
                     self.on_tree_changed();
                 }
                 HostEffect::CloseWindow(id) => {

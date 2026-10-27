@@ -38,6 +38,9 @@ pub(super) struct WindowRender {
 /// into this canvas, at this size, and right now it is (not) visible*.
 pub(super) struct CanvasSlot {
     pub(super) window: Arc<Window>,
+    /// The server buffer each view reads, by widget: what a redefine keeps
+    /// the pictures of (`frame::carry_slots`).
+    pub(super) reads: HashMap<i32, i32>,
     /// The GPU resources, once the async device resolved.
     pub(super) render: Option<WindowRender>,
     /// A size that arrived before the GPU was ready (so `render` was `None` and
@@ -175,6 +178,7 @@ impl CanvasSlot {
     pub(super) fn new(window: Arc<Window>) -> Self {
         Self {
             window,
+            reads: HashMap::new(),
             render: None,
             pending_size: None,
             visible: true,
@@ -256,6 +260,7 @@ impl CanvasSlot {
     /// -- the rebuild semantics of a re-`/gui_def` and of a `/gui_free`.
     pub(super) fn clear_def_state(&mut self) {
         self.pending_bulk.clear();
+        self.reads.clear();
         if let Some(render) = self.render.as_mut() {
             render.waveforms.clear();
             render.spectrograms.clear();

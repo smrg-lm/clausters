@@ -93,6 +93,9 @@ pub(super) struct WindowState {
     /// When the oldest frame this window asked for and has not been given
     /// was asked for ([`WindowState::unanswered`]).
     pub(super) asked: std::cell::Cell<Option<Instant>>,
+    /// The server buffer each view reads, by widget: what a redefine keeps
+    /// the pictures of (`frame::carry_slots`).
+    pub(super) reads: HashMap<i32, i32>,
 }
 
 /// **How long a frame may go unanswered before its window counts as hidden.**

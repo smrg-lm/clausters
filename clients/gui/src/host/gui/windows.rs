@@ -85,8 +85,17 @@ impl App {
         // that is no longer there.
         self.fetches.drop_def(id);
 
-        let held = self.windows.remove(&id);
+        let mut held = self.windows.remove(&id);
         let opened = held.is_some();
+        // What a redefine may keep of the pictures: the slots, and what each
+        // view read.
+        let pictures = held.as_mut().map(|ws| {
+            (
+                std::mem::take(&mut ws.waveforms),
+                std::mem::take(&mut ws.spectrograms),
+                std::mem::take(&mut ws.reads),
+            )
+        });
         let (gpu, renderers, batches, mut state) = match held {
             Some(ws) => {
                 if let Some(window) = ws.gpu.window() {
@@ -140,11 +149,20 @@ impl App {
             }
         };
 
-        let (waveforms, spectrograms, canvases, buffer_refs) =
+        let (mut waveforms, mut spectrograms, canvases, buffer_refs) =
             self.load_def_resources(id, &gpu, &renderers);
         if opened {
             info!("gui_def {id}: redefined window \"{title}\" in place");
         }
+        if let Some((old_waveforms, old_spectrograms, before)) = pictures {
+            let _ = frame::carry_slots(&before, &buffer_refs, old_waveforms, &mut waveforms);
+            frame::carry_spectrograms(&before, &buffer_refs, old_spectrograms, &mut spectrograms);
+            // the new tree's views span what the pictures they kept span
+            for (wid, total) in frame::take_totals(&waveforms, &spectrograms) {
+                self.host.set_take_total(wid, total);
+            }
+        }
+        let reads = frame::reads_of(&buffer_refs);
 
         let (origin, cursor, shift, ctrl, alt, unnamed, gestures, histories) =
             state.take().unwrap_or((
@@ -179,6 +197,7 @@ impl App {
                 frames: super::app::FrameTally::default(),
                 occluded: false,
                 asked: std::cell::Cell::new(None),
+                reads,
             },
         );
         if let Some(ws) = self.windows.get(&id) {
@@ -310,15 +329,8 @@ impl App {
         // **The widget's own picture registers its extent**, not a body's: the
         // group's span is what its members show, and a box inside a view spans
         // the view rather than the axis.
-        for ((wid, key), slot) in &waveforms {
-            if *key == SlotKey::SELF {
-                self.host.set_take_total(*wid, slot.view.total_samples());
-            }
-        }
-        for ((wid, key), slot) in &spectrograms {
-            if *key == SlotKey::SELF {
-                self.host.set_take_total(*wid, slot.total_samples());
-            }
+        for (wid, total) in frame::take_totals(&waveforms, &spectrograms) {
+            self.host.set_take_total(wid, total);
         }
         (waveforms, spectrograms, canvases, buffer_refs)
     }
@@ -375,6 +387,7 @@ impl App {
                 }
                 ws.spectrograms.insert(at, slot);
             }
+            ws.reads.extend(frame::reads_of(&buffer_refs));
         }
         self.start_buffer_fetches(def_id, buffer_refs);
     }
