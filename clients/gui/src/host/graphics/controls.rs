@@ -271,7 +271,7 @@ pub fn stepper_cells(body: Rect, size: f32, m: &Metrics) -> (Rect, Rect) {
     )
 }
 
-pub fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32, stepper: bool) {
+pub fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32, stepper: bool, typed: Option<&str>) {
     label_strip(d, r.label.as_deref(), rect, size);
     let whole = body_rect_at(rect, r.label.is_some(), size, d.m);
     // The arrows take their cells off the field, so the value is centred in
@@ -298,16 +298,24 @@ pub fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32, stepper: bool) {
         );
     }
     let (mesh, m, theme) = d.parts();
+    // The figure alone in a framed field: a number is read, so nothing
+    // behind it draws a level the way a meter or a slider would.
     mesh.rect(body, theme.field);
-    // A vertical fill rising from the bottom shows the value in range, so
-    // dragging up raises the green level; a border frames the field.
-    let fill_h = body.h * r.fraction();
-    mesh.rect(
-        Rect::new(body.x, body.y + body.h - fill_h, body.w, fill_h),
-        theme.accent_dim,
-    );
     border(mesh, body, m.divider_w, theme.accent);
-    font::text_centered(mesh, &fmt(r.value), body, size, theme.text);
+    match typed {
+        // what is being typed, with the caret after it
+        Some(typed) => {
+            let w = font::width(typed, size);
+            let x = body.x + (body.w - w) * 0.5;
+            let ty = body.y + (body.h - font::height(size)) * 0.5;
+            font::text(mesh, typed, x, ty, size, theme.text);
+            mesh.rect(
+                Rect::new(x + w, ty, m.divider_w.max(1.0), font::height(size)),
+                theme.text,
+            );
+        }
+        None => font::text_centered(mesh, &fmt(r.value), body, size, theme.text),
+    }
 }
 
 /// Draws a `label` into its rect: the line block vertically centered, each
@@ -850,7 +858,7 @@ pub(crate) fn readout_w(r: &Range, size: f32, m: &Metrics) -> f32 {
 }
 
 /// Formats a control value compactly (drops trailing zeros within 2 decimals).
-fn fmt(v: f32) -> String {
+pub(crate) fn fmt(v: f32) -> String {
     if v.fract() == 0.0 && v.abs() < 1e6 {
         format!("{v:.0}")
     } else {

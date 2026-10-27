@@ -3,6 +3,13 @@
 //! Its drag is a knob's, verbatim ([`super::control::Dial`]): the two differ in
 //! the picture and in the height they ask for, which is the whole of what a
 //! catalog entry is once the interaction lives in one place.
+//!
+//! **And it is typed into**, as a numeric field is: with the focus, a digit,
+//! a point or a minus starts a figure in place of the value shown, Backspace
+//! takes its last character back, and Enter, or the focus going elsewhere,
+//! sets the value to it, within the range and on the step. An arrow drops
+//! what was typed and steps the value. The field draws the figure alone, with
+//! no level behind it: it is read, not watched.
 
 use serde_json::{Map, Value};
 
@@ -27,6 +34,9 @@ pub struct Number {
     /// move the value one step each.
     pub stepper: bool,
     drag: Dial,
+    /// The figure being typed, until Enter or the focus going elsewhere
+    /// sets it.
+    typed: Option<String>,
 }
 
 pub(super) fn build(
@@ -44,6 +54,30 @@ fn from_props(props: &Map<String, Value>) -> Number {
             .and_then(crate::host::widget::parse::truthy)
             .unwrap_or(false),
         drag: Dial::default(),
+        typed: None,
+    }
+}
+
+impl Number {
+    /// **Sets the value to the figure typed**, within the range and on the
+    /// step, and reports it; nothing for no figure or one that is no number.
+    fn commit(&mut self) -> Events {
+        let Some(typed) = self.typed.take() else {
+            return Events::none();
+        };
+        let Ok(value) = typed.parse::<f32>() else {
+            return Events::none();
+        };
+        let (lo, hi) = (
+            self.range.min.min(self.range.max),
+            self.range.min.max(self.range.max),
+        );
+        let mut value = value.clamp(lo, hi);
+        if self.range.step > 0.0 {
+            value = (lo + ((value - lo) / self.range.step).round() * self.range.step).min(hi);
+        }
+        self.range.value = value;
+        Events::value(OscType::Float(value))
     }
 }
 
@@ -64,6 +98,7 @@ impl Element for Number {
             ctx.rect,
             self.range.text_size * ctx.scale,
             self.stepper,
+            self.typed.as_deref(),
         );
     }
 
@@ -137,7 +172,34 @@ impl Element for Number {
     }
 
     fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
-        control::key(&mut self.range, key, input.mods)
+        match key {
+            Key::Char(c) if c.is_ascii_digit() || matches!(c, '.' | ',' | '-') => {
+                let c = if *c == ',' { '.' } else { *c };
+                self.typed.get_or_insert_with(String::new).push(c);
+                Some(Events::none())
+            }
+            Key::Char(_) => None,
+            Key::Backspace => {
+                let typed = self
+                    .typed
+                    .get_or_insert_with(|| controls::fmt(self.range.value));
+                typed.pop();
+                Some(Events::none())
+            }
+            Key::Enter => Some(self.commit()),
+            Key::Escape if self.typed.is_some() => {
+                self.typed = None;
+                Some(Events::none())
+            }
+            _ => {
+                self.typed = None;
+                control::key(&mut self.range, key, input.mods)
+            }
+        }
+    }
+
+    fn blur(&mut self) -> Events {
+        self.commit()
     }
 
     /// The wheel turns it, a notch a step, wherever the pointer is on it.
@@ -182,5 +244,41 @@ mod tests {
         n.drag((40.0, -8.0), &input);
         assert!(n.range.value > 5.0, "up is more: {}", n.range.value);
         assert_eq!(n.value(), Some(OscType::Float(n.range.value)));
+    }
+
+    /// **A number is typed into**: a figure replaces the value shown, Enter
+    /// sets it within the range and on the step, the focus going elsewhere
+    /// sets it too, and an arrow drops what was typed and steps the value.
+    #[test]
+    fn a_figure_typed_sets_the_value_on_enter_or_blur() {
+        let mut clip = crate::host::clipboard::Clip::default();
+        let mut n = from_props(&props(r#"{"min":200,"max":1000,"step":0.1,"value":440}"#));
+        let mut type_in = |n: &mut Number, keys: &[Key]| {
+            let mut input = KeyInput {
+                mods: Mods::default(),
+                clipboard: &mut clip,
+                cursor: None,
+            };
+            keys.iter().map(|k| n.key(k, &mut input)).last().flatten()
+        };
+        let digits = |s: &str| s.chars().map(Key::Char).collect::<Vec<_>>();
+        type_in(&mut n, &digits("432,57"));
+        assert_eq!(n.range.value, 440.0, "nothing is set while typing");
+        assert_eq!(n.typed.as_deref(), Some("432.57"));
+        let set = type_in(&mut n, &[Key::Backspace, Key::Enter]).expect("consumed");
+        assert!((n.range.value - 432.5).abs() < 1e-3, "{}", n.range.value);
+        assert_eq!(set, Events::value(OscType::Float(n.range.value)));
+        type_in(&mut n, &digits("5000"));
+        n.blur();
+        assert_eq!(n.range.value, 1000.0, "within the range");
+        type_in(&mut n, &digits("3"));
+        type_in(&mut n, &[Key::Down]);
+        assert!(n.typed.is_none(), "an arrow drops the figure");
+        assert!((n.range.value - 999.9).abs() < 1e-3, "{}", n.range.value);
+        assert_eq!(
+            type_in(&mut n, &[Key::Char('x')]),
+            None,
+            "a letter is the window's"
+        );
     }
 }
