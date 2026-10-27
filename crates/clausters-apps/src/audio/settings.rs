@@ -78,7 +78,7 @@ impl Default for Settings {
             window: 1024,
             shape: "hann".into(),
             overlap: 0.5,
-            scale: "log".into(),
+            scale: "linear".into(),
             tuning: 440.0,
             colormap: "viridis".into(),
             normalize: false,
@@ -222,8 +222,8 @@ impl Settings {
         let scale = SCALES
             .iter()
             .position(|(n, _)| *n == self.scale)
-            .unwrap_or(1);
-        let analysis: Vec<Value> = [
+            .unwrap_or(0);
+        let settings: Vec<Value> = [
             choice(
                 "window",
                 "Window size",
@@ -241,11 +241,6 @@ impl Settings {
                     "min": 0, "max": 100, "step": 1,
                     "value": (self.overlap * 100.0).round()})
             }),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        let display: Vec<Value> = [
             choice(
                 "scale",
                 "Frequency scale",
@@ -270,14 +265,14 @@ impl Settings {
         .into_iter()
         .flatten()
         .collect();
-        let sections: Vec<Value> = [("Analysis", analysis), ("Display", display)]
-            .into_iter()
-            .filter(|(_, children)| !children.is_empty())
-            .map(|(title, children)| {
-                let mut section = crate::panels::section(title, false, children);
+        // one section, the spectrogram's, folded and unfolded whole
+        let sections: Vec<Value> = (!settings.is_empty())
+            .then(|| {
+                let mut section = crate::panels::section("Spectrogram", false, settings);
                 section.insert("flow".into(), json!("col"));
                 Value::Object(section)
             })
+            .into_iter()
             .collect();
         crate::panels::column(sections, WIDTH)
     }
@@ -355,8 +350,10 @@ mod tests {
         let panel = s.panel(&ids()).expect("a panel");
         assert_eq!(panel["type"], "plane");
         let sections = panel["children"].as_array().unwrap();
-        assert_eq!(sections.len(), 2);
-        assert_eq!(sections[0]["title"], "Analysis");
+        assert_eq!(sections.len(), 1, "every setting in one section");
+        assert_eq!(sections[0]["title"], "Spectrogram");
+        assert_eq!(sections[0]["children"].as_array().unwrap().len(), 7);
+        assert_eq!(sections[0]["children"][3]["index"], 0, "a linear scale");
         assert_eq!(sections[0]["children"][0]["index"], 2, "1024 frames");
         assert_eq!(sections[0]["children"][2]["value"], 50.0, "half");
         assert_eq!(
