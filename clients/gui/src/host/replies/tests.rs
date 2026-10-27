@@ -706,27 +706,48 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
         panic!("{owed:?}")
     };
     assert!(
-        close.start < frames && close.start + close.hop * close.columns > frames + 2 * frames / 10
+        close.start < frames + 1
+            && close.start + close.hop * close.columns > frames + 2 * frames / 10
     );
     assert!(close.hop.is_power_of_two() && close.hop < span.hop);
-    // **The span asked reaches half a view past either edge**, and is asked
+    // **What is on screen is asked alone first**, when nothing held draws
+    // it: a span comes whole, and the view alone comes in half the time.
+    assert_eq!(close.start, frames / close.hop * close.hop, "{close:?}");
+    let of = |ask: &crate::host::columns::ColumnSpan| {
+        crate::spectrogram::Stft::of_span(
+            vec![0.0; ask.columns * 256],
+            256,
+            ask.start,
+            ask.hop,
+            512,
+            48_000.0,
+            2 * frames,
+        )
+        .unwrap()
+        .with_analysis(256, 0)
+    };
+    // **Then the span reaches half a view past either edge**, and is asked
     // again once the view comes within a quarter of a view of what is held:
     // a zoom out or a pan reveals what is beside the view while the next
     // span comes, instead of the whole take's columns.
-    assert!(
-        close.start <= frames - frames / 10 && close.start + frames / 10 >= frames - frames / 5
-    );
-    let held = crate::spectrogram::Stft::of_span(
-        vec![0.0; close.columns * 256],
-        256,
-        close.start,
-        close.hop,
-        512,
-        48_000.0,
-        2 * frames,
+    let owed = crate::host::frame::columns_owed_of(
+        &of(&close),
+        Some(stft),
+        None,
+        &near,
+        200.0,
+        (512, 256, 0),
     )
-    .unwrap()
-    .with_analysis(256, 0);
+    .expect("the margins, once the view is held");
+    let crate::host::frame::Owed::Columns(far) = owed else {
+        panic!("{owed:?}")
+    };
+    assert!(
+        far.start <= frames - frames / 10 && far.start + frames / 10 >= frames - frames / 5,
+        "{far:?}"
+    );
+    assert_eq!(far.hop, close.hop);
+    let held = of(&far);
     let owes = |at: f64| {
         let view = crate::viewport::View {
             start: at,

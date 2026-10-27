@@ -733,7 +733,9 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
 /// spectral summary is asked at least a column of the summary apart
 /// (`clausters_core::spectra`), so it is read from the summary with no
 /// sample, and a view finer than that asks for its span. The span asked
-/// reaches half a view past either edge ([`OWED_REACH`]) and is asked again
+/// reaches half a view past either edge ([`OWED_REACH`]), once the view
+/// itself is held (a span comes whole, so what is on screen is asked alone
+/// first when nothing held draws it), and is asked again
 /// once the view comes within a quarter of a view of the edge of what is
 /// held ([`OWED_NEAR`]), as a waveform's detail is: a pan or a zoom out at a
 /// hand's pace stays inside what is held while the next span comes, instead
@@ -847,7 +849,15 @@ pub(crate) fn columns_owed_of(
     if analyzed(held) && covers(held, near) || covers(overview, near) {
         return None;
     }
-    let (a, b) = span_of(nav.len * OWED_REACH);
+    // what is on screen first, when nothing held draws it: a span comes
+    // whole, and one of the view alone comes in half the time of one that
+    // reaches past both edges, which is asked next
+    let shown = span_of(0.0);
+    let (a, b) = if analyzed(held) && covers(held, shown) {
+        span_of(nav.len * OWED_REACH)
+    } else {
+        shown
+    };
     Some(span(a, b, want))
 }
 

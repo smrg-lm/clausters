@@ -173,9 +173,10 @@ code that keeps it lives.
   that resolves. A view draws the span where its columns reach and the whole
   take everywhere else, so a zoom out, or a pan past what is held, shows the
   whole take coarser at once and never stretches the span's first or last
-  column over the rest. The span reaches half a view past either edge and the
-  next is asked within a quarter of a view of what is held, as a waveform's
-  detail is. The whole take, analyzed as the file's spectral summary, is read
+  column over the rest. Where nothing held draws the view, the view alone is
+  asked first and then the span that reaches half a view past either edge;
+  the next is asked within a quarter of a view of what is held, as a
+  waveform's detail is. The whole take, analyzed as the file's spectral summary, is read
   from the summary. After an edit the whole take is asked again first,
   at the length the take has now, and the picture before the edit is drawn
   only where its columns reach.
