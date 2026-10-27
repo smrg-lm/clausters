@@ -122,6 +122,11 @@ already carry it.
   editor's layout: the clip's half of the folded channels, a ruler detail,
   and the meter's width.
 
+- ⬜ **A spectrogram's first look at a span of 20 s to a few minutes
+  analyzes every window under it** *(`clients/gui/PLAN.md`, Found by
+  use)*. Measured while fixing the editor's zoom; a trade of the summary's
+  size against a burst of analysis, weighed before the format changes.
+
 - ⬜ **The audio editor's switches are menu entries, not checks**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.

@@ -8912,3 +8912,18 @@ module of its own.
   in how scrubbable fields behave before it is chosen.
   *(Closed 2026-10-27: a step a pixel, Shift ten and Alt a tenth, the
   scrubbing fields' convention (`control::Scrub`).)*
+
+- ⬜ **A spectrogram's first look at a span of 20 s to a few minutes
+  analyzes every window under it** *(found 2026-10-27, measuring a zoom
+  over a four-minute stereo take)*. Under the file's spectral summary,
+  whose finest column stands for 8192 frames, a view's detail is pooled
+  from the analysis's own windows, every one of them in the span shown:
+  a view of 20 s to about 170 s at a thousand pixels is up to some 16 000
+  windows a channel, which comes as a burst of about 250 ms of one core
+  the first time a span is seen (the answerer's column cache makes every
+  later look free). Finer levels in the summary would read those views
+  with no sample at all: columns of 2048 frames start the analysis only
+  under views of about 40 s, at four times the summary's size (some
+  170 MB for an hour of stereo against 43). It is a change to a format
+  the server writes beside its peaks (`clausters_core::spectra`, its
+  version), so the size is weighed against the burst before it is made.
