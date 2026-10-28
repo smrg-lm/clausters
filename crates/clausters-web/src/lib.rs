@@ -702,7 +702,7 @@ impl WebServer {
 
 /// **The files a score reads**, as a JSON array of paths: the ones its joins
 /// name and the ones its `DiskIn`s stream, which a page opens before a
-/// [`render_file`] of it starts.
+/// `render_file` of it starts.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = scoreFiles))]
 pub fn score_files(score: &[u8]) -> Result<String, JsErrorish> {
     let score = clausters::server::render::OscScore::from_bytes(score).map_err(err)?;
@@ -712,7 +712,7 @@ pub fn score_files(score: &[u8]) -> Result<String, JsErrorish> {
 /// **The files a score's synths write**, as a JSON array of paths: its
 /// `DiskOut`s' and `PeaksOut`s' (a peaks file and the spectral summary
 /// beside it), which a page creates before a
-/// [`render_file`] of it starts.
+/// `render_file` of it starts.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = scoreOutputs))]
 pub fn score_outputs(score: &[u8]) -> Result<String, JsErrorish> {
     let score = clausters::server::render::OscScore::from_bytes(score).map_err(err)?;

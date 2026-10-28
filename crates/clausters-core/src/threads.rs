@@ -6,7 +6,7 @@
 //! spawn on `wasm32-unknown-unknown`, where a thread is a worker the page
 //! makes and instantiates the module in, over the memory the module shares;
 //! so the one door here is `std::thread` natively, and in a page whatever the
-//! host registers ([`set_spawner`]) once it can make workers.
+//! host registers (`set_spawner`) once it can make workers.
 //!
 //! **A page's main thread cannot block**: a wasm `memory.atomic.wait` there
 //! traps. So what is spawned here is woken ([`Spawned::unpark`]) and never

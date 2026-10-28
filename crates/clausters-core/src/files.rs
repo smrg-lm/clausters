@@ -8,13 +8,13 @@
 //! holding a file's sync access handle, which it gets asynchronously. So in a
 //! page a call is a request the calling thread writes into the shared memory
 //! and waits on, while a file worker of the page does the work with its sync
-//! handles and wakes it ([`set_bridge`], registered by the host's
+//! handles and wakes it (`set_bridge`, registered by the host's
 //! applications' build). Waiting is a thread's: a page's main thread cannot
 //! wait, and a call from it is refused rather than made.
 //!
 //! The surface is the part of `std::fs` the applications use, with its
 //! names: [`File`] (`open`, `create`, `Read`, `Write`, `Seek`), [`read`],
-//! [`write`], [`rename`], [`remove_file`], [`remove_dir`],
+//! [`write()`], [`rename`], [`remove_file`], [`remove_dir`],
 //! [`remove_dir_all`], [`create_dir`], [`create_dir_all`], [`metadata`] and
 //! [`read_dir`].
 

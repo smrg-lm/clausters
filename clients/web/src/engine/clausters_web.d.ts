@@ -331,7 +331,7 @@ export function renderFile(score: Uint8Array, sample_rate: number, channels: num
 /**
  * **The files a score reads**, as a JSON array of paths: the ones its joins
  * name and the ones its `DiskIn`s stream, which a page opens before a
- * [`render_file`] of it starts.
+ * `render_file` of it starts.
  */
 export function scoreFiles(score: Uint8Array): string;
 
@@ -339,7 +339,7 @@ export function scoreFiles(score: Uint8Array): string;
  * **The files a score's synths write**, as a JSON array of paths: its
  * `DiskOut`s' and `PeaksOut`s' (a peaks file and the spectral summary
  * beside it), which a page creates before a
- * [`render_file`] of it starts.
+ * `render_file` of it starts.
  */
 export function scoreOutputs(score: Uint8Array): string;
 

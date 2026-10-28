@@ -1274,7 +1274,7 @@ impl AudioEditor {
     /// `meter` is the id the level meter is drawn under. The meter is part
     /// of the window from the start, whatever the file's work: until a
     /// playback says where it writes ([`Self::set_meters`]) it reads no bus,
-    /// and the answer that says so corrects it ([`Self::meter_corrections`]).
+    /// and the answer that says so corrects it (`Self::meter_corrections`).
     pub fn window(&mut self, widget: i32, meter: Option<i32>) -> Value {
         self.window_state.widget = Some(widget);
         let (bus, channels) = self
