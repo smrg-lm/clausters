@@ -249,6 +249,9 @@ struct WebApp {
     canvases: HashMap<i32, CanvasSlot>,
     /// The reverse index winit's per-window events route through.
     by_winit: HashMap<WindowId, i32>,
+    /// **Captures waiting for their picture to be read**: the canvas, the
+    /// path and when to give up waiting, on the page's clock.
+    capturing: Vec<(i32, String, f64)>,
     /// Whether the event loop resumed -- a window can only be created after it,
     /// so an `attach` that arrives first waits here.
     resumed: bool,
@@ -350,6 +353,7 @@ impl WebApp {
             outbox,
             canvases: HashMap::new(),
             by_winit: HashMap::new(),
+            capturing: Vec::new(),
             resumed: false,
             pending_attach: Vec::new(),
             buses: Arc::new(StreamedBuses::default()),
@@ -1232,7 +1236,10 @@ impl ApplicationHandler<HostEvent> for WebHosts {
                 }
             }
             HostEvent::To(id, event) => match self.apps.get_mut(&id) {
-                Some(app) => app.on_user_event(event_loop, event),
+                Some(app) => {
+                    app.on_user_event(event_loop, event);
+                    app.finish_captures();
+                }
                 // A packet for an instance that was closed while it was in
                 // flight. Dropping it is the whole handling: the canvases it
                 // would have drawn into are gone with it.

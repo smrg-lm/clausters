@@ -10,13 +10,50 @@ use wasm_bindgen_futures::JsFuture;
 
 use super::*;
 use crate::host::frame::Readback;
+use crate::host::replies::Front;
 use crate::host::{captured, png};
 
+/// How long a capture waits for its canvas' picture to be read before it is
+/// written as it stands, in milliseconds.
+const CAPTURE_WAIT_MS: f64 = 10_000.0;
+
 impl WebApp {
-    /// **A client asked for the picture of canvas `def` at `path`**: drawn
-    /// now, read and written once the card has it, and answered then.
+    /// **A client asked for the picture of canvas `def` at `path`**: drawn,
+    /// read and written once the card has it, and answered then. As natively,
+    /// **a capture asks for what its picture needs**: its draw notes what the
+    /// views owe, the reads are asked for at once, and it is written once
+    /// nothing more is owed ([`Front::awaits_picture`]), or after
+    /// [`CAPTURE_WAIT_MS`].
     pub(super) fn capture(&mut self, def: i32, path: String) {
-        let readback = match self.capture_frame(def) {
+        let until = canvas::now_ms() + CAPTURE_WAIT_MS;
+        self.capturing.push((def, path, until));
+        self.finish_captures();
+    }
+
+    /// **The captures whose picture is read**, drawn and written; the others
+    /// wait for the next event.
+    pub(super) fn finish_captures(&mut self) {
+        if self.capturing.is_empty() {
+            return;
+        }
+        let now = canvas::now_ms();
+        for (def, path, until) in std::mem::take(&mut self.capturing) {
+            if now < until && self.awaits_picture(def) {
+                self.capturing.push((def, path, until));
+                continue;
+            }
+            let readback = self.capture_frame(def);
+            self.ask_owed_spans(&[def]);
+            if now < until && self.awaits_picture(def) {
+                self.capturing.push((def, path, until));
+                continue;
+            }
+            self.write_capture(def, path, readback);
+        }
+    }
+
+    fn write_capture(&mut self, def: i32, path: String, readback: Result<Readback, String>) {
+        let readback = match readback {
             Ok(readback) => readback,
             Err(e) => {
                 log(&format!("/gui_capture {def} {path}: {e}"));

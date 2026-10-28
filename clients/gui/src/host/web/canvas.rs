@@ -601,7 +601,7 @@ impl WebApp {
 
 /// The page's monotonic clock, in milliseconds (`performance.now()`): what a
 /// frame is timed by for `/gui_activity`.
-fn now_ms() -> f64 {
+pub(super) fn now_ms() -> f64 {
     web_sys::window()
         .and_then(|w| w.performance())
         .map_or(0.0, |p| p.now())

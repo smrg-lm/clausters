@@ -184,6 +184,24 @@ impl Probe {
     }
 }
 
+/// **A window's picture is awaited until nothing more is owed**: what a
+/// capture of a window the compositor does not draw waits on. Told its take,
+/// a view owes the summary; drawn, it asks; answered whole, nothing is owed.
+#[test]
+fn a_picture_is_awaited_until_its_summary_is_whole() {
+    let mut probe = Probe::open();
+    probe.told(TEN_MINUTES);
+    assert!(
+        probe.awaits_picture(1),
+        "a view told its take owes its summary"
+    );
+    probe.drawn(760.0);
+    assert!(probe.awaits_picture(1), "asked, not answered");
+    probe.answer_all(0.5, TEN_MINUTES);
+    assert_eq!(probe.picture(), Some((TEN_MINUTES, 0.5)));
+    assert!(!probe.awaits_picture(1), "whole, nothing more is owed");
+}
+
 /// **A take's summary is asked at the level the view is drawn at**, once it
 /// has been drawn, and comes in a few replies whatever the take's length.
 #[test]

@@ -127,11 +127,6 @@ already carry it.
   use)*. Measured while fixing the editor's zoom; a trade of the summary's
   size against a burst of analysis, weighed before the format changes.
 
-- ⬜ **A window the compositor does not draw asks for no picture**
-  *(`clients/gui/PLAN.md`, Found by use)*. Found probing the audio editor
-  from a script with its window covered; what is open is whether a window
-  nobody sees should ask, or a capture should.
-
 - ⬜ **The audio editor's switches are menu entries, not checks**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.

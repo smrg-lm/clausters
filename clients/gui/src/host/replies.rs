@@ -905,6 +905,22 @@ pub(crate) trait Front {
     /// are ticked here too, for the same reason and against the same clock: a
     /// summary that never came back is asked for again rather than leaving a
     /// hole in the picture.
+    /// **Whether window `def_id` still waits on a read for its picture**: a
+    /// view owed its take's summary, a plural asker owed one, or a download
+    /// in flight. What a capture waits on before it is written, since a
+    /// window nobody looks at is drawn only by a capture: the first draw is
+    /// what asks, and the picture is whole once nothing more is owed.
+    fn awaits_picture(&mut self, def_id: i32) -> bool {
+        let mut owed = false;
+        if let Some(tree) = self.host_mut().window_def_mut(def_id) {
+            crate::host::takes::samples_views(tree, &mut |el| {
+                owed |= el.owed_summary().is_some();
+                false
+            });
+        }
+        owed || !self.fetches().owed_widgets(def_id).is_empty() || self.fetches().pending()
+    }
+
     fn ask_owed_spans(&mut self, defs: &[i32]) {
         for key in self.host_mut().take_relisted() {
             self.fetches().forget(key);

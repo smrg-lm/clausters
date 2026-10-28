@@ -229,6 +229,9 @@ pub(super) struct App {
     /// script that opens a window and asks it for a verb and a picture at
     /// once must not lose either to the event loop's start.
     pub(super) pending_asks: Vec<(i32, Asked)>,
+    /// **Captures waiting for their picture to be read**: the window, the
+    /// path, who asked and when to give up waiting (`capture::CAPTURE_WAIT`).
+    pub(super) capturing: Vec<(i32, String, ClientId, Instant)>,
     pub(super) resumed: bool,
     /// The last whole second the playhead clock was logged at, so the debug
     /// line is one a second rather than one a frame.
@@ -309,6 +312,7 @@ impl App {
             inflight,
             pending: Vec::new(),
             pending_asks: Vec::new(),
+            capturing: Vec::new(),
             resumed: false,
             head_said: u64::MAX,
             started: Instant::now(),
@@ -864,6 +868,7 @@ impl App {
         // becomes a read of exactly that span, so a picture that cannot map
         // the samples still resolves to the sample where the eye is.
         self.fetch_wanted_spans();
+        self.finish_captures();
 
         // **Only what can be seen is ticked.** An occluded window keeps what
         // it plays and what it holds; it is not drawn, read back or queried

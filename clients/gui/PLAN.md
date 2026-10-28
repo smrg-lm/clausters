@@ -8946,7 +8946,7 @@ module of its own.
   version), so the size is weighed against the burst before it is made.
 
 
-- ⬜ **A window the compositor does not draw asks for no picture** *(found
+- ✅ **A window the compositor does not draw asks for no picture** *(found
   2026-10-27, probing the audio editor from a script with its window
   covered)*. What a view owes (`SpectrogramSlot::owed`, the waveform's too)
   is noted by the draw pass, so a window that receives no frame asks for
@@ -8955,3 +8955,8 @@ module of its own.
   a window nobody sees should ask at all is the question (asking on
   placement would spend a read on a picture nobody looks at), and a capture,
   which is the one reader of a window nobody sees, may be what should ask.
+  *Fixed 2026-10-28:* a capture asks. A window nobody sees still asks for
+  nothing, and a capture's own draw notes what its views owe, asks it at
+  once and writes the file once nothing more is owed
+  (`Front::awaits_picture`, the same rule natively and in a page), or after
+  ten seconds as it stands (`a_picture_is_awaited_until_its_summary_is_whole`).
