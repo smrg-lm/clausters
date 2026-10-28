@@ -143,7 +143,9 @@ already carry it.
 
 - ⬜ **A file of fewer channels is drawn silent where it is played**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. A part with no channel
-  map is drawn and played by two rules; one function should say it.
+  map is drawn and played by two rules; one function should say it, and a
+  paste of another width follows the rules decided there (duplicate, mix,
+  channels as tracks). Before `X34`, which would inherit both.
 
 - ⬜ **The other applications that open files open without one and outlive
   their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
@@ -330,7 +332,10 @@ its plan; the plan is where its acceptance is read.
   after `X32`: the apps plan's "A compressed file opens through a buffer of
   all of it" (Found by use); to look at in a page before the audio editor's
   eye pass: the GUI plan's "A spectrogram of a server buffer may draw nothing
-  in a host that cannot map it" (Found by use).
+  in a host that cannot map it" (Found by use). With `X34`: the document
+  plan's "A track is as wide as its widest region" (Future directions).
+  After it: the apps plan's "Working on one channel of a take" (Future
+  directions), the channel a paste lands from.
 
   | Order | Milestone | Plan |
   |---|---|---|

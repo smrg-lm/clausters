@@ -4073,6 +4073,17 @@ Every entry carries a checkbox.
   field of the document, a control in the header and a rule for the notes
   that already name one.
 
+- ⬜ **Working on one channel of a take** *(decided with the user,
+  2026-10-28, settling how a paste fits a take of another width)*. An audio
+  editor chooses the channel of a file it works on, for a stereo take as for
+  a wider one: a selection names its channels as well as its span, and a
+  copy, a paste and an edit act on those. The paste's rules (Found by use,
+  "A file of fewer channels is drawn silent where it is played") read the
+  chosen channel as where a block lands. A paste over a span of chosen
+  channels that keeps the others' contents needs a take whose channels can
+  hold different parts, which the parts list does not yet: that is the
+  design question this entry carries.
+
 ## Found by use: the running list of fixes
 
 - ✅ **The audio meter is corrected while the window does not draw it**
@@ -5362,6 +5373,13 @@ wrong.
   an hour of it costs the memory and the time the files model removes for
   everything else. It should be decoded into the working folder a run at a
   time, as an offline render reads a stream, without a buffer between.
+  **Decided with the user (2026-10-28):** the window opens at once and the
+  take appears when the decode ends, as a take appears with its peaks; what
+  is edited is the decoded copy, and a save of a compressed file is a save
+  as WAV, never a write over the original, since nothing here encodes a
+  compressed format. Saving in other formats is a later feature (FLAC first:
+  lossless encoders exist with licenses this project can take; MP3's
+  encoder's license has to be weighed first).
 
 - ✅ **What the clients' audio coordinator leaves behind** *(found
   2026-10-24, making both clients the audio editor's handler)*. With the
@@ -5415,6 +5433,38 @@ wrong.
   both channels and draws on one. Two rules for one map, in two places; the
   map a part reads should be one function the drawing and the reading both
   call.
+  **The rules, decided with the user (2026-10-28).** The implicit map is
+  the mono one: a mono part under a take of any width is heard and drawn on
+  every channel, and otherwise a channel reads the file's channel of the
+  same number, silence past it. Pasting a block whose width differs from the
+  take's, which is refused today, goes by a rule:
+  - **mono into N channels duplicates** it on every channel (a map of
+    zeros);
+  - **N channels into mono mixes** them, the average of the channels so a
+    paste never clips;
+  - **N channels into M channels takes the channels as tracks**: the block
+    lands from a chosen channel of the take (the first when none is chosen),
+    only the channels that fit are pasted, nothing is duplicated or mixed,
+    and the take's other channels are silence over the inserted span.
+  Duplicating and choosing channels are routing, written as the part's map;
+  mixing is **rendered** into the working folder, because a part's picture
+  is composed from its file's peaks one channel at a time and the peaks of a
+  sum do not follow from its channels'. A rule is a function of the block's
+  width, the take's width and the chosen channel that returns a map or a
+  render, kept in one place, so another rule (a mix with a layout's
+  coefficients) is one more function and the paste names which it applies.
+  **The rules build one general structure** *(the user's, 2026-10-28)*: a
+  channel matrix, a fixed gain for each input channel in each output
+  channel, of which a part's map is the routing form (each output reads at
+  most one input, at unity). The same matrix is what a track of one width
+  playing into a master of another needs (the document plan's "A track is
+  as wide as its widest region"), where it is applied as it plays and a mix
+  costs nothing to draw. A pan or a balance stays the strip's control and
+  out of the matrix: a mono track in a stereo mix is panned under a law,
+  while a mono block pasted into a stereo take is duplicated at full level,
+  and both are conventions of the field.
+  Choosing the channel is a feature of its own ("Working on one channel of a
+  take", Future directions); until it lands the paste starts at the first.
 
 - ✅ **A window closing answers every window's pending action** *(found
   2026-10-25, reviewing the audio editor's code before `X34`)*. The host's

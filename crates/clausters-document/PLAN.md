@@ -1775,6 +1775,23 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   multiply, the trapezoid's top made a grab in the curve element (vertical
   only, its two corners moving together) and `Region.level` in both clients.
 
+- ⬜ **A track is as wide as its widest region** *(decided with the user,
+  2026-10-28, settling the audio editor's channel rules)*. Editing a file's
+  channels and holding regions of different widths on one track are not the
+  same problem. A region on a track plays by the audio editor's implicit map
+  (a mono region on every channel of the track, otherwise channel by
+  channel); a track takes the width of its widest region rather than a fixed
+  two (`Track::channels` stays the field that says it, so the mix survives a
+  save), and the channels it has past the multitrack's (`Multitrack::channels`)
+  are routed: to the master's first channels unless the track says where.
+  The routing is the channel matrix the audio editor's paste rules build
+  (`crates/clausters-apps/PLAN.md`, "A file of fewer channels is drawn
+  silent where it is played"), and it is also the N-to-M table the
+  mixer's strip refuses today for widths past stereo; the strip's pan and
+  balance stay its own controls, outside the matrix.
+  Lands with the multitrack's port onto the audio editor's modules (`X34`,
+  `crates/clausters-apps/PLAN.md`).
+
 ## Found by use: the running list of fixes
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.
