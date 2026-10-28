@@ -8930,7 +8930,7 @@ module of its own.
   *(Closed 2026-10-27: a step a pixel, Shift ten and Alt a tenth, the
   scrubbing fields' convention (`control::Scrub`).)*
 
-- ⬜ **A spectrogram's first look at a span of 20 s to a few minutes
+- ✅ **A spectrogram's first look at a span of 20 s to a few minutes
   analyzes every window under it** *(found 2026-10-27, measuring a zoom
   over a four-minute stereo take)*. Under the file's spectral summary,
   whose finest column stands for 8192 frames, a view's detail is pooled
@@ -8944,6 +8944,15 @@ module of its own.
   170 MB for an hour of stereo against 43). It is a change to a format
   the server writes beside its peaks (`clausters_core::spectra`, its
   version), so the size is weighed against the burst before it is made.
+  *Fixed 2026-10-28, without changing the format:* the work is spread
+  rather than shrunk. An answer analyzes at most 128 windows
+  (`SPECTRUM_WINDOWS`, 4096 before), so the longest is about 6 ms natively
+  where it was 47, over the same four-minute stereo take and about the
+  same 300 ms in all; and a page, which answers on its own thread, gives
+  itself a turn before each spectrum answer (`web::disk`), so the analysis
+  never holds a frame back. The view keeps the picture it has until the
+  columns are whole. A summary with finer levels stays the way to make the
+  work itself smaller, if a first look at minutes ever needs to be faster.
 
 
 - ✅ **A window the compositor does not draw asks for no picture** *(found

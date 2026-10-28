@@ -62,6 +62,14 @@ impl DiskLink for WebDisk {
 
 /// One ask, read through to its answer and handed back.
 async fn drive(host: HostId, answerer: Rc<RefCell<Answerer>>, msg: OscMessage) {
+    // **A spectrum's answers give the page its turn.** Each analyzes a
+    // bounded number of windows, but a reply's event asks for the next at
+    // once, and a chain of answers run as promises would keep the page from
+    // drawing until a view of minutes was analyzed whole; a timer between
+    // them lets a frame in.
+    if msg.addr == "/buffer_spectrum" {
+        let _ = super::next_turn().await;
+    }
     for _ in 0..ROUNDS {
         let answer = answerer.borrow_mut().answer(&msg);
         match answer {

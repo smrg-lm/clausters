@@ -5,9 +5,6 @@
 //! storage, where a path in a tab is (`docs/decisions.md`, "A path in a page
 //! is its own storage").
 
-use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::JsFuture;
-
 use super::*;
 use crate::host::frame::Readback;
 use crate::host::replies::Front;
@@ -106,14 +103,4 @@ async fn finish(host: HostId, def_id: i32, path: String, readback: Readback, dev
             },
         ));
     }
-}
-
-/// One turn of the browser's loop: a timer of no delay, awaited.
-async fn next_turn() -> Result<(), ()> {
-    let window = web_sys::window().ok_or(())?;
-    let promise = js_sys::Promise::new(&mut |resolve, _| {
-        let _ = window
-            .set_timeout_with_callback_and_timeout_and_arguments_0(resolve.unchecked_ref(), 0);
-    });
-    JsFuture::from(promise).await.map(|_| ()).map_err(|_| ())
 }

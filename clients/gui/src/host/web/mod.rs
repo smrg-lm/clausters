@@ -1264,6 +1264,19 @@ impl ApplicationHandler<HostEvent> for WebHosts {
     }
 }
 
+/// One turn of the browser's loop: a timer of no delay, awaited.
+pub(super) async fn next_turn() -> Result<(), ()> {
+    let window = web_sys::window().ok_or(())?;
+    let promise = js_sys::Promise::new(&mut |resolve, _| {
+        let _ = window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(resolve.unchecked_ref(), 0);
+    });
+    wasm_bindgen_futures::JsFuture::from(promise)
+        .await
+        .map(|_| ())
+        .map_err(|_| ())
+}
+
 thread_local! {
     /// The page's one event-loop proxy, so an instance's own closures can reach
     /// the loop for the async GPU hand-off, the tick and the bulk fetches

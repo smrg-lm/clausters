@@ -1369,9 +1369,14 @@ pub const SPECTRUM_BLOCKS: usize = 192;
 pub const COLUMN_WINDOWS: usize = 64;
 
 /// Windows one spectrum answer analyzes at most once it has a column to
-/// answer: some tens of milliseconds, so a view of minutes pooled from its
-/// windows comes over a few answers rather than in one long one.
-pub const SPECTRUM_WINDOWS: usize = 4096;
+/// answer: about six milliseconds natively, so a view of minutes pooled from
+/// its windows comes over many short answers rather than a few long ones. A
+/// page answers on its own thread and gives itself a turn before each
+/// (`web::disk`), so none of them holds a frame back; the total is the same.
+/// Measured over a four-minute stereo take at a thousand columns of a
+/// hundred seconds: 4096 windows an answer took 47 ms at the longest, 128
+/// take 6, both about 300 ms in all.
+pub const SPECTRUM_WINDOWS: usize = 128;
 
 /// A list's parts read through the answerer, at one bucket, noting what is
 /// not held yet.
