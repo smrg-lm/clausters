@@ -5439,3 +5439,18 @@ wrong.
   (`Editing::forget_audio`): every file it holds is closed with its
   history, the takes and renders only it named are let go, and its seat
   keeps an editor with no file.
+
+- ⬜ **A loop switched to another loop near its end plays silence on a
+  machine of one or two cores** *(found 2026-10-27, by CI's synth-only
+  job, and reproduced with `taskset -c 0,1` on the test binary of
+  `crates/clausters-app-engine/tests/playback.rs`)*.
+  `two_loop_switches_close_together_at_its_end_are_not_heard` fails the
+  same way on every run held to two cores: on the third pass, where the
+  switch turns on another loop, 37 blocks from block 640 are silence
+  where the take's frames should play (over the fed stream; over the
+  reader's own thread on an earlier CI run). It passes on every run with
+  more cores, and it fails the same with the readers polling every 2 ms
+  as with them woken, so it is not how a reader waits. What is open is
+  the diagnosis: which turn the readers miss when their threads share two
+  cores with the one that plays, and whether a person hears it on a
+  small machine.
