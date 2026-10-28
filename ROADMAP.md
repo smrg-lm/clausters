@@ -126,10 +126,10 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
-- ⬜ **Two playback tests of the application's engine fail now and then
-  under a parallel run** *(`crates/clausters-apps/PLAN.md`, Found by
-  use)*. Reopened: the loop switch was fixed, the crossfade test still
-  fails under load now and then.
+- ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
+  load closing the playback tests' entry; rare, and before `X34` only if it
+  comes back.
 
 - ⬜ **`edit(SoundFile.empty(...))` is refused, though both books say it
   opens silence** *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found

@@ -5408,7 +5408,7 @@ wrong.
   with the C ABI symbols behind them and the wasm `AudioEditorPlayback`
   (core ABI v94), and `SamplesView` from both clients' `editing`.
 
-- ⬜ **Two playback tests of the application's engine fail now and then under
+- ✅ **Two playback tests of the application's engine fail now and then under
   a parallel run** *(found 2026-10-24, moving the application's threads
   onto one door)*. `a_loop_moved_while_it_plays_is_crossfaded` and
   `two_loop_switches_close_together_at_its_end_are_not_heard`
@@ -5431,6 +5431,18 @@ wrong.
   alone right after. The change being tested did not reach it (its take
   is mono into a mono list, read the same by either channel rule), so the
   crossfade has a load-dependent failure of its own.
+  *Closed again 2026-10-28, reproduced first:* with every core busy the
+  suite failed about one run in three. Two causes, neither the crossfade.
+  The test read a wrap landing on a block's last frame as a step in the
+  wrong block (its step is the first frame of the next), now allowed. And
+  the readers fell short of a machine that busy: the silence was the ring
+  out of lead, which the engine did not always count -- a replacement whose
+  kept frames ran out before its refill landed was silence counted as
+  nothing, natively and in a page. It is counted now (`src/dsp/stream.rs`,
+  `src/dsp/disk_web.rs`; `a_replacement_whose_refill_is_late_is_counted_as_starved`),
+  and the three loop tests run again a run the engine reports starved, up
+  to four times, failing if every run starved (`unstarved`). Under full
+  load the suite then failed once in twelve, on the case below.
 
 - ✅ **A peaks read lands after its working folder is gone** *(found
   2026-10-24, the audio editor's acceptance page)*. Closing an editor
@@ -5572,3 +5584,14 @@ wrong.
   reached only by `new_file` on an open editor. Either `edit` opens an
   empty editor and adds a new file of that shape, or the books stop saying
   it.
+
+- ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
+  *(found 2026-10-28, closing the playback tests' entry)*. With every core
+  busy, `a_loop_moved_while_it_plays_is_crossfaded` once heard the take
+  step at the wrap (frame 14528, the first of block 227, after the
+  position jumped in block 226) and step again a block later (14592), with
+  the engine's starve meter at zero: a block of silence right after a wrap
+  on a block's edge while the loop's end was being dragged, which no run
+  counted. Seen once in some thirty runs of the suite under full load and
+  not in twenty more; what the reader holds at that wrap is the question
+  (a ring that read the old loop's end, refilled as a locate would be).

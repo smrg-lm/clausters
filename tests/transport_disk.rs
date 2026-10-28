@@ -377,6 +377,86 @@ fn a_list_replaced_while_it_plays_fades_into_the_new_one() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// **A replacement whose kept frames run out is counted as out of lead**:
+/// a fed stream whose contents change while it plays, its owner holding the
+/// refill back, plays the kept frames of the old contents and then silence
+/// until the refill comes -- every sample of which is counted as starved,
+/// since the transport played on. A locate's silence is not.
+#[test]
+fn a_replacement_whose_refill_is_late_is_counted_as_starved() {
+    use clausters::dsp::fed::{FeedRequest, Feeder, feed};
+    let frames = 12 * QUARTER;
+    let values: Vec<f32> = (0..frames)
+        .map(|n| 0.25 + n as f32 / (1 << 22) as f32)
+        .collect();
+    let (fed, mut feeder) = feed();
+    let (mut engine, mut handle) = engine_pair(SR as f32, 2);
+    let meters = Meters::detached();
+    install(
+        &mut handle,
+        0,
+        Arc::new(Buffer::fed_by(Arc::new(fed), 1, frames, SR)),
+    );
+    install(
+        &mut handle,
+        1,
+        Arc::new(Buffer::new(values.clone(), 1, frames, SR)),
+    );
+    readers(&mut handle, &meters, false);
+    roll(&mut handle, None);
+    // the owner: renders from the frame the latest request names, as much
+    // as fits, and publishes it
+    let mut next: Option<usize> = None;
+    let mut serve = |feeder: &mut Feeder, held: bool| {
+        if held {
+            return;
+        }
+        if let Some(FeedRequest { frame, .. }) = feeder.latest() {
+            next = Some(frame as usize);
+        }
+        if let Some(n) = next.filter(|&n| n < frames) {
+            let pushed = feeder.push(&values[n..]);
+            next = Some(n + pushed);
+            feeder.publish();
+        }
+    };
+    let mut blocks = |engine: &mut Engine, feeder: &mut Feeder, n: usize, held: bool| {
+        let mut disk = Vec::new();
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        for _ in 0..n {
+            serve(feeder, held);
+            engine.process_block(&mut out);
+            disk.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
+        }
+        disk
+    };
+    let first = blocks(&mut engine, &mut feeder, 200, false);
+    assert!(first[first.len() - 1] > 0.0, "the stream plays");
+    assert_eq!(meters.starved(), 0, "fed, nothing ran out of lead");
+    // the contents change while it plays, and the refill is held back for
+    // longer than the kept frames last
+    feeder.changed();
+    let held = blocks(&mut engine, &mut feeder, 1200, true);
+    let silent = held.iter().filter(|&&d| d == 0.0).count() as u64;
+    assert!(silent > 0, "the kept frames ran out before the refill");
+    assert_eq!(
+        meters.starved(),
+        silent,
+        "every sample of the silence is counted"
+    );
+    let back = blocks(&mut engine, &mut feeder, 200, false);
+    assert!(back[back.len() - 1] > 0.0, "the refill comes, and plays");
+    assert_eq!(meters.starved(), silent, "and nothing more ran out");
+    // a locate lands on silence by design: not a shortage
+    roll(&mut handle, Some(2 * QUARTER as u64));
+    blocks(&mut engine, &mut feeder, 40, true);
+    assert_eq!(
+        meters.starved(),
+        silent,
+        "a locate is not running out of lead"
+    );
+}
+
 /// **A cue, then the engine's answer**: blocks of a stopped transport, paced,
 /// until the cue is over. Answers whether its readers were ready, and how
 /// many blocks it took.

@@ -218,6 +218,13 @@ pub struct TransportDiskIn {
     kept: Vec<f32>,
     /// Frames of fade-in left for the list that replaced it.
     fade_in: usize,
+    /// **The reader fell short of a transport playing on**: the old
+    /// reading's kept frames ran out before the new one landed (played to
+    /// their end or to the splice), or the transport went a ring past what
+    /// was read. The silence until the refill lands is the ring out of lead
+    /// and is counted as starved -- unlike the silence a locate, a play from
+    /// a stop or a transport gone elsewhere lands on.
+    short: bool,
     /// **What the list it replaced plays over the fade-in**, this reader's
     /// channel of it: the replaced list's next frames, taken out of the ring
     /// as the new one lands, so the two are mixed rather than one faded out
@@ -237,6 +244,10 @@ pub struct TransportDiskIn {
     /// reader the transport froze ran no block in between, so continuity of
     /// the position is what tells the two apart.
     continues: Option<u64>,
+    /// Whether the block being played goes on from the one before
+    /// (`continues`), noted once a block: a refill this reader falls behind
+    /// into then is a shortage, and one a locate asks for is not.
+    playing_on: bool,
     /// The loop in force, in the list's frames, as the last block read it:
     /// what decides at a splice whether the new reading or the old one goes
     /// on. A loop asked for and not yet in place is not it.
@@ -308,10 +319,12 @@ impl TransportDiskIn {
             outgoing: None,
             kept: vec![0.0; KEPT],
             fade_in: 0,
+            short: false,
             faded: [0.0; CROSS],
             fed: None,
             retired: None,
             continues: None,
+            playing_on: false,
             applied: None,
             delta: 0.0,
             low: true,
@@ -361,6 +374,7 @@ impl TransportDiskIn {
         self.head = None;
         self.outgoing = None;
         self.fade_in = 0;
+        self.short = false;
         let Some(fed) = fed else {
             return true;
         };
@@ -418,6 +432,7 @@ impl TransportDiskIn {
         self.epoch = epoch;
         self.pending = Some(frame);
         self.head = None;
+        self.short = false;
         self.wake();
         if self.offline {
             self.collect();
@@ -449,6 +464,7 @@ impl TransportDiskIn {
         }
         self.popped += stale as u64;
         self.pending = None;
+        self.short = false;
         self.head = Some(frame);
         // The thread may be parked on a ring that was full of what was just
         // thrown away.
@@ -543,6 +559,8 @@ impl TransportDiskIn {
                     return self.take_outgoing(frame, channel);
                 }
                 self.outgoing = None;
+                // played to the splice: the new reading is owed from here
+                self.short = self.pending.is_some();
                 let seamless = self.pending.is_none()
                     && self.head == Some(frame)
                     && self.consumer.slots() >= self.channels;
@@ -552,6 +570,8 @@ impl TransportDiskIn {
             }
         } else if landed || outgoing.next + channels > outgoing.end {
             self.end_outgoing(channel);
+            // played to their end: the new reading is owed from here
+            self.short = self.pending.is_some();
             return 0.0;
         }
         let value = self.kept[outgoing.next + channel.min(channels - 1)];
@@ -642,11 +662,14 @@ impl TransportDiskIn {
     fn take(&mut self, frame: u64, channel: usize, starved: &mut u64) -> f32 {
         if self.outgoing.is_some() {
             let value = self.take_outgoing(frame, channel);
-            if self.outgoing.is_some() || self.pending.is_some() {
+            if self.outgoing.is_some() {
                 return value;
             }
         }
         if self.pending.is_some() {
+            if self.short {
+                *starved += 1;
+            }
             return 0.0;
         }
         let Some(head) = self.head else {
@@ -663,7 +686,15 @@ impl TransportDiskIn {
                 // skipped so the list stays where the transport is.
                 self.skip(frame - head);
             } else {
-                if !self.refill(None, frame) || !self.offline || self.pending.is_some() {
+                let refilled = self.refill(None, frame);
+                // **Fallen a ring behind a transport playing on**: the reader
+                // did not keep up, and the silence until it does is a
+                // shortage. A locate lands here too, and is not one.
+                if self.playing_on && head < frame && !self.offline {
+                    self.short = true;
+                    *starved += 1;
+                }
+                if !refilled || !self.offline || self.pending.is_some() {
                     return 0.0;
                 }
                 return self.take(frame, channel, starved);
@@ -845,6 +876,7 @@ impl TransportDiskIn {
         let looping = inputs[4][0] != 0.0;
         let base = ctx.transport.position as f64;
         let rolling = ctx.transport.rolling;
+        self.playing_on = rolling && self.continues == Some(ctx.transport.position);
         // The transport's loop, read straight through: what its wrap plays
         // next is in the ring before the position gets there. A list that
         // loops on its own wraps at its own end instead.

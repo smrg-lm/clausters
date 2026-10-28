@@ -1083,6 +1083,9 @@ impl TransportDiskIn {
                     return self.take_outgoing(frame, channel);
                 }
                 self.outgoing = None;
+                // played to the splice: the new reading is owed from here, so
+                // a silence until it comes is the ring out of lead, as natively
+                self.fresh = false;
                 let seamless = self.head == Some(frame) && self.consumer.slots() >= self.channels;
                 self.faded = [0.0; CROSS];
                 self.fade_in = if seamless { 0 } else { CROSS };
@@ -1120,8 +1123,10 @@ impl TransportDiskIn {
         }
         if next + channels > end {
             // the new list did not come while the old one played: a silence,
-            // and the new one fades in from it, as natively
+            // counted as the ring out of lead, and the new one fades in from
+            // it, as natively
             self.outgoing = None;
+            self.fresh = false;
             self.faded = [0.0; CROSS];
             self.fade_in = CROSS;
             return 0.0;
