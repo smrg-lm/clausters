@@ -1,6 +1,9 @@
 //! **The renders an audio editor's edits are**, rendered: each score
 //! `clausters_apps::audio::renders` answers, run through the offline render
 //! a `--nrt` process runs, and the file and the peaks it writes read back.
+//! Its renders run SynthDefs, so it needs the `synth` family.
+
+#![cfg(feature = "synth")]
 
 use clausters::server::render::{OscScore, RenderConfig, render_discarding, render_to_wav};
 use clausters_apps::audio::renders::{self, GainPoint, List, Output};
