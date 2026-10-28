@@ -149,6 +149,40 @@ fn opening_measures_the_file_and_draws_its_list() {
     assert!(def["children"][1].get("buffer").is_none());
 }
 
+/// **A compressed file is decoded at open**: the take is a file of the
+/// working folder the open writes with its peaks, the file is never written
+/// over (its first save asks for a path), and the window names it.
+#[test]
+fn a_compressed_file_is_decoded_into_the_working_folder() {
+    let mut editor = new_json(
+        &json!({"path": "/in/take.mp3", "workspace": "/work", "frames": 100, "channels": 2,
+                "rate": 44100, "codec": "mp3"})
+        .to_string(),
+    )
+    .unwrap();
+    let steps = open(&mut editor)["steps"].clone();
+    assert_eq!(walk(&steps), ["render"]);
+    let decoded = &renders(&steps)[0];
+    assert_eq!(decoded["path"], "/work/1-decoded.w64");
+    assert_eq!(
+        (decoded["channels"].clone(), decoded["rate"].clone()),
+        (json!(2), json!(44100.0))
+    );
+    assert_eq!(spans(&mut editor), [span("1-decoded", 0, 100)]);
+    let file = editor.file.file();
+    assert_eq!(file["untitled"], true, "the first save asks for a path");
+    assert_eq!(file["codec"], Value::Null);
+    assert_eq!(editor.file.take_name().as_deref(), Some("take.mp3"));
+    // a file a part reads in place is measured where it is, as before
+    let mut wav = new_json(
+        &json!({"path": "/in/take.wav", "workspace": "/work", "frames": 100, "channels": 1,
+                "rate": 44100, "codec": "wav"})
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(renders(&open(&mut wav)["steps"])[0]["path"], "");
+}
+
 #[test]
 fn a_stroke_is_a_new_take_the_size_of_the_stroke_spliced_over_its_frames() {
     let mut editor = opened(1);

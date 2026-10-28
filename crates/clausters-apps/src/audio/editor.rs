@@ -583,6 +583,9 @@ struct AudioFileState {
     // A new file, which the open writes as silence before anything is put
     // in it.
     silence: bool,
+    // A file a part cannot read in place (a compressed one), which the open
+    // decodes into the file the take reads before anything else.
+    decoded_from: Option<String>,
     contents: parts::Take,
     dirty: bool,
     revision: u64,
@@ -710,6 +713,7 @@ impl AudioEditor {
                 sources: Sources::new(),
                 rates: BTreeMap::new(),
                 silence: false,
+                decoded_from: None,
                 contents: parts::Take::default(),
                 dirty: false,
                 revision: 1,
@@ -1214,6 +1218,22 @@ impl AudioEditor {
             .opened
             .and_then(|id| self.file.sources.get(&id).cloned());
         let silence = std::mem::take(&mut self.file.silence);
+        if let (Some(from), Some(file)) = (self.file.decoded_from.take(), opened.as_ref()) {
+            let out = renders::Output {
+                path: file.path.clone(),
+                peaks: file.peaks.clone(),
+                format: "float".into(),
+                label: renders::operation("open_file"),
+            };
+            steps.push(renders::decode(
+                &from,
+                file.channels,
+                file.frames,
+                file.rate,
+                &out,
+            ));
+            return Ok(steps);
+        }
         if let (true, Some(file)) = (silence, opened.as_ref()) {
             let out = renders::Output {
                 path: file.path.clone(),

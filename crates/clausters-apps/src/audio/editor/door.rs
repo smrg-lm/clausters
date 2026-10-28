@@ -105,6 +105,16 @@ impl AudioEditor {
     }
 }
 
+/// The containers a part of a list reads in place; a file of any other is
+/// decoded when it is opened. A file whose codec the caller did not say is
+/// taken as one of them.
+const IN_PLACE: &[&str] = &["wav", "w64", "rf64"];
+
+/// Whether a part reads a file of `codec` in place.
+fn reads_in_place(codec: Option<&str>) -> bool {
+    codec.is_none_or(|c| IN_PLACE.contains(&c))
+}
+
 /// **An editor built from a JSON request** -- the file it opens (`path`,
 /// and `frames`, `channels` and `rate` from its header), or `untitled` for a
 /// new file of that shape; `workspace`, the working folder its renders are
@@ -134,8 +144,24 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
             .ok_or("an editor that makes its file needs a working folder")?;
         Ok(format!("{folder}/{serial}-{what}.w64"))
     };
+    let decoded = path.is_some() && !reads_in_place(facts.codec.as_deref());
     let (opened, silence) = if empty {
         (None, false)
+    } else if decoded {
+        // **A compressed file is decoded into the working folder**, and the
+        // take is that file: a part reads PCM in place and nothing else, and
+        // the file was never this editor's to write over, so its first save
+        // asks for a path.
+        let into = made("decoded")?;
+        let file = FileSource {
+            peaks: sources::peaks_beside(&into),
+            path: into,
+            frames,
+            channels,
+            rate,
+            render: true,
+        };
+        (Some(file), false)
     } else if let Some(path) = path.as_ref() {
         let peaks = match workspace.as_deref() {
             Some(folder) => sources::peaks_for_opened(folder, path),
@@ -167,11 +193,23 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     };
     let mut editor = AudioEditor::new(opened, channels, rate, &names, facts.version.unwrap_or(0))?;
     editor.file.silence = silence;
+
     editor.file.presentation.layers = stack;
     editor.file.codec = facts.codec.clone();
     // without a stamp, the first look takes the file as it is
     editor.file.disk = path.clone().map(|path| (path, facts.stamp));
     editor.file.sample_format = facts.sample_format.clone();
+    if decoded {
+        // what the take is now is the decoded copy, not written anywhere the
+        // user named: no codec of its own, and the opened file's name
+        editor.file.decoded_from = path.clone();
+        editor.file.codec = None;
+        editor.file.sample_format = Some("float".into());
+        editor.file.name = path
+            .as_deref()
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .map(|n| n.to_string_lossy().into_owned());
+    }
     editor.adopt(Facts {
         layers: None,
         channels: None,

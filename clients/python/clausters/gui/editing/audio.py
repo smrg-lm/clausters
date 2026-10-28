@@ -133,10 +133,10 @@ class AudioEditor:
     """
 
     def __init__(self, file=None, *, title: str = "Audio", layers=None):
-        if file is not None and not reads_in_place(file):
+        if file is not None and file.path is None:
             raise ValueError(
-                f"{file.path or 'a file not written yet'} is not a WAV, RF64 or W64 file "
-                "on disk, which is what the audio editor reads")
+                "a file not written yet is not a file on disk, which is what the "
+                "audio editor opens")
         self._file = file
         #: The window's title.
         self.title = str(title)
@@ -664,7 +664,9 @@ class AudioEditor:
 
 def reads_in_place(file) -> bool:
     """Whether the audio editor reads ``file``, a `clausters.SoundFile`,
-    where it is: a PCM file on disk a part streams from."""
+    where it is: a PCM file on disk a part streams from. Any other file on
+    disk (an MP3, a FLAC) is decoded into the editor's working folder when
+    it opens, and its first save asks for a path."""
     return file.path is not None and file.codec in _STREAMED
 
 

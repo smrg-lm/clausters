@@ -17,9 +17,6 @@ use super::run::{Await, End, Failure};
 use super::*;
 use crate::editing::{Caller, Raised, Ran, Render};
 
-/// The containers a part of a list reads in place.
-const IN_PLACE: &[&str] = &["wav", "w64", "rf64"];
-
 impl Editing {
     /// **Starts `action` on audio member `member`** and carries it as far as
     /// it goes: to its end, or to a render it hands back. `lease` says the
@@ -285,8 +282,8 @@ fn raised(failure: Failure) -> Raised {
 }
 
 /// **A file asked for**, by the window or a script: its header read (a new
-/// file is the shape it is asked as), and refused where a part could not
-/// read it in place.
+/// file is the shape it is asked as). A file a part cannot read in place is
+/// decoded when the editor opens it.
 fn shape(file: &Value, caller: &mut dyn Caller) -> Result<Value, String> {
     if let Some(shape) = file.get("shape").filter(|s| !s.is_null()) {
         return Ok(
@@ -297,12 +294,6 @@ fn shape(file: &Value, caller: &mut dyn Caller) -> Result<Value, String> {
     }
     let path = file["path"].as_str().unwrap_or_default();
     let info = caller.header(path)?;
-    if !IN_PLACE.contains(&info.codec.as_str()) {
-        return Err(format!(
-            "{path} is a {} file, which the audio editor does not read in place",
-            info.codec
-        ));
-    }
     Ok(json!({
         "frames": info.frames, "channels": info.channels,
         "rate": info.rate, "path": path, "untitled": false,

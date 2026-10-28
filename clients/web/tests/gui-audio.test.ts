@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AudioEditor, edit } from "../src/gui/editing/index.ts";
+import { AudioEditor, edit, readsInPlace } from "../src/gui/editing/index.ts";
 import type { GuiHost } from "../src/gui/host.ts";
 import { Segment } from "../src/segments.ts";
 import { SoundFile } from "../src/soundfile.ts";
@@ -104,11 +104,13 @@ test("a buffer is not edited", async () => {
     await assert.rejects(edit(buffer, { host: new FakeHost() as unknown as GuiHost }), /sound files/);
 });
 
-test("a file the editor does not read in place is refused", async () => {
+test("a file not on disk is refused and a compressed one is not", async () => {
     await assert.rejects(
-        edit(aFile("/takes/take.mp3", "mp3"), { host: new FakeHost() as unknown as GuiHost }),
-        /WAV, RF64 or W64/,
+        edit(new SoundFile(null, 100, 1, SR), { host: new FakeHost() as unknown as GuiHost }),
+        /not a file on disk/,
     );
+    assert.equal(readsInPlace(aFile("/takes/take.mp3", "mp3")), false);
+    await edit(aFile("/takes/take.mp3", "mp3"), { host: new FakeHost() as unknown as GuiHost, open: false });
 });
 
 test("what the editor holds is read from the application", async () => {

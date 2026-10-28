@@ -5363,7 +5363,7 @@ wrong.
   owner's readings carry only where a paste lands, so they had nothing to
   follow.
 
-- ⬜ **A compressed file opens through a buffer of all of it**
+- ✅ **A compressed file opens through a buffer of all of it**
   *(found 2026-10-23, moving the audio editor onto files)*. Since the
   clients became the handler (2026-10-24), a compressed file is not opened
   at all: the application reads WAV, RF64 and W64 in place and refuses the
@@ -5380,6 +5380,16 @@ wrong.
   compressed format. Saving in other formats is a later feature (FLAC first:
   lossless encoders exist with licenses this project can take; MP3's
   encoder's license has to be weighed first).
+  *Fixed 2026-10-28:* a file whose codec a part does not read in place is
+  decoded at open by an offline render that streams it through `DiskIn`
+  into `<serial>-decoded.w64` of the working folder with its peaks
+  (`renders::decode`); the take is that copy, untitled, named after the
+  file opened, and the file opened is left as it was. Neither client
+  refuses a compressed file now; `reads_in_place` / `readsInPlace` still
+  say which files are read where they are. Heard end to end over an AIFF,
+  which takes the same path (`a_file_not_read_in_place_is_decoded_and_heard`).
+  A page does not decode yet: see "A page decodes no compressed file when
+  it opens".
 
 - ✅ **What the clients' audio coordinator leaves behind** *(found
   2026-10-24, making both clients the audio editor's handler)*. With the
@@ -5539,3 +5549,21 @@ wrong.
   lands a ready change on the wrap before it, and wraps at once a loop put
   in place on its own end (`server::engine`, `cross_edge`, `edge_due`).
   Few cores only changed which block the readers were ready on.
+
+- ⬜ **A page decodes no compressed file when it opens** *(found
+  2026-10-28, decoding a compressed file at open)*. The decode is an
+  offline render whose `DiskIn` streams the file, and in a page `diskIn`
+  streams WAV only (`clients/web/docs/src/platform.md`), so the same open
+  that decodes natively fails its render in a page. The page's render
+  worker should stream a compressed file through the decoder from its top,
+  as a native render does; a span of one is still not a file, but a decode
+  reads it once, in order.
+
+- ⬜ **`edit(SoundFile.empty(...))` is refused, though both books say it
+  opens silence** *(found 2026-10-28, reading the client's check while
+  decoding compressed files)*. The editor's constructor refuses a file with
+  no path in both clients, and the window's open takes a path or none, so
+  the silence the books describe (its first save asking for a path) is
+  reached only by `new_file` on an open editor. Either `edit` opens an
+  empty editor and adds a new file of that shape, or the books stop saying
+  it.

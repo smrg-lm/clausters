@@ -84,9 +84,11 @@ one of a second. The files a history or the clipboard can still reach are kept, 
 deleted when nothing can. **A file changed on disk is said**: when the window comes back, the files the take reads are looked at, and one another program changed or removed since the editor read it is said on the window's status bar; the editor's own save is no change. The working folder is the host's, a folder of the user's cache on disk
 (`clausters/work` under the platform's cache folder, or `$CLAUSTERS_CACHE_DIR`), and goes with
 the window; one a host left when its process was killed goes the next time any editor opens. A
-render that fails takes away what it had written there. What it opens is a WAV, RF64 or W64
-file, read where it is; a compressed file (MP3, FLAC) is not opened yet, and
-`reads_in_place(file)` says which. `editor.save()` renders the edited take over the file it was
+render that fails takes away what it had written there. A WAV, RF64 or W64 file is read where it
+is; any other (an MP3, a FLAC) is decoded into the working folder a run at a time when it
+opens, and the take appears when the decode ends. `reads_in_place(file)` says which. The
+decoded copy is what is edited and the file opened is never written over: its first save asks
+for a path, and writes a WAV. `editor.save()` renders the edited take over the file it was
 opened from (moved aside first while the list reads it, and the render moved where it was),
 answered once the file is whole, and Ctrl+S in the window does the same. `editor.save(path)`
 renders it as another file, which a later save then writes over. `edit(SoundFile.empty(channels, frames, rate))` is silence not

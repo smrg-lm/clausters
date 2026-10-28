@@ -575,3 +575,77 @@ fn a_stereo_copy_pasted_into_a_mono_take_is_its_average() {
     assert_close(&client.heard(), &expected, "mixed in");
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// A mono 16-bit AIFF of `samples`: a container a part does not read in
+/// place, decoded the way a compressed file is.
+fn write_aiff(path: &str, samples: &[f32]) {
+    let data: Vec<u8> = samples
+        .iter()
+        .flat_map(|&x| ((x * 32767.0).round() as i16).to_be_bytes())
+        .collect();
+    let mut comm = Vec::new();
+    comm.extend_from_slice(&1u16.to_be_bytes());
+    comm.extend_from_slice(&(samples.len() as u32).to_be_bytes());
+    comm.extend_from_slice(&16u16.to_be_bytes());
+    // 48000 as an 80-bit extended float
+    comm.extend_from_slice(&[0x40, 0x0E, 0xBB, 0x80, 0, 0, 0, 0, 0, 0]);
+    let mut body = b"AIFF".to_vec();
+    body.extend_from_slice(b"COMM");
+    body.extend_from_slice(&(comm.len() as u32).to_be_bytes());
+    body.extend_from_slice(&comm);
+    body.extend_from_slice(b"SSND");
+    body.extend_from_slice(&(data.len() as u32 + 8).to_be_bytes());
+    body.extend_from_slice(&[0; 8]);
+    body.extend_from_slice(&data);
+    let mut file = b"FORM".to_vec();
+    file.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    file.extend_from_slice(&body);
+    std::fs::write(path, file).unwrap();
+}
+
+/// **A file a part cannot read in place is decoded when it opens**, by the
+/// application's threads into its working folder, and the take is heard
+/// from the decoded copy; the file opened is left as it was.
+#[test]
+fn a_file_not_read_in_place_is_decoded_and_heard() {
+    let directory = scratch("decoded");
+    let mut client = Client::new(&directory);
+    let aiff = directory.join("ramp.aiff").to_string_lossy().into_owned();
+    write_aiff(&aiff, &(0..FRAMES).map(ramp).collect::<Vec<_>>());
+    let before = std::fs::read(&aiff).unwrap();
+    let info = clausters_app_engine::probe_audio(&aiff).unwrap();
+    assert_eq!((info.frames, info.channels), (FRAMES as u64, 1));
+    let work = client.work.to_str().unwrap().to_string();
+    let opened = client.call(json!({"verb": "openAudio", "key": aiff, "path": aiff,
+        "workspace": work, "frames": info.frames, "channels": info.channels,
+        "rate": info.sample_rate, "codec": info.codec}));
+    client.member = opened["member"].as_u64().expect("opened") as MemberId;
+    client.member(json!({"verb": "sync", "window": WINDOW}));
+    client.member(json!({"verb": "attach_view"}));
+    client.member(json!({"verb": "window", "widget": PICTURE}));
+    let ran = client.run(
+        json!({"verb": "open", "empty": false, "window": true}),
+        false,
+    );
+    assert!(ran.is_ok(), "{ran:?}");
+    let heard = client.heard();
+    assert_eq!(heard.len(), FRAMES);
+    for (i, h) in heard.iter().enumerate() {
+        assert!(
+            (h - ramp(i)).abs() < 1e-4,
+            "frame {i} is {h}, not {}",
+            ramp(i)
+        );
+    }
+    assert_eq!(
+        client.renders("decoded"),
+        1,
+        "the decoded copy is the working folder's"
+    );
+    assert_eq!(
+        std::fs::read(&aiff).unwrap(),
+        before,
+        "the file opened is untouched"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+}

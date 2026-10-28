@@ -10,7 +10,7 @@ does to the take is the crate's.
 import pytest
 
 from clausters.gui import edit
-from clausters.gui.editing import AudioEditor
+from clausters.gui.editing import AudioEditor, reads_in_place
 from clausters.segments import Segment
 from clausters.soundfile import SoundFile
 
@@ -115,9 +115,11 @@ def test_a_buffer_is_not_edited():
         edit(Buffer(), host=FakeHost())
 
 
-def test_a_file_the_editor_does_not_read_in_place_is_refused():
-    with pytest.raises(ValueError, match="WAV, RF64 or W64"):
-        edit(a_file("/takes/take.mp3", "mp3"), host=FakeHost())
+def test_a_file_not_on_disk_is_refused_and_a_compressed_one_is_not():
+    with pytest.raises(ValueError, match="not a file on disk"):
+        edit(SoundFile(None, 100, 1, SR), host=FakeHost())
+    assert not reads_in_place(a_file("/takes/take.mp3", "mp3"))
+    edit(a_file("/takes/take.mp3", "mp3"), host=FakeHost(), open=False)
 
 
 def test_what_the_editor_holds_is_read_from_the_application():

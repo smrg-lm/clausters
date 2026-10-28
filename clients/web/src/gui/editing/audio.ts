@@ -34,7 +34,9 @@ const NO_FILE = "no file is open";
 
 /**
  * Whether the audio editor reads `file` where it is: a PCM file on disk a
- * part streams from.
+ * part streams from. Any other file on disk (an MP3, a FLAC) is decoded
+ * into the editor's working folder when it opens, and its first save asks
+ * for a path.
  */
 export function readsInPlace(file: SoundFile): boolean {
     return file.path !== null && STREAMED.includes(String(file.codec));
@@ -196,10 +198,10 @@ export class AudioEditor {
     private handle: WindowHandle | null = null;
 
     constructor(file: SoundFile | null = null, { title = "Audio", layers }: AudioEditorOptions = {}) {
-        if (file !== null && !readsInPlace(file)) {
+        if (file !== null && file.path === null) {
             throw new RangeError(
-                `${file.path ?? "a file not written yet"} is not a WAV, RF64 or W64 file ` +
-                    "on disk, which is what the audio editor reads",
+                "a file not written yet is not a file on disk, which is what the " +
+                    "audio editor opens",
             );
         }
         this.opening = file;

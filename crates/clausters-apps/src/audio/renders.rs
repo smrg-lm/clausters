@@ -603,6 +603,19 @@ pub fn consolidate(list: &List, out: &Output) -> Step {
     )
 }
 
+/// **A file a part cannot read in place, decoded into `out`**: the file
+/// streamed a run at a time, as an offline render reads a stream, and
+/// written with its peaks, so an hour of a compressed file never sits in
+/// memory. `frames` is its length as its header says.
+pub fn decode(path: &str, channels: u32, frames: u64, rate: f64, out: &Output) -> Step {
+    let mut def = Def::new();
+    let read: Vec<usize> = (0..channels)
+        .map(|c| def.push(json!({"kind": "DiskIn", "inputs": [{"const": c as f64}], "path": path})))
+        .collect();
+    let def = def.finish("ae.decode", &read, &out.peaks);
+    render(Vec::new(), def, frames.max(1), rate, channels, out)
+}
+
 /// **A file of silence**: what a new file is before anything is put in it.
 pub fn silence(frames: u64, channels: u32, rate: f64, out: &Output) -> Step {
     let zeros: Vec<Value> = (0..channels).map(|_| json!({"const": 0.0})).collect();

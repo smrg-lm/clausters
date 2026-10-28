@@ -146,6 +146,10 @@ already carry it.
   use)*. Reopened: the loop switch was fixed, the crossfade test still
   fails under load now and then.
 
+- ⬜ **`edit(SoundFile.empty(...))` is refused, though both books say it
+  opens silence** *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found
+  decoding compressed files: the books and the clients disagree.
+
 - ⬜ **The other applications that open files open without one and outlive
   their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
   editor keeps the rule; the score editor and the multitrack with a session
@@ -328,8 +332,8 @@ its plan; the plan is where its acceptance is read.
   shareable (the code review of 2026-10-25, done); and the server's cleaning last, once nothing calls what it removes.
   Before `X25`, which should port this lifecycle.
   **Related:** found moving the editor onto files, and taken
-  after `X32`: the apps plan's "A compressed file opens through a buffer of
-  all of it" (Found by use); to look at in a page before the audio editor's
+  after `X32`: the apps plan's "A page decodes no compressed file when it
+  opens" (Found by use); to look at in a page before the audio editor's
   eye pass: the GUI plan's "A spectrogram of a server buffer may draw nothing
   in a host that cannot map it" (Found by use). With `X34`: the document
   plan's "A track is as wide as its widest region" (Future directions).
