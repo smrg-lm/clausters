@@ -50,6 +50,7 @@ fn main() {
         );
     }
 
+    println!("cargo:prefix={prefix}");
     println!("cargo:rustc-link-search=native={prefix}/lib");
     println!("cargo:rustc-link-lib=dylib=faust");
     println!("cargo:rustc-link-arg=-Wl,--disable-new-dtags");

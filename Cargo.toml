@@ -33,6 +33,11 @@ name = "clausters"
 version.workspace = true
 edition = "2024"
 license = "GPL-3.0-or-later"
+# Declares that this package is the one linking the native libfaust, and lets
+# `build.rs` publish where it found it (`DEP_FAUST_PREFIX`): a build script's
+# rpath reaches only its own crate's artifacts, so a dependent whose binaries
+# link libfaust (the application engine's tests) emits the same one.
+links = "faust"
 description = "A real-time audio synthesis server in the style of SuperCollider's scsynth, controlled over OSC, with Faust JIT-compiled synth definitions."
 # `documentation` points at the book, not at docs.rs (which builds the crate's
 # rustdoc anyway): the book is what a user of the *server* needs, and without
