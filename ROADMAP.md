@@ -127,6 +127,11 @@ already carry it.
   use)*. Measured while fixing the editor's zoom; a trade of the summary's
   size against a burst of analysis, weighed before the format changes.
 
+- ⬜ **A window the compositor does not draw asks for no picture**
+  *(`clients/gui/PLAN.md`, Found by use)*. Found probing the audio editor
+  from a script with its window covered; what is open is whether a window
+  nobody sees should ask, or a capture should.
+
 - ⬜ **The audio editor's switches are menu entries, not checks**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
@@ -421,7 +426,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   the GUI's (a steady
   goniometer; a Tauri wrapper, only a possibility; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
-  that could make tracks), the web client's (type-safe GuiDef/def schemas, a
+  that could make tracks; a frame of what moves that presents only what
+  moved), the web client's (type-safe GuiDef/def schemas, a
   remote-server standalone page, native plugins and the in-page engine), the
   Python client's three open questions, the document crate's (an interpreter
   inside a standalone host; a region's level on the top of its fade

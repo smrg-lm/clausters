@@ -34,6 +34,10 @@ use super::ClientId;
 /// threads do not have.
 const IDLE: Duration = Duration::from_millis(5);
 
+/// How long it sleeps when nothing under way can land (`App::busy`): only
+/// the engine's garbage is taken in meanwhile, and an ask still wakes it.
+const REST: Duration = Duration::from_millis(100);
+
 /// What makes the application's engine, on its thread: the machine's output
 /// device, or one a caller brings (a test driving it block by block).
 pub(super) type MakeEngine = Box<dyn FnOnce() -> Result<Arc<Mutex<AppEngine>>, String> + Send>;
@@ -254,7 +258,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
         }
         state.landed();
         if !asked {
-            std::thread::park_timeout(IDLE);
+            std::thread::park_timeout(if state.app.busy() { IDLE } else { REST });
         }
     }
 }

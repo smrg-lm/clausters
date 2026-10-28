@@ -17,6 +17,12 @@ use crate::server::meters::{Meters, Role, Stamp, stamp};
 /// How long the I/O thread parks when its ring is full/empty before retrying.
 const PARK: Duration = Duration::from_millis(2);
 
+/// **How long a reader that is woken for its work parks**, as a safety net:
+/// a request, a list put in place and a ring fallen to half wake it
+/// (`dsp::stream`), so a thread with nothing to read costs no turn of a core
+/// five hundred times a second.
+pub(crate) const REST: Duration = Duration::from_millis(100);
+
 /// How long an offline wait sleeps between two looks, once spinning is over.
 const NAP: Duration = Duration::from_micros(50);
 
@@ -58,6 +64,13 @@ impl Turn {
     pub(crate) fn park(&mut self) {
         self.close();
         std::thread::park_timeout(PARK);
+        self.since = stamp();
+    }
+
+    /// Closes the stretch and parks until it is woken, or for [`REST`].
+    pub(crate) fn rest(&mut self) {
+        self.close();
+        std::thread::park_timeout(REST);
         self.since = stamp();
     }
 

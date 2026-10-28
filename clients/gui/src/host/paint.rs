@@ -195,6 +195,32 @@ impl Mesh {
         self.verts.is_empty()
     }
 
+    /// **Where each of its triangles lies**, flat and glyph, as `[x0, y0,
+    /// x1, y1]` in device pixels: what a frame reads to know which pixels a
+    /// batch covers.
+    pub(crate) fn triangle_bounds(&self) -> Vec<[f32; 4]> {
+        fn bounds(out: &mut Vec<[f32; 4]>, verts: &[f32], stride: usize) {
+            for tri in verts.chunks_exact(stride * 3) {
+                let (mut b, mut i) = ([f32::MAX, f32::MAX, f32::MIN, f32::MIN], 0);
+                while i < tri.len() {
+                    b = [
+                        b[0].min(tri[i]),
+                        b[1].min(tri[i + 1]),
+                        b[2].max(tri[i]),
+                        b[3].max(tri[i + 1]),
+                    ];
+                    i += stride;
+                }
+                out.push(b);
+            }
+        }
+        let mut out = Vec::new();
+        bounds(&mut out, &self.verts, FLOATS_PER_VERTEX);
+        #[cfg(feature = "font-atlas")]
+        bounds(&mut out, &self.glyphs, FLOATS_PER_GLYPH_VERTEX);
+        out
+    }
+
     /// Whether this batch draws what `other` does, to within `slack` device
     /// pixels: the same vertices in the same colors, none of them further than
     /// that from its counterpart.
@@ -1141,11 +1167,26 @@ impl Painter {
         fb_w: u32,
         fb_h: u32,
     ) -> usize {
-        let (fw, fh) = (fb_w.max(1) as f32, fb_h.max(1) as f32);
+        self.upload_at(device, queue, mesh, (0.0, 0.0), (fb_w, fb_h))
+    }
+
+    /// Uploads `mesh` as [`upload`](Self::upload) does, for a viewport of
+    /// `size` whose top-left corner is the framebuffer's pixel `origin`:
+    /// what draws a part of a window into a texture of that part's size.
+    pub fn upload_at(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        mesh: &Mesh,
+        origin: (f32, f32),
+        size: (u32, u32),
+    ) -> usize {
+        let (fw, fh) = (size.0.max(1) as f32, size.1.max(1) as f32);
+        let (ox, oy) = origin;
         let mut clip = Vec::with_capacity(mesh.verts.len());
         for v in mesh.verts.as_chunks::<FLOATS_PER_VERTEX>().0 {
-            clip.push((v[0] / fw) * 2.0 - 1.0);
-            clip.push(1.0 - (v[1] / fh) * 2.0);
+            clip.push(((v[0] - ox) / fw) * 2.0 - 1.0);
+            clip.push(1.0 - ((v[1] - oy) / fh) * 2.0);
             clip.extend_from_slice(&v[2..6]);
         }
         let needed = mesh.vertex_count() as u64;
@@ -1163,7 +1204,7 @@ impl Painter {
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&clip));
         self.num_vertices = needed as u32;
         #[cfg(feature = "font-atlas")]
-        self.upload_glyphs(device, queue, mesh, fw, fh);
+        self.upload_glyphs(device, queue, mesh, origin, fw, fh);
         let glyphs = {
             #[cfg(feature = "font-atlas")]
             {
@@ -1186,6 +1227,7 @@ impl Painter {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         mesh: &Mesh,
+        (ox, oy): (f32, f32),
         fw: f32,
         fh: f32,
     ) {
@@ -1199,8 +1241,8 @@ impl Painter {
         let text = self.text.get_or_insert_with(|| TextLayer::new(device));
         let mut clip = Vec::with_capacity(verts.len());
         for v in verts.as_chunks::<FLOATS_PER_GLYPH_VERTEX>().0 {
-            clip.push((v[0] / fw) * 2.0 - 1.0);
-            clip.push(1.0 - (v[1] / fh) * 2.0);
+            clip.push(((v[0] - ox) / fw) * 2.0 - 1.0);
+            clip.push(1.0 - ((v[1] - oy) / fh) * 2.0);
             clip.extend_from_slice(&v[2..FLOATS_PER_GLYPH_VERTEX]);
         }
         let needed = (verts.len() / FLOATS_PER_GLYPH_VERTEX) as u64;

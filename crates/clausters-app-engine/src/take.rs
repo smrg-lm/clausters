@@ -41,8 +41,11 @@ const CHUNK: usize = 4096;
 /// is waiting for arrive as soon as one short read allows.
 const FIRST_CHUNK: usize = 256;
 
-/// How long the thread sleeps with nothing to do; a request wakes it sooner.
-const PARK: Duration = Duration::from_millis(2);
+/// How long the thread sleeps with nothing to do, as a safety net: a
+/// request, a list put in place and a reader's ring fallen to half wake it
+/// (`clausters::dsp::stream`), so a take that is not playing costs no turn of
+/// a core five hundred times a second.
+const PARK: Duration = Duration::from_millis(100);
 
 /// How many files the thread keeps open.
 const OPEN_FILES: usize = 8;

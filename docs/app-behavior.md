@@ -183,7 +183,15 @@ code that keeps it lives.
   overlap, a shape) the span shown is asked first, and the whole take only
   when a view shows it, unless the summary answers it; an ask of the
   analysis before is let go at its next answer, so changing a setting many
-  times analyzes only the last.
+  times analyzes only the last. Going back to one of the last two analyses
+  left draws its picture of the whole take at once and asks nothing for it;
+  an edit keeps none of them.
+- **A playing window draws what moves, not the window.** A frame asked for
+  by a playhead, a meter or a live reading copies the picture kept under
+  the live layers and draws them over it, antialiased as a whole frame
+  draws them, so the work of a playing window does not grow with its size or
+  with what its views show. The picture is drawn again only when a whole
+  frame changes it.
 - **A redefine keeps what has not changed.** A window redefined in place (a
   panel shown or hidden beside a view) keeps the pictures of every view that
   reads the buffer it read: the view does not empty and is not asked for

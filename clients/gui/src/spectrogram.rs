@@ -505,6 +505,12 @@ pub fn hold_for(
     }
 }
 
+/// **How many pictures of the whole take by other analyses a view keeps**
+/// ([`SpectrogramView::shelve`]): the one drawn and these two cover going
+/// back and forth between the analyses being compared, at a few megabytes
+/// each (a picture of the whole take is a column a pixel or so).
+pub const SHELVED: usize = 2;
+
 pub struct SpectrogramView {
     stft: Stft,
     texture: SpectrogramTexture,
@@ -535,6 +541,11 @@ pub struct SpectrogramView {
     /// the take, show the whole take coarser until the new columns land,
     /// where the held span was stretched over the view.
     overview: Option<Box<SpectrogramView>>,
+    /// **Pictures of the whole take by other analyses**, the latest first:
+    /// a window size, a hop or a window shape tried and left, kept so that
+    /// going back to it draws it at once rather than analyzing the take
+    /// again ([`SHELVED`] of them).
+    shelved: Vec<SpectrogramView>,
     /// The samples a finer picture drawn over this one covers, which this one
     /// leaves to it.
     hole: Option<(f64, f64)>,
@@ -580,6 +591,7 @@ impl SpectrogramView {
             framing: Framing::IDENTITY,
             scratch: Vec::new(),
             overview: None,
+            shelved: Vec::new(),
             hole: None,
             normalize: false,
             interpolate: false,
@@ -700,6 +712,66 @@ impl SpectrogramView {
     /// Puts `overview`, a picture of the whole take, under this one.
     pub fn set_overview(&mut self, overview: Option<SpectrogramView>) {
         self.overview = overview.map(Box::new);
+    }
+
+    /// Whether this is a transform by `analysis`: a window size, a hop and
+    /// a window shape.
+    pub fn analyzed_as(&self, (window, hop, wintype): (usize, usize, i32)) -> bool {
+        self.stft.window_size() == window && self.stft.analysis() == (hop.max(1), wintype)
+    }
+
+    /// **Keeps `whole`, a picture of the whole take by another analysis**,
+    /// first, in place of one by the same analysis, and lets the oldest go
+    /// past [`SHELVED`].
+    pub fn shelve(&mut self, whole: SpectrogramView) {
+        let analysis = (
+            whole.stft.window_size(),
+            whole.stft.analysis().0,
+            whole.stft.analysis().1,
+        );
+        self.shelved.retain(|v| !v.analyzed_as(analysis));
+        self.shelved.insert(0, whole);
+        self.shelved.truncate(SHELVED);
+    }
+
+    /// Takes the pictures by other analyses kept with this one.
+    pub fn take_shelved(&mut self) -> Vec<SpectrogramView> {
+        std::mem::take(&mut self.shelved)
+    }
+
+    /// Whether a picture of the whole take by `analysis` is kept with this
+    /// one and is not the one drawn: what [`recall`](Self::recall) would
+    /// bring back.
+    pub fn can_recall(&self, analysis: (usize, usize, i32)) -> bool {
+        let drawn = if self.is_whole() {
+            Some(self)
+        } else {
+            self.overview()
+        };
+        !drawn.is_some_and(|v| v.analyzed_as(analysis))
+            && self.shelved.iter().any(|v| v.analyzed_as(analysis))
+    }
+
+    /// **Brings back the picture of the whole take by `analysis`**, when one
+    /// is kept: it becomes this view where this one is of the whole take,
+    /// and the overview under it where this one is of a span, and the one it
+    /// replaces is kept in its place.
+    pub fn recall(&mut self, analysis: (usize, usize, i32)) -> bool {
+        if !self.can_recall(analysis) {
+            return false;
+        }
+        let Some(i) = self.shelved.iter().position(|v| v.analyzed_as(analysis)) else {
+            return false;
+        };
+        let mut found = self.shelved.remove(i);
+        if self.is_whole() {
+            std::mem::swap(self, &mut found);
+            self.shelved = found.take_shelved();
+            self.shelve(found);
+        } else if let Some(left) = self.overview.replace(Box::new(found)) {
+            self.shelve(*left);
+        }
+        true
     }
 
     /// Sets the display state from widget props: the dB window (contrast), the

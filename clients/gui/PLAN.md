@@ -5071,6 +5071,18 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 - ⬜ **The page's clipboard reaches the browser's** *(left by `G42`, 2026-10-04)*. A page keeps the host's own clipboard, so text copied in a canvas does not paste in another tab or program. Reaching it takes code on the page's side: a copy writes `navigator.clipboard` in the gesture that made it, Ctrl+V takes the text the browser's `paste` event carries before it pastes, and the menu's Paste reads it asynchronously (a browser may ask the reader's permission). A page has no primary selection at all, so the middle button stays the host's own there.
 
+- ⬜ **A frame of what moves presents only what moved** *(named
+  2026-10-27, measuring the audio editor playing in a window of 3840 by
+  2071 pixels)*. With the picture kept on the card, a frame of what moves is
+  a copy of the window's pixels and the boxes of its live layers: the copy
+  alone measured 13 % of an integrated GPU at thirty frames a second in
+  that window, and the
+  compositor's own copy beside it. Both are the cost of presenting a whole
+  image, since a swapchain keeps no picture to draw over. Presenting with
+  the rectangles that changed (incremental present, the compositor's damage
+  regions) would cut both to the boxes. Take it when the graphics layer
+  offers it on every backend the host draws with, the page included.
+
 ## Found by use: the running list of fixes
 
 - ✅ **A focused multitrack's meters at rest cover its focus ring** *(found 2026-10-08 by the user in `editors/edit_multitrack` with tall tracks scrolled: the meters drew over the blue line round the multitrack, above and below, only while they showed no signal; fixed the same day)*. The ring is drawn with the picture and the live layer over it, since a window keeps its picture and a tick draws what moves; a meter column at rest is the height of its track, so where a track met the multitrack's top or bottom edge the column covered the ring. The live layer of a focused element now ends with the ring (`frame::draw_live_places`), so it is the last thing of the element in a tick as it is in a whole frame. Pinned by `the_focus_ring_is_drawn_over_the_live_layer`; `a_scrolled_stacks_meters_paint_inside_its_own_rect` and `a_tall_multitracks_meters_stay_inside_it` were written while looking for it and pin that the meters stay inside the multitrack.
@@ -8132,6 +8144,11 @@ finished work, where a pending item reads as done.
     An offscreen copy of the picture, blitted under the live layer, is what
     would save the card's own work; nothing measured asks for it yet (the
     live frame's remaining 0.8 ms is the pass and the present).
+    *(Revised 2026-10-27: measured on the audio editor in a large window,
+    the card's work was what a playing window cost, and the picture under
+    the live layers is kept on the card, the live layers multisampled in
+    their boxes alone: `host::frame::underlay`, and `docs/decisions.md`,
+    "A window keeps its picture, and a tick draws what moves".)*
   - **Whole wins, and silence is whole.** A frame the platform asked for, a
     window with a dialog up (its lines are under the scrim) and a picture
     drawn before the glyph atlas was packed again are drawn whole. An element
@@ -8927,3 +8944,14 @@ module of its own.
   170 MB for an hour of stereo against 43). It is a change to a format
   the server writes beside its peaks (`clausters_core::spectra`, its
   version), so the size is weighed against the burst before it is made.
+
+
+- ⬜ **A window the compositor does not draw asks for no picture** *(found
+  2026-10-27, probing the audio editor from a script with its window
+  covered)*. What a view owes (`SpectrogramSlot::owed`, the waveform's too)
+  is noted by the draw pass, so a window that receives no frame asks for
+  nothing: a capture of it drew the take's one dark column for seconds, and
+  a change of analysis ran only when the next gesture drew a frame. Whether
+  a window nobody sees should ask at all is the question (asking on
+  placement would spend a read on a picture nobody looks at), and a capture,
+  which is the one reader of a window nobody sees, may be what should ask.

@@ -54,6 +54,21 @@ let (mut producer, mut consumer) = rtrb::RingBuffer::<Cmd>::new(1024);
 - Drain the FIFO at the START of each block, with a per-block command limit if the
   worst case needs bounding.
 
+### Waking an I/O thread
+
+A thread that fills a ring the audio thread reads (a disk reader, a fed
+take's reader) **parks until it is woken**, and the audio thread wakes it with
+`std::thread::Thread::unpark`, a futex wake, which a real-time thread may
+make (never a lock, a channel send or an allocation). Wake on every cause of
+work and the reader needs no polling: a request, a list put in place, and
+**the ring fallen to half, once per fall** (`dsp::stream`: after each block,
+a reader whose ring is at half or less wakes its filler and does not again
+until it has been filled past half, since half a ring is far more lead
+than a read takes). The park keeps a long timeout (100 ms) only as a safety net. A
+reader that polls every 2 ms costs a core's percent per thread for nothing
+at rest, and an editor has several. An offline render, which waits for
+frames instead of starving, wakes the reader before it waits.
+
 ### Shared data: `basedrop`
 
 For data the audio thread reads and the network thread replaces (e.g. the SynthDef

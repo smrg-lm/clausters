@@ -26,6 +26,7 @@
 
 pub(crate) mod draw;
 mod items;
+mod underlay;
 
 use crate::host::diag;
 use clausters_core::spectra;
@@ -34,6 +35,7 @@ pub(crate) use draw::{draw_time_ruler, marker_at, ruler_strip, ruler_strip_body}
 // The arrow's width is the drawing's own business; a gesture asks `marker_at`
 // what was hit. The test that pins the reach to it is the one exception.
 use items::*;
+use underlay::Underlay;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -225,19 +227,49 @@ pub(crate) fn keep_data(widget: &mut Widget, data: &Loaded) {
 /// was the whole take. One of the whole take replaces both, and one of a take
 /// of another length keeps nothing of it, since what it held is not where it
 /// was any more.
+///
+/// **The pictures of the whole take by other analyses are kept too**: the
+/// ones the slot it replaces kept, and the one it drew when the new picture
+/// is of the whole take by another analysis ([`SpectrogramView::shelve`]).
+/// None of them is kept across an edit (a slot whose columns are `stale`), or
+/// into a take of another length.
 fn keep_overviews(slot: &mut SpectrogramSlot, mut held: SpectrogramSlot) {
+    let edited = held.stale.get().is_some();
     for (view, mut was) in slot.views.iter_mut().zip(held.views.drain(..)) {
-        if !view.stft().is_span() || !was.stft().is_span() || view.is_whole() {
+        if !view.stft().is_span() || !was.stft().is_span() {
             continue;
         }
+        let total = view.stft().total_samples();
+        let shelved = was.take_shelved();
         let overview = if was.is_whole() {
             Some(was)
         } else {
             was.take_overview()
         };
-        view.set_overview(
-            overview.filter(|o| o.stft().total_samples() == view.stft().total_samples()),
-        );
+        let overview = overview.filter(|o| o.stft().total_samples() == total);
+        if !edited {
+            for kept in shelved.into_iter().rev() {
+                if kept.stft().total_samples() == total {
+                    view.shelve(kept);
+                }
+            }
+        }
+        if view.is_whole() {
+            // the one dark column a take is given before its columns is no
+            // picture to go back to
+            if let Some(o) = overview.filter(|o| !edited && o.stft().n_frames() > 1) {
+                let analysis = (
+                    o.stft().window_size(),
+                    o.stft().analysis().0,
+                    o.stft().analysis().1,
+                );
+                if !view.analyzed_as(analysis) {
+                    view.shelve(o);
+                }
+            }
+            continue;
+        }
+        view.set_overview(overview);
     }
 }
 
@@ -851,6 +883,11 @@ pub(crate) fn columns_owed(
     analysis: (usize, usize, i32),
 ) -> Option<Owed> {
     let view = slot.views.first()?;
+    // a picture of this analysis kept aside is brought back as the frame is
+    // uploaded ([`SpectrogramView::recall`]), and nothing is asked for it
+    if slot.stale.get().is_none() && view.can_recall(analysis) {
+        return None;
+    }
     let overview = if view.is_whole() {
         Some(view)
     } else {
@@ -1120,6 +1157,12 @@ pub(crate) struct Batches {
     pub(crate) live: Painter,
     pub(crate) top: Painter,
     kept: Kept,
+    /// What lies under the live layers, kept on the card ([`Underlay`]).
+    underlay: Underlay,
+    /// Every frame drawn in one pass, for a test to compare the kept
+    /// picture's frames with.
+    #[cfg(test)]
+    one_pass: bool,
     asked: Asked,
     /// What the last frame cost, phase by phase ([`FrameCost`]).
     cost: FrameCost,
@@ -1213,6 +1256,9 @@ impl Batches {
             top: Painter::sharing(device, target, &base),
             base,
             kept: Kept::default(),
+            underlay: Underlay::new(device, target),
+            #[cfg(test)]
+            one_pass: false,
             asked: Asked::default(),
             cost: FrameCost::default(),
         }
@@ -1287,6 +1333,22 @@ struct Kept {
     inside: Option<Collected>,
     /// The live layer as it was last drawn.
     live: Mesh,
+    /// Where what is drawn over the live layers lies (the host's bands, the
+    /// open menus), as triangle bounds joined: a live layer that meets it
+    /// is drawn in the single pass ([`underlay::plan`]).
+    over: Vec<[f32; 4]>,
+}
+
+impl Kept {
+    /// Whether anything is drawn on the live layers: a placed element with
+    /// one, or a timeline's playhead.
+    fn has_live(&self) -> bool {
+        !self.places.is_empty()
+            || self
+                .collected
+                .as_ref()
+                .is_some_and(|c| c.timeline_items.iter().any(|i| i.axis_owned))
+    }
 }
 
 /// The glyph atlas' epoch (`font::atlas::epoch`): the same for ever in a
@@ -1548,66 +1610,179 @@ pub(crate) fn render(
     drawn
 }
 
-/// **The one render pass a window's frame is**, into `target`: the batches
-/// as they stand, the heavy views between them, resolved out of the
-/// multisampled attachment when the window has one. The screen's frame and a
-/// capture's are this pass into two textures, which is what keeps a capture
-/// the screen's picture.
+/// **The passes a window's frame is**, into `target`: the batches as they
+/// stand, the heavy views between them, resolved out of the multisampled
+/// attachment when the window has one. The screen's frame and a capture's
+/// are these passes into two textures, which is what keeps a capture the
+/// screen's picture.
+///
+/// A window with live layers keeps everything else ([`Underlay`]): its
+/// picture is drawn into a texture of its own when a whole frame changed it,
+/// and every frame copies that texture and draws the live layers over it,
+/// multisampled in the boxes they cover, so a frame asked for by a moving
+/// line costs a copy and that line. A window with nothing live, with a
+/// dialog up (whose frames are all whole ones), or whose live layers meet a
+/// menu or a band drawn over them draws everything in one pass.
 fn encode_pass(
     gpu: &Gpu,
     renderers: &mut Renderers,
-    batches: &Batches,
+    batches: &mut Batches,
     spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
     canvases: &HashMap<i32, CanvasView>,
     theme: &Theme,
     target: &wgpu::TextureView,
 ) -> wgpu::CommandEncoder {
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
+    let fb = (fb_w, fb_h);
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("gui frame"),
         });
-    // Antialiasing is a property of the **attachment**, so it is the whole of
-    // what MSAA changes here: with it on, every pipeline draws into the
-    // multisampled texture and the GPU resolves that into the target as the
-    // pass ends. One flag, one texture per window, nothing per widget.
-    let (attachment, resolve_target) = match gpu.msaa_view() {
-        Some(ms) => (ms, Some(target)),
-        None => (target, None),
-    };
-    let fb = (fb_w, fb_h);
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("gui pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: attachment,
-                resolve_target,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(
-                        batches.kept.clear.unwrap_or_else(|| clear_color(theme)),
-                    ),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        batches.base.draw(&mut pass);
-        if let Some(collected) = &batches.kept.collected {
-            draw_heavy(&mut pass, renderers, spectrograms, canvases, collected, fb);
-        }
-        batches.over.draw(&mut pass);
+    let clear = batches.kept.clear.unwrap_or_else(|| clear_color(theme));
+    let boxes = (batches.kept.valid && batches.kept.has_live())
+        .then(|| underlay::plan(&batches.kept.live, &batches.kept.over, fb))
+        .flatten();
+    #[cfg(test)]
+    let boxes = boxes.filter(|_| !batches.one_pass);
+    let Some(boxes) = boxes else {
+        batches.underlay.release();
+        let mut pass = begin_pass(&mut encoder, gpu, target, clear);
+        draw_under(&mut pass, renderers, batches, spectrograms, canvases, fb);
         batches.live.draw(&mut pass);
-        if let Some(inside) = &batches.kept.inside {
-            draw_heavy(&mut pass, renderers, spectrograms, canvases, inside, fb);
-        }
-        batches.top.draw(&mut pass);
+        draw_above(&mut pass, renderers, batches, spectrograms, canvases, fb);
+        drop(pass);
+        return encoder;
+    };
+    if !batches.underlay.holds(fb) {
+        let kept = batches.underlay.target(&gpu.device, &gpu.queue, fb);
+        let mut pass = begin_pass(&mut encoder, gpu, &kept, clear);
+        draw_under(&mut pass, renderers, batches, spectrograms, canvases, fb);
+        draw_above(&mut pass, renderers, batches, spectrograms, canvases, fb);
+        drop(pass);
+        batches.underlay.fresh = true;
     }
+    // Multisampled, the live layers are drawn in their boxes, each over the
+    // picture under it; single-sampled, straight over the copy.
+    let multisampled = gpu.msaa_view().is_some();
+    let atlas = if multisampled && !boxes.is_empty() {
+        batches.underlay.place(
+            &gpu.device,
+            &gpu.queue,
+            &batches.base,
+            &batches.kept.live,
+            &boxes,
+        )
+    } else {
+        batches.underlay.unplace();
+        None
+    };
+    if let Some((samples, resolved)) = &atlas {
+        let mut pass = begin_into(&mut encoder, samples, Some(resolved), clear);
+        batches.underlay.draw_boxes(&mut pass);
+        drop(pass);
+    }
+    if multisampled && atlas.is_none() && !boxes.is_empty() {
+        // An atlas the card cannot hold: the single pass's way.
+        let mut pass = begin_pass(&mut encoder, gpu, target, clear);
+        draw_under(&mut pass, renderers, batches, spectrograms, canvases, fb);
+        batches.live.draw(&mut pass);
+        draw_above(&mut pass, renderers, batches, spectrograms, canvases, fb);
+        drop(pass);
+        return encoder;
+    }
+    let mut pass = begin_into(&mut encoder, target, None, clear);
+    batches.underlay.draw_frame(&mut pass);
+    if !multisampled {
+        pass.set_viewport(0.0, 0.0, fb_w as f32, fb_h as f32, 0.0, 1.0);
+        pass.set_scissor_rect(0, 0, fb_w, fb_h);
+        batches.live.draw(&mut pass);
+    }
+    drop(pass);
     encoder
+}
+
+/// A pass into `target`, cleared to `clear`.
+///
+/// Antialiasing is a property of the **attachment**, so it is the whole of
+/// what MSAA changes here: with it on, every pipeline draws into the
+/// multisampled texture and the GPU resolves that into the target as the
+/// pass ends. One flag, one texture per window, nothing per widget.
+fn begin_pass<'e>(
+    encoder: &'e mut wgpu::CommandEncoder,
+    gpu: &Gpu,
+    target: &wgpu::TextureView,
+    clear: wgpu::Color,
+) -> wgpu::RenderPass<'e> {
+    match gpu.msaa_view() {
+        Some(ms) => begin_into(encoder, ms, Some(target), clear),
+        None => begin_into(encoder, target, None, clear),
+    }
+}
+
+/// A pass into `attachment`, resolved into `resolve` when it is
+/// multisampled. The samples are not kept past the resolve: no pass reads
+/// them again.
+fn begin_into<'e>(
+    encoder: &'e mut wgpu::CommandEncoder,
+    attachment: &wgpu::TextureView,
+    resolve: Option<&wgpu::TextureView>,
+    clear: wgpu::Color,
+) -> wgpu::RenderPass<'e> {
+    let store = if resolve.is_some() {
+        wgpu::StoreOp::Discard
+    } else {
+        wgpu::StoreOp::Store
+    };
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("gui pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: attachment,
+            resolve_target: resolve,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(clear),
+                store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    })
+}
+
+/// What lies under the live layers: the flat widgets, the window's heavy
+/// views and what its elements draw over them.
+fn draw_under(
+    pass: &mut wgpu::RenderPass<'_>,
+    renderers: &mut Renderers,
+    batches: &Batches,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
+    canvases: &HashMap<i32, CanvasView>,
+    fb: (u32, u32),
+) {
+    batches.base.draw(pass);
+    if let Some(collected) = &batches.kept.collected {
+        draw_heavy(pass, renderers, spectrograms, canvases, collected, fb);
+    }
+    batches.over.draw(pass);
+}
+
+/// What is over the live layers: a dialog's heavy views, the host's bands,
+/// the menus, the lists and the tip.
+fn draw_above(
+    pass: &mut wgpu::RenderPass<'_>,
+    renderers: &mut Renderers,
+    batches: &Batches,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
+    canvases: &HashMap<i32, CanvasView>,
+    fb: (u32, u32),
+) {
+    if let Some(inside) = &batches.kept.inside {
+        draw_heavy(pass, renderers, spectrograms, canvases, inside, fb);
+    }
+    batches.top.draw(pass);
 }
 
 /// **A window's picture on its way back from the card**: the frame copied
@@ -1835,6 +2010,7 @@ fn draw_whole(
         );
     }
     batches.cost.upload = uploading.elapsed();
+    let over = underlay::join(&picture.top.triangle_bounds(), 0.0);
     batches.kept = Kept {
         valid: picture.kept,
         size: (fb_w, fb_h),
@@ -1844,7 +2020,9 @@ fn draw_whole(
         collected: Some(picture.collected),
         inside: picture.inside,
         live: picture.live,
+        over,
     };
+    batches.underlay.fresh = false;
 }
 
 /// A whole frame as triangles and snapshots, before any of it reaches a card.
@@ -2077,6 +2255,11 @@ fn upload_heavy(
             let channels = slot.views.len();
             let rows = if item.look.overlay { 1 } else { channels };
             let alpha = item.look.layers.alpha_of(Paint::Spectrogram).unwrap_or(1.0);
+            if slot.stale.get().is_none() {
+                for view in &mut slot.views {
+                    view.recall(look.analysis);
+                }
+            }
             for (ch, view) in slot.views.iter_mut().enumerate() {
                 view.set_display(
                     look.db_floor,
@@ -2386,6 +2569,171 @@ mod tests {
             differs > 500,
             "the slider is drawn: {differs} pixels differ"
         );
+    }
+
+    /// **A picture of the whole take by an analysis left is kept, and going
+    /// back to that analysis draws it again with nothing asked**: over the
+    /// whole take the view becomes it, over a span the overview does, and
+    /// the one it replaces is kept in its place. An edit keeps none.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn a_picture_of_an_analysis_left_is_brought_back() {
+        let Ok(gpu) = pollster::block_on(Gpu::offscreen(64, 64, 1)) else {
+            eprintln!("no adapter on this machine: nothing to draw offscreen with");
+            return;
+        };
+        let renderers = Renderers::new(&gpu.device, gpu.target());
+        let total = 480_000;
+        let whole = |window: usize| {
+            let bins = window / 2 + 1;
+            Stft::of_span(
+                vec![0.5; bins * 60],
+                bins,
+                0,
+                total / 60 + 1,
+                window,
+                48_000.0,
+                total,
+            )
+            .expect("a whole take's columns")
+            .with_analysis(window / 2, 0)
+        };
+        let slot = |stft: Stft| spectrogram_slot(vec![stft], &gpu, &renderers).expect("a slot");
+        let (a, b) = ((1024, 512, 0), (4096, 2048, 0));
+        let nav = View::full(total);
+
+        let mut shown = slot(whole(4096));
+        keep_overviews(&mut shown, slot(whole(1024)));
+        assert!(shown.views[0].analyzed_as(b));
+        assert!(shown.views[0].can_recall(a), "the analysis left is kept");
+        assert!(
+            columns_owed(&shown, &nav, 400.0, a).is_none(),
+            "nothing is asked"
+        );
+        assert!(shown.views[0].recall(a));
+        assert!(shown.views[0].analyzed_as(a), "the whole take is it again");
+        assert!(
+            shown.views[0].can_recall(b),
+            "and the one it replaced is kept"
+        );
+
+        let bins = 2049;
+        let span = Stft::of_span(
+            vec![0.5; bins * 8],
+            bins,
+            96_000,
+            2048,
+            4096,
+            48_000.0,
+            total,
+        )
+        .expect("a span's columns")
+        .with_analysis(2048, 0);
+        let mut zoomed = slot(span);
+        keep_overviews(&mut zoomed, shown);
+        let view = &mut zoomed.views[0];
+        assert!(view.overview().is_some_and(|o| o.analyzed_as(a)));
+        assert!(view.recall(b), "the overview of the span's own analysis");
+        assert!(view.overview().is_some_and(|o| o.analyzed_as(b)));
+        assert!(view.can_recall(a));
+
+        zoomed.stale.set(Some(total));
+        let mut edited = slot(whole(1024));
+        keep_overviews(&mut edited, zoomed);
+        assert!(!edited.views[0].can_recall(b), "an edit keeps none");
+    }
+
+    /// **A frame of the kept picture is the single pass's frame**: a window
+    /// of everything that moves, drawn with its live layers in their boxes
+    /// over the kept picture, reads back as the same window drawn in one
+    /// pass: exactly when single-sampled, and multisampled but for the few
+    /// pixels where a live edge crosses an edge of the picture. Skipped, and
+    /// said so, where no adapter answers.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn a_kept_picture_frame_is_the_single_pass_frame() {
+        use crate::host::world::HeadClocks;
+        use clausters_core::osc::{OscMessage, OscPacket, OscType};
+
+        struct Flat(f32);
+        impl crate::host::BusSource for Flat {
+            fn control(&self, _index: usize) -> f32 {
+                self.0
+            }
+        }
+        for samples in [1, 4] {
+            let Ok(mut gpu) = pollster::block_on(Gpu::offscreen(360, 420, samples)) else {
+                eprintln!("no adapter on this machine: nothing to draw offscreen with");
+                return;
+            };
+            let mut host = crate::host::Host::new();
+            host.handle_packet(
+                OscPacket::Message(OscMessage {
+                    addr: crate::host::GUI_DEF.into(),
+                    args: vec![OscType::Int(1), OscType::String(MOVING.into())],
+                }),
+                crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                    std::net::Ipv4Addr::LOCALHOST,
+                    9000,
+                ))),
+            );
+            let bus = Flat(0.6);
+            let inputs = FrameInputs {
+                metrics: host.metrics_for(1),
+                world: World {
+                    bus: Some(&bus),
+                    clocks: HeadClocks::uniform(0.4),
+                    timelines: host.timelines(),
+                    ..World::default()
+                },
+                ..FrameInputs::default()
+            };
+            let mut renderers = Renderers::new(&gpu.device, gpu.target());
+            let mut batches = Batches::new(&gpu.device, gpu.target());
+            let mut read = |one_pass: bool| {
+                batches.one_pass = one_pass;
+                let readback = capture(
+                    &mut gpu,
+                    &mut renderers,
+                    &mut batches,
+                    &mut HashMap::new(),
+                    &mut HashMap::new(),
+                    &mut HashMap::new(),
+                    host.window_def(1).expect("the window is defined"),
+                    &inputs,
+                    &host.theme,
+                )
+                .expect("the window reads back");
+                readback.wait(&gpu.device).expect("the card maps it");
+                (readback.pixels().2, batches.underlay.holds((360, 420)))
+            };
+            let (kept, held) = read(false);
+            assert!(held, "{samples} samples: the window keeps its picture");
+            let (single, _) = read(true);
+            // A live edge that crosses an edge of the picture inside one
+            // pixel blends over the picture's resolved color rather than
+            // over each sample of it: both antialiased, a few levels apart
+            // on those pixels alone.
+            let (mut off, mut worst) = (0, 0);
+            for (a, b) in kept
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(single.as_chunks::<4>().0)
+            {
+                let d = (0..3)
+                    .map(|c| (i32::from(a[c]) - i32::from(b[c])).abs())
+                    .max()
+                    .unwrap_or(0);
+                off += usize::from(d > 2);
+                worst = worst.max(d);
+            }
+            let edges = if samples == 1 { 0 } else { 360 * 420 / 2000 };
+            assert!(
+                off <= edges && worst <= 32,
+                "{samples} samples: {off} pixels differ, by up to {worst}"
+            );
+        }
     }
 
     /// **A window drawn offscreen is the picture kept beside this test**,

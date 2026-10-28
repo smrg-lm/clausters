@@ -9864,6 +9864,32 @@ the multitrack session with its server 9.5 % at rest, 2.8 % after). An
 offscreen copy of the picture under the live layer would save the card's own
 work, and nothing measured asks for it.
 
+*Revised 2026-10-27: the card keeps the picture too.* Measured on the audio
+editor playing a four-minute take, in a window of 3840 by 2071 pixels on an
+integrated GPU, the card was busy 29 to 39 % of the time for a moving
+playhead and a meter: every tick drew every panel, waveform and spectrogram
+again into a multisampled attachment and resolved it, and the cost grew with
+the window, not with what moved. A window with live layers now keeps
+everything else in a texture of its own (`host::frame::underlay`), drawn when
+a whole frame changed it. A frame copies it into the surface single-sampled,
+and the live layers are drawn **multisampled in the boxes they cover**: each
+box is the picture under it and the live layers over it, drawn into a small
+atlas and resolved, then copied over the frame. Copying the whole frame
+through the multisampled attachment kept the antialiasing too, at 22 to 26 %
+in that window; with the boxes the card is busy 14 to 15 %, against 13 % for
+the single-sampled copy alone, which is the floor, since a swapchain keeps no
+picture to draw over and a presented frame is a whole one. In the editor's
+default window the card went from 6 % to 2.5 % playing. The
+order the eye sees does not change: the live layers sat over the window's
+overlays and under the host's bands, a dialog and the open menus, so a window
+with a dialog keeps nothing, and a live layer that meets a band or a menu is
+drawn the single pass's way. Single-sampled the frame is the single pass's to
+the bit; multisampled it differs only on the pixels where a live edge
+crosses an edge of the picture, which blends over the picture's resolved
+color rather than over each sample (a test bounds both). It is passes,
+textures and texel loads, which every backend the host draws with has, so the
+page draws it as the window does.
+
 **The glyph atlas had to change with it.** A kept picture's text names
 places in the atlas, so the atlas may not move them: a glyph's coordinates
 are texels of the sheet, which the shader divides by the texture's own size,
@@ -10984,6 +11010,44 @@ ask of an analysis the view no longer wants is let go at its next answer
 (`host::columns`); after an edit the whole take is still asked first, since
 the answerer holds most of its windows and the old picture is of the old
 length.
+
+*Revised again 2026-10-27: the analyses left are kept.* Going back to an
+analysis tried a moment ago analyzed the whole take again, 0.4 to 0.7 s of
+the same take each time. A view now keeps the pictures of the whole take by
+the last two analyses it left (`SpectrogramView::shelve`), a column a pixel
+or so each, and one that comes back to one of them draws it at once and asks
+nothing for it: over the whole take it becomes the view, over a span the
+overview under it. None is kept across an edit or into a take of another
+length. They are kept in memory for as long as the view is: a store per
+analysis beside the file's spectral summary would survive reopening the take,
+at the size of a summary per analysis, and is left until reopening long takes
+with another analysis is what is measured to cost.
+
+## A reader with nothing to read sleeps until it is woken (2026-10-27)
+
+The threads that read a take for the audio thread (each transport reader's
+own I/O thread in `dsp::stream`, the take reader an application runs beside
+its engine in `clausters_app_engine::take`, and the application's own thread
+in the host, `host::audio_app`) looked for work every 2 or 5 ms whatever they
+had to do. Measured on the audio editor with a take open and nothing playing,
+that was 9 % of a core: two readers that a fed stream had made idle for good,
+a take reader in front of a full ring, and the application asking its engine
+for garbage, two hundred times a second each.
+
+**What wakes a reader is what gives it work**, and the audio thread already
+said so for a request and a list put in place (an unpark, a futex wake, which
+a real-time thread may make). The one thing it did not say is that a ring
+has room, and that is now said **once per fall to half a ring**: after each
+block a reader whose ring has fallen to half or less wakes whoever fills it,
+and not again until it has been filled past half: over half a second of
+lead at the ring's size, where a read takes milliseconds. With every cause of
+work waking it, a reader parks for 100 ms as a safety net rather than 2. An
+offline render waits for frames the way it did, and wakes the reader before
+it waits. The application's thread looks every 5 ms only while something can
+land unasked (a render on its thread, a transport rolling or a play waiting
+on its cue), a render that ends wakes it, and otherwise it rests 100 ms; an
+ask wakes it as it did. At rest the editor's process is now the audio
+device's callback and nothing else, 2 to 3 % of a core.
 
 ## A render's progress is a window prop, not a status line (2026-10-23)
 

@@ -244,6 +244,10 @@ pub struct TransportDiskIn {
     /// The list frame its offset and start put at the transport's frame 0,
     /// as the last block read it: what a loop asked for is read through.
     delta: f64,
+    /// The ring was at half or less after the last block: whoever fills it
+    /// was woken as it fell there, and is not woken again until it has
+    /// filled it past half.
+    low: bool,
 }
 
 /// A fed stream a reader is playing: the requests' producer, what the halves
@@ -310,6 +314,7 @@ impl TransportDiskIn {
             continues: None,
             applied: None,
             delta: 0.0,
+            low: true,
         }
     }
 
@@ -665,6 +670,7 @@ impl TransportDiskIn {
             }
         }
         if self.offline && self.head == Some(frame) && self.consumer.slots() < self.channels {
+            self.wake();
             let (consumer, channels) = (&self.consumer, self.channels);
             crate::dsp::io_thread::wait_for(|| consumer.slots() >= channels);
         }
@@ -749,6 +755,14 @@ impl UGen for TransportDiskIn {
         let rolling = ctx.transport.rolling;
         self.play(ctx, inputs, output);
         self.continues = rolling.then_some(next);
+        // **The ring fallen to half wakes whoever fills it**, once per fall:
+        // the reader parks with a full ring rather than looking every few
+        // milliseconds, and half a ring is over half a second of lead.
+        let low = self.consumer.slots() <= self.consumer.buffer().capacity() / 2;
+        if low && !self.low {
+            self.wake();
+        }
+        self.low = low;
     }
 }
 
@@ -1179,7 +1193,7 @@ fn render_list(mut side: impl Side, mut turn: crate::dsp::io_thread::Turn) {
         };
         let (Some(l), Some(at)) = (list.as_ref(), next) else {
             publish(&mut due, &side);
-            turn.park();
+            turn.rest();
             continue;
         };
         let channels = l.channels().max(1);
@@ -1189,7 +1203,7 @@ fn render_list(mut side: impl Side, mut turn: crate::dsp::io_thread::Turn) {
                 next = Some(0);
             } else {
                 publish(&mut due, &side);
-                turn.park();
+                turn.rest();
             }
             continue;
         }
@@ -1201,7 +1215,7 @@ fn render_list(mut side: impl Side, mut turn: crate::dsp::io_thread::Turn) {
         let n = want.min(room).min(left);
         if n == 0 || (!first && room < want && left > room) {
             publish(&mut due, &side);
-            turn.park();
+            turn.rest();
             continue;
         }
         turn.worked();

@@ -77,6 +77,10 @@ pub struct App {
     notes: (Sender<Note>, Receiver<Note>),
     /// Each member's renders under way, which [`App::forget`] lets go.
     live: HashMap<MemberId, Vec<Arc<AtomicBool>>>,
+    /// The thread it was made on, which looks for what landed: a render
+    /// that ends wakes it, since it is no longer [`busy`](App::busy) once
+    /// the render's thread is done.
+    waker: std::thread::Thread,
 }
 
 impl std::fmt::Debug for App {
@@ -143,6 +147,7 @@ impl App {
             ids: IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE),
             notes: channel(),
             live: HashMap::new(),
+            waker: std::thread::current(),
         }
     }
 
@@ -158,6 +163,17 @@ impl App {
         for freed in editing.forget_audio(member) {
             here.delete(&freed.files);
         }
+    }
+
+    /// **Whether something under way may land unasked**: a render on its
+    /// thread, or the engine's transport rolling ([`AppEngine::busy`]). A
+    /// caller that looks for what landed looks often only then.
+    pub fn busy(&self) -> bool {
+        self.live
+            .values()
+            .flatten()
+            .any(|r| r.load(Ordering::Acquire) && Arc::strong_count(r) > 1)
+            || self.engine.lock().unwrap_or_else(|e| e.into_inner()).busy()
     }
 
     /// The engine it holds.
@@ -279,6 +295,7 @@ impl App {
     /// thread of their own, their progress and their end said back.
     fn hand_off(&mut self, member: MemberId, token: u64, run: u64, steps: Vec<Step>, lease: bool) {
         let tx = self.notes.0.clone();
+        let waker = self.waker.clone();
         let live = Arc::new(AtomicBool::new(true));
         let renders = self.live.entry(member).or_default();
         renders.retain(|r| r.load(Ordering::Acquire) && Arc::strong_count(r) > 1);
@@ -323,6 +340,7 @@ impl App {
                 result,
                 lease,
             });
+            waker.unpark();
         });
         if let Err(e) = spawned {
             let _ = self.notes.0.send(Note::Landed {

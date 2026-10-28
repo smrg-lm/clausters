@@ -227,6 +227,13 @@ impl AppEngine {
         waiting.unwrap_or_else(|| self.rolling.get(&transport).copied().unwrap_or(false))
     }
 
+    /// **Whether anything it runs may report back unasked**: a transport
+    /// that rolls, whose end comes back as garbage, or a play waiting on its
+    /// cue.
+    pub fn busy(&self) -> bool {
+        !self.held.is_empty() || self.rolling.values().any(|&r| r)
+    }
+
     /// **Puts a take's fed streams in the pool**, one mono buffer per
     /// channel, `frames` long, at the buffers `buffers` names (allocated by
     /// [`Self::alloc_take`]), so channel `c`'s reader plays `buffers[c]`. Put
