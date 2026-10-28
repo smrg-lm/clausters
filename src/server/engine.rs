@@ -660,6 +660,15 @@ impl TransportState {
         }
         if let Some(span) = &self.looping {
             let here = self.at(device);
+            // **A loop put in place on its own end wraps at once.** It was
+            // asked for while the position was short of the end, and its
+            // readers read it through the wrap as they were asked; landing
+            // on the block that starts at the end, it is due now rather than
+            // never, or the transport would play on past it while the
+            // readers hold the loop's start.
+            if span.start < span.end && self.position.at(here).get() == span.end {
+                return Some((Edge::Wrap, device));
+            }
             return self
                 .position
                 .reaching(TransportPosition::new(span.end), here)
@@ -1486,19 +1495,12 @@ impl Engine {
     /// block before, `UGen::looped`), once it has waited [`CUE_WAIT_SECS`],
     /// or once the transport no longer rolls.
     fn land_loop_cues(&mut self) {
-        let wait = (CUE_WAIT_SECS * self.sample_rate as f64 / BLOCK_SIZE as f64).ceil() as u32;
         let here = self.now;
         for k in 0..self.transports.len() {
             let Some((span, waited)) = self.transports[k].loop_cue.clone() else {
                 continue;
             };
-            let t = &self.transports[k];
-            let ready = !t.rolling
-                || waited >= wait
-                || t.group.is_none_or(|g| {
-                    let view = Self::view_of(t, here, Some(span.clone()));
-                    self.tree.looped_subtree(g, &view) != Some(false)
-                });
+            let ready = self.loop_cue_ready(k, here).is_some();
             let t = &mut self.transports[k];
             if ready {
                 t.loop_cue = None;
@@ -1507,6 +1509,23 @@ impl Engine {
                 t.loop_cue = Some((span, waited + 1));
             }
         }
+    }
+
+    /// **The loop change transport `k` waits for, when it may be put in
+    /// place** at device sample `here`: every reader of its governed group
+    /// holds the reading it asks for, it has waited [`CUE_WAIT_SECS`], or
+    /// the transport no longer rolls.
+    fn loop_cue_ready(&mut self, k: usize, here: u64) -> Option<Option<Range<u64>>> {
+        let wait = (CUE_WAIT_SECS * self.sample_rate as f64 / BLOCK_SIZE as f64).ceil() as u32;
+        let t = &self.transports[k];
+        let (span, waited) = t.loop_cue.clone()?;
+        let ready = !t.rolling
+            || waited >= wait
+            || t.group.is_none_or(|g| {
+                let view = Self::view_of(t, here, Some(span.clone()));
+                self.tree.looped_subtree(g, &view) != Some(false)
+            });
+        ready.then_some(span)
     }
 
     /// **Every cue in progress, one block further**: a stopped transport's
@@ -1673,7 +1692,24 @@ impl Engine {
     /// stopping phase ends in.
     fn cross_edge(&mut self, k: usize, edge: Edge, offset: usize) {
         let here = self.device_here();
+        // **A loop change whose readers are ready lands on the wrap**, before
+        // it: they read the take through the loop asked for, so the position
+        // goes where they read (the new loop's start, or straight on when
+        // the loop was turned off) rather than to the old loop's start a
+        // block before the change would have landed anyway.
+        let landing = match edge {
+            Edge::Wrap => self.loop_cue_ready(k, here),
+            _ => None,
+        };
         let t = &mut self.transports[k];
+        if let Some(span) = landing {
+            t.loop_cue = None;
+            Self::put_loop(t, here, span);
+            if t.looping.is_none() {
+                self.run_released();
+                return;
+            }
+        }
         // What freezing it on this sample leaves to do: whether the
         // end mark caused it, and where the pass goes back to.
         let froze = match edge {

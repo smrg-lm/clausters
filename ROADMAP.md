@@ -132,11 +132,6 @@ already carry it.
   from a script with its window covered; what is open is whether a window
   nobody sees should ask, or a capture should.
 
-- ⬜ **A loop switched to another loop near its end plays silence on a
-  machine of one or two cores** *(`crates/clausters-apps/PLAN.md`, Found
-  by use)*. Found by CI and reproduced held to two cores; the playback
-  test that catches it is red on CI until it is diagnosed.
-
 - ⬜ **The audio editor's switches are menu entries, not checks**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.

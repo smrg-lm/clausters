@@ -5440,7 +5440,7 @@ wrong.
   history, the takes and renders only it named are let go, and its seat
   keeps an editor with no file.
 
-- ⬜ **A loop switched to another loop near its end plays silence on a
+- ✅ **A loop switched to another loop near its end plays silence on a
   machine of one or two cores** *(found 2026-10-27, by CI's synth-only
   job, and reproduced with `taskset -c 0,1` on the test binary of
   `crates/clausters-app-engine/tests/playback.rs`)*.
@@ -5454,3 +5454,11 @@ wrong.
   the diagnosis: which turn the readers miss when their threads share two
   cores with the one that plays, and whether a person hears it on a
   small machine.
+  *Fixed 2026-10-28:* the readers missed no turn; the transport took the
+  wrong one at the loop's end. A loop change whose readers were ready on
+  the block that ended on the loop's end landed a block late: wrapping
+  first with the old loop (the readers held the new loop's start), or,
+  put in place on the end itself, never wrapping at all. The engine now
+  lands a ready change on the wrap before it, and wraps at once a loop put
+  in place on its own end (`server::engine`, `cross_edge`, `edge_due`).
+  Few cores only changed which block the readers were ready on.
