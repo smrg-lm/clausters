@@ -5380,7 +5380,7 @@ wrong.
   with the C ABI symbols behind them and the wasm `AudioEditorPlayback`
   (core ABI v94), and `SamplesView` from both clients' `editing`.
 
-- ⬜ **Two playback tests of the application's engine fail now and then under
+- ✅ **Two playback tests of the application's engine fail now and then under
   a parallel run** *(found 2026-10-24, moving the application's threads
   onto one door)*. `a_loop_moved_while_it_plays_is_crossfaded` and
   `two_loop_switches_close_together_at_its_end_are_not_heard`
@@ -5390,6 +5390,13 @@ wrong.
   thread of its own, so a loaded machine changes what the reader has filled
   by a given block. They should wait for the reader as the engine's cue does
   rather than for time.
+  *Closed 2026-10-28:* the tests were right and the engine was not. The
+  loop switch's failures were a loop change that landed a block late at
+  the loop's end, which a loaded machine made likely by moving the block
+  its readers were ready on; fixed in the engine (see "A loop switched to
+  another loop near its end plays silence on a machine of one or two
+  cores", below). The crossfade test, which turns a loop the same way,
+  has not failed since, held to one or two cores; reopen it if it does.
 
 - ⬜ **A peaks read lands after its working folder is gone** *(found
   2026-10-24, the audio editor's acceptance page)*. Closing an editor
