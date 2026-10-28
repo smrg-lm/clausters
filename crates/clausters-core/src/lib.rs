@@ -109,6 +109,7 @@ pub mod audio_editor;
 pub mod builtins;
 pub mod bundle;
 pub mod bytes;
+pub mod channel_matrix;
 pub mod clocksync;
 pub mod config;
 pub mod denormals;

@@ -617,8 +617,8 @@ class Buffer:
         ``frames`` frames of `source` from ``src_start`` are scaled by ``gain``
         and added into this buffer from ``start``; every position is a frame.
         ``frames=-1`` runs as far as both buffers allow. `source` may be a join,
-        read through its parts; a narrower source repeats across this buffer's
-        channels."""
+        read through its parts; a mono source is added on every channel of
+        this buffer, a source of another width channel by channel."""
         self._edit("/buffer_mix", (start, source.bufnum, src_start, frames,
                                    float(gain)), wait, timeout)
 

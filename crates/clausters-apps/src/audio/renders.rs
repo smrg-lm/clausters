@@ -132,15 +132,14 @@ fn stitch(index: i32, list: &List) -> OscMessage {
         args.push(OscType::Float(part.fade_in_shape.curve as f32));
         args.push(OscType::Int(part.fade_out_shape.shape));
         args.push(OscType::Float(part.fade_out_shape.curve as f32));
-        // Every part spells its whole map: a narrower file repeats, as a
-        // join reads it.
-        for c in 0..list.channels as i32 {
-            let picked = match &part.channels {
-                Some(map) => map.get(c as usize).copied().unwrap_or(-1),
-                None => c % part.source_channels.max(1) as i32,
-            };
-            args.push(OscType::Int(picked));
-        }
+        // Every part spells its whole map, by the rule every reader of a part
+        // uses.
+        let map = clausters_core::segments::channel_map(
+            part.channels.as_deref(),
+            part.source_channels as usize,
+            list.channels as usize,
+        );
+        args.extend(map.into_iter().map(OscType::Int));
     }
     msg("/buffer_stitch", args)
 }
@@ -417,13 +416,12 @@ pub fn reverse(list: &List, out: &Output) -> Step {
         args.push(OscType::Float(part.fade_in_shape.curve as f32));
         args.push(OscType::Int(part.fade_out_shape.shape));
         args.push(OscType::Float(part.fade_out_shape.curve as f32));
-        for c in 0..list.channels as i32 {
-            let picked = match &part.channels {
-                Some(map) => map.get(c as usize).copied().unwrap_or(-1),
-                None => c % part.source_channels.max(1) as i32,
-            };
-            args.push(OscType::Int(picked));
-        }
+        let map = clausters_core::segments::channel_map(
+            part.channels.as_deref(),
+            part.source_channels as usize,
+            list.channels as usize,
+        );
+        args.extend(map.into_iter().map(OscType::Int));
     }
     setup.push(msg("/buffer_stitch", args));
     let frames = list.frames();

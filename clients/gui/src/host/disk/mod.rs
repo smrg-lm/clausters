@@ -282,25 +282,17 @@ impl List {
     }
 
     /// **One part where the list reads it**, as the views draw it: its span
-    /// over its file at the list's rate, a channel past the file's silent.
+    /// over its file at the list's rate, its channels by the map every reader
+    /// of a part uses.
     pub fn placed(&self, placed: Placed) -> Option<ListPart> {
         let file = self.files.get(&placed.part.source.source)?;
         let part = placed.part;
         let range = part.source.range?;
-        let source_channels = file.channels as i32;
-        let map: Vec<i32> = match &part.channels {
-            Some(map) => (0..self.channels)
-                .map(|c| {
-                    map.get(c)
-                        .copied()
-                        .filter(|&s| s < source_channels)
-                        .unwrap_or(-1)
-                })
-                .collect(),
-            None => (0..self.channels as i32)
-                .map(|c| if c < source_channels { c } else { -1 })
-                .collect(),
-        };
+        let map = clausters_core::segments::channel_map(
+            part.channels.as_deref(),
+            file.channels as usize,
+            self.channels,
+        );
         let shape = |s: &clausters_document::session::SeamShape| FadeShape {
             shape: s.shape,
             curve: s.curve as f32,

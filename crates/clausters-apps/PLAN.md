@@ -5465,6 +5465,14 @@ wrong.
   and both are conventions of the field.
   Choosing the channel is a feature of its own ("Working on one channel of a
   take", Future directions); until it lands the paste starts at the first.
+  *Fixed in part 2026-10-28:* the matrix is `clausters_core::channel_matrix`
+  with the three rules and the implicit conversion, and a part's map is one
+  function over it (`clausters_core::segments::channel_map`), which the
+  host's drawing, the application's reader, the server's join, the list
+  renders and `/buffer_mix` all call; a mono part under a stereo take is
+  drawn on both channels now. What is open is the paste: a block of another
+  width is still refused, and should go by `ChannelMatrix::fit`, a routing
+  written as the part's map and a mix rendered.
 
 - ✅ **A window closing answers every window's pending action** *(found
   2026-10-25, reviewing the audio editor's code before `X34`)*. The host's

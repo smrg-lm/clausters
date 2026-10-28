@@ -142,10 +142,10 @@ already carry it.
   wrong.
 
 - ⬜ **A file of fewer channels is drawn silent where it is played**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A part with no channel
-  map is drawn and played by two rules; one function should say it, and a
-  paste of another width follows the rules decided there (duplicate, mix,
-  channels as tracks). Before `X34`, which would inherit both.
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The map is one
+  function now; what is left is a paste of another width following the
+  rules decided there (duplicate, mix, channels as tracks). Before `X34`,
+  which would inherit it.
 
 - ⬜ **The other applications that open files open without one and outlive
   their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio

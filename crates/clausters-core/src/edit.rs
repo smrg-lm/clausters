@@ -200,10 +200,11 @@ pub fn replace(
 /// **Adds `source` into `frames` frames from `start`**, scaled by `gain` --
 /// what a paste that mixes rather than inserts is.
 ///
-/// `source` holds exactly `frames` frames of `source_channels` channels; a
-/// source narrower than the span **repeats** (its channel `c % source_channels`
-/// feeds channel `c`), which is how a join reads a narrower part too, so a mono
-/// block mixed into a stereo take is heard on both sides.
+/// `source` holds exactly `frames` frames of `source_channels` channels, read
+/// through the implicit conversion every reader of a part uses
+/// ([`ChannelMatrix::implicit`](crate::channel_matrix::ChannelMatrix::implicit)):
+/// a mono block mixed into a stereo take is heard on both sides, and a wider
+/// source of another width channel by channel, adding nothing past it.
 pub fn mix(
     data: &mut [f32],
     channels: usize,
@@ -220,12 +221,17 @@ pub fn mix(
     if source.len() != frames * source_channels {
         return Err(EditError::Length);
     }
+    let map = crate::channel_matrix::ChannelMatrix::implicit(source_channels, channels)
+        .as_routing()
+        .expect("the implicit conversion is a routing");
     for (frame, from) in data[span]
         .chunks_exact_mut(channels)
         .zip(source.chunks_exact(source_channels))
     {
-        for (c, s) in frame.iter_mut().enumerate() {
-            *s += gain * from[c % source_channels];
+        for (s, &c) in frame.iter_mut().zip(&map) {
+            if let Ok(c) = usize::try_from(c) {
+                *s += gain * from[c];
+            }
         }
     }
     Ok(())
@@ -262,10 +268,14 @@ mod tests {
     use crate::envshape::{SHAPE_LINEAR, SHAPE_STEP};
 
     #[test]
-    fn a_mix_adds_the_source_scaled_and_a_narrow_source_repeats() {
+    fn a_mix_adds_the_source_scaled_and_a_mono_source_on_every_channel() {
         let mut data = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         mix(&mut data, 2, 1, 2, &[0.5, 1.0], 1, 2.0).unwrap();
         assert_eq!(data, [1.0, 1.0, 2.0, 2.0, 3.0, 3.0]);
+        // a stereo source into four channels: channel by channel, nothing past
+        let mut four = vec![0.0; 4];
+        mix(&mut four, 4, 0, 1, &[0.5, 0.25], 2, 1.0).unwrap();
+        assert_eq!(four, [0.5, 0.25, 0.0, 0.0]);
         assert_eq!(
             mix(&mut data, 2, 0, 2, &[0.5], 1, 1.0),
             Err(EditError::Length)

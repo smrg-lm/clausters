@@ -10,6 +10,7 @@
 //! once and each reader supplies only where a source frame comes from
 //! ([`PartSpan::read_with`]). Nothing here holds a source.
 
+use crate::channel_matrix::ChannelMatrix;
 use crate::envshape::{SHAPE_LINEAR, shape_value};
 
 /// **The shape of a part's fade**: an envelope segment's shape number
@@ -233,6 +234,26 @@ impl PartSpan {
     }
 }
 
+/// **Which channel of its file each channel of the list reads**, the map
+/// every reader of a part uses: the server's join, the application's reader
+/// and the host's drawing, so what is drawn is what is heard.
+///
+/// A part's own map wins where it has one, an entry past the file's channels
+/// being silence. Without one it is the implicit conversion
+/// ([`ChannelMatrix::implicit`]): a **mono** file is read on every channel of
+/// the list, which is how a mono take sounds under a stereo one, and a wider
+/// file channel by channel, silence past its last. A negative entry is
+/// silence.
+pub fn channel_map(own: Option<&[i32]>, file_channels: usize, list_channels: usize) -> Vec<i32> {
+    let matrix = match own {
+        Some(map) => ChannelMatrix::routing(map, file_channels, list_channels),
+        None => ChannelMatrix::implicit(file_channels, list_channels),
+    };
+    matrix
+        .as_routing()
+        .expect("a routing and the implicit conversion are routings")
+}
+
 /// **Places cuts one after another**: each part starts where the last ended.
 /// Each cut comes with its source's length in frames and its rate ratio.
 pub fn place(cuts: impl IntoIterator<Item = (Cut, usize, f64)>) -> (Vec<PartSpan>, usize) {
@@ -287,6 +308,19 @@ mod tests {
         assert_eq!(part_at(&parts, 0), Some(0));
         assert_eq!(part_at(&parts, 10), Some(1));
         assert_eq!(part_at(&parts, 15), None);
+    }
+
+    /// A mono file is read on every channel; a wider one channel by channel,
+    /// silence past it; a part's own map wins, inside its file.
+    #[test]
+    fn a_part_without_a_map_reads_a_mono_file_on_every_channel() {
+        assert_eq!(channel_map(None, 1, 2), [0, 0]);
+        assert_eq!(channel_map(None, 1, 4), [0, 0, 0, 0]);
+        assert_eq!(channel_map(None, 2, 2), [0, 1]);
+        assert_eq!(channel_map(None, 2, 4), [0, 1, -1, -1]);
+        assert_eq!(channel_map(None, 4, 2), [0, 1]);
+        assert_eq!(channel_map(Some(&[1, 3]), 2, 2), [1, -1]);
+        assert_eq!(channel_map(Some(&[0]), 2, 2), [0, -1]);
     }
 
     /// A fade multiplies the source; the map routes and silences; a part at

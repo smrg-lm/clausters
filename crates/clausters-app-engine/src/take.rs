@@ -236,12 +236,11 @@ impl ReadList {
         let id = part.source.source;
         let (file, layout) = (self.files.get(&id)?, self.layouts.get(&id)?);
         let range = part.source.range?;
-        let map = (0..self.channels)
-            .map(|c| match &part.channels {
-                Some(map) => map.get(c).copied().unwrap_or(-1),
-                None => (c % file.channels.max(1) as usize) as i32,
-            })
-            .collect();
+        let map = clausters_core::segments::channel_map(
+            part.channels.as_deref(),
+            file.channels as usize,
+            self.channels,
+        );
         let cut = Cut {
             src_start: range.start as usize,
             frames: frames as usize,

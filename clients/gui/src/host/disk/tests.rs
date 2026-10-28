@@ -208,6 +208,28 @@ fn a_file_opened_whole_is_drawn_from_its_peaks_alone() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// **A mono file under a stereo list is drawn on both channels**, as every
+/// reader of a part plays it: the drawing and the playing read one map.
+#[test]
+fn a_mono_file_under_a_stereo_list_is_drawn_on_both_channels() {
+    let dir = scratch("mono");
+    let frames = 1 << 16;
+    let data = noise(frames, 7);
+    let (path, peaks) = take(&dir, "m", &data, 1, true);
+    let l = list(2, vec![part(&path, Some(&peaks), 0, frames, (1, frames))]);
+    let mut answerer = Answerer::default();
+    let mut io = Disk::default();
+    answerer.define(-2, l);
+    let bucket = 1 << 12;
+    let stats = summary(&mut answerer, &mut io, -2, bucket, 2);
+    assert_eq!(stats.len(), frames / bucket * 6);
+    for column in stats.as_chunks::<6>().0 {
+        assert_eq!(column[..3], column[3..], "both channels are the file's");
+        assert!(column[1] > column[0], "and neither is silence");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// **An edit is drawn from the peaks already held**: a paste shifts the tail
 /// off the file's grid, and at a coarse bucket only the fades and the cuts
 /// are read from samples. Each column holds what its samples hold and

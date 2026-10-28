@@ -78,9 +78,9 @@ pub struct StitchPart {
     /// it, or `-1` for silence.
     ///
     /// Always spelled in full, which is what makes the wire's group fixed
-    /// width -- and what decides the case nobody writes a test for: a part
-    /// **narrower than the join repeats**, so a mono take in a stereo join is
-    /// heard on both sides rather than on one.
+    /// width -- and what decides the case nobody writes a test for: a
+    /// **mono** part is heard on every channel of the join, a wider one
+    /// channel by channel with silence past it.
     pub channels: Vec<i32>,
 }
 
@@ -209,20 +209,10 @@ fn span_of(part: &Part, take: &Held) -> (u64, u64) {
     }
 }
 
-/// Which channel of a part feeds each channel of the join.
-///
-/// The part's own map wins where it has one; otherwise a part **repeats** to
-/// fill the join, which is the rule that makes a mono take in a stereo join
-/// heard on both sides. A channel the map does not name is silence (`-1`), as
-/// on the wire.
+/// Which channel of a part feeds each channel of the join: the core's one
+/// rule (`clausters_core::segments::channel_map`), which the host draws by.
 fn map_of(part: &Part, width: usize, channels: usize) -> Vec<i32> {
-    let width = width.max(1);
-    (0..channels)
-        .map(|channel| match &part.channels {
-            Some(map) => map.get(channel).copied().unwrap_or(-1),
-            None => (channel % width) as i32,
-        })
-        .collect()
+    clausters_core::segments::channel_map(part.channels.as_deref(), width, channels)
 }
 
 #[cfg(test)]
@@ -380,9 +370,8 @@ mod tests {
         assert_eq!(made.parts[0].channels, [0, 1], "straight through");
     }
 
-    /// **A part narrower than the join repeats.** A mono take in a stereo join
-    /// is heard on both sides rather than on one, which is the half of this
-    /// that had drifted between the two places it was written.
+    /// **A mono part fills the join.** A mono take in a stereo join is heard
+    /// on both sides rather than on one, by the rule the host draws by.
     #[test]
     fn a_narrow_part_fills_the_join_rather_than_half_of_it() {
         let source = join(vec![part(1, Some((0, 100))), part(2, Some((0, 50)))], None);
