@@ -65,7 +65,9 @@ def test_a_render_with_no_path_keeps_no_output_and_does_its_work(tmp_path):
     render_step({"score": nrt.score.bytes().hex(), "path": "", "rate": 48_000.0,
                  "channels": 1, "format": "float"})
     assert peaks.read_bytes()[:4] == b"CLPK"
-    assert list(tmp_path.iterdir()) == [peaks]
+    # the peaks file and the spectral summary a PeaksOut writes beside it,
+    # and no rendered file
+    assert sorted(tmp_path.iterdir()) == sorted([peaks, peaks.with_suffix(".spectra")])
 
 
 def test_renders_called_off_are_not_begun(tmp_path):
