@@ -136,11 +136,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
-- ⬜ **A peaks read lands after its working folder is gone**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A warning when an
-  editor closes while its picture is still being read; nothing is drawn
-  wrong.
-
 - ⬜ **Two playback tests of the application's engine fail now and then
   under a parallel run** *(`crates/clausters-apps/PLAN.md`, Found by
   use)*. Reopened: the loop switch was fixed, the crossfade test still

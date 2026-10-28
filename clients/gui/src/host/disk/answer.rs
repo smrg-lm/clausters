@@ -27,7 +27,7 @@
 //! of a fade, are read exactly, since past a cut is material the list does not
 //! hold; so are the fades, and every edge of a finer column.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscType};
@@ -346,10 +346,36 @@ impl Answerer {
         self.lists.insert(key, list);
     }
 
-    /// Nothing names `key`. What was read of its files stays held, for the
-    /// next list over them.
+    /// Nothing names `key`. What was read of a file another list still names
+    /// stays held, for the next list over it; **a file no list names any more
+    /// is forgotten with the last**, so a read of it still on its way lands
+    /// on nothing and is dropped -- the files of a closed editor's working
+    /// folder are deleted with it, and a late read of one is no warning.
     pub fn forget(&mut self, key: i32) {
-        self.lists.remove(&key);
+        if self.lists.remove(&key).is_none() {
+            return;
+        }
+        let (mut files, mut peaks, mut spectra) = (HashSet::new(), HashSet::new(), HashSet::new());
+        for taken in self.lists.values().flat_map(|l| l.files.values()) {
+            files.insert(Arc::clone(&taken.path));
+            if let Some(p) = &taken.peaks {
+                spectra.insert(Arc::<str>::from(spectra::beside_peaks(p)));
+                peaks.insert(Arc::clone(p));
+            }
+        }
+        self.files.retain(|path, _| files.contains(path));
+        self.peaks.retain(|path, _| peaks.contains(path));
+        self.spectra.retain(|path, _| spectra.contains(path));
+        self.held = self.counted();
+    }
+
+    /// Whether anything read of `path` (a file, its peaks or its spectral
+    /// summary) is held.
+    #[cfg(test)]
+    pub fn knows(&self, path: &str) -> bool {
+        self.files.contains_key(path)
+            || self.peaks.contains_key(path)
+            || self.spectra.contains_key(path)
     }
 
     /// Whether `key` names a list here.
@@ -563,33 +589,40 @@ impl Answerer {
             .collect();
         ages.sort_unstable();
         let cut = ages[ages.len() / 2];
-        let mut held = 0;
         for file in self.files.values_mut() {
             file.samples.retain(|_, h| h.used > cut);
-            held += file
-                .samples
-                .values()
-                .map(|h| h.value.len() * 4)
-                .sum::<usize>();
         }
         for peaks in self.peaks.values_mut() {
             peaks.levels.retain(|_, h| h.used > cut);
-            held += peaks
-                .levels
-                .values()
-                .flat_map(|h| h.value.arrays.iter().flatten())
-                .map(|a| a.len() * 4)
-                .sum::<usize>();
         }
         for summary in self.spectra.values_mut() {
             summary.blocks.retain(|_, h| h.used > cut);
-            held += summary
-                .blocks
-                .values()
-                .map(|h| h.value.len())
-                .sum::<usize>();
         }
-        self.held = held;
+        self.held = self.counted();
+    }
+
+    /// The bytes of samples, levels and spectra held.
+    fn counted(&self) -> usize {
+        let samples: usize = self
+            .files
+            .values()
+            .flat_map(|f| f.samples.values())
+            .map(|h| h.value.len() * 4)
+            .sum();
+        let levels: usize = self
+            .peaks
+            .values()
+            .flat_map(|p| p.levels.values())
+            .flat_map(|h| h.value.arrays.iter().flatten())
+            .map(|a| a.len() * 4)
+            .sum();
+        let spectra: usize = self
+            .spectra
+            .values()
+            .flat_map(|s| s.blocks.values())
+            .map(|h| h.value.len())
+            .sum();
+        samples + levels + spectra
     }
 
     /// What every file of `list` needs before anything about it can be

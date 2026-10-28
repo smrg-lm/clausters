@@ -9,7 +9,7 @@ use clausters_core::osc::{OscMessage, OscType};
 use clausters_core::peaks::{MultiPyramid, SpanStats};
 use serde_json::json;
 
-use super::answer::Answerer;
+use super::answer::{Answer, Answerer, Need, What};
 use super::native::{Disk, answer};
 use super::{List, is_list_key, list_key_of};
 
@@ -205,6 +205,81 @@ fn a_file_opened_whole_is_drawn_from_its_peaks_alone() {
             );
         }
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **A file is forgotten with the last list over it**: a read of its peaks
+/// still on its way when its window closed (and its working folder went)
+/// lands on nothing, while a file another list names keeps what was read.
+#[test]
+fn a_read_landing_after_its_last_list_went_is_dropped() {
+    let dir = scratch("gone");
+    let frames = 1 << 16;
+    let data = noise(frames, 9);
+    let (path, peaks) = take(&dir, "a", &data, 1, true);
+    let (other, other_peaks) = take(&dir, "b", &data, 1, true);
+    let mut answerer = Answerer::default();
+    let mut io = Disk::default();
+    answerer.define(
+        -2,
+        list(1, vec![part(&path, Some(&peaks), 0, frames, (1, frames))]),
+    );
+    answerer.define(
+        -3,
+        list(
+            1,
+            vec![part(&other, Some(&other_peaks), 0, frames, (1, frames))],
+        ),
+    );
+    answerer.define(
+        -4,
+        list(
+            1,
+            vec![part(&other, Some(&other_peaks), 0, frames, (1, frames))],
+        ),
+    );
+    let ask = |key: i32| OscMessage {
+        addr: "/buffer_peaks".into(),
+        args: vec![
+            OscType::Int(key),
+            OscType::Int(1 << 12),
+            OscType::Long(0),
+            OscType::Int(-1),
+        ],
+    };
+    // read until what is left is a level of the peaks file
+    let level = loop {
+        let Answer::Need(needs) = answerer.answer(&ask(-2)) else {
+            panic!("a level is read before the answer");
+        };
+        if let Some(n) = needs.iter().find(|n| {
+            matches!(
+                n,
+                Need::Read {
+                    what: What::Level { .. },
+                    ..
+                }
+            )
+        }) {
+            break n.clone();
+        }
+        for need in needs {
+            let got = io.read(&need);
+            answerer.deliver(&need, got);
+        }
+    };
+    summary(&mut answerer, &mut io, -3, 1 << 12, 1);
+    assert!(answerer.knows(&peaks) && answerer.knows(&other_peaks));
+    answerer.forget(-2);
+    answerer.forget(-3);
+    let _ = std::fs::remove_file(&peaks);
+    answerer.deliver(&level, Err("NotFoundError".into()));
+    assert!(!answerer.knows(&peaks), "the late read lands on nothing");
+    assert!(!answerer.knows(&path));
+    assert!(
+        answerer.knows(&other_peaks),
+        "a file another list names is kept"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

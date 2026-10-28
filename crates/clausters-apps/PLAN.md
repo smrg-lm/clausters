@@ -5432,13 +5432,18 @@ wrong.
   is mono into a mono list, read the same by either channel rule), so the
   crossfade has a load-dependent failure of its own.
 
-- ⬜ **A peaks read lands after its working folder is gone** *(found
+- ✅ **A peaks read lands after its working folder is gone** *(found
   2026-10-24, the audio editor's acceptance page)*. Closing an editor
   removes its working folder while a level of a peaks file in it is still
   being read for the window, and the host warns `peaks <path>: ...
   NotFoundError` as the read lands. The window is gone, so nothing is
   drawn wrong; the host should forget a file's pending reads with the last
   window reading it rather than warn about them.
+  *Fixed 2026-10-28:* the host's answerer forgets what it read of a file,
+  its peaks and its spectral summary when the last list naming them is
+  forgotten (`Answerer::forget`), so a read still on its way lands on
+  nothing and is dropped without a warning; a file another window's list
+  names keeps what was read (`a_read_landing_after_its_last_list_went_is_dropped`).
 
 - ✅ **A file of fewer channels is drawn silent where it is played**
   *(found 2026-10-24, moving the take onto a tree)*. A part with no channel
