@@ -296,6 +296,80 @@ fn a_paste_of_a_block_is_a_file_of_its_own_put_in_at_the_position() {
     assert_eq!(out["record"]["label"], "paste");
 }
 
+/// **A paste of another width goes by the paste's rule**: a mono block on
+/// both channels of a stereo take, and a stereo block into a mono take
+/// mixed, each a file of the take's width.
+#[test]
+fn a_block_of_another_width_is_fitted_to_the_take() {
+    let mut editor = opened(2);
+    let mono = serde_json::to_string(&Clipboard::samples(1, 3, 44100.0, 0)).unwrap();
+    let out = event(
+        &mut editor,
+        json!([12, 1, 0, "paste", 50.0, "samples", mono, [0.1, 0.2, 0.3]]),
+    );
+    assert_eq!(walk(&out["steps"]), ["render"], "{out}");
+    assert_eq!(renders(&out["steps"])[0]["channels"], 2);
+    assert_eq!(spans(&mut editor)[1], span("1-2-pasted", 0, 3));
+
+    let mut editor = opened(1);
+    let stereo = serde_json::to_string(&Clipboard::samples(2, 2, 44100.0, 0)).unwrap();
+    let out = event(
+        &mut editor,
+        json!([
+            12,
+            1,
+            0,
+            "paste",
+            50.0,
+            "samples",
+            stereo,
+            [0.5, 0.25, 1.0, 0.0]
+        ]),
+    );
+    assert_eq!(walk(&out["steps"]), ["render"], "{out}");
+    assert_eq!(renders(&out["steps"])[0]["channels"], 1);
+    assert_eq!(spans(&mut editor)[1], span("1-2-pasted", 0, 2));
+}
+
+/// **Segments of another width**: a routing is written into the parts' maps
+/// and reads nothing, a mix into a mono take is rendered.
+#[test]
+fn segments_of_another_width_are_routed_or_mixed() {
+    let segment = |channels: u32| SegmentPart {
+        path: format!("/elsewhere/other{channels}.wav"),
+        start: 1_000,
+        frames: 20,
+        fade_in: 0,
+        fade_out: 0,
+        fade_in_shape: Default::default(),
+        fade_out_shape: Default::default(),
+        channels: None,
+        source_channels: channels,
+        source_frames: 48_000,
+        source_rate: 44_100.0,
+    };
+    let mut editor = opened(2);
+    let doc = Clipboard::segments(1, 44_100.0, vec![segment(1)]).to_json();
+    let out = event(
+        &mut editor,
+        json!([12, 1, 0, "paste", 50.0, "segments", doc]),
+    );
+    assert_eq!(walk(&out["steps"]), [] as [&str; 0], "{out}");
+    let parts = call(&mut editor, json!({"verb": "parts"}))["parts"].clone();
+    assert_eq!(parts[1]["channels"], json!([0, 0]), "mono on both channels");
+
+    let mut editor = opened(1);
+    let doc = Clipboard::segments(2, 44_100.0, vec![segment(2)]).to_json();
+    let out = event(
+        &mut editor,
+        json!([12, 1, 0, "paste", 50.0, "segments", doc]),
+    );
+    assert_eq!(walk(&out["steps"]), ["render"], "{out}");
+    let render = &renders(&out["steps"])[0];
+    assert_eq!(render["channels"], 1, "mixed to the take's width");
+    assert_eq!(spans(&mut editor)[1], span("1-2-fitted", 0, 20));
+}
+
 /// **A paste of segments puts their parts in**: nothing is made, the files
 /// they name join the take's.
 #[test]
@@ -393,22 +467,11 @@ fn a_paste_lands_at_its_end_and_is_shown_whole() {
     );
 }
 
+/// A mix is a sum taken sample for sample, so a block at another rate is
+/// refused; its width is fitted as a paste's is.
 #[test]
-fn a_block_of_another_width_or_rate_is_refused() {
+fn a_mix_of_a_block_at_another_rate_is_refused() {
     let mut editor = opened(1);
-    let wide = serde_json::to_string(&Clipboard::samples(2, 1, 44100.0, 0)).unwrap();
-    let out = event(
-        &mut editor,
-        json!([12, 1, 0, "paste", 0.0, "samples", wide, [0.1, 0.2]]),
-    );
-    assert!(
-        out["answer"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("2 channels")
-    );
-    assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
-    // a mix is a sum taken sample for sample, so it is one rate
     let fast = serde_json::to_string(&Clipboard::samples(1, 1, 48000.0, 0)).unwrap();
     let out = event(
         &mut editor,
@@ -416,6 +479,12 @@ fn a_block_of_another_width_or_rate_is_refused() {
     );
     assert!(out["answer"]["reason"].as_str().unwrap().contains("Hz"));
     assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
+    let wide = serde_json::to_string(&Clipboard::samples(2, 1, 44100.0, 0)).unwrap();
+    let out = event(
+        &mut editor,
+        json!([12, 3, 0, "mix", 0.0, "samples", wide, [0.1, 0.2]]),
+    );
+    assert_eq!(walk(&out["steps"]), ["render"], "{out}");
 }
 
 /// **A block at another rate pastes as a take at its own rate**, which the
@@ -1282,7 +1351,7 @@ fn a_cut_waits_for_copy_completion_and_checks_its_original_target() {
 }
 
 #[test]
-fn a_copy_mixes_into_a_span_and_a_width_or_rate_mismatch_refuses() {
+fn a_copy_mixes_into_a_span_a_rate_mismatch_refuses_and_a_width_is_fitted() {
     let mut editor = opened(1);
     let copied = event(&mut editor, json!([12, 1, 0, "copy", 0, 20]));
     let doc = copied["clipboard"].as_str().unwrap();
@@ -1301,13 +1370,13 @@ fn a_copy_mixes_into_a_span_and_a_width_or_rate_mismatch_refuses() {
     );
     assert!(refused["answer"]["reason"].is_string());
     assert!(refused.get("steps").is_none());
-    invalid["content"]["channels"] = json!(2);
-    let refused = event(
+    let mut wide: Value = serde_json::from_str(doc).unwrap();
+    wide["content"]["channels"] = json!(2);
+    let fitted = event(
         &mut editor,
-        json!([12, 4, 1, "paste", 0, "segments", invalid.to_string()]),
+        json!([12, 4, 1, "paste", 0, "segments", wide.to_string()]),
     );
-    assert!(refused["answer"]["reason"].is_string());
-    assert!(refused.get("steps").is_none());
+    assert_eq!(walk(&fitted["steps"]), ["render"], "a stereo copy is mixed");
 }
 
 #[test]

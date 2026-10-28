@@ -5430,7 +5430,7 @@ wrong.
   drawn wrong; the host should forget a file's pending reads with the last
   window reading it rather than warn about them.
 
-- ⬜ **A file of fewer channels is drawn silent where it is played**
+- ✅ **A file of fewer channels is drawn silent where it is played**
   *(found 2026-10-24, moving the take onto a tree)*. A part with no channel
   map over a file narrower than the take is drawn by the host with the
   file's channels in order and silence past them, and played by the
@@ -5476,9 +5476,15 @@ wrong.
   function over it (`clausters_core::segments::channel_map`), which the
   host's drawing, the application's reader, the server's join, the list
   renders and `/buffer_mix` all call; a mono part under a stereo take is
-  drawn on both channels now. What is open is the paste: a block of another
-  width is still refused, and should go by `ChannelMatrix::fit`, a routing
-  written as the part's map and a mix rendered.
+  drawn on both channels now.
+  *Fixed 2026-10-28:* a paste of another width goes by `ChannelMatrix::fit`.
+  A block the host carried is fitted in memory, exactly, before its file is
+  written; segments are routed by writing the composed map into each part,
+  reading nothing, and mixed into a mono take by a render through the matrix
+  (`renders::convert`), heard end to end as the average of the copied
+  channels (`a_stereo_copy_pasted_into_a_mono_take_is_its_average`). Paste
+  mixed fits a width the same way. Until a channel can be chosen the block
+  lands from the first.
 
 - ✅ **A window closing answers every window's pending action** *(found
   2026-10-25, reviewing the audio editor's code before `X34`)*. The host's

@@ -531,3 +531,47 @@ fn two_renders_over_two_files_land_in_either_order() {
     assert_eq!(client.pending_cleanup(), 0);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+/// **A stereo copy pasted into a mono take is mixed**, rendered by the
+/// application's threads: each frame of what is put in is the average of
+/// the two channels it was copied from.
+#[test]
+fn a_stereo_copy_pasted_into_a_mono_take_is_its_average() {
+    use clausters_document::clipboard::{Clipboard, SegmentPart};
+    let directory = scratch("fitted");
+    let mut client = Client::new(&directory);
+    client.open();
+    let stereo = directory.join("stereo.wav").to_string_lossy().into_owned();
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: SR as u32,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut w = hound::WavWriter::create(&stereo, spec).unwrap();
+    for i in 0..FRAMES {
+        w.write_sample(ramp(i)).unwrap();
+        w.write_sample(0.5f32).unwrap();
+    }
+    w.finalize().unwrap();
+    let part = SegmentPart {
+        path: stereo,
+        start: 0,
+        frames: 10,
+        fade_in: 0,
+        fade_out: 0,
+        fade_in_shape: Default::default(),
+        fade_out_shape: Default::default(),
+        channels: None,
+        source_channels: 2,
+        source_frames: FRAMES as u64,
+        source_rate: SR,
+    };
+    client.clipboard = Some(Clipboard::segments(2, SR, vec![part]).to_json());
+    client.paste(1, "paste", 50.0).unwrap();
+    let mut expected: Vec<f32> = (0..50).map(ramp).collect();
+    expected.extend((0..10).map(|i| (ramp(i) + 0.5) / 2.0));
+    expected.extend((50..FRAMES).map(ramp));
+    assert_close(&client.heard(), &expected, "mixed in");
+    let _ = std::fs::remove_dir_all(&directory);
+}

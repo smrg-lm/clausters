@@ -21,9 +21,11 @@
 //!
 //! A drawn take uses the edited file's rate. A pasted block keeps its source
 //! rate and the parts list reads it at the existing ratio. Paste mixed needs
-//! matching rates and channels; no implicit resampling or channel conversion
-//! is performed. Clipboard publications and readers use the application
-//! exchange rather than history entries.
+//! matching rates; nothing is resampled. A block of another width goes by the
+//! paste's rule (`ChannelMatrix::fit` in `clausters_core::channel_matrix`):
+//! a routing is written into the parts' maps, a mix is rendered. Clipboard
+//! publications and readers use the application exchange rather than
+//! history entries.
 
 pub mod dialogs;
 pub mod editor;

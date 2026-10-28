@@ -146,12 +146,6 @@ already carry it.
   use)*. Reopened: the loop switch was fixed, the crossfade test still
   fails under load now and then.
 
-- ⬜ **A file of fewer channels is drawn silent where it is played**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The map is one
-  function now; what is left is a paste of another width following the
-  rules decided there (duplicate, mix, channels as tracks). Before `X34`,
-  which would inherit it.
-
 - ⬜ **The other applications that open files open without one and outlive
   their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
   editor keeps the rule; the score editor and the multitrack with a session

@@ -3,6 +3,7 @@
 //! that make the files it reads; and what a hand does that is not an edit.
 
 use super::*;
+use clausters_core::channel_matrix::ChannelMatrix;
 
 /// What a paste or a mix carries in: the parts it puts in, and the steps
 /// that make the file they read when the clipboard held samples.
@@ -278,22 +279,12 @@ impl AudioEditor {
         let Ok(clip) = serde_json::from_str::<Clipboard>(&doc) else {
             return Err("the clipboard did not travel with the paste".into());
         };
-        let fits = |channels: u32, ours: u32| {
-            if channels == ours {
-                Ok(())
-            } else {
-                Err(format!(
-                    "a block of {channels} channels does not paste into a take of {ours}"
-                ))
-            }
-        };
         match clip.content {
             Content::Segments {
                 channels,
                 held: Some(held),
                 ..
             } => {
-                fits(channels, self.file.channels)?;
                 let copy = self
                     .window_state
                     .shared
@@ -323,12 +314,11 @@ impl AudioEditor {
                 } else {
                     self.tree_of(&copy.tree.to_vec())
                 };
-                Ok((!tree.is_empty()).then_some((tree, Vec::new())))
+                self.fit_width(tree, channels)
             }
             Content::Segments {
                 channels, parts, ..
             } => {
-                fits(channels, self.file.channels)?;
                 let mut list = Vec::with_capacity(parts.len());
                 for segment in parts {
                     let peaks = self
@@ -355,7 +345,7 @@ impl AudioEditor {
                     list.push(piece);
                 }
                 let tree = self.tree_of(&list);
-                Ok((!tree.is_empty()).then_some((tree, Vec::new())))
+                self.fit_width(tree, channels)
             }
             Content::Buffer { .. } => Err(
                 "a block in a server's buffer does not paste into a file: copy it from a file"
@@ -377,6 +367,59 @@ impl AudioEditor {
                 other.kind()
             )),
         }
+    }
+
+    /// **Parts `channels` wide made the take's width**, by the paste's rule
+    /// ([`ChannelMatrix::fit`]): a routing is written into each part's map,
+    /// over the map it had, so nothing is read; a mix is rendered into a
+    /// file of the take's width, since a part's picture is composed one
+    /// channel of its file's peaks at a time.
+    fn fit_width(&mut self, tree: parts::Tree, channels: u32) -> Result<Option<Carried>, String> {
+        let ours = self.file.channels;
+        if tree.is_empty() {
+            return Ok(None);
+        }
+        if channels == ours {
+            return Ok(Some((tree, Vec::new())));
+        }
+        let matrix = ChannelMatrix::fit(channels as usize, ours as usize, None);
+        let parts = tree.to_vec();
+        let Some(route) = matrix.as_routing() else {
+            let frames = tree.frames();
+            let list = sources::list(&parts, &self.file.sources, channels, self.file.rate);
+            let out = self.render_output("fitted", "paste")?;
+            let step = renders::convert(&list, &matrix, &out);
+            let id = self.rendered(&out, frames, self.file.rate);
+            return Ok(Some((self.tree_of(&[part(id, 0, frames)]), vec![step])));
+        };
+        let mapped: Vec<Part> = parts
+            .into_iter()
+            .map(|mut piece| {
+                let file = self
+                    .file
+                    .sources
+                    .get(&piece.source.source)
+                    .map_or(1, |s| s.channels as usize);
+                let theirs = clausters_core::segments::channel_map(
+                    piece.channels.as_deref(),
+                    file,
+                    channels as usize,
+                );
+                piece.channels = Some(
+                    route
+                        .iter()
+                        .map(|&c| {
+                            usize::try_from(c)
+                                .ok()
+                                .and_then(|c| theirs.get(c).copied())
+                                .unwrap_or(-1)
+                        })
+                        .collect(),
+                );
+                piece
+            })
+            .collect();
+        Ok(Some((self.tree_of(&mapped), Vec::new())))
     }
 
     /// **A paste puts what the clipboard carries in at the position**: a
@@ -519,11 +562,8 @@ impl AudioEditor {
                 clip.content.kind()
             ));
         };
-        if channels != self.file.channels {
-            return Err(format!(
-                "a block of {channels} channels does not paste into a take of {}",
-                self.file.channels
-            ));
+        if channels == 0 {
+            return Err("the clipboard's block has no channels".into());
         }
         if !sample_rate.is_finite() || sample_rate <= 0.0 {
             return Err("the clipboard sample rate must be finite and positive".into());
@@ -541,11 +581,24 @@ impl AudioEditor {
                 .ok_or("the clipboard contains invalid samples")?,
             _ => return Err("the clipboard's samples did not travel with it".into()),
         };
-        let width = u64::from(self.file.channels);
+        let width = u64::from(channels);
         if frames.checked_mul(width) != Some(samples.len() as u64) {
             return Err("the clipboard sample payload does not match its shape".into());
         }
-        Ok((position, samples, rate))
+        if channels == self.file.channels {
+            return Ok((position, samples, rate));
+        }
+        // **A block of another width goes by the paste's rule**, which in
+        // memory is exact whether it routes or mixes.
+        let matrix = ChannelMatrix::fit(channels as usize, self.file.channels as usize, None);
+        let mut fitted = vec![0.0; frames as usize * matrix.outputs()];
+        for (from, to) in samples
+            .chunks_exact(matrix.inputs())
+            .zip(fitted.chunks_exact_mut(matrix.outputs()))
+        {
+            matrix.apply(from, to);
+        }
+        Ok((position, fitted, rate))
     }
 
     /// **Frames `from..to` shown whole**: where they run past what the view

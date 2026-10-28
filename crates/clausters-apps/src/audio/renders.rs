@@ -18,6 +18,7 @@
 //! the list is there from its first frame. The render runs at the list's
 //! rate, one frame a sample, and is exactly as long as what it writes.
 
+use clausters_core::channel_matrix::ChannelMatrix;
 use clausters_core::osc::{OscMessage, OscPacket, OscType, bundle, encode, pack_timetag};
 use clausters_document::clipboard::SegmentPart;
 use clausters_editing::apply::{Render, Step, count_arg};
@@ -211,6 +212,11 @@ impl Def {
         self.push(json!({"kind": "TransportBufRd", "inputs": [
             {"const": index as f64}, {"const": channel as f64}, {"const": 0.0},
             {"const": rate}, {"const": start}, {"const": 0.0}]}))
+    }
+
+    /// `a` times a constant.
+    fn scaled(&mut self, a: usize, gain: f32) -> usize {
+        self.push(json!({"kind": "Mul", "inputs": [{"ugen": a}, {"const": gain}]}))
     }
 
     fn binary(&mut self, kind: &str, a: usize, b: usize) -> usize {
@@ -472,6 +478,48 @@ pub fn mix_block(onto: &List, samples: &[f32], out: &Output) -> Step {
     let mut setup = vec![stitch(LIST, onto)];
     setup.extend(block(BLOCK, onto.channels, samples));
     render(setup, def, onto.frames(), onto.rate, onto.channels, out)
+}
+
+/// **A list taken to another width through `matrix`**: each output channel
+/// the sum of the list's channels at their gains, what a paste that mixes a
+/// block to the take's width writes. As long as the list, `matrix.outputs()`
+/// wide.
+pub fn convert(list: &List, matrix: &ChannelMatrix, out: &Output) -> Step {
+    let mut def = Def::new();
+    let read: Vec<usize> = (0..list.channels)
+        .map(|c| def.list_channel(LIST, c))
+        .collect();
+    let channels: Vec<usize> = (0..matrix.outputs())
+        .map(|o| {
+            let mut sum: Option<usize> = None;
+            for (i, &ugen) in read.iter().enumerate().take(matrix.inputs()) {
+                let gain = matrix.gain(o, i);
+                if gain == 0.0 {
+                    continue;
+                }
+                let term = if gain == 1.0 {
+                    ugen
+                } else {
+                    def.scaled(ugen, gain)
+                };
+                sum = Some(match sum {
+                    Some(a) => def.binary("Add", a, term),
+                    None => term,
+                });
+            }
+            // an output no input reaches is silence: any channel at zero
+            sum.unwrap_or_else(|| def.scaled(read[0], 0.0))
+        })
+        .collect();
+    let def = def.finish("ae.convert", &channels, &out.peaks);
+    render(
+        vec![stitch(LIST, list)],
+        def,
+        list.frames(),
+        list.rate,
+        matrix.outputs() as u32,
+        out,
+    )
 }
 
 /// **A block of samples, as a file**: what a paste of a block the host
