@@ -5398,7 +5398,7 @@ wrong.
   with the C ABI symbols behind them and the wasm `AudioEditorPlayback`
   (core ABI v94), and `SamplesView` from both clients' `editing`.
 
-- ✅ **Two playback tests of the application's engine fail now and then under
+- ⬜ **Two playback tests of the application's engine fail now and then under
   a parallel run** *(found 2026-10-24, moving the application's threads
   onto one door)*. `a_loop_moved_while_it_plays_is_crossfaded` and
   `two_loop_switches_close_together_at_its_end_are_not_heard`
@@ -5415,6 +5415,12 @@ wrong.
   another loop near its end plays silence on a machine of one or two
   cores", below). The crossfade test, which turns a loop the same way,
   has not failed since, held to one or two cores; reopen it if it does.
+  *Reopened 2026-10-28:* `a_loop_moved_while_it_plays_is_crossfaded`
+  failed once more (`playback.rs`, the one jump it expects), in a run of
+  the crate's suite beside a build of other crates, and passed six times
+  alone right after. The change being tested did not reach it (its take
+  is mono into a mono list, read the same by either channel rule), so the
+  crossfade has a load-dependent failure of its own.
 
 - ⬜ **A peaks read lands after its working folder is gone** *(found
   2026-10-24, the audio editor's acceptance page)*. Closing an editor

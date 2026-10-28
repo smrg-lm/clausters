@@ -141,6 +141,11 @@ already carry it.
   editor closes while its picture is still being read; nothing is drawn
   wrong.
 
+- ⬜ **Two playback tests of the application's engine fail now and then
+  under a parallel run** *(`crates/clausters-apps/PLAN.md`, Found by
+  use)*. Reopened: the loop switch was fixed, the crossfade test still
+  fails under load now and then.
+
 - ⬜ **A file of fewer channels is drawn silent where it is played**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. The map is one
   function now; what is left is a paste of another width following the
