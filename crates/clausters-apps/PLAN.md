@@ -5839,13 +5839,20 @@ wrong.
   did before whatever the end says. It re-marks a pass over no selection
   only when the pass moves.
 
-- ⬜ **The roll's passes are not the shared rules** *(found 2026-10-29,
+- ✅ **The roll's passes are not the shared rules** *(found 2026-10-29,
   fixing the entry above)*. The notes editor's playback
   (`notes_playback`: `play_pass`, `set_loop`, `cue`, `stop`) still has its
   own version of the space bar's pass, the loop switch and the cursor, in
   beats. It moves onto `clausters_editing::pass` as the multitrack's did:
   its unit is the beat, crossed to the transport's samples by the tempo,
   and what it keeps of its own is the sequence's end.
+  **Fixed 2026-10-29.** `NotesPlayback` keeps its calls in beats and
+  carries them out through `Passes`, the beat crossed to a sample at the
+  edge; `View` moved to `pass` for both playbacks. Stopped, it marks
+  nothing (the next play reads the end), and a pass over no range follows
+  an edit of the notes. The roll's coordinator asks the engine whether it
+  rolls before acting, and a cursor placed while it plays moves the music
+  (`place`).
 
 - ⬜ **A box drawn as its page opens its roll** *(found 2026-10-29 by
   the user, the eye pass over the multitrack on its application)*. With the

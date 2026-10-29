@@ -324,14 +324,15 @@ code that keeps it lives.
   cursors move together everywhere but in play, where the position cursor
   stays where the pass began: a selection made whole at once (select all) is
   one let go, and the window is told the position cursor moved.
-- **The multitrack plays by the audio editor's rules.** What the space bar
-  plays, how a pass ends, what the loop switch does to a pass in progress,
-  what a placed cursor and a selection let go do to the music, and what a
-  play after a pause resumes are one policy (`clausters_editing::pass`),
-  which both playbacks carry out. The multitrack keeps only its unit (the
-  transport's samples) and its end: a pass with no selection stops where
-  the end switch says, or runs on, and a loop with no selection repeats the
-  contents.
+- **The multitrack and the roll play by the audio editor's rules.** What
+  the space bar plays, how a pass ends, what the loop switch does to a pass
+  in progress, what a placed cursor and a selection let go do to the music,
+  and what a play after a pause resumes are one policy
+  (`clausters_editing::pass`), which every playback carries out. Each keeps
+  only its unit (the multitrack the transport's samples, the roll its
+  beats, crossed by the tempo) and its end: a pass with no selection stops
+  where the end switch says, or runs on, and a loop with no selection
+  repeats the contents (every note, in a roll).
 - **A copy of a take is made on the server.** Copy and cut in the audio
   editor copy the span into a server buffer the clipboard names, whatever
   its length; a paste copies it again on the server. No sample crosses the

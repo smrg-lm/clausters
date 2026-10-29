@@ -184,8 +184,9 @@ fn an_update_sends_the_lane_its_data() {
 }
 
 /// **A pass is open by default**, as a multitrack's is; at the contents it
-/// ends where the last note does, following an edit, and an end marker is a
-/// beat -- each going back to the position cursor, which a cue moves.
+/// ends where the last note does, and an end marker is a beat -- each going
+/// back to the position cursor. Stopped, nothing is marked: the next play
+/// reads the end and the cursor a cue moved.
 #[test]
 fn a_pass_ends_where_it_is_asked_to() {
     let end_mark = |steps: &[Step]| {
@@ -206,15 +207,16 @@ fn a_pass_ends_where_it_is_asked_to() {
     );
     playback.set_rolling(false);
     let cued = playback.cue(&sequence(), 1.0, SR);
-    assert_eq!(
-        end_mark(&cued),
-        Some(vec![OscType::Long(150), OscType::Long(50)]),
-        "the return follows the cursor"
+    assert_eq!(addrs(&cued), ["/transport_locateSample"]);
+    assert!(
+        playback.set_end(End::At(2.0), &sequence(), SR).is_empty(),
+        "stopped: the next play reads it"
     );
-    let marker = playback.set_end(End::At(2.0), &sequence(), SR);
+    let played = playback.play(&sequence(), 1.0, SR, &mut ids()).unwrap();
     assert_eq!(
-        end_mark(&marker),
-        Some(vec![OscType::Long(100), OscType::Long(50)])
+        end_mark(&played),
+        Some(vec![OscType::Long(100), OscType::Long(50)]),
+        "the marker, back to the cursor"
     );
     assert_eq!(
         end_mark(&playback.set_end(End::Open, &sequence(), SR)),

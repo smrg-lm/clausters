@@ -35,27 +35,15 @@ use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Medium, Step, steps_
 use crate::instance::{Instance, Op};
 use crate::note_curves::{self, NoteCurves};
 use crate::notes_playback::Placement;
-use crate::pass::{self, Pass, Passes};
+use crate::pass::{self, Pass, Passes, samples};
 
 /// **Where a pass ends**: the document's own type, since a session keeps it
 /// ([`clausters_document::End`]). Both playbacks that end on the transport
 /// take one -- the multitrack's and the notes editor's.
 pub use clausters_document::End;
 
-/// **What a pass is read off**: the selection and the position cursor, in
-/// samples of the multitrack.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct View {
-    /// The span a sweep left, `[from, to)`.
-    pub selection: Option<(u64, u64)>,
-    /// The position cursor.
-    pub cursor: Option<u64>,
-}
-
-/// The multitrack counts in the transport's samples.
-fn samples(frame: u64) -> i64 {
-    frame as i64
-}
+/// **What a pass is read off**, in samples of the multitrack.
+pub use crate::pass::View;
 
 /// What a multitrack was last synced from: what a plan is made of, kept so
 /// the boxes that play notes can be planned when the notes say which they

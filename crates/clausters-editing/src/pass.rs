@@ -37,6 +37,16 @@ pub enum Pass {
     },
 }
 
+/// **What a pass is read off**: the selection and the position cursor, in
+/// the frames a playback counts in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct View {
+    /// The span a sweep left, `[from, to)`.
+    pub selection: Option<(u64, u64)>,
+    /// The position cursor.
+    pub cursor: Option<u64>,
+}
+
 /// **What the space bar plays**, read off the view: where the pass starts
 /// and how it ends.
 ///
@@ -243,6 +253,12 @@ impl Passes {
         ops.extend(self.set_pass(transport, pass, at));
         ops
     }
+}
+
+/// **The crossing of a playback that counts in the transport's samples**:
+/// each frame is its own sample.
+pub fn samples(frame: u64) -> i64 {
+    frame as i64
 }
 
 /// Puts the transport at frame `frame`.

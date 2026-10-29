@@ -59,6 +59,7 @@ use serde_json::{Map, Value, json};
 use crate::apply::{Applier, Endpoint, Medium, Step};
 use crate::instance::Op;
 use crate::note_curves::{self, NoteCurves};
+use crate::pass::{self, Pass, Passes, View, samples};
 use crate::playback::End;
 
 const EDITOR: &str = "notes";
@@ -397,16 +398,21 @@ pub struct NotesPlayback<M: Medium = Applier> {
     /// Whether the transport was taken from the id spaces, and so is given
     /// back by [`Self::close`]; one handed in is the caller's.
     owned: bool,
-    rolling: bool,
+    /// **Whether the transport rolls and its pass loops**: the rules every
+    /// editor plays by ([`crate::pass`]), in the transport's samples, which
+    /// a beat is crossed to by the sequence's tempo.
+    passes: Passes,
     /// The lane, once it is made: the governed group's id.
     lane: Option<i32>,
-    /// The sample a pass goes back to: the position cursor, where the last
-    /// play began or a cue or a stop put it.
-    back: i64,
+    /// **What the pass in progress was read off**, in samples: the range and
+    /// the position cursor -- where a pass goes back to, which the last play,
+    /// a cue or a stop put there.
+    view: View,
+    /// The pass in progress as last asked of the transport, so it is asked
+    /// again only when it moves.
+    pass: Option<Pass>,
     /// Where a pass ends ([`End`]): open unless asked.
     end: End,
-    /// The end mark last sent, as `(end, back)` in samples.
-    end_sent: Option<(i64, i64)>,
     /// The graphs, readers and tables the sequence's curves play through.
     curves: NoteCurves,
 }
@@ -437,11 +443,11 @@ impl<M: Medium> NotesPlayback<M> {
             applier: medium,
             transport: None,
             owned: true,
-            rolling: false,
+            passes: Passes::default(),
             lane: None,
-            back: 0,
+            view: View::default(),
+            pass: None,
             end: End::Open,
-            end_sent: None,
             curves: NoteCurves::new(CURVES),
         }
     }
@@ -470,7 +476,7 @@ impl<M: Medium> NotesPlayback<M> {
     /// the position cursor. Sent only when the mark moves.
     pub fn set_end(&mut self, end: End, sequence: &EventSequence, rate: f64) -> Vec<Step> {
         self.end = end;
-        self.end_steps(sequence, rate)
+        self.remark(sequence, rate)
     }
 
     /// The transport it plays on, or `None` before it has taken one.
@@ -480,13 +486,13 @@ impl<M: Medium> NotesPlayback<M> {
 
     /// Whether the transport was last told to roll.
     pub fn rolling(&self) -> bool {
-        self.rolling
+        self.passes.rolling()
     }
 
     /// Says whether the transport rolls, when the caller learned it from the
     /// engine -- a pass that ended on its mark.
     pub fn set_rolling(&mut self, rolling: bool) {
-        self.rolling = rolling;
+        self.passes.set_rolling(rolling);
     }
 
     /// A command of its transport, as the op that carries it out in the
@@ -546,7 +552,7 @@ impl<M: Medium> NotesPlayback<M> {
         // The transport is the editor's, and whatever end it was left with is
         // not this playback's: a pass is open until it is asked otherwise.
         steps.extend(self.command("/transport_end", vec![]));
-        self.end_sent = None;
+        self.pass = None;
         self.lane = Some(group);
         Ok(steps)
     }
@@ -575,34 +581,54 @@ impl<M: Medium> NotesPlayback<M> {
         Ok(steps)
     }
 
-    /// The end mark the end, the notes and the cursor ask for, sent when it
-    /// differs from the one last sent. The contents end where the last note
-    /// does -- its onset and its length, the latest of them -- and a note's
-    /// release rings out past it, since a stop releases the notes and does not
-    /// freeze them.
-    fn end_steps(&mut self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
+    /// **Where a pass of `sequence` ends, in samples**, as the rule is handed
+    /// it ([`pass::space`]): where [`End`] says for a pass that stops, and for
+    /// a loop over no range every note. The notes end where the last does --
+    /// its onset and its length, the latest of them -- and a note's release
+    /// rings out past it, since a stop releases the notes and does not freeze
+    /// them.
+    fn end_of(&self, sequence: &EventSequence, rate: f64, looping: bool) -> Option<u64> {
         let contents = placed(sequence)
             .events
             .iter()
             .filter(|p| render::Type::of(&p.keys) == Type::Note)
             .map(|p| p.end)
             .fold(0.0, f64::max);
-        let secs = match self.end {
-            End::Open => None,
-            End::Contents => (contents > 0.0).then_some(contents),
-            End::At(beat) => Some(map(sequence).secs_at(beat.max(0.0))),
+        let secs = match (looping, self.end) {
+            (true, _) | (false, End::Contents) => (contents > 0.0).then_some(contents),
+            (false, End::Open) => None,
+            (false, End::At(beat)) => Some(map(sequence).secs_at(beat.max(0.0))),
         };
-        let want = secs.map(|secs| (((secs * rate).round() as i64).max(self.back), self.back));
-        if want == self.end_sent || self.transport.is_none() {
+        secs.map(|secs| (secs * rate).round().max(0.0) as u64)
+    }
+
+    /// A beat of `sequence` as a frame of the transport, never before the first.
+    fn frame(sequence: &EventSequence, beat: f64, rate: f64) -> u64 {
+        Self::sample(sequence, beat, rate).max(0) as u64
+    }
+
+    /// **The pass in progress ends as the view now says**, asked of the
+    /// transport only when it moved.
+    fn repass(&mut self, sequence: &EventSequence, rate: f64, looping: bool) -> Vec<Step> {
+        let end = self.end_of(sequence, rate, looping);
+        let pass = pass::space(looping, self.view.selection, self.view.cursor, end).1;
+        if self.pass == Some(pass) {
             return Vec::new();
         }
-        self.end_sent = want;
-        self.command(
-            "/transport_end",
-            want.map_or_else(Vec::new, |(end, back)| {
-                vec![OscType::Long(end), OscType::Long(back)]
-            }),
-        )
+        let ops = self.passes.set_pass(self.transport, pass, &samples);
+        if !ops.is_empty() {
+            self.pass = Some(pass);
+        }
+        self.plain(ops)
+    }
+
+    /// **A pass over no range ends where the notes or the end now say**: read
+    /// again while it plays, when the sequence or the end moved.
+    fn remark(&mut self, sequence: &EventSequence, rate: f64) -> Vec<Step> {
+        if self.view.selection.is_some() {
+            return Vec::new();
+        }
+        self.repass(sequence, rate, self.passes.looping())
     }
 
     /// A beat of `sequence` as a sample of the transport.
@@ -610,10 +636,8 @@ impl<M: Medium> NotesPlayback<M> {
         (map(sequence).secs_at(beat.max(0.0)) * rate).round() as i64
     }
 
-    /// **Plays `sequence` from beat `from`**: the lane takes the sequence, the
-    /// transport's loop is cleared and its end mark is where [`End`] says
-    /// (going back to `from`), and the transport is located at `from` and
-    /// rolled.
+    /// **Plays `sequence` from beat `from`**, to where [`End`] says and back
+    /// to `from`: [`Self::play_pass`] over no range, not looping.
     pub fn play(
         &mut self,
         sequence: &EventSequence,
@@ -621,24 +645,15 @@ impl<M: Medium> NotesPlayback<M> {
         rate: f64,
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
-        let mut steps = self.structure(ids)?;
-        steps.extend(self.lane_set(sequence, rate, true, ids)?);
-        let from = Self::sample(sequence, from, rate);
-        self.back = from;
-        steps.extend(self.command("/transport_loop", vec![]));
-        steps.extend(self.end_steps(sequence, rate));
-        steps.extend(self.command("/transport_locateSample", vec![OscType::Long(from)]));
-        self.rolling = true;
-        steps.extend(self.command("/transport_play", vec![]));
-        Ok(steps)
+        self.play_pass(sequence, from, None, false, rate, ids)
     }
 
-    /// **The space bar's play: the audio editor's pass over a roll.** From
-    /// beat `from` -- the position cursor, and where a pass goes back to -- or
-    /// from the start of `range` (`[start, end]` in beats) to its end; with the
-    /// loop switch the transport loops the range, or with none every note.
-    /// Without either it is [`Self::play`], ending where [`End`] says; a pass
-    /// over a range sets the end mark for that pass alone.
+    /// **The space bar's play: the audio editor's pass over a roll**
+    /// ([`pass::space`]). From beat `from` -- the position cursor, and where a
+    /// pass goes back to -- or from the start of `range` (`[start, end]` in
+    /// beats) to its end; with the loop switch the transport loops the range,
+    /// or with none every note; and with neither it ends where [`End`] says.
+    /// The lane takes the sequence first.
     #[allow(clippy::too_many_arguments)] // one pass: where, how far, and its sequence
     pub fn play_pass(
         &mut self,
@@ -649,44 +664,18 @@ impl<M: Medium> NotesPlayback<M> {
         rate: f64,
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
-        if range.is_none() && !looping {
-            return self.play(sequence, from, rate, ids);
-        }
         let mut steps = self.structure(ids)?;
         steps.extend(self.lane_set(sequence, rate, true, ids)?);
-        let back = Self::sample(sequence, from, rate);
-        self.back = back;
-        let contents = placed(sequence)
-            .events
-            .iter()
-            .filter(|p| render::Type::of(&p.keys) == Type::Note)
-            .map(|p| p.end)
-            .fold(0.0, f64::max);
-        let start = range.map_or(back, |(a, _)| Self::sample(sequence, a, rate));
-        if looping {
-            let (a, b) = match range {
-                Some((a, b)) => (
-                    Self::sample(sequence, a, rate),
-                    Self::sample(sequence, b, rate),
-                ),
-                None => (0, (contents * rate).round() as i64),
-            };
-            steps.extend(self.command(
-                "/transport_loop",
-                vec![OscType::Long(a), OscType::Long(b.max(a + 1))],
-            ));
-        } else if let Some((_, b)) = range {
-            steps.extend(self.command("/transport_loop", vec![]));
-            let want = (Self::sample(sequence, b, rate).max(start), back);
-            self.end_sent = Some(want);
-            steps.extend(self.command(
-                "/transport_end",
-                vec![OscType::Long(want.0), OscType::Long(want.1)],
-            ));
-        }
-        steps.extend(self.command("/transport_locateSample", vec![OscType::Long(start)]));
-        self.rolling = true;
-        steps.extend(self.command("/transport_play", vec![]));
+        let at = |beat| Self::frame(sequence, beat, rate);
+        self.view = View {
+            selection: range.map(|(a, b)| (at(a), at(b.max(a)))),
+            cursor: Some(at(from)),
+        };
+        let end = self.end_of(sequence, rate, looping);
+        let (start, pass) = pass::space(looping, self.view.selection, self.view.cursor, end);
+        self.pass = Some(pass);
+        let ops = self.passes.play(self.transport, start, pass, &samples);
+        steps.extend(self.plain(ops));
         Ok(steps)
     }
 
@@ -703,52 +692,32 @@ impl<M: Medium> NotesPlayback<M> {
         looping: bool,
         rate: f64,
     ) -> Vec<Step> {
-        if !self.rolling || self.lane.is_none() {
+        if !self.passes.rolling() || self.lane.is_none() {
             return Vec::new();
         }
-        if looping {
-            let (a, b) = match range {
-                Some((a, b)) => (
-                    Self::sample(sequence, a, rate),
-                    Self::sample(sequence, b, rate),
-                ),
-                None => {
-                    let contents = placed(sequence)
-                        .events
-                        .iter()
-                        .filter(|p| render::Type::of(&p.keys) == Type::Note)
-                        .map(|p| p.end)
-                        .fold(0.0, f64::max);
-                    (0, (contents * rate).round() as i64)
-                }
-            };
-            let mut steps = self.command(
-                "/transport_loop",
-                vec![OscType::Long(a), OscType::Long(b.max(a + 1))],
-            );
-            // A loop does not stop on an end mark the pass began with.
-            if self.end_sent.take().is_some() {
-                steps.extend(self.command("/transport_end", vec![]));
-            }
-            return steps;
-        }
-        let mut steps = self.command("/transport_loop", vec![]);
-        match range {
-            Some((_, b)) => {
-                let want = (Self::sample(sequence, b, rate).max(self.back), self.back);
-                self.end_sent = Some(want);
-                steps.extend(self.command(
-                    "/transport_end",
-                    vec![OscType::Long(want.0), OscType::Long(want.1)],
-                ));
-            }
-            None => steps.extend(self.end_steps(sequence, rate)),
-        }
-        steps
+        let at = |beat| Self::frame(sequence, beat, rate);
+        self.view.selection = range.map(|(a, b)| (at(a), at(b.max(a))));
+        self.repass(sequence, rate, looping)
     }
 
-    /// **The sequence changed**: the lane takes it again, and an end at the
-    /// contents follows its new end.
+    /// **The position cursor was placed at beat `at`**: rolling, the music
+    /// goes on from it, its pass ending as the loop switch says from there;
+    /// stopped, the transport stands on it ([`Passes::place`]).
+    pub fn place(&mut self, sequence: &EventSequence, at: f64, rate: f64) -> Vec<Step> {
+        let frame = Self::frame(sequence, at, rate);
+        self.view.cursor = Some(frame);
+        let looping = self.passes.looping();
+        let end = self.end_of(sequence, rate, looping);
+        let pass = pass::space(looping, self.view.selection, self.view.cursor, end).1;
+        if self.passes.rolling() {
+            self.pass = Some(pass);
+        }
+        let ops = self.passes.place(self.transport, frame, pass, &samples);
+        self.plain(ops)
+    }
+
+    /// **The sequence changed**: the lane takes it again, and a pass over no
+    /// range follows its new end.
     /// Nothing before the first play: there is no lane yet.
     pub fn update(
         &mut self,
@@ -760,47 +729,45 @@ impl<M: Medium> NotesPlayback<M> {
             return Ok(Vec::new());
         }
         let mut steps = self.lane_set(sequence, rate, false, ids)?;
-        steps.extend(self.end_steps(sequence, rate));
+        if self.passes.rolling() {
+            steps.extend(self.remark(sequence, rate));
+        }
         Ok(steps)
     }
 
     /// Rolls the transport again from where it stands.
     pub fn resume(&mut self) -> Vec<Step> {
-        self.rolling = true;
-        self.command("/transport_play", vec![])
+        let ops = self.passes.resume(self.transport);
+        self.plain(ops)
     }
 
     /// Pauses where it stands: the server releases what the lane sounds, and a
     /// resume plays on from there -- the notes that start after it.
     pub fn pause(&mut self) -> Vec<Step> {
-        self.rolling = false;
-        self.command("/transport_stop", vec![])
+        let ops = self.passes.pause(self.transport);
+        self.plain(ops)
     }
 
     /// **Stops and goes back to beat `back`**: the transport stops and is
     /// located there, which releases what the lane was sounding.
     pub fn stop(&mut self, sequence: &EventSequence, back: f64, rate: f64) -> Vec<Step> {
-        let mut steps = self.pause();
-        let sample = Self::sample(sequence, back, rate);
-        self.back = sample;
-        steps.extend(self.command("/transport_locateSample", vec![OscType::Long(sample)]));
-        steps.extend(self.end_steps(sequence, rate));
-        steps
+        let frame = Self::frame(sequence, back, rate);
+        self.view.cursor = Some(frame);
+        let ops = self.passes.stop(self.transport, frame, &samples);
+        self.plain(ops)
     }
 
-    /// **The position cursor moved to beat `at`**: a stopped transport is
-    /// located there, so the play cursor goes with it; a rolling pass is left
-    /// alone, since the cursor is where the reader is and not a seek.
+    /// **The position cursor moved to beat `at` where nothing plays**: a
+    /// stopped transport is located there, so the play cursor goes with it; a
+    /// rolling pass is left alone ([`Passes::cue`]).
     pub fn cue(&mut self, sequence: &EventSequence, at: f64, rate: f64) -> Vec<Step> {
-        if self.rolling {
+        if self.passes.rolling() {
             return Vec::new();
         }
-        let sample = Self::sample(sequence, at, rate);
-        self.back = sample;
-        let mut steps = self.command("/transport_locateSample", vec![OscType::Long(sample)]);
-        // The pass goes back to the cursor, so the end mark's return moves with it.
-        steps.extend(self.end_steps(sequence, rate));
-        steps
+        let frame = Self::frame(sequence, at, rate);
+        self.view.cursor = Some(frame);
+        let ops = self.passes.cue(self.transport, frame, &samples);
+        self.plain(ops)
     }
 
     /// Frees what the playback made -- the lane (its notes released), the
@@ -820,7 +787,8 @@ impl<M: Medium> NotesPlayback<M> {
             });
             steps.extend(self.applier.apply(ops, ids)?);
         }
-        self.end_sent = None;
+        self.passes = Passes::default();
+        self.pass = None;
         if self.owned
             && let Some(transport) = self.transport.take()
         {

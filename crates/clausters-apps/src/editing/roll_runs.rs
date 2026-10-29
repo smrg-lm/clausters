@@ -140,10 +140,16 @@ impl Editing {
                     ran.effects.push(effect("notes", json!({})));
                     self.roll_update(member, roll, ids);
                 }
+                if outcome.locate.is_some() || outcome.play.is_some() {
+                    // whether it rolls is the engine's: a pass may have ended
+                    // on its own
+                    self.roll_rolling(roll);
+                }
+                // **a cursor placed moves the music** where it plays
                 if let Some(beat) = outcome.locate {
                     roll.cursor = beat;
                     self.roll_with(member, |sequence| {
-                        roll.playback.cue(sequence, beat, roll.rate)
+                        roll.playback.place(sequence, beat, roll.rate)
                     });
                 }
                 if let Some(asked) = &outcome.play {
@@ -211,6 +217,16 @@ impl Editing {
         let shared = editor.sequence().clone();
         let sequence = shared.lock().unwrap_or_else(|e| e.into_inner());
         Some(f(&sequence))
+    }
+
+    /// Whether the roll's transport rolls, as the engine says now.
+    fn roll_rolling(&self, roll: &mut Roll) {
+        let rolling = roll.playback.transport().is_some_and(|transport| {
+            self.engine
+                .as_ref()
+                .is_some_and(|engine| engine.rolling(transport))
+        });
+        roll.playback.set_rolling(rolling);
     }
 
     /// The roll's lane takes its sequence again, as it now is.
