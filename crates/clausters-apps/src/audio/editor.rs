@@ -50,8 +50,8 @@ use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::view::layers::Stack;
 use clausters_document::{Lifetime, Opaque, Range, SourceId, SourceRef};
 use clausters_editing::apply::{Step, steps_json};
-use clausters_editing::audio_playback::{Pass, space};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message};
+use clausters_editing::pass::{Pass, space};
 use clausters_editing::samples;
 use clausters_editing::verbs::{self, ActionState, ActionTarget, PasteTarget};
 
@@ -1580,7 +1580,7 @@ impl AudioEditor {
             looping,
             self.file.presentation.selection,
             self.file.presentation.cursor,
-            self.length(),
+            Some(self.length()),
         );
         Play {
             start,
@@ -1601,7 +1601,7 @@ impl AudioEditor {
             true,
             self.file.presentation.selection,
             self.file.presentation.cursor,
-            self.length(),
+            Some(self.length()),
         )
         .1
         {

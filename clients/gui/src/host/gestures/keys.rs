@@ -23,7 +23,7 @@ use super::super::interact::Hit;
 use super::super::wire::frames_arg;
 use crate::host::diag;
 use clausters_core::osc::OscType;
-use clausters_editing::audio_playback::space;
+use clausters_editing::pass::space;
 
 use super::super::clipboard::Clip;
 use super::super::keymap::Verb;
@@ -678,7 +678,7 @@ impl Gestures {
             host.monitor_loops(),
             span,
             position_cursor(host, id),
-            frames,
+            Some(frames),
         );
         host.play_buffer(ctx.def_id, id, start, pass)
             .then(|| vec![GestureEffect::Redraw(ctx.def_id)])
@@ -696,7 +696,12 @@ impl Gestures {
             && let Some(frames) = host.buffer_frames(ctx.def_id, loaded.widget)
         {
             let (_, span) = start_of(host, loaded.widget);
-            let (_, pass) = space(looping, span, position_cursor(host, loaded.widget), frames);
+            let (_, pass) = space(
+                looping,
+                span,
+                position_cursor(host, loaded.widget),
+                Some(frames),
+            );
             host.repass_monitor(pass);
         }
         host.say(

@@ -98,12 +98,10 @@ impl Session {
                 let binding = outcome.binding.clone().unwrap_or(Value::Null);
                 if outcome.focus_changed && binding.is_null() {
                     // the last file closed: the editor stays, with none
-                    self.paused = false;
                     tasks.push(effect("bind", json!({"binding": null})));
                 } else if outcome.focus_changed {
                     // the file in focus brings back the span and the loop
                     // switch it left, which are its own
-                    self.paused = false;
                     tasks.push(effect("bind", json!({"binding": binding})));
                     tasks.push(Task::Sound);
                     // a pass in progress goes on: the window only looks elsewhere
@@ -384,6 +382,11 @@ impl Session {
                         back,
                     } => Ok(playback.stop_viewing(file, back)),
                     Op::Stop { file: None, back } => Ok(playback.stop(back)),
+                    Op::Place {
+                        frame,
+                        pass: Some(pass),
+                    } => Ok(playback.place(frame, pass)),
+                    Op::Place { frame, pass: None } => Ok(playback.cue(frame)),
                     Op::Locate(frame) => Ok(playback.locate(frame)),
                     Op::Cue(frame) => Ok(playback.cue(frame)),
                     Op::Close => {

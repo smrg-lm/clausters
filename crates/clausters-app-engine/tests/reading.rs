@@ -17,7 +17,8 @@ use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
 use clausters_app_engine::{AppEngine, EngineMedium};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_document::clipboard::SegmentPart;
-use clausters_editing::audio_playback::{AudioEditorPlayback, Pass};
+use clausters_editing::audio_playback::AudioEditorPlayback;
+use clausters_editing::pass::Pass;
 
 const SR: f64 = 48_000.0;
 const FILE: usize = 12_000;
@@ -183,7 +184,7 @@ fn a_cued_play_is_heard_from_its_first_frame() {
         1,
         from as u64,
         Pass::Until {
-            end: TAKE as u64,
+            end: Some(TAKE as u64),
             back: 0,
         },
     );
@@ -248,7 +249,7 @@ fn a_locate_never_plays_a_stale_frame() {
         1,
         0,
         Pass::Until {
-            end: TAKE as u64,
+            end: Some(TAKE as u64),
             back: 0,
         },
     );

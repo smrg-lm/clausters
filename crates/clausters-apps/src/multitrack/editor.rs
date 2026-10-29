@@ -76,6 +76,11 @@ pub struct Outcome {
     /// The selection a sweep left, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<Value>,
+    /// **The selection was redrawn**: a loop in progress repeats over it --
+    /// or over everything, with none -- and the head goes into it when the
+    /// sweep is let go (`true`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow: Option<bool>,
     /// What the transport is asked to do.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transport: Option<TransportVerb>,
@@ -934,6 +939,11 @@ impl MultitrackEditor {
         self.cursor
     }
 
+    /// The time range a sweep left, `[start, end]` in seconds.
+    pub fn range(&self) -> Option<(f64, f64)> {
+        self.range
+    }
+
     /// The grid a box lands on, in beats; `0` for none.
     pub fn grid(&self) -> f64 {
         self.grid
@@ -1434,6 +1444,11 @@ impl MultitrackEditor {
         }
         if NOT_AN_EDIT.contains(&tag) {
             self.observe(tag, values, out);
+            // a selection let go moved the position cursor to its start, and
+            // the window draws it there with the play cursor
+            if out.follow == Some(true) && self.range.is_some() {
+                return (None, self.cursor_corrections());
+            }
             return (None, Vec::new());
         }
         let taken = {
@@ -1574,6 +1589,11 @@ impl MultitrackEditor {
         self.cursor = Some(0.0);
         out.cursor = Some(0.0);
         out.transport = Some(TransportVerb::Cue { secs: 0.0 });
+        self.cursor_corrections()
+    }
+
+    /// The correction that tells the host where the position cursor now is.
+    fn cursor_corrections(&self) -> Vec<Correction> {
         let Some(widget) = self.widget else {
             return Vec::new();
         };
@@ -1628,6 +1648,15 @@ impl MultitrackEditor {
                         json!({ "min": number(&values[2]), "max": number(&values[3]) });
                 }
                 out.selection = Some(selection);
+                // **A selection let go puts the cursor at its start**, and the
+                // music with it, whether it plays or not; a loop in progress
+                // repeats over the new span.
+                let released = values.last().and_then(Value::as_bool) == Some(true);
+                if released && let Some((start, _)) = self.range {
+                    self.cursor = Some(start);
+                    out.locate = Some(start);
+                }
+                out.follow = Some(released);
             }
             _ => {}
         }
@@ -2382,6 +2411,39 @@ mod tests {
             Value::Object(ed.props(41)),
             json!({ "cursor": 4.0 * SR }),
             "the ruler reports the editor's own copy"
+        );
+    }
+
+    /// **A selection let go puts the position cursor at its start**, the
+    /// window told, and asks a loop in progress to follow it with the head
+    /// placed in it; a sweep still moving asks only the loop.
+    #[test]
+    fn a_selection_let_go_puts_the_cursor_at_its_start() {
+        let mut ed = editor();
+        let moving = ed.event(
+            &event(40, 2, 1, "selection", vec![json!(2.0 * SR), json!(SR)]),
+            1,
+        );
+        assert_eq!(moving.follow, Some(false));
+        assert_eq!(moving.locate, None, "the cursor stays while it sweeps");
+        let let_go = ed.event(
+            &event(
+                40,
+                3,
+                1,
+                "selection",
+                vec![json!(2.0 * SR), json!(SR), json!(true)],
+            ),
+            1,
+        );
+        assert_eq!(let_go.follow, Some(true));
+        assert_eq!(let_go.locate, Some(2.0));
+        assert_eq!(ed.cursor(), Some(2.0));
+        assert_eq!(ed.range(), Some((2.0, 3.0)));
+        let told = serde_json::to_value(&let_go.answer).unwrap();
+        assert!(
+            told.to_string().contains("\"cursor\""),
+            "the window is told: {told}"
         );
     }
 

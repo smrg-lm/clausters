@@ -3,7 +3,7 @@
 //! resumed with its caller's result.
 
 use super::*;
-use clausters_editing::audio_playback::Pass;
+use clausters_editing::pass::Pass;
 
 /// What a client raises when a run ends in an error of the coordinator's.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -508,6 +508,12 @@ pub(super) enum Op {
     Stop {
         file: Option<u64>,
         back: u64,
+    },
+    /// The position cursor was placed at the frame of the file in focus:
+    /// the music goes on from it, its pass ending as this says.
+    Place {
+        frame: u64,
+        pass: Option<Pass>,
     },
     /// The playing head moves to the frame.
     Locate(u64),

@@ -165,13 +165,11 @@ impl Session {
                 let mut tasks = Vec::new();
                 if self.focused(editing, member) {
                     tasks.push(Task::Playback(Op::Pause));
-                    self.paused = true;
                     tasks.push(Task::ShowTransport);
                 }
                 tasks
             }
             AudioAction::Stop => {
-                self.paused = false;
                 if self.focused(editing, member) {
                     self.script_stop(editing, member)
                 } else {
@@ -250,11 +248,9 @@ impl Session {
         member: MemberId,
         at: Option<f64>,
     ) -> Vec<Task> {
-        if at.is_none() && self.paused && self.focused(editing, member) {
-            self.paused = false;
+        if at.is_none() && self.playback.paused() && self.focused(editing, member) {
             return vec![Task::Playback(Op::Resume), Task::ShowTransport];
         }
-        self.paused = false;
         let mut tasks = Vec::new();
         if let Some(at) = at {
             tasks.extend(self.script_locate(editing, member, at));
@@ -369,14 +365,13 @@ impl Session {
             // **A placed cursor moves the music where it plays**: the file in
             // focus rolling goes on from the cursor, its pass ending as the
             // switch says from there; stopped, the transport stands on it.
-            Rolled::Cue(frame) if rolling && self.focused(editing, member) => {
-                let mut tasks = vec![Task::Playback(Op::Locate(frame))];
-                if let Some(play) = space(editing, member) {
-                    tasks.push(Task::Playback(Op::Pass(Some(play.pass))));
-                }
-                tasks.push(Task::ShowTransport);
-                tasks
-            }
+            Rolled::Cue(frame) if self.focused(editing, member) => vec![
+                Task::Playback(Op::Place {
+                    frame,
+                    pass: space(editing, member).map(|play| play.pass),
+                }),
+                Task::ShowTransport,
+            ],
             Rolled::Cue(frame) => vec![Task::Playback(Op::Cue(frame)), Task::ShowTransport],
             Rolled::Playing { was } => {
                 let mut tasks = Vec::new();

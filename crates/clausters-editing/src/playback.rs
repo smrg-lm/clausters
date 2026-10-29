@@ -35,25 +35,26 @@ use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Medium, Step, steps_
 use crate::instance::{Instance, Op};
 use crate::note_curves::{self, NoteCurves};
 use crate::notes_playback::Placement;
+use crate::pass::{self, Pass, Passes};
 
 /// **Where a pass ends**: the document's own type, since a session keeps it
 /// ([`clausters_document::End`]). Both playbacks that end on the transport
 /// take one -- the multitrack's and the notes editor's.
 pub use clausters_document::End;
 
-/// **A pass as JSON**, `{"range": [start, end] | null, "looping": bool}`: the
-/// one reading every door of [`MultitrackPlayback::play_pass`] shares.
-pub fn pass_of(json: &str) -> (Option<(f64, f64)>, bool) {
-    let value: Value = serde_json::from_str(json).unwrap_or(Value::Null);
-    let range = value
-        .get("range")
-        .and_then(Value::as_array)
-        .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
-    let looping = value
-        .get("looping")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    (range, looping)
+/// **What a pass is read off**: the selection and the position cursor, in
+/// samples of the multitrack.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct View {
+    /// The span a sweep left, `[from, to)`.
+    pub selection: Option<(u64, u64)>,
+    /// The position cursor.
+    pub cursor: Option<u64>,
+}
+
+/// The multitrack counts in the transport's samples.
+fn samples(frame: u64) -> i64 {
+    frame as i64
 }
 
 /// What a multitrack was last synced from: what a plan is made of, kept so
@@ -95,8 +96,16 @@ pub struct MultitrackPlayback<M: Medium = Applier> {
     applier: M,
     /// The rate the multitrack was last planned at.
     rate: f64,
-    /// Whether the transport was last told to roll.
-    rolling: bool,
+    /// **Whether the transport rolls and its pass loops**: the rules every
+    /// editor plays by ([`crate::pass`]), in samples at [`Self::rate`].
+    passes: Passes,
+    /// **What the pass in progress was read off**, the selection and the
+    /// position cursor in samples: a pass over no selection ends where the
+    /// multitrack does, so it is read again when that moves.
+    view: Option<View>,
+    /// The pass in progress as last asked of the transport, so it is asked
+    /// again only when it moves.
+    pass: Option<Pass>,
     /// Where a pass ends ([`Self::set_end`]).
     end: End,
     /// Where the contents end, in seconds of the multitrack: the last region's
@@ -104,11 +113,6 @@ pub struct MultitrackPlayback<M: Medium = Applier> {
     content_end: f64,
     /// Whether a [`Self::sync`] has said where the contents end.
     measured: bool,
-    /// The position cursor, in seconds -- where a pass that stops at the end
-    /// goes back to. Moved by [`Self::cue`] and [`Self::stop`].
-    mark: f64,
-    /// The end mark last sent, in samples, so it is sent only when it moves.
-    end_sent: Option<(i64, i64)>,
     /// The transport's ramp last sent, in samples.
     fade_sent: Option<i64>,
     /// **The event lane the boxes over sequences play from**, once made: its
@@ -144,12 +148,12 @@ impl<M: Medium> MultitrackPlayback<M> {
             instance: Instance::new(),
             applier: medium,
             rate: 48_000.0,
-            rolling: false,
+            passes: Passes::default(),
+            view: None,
+            pass: None,
             end: End::Open,
             measured: false,
             content_end: 0.0,
-            mark: 0.0,
-            end_sent: None,
             fade_sent: None,
             lane: None,
             voiced: BTreeSet::new(),
@@ -351,16 +355,17 @@ impl<M: Medium> MultitrackPlayback<M> {
         }
         self.measured = true;
         self.content_end = now;
-        steps.extend(self.end_steps());
+        steps.extend(self.remark());
         Ok(steps)
     }
 
     /// **Where a pass ends** ([`End`]): open by default, or where the last
-    /// region ends on any track and any take lane, or at an end marker in seconds
-    /// -- going back to the position cursor.
+    /// region ends on any track and any take lane, or at an end marker in
+    /// seconds -- going back to the position cursor. A pass in progress over
+    /// no selection ends there from now on.
     pub fn set_end(&mut self, end: End) -> Vec<Step> {
         self.end = end;
-        self.end_steps()
+        self.remark()
     }
 
     /// The transport this multitrack plays on -- what its transport commands
@@ -374,192 +379,151 @@ impl<M: Medium> MultitrackPlayback<M> {
         self.end
     }
 
-    /// The end mark the end, the contents and the cursor ask for, sent when
-    /// it differs from the one last sent.
-    fn end_steps(&mut self) -> Vec<Step> {
-        let want = self
-            .end
-            .at(self.content_end)
-            .map(|end| (self.secs_to_samples(end), self.secs_to_samples(self.mark)));
-        if want == self.end_sent {
-            return Vec::new();
-        }
-        self.end_sent = want;
-        self.command(
-            "/transport_end",
-            want.map_or_else(Vec::new, |(end, back)| {
-                vec![OscType::Long(end), OscType::Long(back)]
-            }),
-        )
-    }
-
-    /// **Rolls the transport**, or continues a paused pass: the engine keeps
-    /// where it stopped, so resuming is the same verb as starting.
-    pub fn play(&mut self) -> Vec<Step> {
-        self.rolling = true;
-        self.passed = true;
-        // **Tracks the application reads are cued first**: their readers
-        // stream from disk, and the play waits until they hold the frames
-        // it starts on.
-        let mut steps = if self.synced.as_ref().is_some_and(|s| s.feeds.is_some()) {
-            self.command("/transport_cue", vec![])
+    /// **What the space bar plays over the multitrack**, read off the view
+    /// in samples ([`pass::space`]). The end it hands the rule is its own:
+    /// where [`End`] says a pass stops, and for a loop over no selection the
+    /// contents, which it repeats whether or not a pass stops where they end.
+    pub fn space(&self, looping: bool, view: View) -> (u64, Pass) {
+        let end = if looping {
+            (self.content_end > 0.0).then_some(self.content_end)
         } else {
-            Vec::new()
+            self.end.at(self.content_end)
         };
-        steps.extend(self.command("/transport_play", vec![]));
-        steps
+        let end = end.map(|secs| self.secs_to_samples(secs) as u64);
+        pass::space(looping, view.selection, view.cursor, end)
     }
 
-    /// **The loop switch changed while it plays**: the pass in progress now
-    /// loops over `range` (`[start, end]` in seconds), or the whole
-    /// multitrack with none -- or, switched off, goes on to the range's end,
-    /// or to where [`End`] says, and back to the mark. From where the
-    /// transport stands: nothing is located and nothing restarts. Stopped, it
-    /// answers nothing, since the next play reads the switch.
-    pub fn set_loop(&mut self, range: Option<(f64, f64)>, looping: bool) -> Vec<Step> {
-        if !self.rolling {
+    /// **Plays what the view asks**: the pass [`Self::space`] reads off it,
+    /// located, cued -- tracks the application reads stream from disk, and
+    /// the play waits until they hold the frames it starts on -- and rolled.
+    pub fn play(&mut self, looping: bool, view: View) -> Vec<Step> {
+        let (start, pass) = self.space(looping, view);
+        self.view = Some(view);
+        self.pass = Some(pass);
+        self.passed = true;
+        let ops = self
+            .passes
+            .play(Some(MULTITRACK_TRANSPORT), start, pass, &samples);
+        self.plain(ops)
+    }
+
+    /// **The loop switch changed while it plays**: the pass in progress ends
+    /// as the view now says, from where the transport stands. Stopped,
+    /// nothing: the next play reads the switch.
+    pub fn set_pass(&mut self, looping: bool, view: View) -> Vec<Step> {
+        if !self.passes.rolling() {
             return Vec::new();
         }
-        let span = range
-            .or_else(|| (looping && self.content_end > 0.0).then_some((0.0, self.content_end)));
-        if let (true, Some((from, to))) = (looping, span) {
-            let mut steps = self.command(
-                "/transport_loop",
-                vec![
-                    OscType::Long(self.secs_to_samples(from)),
-                    OscType::Long(self.secs_to_samples(to.max(from))),
-                ],
-            );
-            // A loop does not stop on an end mark the pass began with.
-            if self.end_sent.take().is_some() {
-                steps.extend(self.command("/transport_end", vec![]));
-            }
-            return steps;
+        let pass = self.space(looping, view).1;
+        self.view = Some(view);
+        if self.pass == Some(pass) {
+            return Vec::new();
         }
-        let mut steps = self.command("/transport_loop", vec![]);
-        match range {
-            Some((from, to)) => {
-                let want = (
-                    self.secs_to_samples(to.max(from)),
-                    self.secs_to_samples(self.mark),
-                );
-                self.end_sent = Some(want);
-                steps.extend(self.command(
-                    "/transport_end",
-                    vec![OscType::Long(want.0), OscType::Long(want.1)],
-                ));
-            }
-            None => steps.extend(self.end_steps()),
-        }
-        steps
+        self.pass = Some(pass);
+        let ops = self
+            .passes
+            .set_pass(Some(MULTITRACK_TRANSPORT), pass, &samples);
+        self.plain(ops)
     }
 
-    /// **The space bar's play: the audio editor's pass over a multitrack.**
-    ///
-    /// With a time range (`[start, end]` in seconds) the pass starts at its
-    /// start and ends at its end, going back to the mark; with the loop switch
-    /// the transport loops the range -- or, with none, the whole multitrack --
-    /// and with neither it plays from where the transport stands (the mark,
-    /// after a stop) to wherever [`End`] says. A pass over a range sets the end
-    /// mark for that pass alone: the next one without a range puts back the
-    /// end that was asked for.
-    pub fn play_pass(&mut self, range: Option<(f64, f64)>, looping: bool) -> Vec<Step> {
-        let mut steps = Vec::new();
-        let span = range
-            .or_else(|| (looping && self.content_end > 0.0).then_some((0.0, self.content_end)));
-        match (span, looping) {
-            (Some((from, to)), true) => {
-                steps.extend(self.command(
-                    "/transport_loop",
-                    vec![
-                        OscType::Long(self.secs_to_samples(from)),
-                        OscType::Long(self.secs_to_samples(to.max(from))),
-                    ],
-                ));
-                if range.is_some() {
-                    steps.extend(self.locate(from));
-                }
-            }
-            _ => {
-                steps.extend(self.command("/transport_loop", vec![]));
-                match range {
-                    Some((from, to)) => {
-                        let want = (
-                            self.secs_to_samples(to.max(from)),
-                            self.secs_to_samples(self.mark),
-                        );
-                        self.end_sent = Some(want);
-                        steps.extend(self.command(
-                            "/transport_end",
-                            vec![OscType::Long(want.0), OscType::Long(want.1)],
-                        ));
-                        steps.extend(self.locate(from));
-                    }
-                    None => steps.extend(self.end_steps()),
-                }
-            }
+    /// **The selection was redrawn while the pass loops**: the loop is now
+    /// over the span the view's loop covers -- the selection, or everything
+    /// with none -- and with `place` the transport goes to its start
+    /// ([`Passes::follow`]).
+    pub fn follow(&mut self, view: View, place: bool) -> Vec<Step> {
+        let Pass::Loop { from, to } = self.space(true, view).1 else {
+            return Vec::new();
+        };
+        let ops = self
+            .passes
+            .follow(Some(MULTITRACK_TRANSPORT), (from, to), place, &samples);
+        if !ops.is_empty() {
+            self.view = Some(view);
+            self.pass = Some(Pass::Loop { from, to });
         }
-        steps.extend(self.play());
-        steps
+        self.plain(ops)
+    }
+
+    /// **The position cursor was placed at `frame`**: rolling, the music goes
+    /// on from it, its pass ending as the view says; stopped, the transport
+    /// stands on it ([`Passes::place`]).
+    pub fn place(&mut self, frame: u64, view: View) -> Vec<Step> {
+        let pass = self.space(self.passes.looping(), view).1;
+        if self.passes.rolling() {
+            self.view = Some(view);
+            self.pass = Some(pass);
+        }
+        let ops = self
+            .passes
+            .place(Some(MULTITRACK_TRANSPORT), frame, pass, &samples);
+        self.plain(ops)
+    }
+
+    /// Rolls the transport again from where it stands: a paused pass goes on.
+    pub fn resume(&mut self) -> Vec<Step> {
+        let ops = self.passes.resume(Some(MULTITRACK_TRANSPORT));
+        self.plain(ops)
     }
 
     /// **Freezes the multitrack where it stands**, every node's state intact -- and
     /// zeroes its meters, because a frozen meter gets no time to fall and would
-    /// go on claiming the last level it wrote. The mark goes with the level.
+    /// go on claiming the last level it wrote.
     pub fn pause(&mut self) -> Vec<Step> {
-        self.rolling = false;
-        let mut ops = vec![Op::TransportRun {
-            transport: MULTITRACK_TRANSPORT,
-            rolling: false,
-        }];
-        ops.extend(
-            self.instance
-                .meters()
-                .into_iter()
-                .map(|(_, handle, _)| Op::FillBus { handle, value: 0.0 }),
-        );
+        let mut ops = self.passes.pause(Some(MULTITRACK_TRANSPORT));
+        ops.extend(self.zeroed());
         self.plain(ops)
     }
 
-    /// **Halts and goes back to the mark**, not to the top: the next play
-    /// starts from where the position cursor is.
-    pub fn stop(&mut self, mark: f64) -> Vec<Step> {
-        self.mark = mark;
-        let mut steps = self.pause();
-        steps.extend(self.locate(mark));
-        steps.extend(self.end_steps());
-        steps
+    /// **Halts and goes back to `back`**, the position cursor in samples: the
+    /// next play starts from it, not from where the pass got to.
+    pub fn stop(&mut self, back: u64) -> Vec<Step> {
+        let mut ops = self.passes.stop(Some(MULTITRACK_TRANSPORT), back, &samples);
+        ops.extend(self.zeroed());
+        self.plain(ops)
     }
 
-    /// **Puts the transport at `secs`** of the multitrack. The readers seek in
-    /// the engine, so what is sounding carries on from there.
-    pub fn locate(&mut self, secs: f64) -> Vec<Step> {
-        self.command(
-            "/transport_locateSample",
-            vec![OscType::Long(self.secs_to_samples(secs))],
-        )
+    /// **Puts the transport at sample `frame`** of the multitrack. The readers
+    /// seek in the engine, so what is sounding carries on from there.
+    pub fn locate(&mut self, frame: u64) -> Vec<Step> {
+        let ops = pass::locate(Some(MULTITRACK_TRANSPORT), frame, &samples);
+        self.plain(ops)
     }
 
-    /// **The position cursor moved**: a stopped transport is cued there and a
-    /// rolling one is left alone, because moving the mark mid-pass must not
-    /// move the music.
-    pub fn cue(&mut self, secs: f64) -> Vec<Step> {
-        self.mark = secs;
-        let mut steps = if self.rolling {
-            Vec::new()
-        } else {
-            self.locate(secs)
-        };
-        // Where a pass that stops at the end goes back to is the cursor, so
-        // the mark follows it -- mid-pass too, since it moves no music.
-        steps.extend(self.end_steps());
-        steps
+    /// **The position cursor moved to `frame` where nothing plays**: a
+    /// stopped transport stands on it, and a rolling one is left alone
+    /// ([`Passes::cue`]).
+    pub fn cue(&mut self, frame: u64) -> Vec<Step> {
+        let ops = self.passes.cue(Some(MULTITRACK_TRANSPORT), frame, &samples);
+        self.plain(ops)
+    }
+
+    /// **A pass over no selection ends where the multitrack now does**: read
+    /// again off the view it was played from, when the contents or the end
+    /// moved while it plays.
+    fn remark(&mut self) -> Vec<Step> {
+        match self.view {
+            Some(view) if view.selection.is_none() && self.passes.rolling() => {
+                self.set_pass(self.passes.looping(), view)
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// The meters zeroed, as a pause leaves them.
+    fn zeroed(&self) -> Vec<Op> {
+        self.instance
+            .meters()
+            .into_iter()
+            .map(|(_, handle, _)| Op::FillBus { handle, value: 0.0 })
+            .collect()
     }
 
     /// Frees everything the multitrack made. The multitrack itself is untouched: what a
     /// playback holds is nodes, and nodes are not the document.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
-        self.rolling = false;
+        self.passes = Passes::default();
+        self.view = None;
+        self.pass = None;
         self.fade_sent = None;
         let mut steps = self.free_lane();
         self.voiced.clear();
@@ -596,12 +560,23 @@ impl<M: Medium> MultitrackPlayback<M> {
     /// Says whether the transport is rolling, when the caller learned it from
     /// the engine rather than from this.
     pub fn set_rolling(&mut self, rolling: bool) {
-        self.rolling = rolling;
+        self.passes.set_rolling(rolling);
     }
 
     /// Whether the transport was last told to roll.
     pub fn rolling(&self) -> bool {
-        self.rolling
+        self.passes.rolling()
+    }
+
+    /// Whether the pass last asked for loops.
+    pub fn looping(&self) -> bool {
+        self.passes.looping()
+    }
+
+    /// Whether the transport stands where a pause left it, so a play
+    /// resumes ([`Passes::paused`]).
+    pub fn paused(&self) -> bool {
+        self.passes.paused()
     }
 
     /// Whether anything of the multitrack is made.
@@ -759,67 +734,54 @@ mod tests {
         })
     }
 
-    /// **A pass is open by default**; at the contents, the end mark is where
-    /// the last region ends and the return is the position cursor, sent only
-    /// when one of the two moves; and an end marker is its own place.
+    /// The arguments of the message to `addr` among `steps`, past the
+    /// transport.
+    fn args_of(steps: &[Step], addr: &str) -> Option<Vec<OscType>> {
+        steps.iter().find_map(|step| match step {
+            Step::Send(m) if m.addr == addr => Some(m.args[1..].to_vec()),
+            _ => None,
+        })
+    }
+
+    /// A playback synced to a multitrack whose contents end at `end` seconds.
+    fn synced(end: f64) -> MultitrackPlayback {
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
+        playback
+            .sync(
+                &ending_at(end),
+                48_000.0,
+                &HashMap::new(),
+                1.0,
+                &mut spaces(),
+            )
+            .unwrap();
+        playback
+    }
+
+    /// The view with the position cursor at `cursor` seconds and no selection.
+    fn at(cursor: f64) -> View {
+        View {
+            selection: None,
+            cursor: Some((cursor * 48_000.0) as u64),
+        }
+    }
+
+    /// **A pass is open by default**; at the contents it ends where the last
+    /// region does and goes back to the position cursor, and a pass in
+    /// progress over no selection follows an edit that moves them, or an end
+    /// marker put in their place.
     #[test]
     fn a_pass_ends_where_it_is_asked_to() {
-        let mut playback = MultitrackPlayback::new(Endpoint::default());
-        let steps = playback
-            .sync(
-                &ending_at(5.0),
-                48_000.0,
-                &HashMap::new(),
-                1.0,
-                &mut spaces(),
-            )
-            .unwrap();
-        assert_eq!(end_mark(&steps), None, "off: nothing is marked");
-
-        let on = playback.set_end(End::Contents);
+        let mut playback = synced(5.0);
+        assert!(playback.set_end(End::Contents).is_empty(), "stopped");
+        playback.set_end(End::Open);
+        let open = playback.play(false, at(1.0));
+        assert_eq!(end_mark(&open), Some(vec![]), "open: nothing is marked");
         assert_eq!(
-            end_mark(&on),
-            Some(vec![OscType::Long(240_000), OscType::Long(0)]),
+            end_mark(&playback.set_end(End::Contents)),
+            Some(vec![OscType::Long(240_000), OscType::Long(48_000)]),
             "the last region's end, back to the cursor"
         );
-        let cued = playback.cue(1.0);
-        assert_eq!(
-            end_mark(&cued),
-            Some(vec![OscType::Long(240_000), OscType::Long(48_000)]),
-            "the return follows the cursor"
-        );
-        let same = playback
-            .sync(
-                &ending_at(5.0),
-                48_000.0,
-                &HashMap::new(),
-                1.0,
-                &mut spaces(),
-            )
-            .unwrap();
-        assert_eq!(end_mark(&same), None, "sent only when it moves");
-        let longer = playback
-            .sync(
-                &ending_at(7.0),
-                48_000.0,
-                &HashMap::new(),
-                1.0,
-                &mut spaces(),
-            )
-            .unwrap();
-        assert_eq!(
-            end_mark(&longer),
-            Some(vec![OscType::Long(336_000), OscType::Long(48_000)]),
-            "an edit that moves the last region moves it"
-        );
-        assert_eq!(
-            end_mark(&playback.set_end(End::At(2.5))),
-            Some(vec![OscType::Long(120_000), OscType::Long(48_000)]),
-            "an end marker is where it says"
-        );
-        // **A region placed past an end marker takes the marker with it**: one
-        // at or past the contents' end is carried forward when they grow past
-        // it, and one put inside them is an early stop that stays.
         let sync = |playback: &mut MultitrackPlayback, secs: f64| {
             playback
                 .sync(
@@ -832,13 +794,23 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(
-            end_mark(&sync(&mut playback, 9.0)),
-            None,
-            "inside: it stays"
+            end_mark(&sync(&mut playback, 7.0)),
+            Some(vec![OscType::Long(336_000), OscType::Long(48_000)]),
+            "an edit that moves the last region moves it"
         );
-        assert_eq!(playback.end(), End::At(2.5));
+        assert_eq!(
+            end_mark(&playback.set_end(End::At(2.5))),
+            Some(vec![OscType::Long(120_000), OscType::Long(48_000)]),
+            "an end marker is where it says"
+        );
+        // **A region placed past an end marker takes the marker with it**: one
+        // at or past the contents' end is carried forward when they grow past
+        // it, and one put inside them is an early stop that stays.
+        sync(&mut playback, 9.0);
+        assert_eq!(playback.end(), End::At(2.5), "inside: it stays");
         playback.set_end(End::At(10.0));
-        assert_eq!(end_mark(&sync(&mut playback, 9.5)), None, "not reached");
+        sync(&mut playback, 9.5);
+        assert_eq!(playback.end(), End::At(10.0), "not reached");
         assert_eq!(
             end_mark(&sync(&mut playback, 12.0)),
             Some(vec![OscType::Long(576_000), OscType::Long(48_000)]),
@@ -858,29 +830,18 @@ mod tests {
         assert_eq!(End::from_json(&json!("nope")), None);
     }
 
-    /// **The space bar's pass over a range** ends at the range's end and goes
-    /// back to the mark; the loop switch loops the range, or with none the
-    /// whole multitrack; and a pass with neither puts back the end asked for.
+    /// **The space bar's pass over a selection** starts at it, ends at its
+    /// end and goes back to the position cursor; the loop switch loops the
+    /// selection, or with none the whole contents, whatever the end says; and
+    /// a pass with neither puts back the end asked for.
     #[test]
     fn a_pass_over_a_range_ends_there_and_the_loop_switch_loops_it() {
-        let args_of = |steps: &[Step], addr: &str| {
-            steps.iter().find_map(|step| match step {
-                Step::Send(m) if m.addr == addr => Some(m.args[1..].to_vec()),
-                _ => None,
-            })
+        let mut playback = synced(5.0);
+        let range = View {
+            selection: Some((48_000, 96_000)),
+            cursor: Some(24_000),
         };
-        let mut playback = MultitrackPlayback::new(Endpoint::default());
-        playback
-            .sync(
-                &ending_at(5.0),
-                48_000.0,
-                &HashMap::new(),
-                1.0,
-                &mut spaces(),
-            )
-            .unwrap();
-        playback.cue(0.5);
-        let steps = playback.play_pass(Some((1.0, 2.0)), false);
+        let steps = playback.play(false, range);
         assert_eq!(
             args_of(&steps, "/transport_end"),
             Some(vec![OscType::Long(96_000), OscType::Long(24_000)])
@@ -889,50 +850,39 @@ mod tests {
             args_of(&steps, "/transport_locateSample"),
             Some(vec![OscType::Long(48_000)])
         );
+        assert!(args_of(&steps, "/transport_cue").is_some(), "cued");
         assert_eq!(
             addrs(&steps).last().map(String::as_str),
             Some("/transport_play")
         );
-        let looped = playback.play_pass(None, true);
+        let looped = playback.play(true, at(0.5));
         assert_eq!(
             args_of(&looped, "/transport_loop"),
             Some(vec![OscType::Long(0), OscType::Long(240_000)]),
-            "the whole multitrack"
+            "the whole contents, though a pass runs on"
         );
-        let plain = playback.play_pass(None, false);
+        let plain = playback.play(false, at(0.5));
         assert_eq!(args_of(&plain, "/transport_loop"), Some(vec![]));
         assert_eq!(
             args_of(&plain, "/transport_end"),
             Some(vec![]),
-            "the range's end mark was for its pass: open again"
+            "the selection's end was for its pass: open again"
         );
     }
 
     /// **The loop switch changes the pass in progress**: on, it loops the
-    /// range or the whole multitrack from where it stands; off, it ends at the
-    /// range's end and goes back to the mark; stopped, nothing.
+    /// selection or the whole contents from where it stands; off, it ends at
+    /// the selection's end and goes back to the cursor; stopped, nothing.
     #[test]
     fn the_loop_switch_changes_the_pass_in_progress() {
-        let args_of = |steps: &[Step], addr: &str| {
-            steps.iter().find_map(|step| match step {
-                Step::Send(m) if m.addr == addr => Some(m.args[1..].to_vec()),
-                _ => None,
-            })
+        let mut playback = synced(5.0);
+        let range = View {
+            selection: Some((48_000, 96_000)),
+            cursor: Some(24_000),
         };
-        let mut playback = MultitrackPlayback::new(Endpoint::default());
-        playback
-            .sync(
-                &ending_at(5.0),
-                48_000.0,
-                &HashMap::new(),
-                1.0,
-                &mut spaces(),
-            )
-            .unwrap();
-        assert!(playback.set_loop(None, true).is_empty(), "nothing playing");
-        playback.cue(0.5);
-        playback.play_pass(Some((1.0, 2.0)), false);
-        let on = playback.set_loop(Some((1.0, 2.0)), true);
+        assert!(playback.set_pass(true, range).is_empty(), "nothing playing");
+        playback.play(false, range);
+        let on = playback.set_pass(true, range);
         assert_eq!(
             args_of(&on, "/transport_loop"),
             Some(vec![OscType::Long(48_000), OscType::Long(96_000)])
@@ -941,16 +891,57 @@ mod tests {
             args_of(&on, "/transport_play").is_none(),
             "nothing restarted"
         );
-        let off = playback.set_loop(Some((1.0, 2.0)), false);
+        let off = playback.set_pass(false, range);
         assert_eq!(args_of(&off, "/transport_loop"), Some(vec![]));
         assert_eq!(
             args_of(&off, "/transport_end"),
             Some(vec![OscType::Long(96_000), OscType::Long(24_000)])
         );
-        let whole = playback.set_loop(None, true);
+        let whole = playback.set_pass(true, at(0.5));
         assert_eq!(
             args_of(&whole, "/transport_loop"),
             Some(vec![OscType::Long(0), OscType::Long(240_000)])
+        );
+    }
+
+    /// **The cursor moves the music where it plays**: placed while it rolls,
+    /// the head goes there and the pass ends as the view says from there; a
+    /// selection redrawn while it loops is the loop, and the head goes into
+    /// it when the sweep is let go.
+    #[test]
+    fn a_cursor_placed_while_it_plays_moves_the_music() {
+        let mut playback = synced(5.0);
+        assert_eq!(
+            addrs(&playback.place(48_000, at(1.0))),
+            ["/transport_locateSample"],
+            "stopped: it stands there"
+        );
+        playback.play(false, at(1.0));
+        let placed = playback.place(96_000, at(2.0));
+        assert_eq!(
+            args_of(&placed, "/transport_locateSample"),
+            Some(vec![OscType::Long(96_000)])
+        );
+        assert!(args_of(&placed, "/transport_play").is_none());
+        assert!(
+            playback.follow(at(2.0), true).is_empty(),
+            "the pass does not loop"
+        );
+        playback.play(true, at(2.0));
+        let swept = View {
+            selection: Some((48_000, 72_000)),
+            cursor: Some(96_000),
+        };
+        let drawn = playback.follow(swept, false);
+        assert_eq!(
+            args_of(&drawn, "/transport_loop"),
+            Some(vec![OscType::Long(48_000), OscType::Long(72_000)])
+        );
+        assert!(args_of(&drawn, "/transport_locateSample").is_none());
+        let let_go = playback.follow(swept, true);
+        assert_eq!(
+            args_of(&let_go, "/transport_locateSample"),
+            Some(vec![OscType::Long(48_000)])
         );
     }
 
@@ -963,7 +954,7 @@ mod tests {
             .sync(&multitrack(), 48_000.0, &HashMap::new(), 1.0, &mut spaces())
             .unwrap();
         assert_eq!(playback.secs_to_samples(2.0), 96_000);
-        let steps = playback.locate(2.0);
+        let steps = playback.locate(96_000);
         assert_eq!(
             steps[0],
             send(
@@ -985,24 +976,37 @@ mod tests {
         assert_eq!(playback.samples_to_secs(48_000), 1.0);
     }
 
-    /// **A cue moves a stopped transport and leaves a rolling one alone**, and
-    /// a stop goes back to the mark.
+    /// **A cue moves a stopped transport and leaves a rolling one alone**, a
+    /// stop goes back to the cursor, and a play after a pause resumes.
     #[test]
     fn a_cue_waits_for_a_stopped_transport_and_a_stop_returns_to_the_mark() {
         let mut playback = MultitrackPlayback::new(Endpoint::default());
-        assert_eq!(addrs(&playback.cue(1.0)), ["/transport_locateSample"]);
-        assert_eq!(addrs(&playback.play()), ["/transport_play"]);
+        assert_eq!(addrs(&playback.cue(48_000)), ["/transport_locateSample"]);
+        assert_eq!(
+            addrs(&playback.play(false, View::default())),
+            [
+                "/transport_loop",
+                "/transport_end",
+                "/transport_locateSample",
+                "/transport_cue",
+                "/transport_play"
+            ]
+        );
         assert!(
-            playback.cue(1.0).is_empty(),
+            playback.cue(48_000).is_empty(),
             "rolling: the mark moves, not the music"
         );
+        playback.pause();
+        assert!(playback.paused());
+        assert_eq!(addrs(&playback.resume()), ["/transport_play"]);
         assert_eq!(
-            addrs(&playback.stop(3.0)),
+            addrs(&playback.stop(144_000)),
             ["/transport_stop", "/transport_locateSample"]
         );
         assert!(!playback.rolling());
+        assert!(!playback.paused(), "a stop is not a pause");
         playback.set_rolling(true);
-        assert!(playback.cue(1.0).is_empty(), "another client rolled it");
+        assert!(playback.cue(48_000).is_empty(), "another client rolled it");
     }
 
     /// **The boxes over sequences play from one lane in the tracks' group**,
@@ -1174,7 +1178,8 @@ mod tests {
     #[test]
     fn the_json_doors_answer_steps_or_an_error() {
         let mut playback = MultitrackPlayback::new(Endpoint::default());
-        let answer: Value = serde_json::from_str(&answer_json(Ok(playback.locate(1.0)))).unwrap();
+        let answer: Value =
+            serde_json::from_str(&answer_json(Ok(playback.locate(48_000)))).unwrap();
         assert_eq!(answer["steps"][0]["send"]["args"][0], json!({"i": 0}));
         assert_eq!(answer["steps"][0]["send"]["args"][1], json!({"h": 48_000}));
         let refused: Value = serde_json::from_str(&sync_json(

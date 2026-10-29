@@ -104,9 +104,6 @@ pub(super) struct Session {
     playback: AudioEditorPlayback<Box<dyn Medium + Send>>,
     /// The engine's rate.
     rate: f64,
-    /// Whether a script paused the pass, which a play without a position
-    /// resumes.
-    paused: bool,
     runs: BTreeMap<u64, Run>,
     next: u64,
 }
@@ -119,7 +116,6 @@ impl Session {
         Some(Session {
             rate: engine.rate(),
             playback: AudioEditorPlayback::in_medium(engine.medium()),
-            paused: false,
             runs: BTreeMap::new(),
             next: 1,
         })
@@ -264,7 +260,7 @@ fn query(editing: &mut Editing, member: MemberId, query: &str) -> Value {
             "transport": session.playback.transport(),
             "span": span.map(|(start, end)| [start, end]),
             "looping": looping,
-            "paused": session.paused,
+            "paused": session.playback.paused(),
             "focused": session.focused(editing, member),
             "state": session.state(),
         }),

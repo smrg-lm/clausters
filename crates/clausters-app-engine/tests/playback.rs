@@ -14,7 +14,8 @@ use clausters::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
 use clausters::server::nrt::{NrtAction, run_job};
 use clausters_app_engine::{AppEngine, EngineMedium};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape, Space};
-use clausters_editing::audio_playback::{AudioEditorPlayback, Pass};
+use clausters_editing::audio_playback::AudioEditorPlayback;
+use clausters_editing::pass::Pass;
 
 const SR: f64 = 48_000.0;
 const FRAMES: usize = 24_000;
@@ -105,7 +106,7 @@ fn the_audio_editor_plays_on_an_engine_it_holds() {
         1,
         0,
         Pass::Until {
-            end: FRAMES as u64,
+            end: Some(FRAMES as u64),
             back: 0,
         },
     );
@@ -189,7 +190,7 @@ fn loops_stops_and_locates_on_an_engine_it_holds() {
         1,
         at,
         Pass::Until {
-            end: FRAMES as u64,
+            end: Some(FRAMES as u64),
             back: 0,
         },
     );
@@ -302,7 +303,7 @@ fn the_application_reads_its_take_into_the_engine() {
         1,
         0,
         Pass::Until {
-            end: FRAMES as u64,
+            end: Some(FRAMES as u64),
             back: 0,
         },
     );
@@ -684,7 +685,7 @@ fn moved_loop_steps(fed: bool) -> (Moved, u64) {
         }
         if b == 400 {
             playback.set_pass(Pass::Until {
-                end: FRAMES as u64,
+                end: Some(FRAMES as u64),
                 back: 2000,
             });
         }
@@ -819,7 +820,7 @@ fn the_loop_switch_turned_while_it_plays_is_not_heard() {
                         looped
                     } else {
                         Pass::Until {
-                            end: FRAMES as u64,
+                            end: Some(FRAMES as u64),
                             back: 1000,
                         }
                     });
@@ -961,7 +962,7 @@ fn two_loop_switches_close_together_at_its_end_are_not_heard() {
                         }
                     } else {
                         Pass::Until {
-                            end: FRAMES as u64,
+                            end: Some(FRAMES as u64),
                             back: 1000,
                         }
                     });

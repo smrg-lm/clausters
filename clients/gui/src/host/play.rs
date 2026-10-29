@@ -35,7 +35,7 @@ use clausters_core::osc::OscType;
 use clausters_editing::apply::Step;
 #[cfg(doc)]
 use clausters_editing::audio_playback::AudioEditorPlayback;
-pub use clausters_editing::audio_playback::Pass;
+pub use clausters_editing::pass::Pass;
 
 use crate::host::diag;
 

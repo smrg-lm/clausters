@@ -152,7 +152,6 @@ impl Session {
         if let Some(play) = outcome.play {
             // The loop switch rides beside the space bar and `L`: a pass that
             // loops is the switch on.
-            self.paused = false;
             tasks.push(Task::Rolling(Rolled::Space(play)));
         }
         if let Some(pass) = outcome.pass {

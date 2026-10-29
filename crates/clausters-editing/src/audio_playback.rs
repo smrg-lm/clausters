@@ -41,10 +41,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use clausters_core::audio_editor as ae;
 use clausters_core::ids::{IdError, IdSpaces, Space};
-use serde::{Deserialize, Serialize};
 
 use crate::apply::{Applier, Endpoint, Medium, Step};
 use crate::instance::{Op, Port, Ports};
+use crate::pass::{self, Pass, Passes};
 
 /// How long a stop and a play ramp, in seconds: short enough that nobody hears
 /// it as a fade, long enough that nobody hears an edge as a click.
@@ -62,55 +62,6 @@ fn play_handle(file: u64) -> String {
 
 fn reader_handle(file: u64, channel: usize) -> String {
     format!("reader:{file}:{channel}")
-}
-
-/// **How a pass over a take ends**: it loops over a span, or it runs until an
-/// end and goes back. Frames of the file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum Pass {
-    /// Over and over, inside the half-open span.
-    Loop {
-        /// The first frame of the span.
-        from: u64,
-        /// The first frame past it.
-        to: u64,
-    },
-    /// Until `end`, where the transport stops and is located to `back`.
-    Until {
-        /// The frame it stops on.
-        end: u64,
-        /// The frame it goes back to.
-        back: u64,
-    },
-}
-
-/// **What the space bar plays over a take**, read off the view: where the
-/// pass starts and how it ends.
-///
-/// A selection plays from its start, and with none the take plays from the
-/// position cursor, or from its first frame where none is placed. Looping, a
-/// selection repeats and so does a take with none. Not looping, the pass stops
-/// at the end of the selection or of the take and goes back to the position
-/// cursor -- where a selection's play started, when there is no cursor apart
-/// from it.
-pub fn space(
-    looping: bool,
-    selection: Option<(u64, u64)>,
-    cursor: Option<u64>,
-    frames: u64,
-) -> (u64, Pass) {
-    let start = selection.map_or(cursor.unwrap_or(0), |(from, _)| from);
-    let pass = if looping {
-        let (from, to) = selection.unwrap_or((0, frames));
-        Pass::Loop { from, to }
-    } else {
-        Pass::Until {
-            end: selection.map_or(frames, |(_, to)| to),
-            back: cursor.unwrap_or(start),
-        }
-    };
-    (start, pass)
 }
 
 /// One open file, as it is sounding.
@@ -147,11 +98,10 @@ pub struct AudioEditorPlayback<M: Medium = Applier> {
     /// The file the window shows, which need not be the one that plays: a
     /// pass goes on while the window looks at another file.
     viewed: Option<u64>,
-    /// Whether the transport was last told to roll.
-    rolling: bool,
-    /// Whether the pass last asked for loops, which is what a selection
-    /// redrawn while it plays goes by ([`Self::follow`]).
-    looping: bool,
+    /// **Whether the transport rolls and its pass loops**: the rules every
+    /// editor plays by ([`crate::pass`]), which this carries out on the file
+    /// in focus.
+    passes: Passes,
 }
 
 impl File {
@@ -197,8 +147,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
             files: BTreeMap::new(),
             focus: None,
             viewed: None,
-            rolling: false,
-            looping: false,
+            passes: Passes::default(),
         }
     }
 
@@ -369,9 +318,10 @@ impl<M: Medium> AudioEditorPlayback<M> {
         let mut steps = Vec::new();
         if self.focus == Some(file) {
             self.focus = None;
-            if self.rolling {
+            if self.passes.rolling() {
                 steps.extend(self.pause());
             }
+            self.passes.end_pause();
         }
         let op = self.free_file(file, channels);
         steps.extend(self.applier.apply(
@@ -394,16 +344,13 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// first frame played is the take's and not a silence while the disk
     /// catches up; the play waits for its `/done`.
     pub fn play(&mut self, file: u64, start: u64, pass: Pass) -> Vec<Step> {
-        self.looping = matches!(pass, Pass::Loop { .. });
         let mut steps = self.focus_on(file);
         let Some(f) = self.files.get(&file).cloned() else {
             return steps;
         };
-        steps.extend(self.pass_steps(&f, pass));
-        let sample = self.frames_to_samples(&f, start);
-        steps.extend(self.transport_op(|transport| Op::TransportLocate { transport, sample }));
-        steps.extend(self.transport_op(|transport| Op::TransportCue { transport }));
-        steps.extend(self.resume());
+        let at = self.frames_of(&f);
+        let ops = self.passes.play(self.transport, start, pass, &at);
+        steps.extend(self.apply_plain(ops));
         steps
     }
 
@@ -413,14 +360,9 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// nothing restarted. Stopped, it answers nothing: the next play reads the
     /// switch.
     pub fn set_pass(&mut self, pass: Pass) -> Vec<Step> {
-        if !self.rolling {
-            return Vec::new();
-        }
-        self.looping = matches!(pass, Pass::Loop { .. });
-        match self.focus.and_then(|f| self.files.get(&f)).cloned() {
-            Some(f) => self.pass_steps(&f, pass),
-            None => Vec::new(),
-        }
+        let at = self.focused_frames();
+        let ops = self.passes.set_pass(self.transport, pass, &at);
+        self.apply_plain(ops)
     }
 
     /// **The selection of `file` was redrawn while it loops**: the loop is
@@ -434,39 +376,22 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// loops. A pass that runs to its end keeps the end it was played with,
     /// and a stopped playback reads the selection on its next play.
     pub fn follow(&mut self, file: u64, from: u64, to: u64, place: bool) -> Vec<Step> {
-        if !self.rolling || !self.looping || self.focus != Some(file) || from >= to {
+        if self.focus != Some(file) {
             return Vec::new();
         }
         let Some(f) = self.files.get(&file).cloned() else {
             return Vec::new();
         };
-        let mut steps = self.pass_steps(&f, Pass::Loop { from, to });
-        if place {
-            steps.extend(self.locate(from));
-        }
-        steps
-    }
-
-    /// The loop and the end mark `pass` asks of the transport, in `f`'s frames.
-    fn pass_steps(&mut self, f: &File, pass: Pass) -> Vec<Step> {
-        let at = |frame| self.frames_to_samples(f, frame);
-        let (span, mark) = match pass {
-            Pass::Loop { from, to } => (Some((at(from), at(to))), None),
-            Pass::Until { end, back } => (None, Some((at(end), at(back)))),
-        };
-        let mut steps = self.transport_op(|transport| Op::TransportLoop { transport, span });
-        steps.extend(self.transport_op(|transport| Op::TransportEnd { transport, mark }));
-        steps
+        let at = self.frames_of(&f);
+        let ops = self.passes.follow(self.transport, (from, to), place, &at);
+        self.apply_plain(ops)
     }
 
     /// Rolls the transport again from where it stands, the file in focus
     /// continuing where it paused.
     pub fn resume(&mut self) -> Vec<Step> {
-        self.rolling = true;
-        self.transport_op(|transport| Op::TransportRun {
-            transport,
-            rolling: true,
-        })
+        let ops = self.passes.resume(self.transport);
+        self.apply_plain(ops)
     }
 
     /// **Pauses where it stands**: the stop rolls out its ramp, the output's
@@ -474,20 +399,17 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// resume continues. The meter falls on its own, since the output is not
     /// frozen.
     pub fn pause(&mut self) -> Vec<Step> {
-        self.rolling = false;
-        self.transport_op(|transport| Op::TransportRun {
-            transport,
-            rolling: false,
-        })
+        let ops = self.passes.pause(self.transport);
+        self.apply_plain(ops)
     }
 
     /// **Stops and goes back to `back`**, a frame of the file in focus: the
     /// next play starts from the position cursor, not from where the pass
     /// ended.
     pub fn stop(&mut self, back: u64) -> Vec<Step> {
-        let mut steps = self.pause();
-        steps.extend(self.locate(back));
-        steps
+        let at = self.focused_frames();
+        let ops = self.passes.stop(self.transport, back, &at);
+        self.apply_plain(ops)
     }
 
     /// **The window shows file `file` now, its position cursor at `frame`.**
@@ -497,7 +419,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// cursor is drawn on it.
     pub fn view(&mut self, file: u64, frame: u64) -> Vec<Step> {
         self.viewed = Some(file);
-        if self.rolling {
+        if self.passes.rolling() {
             return Vec::new();
         }
         let mut steps = self.focus_on(file);
@@ -520,12 +442,12 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// shows**: always, but while another file plays, since that line is a
     /// position in the other file's frames.
     pub fn follows(&self) -> bool {
-        !self.rolling || self.viewed.is_none() || self.focus == self.viewed
+        !self.passes.rolling() || self.viewed.is_none() || self.focus == self.viewed
     }
 
     /// The file a pass is playing, if one is.
     pub fn playing(&self) -> Option<u64> {
-        self.focus.filter(|_| self.rolling)
+        self.focus.filter(|_| self.passes.rolling())
     }
 
     /// **The position cursor moved to `frame`** in a file that is not the
@@ -534,22 +456,25 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// file. A cursor placed in the file that plays moves the music
     /// ([`Self::locate`]), which the caller decides.
     pub fn cue(&mut self, frame: u64) -> Vec<Step> {
-        if self.rolling {
-            return Vec::new();
-        }
-        self.locate(frame)
+        let at = self.focused_frames();
+        let ops = self.passes.cue(self.transport, frame, &at);
+        self.apply_plain(ops)
+    }
+
+    /// **The position cursor was placed at `frame` of the file in focus**:
+    /// rolling, the music goes on from it, its pass ending as `pass` says;
+    /// stopped, the transport stands on it ([`Passes::place`]).
+    pub fn place(&mut self, frame: u64, pass: Pass) -> Vec<Step> {
+        let at = self.focused_frames();
+        let ops = self.passes.place(self.transport, frame, pass, &at);
+        self.apply_plain(ops)
     }
 
     /// Puts the transport at frame `frame` of the file in focus.
     pub fn locate(&mut self, frame: u64) -> Vec<Step> {
-        let at = match self.focus.and_then(|f| self.files.get(&f)) {
-            Some(f) => self.frames_to_samples(f, frame),
-            None => frame as i64,
-        };
-        self.transport_op(|transport| Op::TransportLocate {
-            transport,
-            sample: at,
-        })
+        let at = self.focused_frames();
+        let ops = pass::locate(self.transport, frame, &at);
+        self.apply_plain(ops)
     }
 
     /// **Loops the transport over frames `[from, to)` of the file in focus**,
@@ -558,11 +483,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// as a locate's are, so a file at another rate than the engine's loops
     /// over the span drawn.
     pub fn set_loop(&mut self, span: Option<(u64, u64)>) -> Vec<Step> {
-        let focused = self.focus.and_then(|f| self.files.get(&f));
-        let at = |frame: u64| match focused {
-            Some(f) => self.frames_to_samples(f, frame),
-            None => frame as i64,
-        };
+        let at = self.focused_frames();
         let span = span.map(|(from, to)| (at(from), at(to)));
         self.transport_op(|transport| Op::TransportLoop { transport, span })
     }
@@ -575,7 +496,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
             return Ok(Vec::new());
         }
         let mut steps = Vec::new();
-        if self.rolling {
+        if self.passes.rolling() {
             steps.extend(self.pause());
         }
         steps.extend(self.transport_op(|transport| Op::TransportLoop {
@@ -622,12 +543,18 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// Says whether the transport is rolling, when the caller learned it from
     /// the engine rather than from this -- a pass that ended on its mark.
     pub fn set_rolling(&mut self, rolling: bool) {
-        self.rolling = rolling;
+        self.passes.set_rolling(rolling);
     }
 
     /// Whether the transport was last told to roll.
     pub fn rolling(&self) -> bool {
-        self.rolling
+        self.passes.rolling()
+    }
+
+    /// Whether the transport stands where a pause left the file in focus, so
+    /// a play resumes it ([`Passes::paused`]).
+    pub fn paused(&self) -> bool {
+        self.passes.paused()
     }
 
     /// The files it holds, in order.
@@ -649,7 +576,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
         let file = self.viewed.or(self.focus)?;
         let channels = self.files.get(&file)?.channels;
         Some((
-            if self.rolling && self.focus == Some(file) {
+            if self.passes.rolling() && self.focus == Some(file) {
                 bus
             } else {
                 -(channels as i32)
@@ -666,6 +593,25 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// Frame `frame` of `file` as a sample of the transport.
     fn frames_to_samples(&self, file: &File, frame: u64) -> i64 {
         (frame as f64 * self.rate / file.rate).round() as i64
+    }
+
+    /// **A frame of `file` as the transport's sample**, the crossing the
+    /// pass rules are handed.
+    fn frames_of(&self, file: &File) -> impl Fn(u64) -> i64 + use<M> {
+        let ratio = self.rate / file.rate;
+        move |frame| (frame as f64 * ratio).round() as i64
+    }
+
+    /// [`Self::frames_of`] the file in focus, or frames as samples with none.
+    fn focused_frames(&self) -> impl Fn(u64) -> i64 + use<M> {
+        let ratio = self
+            .focus
+            .and_then(|f| self.files.get(&f))
+            .map(|f| self.rate / f.rate);
+        move |frame| match ratio {
+            Some(ratio) => (frame as f64 * ratio).round() as i64,
+            None => frame as i64,
+        }
     }
 
     /// The defs a file of `channels` needs that were not sent yet, and the
@@ -837,6 +783,8 @@ impl<M: Medium> AudioEditorPlayback<M> {
         if self.focus == Some(file) || !self.files.contains_key(&file) {
             return Vec::new();
         }
+        // a pause was of the file that leaves focus
+        self.passes.end_pause();
         let mut ops = Vec::new();
         if let Some(was) = self.focus.replace(file) {
             ops.push(Op::Run {
@@ -1031,7 +979,7 @@ mod tests {
             1,
             0,
             Pass::Until {
-                end: 44_100,
+                end: Some(44_100),
                 back: 22_050,
             },
         );
@@ -1064,7 +1012,7 @@ mod tests {
             1,
             0,
             Pass::Until {
-                end: 48_000,
+                end: Some(48_000),
                 back: 0,
             },
         );
@@ -1074,7 +1022,10 @@ mod tests {
             [OscType::Long(100), OscType::Long(200)]
         );
         assert!(sent(&on, "/transport_play").is_empty(), "nothing restarted");
-        let off = playback.set_pass(Pass::Until { end: 200, back: 50 });
+        let off = playback.set_pass(Pass::Until {
+            end: Some(200),
+            back: 50,
+        });
         assert_eq!(
             sent(&off, "/transport_end")[0].args[1..],
             [OscType::Long(200), OscType::Long(50)]
@@ -1112,7 +1063,10 @@ mod tests {
         assert!(playback.follow(2, 0, 100, true).is_empty(), "not in focus");
         assert!(playback.follow(1, 100, 100, true).is_empty(), "no span");
         // A pass that runs to its end keeps the end it was played with.
-        playback.set_pass(Pass::Until { end: 200, back: 0 });
+        playback.set_pass(Pass::Until {
+            end: Some(200),
+            back: 0,
+        });
         assert!(playback.follow(1, 0, 100, true).is_empty());
         let looped = playback.set_pass(Pass::Loop { from: 0, to: 100 });
         assert!(!sent(&looped, "/transport_loop").is_empty());
@@ -1134,7 +1088,7 @@ mod tests {
             1,
             0,
             Pass::Until {
-                end: 44_100,
+                end: Some(44_100),
                 back: 0,
             },
         );
@@ -1187,27 +1141,6 @@ mod tests {
         assert!(
             playback.cue(40).is_empty(),
             "rolling: the mark moves, not the music"
-        );
-    }
-
-    /// **The space bar's pass, read off the view.**
-    #[test]
-    fn the_space_bar_plays_the_selection_or_from_the_cursor() {
-        assert_eq!(
-            space(false, None, Some(10), 100),
-            (10, Pass::Until { end: 100, back: 10 })
-        );
-        assert_eq!(
-            space(false, Some((20, 40)), None, 100),
-            (20, Pass::Until { end: 40, back: 20 })
-        );
-        assert_eq!(
-            space(true, None, None, 100),
-            (0, Pass::Loop { from: 0, to: 100 })
-        );
-        assert_eq!(
-            space(true, Some((20, 40)), Some(5), 100),
-            (20, Pass::Loop { from: 20, to: 40 })
         );
     }
 
@@ -1277,7 +1210,7 @@ mod tests {
                 file,
                 0,
                 Pass::Until {
-                    end: 48000,
+                    end: Some(48000),
                     back: 0,
                 },
             );

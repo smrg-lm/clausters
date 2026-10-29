@@ -13,7 +13,8 @@ use clausters::rosc::OscType;
 use clausters::server::nrtsession::{NrtSession, SessionConfig};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_editing::apply::{Endpoint, Step};
-use clausters_editing::audio_playback::{AudioEditorPlayback, Pass};
+use clausters_editing::audio_playback::AudioEditorPlayback;
+use clausters_editing::pass::Pass;
 
 const SR: f64 = 48_000.0;
 const BLOCK: usize = 64;
@@ -201,7 +202,7 @@ fn a_pass_is_declicked_and_ends_where_the_take_does() {
         1,
         0,
         Pass::Until {
-            end: frames as u64,
+            end: Some(frames as u64),
             back: 0,
         },
     );

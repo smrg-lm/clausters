@@ -14,13 +14,21 @@ use clausters_document::multitrack::nodes::SourceInfo;
 use clausters_document::multitrack::{Content, Fade, Multitrack, Region, Track};
 use clausters_document::{Lifetime, NodeId, Second, SourceId, SourceRef};
 use clausters_editing::apply::{Endpoint, Step};
-use clausters_editing::playback::MultitrackPlayback;
+use clausters_editing::playback::{MultitrackPlayback, View};
 
 const SR: f64 = 48_000.0;
 const BLOCK: usize = 64;
 
+/// Sends one message, letting the server drain its ring first when a run of
+/// steps has filled it -- as a real-time server drains it on its own.
 fn send(s: &mut NrtSession, addr: &str, args: Vec<OscType>) {
-    assert!(s.send_msg(addr, args).expect("encode"), "ring full");
+    for _ in 0..64 {
+        if s.send_msg(addr, args.clone()).expect("encode") {
+            return;
+        }
+        s.settle_for(1);
+    }
+    panic!("ring full");
 }
 
 /// Carries the steps out: every message sent, every wait a settle.
@@ -108,7 +116,7 @@ fn a_box_longer_than_its_source_is_silent_past_its_end() {
         .sync(&multitrack, SR, &sources, 1.0, &mut ids)
         .unwrap();
     run(&mut s, steps);
-    let steps = playback.play();
+    let steps = playback.play(false, View::default());
     run(&mut s, steps);
 
     let out = s.run_to_vec((24 * BLOCK) as u64).expect("the render ran");
@@ -200,7 +208,7 @@ fn a_track_s_width_is_the_document_s_and_may_change_while_it_plays() {
         .sync(&multitrack, SR, &sources, 1.0, &mut ids)
         .unwrap();
     run(&mut s, steps);
-    let steps = playback.play();
+    let steps = playback.play(false, View::default());
     run(&mut s, steps);
 
     // The last block of a stretch, past every fader's lag.
@@ -416,7 +424,7 @@ fn a_note_in_a_box(
     };
     let steps = playback.notes(&placed, &mut ids).unwrap();
     run(&mut s, steps);
-    let steps = playback.play();
+    let steps = playback.play(false, View::default());
     run(&mut s, steps);
 
     // In stretches, a serving turn between them: the lane is fed ahead of
@@ -503,7 +511,7 @@ fn a_region_fades_in_and_out_at_its_own_edges() {
         .sync(&multitrack, SR, &sources, 1.0, &mut ids)
         .unwrap();
     run(&mut s, steps);
-    let steps = playback.play();
+    let steps = playback.play(false, View::default());
     run(&mut s, steps);
 
     let out = s
@@ -649,7 +657,7 @@ fn an_overlap_crossfades_at_equal_power() {
         .sync(&multitrack, SR, &sources, 1.0, &mut ids)
         .unwrap();
     run(&mut s, steps);
-    let steps = playback.play();
+    let steps = playback.play(false, View::default());
     run(&mut s, steps);
 
     let out = s

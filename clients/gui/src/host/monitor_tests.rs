@@ -140,7 +140,15 @@ fn received(server: &UdpSocket) -> Option<OscMessage> {
 fn the_monitor_plays_a_takes_buffer_and_stops_it() {
     let (mut host, server) = take_host(1, 16);
     assert!(
-        host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }),
+        host.play_buffer(
+            1,
+            50,
+            0,
+            play::Pass::Until {
+                end: Some(16),
+                back: 0
+            }
+        ),
         "a take with a buffer plays"
     );
     let sent = exchange(&mut host, &server);
@@ -199,7 +207,15 @@ fn the_monitor_plays_a_takes_buffer_and_stops_it() {
 fn the_monitor_draws_the_play_cursor_from_the_transport() {
     let (mut host, _server) = take_host(1, 16);
     let key = host.timeline_key(50).expect("the take is on a timeline");
-    assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
+    assert!(host.play_buffer(
+        1,
+        50,
+        0,
+        play::Pass::Until {
+            end: Some(16),
+            back: 0
+        }
+    ));
     assert_eq!(
         host.head_clock_of(1, Some(50)),
         HeadClock::Transport(MONITOR as usize),
@@ -282,11 +298,27 @@ fn an_end_the_engine_reached_ends_the_pass_and_a_hosts_stop_does_not() {
 
     // A stop this host sent, then a play: the stop's transition arrives
     // after the new pass started, and it is not that pass's end.
-    assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
+    assert!(host.play_buffer(
+        1,
+        50,
+        0,
+        play::Pass::Until {
+            end: Some(16),
+            back: 0
+        }
+    ));
     host.on_server_reply(instance::Leg::Server, &state(0)); // the commands before it
     host.on_server_reply(instance::Leg::Server, &state(1)); // the play
     assert!(host.stop_playback());
-    assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
+    assert!(host.play_buffer(
+        1,
+        50,
+        0,
+        play::Pass::Until {
+            end: Some(16),
+            back: 0
+        }
+    ));
     host.on_server_reply(instance::Leg::Server, &state(0)); // the host's stop
     host.on_server_reply(instance::Leg::Server, &state(1)); // the new play
     assert_eq!(host.playing_widget(), Some(50), "the new pass stands");
@@ -452,7 +484,15 @@ fn a_span_plays_by_the_transports_loop_and_locate() {
 #[test]
 fn pausing_keeps_the_readers_and_resuming_continues() {
     let (mut host, server) = take_host(1, 16);
-    assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
+    assert!(host.play_buffer(
+        1,
+        50,
+        0,
+        play::Pass::Until {
+            end: Some(16),
+            back: 0
+        }
+    ));
     exchange(&mut host, &server);
 
     assert_eq!(host.pause_playback(), Some(false), "rolling -> paused");
@@ -485,7 +525,15 @@ fn a_host_given_no_server_owns_no_transport() {
 #[test]
 fn a_stereo_take_plays_a_reader_per_channel() {
     let (mut host, server) = take_host(2, 16);
-    assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
+    assert!(host.play_buffer(
+        1,
+        50,
+        0,
+        play::Pass::Until {
+            end: Some(16),
+            back: 0
+        }
+    ));
     let sent = exchange(&mut host, &server);
     let readers: Vec<&OscMessage> = sent.iter().filter(|m| m.addr == "/graph_addSlot").collect();
     assert_eq!(readers.len(), 2);

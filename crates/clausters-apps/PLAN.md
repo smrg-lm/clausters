@@ -5795,7 +5795,7 @@ wrong.
   summary were keyed is what a spectral view of the multitrack waits on,
   with the verb that offers it.
 
-- ⬜ **The multitrack's cursors are not the audio editor's** *(found
+- ✅ **The multitrack's cursors are not the audio editor's** *(found
   2026-10-29 by the user, the same pass)*. Placing the position cursor and
   what a play, a stop, a loop and a pass that ends do with it are written
   for the audio editor (`docs/app-behavior.md`, "The cursor moves the
@@ -5820,6 +5820,23 @@ wrong.
   moves the music while it plays, as the audio editor's gestures do; the
   coordinator (`multitrack_runs`) computes the pass with `space` from the
   range, the cursor and the playback's end.
+  **Fixed 2026-10-29** in that shape, with three changes found on the way.
+  `Passes` also holds what both coordinators repeated: `place` (a cursor
+  placed where it plays moves the music) and the pause a play resumes,
+  which the audio editor's coordinator kept as a flag of its own.
+  `MultitrackPlayback::space` reads the pass itself, handed a `View` in
+  samples, because the end is its own: the `End` for a pass that stops,
+  and the contents for a loop over no selection, which repeats them as it
+  did before whatever the end says. It re-marks a pass over no selection
+  only when the pass moves.
+
+- ⬜ **The roll's passes are not the shared rules** *(found 2026-10-29,
+  fixing the entry above)*. The notes editor's playback
+  (`notes_playback`: `play_pass`, `set_loop`, `cue`, `stop`) still has its
+  own version of the space bar's pass, the loop switch and the cursor, in
+  beats. It moves onto `clausters_editing::pass` as the multitrack's did:
+  its unit is the beat, crossed to the transport's samples by the tempo,
+  and what it keeps of its own is the sequence's end.
 
 - ⬜ **A box drawn as its page opens its roll** *(found 2026-10-29 by
   the user, the eye pass over the multitrack on its application)*. With the

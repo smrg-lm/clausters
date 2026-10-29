@@ -24,7 +24,7 @@ use clausters_document::NodeId;
 use clausters_document::multitrack::nodes::PlannedFeed;
 use clausters_document::multitrack::read::{PlacedRegion, track_reads};
 use clausters_editing::apply::Medium;
-use clausters_editing::playback::MultitrackPlayback;
+use clausters_editing::playback::{MultitrackPlayback, View};
 use serde_json::{Value, json};
 
 use super::held::{HeldList, HeldTake, PlacedList};
@@ -57,6 +57,20 @@ pub(super) struct Tracks {
 }
 
 impl Tracks {
+    /// **What a pass is read off**, in the playback's samples: a selection
+    /// `range` and a position `cursor`, in seconds.
+    fn view(&self, range: Option<(f64, f64)>, cursor: Option<f64>) -> View {
+        View {
+            selection: range.map(|(from, to)| (self.frame(from), self.frame(to.max(from)))),
+            cursor: cursor.map(|secs| self.frame(secs)),
+        }
+    }
+
+    /// A second of the multitrack as the playback's sample.
+    fn frame(&self, secs: f64) -> u64 {
+        self.playback.secs_to_samples(secs) as u64
+    }
+
     /// Whether a pass that is not looped stops where the contents end.
     pub(super) fn stops_at_end(&self) -> bool {
         self.playback.end() == clausters_editing::playback::End::Contents
@@ -337,28 +351,50 @@ impl Editing {
                 }
                 Ok(serde_json::from_str(&answer).unwrap_or(Value::Null))
             }
+            // **A script's play**: over its range, or -- with none -- a
+            // paused pass goes on, and otherwise one starts at the position
+            // cursor, as the space bar's does
             "play" => {
                 let range = action["range"]
                     .as_array()
                     .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
-                tracks.playback.play_pass(range, action["looping"] == true);
+                if range.is_none() && tracks.playback.paused() {
+                    tracks.playback.resume();
+                } else {
+                    let (_, cursor) = self.multitrack_view(member);
+                    let view = tracks.view(range, cursor);
+                    tracks.playback.play(action["looping"] == true, view);
+                }
                 Ok(Value::Null)
             }
             "pause" => {
                 tracks.playback.pause();
                 Ok(Value::Null)
             }
+            // a script's stop goes back to `mark`, which is the position
+            // cursor from then on: a play with no range starts there
             "stop" => {
                 let mark = action["mark"].as_f64().unwrap_or(0.0);
-                tracks.playback.stop(mark);
+                if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+                    editor.set_cursor(Some(mark));
+                }
+                let back = tracks.frame(mark);
+                tracks.playback.stop(back);
                 Ok(Value::Null)
             }
+            // **A script's locate places the position cursor**, where a play
+            // with no range starts: the head goes there while it rolls, and a
+            // stopped transport stands on it
             "locate" => {
                 let at = action["at"].as_f64().unwrap_or(0.0);
+                if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+                    editor.set_cursor(Some(at));
+                }
+                let frame = tracks.frame(at);
                 if tracks.playback.rolling() {
-                    tracks.playback.locate(at);
+                    tracks.playback.locate(frame);
                 } else {
-                    tracks.playback.cue(at);
+                    tracks.playback.cue(frame);
                 }
                 Ok(Value::Null)
             }
@@ -488,6 +524,15 @@ impl Editing {
         effect(kind, json!({ "multitrack": multitrack }))
     }
 
+    /// **What a pass of member `member` is read off**: its window's time
+    /// range and position cursor, in seconds.
+    fn multitrack_view(&self, member: MemberId) -> (Option<(f64, f64)>, Option<f64>) {
+        match self.member(member) {
+            Some(Member::Multitrack(editor)) => (editor.range(), editor.cursor()),
+            _ => (None, None),
+        }
+    }
+
     /// Whether the multitrack's transport rolls, as the engine says now.
     fn multitrack_rolling(&self, tracks: &mut Tracks) -> bool {
         let rolling = self
@@ -550,15 +595,31 @@ impl Editing {
         if outcome.changed {
             self.sound(member, tracks, ids);
         }
+        // **The rules every editor plays by** (`clausters_editing::pass`),
+        // read off this window's selection and position cursor
+        let (range, cursor) = self.multitrack_view(member);
+        let view = tracks.view(range, cursor);
+        if outcome.follow.is_some() || outcome.locate.is_some() {
+            // whether it rolls is the engine's: a pass may have ended on its own
+            self.multitrack_rolling(tracks);
+        }
+        if let Some(place) = outcome.follow {
+            tracks.playback.follow(view, place);
+        }
+        // a cursor placed moves the music where it plays
         if let Some(secs) = outcome.locate {
-            tracks.playback.cue(secs);
+            let frame = tracks.frame(secs);
+            tracks.playback.place(frame, view);
         }
         match outcome.transport {
             Some(TransportVerb::Toggle) => {
                 if self.multitrack_rolling(tracks) {
                     tracks.playback.pause();
+                } else if tracks.playback.paused() {
+                    tracks.playback.resume();
                 } else {
-                    tracks.playback.play_pass(None, false);
+                    let looping = tracks.playback.looping();
+                    tracks.playback.play(looping, view);
                 }
             }
             Some(TransportVerb::PlayStop {
@@ -567,16 +628,20 @@ impl Editing {
                 looping,
             }) => {
                 if self.multitrack_rolling(tracks) {
-                    tracks.playback.stop(mark);
+                    let back = tracks.frame(mark);
+                    tracks.playback.stop(back);
                 } else {
-                    tracks.playback.play_pass(range, looping);
+                    let view = tracks.view(range, Some(mark));
+                    tracks.playback.play(looping, view);
                 }
             }
             Some(TransportVerb::Loop { range, looping }) => {
-                tracks.playback.set_loop(range, looping);
+                let view = tracks.view(range, cursor);
+                tracks.playback.set_pass(looping, view);
             }
             Some(TransportVerb::Stop { mark }) => {
-                tracks.playback.stop(mark);
+                let back = tracks.frame(mark);
+                tracks.playback.stop(back);
             }
             Some(TransportVerb::StopAtEnd) => {
                 let end = match tracks.playback.end() {
@@ -588,7 +653,8 @@ impl Editing {
                 tracks.playback.set_end(end);
             }
             Some(TransportVerb::Cue { secs }) => {
-                tracks.playback.cue(secs);
+                let frame = tracks.frame(secs);
+                tracks.playback.cue(frame);
             }
             None => {}
         }

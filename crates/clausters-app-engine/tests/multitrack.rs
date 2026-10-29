@@ -235,7 +235,7 @@ fn a_multitrack_plays_its_tracks_on_an_engine_it_holds() {
     use clausters_app_engine::held::Readers;
     use clausters_apps::editing::held::{HeldEngine, HeldList, HeldTake};
     use clausters_document::multitrack::nodes::PlannedFeed;
-    use clausters_editing::playback::MultitrackPlayback;
+    use clausters_editing::playback::{MultitrackPlayback, View};
 
     let (path, values) = source("plays", 48_000, 24_000);
     let mut region = region(0.0, 0.5, 0.0, 1.0, false);
@@ -290,7 +290,7 @@ fn a_multitrack_plays_its_tracks_on_an_engine_it_holds() {
         .sync_fed(&multitrack, SR, &feeds, 1.0, &mut ids)
         .expect("synced");
     assert!(steps.is_empty(), "nothing to walk: {steps:?}");
-    assert!(playback.play_pass(None, false).is_empty());
+    assert!(playback.play(false, View::default()).is_empty());
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     let mut left = Vec::new();
     while left.len() < 24_000 {

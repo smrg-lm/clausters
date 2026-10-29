@@ -44,6 +44,7 @@ pub mod multitrack;
 pub mod note_curves;
 pub mod notes;
 pub mod notes_playback;
+pub mod pass;
 pub mod playback;
 pub mod points;
 pub mod run;
