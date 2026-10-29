@@ -56,8 +56,8 @@ pub enum NrtJob {
         /// `/buffer_readChannel`'s selection; empty is every channel.
         channels: Vec<usize>,
     },
-    /// `/buffer_write`: a sound file out, in `container` (a WAV, or a W64 or an
-    /// RF64 past WAV's 4 GB); `sample_format` is `int16`, `int24` or `float`.
+    /// `/buffer_write`: a sound file out, in `container` (a WAV, closed as an
+    /// RF64 past 4 GB, or a W64 or an RF64); `sample_format` is `int16`, `int24` or `float`.
     /// `num_frames <= 0` writes from `buf_start` to the end.
     Write {
         path: String,
@@ -1587,7 +1587,8 @@ fn read_wav_reader<R: std::io::Read + std::io::Seek>(
     Ok(Buffer::new(data, channels, frames, spec.sample_rate as f64))
 }
 
-/// A canonical 44-byte WAV header for `data_bytes` of sample data.
+/// A WAV header for `data_bytes` of sample data, as long as an RF64's and an
+/// RF64's past 4 GB (`dsp::pcm::header`).
 ///
 /// Paired with [`encode_wav_frames`] this is a WAV file in two pieces, which is
 /// what a *streaming* writer needs: the header cannot be written correctly
@@ -1612,7 +1613,7 @@ pub fn wav_header(
 /// **The header of the file at `path`**, in the container its extension
 /// names (`.w64`, `.rf64`, a WAV otherwise; `dsp::pcm`), for `data_bytes`
 /// of samples: what a writer in pieces lays down first and rewrites at the
-/// close, a WAV of up to 4 GB or a W64 or RF64 of any length.
+/// close, of any length: a WAV past 4 GB is an RF64 under its own name.
 pub fn sound_header(
     path: &str,
     channels: usize,

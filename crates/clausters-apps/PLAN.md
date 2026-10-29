@@ -5611,7 +5611,7 @@ wrong.
   member), and a window's close lets go of all of them, which it never
   did. `a_second_window_plays_on_the_engine_the_first_holds`.
 
-- ⬜ **A save that cannot fit its file fails late, and its message is cut**
+- ✅ **A save that cannot fit its file fails late, and its message is cut**
   *(found 2026-10-28 by the user, saving a take pasted to four and a half
   hours over the `.wav` it was opened from)*. Six gigabytes of stereo float
   do not fit a WAV, and the render found it at 40 %, after writing four:
@@ -5621,11 +5621,22 @@ wrong.
   as RF64 (decided 2026-10-28), and the length is known before the render
   starts. The status line shows the refusal cut at the window's width, so
   the reason never reached the screen; it was read in the host's log.
+  *Fixed 2026-10-28.* Every WAV written keeps an RF64's room, a `JUNK`
+  chunk the size of a `ds64`, and its header is rewritten at the close as
+  an RF64 in place if the body outgrew 32 bits (`pcm::header`): one rule
+  for the native writer and a page's writer in pieces, so no length needs
+  knowing before the render and nothing is refused. A render that fails
+  says the file by its name and the reason after it, once.
 
-- ⬜ **A save cannot be cancelled** *(found 2026-10-28 by the user, the
+- ✅ **A save cannot be cancelled** *(found 2026-10-28 by the user, the
   same save)*. The progress window's Cancel stays inactive and the status
   line reads `call_off refused`. A save renders into the working folder
   and moves its render over the file only when it is done, so a save
   cancelled before the moves leaves the file as it was and the partial
   render to delete: it is as cancellable as any other render, and a long
   take is when it is needed.
+  *Fixed 2026-10-28.* The call-off reached the application, which checks
+  it before each step, and a save is one render: a take of hours was
+  written to its end before the call was heard. An offline render now
+  checks it after each run, a second of the score
+  (`render_to_wav_while`), and the save's render is let go there.

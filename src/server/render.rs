@@ -17,6 +17,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rosc::{OscMessage, OscPacket, OscTime, OscType};
 
@@ -569,9 +570,9 @@ pub fn render_to_vec(
     Ok((out, stats))
 }
 
-/// Renders a score straight to a sound file: a WAV, or a W64 or an RF64 by
-/// the path's extension (`dsp::pcm`), which a render longer than WAV's 4 GB
-/// needs. `sample_format` is `int16`, `int24` or `float`, like
+/// Renders a score straight to a sound file: a WAV, closed as an RF64 if
+/// the render outgrew 4 GB, or a W64 or an RF64 by the path's extension
+/// (`dsp::pcm`). `sample_format` is `int16`, `int24` or `float`, like
 /// `/buffer_write`.
 pub fn render_to_wav(
     score: &OscScore,
@@ -589,7 +590,18 @@ pub fn render_discarding(
     cfg: &RenderConfig,
     progress: impl FnMut(u64, u64),
 ) -> Result<RenderStats, String> {
-    drive(score, cfg, |_: &[f32]| Ok(()), progress)
+    render_discarding_while(score, cfg, &AtomicBool::new(true), progress)
+}
+
+/// [`render_discarding`], **while `live` holds**: let go, the render stops
+/// at the end of its run and answers that it was called off.
+pub fn render_discarding_while(
+    score: &OscScore,
+    cfg: &RenderConfig,
+    live: &AtomicBool,
+    progress: impl FnMut(u64, u64),
+) -> Result<RenderStats, String> {
+    drive(score, cfg, live, |_: &[f32]| Ok(()), progress)
 }
 
 /// [`render_to_wav`], telling `progress` the frames done and the frames the
@@ -601,13 +613,44 @@ pub fn render_to_wav_with(
     sample_format: &str,
     progress: impl FnMut(u64, u64),
 ) -> Result<RenderStats, String> {
+    render_to_wav_while(
+        score,
+        cfg,
+        path,
+        sample_format,
+        &AtomicBool::new(true),
+        progress,
+    )
+}
+
+/// [`render_to_wav_with`], **while `live` holds**: let go, the render stops
+/// at the end of its run, leaves what it wrote for its caller to delete, and
+/// answers that it was called off. A save of hours is one render, so this is
+/// how a hand that cancels it is heard before it ends.
+pub fn render_to_wav_while(
+    score: &OscScore,
+    cfg: &RenderConfig,
+    path: impl AsRef<Path>,
+    sample_format: &str,
+    live: &AtomicBool,
+    progress: impl FnMut(u64, u64),
+) -> Result<RenderStats, String> {
     let path = path.as_ref().to_string_lossy().into_owned();
     let mut writer =
         crate::dsp::pcm::Writer::create(&path, cfg.channels, cfg.sample_rate, sample_format)?;
-    let stats = drive(score, cfg, |chunk: &[f32]| writer.write(chunk), progress)?;
+    let stats = drive(
+        score,
+        cfg,
+        live,
+        |chunk: &[f32]| writer.write(chunk),
+        progress,
+    )?;
     writer.finalize()?;
     Ok(stats)
 }
+
+/// What a render that was let go answers.
+pub const CALLED_OFF: &str = "called off";
 
 /// **A render driven to its end** by the helpers above: a second of the
 /// score a run, `progress` told after each. In a page the render's file
@@ -616,6 +659,7 @@ pub fn render_to_wav_with(
 fn drive(
     score: &OscScore,
     cfg: &RenderConfig,
+    live: &AtomicBool,
     mut sink: impl FnMut(&[f32]) -> Result<(), String>,
     mut progress: impl FnMut(u64, u64),
 ) -> Result<RenderStats, String> {
@@ -630,6 +674,11 @@ fn drive(
         #[cfg(all(target_arch = "wasm32", feature = "synth"))]
         served.drain();
         progress(render.frames_done(), render.total_frames());
+        if !live.load(Ordering::Acquire) {
+            #[cfg(all(target_arch = "wasm32", feature = "synth"))]
+            served.close();
+            return Err(CALLED_OFF.into());
+        }
     }
     progress(render.total_frames(), render.total_frames());
     let stats = render.finish();

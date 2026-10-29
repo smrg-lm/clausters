@@ -13,7 +13,7 @@
 //! left out.
 
 use clausters::server::render::{
-    OscScore, RenderConfig, RenderStats, render_discarding, render_to_wav_with,
+    OscScore, RenderConfig, RenderStats, render_discarding_while, render_to_wav_while,
 };
 use clausters_editing::apply::{Render, Step};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -53,7 +53,7 @@ pub fn carry_while(
         }
         match step {
             Step::Render(job) => {
-                render(job, |done, _| {
+                render_while(job, live, |done, _| {
                     progress(job, (before + done).min(total), total.max(1))
                 })?;
                 before += frames;
@@ -74,7 +74,18 @@ pub fn carry_while(
 
 /// **One render**: the score rendered into its file, or into nothing for one
 /// whose work is what its synths write (a `PeaksOut` measuring a file).
-pub fn render(job: &Render, mut progress: impl FnMut(u64, u64)) -> Result<RenderStats, String> {
+pub fn render(job: &Render, progress: impl FnMut(u64, u64)) -> Result<RenderStats, String> {
+    render_while(job, &AtomicBool::new(true), progress)
+}
+
+/// [`render`], **while `live` holds**: a render let go stops at the end of
+/// its run, so a save of hours is called off when the hand asks rather than
+/// when it ends.
+pub fn render_while(
+    job: &Render,
+    live: &AtomicBool,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<RenderStats, String> {
     let score = OscScore::from_bytes(&job.score)?;
     let cfg = RenderConfig {
         sample_rate: job.rate,
@@ -88,7 +99,7 @@ pub fn render(job: &Render, mut progress: impl FnMut(u64, u64)) -> Result<Render
         if !job.path.is_empty() {
             clausters::dsp::pcm::Writer::create(&job.path, cfg.channels, job.rate, &job.format)
                 .and_then(|w| w.finalize())
-                .map_err(|e| format!("the render into {} failed: {e}", job.path))?;
+                .map_err(|e| failed(&job.path, e))?;
         }
         progress(0, 0);
         return Ok(RenderStats {
@@ -101,11 +112,26 @@ pub fn render(job: &Render, mut progress: impl FnMut(u64, u64)) -> Result<Render
         });
     }
     if job.path.is_empty() {
-        render_discarding(&score, &cfg, progress)
+        render_discarding_while(&score, &cfg, live, progress)
     } else {
-        render_to_wav_with(&score, &cfg, &job.path, &job.format, progress)
+        render_to_wav_while(&score, &cfg, &job.path, &job.format, live, progress)
     }
-    .map_err(|e| format!("the render into {} failed: {e}", job.path))
+    .map_err(|e| failed(&job.path, e))
+}
+
+/// **What a render that failed says**, read where a window has one line for
+/// it: the file by its name and the reason after, once. The writer names
+/// the path it failed on too, and the two full paths of a working file came
+/// first, so a window's status line was cut before the reason began.
+fn failed(path: &str, e: String) -> String {
+    if e == clausters::server::render::CALLED_OFF {
+        return e;
+    }
+    let name = std::path::Path::new(path)
+        .file_name()
+        .map_or_else(|| path.into(), |n| n.to_string_lossy());
+    let reason = e.strip_prefix(&format!("{path}: ")).unwrap_or(&e);
+    format!("rendering {name} failed: {reason}")
 }
 
 #[cfg(test)]
@@ -133,5 +159,58 @@ mod tests {
         assert_eq!(carry(&steps, |_, _, _| {}), Ok(()));
         assert!(to.exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A render let go stops at the end of its run**: a save of hours is
+    /// one render, so the call-off is heard while it writes, not after.
+    /// Here the render of ten seconds is let go after its first second.
+    #[test]
+    fn a_render_called_off_stops_while_it_writes() {
+        use clausters::rosc::{OscBundle, OscMessage, OscPacket, OscTime, encoder};
+        let dir = std::env::temp_dir().join(format!("clausters-calloff-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("long.wav").to_string_lossy().into_owned();
+        // a score whose last event is at ten seconds: ten seconds of output
+        let packet = OscPacket::Bundle(OscBundle {
+            timetag: OscTime {
+                seconds: 10,
+                fractional: 0,
+            },
+            content: vec![OscPacket::Message(OscMessage {
+                addr: "/status".into(),
+                args: Vec::new(),
+            })],
+        });
+        let bytes = encoder::encode(&packet).unwrap();
+        let mut score = (bytes.len() as i32).to_be_bytes().to_vec();
+        score.extend_from_slice(&bytes);
+        let job = Render {
+            score,
+            path: path.clone(),
+            rate: 48_000.0,
+            channels: 2,
+            format: "float".into(),
+            label: String::new(),
+        };
+        let live = AtomicBool::new(true);
+        let mut runs = 0;
+        let answer = render_while(&job, &live, |_, _| {
+            runs += 1;
+            live.store(false, Ordering::Release);
+        });
+        assert_eq!(answer.unwrap_err(), "called off");
+        assert_eq!(runs, 1, "one run, then it stopped");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A failure names the file once, by its name, before the reason.
+    #[test]
+    fn a_failed_render_says_why_first() {
+        let path = "/a/long/working/folder/1-2-replaced.w64.saving";
+        assert_eq!(
+            failed(path, format!("{path}: no room")),
+            "rendering 1-2-replaced.w64.saving failed: no room"
+        );
+        assert_eq!(failed(path, "called off".into()), "called off");
     }
 }

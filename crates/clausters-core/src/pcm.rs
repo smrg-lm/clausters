@@ -28,6 +28,10 @@
 //!   64 bits, each size counting its own 24-byte header and each chunk padded
 //!   to 8 bytes.
 //!
+//! A WAV written here keeps an RF64's room and becomes one at its close when
+//! its body outgrew 32 bits, under the name it was given ([`header`]): a
+//! `.wav` is never refused for its length.
+//!
 //! So a file is one [`Container`] -- chosen by its extension when one is
 //! written, `.w64` or `.rf64`, a WAV otherwise -- and one body, and everything
 //! that reads or writes a sample reads or writes it the same way in all
@@ -106,7 +110,8 @@ impl Encoding {
 /// How a file's header is laid out around its samples.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Container {
-    /// RIFF WAV: 32-bit sizes, so at most 4 GB.
+    /// RIFF WAV: 32-bit sizes, so at most 4 GB; one written here is closed
+    /// as an RF64 past that ([`header`]).
     Wav,
     /// Sony Wave64: GUID chunks with 64-bit sizes.
     W64,
@@ -361,7 +366,15 @@ fn w64_chunks<R: Read + Seek>(
 
 /// **The header of a file whose body is `data_bytes` of samples**, in its
 /// container: what a writer puts before the samples, and writes again once it
-/// knows how many there were. A WAV refuses a body past what 32 bits count.
+/// knows how many there were.
+///
+/// **A WAV keeps room to become an RF64**, the way EBU Tech 3306 says to
+/// write one: a `JUNK` chunk the size of a `ds64` before its format, so the
+/// header is as long as an RF64's. A body past what 32 bits count is then the
+/// same header in place, `RIFF` turned to `RF64` and `JUNK` to `ds64` with
+/// the real sizes: a writer that only learns the length at its close (a
+/// render, a recording, a page's writer in pieces) never has to move the
+/// samples, and a `.wav` of hours is written rather than refused at 4 GB.
 pub fn header(
     container: Container,
     channels: usize,
@@ -383,22 +396,24 @@ pub fn header(
     let mut out = Vec::with_capacity(104);
     match container {
         Container::Wav => {
-            let data = u32::try_from(data_bytes)
-                .ok()
-                .filter(|d| d.checked_add(36).is_some())
-                .ok_or_else(|| {
-                    format!(
-                        "{data_bytes} bytes do not fit a WAV file, which ends at 4 GB: \
-                         a longer take is a .w64 or an .rf64"
-                    )
-                })?;
-            out.extend_from_slice(b"RIFF");
-            out.extend_from_slice(&(36 + data).to_le_bytes());
-            out.extend_from_slice(b"WAVEfmt ");
-            out.extend_from_slice(&16u32.to_le_bytes());
-            out.extend_from_slice(&fmt);
-            out.extend_from_slice(b"data");
-            out.extend_from_slice(&data.to_le_bytes());
+            match u32::try_from(72 + data_bytes) {
+                // what 32 bits count: a WAV, the ds64's room left as JUNK
+                Ok(riff) => {
+                    out.extend_from_slice(b"RIFF");
+                    out.extend_from_slice(&riff.to_le_bytes());
+                    out.extend_from_slice(b"WAVEJUNK");
+                    out.extend_from_slice(&28u32.to_le_bytes());
+                    out.extend_from_slice(&[0u8; 28]);
+                    out.extend_from_slice(b"fmt ");
+                    out.extend_from_slice(&16u32.to_le_bytes());
+                    out.extend_from_slice(&fmt);
+                    out.extend_from_slice(b"data");
+                    out.extend_from_slice(&(data_bytes as u32).to_le_bytes());
+                }
+                Err(_) => {
+                    return header(Container::Rf64, channels, sample_rate, encoding, data_bytes);
+                }
+            }
         }
         Container::Rf64 => {
             let frames = data_bytes / u64::from(block.max(1));
@@ -524,16 +539,10 @@ impl Writer {
         })
     }
 
-    /// Appends interleaved samples. A WAV refuses what would take it past
-    /// 4 GB, and writes nothing of it.
+    /// Appends interleaved samples. A WAV that grows past 4 GB is closed as
+    /// an RF64 ([`header`]).
     pub fn write(&mut self, samples: &[f32]) -> Result<(), String> {
         let add = (samples.len() * self.encoding.bytes()) as u64;
-        if self.container == Container::Wav && self.data_bytes + add > u32::MAX as u64 - 36 {
-            return Err(format!(
-                "{}: a WAV file ends at 4 GB; a longer take is a .w64 or an .rf64",
-                self.path
-            ));
-        }
         self.bytes.clear();
         encode(samples, self.encoding, &mut self.bytes);
         self.file
@@ -724,18 +733,53 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A WAV is the canonical 44-byte one, and refuses a body past 4 GB by
-    /// naming the containers that hold one.
+    /// **A WAV keeps an RF64's room and becomes one past 4 GB**, in place:
+    /// the two headers are one length, so a writer that learns at its close
+    /// that the body outgrew 32 bits rewrites the header and nothing else.
     #[test]
-    fn a_wav_header_is_canonical_and_ends_at_four_gigabytes() {
-        let head = header(Container::Wav, 1, 48_000.0, Encoding::I16, 100).unwrap();
-        assert_eq!(head.len(), 44);
-        let e = header(Container::Wav, 1, 48_000.0, Encoding::I16, 5 << 30).unwrap_err();
-        assert!(e.contains(".w64"), "{e}");
+    fn a_wav_becomes_an_rf64_in_place_past_four_gigabytes() {
+        let wav = header(Container::Wav, 1, 48_000.0, Encoding::I16, 100).unwrap();
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[12..16], b"JUNK", "the ds64's room, kept");
+        let past = header(Container::Wav, 1, 48_000.0, Encoding::I16, 5 << 30).unwrap();
+        assert_eq!(&past[0..4], b"RF64");
+        assert_eq!(&past[12..16], b"ds64");
+        assert_eq!(wav.len(), past.len(), "one length, so nothing moves");
         let rf64 = header(Container::Rf64, 1, 48_000.0, Encoding::I16, 5 << 30).unwrap();
-        assert_eq!(&rf64[0..4], b"RF64");
+        assert_eq!(past, rf64);
         let w64 = header(Container::W64, 1, 48_000.0, Encoding::I16, 5 << 30).unwrap();
         assert_eq!(w64.len(), 104);
+    }
+
+    /// **A `.wav` that grew past 4 GB reads back as the RF64 it became**:
+    /// the header a writer rewrites at its close over a body it never moved.
+    /// Written as the header of a body past 32 bits over a short one, since
+    /// a real one is gigabytes; what is checked is that the reader takes
+    /// the header the writer left.
+    #[test]
+    fn a_wav_promoted_at_its_close_reads_as_an_rf64() {
+        let dir = scratch("promoted");
+        let path = dir.join("long.wav");
+        let path = path.to_str().unwrap();
+        let mut w = Writer::create(path, 1, 48_000.0, "float").unwrap();
+        w.write(&[0.25, -0.5, 0.75]).unwrap();
+        w.finalize().unwrap();
+        let mut bytes = std::fs::read(path).unwrap();
+        let head = header(Container::Wav, 1, 48_000.0, Encoding::F32, 12).unwrap();
+        assert_eq!(&bytes[..head.len()], &head[..], "a WAV while it fits");
+        // the same body under the header it would get past 4 GB, its ds64
+        // stating the body's real size
+        let mut rf64 = header(Container::Wav, 1, 48_000.0, Encoding::F32, 5 << 30).unwrap();
+        rf64[28..36].copy_from_slice(&12u64.to_le_bytes());
+        bytes[..rf64.len()].copy_from_slice(&rf64);
+        std::fs::write(path, &bytes).unwrap();
+        let layout = Layout::open(path).unwrap();
+        assert_eq!(layout.container, Container::Rf64);
+        assert_eq!(layout.frames, 3);
+        let mut out = Vec::new();
+        Reader::open(&layout).unwrap().read(0, 3, &mut out).unwrap();
+        assert_eq!(out, [0.25, -0.5, 0.75]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A compressed or foreign file is refused by name rather than read as

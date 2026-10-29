@@ -251,8 +251,8 @@ export const diskIn = (chan: Channel = 0.0, { path, loop = false, start = 0 }: D
 /**
  * Streams `signal` to a mono sound file at `path` (`format` is `"int16"`,
  * `"int24"` or `"float"`) and passes `signal` through as its output: a WAV,
- * or a W64 or an RF64 when the path ends in `.w64` or `.rf64` -- the two
- * containers that hold a take past WAV's 4 GB. Record stereo with two
+ * closed as an RF64 if the take outgrew 4 GB, or a W64 or an RF64 when the
+ * path ends in `.w64` or `.rf64`. Record stereo with two
  * `diskOut`s; `peaksOut` beside it writes the take's peaks file.
  *
  * It delivers audio out of the graph, so it is a valid def root on its own:

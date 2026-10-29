@@ -162,12 +162,12 @@ pub fn probe_audio(bytes: Vec<u8>, ext: &str, label: &str) -> Result<Probed, Str
     })
 }
 
-/// A canonical 44-byte WAV header for `dataBytes` of sample data -- the first
-/// half of a file a page writes in pieces.
+/// A WAV header for `dataBytes` of sample data -- the first half of a file a
+/// page writes in pieces. It is as long as an RF64's, and an RF64's past 4 GB.
 ///
 /// The recording door is two calls rather than one because the header carries a
 /// length nobody knows until the take ends: a writer lays down a placeholder,
-/// appends bytes as they come, and rewrites these 44 at the close.
+/// appends bytes as they come, and rewrites the header at the close.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = wavHeader))]
 pub fn wav_header_bytes(
     channels: u32,
@@ -178,8 +178,8 @@ pub fn wav_header_bytes(
     wav_header(channels as u16, sample_rate, sample_format, data_bytes)
 }
 
-/// **The header of a sound file**: a WAV, or a W64 or an RF64 past WAV's
-/// 4 GB, for `dataBytes` of samples. `container` is `"wav"`, `"w64"` or
+/// **The header of a sound file**: a WAV (an RF64 past 4 GB), a W64 or an
+/// RF64, for `dataBytes` of samples. `container` is `"wav"`, `"w64"` or
 /// `"rf64"` as a `/buffer_write` names it, and empty to take it from `path`'s
 /// extension, as `DiskOut` does. A writer in pieces lays it down first and
 /// rewrites it at the close.

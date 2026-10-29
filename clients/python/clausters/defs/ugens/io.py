@@ -187,9 +187,9 @@ def disk_in(chan=0.0, *, path, loop=False, start=0) -> Ugen:
 def disk_out(signal, *, path, format="int16") -> Ugen:
     """Streams ``signal`` to a mono sound file at ``path`` (``format`` is
     ``"int16"``, ``"int24"`` or ``"float"``) and passes ``signal`` through as
-    its output: a WAV, or a W64 or an RF64 when the path ends in ``.w64`` or
-    ``.rf64`` -- the two containers that hold a take past WAV's 4 GB. Record
-    stereo with two `disk_out`\\ s; `peaks_out` beside it writes the take's
+    its output: a WAV, closed as an RF64 if the take outgrew 4 GB, or a W64
+    or an RF64 when the path ends in ``.w64`` or ``.rf64``. Record stereo with
+    two `disk_out`\\ s; `peaks_out` beside it writes the take's
     peaks file.
 
     ``path`` and ``format`` are **static** fields and are keyword-only, so the

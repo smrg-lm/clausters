@@ -649,3 +649,36 @@ fn a_file_not_read_in_place_is_decoded_and_heard() {
     );
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// **A save is called off like any render**: the window's call-off while
+/// the take is being written stops the render, the file is as it was and
+/// still dirty in the window, and nothing of the render is left behind.
+#[test]
+fn a_save_called_off_leaves_the_file_as_it_was() {
+    let directory = scratch("calledoff");
+    let mut client = Client::new(&directory);
+    client.open();
+    client
+        .gesture(1, "delete", &[json!(10.0), json!(20.0)])
+        .unwrap();
+    let before = std::fs::read(&client.take).unwrap();
+    let (token, ran) = client.start(
+        json!({"verb": "save", "request": {"path": null, "format": "float"}}),
+        false,
+    );
+    assert!(ran.end.is_none(), "the save is a render on its way");
+    client.verb(2, "call_off").unwrap();
+    assert_eq!(client.end(token), Err("called off".into()));
+    assert_eq!(
+        std::fs::read(&client.take).unwrap(),
+        before,
+        "the file as it was"
+    );
+    assert_eq!(client.binding()["dirty"], true);
+    let partial = std::fs::read_dir(&client.work)
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|e| e.file_name().to_string_lossy().ends_with(".saving"));
+    assert!(!partial, "nothing of the render left");
+    std::fs::remove_dir_all(directory).unwrap();
+}

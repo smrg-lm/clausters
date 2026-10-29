@@ -11368,3 +11368,24 @@ by reference is kept per editing context (`audio::shared::Shared`) rather than
 by the process, so a member that leaves the context lets go of what only it
 named.
 
+## A WAV past 4 GB is closed as an RF64 under its own name (2026-10-28)
+
+**Context.** A save writes the take into the file it was opened from, and
+a `.wav` the hand pasted to hours outgrew what a RIFF's 32-bit sizes
+count. The writer refused at the write that crossed 4 GB, after writing
+four of them, and the length is only known at the close for every writer
+that streams: a render, a recording, a page's writer in pieces.
+
+**Decision.** Every WAV written keeps an RF64's room: a `JUNK` chunk the
+size of a `ds64` before its format, which makes its header exactly as long
+as an RF64's. At the close, a body past 32 bits rewrites that header in
+place as an RF64 (`RIFF` to `RF64`, `JUNK` to `ds64` with the real sizes)
+and keeps the name it was given. This is how EBU Tech 3306 says to write a
+WAV that may grow, and what the field's recorders do.
+
+**Consequences.** One rule in `pcm::header`, so the native writer and a
+page's writer, which both ask for the header at length zero and again at
+the close, agree without either knowing the length beforehand. A WAV
+written here is 36 bytes longer than the canonical 44-byte one; every
+reader skips a `JUNK` chunk, and the server's readers already took an
+RF64 named `.wav`.

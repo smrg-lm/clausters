@@ -512,8 +512,8 @@ fn writer_thread(
     };
 
     // Creating the file, writing into it and finalizing it are the work. The
-    // container is the path's: a WAV, or a W64 or an RF64 for a take past
-    // WAV's 4 GB (`dsp::pcm`).
+    // container is the path's: a WAV, closed as an RF64 if the take outgrew
+    // 4 GB, or a W64 or an RF64 (`dsp::pcm`).
     turn.worked();
     let mut writer = match crate::dsp::pcm::Writer::create(&path, 1, f64::from(rate), &format) {
         Ok(w) => w,
