@@ -723,3 +723,112 @@ fn a_roll_plays_its_notes_on_a_transport_of_its_own() {
     app.forget(&mut editing, roll);
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// **A track wider than its multitrack plays at its own width, and its
+/// channels past the master's land on the master's first ones**: a
+/// four-channel take on a stereo multitrack is heard as its first two channels
+/// with the other two folded onto them, each a constant so the sum is read off
+/// the output.
+#[test]
+fn a_track_wider_than_stereo_folds_onto_the_master() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::Editing;
+    use clausters_document::session::{Session, Source};
+    use clausters_document::{Document, Lifetime};
+
+    let folder = std::env::temp_dir().join(format!("mt-wide-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    std::fs::create_dir_all(&folder).unwrap();
+    const LEVELS: [f32; 4] = [0.1, 0.2, 0.3, 0.05];
+    let frames = 24_000;
+    let spec = hound::WavSpec {
+        channels: 4,
+        sample_rate: SR as u32,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut w = hound::WavWriter::create(folder.join("wide.wav"), spec).unwrap();
+    for _ in 0..frames {
+        for level in LEVELS {
+            w.write_sample(level).unwrap();
+        }
+    }
+    w.finalize().unwrap();
+    let mut track = Track::new(NodeId(1), NodeId(2));
+    track.take_lanes[0] = TakeLane {
+        regions: vec![Region::new(
+            NodeId(3),
+            Second(0.0),
+            Second(0.5),
+            Content::Window {
+                window: Window {
+                    source: SourceRef {
+                        source: SourceId(9),
+                        lifetime: Lifetime::Session,
+                        generation: 0,
+                        range: None,
+                    },
+                    start: 0.0,
+                    duration: 0.5,
+                },
+                playrate: 1.0,
+                args: Opaque::none(),
+                looping: false,
+            },
+        )],
+        ..TakeLane::new(NodeId(2))
+    };
+    let session = Session::new(Document::empty())
+        .with_multitrack(Multitrack {
+            tracks: vec![track],
+            channels: 2,
+            ..Multitrack::default()
+        })
+        .with_source(SourceId(9), Source::file("wide.wav", Lifetime::Session));
+    let path = folder.join("wide.json");
+    std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app_engine = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let mut app = App::new(Arc::clone(&app_engine));
+    let mut editing = Editing::new();
+    app.hold(&mut editing);
+    let opened = app.call(
+        &mut editing,
+        &serde_json::json!({"verb": "openMultitrack", "key": "mt", "multitrack": {}, "rate": SR}),
+    );
+    let member = opened["member"].as_u64().unwrap() as u32;
+    let ran = app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "open", "session": path.to_str().unwrap()}),
+        1,
+        None,
+    );
+    assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+    app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "play"}),
+        2,
+        None,
+    );
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut heard = Vec::new();
+    while heard.len() < 12_000 {
+        engine.process_block(&mut out);
+        let _ = app.landed(&mut editing);
+        heard.extend(out.as_chunks::<2>().0.iter().map(|f| (f[0], f[1])));
+        std::thread::sleep(std::time::Duration::from_micros(1_333));
+    }
+    let (left, right) = heard[9_000];
+    let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
+    assert!(
+        near(left, LEVELS[0] + LEVELS[2]) && near(right, LEVELS[1] + LEVELS[3]),
+        "the four channels fold onto two: {left} {right}"
+    );
+    let meters = app.query(&mut editing, member, "output");
+    let levels = meters["tracks"]["1"].as_array().map_or(0, Vec::len);
+    assert_eq!(levels, 4, "the track meters its four channels: {meters}");
+    let _ = std::fs::remove_dir_all(&folder);
+}

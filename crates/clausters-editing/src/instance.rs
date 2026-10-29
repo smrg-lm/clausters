@@ -865,23 +865,16 @@ impl Instance {
             .enumerate()
         {
             let mut ports: Ports = BTreeMap::new();
-            ports.insert(
-                "meter/out0".into(),
-                Port::Bus {
-                    bus: meter_bus_handle(id),
-                    offset: run,
-                },
-            );
-            ports.insert("meter/hold".into(), Port::from(hold));
-            if channels > 1 {
+            for channel in 0..channels {
                 ports.insert(
-                    "meter/out1".into(),
+                    mixer::meter_out_port(channel),
                     Port::Bus {
                         bus: meter_bus_handle(id),
-                        offset: run + 1,
+                        offset: run + channel,
                     },
                 );
             }
+            ports.insert("meter/hold".into(), Port::from(hold));
             ops.push(Op::Slot {
                 handle: meter_handle(id, n),
                 target: track_handle(id),

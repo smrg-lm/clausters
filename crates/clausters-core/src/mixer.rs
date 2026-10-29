@@ -44,16 +44,20 @@
 //! cannot be checked. The slot is a nested-graph slot, so an effect may itself
 //! be a GraphDef and a compound effect needs no new mechanism.
 //!
-//! **Widths past stereo**: [`strip_def`] is written for 1 and 2 channels, which
-//! is what a track declares today. The general N->M downmix (BS.775 and its
-//! relatives) is named where the widths are checked and refused.
+//! **A downmix past stereo**: a track may be up to [`MAX_TRACK_CHANNELS`]
+//! wide, and the channels it has past the master's are routed onto the
+//! master's first ones ([`route_def`]); a master is 1 or 2 channels, and a
+//! table that mixes a wide track into it by law (BS.775 and its relatives) is
+//! a decision not taken.
 //!
 //! # A track has its own width
 //!
 //! A track is as wide as the document says it is, whatever the master's
 //! width: its mix bus, its fader and its meter are that wide, and the change
 //! of width is the last thing it does, on its way into the master
-//! ([`track_graph`]). So the tracks' group declares **a slot per width**
+//! ([`track_graph`]). Past two channels a strip has no image -- a pan and a
+//! balance are laws over one and two -- and its channels reach the master
+//! through a fixed matrix ([`route_def`]). So the tracks' group declares **a slot per width**
 //! ([`track_slot`]), as a track declares a clip slot per source width, and
 //! which one a track fills is the one fact about it that decides the wiring.
 
@@ -227,6 +231,11 @@ pub const METER_SLOT: &str = "meters";
 /// decision about which one, and it is refused rather than guessed.
 pub const MAX_CHANNELS: usize = 2;
 
+/// **The widest a track may be**: a take of up to this many channels plays at
+/// its own width, through a strip of gains with no image, and into the master
+/// through [`route_def`].
+pub const MAX_TRACK_CHANNELS: usize = 8;
+
 /// The name of the feed def: what one channel of a track's take sounds as.
 pub fn feed_name() -> String {
     format!("{PREFIX}.feed")
@@ -247,6 +256,12 @@ pub fn meter_name(channels: usize) -> String {
 /// it ([`track_meter_def`]).
 pub fn track_meter_name(channels: usize) -> String {
     format!("{PREFIX}.trackmeter.{channels}")
+}
+
+/// The name of the route def from a track of `inputs` channels into a master
+/// of `outputs` ([`route_def`]).
+pub fn route_name(inputs: usize, outputs: usize) -> String {
+    format!("{PREFIX}.route.{inputs}.{outputs}")
 }
 
 /// The name of the send def for `channels`.
@@ -302,12 +317,23 @@ pub fn multitrack_name(channels: usize) -> String {
     format!("{PREFIX}.multitrack.{channels}")
 }
 
-/// Refuses a width this module has no wiring for, saying which it has.
+/// Refuses a width this module has no wiring for, saying which it has: what
+/// has an image -- a master, a clip, a send -- is 1 or 2 channels.
 fn check(channels: usize, what: &str) -> Result<(), String> {
     if channels == 0 || channels > MAX_CHANNELS {
         return Err(format!(
             "{what}: {channels} channels; the strip is written for 1 and {MAX_CHANNELS} \
              (a wider one is a downmix table, and which table is a decision)"
+        ));
+    }
+    Ok(())
+}
+
+/// Refuses a track width past [`MAX_TRACK_CHANNELS`], or none.
+fn check_track(channels: usize, what: &str) -> Result<(), String> {
+    if channels == 0 || channels > MAX_TRACK_CHANNELS {
+        return Err(format!(
+            "{what}: {channels} channels; a track is 1 to {MAX_TRACK_CHANNELS} wide"
         ));
     }
     Ok(())
@@ -559,7 +585,7 @@ pub fn curve_def() -> Value {
 /// here rather than by whoever draws, so two clients cannot draw two different
 /// falls off one signal.
 pub fn meter_def(channels: usize) -> Result<Value, String> {
-    check(channels, "meter")?;
+    check_track(channels, "meter")?;
     Ok(meter_spec(&meter_name(channels), channels, MAX_CHANNELS))
 }
 
@@ -574,7 +600,7 @@ pub fn meter_def(channels: usize) -> Result<Value, String> {
 /// it writes before the freeze is zero. The master's meter is outside the
 /// governed group and falls on its own; it is [`meter_def`].
 pub fn track_meter_def(channels: usize) -> Result<Value, String> {
-    check(channels, "meter")?;
+    check_track(channels, "meter")?;
     Ok(meter_spec_gated(
         &track_meter_name(channels),
         channels,
@@ -718,8 +744,11 @@ pub fn out_def(channels: usize) -> Result<Value, String> {
 /// indices come in as separate controls (`out0`, `out1`), which is what
 /// `"mix:1"` in a GraphDef exists to fill.
 pub fn strip_def(inputs: usize, outputs: usize) -> Result<Value, String> {
-    check(inputs, "strip inputs")?;
-    check(outputs, "strip outputs")?;
+    check_track(inputs, "strip inputs")?;
+    check_track(outputs, "strip outputs")?;
+    if inputs > MAX_CHANNELS || outputs > MAX_CHANNELS {
+        return Ok(wide_strip_def(inputs, outputs));
+    }
     let mut controls = vec![control("in0", 0.0), control("in1", 0.0)];
     controls.push(control("out0", 0.0));
     controls.push(control("out1", 0.0));
@@ -864,30 +893,141 @@ pub fn strip_def(inputs: usize, outputs: usize) -> Result<Value, String> {
     Ok(json!({ "name": strip_name(inputs, outputs), "controls": controls, "ugens": ugens }))
 }
 
+/// **A strip past stereo**: `inputs` channels in through the implicit matrix
+/// (mono on every output, a wider width channel by channel), each at the gain
+/// and the mute, onto `outputs` channels out. It has no image: a pan and a
+/// balance are laws over one and two channels, so `pan` and `width` are
+/// declared, for a surface every strip shares, and move nothing.
+fn wide_strip_def(inputs: usize, outputs: usize) -> Value {
+    let (ins, outs) = (inputs.max(MAX_CHANNELS), outputs.max(MAX_CHANNELS));
+    let mut controls = Vec::new();
+    for channel in 0..ins {
+        controls.push(control(&format!("in{channel}"), 0.0));
+    }
+    for channel in 0..outs {
+        controls.push(control(&format!("out{channel}"), 0.0));
+    }
+    let (gain, mute) = ((ins + outs) as u32, (ins + outs + 1) as u32);
+    controls.push(lagged(GAIN, 1.0));
+    controls.push(lagged(MUTE, 0.0));
+    controls.push(lagged(PAN, 0.0));
+    controls.push(lagged(WIDTH, 1.0));
+    let mut ugens = vec![
+        json!({"kind": "BinaryOpUGen", "op": "sub",
+               "inputs": [{"const": 1.0}, {"control": mute}]}),
+        json!({"kind": "Mul", "inputs": [{"ugen": 0}, {"control": gain}]}),
+    ];
+    let matrix = crate::channel_matrix::ChannelMatrix::implicit(inputs, outputs);
+    matrix_out(&mut ugens, &matrix, Some(json!({"ugen": 1})), ins);
+    json!({ "name": strip_name(inputs, outputs), "controls": controls, "ugens": ugens })
+}
+
+/// **A track's channels into a master of another width, through a fixed
+/// matrix**: the channels the master has read the track's channel of the same
+/// number, and the track's channels past the master's are routed onto the
+/// master's first ones (`ChannelMatrix::folded`), at the send's gain. What a
+/// track wider than stereo leaves by, since a pan and a balance stop at two.
+pub fn route_def(inputs: usize, outputs: usize) -> Result<Value, String> {
+    check_track(inputs, "route inputs")?;
+    check(outputs, "route outputs")?;
+    let (ins, outs) = (inputs.max(MAX_CHANNELS), outputs.max(MAX_CHANNELS));
+    let mut controls = Vec::new();
+    for channel in 0..ins {
+        controls.push(control(&format!("in{channel}"), 0.0));
+    }
+    for channel in 0..outs {
+        controls.push(control(&format!("out{channel}"), 0.0));
+    }
+    controls.push(lagged(GAIN, 1.0));
+    let gain = (ins + outs) as u32;
+    let mut ugens = Vec::new();
+    let matrix = crate::channel_matrix::ChannelMatrix::folded(inputs, outputs);
+    matrix_out(&mut ugens, &matrix, Some(json!({"control": gain})), ins);
+    Ok(json!({ "name": route_name(inputs, outputs), "controls": controls, "ugens": ugens }))
+}
+
+/// **A matrix as UGens**: input `i` read off the bus control `i` names, and
+/// output `o` the sum of the inputs its row names at their gains, times
+/// `level` when one is given, written to the bus control `first_out + o`
+/// names. An output the matrix leaves silent is not written.
+fn matrix_out(
+    ugens: &mut Vec<Value>,
+    matrix: &crate::channel_matrix::ChannelMatrix,
+    level: Option<Value>,
+    first_out: usize,
+) {
+    let mut push = |unit: Value| -> u32 {
+        ugens.push(unit);
+        (ugens.len() - 1) as u32
+    };
+    let read: Vec<u32> = (0..matrix.inputs())
+        .map(|input| push(json!({"kind": "In", "inputs": [{"control": input}]})))
+        .collect();
+    for output in 0..matrix.outputs() {
+        let mut sum: Option<u32> = None;
+        for (input, &at) in read.iter().enumerate() {
+            let gain = matrix.gain(output, input);
+            if gain == 0.0 {
+                continue;
+            }
+            let term = if gain == 1.0 {
+                at
+            } else {
+                push(json!({"kind": "Mul", "inputs": [{"ugen": at}, {"const": gain}]}))
+            };
+            sum = Some(match sum {
+                None => term,
+                Some(s) => push(json!({"kind": "Add", "inputs": [{"ugen": s}, {"ugen": term}]})),
+            });
+        }
+        let Some(mut signal) = sum else {
+            continue;
+        };
+        if let Some(level) = &level {
+            signal = push(json!({"kind": "Mul", "inputs": [{"ugen": signal}, level]}));
+        }
+        push(json!({"kind": "Out", "inputs": [
+            {"control": first_out + output}, {"ugen": signal}]}));
+    }
+}
+
 /// The buses a strip's `in`/`out` controls are wired to, given a bus name and a
-/// width. Channel 1 of a mono bus does not exist, so it is left at 0 -- the def
-/// never reads it.
+/// width: a control for every channel, at least two of each. A channel the
+/// bus does not have is left on channel 0 -- the def never reads it.
 fn strip_wiring(input: &str, inputs: usize, output: &str, outputs: usize) -> Value {
-    json!({
-        "in0": format!("{input}:0"),
-        "in1": if inputs == 2 { format!("{input}:1") } else { format!("{input}:0") },
-        "out0": format!("{output}:0"),
-        "out1": if outputs == 2 { format!("{output}:1") } else { format!("{output}:0") },
-    })
+    let mut wiring = serde_json::Map::new();
+    for channel in 0..inputs.max(MAX_CHANNELS) {
+        let on = if channel < inputs { channel } else { 0 };
+        wiring.insert(format!("in{channel}"), json!(format!("{input}:{on}")));
+    }
+    for channel in 0..outputs.max(MAX_CHANNELS) {
+        let on = if channel < outputs { channel } else { 0 };
+        wiring.insert(format!("out{channel}"), json!(format!("{output}:{on}")));
+    }
+    Value::Object(wiring)
 }
 
 /// The buses a meter reads, given the strip's output bus and its width.
 fn meter_wiring(input: &str, channels: usize) -> Value {
-    json!({
-        "in0": format!("{input}:0"),
-        "in1": if channels == 2 { format!("{input}:1") } else { format!("{input}:0") },
-    })
+    let mut wiring = serde_json::Map::new();
+    for channel in 0..channels.max(MAX_CHANNELS) {
+        let on = if channel < channels { channel } else { 0 };
+        wiring.insert(format!("in{channel}"), json!(format!("{input}:{on}")));
+    }
+    Value::Object(wiring)
+}
+
+/// The meter port of channel `channel`: where a host says that channel's level
+/// is written ([`METER_OUT0`], [`METER_OUT1`], and on past stereo).
+pub fn meter_out_port(channel: usize) -> String {
+    format!("meter/out{channel}")
 }
 
 /// The surface a track and the master share: the four controls of their own
-/// strip, the send's gain, and the meter slot's -- which is what lets a host
-/// say **where** it wants the level written without learning a private bus.
-fn surface_of(meter: usize) -> Value {
+/// strip, the send's gain, and the meter slot's, one `meter/out` per channel
+/// of a strip `channels` wide -- which is what lets a host say **where** it
+/// wants the level written without learning a private bus.
+fn surface_of(meter: usize, channels: usize) -> Value {
     let mut surface = json!({
         GAIN:  [{"member": 0, "control": GAIN}],
         PAN:   [{"member": 0, "control": PAN}],
@@ -896,12 +1036,13 @@ fn surface_of(meter: usize) -> Value {
         SEND_GAIN: [{"member": 1, "control": GAIN}],
     });
     let object = surface.as_object_mut().expect("an object");
-    for (port, control) in [
-        (METER_OUT0, "out0"),
-        (METER_OUT1, "out1"),
-        (METER_DECAY_PORT, "decay"),
-        (METER_HOLD_PORT, "hold"),
-    ] {
+    for channel in 0..channels.max(MAX_CHANNELS) {
+        object.insert(
+            meter_out_port(channel),
+            json!([{"member": meter, "control": format!("out{channel}")}]),
+        );
+    }
+    for (port, control) in [(METER_DECAY_PORT, "decay"), (METER_HOLD_PORT, "hold")] {
         object.insert(
             port.to_string(),
             json!([{"member": meter, "control": control}]),
@@ -1049,7 +1190,7 @@ pub fn input_def() -> Value {
 /// its gain, its image, its mute, each a port a curve may drive -- and a note
 /// keeps whatever its def and its own curves make of it before that.
 pub fn voices_graph(outputs: usize) -> Result<Value, String> {
-    check(outputs, "voices outputs")?;
+    check_track(outputs, "voices outputs")?;
     let inputs = VOICE_CHANNELS;
     let mut wiring = serde_json::Map::new();
     let mut surface = json!({
@@ -1114,20 +1255,48 @@ pub fn voices_graph(outputs: usize) -> Result<Value, String> {
 /// So `pan` is one port on every track and it lands on whichever stage has an
 /// image to move, which is the rule [`PAN`] already states for a strip.
 pub fn track_graph(channels: usize, master: usize) -> Result<Value, String> {
-    check(channels, "track")?;
+    check_track(channels, "track")?;
     check(master, "multitrack")?;
     let way_out = if channels == master {
         send_name(channels)
-    } else {
+    } else if channels <= MAX_CHANNELS {
         strip_name(channels, master)
+    } else {
+        route_name(channels, master)
     };
-    let mut surface = surface_of(4);
+    let mut members = vec![
+        json!({"def": strip_name(channels, channels),
+               "controls": strip_wiring(MIX_BUS, channels, POST_BUS, channels)}),
+        json!({"def": way_out,
+               "controls": strip_wiring(POST_BUS, channels, OUT_BUS, master)}),
+    ];
+    // a box of samples played by readers of its own, for the widths a clip is
+    // written for; a wider track is read by its feed alone
+    if channels <= MAX_CHANNELS {
+        for inputs in 1..=MAX_CHANNELS {
+            members.push(json!({"def": clip_name(inputs, channels), "kind": "graph",
+                                "slot": clip_slot(inputs), "controls": {OUT_BUS: MIX_BUS}}));
+        }
+    }
+    let meter = members.len();
+    members.push(
+        json!({"def": track_meter_name(channels), "slot": METER_SLOT,
+                        "controls": meter_wiring(POST_BUS, channels)}),
+    );
+    members.push(
+        json!({"def": voices_name(channels), "kind": "graph", "slot": VOICE_SLOT,
+                        "controls": {OUT_BUS: MIX_BUS}}),
+    );
+    let feed = members.len();
+    members.push(json!({"def": feed_name(), "slot": FEED_SLOT,
+                        "controls": {OUT_BUS: format!("{MIX_BUS}:0")}}));
+    let mut surface = surface_of(meter, channels);
     if channels < master {
         surface[PAN] = json!([{"member": 1, "control": PAN}]);
     }
     // the feed slot's own controls, which each of its readers answers
     for control in [BUF, CHAN, SPAN] {
-        surface[control] = json!([{"member": 6, "control": control}]);
+        surface[control] = json!([{"member": feed, "control": control}]);
     }
     Ok(json!({
         "name": track_name(channels, master),
@@ -1136,22 +1305,7 @@ pub fn track_graph(channels: usize, master: usize) -> Result<Value, String> {
             {"name": POST_BUS, "rate": "audio", "channels": channels},
             {"name": OUT_BUS, "rate": "audio", "channels": master, "external": true},
         ],
-        "members": [
-            {"def": strip_name(channels, channels),
-             "controls": strip_wiring(MIX_BUS, channels, POST_BUS, channels)},
-            {"def": way_out,
-             "controls": strip_wiring(POST_BUS, channels, OUT_BUS, master)},
-            {"def": clip_name(1, channels), "kind": "graph", "slot": clip_slot(1),
-             "controls": {OUT_BUS: MIX_BUS}},
-            {"def": clip_name(2, channels), "kind": "graph", "slot": clip_slot(2),
-             "controls": {OUT_BUS: MIX_BUS}},
-            {"def": track_meter_name(channels), "slot": METER_SLOT,
-             "controls": meter_wiring(POST_BUS, channels)},
-            {"def": voices_name(channels), "kind": "graph", "slot": VOICE_SLOT,
-             "controls": {OUT_BUS: MIX_BUS}},
-            {"def": feed_name(), "slot": FEED_SLOT,
-             "controls": {OUT_BUS: format!("{MIX_BUS}:0")}},
-        ],
+        "members": members,
         "surface": surface,
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }
     }))
@@ -1171,7 +1325,7 @@ pub fn track_graph(channels: usize, master: usize) -> Result<Value, String> {
 /// names, whatever the others are.
 pub fn tracks_graph(channels: usize) -> Result<Value, String> {
     check(channels, "tracks")?;
-    let members: Vec<Value> = (1..=MAX_CHANNELS)
+    let members: Vec<Value> = (1..=MAX_TRACK_CHANNELS)
         .map(|track| {
             json!({"def": track_name(track, channels), "kind": "graph",
                    "slot": track_slot(track), "controls": {OUT_BUS: OUT_BUS}})
@@ -1222,7 +1376,7 @@ pub fn multitrack_graph(channels: usize) -> Result<Value, String> {
             {"def": meter_name(channels), "slot": METER_SLOT,
              "controls": meter_wiring(POST_BUS, channels)},
         ],
-        "surface": surface_of(3),
+        "surface": surface_of(3, channels),
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }
     }))
 }
@@ -1245,8 +1399,8 @@ pub fn multitrack_graph(channels: usize) -> Result<Value, String> {
 pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String> {
     check(master, "multitrack")?;
     for &(inputs, outputs) in widths {
-        check(inputs, "strip inputs")?;
-        check(outputs, "strip outputs")?;
+        check_track(inputs, "strip inputs")?;
+        check_track(outputs, "strip outputs")?;
     }
 
     let mut synth = vec![reader_def(), curve_def(), input_def(), feed_def()];
@@ -1271,8 +1425,17 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
         // whether or not it holds one today.
         graph.push(voices_graph(channels)?);
     }
+    // Every track past stereo: its strip, the strip its notes enter by, its
+    // meter, its way into the master, and the graphs that name them.
+    for channels in MAX_CHANNELS + 1..=MAX_TRACK_CHANNELS {
+        synth.push(strip_def(channels, channels)?);
+        synth.push(strip_def(VOICE_CHANNELS, channels)?);
+        synth.push(track_meter_def(channels)?);
+        synth.push(route_def(channels, master)?);
+        graph.push(voices_graph(channels)?);
+    }
     synth.push(out_def(master)?);
-    for channels in 1..=MAX_CHANNELS {
+    for channels in 1..=MAX_TRACK_CHANNELS {
         graph.push(track_graph(channels, master)?);
     }
     graph.push(tracks_graph(master)?);
@@ -1311,18 +1474,71 @@ mod tests {
         }
     }
 
-    /// **A width nobody wrote a downmix for is refused, not guessed.**
+    /// **A track past stereo plays at its width, and a master does not.** A
+    /// strip and a track take up to [`MAX_TRACK_CHANNELS`]; what has an image
+    /// -- a master, a send -- stops at two, and a width of none or past the
+    /// track's limit is refused, saying what the limit is.
     #[test]
-    fn a_width_past_stereo_is_refused() {
-        let err = strip_def(6, 2).unwrap_err();
-        assert!(
-            err.contains("downmix"),
-            "it says what the decision is: {err}"
-        );
+    fn a_track_past_stereo_plays_and_a_master_past_it_is_refused() {
+        assert!(strip_def(6, 6).is_ok());
+        assert!(track_graph(6, 2).is_ok());
+        let err = strip_def(MAX_TRACK_CHANNELS + 1, 2).unwrap_err();
+        assert!(err.contains("1 to 8"), "it says the limit: {err}");
         assert!(
             strip_def(0, 2).is_err(),
-            "and a strip of no channels is not one"
+            "a strip of no channels is not one"
         );
+        let err = multitrack_graph(6).unwrap_err();
+        assert!(
+            err.contains("downmix"),
+            "a master past stereo is the decision: {err}"
+        );
+    }
+
+    /// **A wide strip is gains, and its way out folds**: a six-channel track
+    /// into a stereo master reads its first two channels as they are and the
+    /// four past them on the master's two again, at the send's gain -- and
+    /// meters every channel.
+    #[test]
+    fn a_wide_track_meters_every_channel_and_folds_into_the_master() {
+        let kinds = |def: &Value| -> Vec<String> {
+            def["ugens"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|u| u["kind"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let strip = strip_def(6, 6).unwrap();
+        let strip_kinds = kinds(&strip);
+        assert_eq!(strip_kinds.iter().filter(|k| *k == "Out").count(), 6);
+        assert!(
+            !strip_kinds.contains(&"Pan2".to_string()),
+            "no image past stereo"
+        );
+        let route = route_def(6, 2).unwrap();
+        let outs: Vec<&Value> = route["ugens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|u| u["kind"] == "Out")
+            .collect();
+        assert_eq!(outs.len(), 2, "onto the master's two channels");
+        assert_eq!(
+            kinds(&route).iter().filter(|k| *k == "Add").count(),
+            4,
+            "three channels summed on each side"
+        );
+        let track = track_graph(6, 2).unwrap();
+        let surface = track["surface"].as_object().unwrap();
+        for channel in 0..6 {
+            assert!(
+                surface.contains_key(&meter_out_port(channel)),
+                "meter/out{channel}"
+            );
+        }
+        let way_out = &track["members"][1]["def"];
+        assert_eq!(way_out, &json!(route_name(6, 2)));
     }
 
     /// **A mono source on a stereo strip is panned, not copied.** The same
@@ -1375,7 +1591,7 @@ mod tests {
     /// one that has not been sent.
     #[test]
     fn the_defs_come_back_in_an_order_that_resolves() {
-        let defs = defs_for(&[(1, 2), (2, 2)], 2).unwrap();
+        let defs = defs_for(&[(1, 2), (2, 2), (6, 6)], 2).unwrap();
         let synth: Vec<String> = defs
             .synth
             .iter()

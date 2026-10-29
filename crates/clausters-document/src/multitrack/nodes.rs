@@ -579,7 +579,7 @@ pub fn plan_voiced(
 /// track's regions of samples are its take, read into the buffers `feeds`
 /// names by track and played by one reader per channel; its boxes of notes
 /// (`voiced`) are clips over their voices, as in [`plan_voiced`]. A track is
-/// as wide as its take, at most what a strip is written for; one `feeds`
+/// as wide as its take, at most [`mixer::MAX_TRACK_CHANNELS`]; one `feeds`
 /// does not name has no take yet and plays its notes alone.
 pub fn plan_fed(
     multitrack: &Multitrack,
@@ -593,7 +593,7 @@ pub fn plan_fed(
             continue;
         };
         let mut feed = feed.clone();
-        feed.buffers.truncate(mixer::MAX_CHANNELS);
+        feed.buffers.truncate(mixer::MAX_TRACK_CHANNELS);
         if !feed.buffers.is_empty() {
             track.channels = feed.buffers.len();
             track.slot = mixer::track_slot(track.channels);

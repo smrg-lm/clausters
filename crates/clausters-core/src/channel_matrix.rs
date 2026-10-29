@@ -84,6 +84,20 @@ impl ChannelMatrix {
         Self::routing(&map, inputs, outputs)
     }
 
+    /// **Folded**: input `i` into output `i % outputs`, at unity -- the
+    /// channels past the outputs routed onto the first ones again, so none is
+    /// dropped. A track wider than its multitrack plays into the master this
+    /// way, its channels past the master's on the master's first channels.
+    pub fn folded(inputs: usize, outputs: usize) -> Self {
+        let mut m = Self::silent(inputs, outputs);
+        if outputs > 0 {
+            for input in 0..inputs {
+                m.set(input % outputs, input, 1.0);
+            }
+        }
+        m
+    }
+
     /// **The implicit conversion**, what a width becomes when nothing says
     /// otherwise: mono is duplicated, anything wider is read channel by
     /// channel, silence past it.
@@ -163,6 +177,20 @@ impl ChannelMatrix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A wider width folds onto the first outputs, and a narrower one is a
+    /// copy of its channels.
+    #[test]
+    fn folding_routes_the_channels_past_the_outputs_onto_the_first() {
+        let m = ChannelMatrix::folded(6, 2);
+        let mut out = [0.0; 2];
+        m.apply(&[1.0, 2.0, 4.0, 8.0, 16.0, 32.0], &mut out);
+        assert_eq!(out, [1.0 + 4.0 + 16.0, 2.0 + 8.0 + 32.0]);
+        assert_eq!(
+            ChannelMatrix::folded(2, 4).as_routing(),
+            Some(vec![0, 1, -1, -1])
+        );
+    }
 
     /// Mono is duplicated, a wider width is read channel by channel.
     #[test]

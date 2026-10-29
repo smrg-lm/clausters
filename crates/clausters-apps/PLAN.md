@@ -3495,11 +3495,12 @@ over the opened file) carries over.
     bar playing its sequence there on the engine, an edit or an undo heard
     while it plays (`NotesPlayback` over any medium, as the multitrack's
     playback is).
-  - ⬜ **Tracks wider than stereo**: a track's take is read as wide as its
-    widest region, but its strip is written for one or two channels, so
-    `nodes::plan_fed` plays the first two; the matrix onto the master's
-    first channels is still to be built (`crates/clausters-document/PLAN.md`,
-    "A track is as wide as its widest region").
+  - ✅ **Tracks wider than stereo** *(2026-10-29)*: a track plays at the
+    width of its widest region, up to eight channels, through a strip of
+    gains, a meter per channel and the folded matrix onto the master
+    (`mt.route.N.M`; `crates/clausters-document/PLAN.md`, "A track is as wide
+    as its widest region"); a four-channel take on a stereo multitrack is
+    heard folded onto two (`clausters-app-engine`'s multitrack tests).
   - ✅ **A saved session opens in the application from both clients**
     *(2026-10-29)*: `edit(session)` over a session that has a file, and
     `SessionEditor` its handler, the same surface in both (the transport,

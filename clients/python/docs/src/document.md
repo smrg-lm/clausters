@@ -1372,6 +1372,13 @@ bug and `pan` is one name for both:
 - Over a **stereo** source, `pan` is a **balance**: it attenuates one side and
   leaves the centre untouched. A pan law here would take 3 dB off every strip,
   and there are three of them in a row.
+- Past **two channels** there is no image to move: a track as wide as its
+  widest region -- up to eight channels -- has a strip of gains, and `pan`
+  and `width` move nothing on it. Its channels reach the master through a
+  fixed matrix: each channel the master has reads the track's channel of the
+  same number, and the track's channels past the master's are routed onto the
+  master's first ones again, so a six-channel track on a stereo multitrack is
+  heard whole, folded onto two. Its meter is a column per channel.
 
 Which one applies follows from the source's width -- `Track.channels` and
 `Multitrack.channels`, both fields of the document, because the width decides

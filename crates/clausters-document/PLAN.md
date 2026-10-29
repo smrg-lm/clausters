@@ -1775,7 +1775,7 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   multiply, the trapezoid's top made a grab in the curve element (vertical
   only, its two corners moving together) and `Region.level` in both clients.
 
-- ⬜ **A track is as wide as its widest region** *(decided with the user,
+- ✅ **A track is as wide as its widest region** *(decided with the user,
   2026-10-28, settling the audio editor's channel rules)*. Editing a file's
   channels and holding regions of different widths on one track are not the
   same problem. A region on a track plays by the audio editor's implicit map
@@ -1791,6 +1791,13 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   balance stay its own controls, outside the matrix.
   Lands with the multitrack's port onto the audio editor's modules (`X34`,
   `crates/clausters-apps/PLAN.md`).
+  *Done 2026-10-29:* a track's take is read as wide as its widest region,
+  up to eight channels (`mixer::MAX_TRACK_CHANNELS`); past stereo its strip is
+  gains with no image, its meter a column per channel, and its way into the
+  master `mt.route.N.M`, the folded matrix (`ChannelMatrix::folded`): the
+  channels the master has read the track's of the same number, and those past
+  them land on the master's first ones again. A track saying where its
+  channels go is not written yet; the folded routing is what it says today.
 
 ## Found by use: the running list of fixes
 

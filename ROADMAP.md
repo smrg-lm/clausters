@@ -306,15 +306,12 @@ its plan; the plan is where its acceptance is read.
   surviving work carries over. In that order, now that the application
   holds its engine, its take is shared blocks and it reads and draws its
   takes: the multitrack on the same modules, its parts left in order in
-  its plan (tracks wider than stereo, with the matrix onto the
-  master); and the server's cleaning last, once nothing
+  its plan, its parts done and its by-ear and by-eye pass left; and the server's cleaning last, once nothing
   calls what it removes.
   Before `X25`, which should port this lifecycle.
   **Related:** found moving the editor onto files, and taken
   after `X32`: the apps plan's "A page decodes no compressed file when it
-  opens" (Found by use). With `X34`: the document
-  plan's "A track is as wide as its widest region" (Future directions).
-  After it: the apps plan's "Working on one channel of a take" (Future
+  opens" (Found by use). After it: the apps plan's "Working on one channel of a take" (Future
   directions), the channel a paste lands from.
 
   | Order | Milestone | Plan |

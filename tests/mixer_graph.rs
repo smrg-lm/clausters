@@ -39,28 +39,28 @@ fn send(s: &mut NrtSession, addr: &str, args: Vec<OscType>) {
     assert!(s.send_msg(addr, args).expect("encode"), "ring full");
 }
 
-/// Sends every def a multitrack of these widths needs, in the order the module says.
+/// Sends every def a multitrack of these widths needs, in the order the module
+/// says, a few at a time: every track width up to eight is in it, more than
+/// the session's command ring holds at once.
 fn send_defs(s: &mut NrtSession, widths: &[(usize, usize)], master: usize) {
     let defs = mixer::defs_for(widths, master).expect("the widths are written");
-    for def in &defs.synth {
+    let sent = defs
+        .synth
+        .iter()
+        .map(|def| ("synth", def))
+        .chain(defs.graph.iter().map(|def| ("graph", def)));
+    for (n, (family, def)) in sent.enumerate() {
         send(
             s,
             "/def_send",
             vec![
-                OscType::String("synth".into()),
+                OscType::String(family.into()),
                 OscType::String(def.to_string()),
             ],
         );
-    }
-    for def in &defs.graph {
-        send(
-            s,
-            "/def_send",
-            vec![
-                OscType::String("graph".into()),
-                OscType::String(def.to_string()),
-            ],
-        );
+        if n % 8 == 7 {
+            s.settle_for(2);
+        }
     }
     s.settle_for(8);
 }
