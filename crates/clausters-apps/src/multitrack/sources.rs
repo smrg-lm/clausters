@@ -31,6 +31,9 @@ pub struct Resolved {
     pub takes: HashMap<SourceId, TakeFile>,
     /// Each join's parts.
     pub segments: HashMap<SourceId, Vec<Part>>,
+    /// Each sequence of events the session holds, which its boxes of notes
+    /// read.
+    pub sequences: HashMap<SourceId, clausters_document::events::EventSequence>,
     /// The renders that measure the peaks a take has not got yet, each with
     /// the source it is for and where it writes.
     pub measure: Vec<(SourceId, String, Step)>,
@@ -115,6 +118,9 @@ pub fn resolve(
             }
             Location::Segments { parts } => {
                 resolved.segments.insert(*id, parts.clone());
+            }
+            Location::Events { sequence } => {
+                resolved.sequences.insert(*id, (**sequence).clone());
             }
             _ => resolved
                 .unresolved

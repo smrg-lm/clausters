@@ -52,7 +52,7 @@ use crate::server::engine::EventLaneTag;
 /// than a turn of the loop (10 ms while a lane exists), so a turn spent on
 /// something slow -- a def compiled, a file read -- does not let the position
 /// overtake the feed.
-pub(in crate::osc::server) const LOOKAHEAD_SECS: f64 = 0.5;
+pub const LOOKAHEAD_SECS: f64 = 0.5;
 
 /// One event of a lane, at a position of its transport.
 #[derive(Clone, Debug, PartialEq)]
@@ -142,7 +142,7 @@ enum Heard {
 }
 
 /// One lane, as this side holds it.
-pub(in crate::osc::server) struct EventLane {
+struct EventLane {
     transport: usize,
     target: i32,
     /// `(position, event)`, sorted by position.
@@ -597,22 +597,46 @@ fn node_note(controls: &[OscType], source: u128, note_id: i32) -> Result<NodeNot
     Ok((events, others))
 }
 
-impl OscServer {
-    /// `/lane_new <transport:int32> <lane:int32> <target:int32>` -- makes lane
-    /// `lane` on transport `transport`, its notes made at the tail of group
-    /// `target` (the group that transport governs, for a pause to freeze
-    /// them). An existing lane of that id is freed first. Replies `/done`.
-    pub(in crate::osc::server) fn handle_lane_new(
+/// **Every event lane of one engine**, and how each is fed ahead of its
+/// transport: what a server's network loop holds, and what an engine an
+/// application holds holds too, each building the entries with its own
+/// translator and sending them its own way.
+#[derive(Default)]
+pub struct EventLanes {
+    lanes: HashMap<i32, EventLane>,
+}
+
+/// **Where a transport stands**, as a lane is fed from it: its position, how
+/// far ahead the lane is kept built, its loop and its end mark.
+#[derive(Clone, Copy, Debug)]
+pub struct Standing {
+    /// Where it stands, a locate sent counting as done.
+    pub position: u64,
+    /// How many samples ahead the lane is kept built.
+    pub window: u64,
+    /// Its loop, `[start, end)`.
+    pub looping: Option<(u64, u64)>,
+    /// Its end mark.
+    pub end: Option<u64>,
+}
+
+impl EventLanes {
+    /// Whether it holds no lane.
+    pub fn is_empty(&self) -> bool {
+        self.lanes.is_empty()
+    }
+
+    /// **Lane `lane` on transport `transport`**, its notes made at the tail
+    /// of group `target`; one of that id already there is freed first, its
+    /// clear answered.
+    pub fn make(
         &mut self,
-        mut args: Args,
-        from: ClientId,
-    ) -> Answer {
-        let transport = self.transport_arg(&mut args)?;
-        let lane = args.int()?;
-        let target = args.int()?;
-        if self.lanes.contains_key(&lane) {
-            self.free_lane(lane)?;
-        }
+        lane: i32,
+        transport: usize,
+        target: i32,
+        t: &mut CmdTranslator,
+    ) -> Option<Cmd> {
+        let freed = self.free(lane, t);
         self.lanes.insert(
             lane,
             EventLane {
@@ -625,133 +649,106 @@ impl OscServer {
                 note_nodes: HashMap::new(),
             },
         );
-        self.retune_timeout();
-        self.done(from, "/lane_new");
-        Ok(())
+        freed
     }
 
-    /// `/lane_set <lane:int32> <json>` -- replaces lane `lane`'s data whole
-    /// (the JSON as a string or a blob, like a def's). What it had queued is
-    /// cleared and fed again from the position; the notes it is sounding keep
-    /// their releases. Replies `/done`.
-    pub(in crate::osc::server) fn handle_lane_set(
+    /// **Lane `id`'s data, replaced whole**: what it had queued cleared (the
+    /// clear answered), the notes it sounds keeping their releases. The
+    /// caller feeds it again.
+    pub fn set(
         &mut self,
-        mut args: Args,
-        from: ClientId,
-    ) -> Answer {
-        let id = args.int()?;
-        let zones = self.translator.midi.decoder.with_layout();
-        let events = parse_events(crate::osc::args::json_payload(args.rest())?, zones)?;
+        id: i32,
+        json: &[u8],
+        t: &mut CmdTranslator,
+    ) -> Result<Option<Cmd>, String> {
+        let zones = t.midi.decoder.with_layout();
+        let events = parse_events(json, zones)?;
         if !self.lanes.contains_key(&id) {
             return Err(format!("no lane {id}"));
         }
-        self.clear_lane(id, false)?;
+        let cleared = self.clear(id, false, t);
         if let Some(lane) = self.lanes.get_mut(&id) {
             lane.events = events;
         }
-        self.feed_lane(id);
-        self.done(from, "/lane_set");
-        Ok(())
+        Ok(cleared)
     }
 
-    /// `/lane_free <lane:int32>` -- frees lane `lane`: what it queued is
-    /// dropped and the notes it is sounding are released now. Replies `/done`.
-    pub(in crate::osc::server) fn handle_lane_free(
-        &mut self,
-        mut args: Args,
-        from: ClientId,
-    ) -> Answer {
-        let id = args.int()?;
-        if !self.lanes.contains_key(&id) {
-            return Err(format!("no lane {id}"));
-        }
-        self.free_lane(id)?;
-        self.retune_timeout();
-        self.done(from, "/lane_free");
-        Ok(())
+    /// Whether lane `id` is held.
+    pub fn has(&self, id: i32) -> bool {
+        self.lanes.contains_key(&id)
     }
 
-    fn free_lane(&mut self, id: i32) -> Answer {
-        self.clear_lane(id, true)?;
+    /// **Lane `id` freed**: what it queued dropped and the notes it sounds
+    /// released now; the clear that does it answered.
+    pub fn free(&mut self, id: i32, t: &mut CmdTranslator) -> Option<Cmd> {
+        let cleared = self.clear(id, true, t);
         self.lanes.remove(&id);
-        Ok(())
+        cleared
     }
 
     /// Drops what lane `id` has queued, and with `release` the releases of
     /// the notes it is sounding run now. Its generation moves, so what comes
-    /// back spent from before is not taken for what is queued after.
-    fn clear_lane(&mut self, id: i32, release: bool) -> Answer {
-        let Some(lane) = self.lanes.get_mut(&id) else {
-            return Ok(());
-        };
+    /// back spent from before is not taken for what is queued after. Answers
+    /// the engine's command that clears it.
+    pub fn clear(&mut self, id: i32, release: bool, t: &mut CmdTranslator) -> Option<Cmd> {
+        let lane = self.lanes.get_mut(&id)?;
         #[cfg(all(
             any(feature = "plugin-clap", feature = "plugin-vst3"),
             target_os = "linux"
         ))]
-        self.translator.clear_plugin_lane(id);
+        t.clear_plugin_lane(id);
+        #[cfg(not(all(
+            any(feature = "plugin-clap", feature = "plugin-vst3"),
+            target_os = "linux"
+        )))]
+        let _ = &t;
         lane.generation = lane.generation.wrapping_add(1);
         lane.queued.clear();
         lane.voices.clear();
         lane.note_nodes.clear();
-        let transport = lane.transport;
-        self.handle
-            .send(Cmd::ClearLane {
-                transport,
-                lane: id,
-                release,
-            })
-            .map_err(|_| "command FIFO full".to_string())
+        Some(Cmd::ClearLane {
+            transport: lane.transport,
+            lane: id,
+            release,
+        })
     }
 
-    /// **Transport `k` jumped** -- a locate, a loop set or cleared, a pass
-    /// that went back to its mark: every lane on it is cleared and fed again
-    /// from where it now stands. The engine releases the sounding notes on a
-    /// jump itself, so the clear leaves releases alone.
-    pub(in crate::osc::server) fn lanes_jumped(&mut self, k: usize) {
-        let ids: Vec<i32> = self
-            .lanes
+    /// The lanes on transport `k`.
+    pub fn on(&self, k: usize) -> Vec<i32> {
+        self.lanes
             .iter()
             .filter(|(_, lane)| lane.transport == k)
             .map(|(id, _)| *id)
-            .collect();
-        for id in ids {
-            if self.clear_lane(id, false).is_ok() {
-                self.feed_lane(id);
-            }
-        }
+            .collect()
     }
 
-    /// Where transport `k` stands, as a reply would say: a locate sent and not
-    /// yet applied counts as done.
-    pub(in crate::osc::server) fn transport_position(&self, k: usize) -> u64 {
-        let clock = self.handle.current_transport_samples(k);
-        match self.transports[k].pending_locate {
-            Some((position, sent_at)) if clock <= sent_at => position,
-            _ => self.handle.current_transport_position(k),
-        }
+    /// Every lane, with the transport it is on.
+    pub fn all(&self) -> Vec<(i32, usize)> {
+        self.lanes
+            .iter()
+            .map(|(id, lane)| (*id, lane.transport))
+            .collect()
     }
 
-    /// One turn's feed: every lane topped up ahead of its transport.
-    pub(in crate::osc::server) fn feed_lanes(&mut self) {
-        let ids: Vec<i32> = self.lanes.keys().copied().collect();
-        for id in ids {
-            self.feed_lane(id);
-        }
-    }
-
-    /// Tops lane `id` up: every event within the lookahead of its transport's
-    /// position, in playback order, that is not on the lane queue yet is built
-    /// and sent there.
-    fn feed_lane(&mut self, id: i32) {
+    /// **Tops lane `id` up**: every event within `standing`'s window, in
+    /// playback order, that is not on the lane queue yet is built and handed
+    /// to `send`, which answers whether the engine took it.
+    pub fn feed(
+        &mut self,
+        id: i32,
+        standing: Standing,
+        t: &mut CmdTranslator,
+        send: &mut dyn FnMut(Cmd) -> bool,
+    ) {
         let Some(lane) = self.lanes.get(&id) else {
             return;
         };
-        let k = lane.transport;
-        let t = self.transports[k];
-        let window = (LOOKAHEAD_SECS * self.info.actual_sample_rate) as u64;
-        let looping = t.loop_span.map(|(a, b)| (a.max(0) as u64, b.max(0) as u64));
-        let end = t.end_mark.map(|(e, _)| e.max(0) as u64);
-        let spans = ahead(self.transport_position(k), window, looping, end);
+        let spans = ahead(
+            standing.position,
+            standing.window,
+            standing.looping,
+            standing.end,
+        );
         let mut due: Vec<u32> = Vec::new();
         for (from, to) in spans {
             let first = lane.events.partition_point(|(p, _)| *p < from);
@@ -765,9 +762,9 @@ impl OscServer {
             }
         }
         for i in due {
-            match self.lane_entry(id, i) {
+            match self.entry(id, i, t) {
                 Ok(Some(cmd)) => {
-                    if self.handle.send(cmd).is_err() {
+                    if !send(cmd) {
                         // A full FIFO: the next turn offers it again.
                         break;
                     }
@@ -790,15 +787,20 @@ impl OscServer {
 
     /// Builds lane `id`'s event `i` as the entry the engine takes: a note's
     /// `/synth_new` with a fresh id and its release, or a message.
-    fn lane_entry(&mut self, id: i32, i: u32) -> Result<Option<Cmd>, String> {
-        let mut result = self.lane_entry_command(id, i)?;
+    fn entry(&mut self, id: i32, i: u32, t: &mut CmdTranslator) -> Result<Option<Cmd>, String> {
+        let mut result = self.entry_command(id, i, t)?;
         if let Some(Cmd::EventLaneEntry { start, .. }) = &mut result {
-            self.translator.prepare_compensation(start, 0);
+            t.prepare_compensation(start, 0);
         }
         Ok(result)
     }
 
-    fn lane_entry_command(&mut self, id: i32, i: u32) -> Result<Option<Cmd>, String> {
+    fn entry_command(
+        &mut self,
+        id: i32,
+        i: u32,
+        t: &mut CmdTranslator,
+    ) -> Result<Option<Cmd>, String> {
         let Some(lane) = self.lanes.get(&id) else {
             return Ok(None);
         };
@@ -829,12 +831,7 @@ impl OscServer {
                 line,
             } => {
                 if let EventLaneDestination::Node(node) = destination {
-                    let Some(def) = self
-                        .translator
-                        .node_defs
-                        .get(&node)
-                        .filter(|d| d.reads_notes())
-                    else {
+                    let Some(def) = t.node_defs.get(&node).filter(|d| d.reads_notes()) else {
                         return Err(format!("node {node} reads no notes"));
                     };
                     let (mut on, controls) = node_note(&controls, source, i as i32)?;
@@ -913,7 +910,7 @@ impl OscServer {
                         }
                     }
                 };
-                self.translator.translate(&message, &mut start)?;
+                t.translate(&message, &mut start)?;
                 let made = start.iter().find_map(|cmd| match cmd {
                     Cmd::AddSynth { id, .. } | Cmd::AddGroup { id, .. } => Some(*id),
                     _ => None,
@@ -941,8 +938,8 @@ impl OscServer {
                             args: vec![OscType::Int(node)],
                         },
                     };
-                    if let Err(why) = self.translator.translate(&message, &mut release) {
-                        self.forget_unrun(&start);
+                    if let Err(why) = t.translate(&message, &mut release) {
+                        forget_unrun(t, &start);
                         return Err(why);
                     }
                 }
@@ -955,16 +952,15 @@ impl OscServer {
                     target_os = "linux"
                 ))]
                 if message.addr == "/plugin_event" {
-                    self.translator
-                        .plugin_event_scoped(&message, Some(source), &mut start)?;
+                    t.plugin_event_scoped(&message, Some(source), &mut start)?;
                 } else {
-                    self.translator.translate(&message, &mut start)?;
+                    t.translate(&message, &mut start)?;
                 }
                 #[cfg(not(all(
                     any(feature = "plugin-clap", feature = "plugin-vst3"),
                     target_os = "linux"
                 )))]
-                self.translator.translate(&message, &mut start)?;
+                t.translate(&message, &mut start)?;
             }
             EventLaneEvent::MidiNote {
                 channel,
@@ -973,7 +969,7 @@ impl OscServer {
                 length: held,
                 program,
                 voice,
-            } => match self.translator.midi_route(channel) {
+            } => match t.midi_route(channel) {
                 Some(MidiRoute::Bus(bus)) => {
                     if let Some(program) = program {
                         start.push(Cmd::BusEvent {
@@ -1003,13 +999,8 @@ impl OscServer {
                     length = held;
                 }
                 Some(MidiRoute::Graph) => {
-                    let Some(node) = self.translator.lane_midi_note(
-                        channel,
-                        note,
-                        velocity,
-                        &mut start,
-                        &mut release,
-                    )?
+                    let Some(node) =
+                        t.lane_midi_note(channel, note, velocity, &mut start, &mut release)?
                     else {
                         return Ok(None);
                     };
@@ -1029,7 +1020,7 @@ impl OscServer {
                 timbre,
                 length: held,
                 voice,
-            } => match self.translator.zone_route(master) {
+            } => match t.zone_route(master) {
                 Some(MidiRoute::Bus(bus)) => {
                     let events = zone_events(
                         MpeEvent::NoteOn {
@@ -1059,7 +1050,7 @@ impl OscServer {
                     length = held;
                 }
                 Some(MidiRoute::Graph) => {
-                    let Some(node) = self.translator.lane_zone_note(
+                    let Some(node) = t.lane_zone_note(
                         master,
                         key,
                         velocity,
@@ -1084,7 +1075,7 @@ impl OscServer {
                 key,
                 voice,
                 event,
-            } => match self.translator.zone_route(master) {
+            } => match t.zone_route(master) {
                 Some(MidiRoute::Bus(bus)) => {
                     let event = match event {
                         MpeEvent::Bend { semitones, .. } => MpeEvent::Bend {
@@ -1119,8 +1110,7 @@ impl OscServer {
                     else {
                         return Ok(None);
                     };
-                    self.translator
-                        .lane_zone_set(master, key, node, event, &mut start);
+                    t.lane_zone_set(master, key, node, event, &mut start);
                     if start.is_empty() {
                         return Ok(None);
                     }
@@ -1129,12 +1119,12 @@ impl OscServer {
             },
             EventLaneEvent::MidiSet { message, voices } => {
                 let channel = message_channel(message);
-                match self.translator.midi_route(channel) {
+                match t.midi_route(channel) {
                     Some(MidiRoute::Bus(_)) => {
                         // As the live input plays it: an event on the bus,
                         // or a plugin binding's mapped control.
                         let mut cmds = Vec::new();
-                        self.translator.translate_midi(message, &mut cmds)?;
+                        t.translate_midi(message, &mut cmds)?;
                         start.extend(cmds.into_iter().map(|cmd| match cmd {
                             Cmd::BusEvent { bus, mut event } => {
                                 event.source = source;
@@ -1148,7 +1138,7 @@ impl OscServer {
                             .iter()
                             .filter_map(|v| self.lanes.get(&id)?.voices.get(v).copied())
                             .collect();
-                        self.translator.lane_midi_set(message, &nodes, &mut start);
+                        t.lane_midi_set(message, &nodes, &mut start);
                     }
                     None => {}
                 }
@@ -1161,7 +1151,7 @@ impl OscServer {
                 note,
                 message,
                 voice,
-            } => match self.translator.midi_route(channel) {
+            } => match t.midi_route(channel) {
                 Some(MidiRoute::Bus(bus)) => {
                     let Some(event) =
                         per_note_event(message, source, channel, note, note_id(voice))
@@ -1178,8 +1168,7 @@ impl OscServer {
                     else {
                         return Ok(None);
                     };
-                    self.translator
-                        .lane_per_note(node, channel, note, message, &mut start);
+                    t.lane_per_note(node, channel, note, message, &mut start);
                     if start.is_empty() {
                         return Ok(None);
                     }
@@ -1199,14 +1188,9 @@ impl OscServer {
 
     /// **A lane entry left the engine**: it is no longer queued, and when it
     /// never ran, the nodes it would have made are forgotten.
-    pub(in crate::osc::server) fn lane_spent(
-        &mut self,
-        tag: EventLaneTag,
-        start: &[Cmd],
-        fired: bool,
-    ) {
+    pub fn spent(&mut self, tag: EventLaneTag, start: &[Cmd], fired: bool, t: &mut CmdTranslator) {
         if !fired {
-            self.forget_unrun(start);
+            forget_unrun(t, start);
         }
         if let Some(lane) = self.lanes.get_mut(&tag.lane)
             && lane.generation == tag.generation
@@ -1214,18 +1198,158 @@ impl OscServer {
             lane.queued.remove(&tag.event);
         }
     }
+}
 
-    /// **Commands that were built and never ran** -- a cleared timed bundle, an
-    /// unrun lane entry: the nodes they would have made never existed, so the
-    /// mirror forgets them and a server-minted id goes back to its range. A
-    /// shell that ran is empty and has nothing here.
-    pub(in crate::osc::server) fn forget_unrun(&mut self, cmds: &[Cmd]) {
-        for cmd in cmds {
-            if let Cmd::AddSynth { id, .. } | Cmd::AddGroup { id, .. } = cmd {
-                self.translator.forget_unrun_node(*id);
-                self.translator.release_node_id(*id);
+/// **Commands that were built and never ran** -- a cleared timed bundle, an
+/// unrun lane entry: the nodes they would have made never existed, so the
+/// mirror forgets them and a server-minted id goes back to its range. A
+/// shell that ran is empty and has nothing here.
+pub fn forget_unrun(t: &mut CmdTranslator, cmds: &[Cmd]) {
+    for cmd in cmds {
+        if let Cmd::AddSynth { id, .. } | Cmd::AddGroup { id, .. } = cmd {
+            t.forget_unrun_node(*id);
+            t.release_node_id(*id);
+        }
+    }
+}
+
+impl OscServer {
+    /// `/lane_new <transport:int32> <lane:int32> <target:int32>` -- makes lane
+    /// `lane` on transport `transport`, its notes made at the tail of group
+    /// `target` (the group that transport governs, for a pause to freeze
+    /// them). An existing lane of that id is freed first. Replies `/done`.
+    pub(in crate::osc::server) fn handle_lane_new(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let transport = self.transport_arg(&mut args)?;
+        let lane = args.int()?;
+        let target = args.int()?;
+        if let Some(cmd) = self
+            .lanes
+            .make(lane, transport, target, &mut self.translator)
+        {
+            self.send_lane(cmd)?;
+        }
+        self.retune_timeout();
+        self.done(from, "/lane_new");
+        Ok(())
+    }
+
+    /// `/lane_set <lane:int32> <json>` -- replaces lane `lane`'s data whole
+    /// (the JSON as a string or a blob, like a def's). What it had queued is
+    /// cleared and fed again from the position; the notes it is sounding keep
+    /// their releases. Replies `/done`.
+    pub(in crate::osc::server) fn handle_lane_set(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let id = args.int()?;
+        let json = crate::osc::args::json_payload(args.rest())?;
+        if let Some(cmd) = self.lanes.set(id, json, &mut self.translator)? {
+            self.send_lane(cmd)?;
+        }
+        self.feed_lane(id);
+        self.done(from, "/lane_set");
+        Ok(())
+    }
+
+    /// `/lane_free <lane:int32>` -- frees lane `lane`: what it queued is
+    /// dropped and the notes it is sounding are released now. Replies `/done`.
+    pub(in crate::osc::server) fn handle_lane_free(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let id = args.int()?;
+        if !self.lanes.has(id) {
+            return Err(format!("no lane {id}"));
+        }
+        if let Some(cmd) = self.lanes.free(id, &mut self.translator) {
+            self.send_lane(cmd)?;
+        }
+        self.retune_timeout();
+        self.done(from, "/lane_free");
+        Ok(())
+    }
+
+    fn send_lane(&mut self, cmd: Cmd) -> Answer {
+        self.handle
+            .send(cmd)
+            .map_err(|_| "command FIFO full".to_string())
+    }
+
+    /// **Transport `k` jumped** -- a locate, a loop set or cleared, a pass
+    /// that went back to its mark: every lane on it is cleared and fed again
+    /// from where it now stands. The engine releases the sounding notes on a
+    /// jump itself, so the clear leaves releases alone.
+    pub(in crate::osc::server) fn lanes_jumped(&mut self, k: usize) {
+        for id in self.lanes.on(k) {
+            if let Some(cmd) = self.lanes.clear(id, false, &mut self.translator)
+                && self.send_lane(cmd).is_ok()
+            {
+                self.feed_lane(id);
             }
         }
+    }
+
+    /// Where transport `k` stands, as a reply would say: a locate sent and not
+    /// yet applied counts as done.
+    pub(in crate::osc::server) fn transport_position(&self, k: usize) -> u64 {
+        let clock = self.handle.current_transport_samples(k);
+        match self.transports[k].pending_locate {
+            Some((position, sent_at)) if clock <= sent_at => position,
+            _ => self.handle.current_transport_position(k),
+        }
+    }
+
+    /// One turn's feed: every lane topped up ahead of its transport.
+    pub(in crate::osc::server) fn feed_lanes(&mut self) {
+        for (id, _) in self.lanes.all() {
+            self.feed_lane(id);
+        }
+    }
+
+    /// Tops lane `id` up from where its transport stands.
+    fn feed_lane(&mut self, id: i32) {
+        let Some(k) = self
+            .lanes
+            .all()
+            .into_iter()
+            .find(|(lane, _)| *lane == id)
+            .map(|(_, k)| k)
+        else {
+            return;
+        };
+        let t = self.transports[k];
+        let standing = Standing {
+            position: self.transport_position(k),
+            window: (LOOKAHEAD_SECS * self.info.actual_sample_rate) as u64,
+            looping: t.loop_span.map(|(a, b)| (a.max(0) as u64, b.max(0) as u64)),
+            end: t.end_mark.map(|(e, _)| e.max(0) as u64),
+        };
+        let handle = &mut self.handle;
+        self.lanes
+            .feed(id, standing, &mut self.translator, &mut |cmd| {
+                handle.send(cmd).is_ok()
+            });
+    }
+
+    /// **A lane entry left the engine** ([`EventLanes::spent`]).
+    pub(in crate::osc::server) fn lane_spent(
+        &mut self,
+        tag: EventLaneTag,
+        start: &[Cmd],
+        fired: bool,
+    ) {
+        self.lanes.spent(tag, start, fired, &mut self.translator);
+    }
+
+    /// [`forget_unrun`], with this server's translator.
+    pub(in crate::osc::server) fn forget_unrun(&mut self, cmds: &[Cmd]) {
+        forget_unrun(&mut self.translator, cmds);
     }
 }
 

@@ -540,3 +540,93 @@ fn a_session_opens_from_its_files_and_saves_relative_paths() {
     assert_eq!(saved["sources"]["9"]["location"]["path"], "take.wav");
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// **A box of notes plays in the application**: a session's sequence, bound
+/// to the box over it, is the transport's event lane, fed on the
+/// application's turn, and its notes sound through the box's track.
+#[test]
+fn a_box_of_notes_plays_on_an_engine_the_application_holds() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::Editing;
+    use clausters_document::events::{Event, EventSequence};
+    use clausters_document::session::{Location, Session, Source};
+    use clausters_document::{Document, Lifetime};
+
+    let folder = std::env::temp_dir().join(format!("mt-notes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    std::fs::create_dir_all(&folder).unwrap();
+    let notes: Vec<Event> = (0..4)
+        .map(|n| {
+            Event::new(
+                n as f64 * 0.25,
+                serde_json::json!({"midinote": 72, "dur": 0.2}),
+            )
+        })
+        .collect();
+    let mut source = Source::file("", Lifetime::Session);
+    source.location = Location::Events {
+        sequence: Box::new(EventSequence::new(notes)),
+    };
+    let mut track = Track::new(NodeId(1), NodeId(2));
+    track.take_lanes[0] = TakeLane {
+        regions: vec![Region::new(
+            NodeId(3),
+            Second(0.0),
+            Second(1.0),
+            Content::Window {
+                window: Window {
+                    source: SourceRef {
+                        source: SourceId(5),
+                        lifetime: Lifetime::Session,
+                        generation: 0,
+                        range: None,
+                    },
+                    start: 0.0,
+                    duration: 1.0,
+                },
+                playrate: 1.0,
+                args: Opaque::none(),
+                looping: false,
+            },
+        )],
+        ..TakeLane::new(NodeId(2))
+    };
+    let session = Session::new(Document::empty())
+        .with_multitrack(Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        })
+        .with_source(SourceId(5), source);
+    let path = folder.join("notes.json");
+    std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app_engine = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let mut app = App::new(Arc::clone(&app_engine));
+    let mut editing = Editing::new();
+    app.hold(&mut editing);
+    let opened = app.call(
+        &mut editing,
+        &serde_json::json!({"verb": "openMultitrack", "key": "mt", "multitrack": {}, "rate": SR}),
+    );
+    let member = opened["member"].as_u64().unwrap() as u32;
+    let ran = app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "open", "session": path.to_str().unwrap()}),
+        1,
+        None,
+    );
+    assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+    app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "play"}),
+        2,
+        None,
+    );
+    let left = blocks(&mut engine, &app_engine, &mut app, &mut editing, 24_000);
+    let heard = left.iter().fold(0.0f32, |a, b| a.max(b.abs()));
+    assert!(heard > 0.01, "the notes are heard: {heard}");
+    let _ = std::fs::remove_dir_all(&folder);
+}

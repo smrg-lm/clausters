@@ -48,6 +48,9 @@ use clausters_core::ids::{IdError, IdSpaces, Space};
 use clausters_editing::apply::{MULTITRACK_TRANSPORT, Medium, Step};
 use clausters_editing::instance::{Op, Port, Ports};
 
+/// A transport's loop and end mark, as last told.
+type Standing = (Option<(u64, u64)>, Option<u64>);
+
 /// **The engine an application holds**: its handle, the translator that
 /// builds its commands, and the device it runs on when it has one.
 pub struct AppEngine {
@@ -64,6 +67,13 @@ pub struct AppEngine {
     /// Whether each transport was last told to roll, and has not stopped on
     /// its end mark since.
     rolling: HashMap<usize, bool>,
+    /// **The event lanes it plays**, fed ahead of their transports on the
+    /// application's turn ([`Self::pump`]), as a server's network loop feeds
+    /// its own.
+    lanes: clausters::osc::server::lanes::EventLanes,
+    /// Each transport's loop and end mark, as last told: where a lane is fed
+    /// from.
+    standings: HashMap<usize, Standing>,
     /// The audio device the engine runs on; `None` for an engine driven by
     /// hand, block by block.
     #[cfg(feature = "realtime")]
@@ -98,6 +108,8 @@ impl AppEngine {
             channels,
             held: VecDeque::new(),
             rolling: HashMap::new(),
+            lanes: Default::default(),
+            standings: HashMap::new(),
             #[cfg(feature = "realtime")]
             _backend: None,
         }
@@ -193,22 +205,112 @@ impl AppEngine {
                 self.held.push_back((*transport, rest));
             }
         }
+        let mut jumped = Vec::new();
         for cmd in &cmds {
-            if let Cmd::TransportRun { transport, rolling } = cmd {
-                self.rolling.insert(*transport, *rolling);
+            match cmd {
+                Cmd::TransportRun { transport, rolling } => {
+                    self.rolling.insert(*transport, *rolling);
+                }
+                Cmd::TransportLoop { transport, span } => {
+                    self.standings.entry(*transport).or_default().0 =
+                        span.as_ref().map(|s| (s.start, s.end));
+                    jumped.push(*transport);
+                }
+                Cmd::TransportEnd { transport, mark } => {
+                    self.standings.entry(*transport).or_default().1 = mark.map(|m| m.end);
+                    jumped.push(*transport);
+                }
+                Cmd::TransportLocate { transport, .. } => jumped.push(*transport),
+                _ => {}
             }
         }
         self.translator.prepare_compensation(&mut cmds, 0);
         if cmds.is_empty() {
             return true;
         }
-        match self.handle.send_batch(cmds) {
+        let sent = match self.handle.send_batch(cmds) {
             Ok(()) => true,
             Err(_) => {
                 tracing::warn!("app engine: the command FIFO is full; a batch was dropped");
                 false
             }
+        };
+        // **A transport that jumped feeds its lanes again** from where it now
+        // stands; the engine releases what sounded on the jump itself.
+        jumped.sort_unstable();
+        jumped.dedup();
+        for transport in jumped {
+            self.lanes_jumped(transport);
         }
+        sent
+    }
+
+    /// **Lane `lane` on transport `transport`**, its notes made at the tail
+    /// of group `target` (`/lane_new`).
+    pub fn lane_new(&mut self, lane: i32, transport: usize, target: i32) {
+        if let Some(cmd) = self
+            .lanes
+            .make(lane, transport, target, &mut self.translator)
+        {
+            let _ = self.handle.send(cmd);
+        }
+    }
+
+    /// **Lane `lane`'s data**, replaced whole (`/lane_set`), and the lane
+    /// fed from where its transport stands.
+    pub fn lane_set(&mut self, lane: i32, data: &str) {
+        match self.lanes.set(lane, data.as_bytes(), &mut self.translator) {
+            Ok(cleared) => {
+                if let Some(cmd) = cleared {
+                    let _ = self.handle.send(cmd);
+                }
+                self.feed_lane(lane);
+            }
+            Err(why) => tracing::warn!("app engine: lane {lane}: {why}"),
+        }
+    }
+
+    /// Lane `lane` freed (`/lane_free`): its notes released.
+    pub fn lane_free(&mut self, lane: i32) {
+        if let Some(cmd) = self.lanes.free(lane, &mut self.translator) {
+            let _ = self.handle.send(cmd);
+        }
+    }
+
+    /// Every lane on transport `transport` cleared and fed again.
+    fn lanes_jumped(&mut self, transport: usize) {
+        for lane in self.lanes.on(transport) {
+            if let Some(cmd) = self.lanes.clear(lane, false, &mut self.translator) {
+                let _ = self.handle.send(cmd);
+            }
+            self.feed_lane(lane);
+        }
+    }
+
+    /// Lane `lane` topped up ahead of where its transport stands.
+    fn feed_lane(&mut self, lane: i32) {
+        let Some(transport) = self
+            .lanes
+            .all()
+            .into_iter()
+            .find(|(id, _)| *id == lane)
+            .map(|(_, k)| k)
+        else {
+            return;
+        };
+        let (looping, end) = self.standings.get(&transport).copied().unwrap_or_default();
+        let standing = clausters::osc::server::lanes::Standing {
+            position: self.handle.current_transport_position(transport),
+            window: (clausters::osc::server::lanes::LOOKAHEAD_SECS * f64::from(self.sample_rate))
+                as u64,
+            looping,
+            end,
+        };
+        let handle = &mut self.handle;
+        self.lanes
+            .feed(lane, standing, &mut self.translator, &mut |cmd| {
+                handle.send(cmd).is_ok()
+            });
     }
 
     /// **Whether transport `transport` rolls**, as the application last told
@@ -283,6 +385,13 @@ impl AppEngine {
                 }
                 Garbage::TransportEnded { transport } => {
                     self.rolling.insert(transport, false);
+                    self.lanes_jumped(transport);
+                }
+                Garbage::EventLaneSpent {
+                    tag, start, fired, ..
+                } => self.lanes.spent(tag, &start, fired, &mut self.translator),
+                Garbage::SpentBundle(cmds) | Garbage::RejectedBundle(cmds) => {
+                    clausters::osc::server::lanes::forget_unrun(&mut self.translator, &cmds);
                 }
                 // the cue is over: what waited for it goes
                 Garbage::TransportCued { transport, .. } => {
@@ -301,6 +410,10 @@ impl AppEngine {
             if event.kind == NodeEventKind::End {
                 self.translator.release_node_id(event.id);
             }
+        }
+        // **The lanes topped up**, each ahead of its transport
+        for (lane, _) in self.lanes.all() {
+            self.feed_lane(lane);
         }
     }
 }
@@ -646,10 +759,27 @@ impl EngineMedium {
                 }
                 Ok(())
             }
-            // An event lane is fed ahead of the position by a server's
-            // network loop, which an engine the application holds has not:
-            // a box of notes is silent here.
-            Op::Lane { .. } | Op::LaneSet { .. } | Op::LaneFree { .. } => Ok(()),
+            // An event lane: its data fed ahead of the transport on the
+            // application's turn ([`AppEngine::pump`]).
+            Op::Lane {
+                transport,
+                lane,
+                target,
+            } => {
+                engine.send(std::mem::take(cmds));
+                engine.lane_new(lane, transport as usize, target);
+                Ok(())
+            }
+            Op::LaneSet { lane, data } => {
+                engine.send(std::mem::take(cmds));
+                engine.lane_set(lane, &data);
+                Ok(())
+            }
+            Op::LaneFree { lane } => {
+                engine.send(std::mem::take(cmds));
+                engine.lane_free(lane);
+                Ok(())
+            }
         };
         if let Err(why) = result {
             tracing::warn!("app engine: {why}");

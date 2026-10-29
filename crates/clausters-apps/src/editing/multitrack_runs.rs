@@ -170,6 +170,9 @@ impl Editing {
         editor.set_multitrack(session.multitrack.clone());
         editor.set_takes(resolved.takes);
         editor.set_segments(resolved.segments);
+        for (source, sequence) in resolved.sequences {
+            editor.bind_sequence(source, std::sync::Arc::new(std::sync::Mutex::new(sequence)));
+        }
         let unresolved: Vec<Value> = resolved
             .unresolved
             .iter()
@@ -238,6 +241,14 @@ impl Editing {
                 super::held::PlacedSource::Parts(_) => continue,
             };
             session.sources.insert(id, entry);
+        }
+        // a sequence is written as it now is: a roll may have edited it
+        for (id, source) in session.sources.iter_mut() {
+            if let Location::Events { sequence } = &mut source.location
+                && let Some(shared) = editor.sequence(*id)
+            {
+                **sequence = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            }
         }
         for source in editor.joins_read() {
             if let (false, Some(parts)) = (
@@ -571,6 +582,11 @@ impl Editing {
         let _ = tracks
             .playback
             .sync_fed(&multitrack, tracks.rate, &feeds, 1.0, ids);
+        // **The boxes of notes**: what they play, on the transport's lane
+        if let Some(Member::Multitrack(editor)) = self.member(member) {
+            let placed = editor.placed_notes();
+            let _ = tracks.playback.notes(&placed, ids);
+        }
         // the meters the window reads, once their buses are made
         let meters = tracks
             .playback
