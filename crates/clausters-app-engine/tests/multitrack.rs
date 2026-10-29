@@ -445,3 +445,98 @@ fn blocks(
     }
     left
 }
+
+/// **A session opens from its folder**: its take's header read, its peaks
+/// measured into the session's `peaks/` while the window is already open,
+/// its track heard; and a save writes the take relative to the folder.
+#[test]
+fn a_session_opens_from_its_files_and_saves_relative_paths() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::Editing;
+    use clausters_document::session::{Session, Source};
+    use clausters_document::{Document, Lifetime};
+
+    let folder = std::env::temp_dir().join(format!("mt-session-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    std::fs::create_dir_all(&folder).unwrap();
+    let (made, values) = source("session", 48_000, 24_000);
+    std::fs::rename(&made, folder.join("take.wav")).unwrap();
+    let mut region = region(0.0, 0.5, 0.0, 1.0, false);
+    region.fade_in = Some(Fade::of(Second(0.0)));
+    let session = Session::new(Document::empty())
+        .with_multitrack(multitrack(region))
+        .with_source(SourceId(9), Source::file("take.wav", Lifetime::Session));
+    let path = folder.join("song.json");
+    std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app_engine = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let mut app = App::new(Arc::clone(&app_engine));
+    let mut editing = Editing::new();
+    app.hold(&mut editing);
+    let opened = app.call(
+        &mut editing,
+        &serde_json::json!({"verb": "openMultitrack", "key": "mt",
+            "multitrack": {}, "rate": SR}),
+    );
+    let member = opened["member"].as_u64().expect("opened") as u32;
+    let ran = app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "open", "session": path.to_str().unwrap()}),
+        1,
+        None,
+    );
+    let Some(Ok(answer)) = &ran.end else {
+        panic!("{:?}", ran.end);
+    };
+    assert_eq!(answer["unresolved"], serde_json::json!([]));
+    // the peaks land while the window is open
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let peaks = folder.join("peaks");
+    loop {
+        let landed = app.landed(&mut editing);
+        if landed
+            .iter()
+            .any(|ran| ran.effects.iter().any(|e| e["kind"] == "resync"))
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the peaks never landed"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let measured: Vec<_> = std::fs::read_dir(&peaks).unwrap().collect();
+    assert!(
+        !measured.is_empty(),
+        "the peaks are in the session's folder"
+    );
+
+    app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "play"}),
+        2,
+        None,
+    );
+    let left = blocks(&mut engine, &app_engine, &mut app, &mut editing, 12_000);
+    let heard = left.iter().fold(0.0f32, |a, b| a.max(b.abs()));
+    assert!(heard > 0.3, "the session's track is heard: {heard}");
+    let _ = values;
+
+    let saved_to = folder.join("again.json");
+    let ran = app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "save", "path": saved_to.to_str().unwrap()}),
+        3,
+        None,
+    );
+    assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&saved_to).unwrap()).unwrap();
+    assert_eq!(saved["sources"]["9"]["location"]["path"], "take.wav");
+    let _ = std::fs::remove_dir_all(&folder);
+}

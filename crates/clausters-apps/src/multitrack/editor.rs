@@ -657,6 +657,16 @@ impl MultitrackEditor {
         self.takes = takes;
     }
 
+    /// One take's file, resolved again (its peaks measured).
+    pub fn set_take(&mut self, source: SourceId, file: clausters_document::parts::TakeFile) {
+        self.takes.insert(source, file);
+    }
+
+    /// The parts a join this editor knows is made of.
+    pub fn segments_of(&self, source: SourceId) -> Option<Vec<clausters_document::session::Part>> {
+        self.segments.get(&source).cloned()
+    }
+
     /// The file a take is, when the application resolved it.
     pub fn take(&self, source: SourceId) -> Option<&clausters_document::parts::TakeFile> {
         self.takes.get(&source)

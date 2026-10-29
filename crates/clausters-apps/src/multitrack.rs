@@ -36,6 +36,7 @@ use clausters_editing::multitrack::{self as projection, Look};
 use crate::chrome::{self, App};
 
 pub mod editor;
+pub mod sources;
 
 /// A multitrack the editor and its holder edit together -- a script's handle
 /// and the window over it are two holders of one tree.

@@ -28,7 +28,7 @@ use clausters_editing::playback::MultitrackPlayback;
 use serde_json::{Value, json};
 
 use super::held::{HeldList, HeldTake, PlacedList};
-use super::{Editing, Member, MemberId, Raised, Ran};
+use super::{Caller, Editing, Member, MemberId, Raised, Ran, Render};
 use crate::multitrack::editor::{Kind, TransportVerb};
 use crate::turn::Event;
 
@@ -42,6 +42,11 @@ pub(super) struct Tracks {
     /// its readers play.
     taken: HashMap<NodeId, (Vec<PlacedRegion>, PlannedFeed)>,
     revision: u64,
+    /// The session it was opened from, and where it is: what a save
+    /// writes again, with the multitrack as it now is.
+    session: Option<(clausters_document::session::Session, String)>,
+    /// The peaks being measured, by take: where each is written.
+    measuring: Vec<(clausters_document::SourceId, String)>,
 }
 
 impl Tracks {
@@ -52,6 +57,8 @@ impl Tracks {
             playback: MultitrackPlayback::in_medium(engine.medium()),
             taken: HashMap::new(),
             revision: 0,
+            session: None,
+            measuring: Vec::new(),
         })
     }
 }
@@ -83,6 +90,7 @@ impl Editing {
         &mut self,
         member: MemberId,
         action: &Value,
+        caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {
         let mut tracks = match self.tracks.remove(&member) {
@@ -92,9 +100,155 @@ impl Editing {
                 None => return refused("runtime", "the multitrack has no engine"),
             },
         };
-        let ran = self.multitrack_run(member, &mut tracks, action, ids);
+        let ran = self.multitrack_run(member, &mut tracks, action, caller, ids);
         self.tracks.insert(member, tracks);
         ran
+    }
+
+    /// **The peaks a session's takes were measured into have landed**:
+    /// each take names its peaks from now on, and the window draws them.
+    pub(crate) fn multitrack_landed(
+        &mut self,
+        member: MemberId,
+        result: Result<(), String>,
+    ) -> Ran {
+        let measured = self
+            .tracks
+            .get_mut(&member)
+            .map(|tracks| std::mem::take(&mut tracks.measuring))
+            .unwrap_or_default();
+        if result.is_ok()
+            && let Some(Member::Multitrack(editor)) = self.member_mut(member)
+        {
+            for (source, peaks) in measured {
+                if let Some(mut file) = editor.take(source).cloned() {
+                    file.peaks = Some(peaks.as_str().into());
+                    editor.set_take(source, file);
+                }
+            }
+        }
+        Ran {
+            effects: vec![effect("resync", json!({}))],
+            ..Ran::default()
+        }
+    }
+
+    /// **A session opened over member `member`**: read from `path` through
+    /// the file layer, its multitrack put in the editor, its takes' headers
+    /// read through `caller`, its joins known, and the peaks it has not got
+    /// measured by a render handed back. A source that is not there is
+    /// said, and its boxes are silent.
+    fn open_session(
+        &mut self,
+        member: MemberId,
+        tracks: &mut Tracks,
+        path: &str,
+        caller: &mut dyn Caller,
+        ran: &mut Ran,
+    ) -> Result<Value, String> {
+        use crate::multitrack::sources;
+        let bytes = clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
+        let session: clausters_document::session::Session =
+            serde_json::from_slice(&bytes).map_err(|e| format!("{path}: not a session: {e}"))?;
+        let folder = std::path::Path::new(path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let resolved = sources::resolve(&session, &folder, &mut |file| caller.header(file));
+        if !resolved.measure.is_empty() {
+            let _ =
+                clausters_core::files::create_dir_all(sources::located(&folder, sources::PEAKS));
+        }
+        let Some(Member::Multitrack(editor)) = self.member_mut(member) else {
+            return Err("the member is not a multitrack".into());
+        };
+        editor.set_multitrack(session.multitrack.clone());
+        editor.set_takes(resolved.takes);
+        editor.set_segments(resolved.segments);
+        let unresolved: Vec<Value> = resolved
+            .unresolved
+            .iter()
+            .map(|(id, why)| json!({"source": id.0, "reason": why}))
+            .collect();
+        if !resolved.measure.is_empty() {
+            tracks.measuring = resolved
+                .measure
+                .iter()
+                .map(|(id, peaks, _)| (*id, peaks.clone()))
+                .collect();
+            ran.render = Some(Render {
+                run: 1,
+                steps: resolved
+                    .measure
+                    .into_iter()
+                    .map(|(_, _, step)| step)
+                    .collect(),
+            });
+        }
+        tracks.session = Some((session, path.to_string()));
+        Ok(json!({"unresolved": unresolved}))
+    }
+
+    /// **The session written** at `path`, or where it was opened from: the
+    /// multitrack as it now is, its takes and its joins in the table, every
+    /// file inside the session's folder named relative to it. A multitrack
+    /// opened over no session asks for a path.
+    fn save_session(
+        &mut self,
+        member: MemberId,
+        tracks: &mut Tracks,
+        path: Option<&str>,
+    ) -> Result<Value, String> {
+        use clausters_document::session::{Location, Session, Source};
+        use clausters_document::{Document, Lifetime};
+        let Some(Member::Multitrack(editor)) = self.member(member) else {
+            return Err("the member is not a multitrack".into());
+        };
+        let path = match (path, tracks.session.as_ref()) {
+            (Some(path), _) => path.to_string(),
+            (None, Some((_, path))) => path.clone(),
+            (None, None) => return Err("the session has no file yet: save it as".into()),
+        };
+        let mut session = tracks
+            .session
+            .as_ref()
+            .map(|(session, _)| session.clone())
+            .unwrap_or_else(|| Session::new(Document::empty()));
+        session.multitrack = editor.multitrack().clone();
+        let (_, placed) = editor.read_sources();
+        for (id, source) in placed {
+            if session.sources.contains_key(&id) {
+                continue;
+            }
+            let entry = match source {
+                super::held::PlacedSource::File(file) => Source::file(
+                    file.path.to_string(),
+                    Lifetime::Session,
+                )
+                .shaped(file.channels, file.frames, file.rate),
+                super::held::PlacedSource::Parts(_) => continue,
+            };
+            session.sources.insert(id, entry);
+        }
+        for source in editor.joins_read() {
+            if let (false, Some(parts)) = (
+                session.sources.contains_key(&source),
+                editor.segments_of(source),
+            ) {
+                let mut entry = Source::file("", Lifetime::Session);
+                entry.location = Location::Segments { parts };
+                session.sources.insert(source, entry);
+            }
+        }
+        let folder = std::path::Path::new(&path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let written = crate::multitrack::sources::written(session.clone(), &folder);
+        let text = serde_json::to_string_pretty(&written).map_err(|e| e.to_string())?;
+        clausters_core::files::write(&path, text).map_err(|e| format!("{path}: {e}"))?;
+        tracks.session = Some((session, path.clone()));
+        Ok(json!({"destination": path}))
     }
 
     fn multitrack_run(
@@ -102,11 +256,24 @@ impl Editing {
         member: MemberId,
         tracks: &mut Tracks,
         action: &Value,
+        caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {
         let mut ran = Ran::default();
         let verb = action["verb"].as_str().unwrap_or_default();
         let result = match verb {
+            "open" if action["session"].is_string() => {
+                let path = action["session"].as_str().unwrap_or_default().to_string();
+                let opened = self.open_session(member, tracks, &path, caller, &mut ran);
+                if opened.is_ok() {
+                    self.sound(member, tracks, ids);
+                }
+                opened.map(|mut answer| {
+                    answer["transport"] = json!(tracks.playback.transport());
+                    answer
+                })
+            }
+            "save" => self.save_session(member, tracks, action["path"].as_str()),
             "open" | "sound" => {
                 self.sound(member, tracks, ids);
                 Ok(json!({"transport": tracks.playback.transport()}))

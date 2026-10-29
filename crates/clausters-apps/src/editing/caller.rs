@@ -119,7 +119,7 @@ impl Editing {
                     ..Ran::default()
                 },
             },
-            Some(Member::Multitrack(_)) => self.multitrack_act(member, action, ids),
+            Some(Member::Multitrack(_)) => self.multitrack_act(member, action, caller, ids),
             _ => refused(),
         }
     }
@@ -137,6 +137,7 @@ impl Editing {
     ) -> Ran {
         match self.member(member) {
             Some(Member::Audio(_)) => self.audio_landed(member, run, result, lease, caller, ids),
+            Some(Member::Multitrack(_)) => self.multitrack_landed(member, result),
             _ => refused(),
         }
     }

@@ -1774,7 +1774,7 @@ mod sources;
 pub(crate) use door::call_value;
 pub(crate) use door::{FileAt, open_paths, refusal, turns};
 pub use door::{call_json, new_json};
-pub(crate) use sources::peaks_beside;
+pub(crate) use sources::{peaks_beside, peaks_for_opened};
 
 #[cfg(test)]
 mod tests;
