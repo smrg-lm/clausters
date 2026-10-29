@@ -126,11 +126,11 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
-- ⬜ **A paste blinks the audio editor's picture, in a short take as in a
-  long one** and **A spectrogram of a server buffer may draw nothing in a
-  host that cannot map it** *(`clients/gui/PLAN.md`, Found by use)*. The
-  first found in `G44c`'s native eye pass; the second now seen in a page,
-  blank and, zoomed, misplaced.
+- ⬜ **A spectrogram of a server buffer may draw nothing in a host that
+  cannot map it** and **A stopped audio editor window ticks thirty times a
+  second for its playhead** *(`clients/gui/PLAN.md`, Found by use)*. The
+  first seen in a page, blank and, zoomed, misplaced; the second measured
+  closing the paste's blink.
 
 - ⬜ **`edit(file, { stage })` opens the audio editor somewhere else**
   *(`clients/web/PLAN.md`, Found by use)*. Found writing the page test of

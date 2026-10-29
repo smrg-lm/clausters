@@ -244,6 +244,8 @@ pub(super) struct App {
     /// The server-buffer fetch machine (`/buffer_query` -> chunked `/buffer_getRange`),
     /// shared with the browser front.
     pub(super) fetches: BufferFetches,
+    /// The windows keeping their last frame while a picture is stale.
+    pub(super) hold: crate::host::replies::PictureHold,
     /// The node tree last read from the server, by group id, feeding `nodetree`
     /// widgets (filled by `/group_queryTree.reply`).
     pub(super) node_trees: HashMap<i32, NodeTree>,
@@ -318,6 +320,7 @@ impl App {
             started: Instant::now(),
             next_frame: Instant::now(),
             fetches: BufferFetches::default(),
+            hold: Default::default(),
             node_trees: HashMap::new(),
             notified: false,
             frontiers: HashMap::new(),
@@ -626,6 +629,16 @@ impl App {
         if whole {
             self.refresh_slots_for(def_id);
         }
+        // a picture of the take before an edit is not drawn on its axis
+        if whole && !capture {
+            let stale = crate::host::replies::Front::draws_stale_picture(self, def_id);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0.0, |d| d.as_secs_f64() * 1000.0);
+            if self.hold.keeps(def_id, stale, now) {
+                return None;
+            }
+        }
         let server_attached = self.host.server().is_some();
         // A window reads its own source where it has one (an application's
         // engine), the segment otherwise.
@@ -837,6 +850,11 @@ impl App {
     pub(super) fn tick(&mut self, lp: Loop) -> Option<Instant> {
         let now = Instant::now();
         let mut next_wake: Option<Instant> = None;
+        // a window keeping its frame is looked at again a frame later
+        for def_id in self.hold.holding() {
+            crate::host::replies::Front::redraw_window(self, def_id);
+            next_wake = Some(now + Duration::from_millis(16));
+        }
 
         // Drain replies from an embedded server (standalone): the UDP leg uses a
         // background thread, but the embed ring is polled here on the main thread.

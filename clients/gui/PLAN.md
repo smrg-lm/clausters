@@ -8969,13 +8969,30 @@ module of its own.
   (`Front::awaits_picture`, the same rule natively and in a page), or after
   ten seconds as it stands (`a_picture_is_awaited_until_its_summary_is_whole`).
 
-- ⬜ **A paste blinks the audio editor's picture, in a short take as in a
+- ✅ **A paste blinks the audio editor's picture, in a short take as in a
   long one** *(found 2026-10-28 by the user, in the native eye pass of
   `G44c`)*. The pasted span shows at once and nothing is redrawn from the
   left, but the picture blinks as it is replaced, the same over a
   two-second and a ten-minute stereo take. The other window, over another
   file, does not move. What blinks (the summary placed whole, a frame drawn
   with no picture between the old and the new) is the question.
+  *Fixed 2026-10-28, measured in a page frame by frame.* The axis spans
+  the new take as soon as its list is named, and the picture stayed the
+  old take's until the new summary landed, so a frame or two drew the old
+  picture squeezed onto the new axis. A window whose picture is of another
+  length than its axis keeps its last frame on screen, up to 250 ms, while
+  what it waits on is asked as a drawn frame would ask it
+  (`replies::PictureHold`, both fronts); the page went from the old picture
+  to the new one with nothing between. Found with it: the status line
+  printed the paste's clipboard document whole; a long string is counted
+  now.
+
+- ⬜ **A stopped audio editor window ticks thirty times a second for its
+  playhead** *(found 2026-10-28, measuring the fix above natively)*.
+  `activity()` over two seconds of a window that never played reads 61
+  ticks with `demand: ['playhead']`; the lifecycle example says a stopped
+  window ticks for nothing. Whether the demand is the play cursor's
+  standing mark or a transport the editor reads is the first thing to see.
 
 - ⬜ **What a score box of the multitrack left open** *(moved here
   2026-10-28 when `N9` closed; each for when it is met)*.

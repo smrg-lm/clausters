@@ -64,6 +64,9 @@ pub(crate) trait Front {
     /// holds any: a view that does keeps drawing them and owes the new
     /// list's, over the take as long as it is now.
     fn stale_columns(&self, def_id: i32, widget_id: i32, frames: usize) -> bool;
+    /// How many frames the picture widget `widget_id` of window `def_id`
+    /// draws, or `None` while it draws none.
+    fn picture_frames(&self, def_id: i32, widget_id: i32) -> Option<usize>;
     /// The widgets a hand is holding in this front's windows, which a value
     /// read back must not move ([`Host::read_back`]).
     fn held(&self) -> Vec<i32>;
@@ -921,6 +924,32 @@ pub(crate) trait Front {
         owed || !self.fetches().owed_widgets(def_id).is_empty() || self.fetches().pending()
     }
 
+    /// **Whether window `def_id` draws a picture of a take it no longer
+    /// shows**: a view whose picture is of another length than the take its
+    /// axis spans. The axis spans a list's new take as soon as the list is
+    /// named, and the picture is the old take's until the new summary lands,
+    /// so a whole frame drawn between the two draws the old picture over the
+    /// new axis -- a paste blinked the picture squeezed for a frame or two.
+    fn draws_stale_picture(&mut self, def_id: i32) -> bool {
+        fn views(w: &crate::host::widget::Widget, out: &mut Vec<i32>) {
+            if let Some(id) = w.id.filter(|_| w.kind.as_samples().is_some()) {
+                out.push(id);
+            }
+            for child in &w.children {
+                views(child, out);
+            }
+        }
+        let mut found = Vec::new();
+        if let Some(tree) = self.host().window_def(def_id) {
+            views(tree, &mut found);
+        }
+        found.into_iter().any(|id| {
+            let total = self.host().timelines().total_of(id);
+            self.picture_frames(def_id, id)
+                .is_some_and(|held| total > 0 && held != total)
+        })
+    }
+
     fn ask_owed_spans(&mut self, defs: &[i32]) {
         for key in self.host_mut().take_relisted() {
             self.fetches().forget(key);
@@ -1148,3 +1177,77 @@ fn number(arg: &OscType) -> f64 {
 
 #[cfg(test)]
 mod tests;
+
+/// **How long a window keeps its last frame on screen** while a picture it
+/// draws is of a take it no longer shows ([`Front::draws_stale_picture`]).
+/// The new picture is a reply or two away; past this, the window is drawn
+/// as it is.
+pub(crate) const PICTURE_HOLD_MS: f64 = 250.0;
+
+/// **The windows keeping their last frame** until their picture is current,
+/// and since when, on the clock of the front that draws them.
+///
+/// A paste names a new list, its axis spans the new take at once, and the
+/// picture is the old take's until the new summary lands: a whole frame
+/// drawn between the two drew the old picture squeezed onto the new axis,
+/// which read as a blink. Keeping the frame on screen until the two agree
+/// shows the edit in one step, as an editor's picture is expected to move.
+#[derive(Debug, Default)]
+pub(crate) struct PictureHold {
+    /// Since when each window's picture is stale, and whether its hold ran
+    /// out (it is then drawn as it is until its picture is current).
+    since: std::collections::HashMap<i32, (f64, bool)>,
+}
+
+impl PictureHold {
+    /// **Whether window `def_id` keeps its last frame** instead of drawing a
+    /// whole one now: its picture is `stale`, and became so less than
+    /// [`PICTURE_HOLD_MS`] before `now_ms`.
+    pub(crate) fn keeps(&mut self, def_id: i32, stale: bool, now_ms: f64) -> bool {
+        if !stale {
+            self.since.remove(&def_id);
+            return false;
+        }
+        let (since, out) = self.since.entry(def_id).or_insert((now_ms, false));
+        if !*out && now_ms - *since >= PICTURE_HOLD_MS {
+            *out = true;
+        }
+        !*out
+    }
+
+    /// **The windows keeping their frame now**, which a front draws again
+    /// soon whether or not anything asks: the picture that ends a hold
+    /// redraws the window, and a hold that runs out has to be found. A
+    /// page asks its next animation frame as it keeps one, so only the
+    /// native front's tick reads this.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn holding(&self) -> Vec<i32> {
+        self.since
+            .iter()
+            .filter(|(_, (_, out))| !out)
+            .map(|(&def, _)| def)
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod hold_tests {
+    use super::*;
+
+    /// A stale picture keeps the frame until it is current or the hold
+    /// runs out, and the next stale picture is held afresh.
+    #[test]
+    fn a_stale_picture_keeps_the_frame_until_it_is_current_or_late() {
+        let mut hold = PictureHold::default();
+        assert!(!hold.keeps(1, false, 0.0), "a current picture is drawn");
+        assert!(hold.keeps(1, true, 10.0));
+        assert!(hold.keeps(1, true, 200.0));
+        assert_eq!(hold.holding(), vec![1]);
+        assert!(!hold.keeps(1, true, 10.0 + PICTURE_HOLD_MS), "not for ever");
+        assert!(!hold.keeps(1, true, 700.0), "and not again while stale");
+        assert!(hold.holding().is_empty());
+        assert!(hold.keeps(2, true, 300.0), "each window on its own");
+        assert!(!hold.keeps(1, false, 400.0));
+        assert!(hold.keeps(1, true, 500.0), "held afresh");
+    }
+}

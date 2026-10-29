@@ -602,6 +602,14 @@ impl Front for App {
             .is_some_and(|slot| slot.keeps_columns(frames))
     }
 
+    fn picture_frames(&self, def_id: i32, widget_id: i32) -> Option<usize> {
+        self.windows
+            .get(&def_id)?
+            .waveforms
+            .get(&(widget_id, SlotKey::SELF))
+            .map(|slot| slot.view.total_samples())
+    }
+
     fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)> {
         let Some(ws) = self.windows.get(&def_id) else {
             return Vec::new();

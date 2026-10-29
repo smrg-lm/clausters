@@ -434,6 +434,16 @@ impl Front for WebApp {
             .is_some_and(|slot| slot.keeps_columns(frames))
     }
 
+    fn picture_frames(&self, def_id: i32, widget_id: i32) -> Option<usize> {
+        self.canvases
+            .get(&def_id)?
+            .render
+            .as_ref()?
+            .waveforms
+            .get(&(widget_id, SlotKey::SELF))
+            .map(|slot| slot.view.total_samples())
+    }
+
     fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)> {
         let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) else {
             return Vec::new();

@@ -445,6 +445,10 @@ code that keeps it lives.
   reports it (`host::web::canvas`); at a fixed 480 x 420 laid out at a scale
   of 1, the editor was crushed and a press at a fractional density landed
   off its mark.
+- **An edit shows in one step.** A window whose picture is of another
+  length than the take its axis spans (a list just named, its summary on
+  its way) keeps its last frame on screen, up to `PICTURE_HOLD_MS`, rather
+  than draw the old picture on the new axis (`replies::PictureHold`).
 - **What moves is drawn over the picture, never through it.** A frame drawn
   because a playhead or a meter moved copies the kept picture and draws the
   live layers in their boxes (`frame::underlay`); each pass ends with its

@@ -213,6 +213,9 @@ fn summarize(args: &[OscType]) -> String {
     parts.join(" ")
 }
 
+/// The longest string argument a line shows as it is.
+const SHOWN_CHARS: usize = 32;
+
 /// One OSC argument, short. A float keeps three decimals and drops the tail of
 /// zeros a placement in samples is full of.
 fn one_arg(arg: &OscType) -> String {
@@ -221,6 +224,11 @@ fn one_arg(arg: &OscType) -> String {
         OscType::Long(n) => n.to_string(),
         OscType::Float(f) => trim_zeros(&format!("{f:.3}")),
         OscType::Double(f) => trim_zeros(&format!("{f:.3}")),
+        // a word is shown; a document (a paste's clipboard rides as one) is
+        // counted, as a blob is, or it fills the line before its verb's end
+        OscType::String(s) if s.chars().count() > SHOWN_CHARS || s.contains('\n') => {
+            format!("<{} characters>", s.chars().count())
+        }
         OscType::String(s) => s.clone(),
         OscType::Blob(b) => format!("<{} bytes>", b.len()),
         OscType::Bool(b) => b.to_string(),
@@ -588,6 +596,26 @@ mod tests {
         let l = Line::of_reason(Some(3), "a marker is the message it sends");
         assert_eq!(l.kind, Kind::Refused);
         assert_eq!(l.text, "refused: a marker is the message it sends");
+    }
+
+    /// A paste carries the clipboard's document, which the line counts
+    /// rather than prints: printed, it filled the bar.
+    #[test]
+    fn a_document_in_a_payload_is_counted_not_printed() {
+        let document = format!(
+            "{{\"content\":{{\"kind\":\"segments\"{}}}}}",
+            " ".repeat(40)
+        );
+        let args = vec![
+            OscType::String("paste".into()),
+            OscType::Float(0.0),
+            OscType::String("segments".into()),
+            OscType::String(document.clone()),
+        ];
+        assert_eq!(
+            Line::of_event(4, &args).text,
+            format!("paste 0 segments <{} characters>", document.chars().count())
+        );
     }
 
     #[test]

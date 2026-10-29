@@ -478,6 +478,17 @@ impl WebApp {
             let extents = refresh_slots(slot, tree);
             self.host.apply_extents(extents);
         }
+        // a picture of the take before an edit is not drawn on its axis
+        if whole && !capture {
+            let stale = crate::host::replies::Front::draws_stale_picture(self, def);
+            if self.hold.keeps(def, stale, now_ms()) {
+                // what the picture waits on is asked as a drawn frame asks
+                // it, and the canvas is looked at again a frame later
+                self.fetch_wanted_spans(def);
+                self.request_redraw(def);
+                return None;
+            }
+        }
         let server_attached = self.host.server().is_some();
         let focused = self
             .host

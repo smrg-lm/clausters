@@ -319,6 +319,8 @@ struct WebApp {
     /// The server-buffer fetch machine (`/buffer_query` -> chunked `/buffer_getRange`),
     /// shared with the native front; requests ride the WS leg.
     fetches: BufferFetches,
+    /// The canvases keeping their last frame while a picture is stale.
+    hold: crate::host::replies::PictureHold,
     /// What a MIDI message's bytes go through to become notes.
     #[cfg(feature = "midi")]
     midi: crate::host::midi::Reader,
@@ -385,6 +387,7 @@ impl WebApp {
             tick_clock: Default::default(),
             stream_seen: false,
             fetches: BufferFetches::default(),
+            hold: Default::default(),
             #[cfg(feature = "midi")]
             midi: Default::default(),
             #[cfg(feature = "midi")]

@@ -56,6 +56,9 @@ impl Front for Probe {
     fn stale_columns(&self, _def_id: i32, _widget_id: i32, _frames: usize) -> bool {
         false
     }
+    fn picture_frames(&self, _def_id: i32, _widget_id: i32) -> Option<usize> {
+        None
+    }
     fn held(&self) -> Vec<i32> {
         Vec::new()
     }
