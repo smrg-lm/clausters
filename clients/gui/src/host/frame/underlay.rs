@@ -383,6 +383,9 @@ impl Underlay {
             pass.draw(0..3, 0..1);
             painter.draw(pass);
         }
+        if let Some(atlas) = &self.atlas {
+            whole(pass, atlas.size);
+        }
     }
 
     /// **The frame, single-sampled**: the picture whole, then each box the
@@ -400,6 +403,9 @@ impl Underlay {
             pass.set_scissor_rect(x, y, w, h);
             pass.set_bind_group(0, self.bound(p.out), &[]);
             pass.draw(0..3, 0..1);
+        }
+        if let Some(held) = &self.held {
+            whole(pass, held.size);
         }
     }
 
@@ -487,6 +493,15 @@ impl Underlay {
         });
         self.bound[slot] = Some((self.epoch, group));
     }
+}
+
+/// **A pass left over all of its target.** WebGL resolves a multisampled
+/// attachment and presents a surface by blitting it, and a blit is clipped by
+/// the scissor still set: a pass that ended on a box's scissor left the page
+/// with the box transparent wherever a live layer was drawn.
+fn whole(pass: &mut wgpu::RenderPass<'_>, (w, h): (u32, u32)) {
+    pass.set_viewport(0.0, 0.0, w as f32, h as f32, 0.0, 1.0);
+    pass.set_scissor_rect(0, 0, w, h);
 }
 
 /// One triangle over the viewport, each pixel the texel its shift away.

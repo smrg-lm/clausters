@@ -38,6 +38,9 @@ pub(super) struct WindowRender {
 /// into this canvas, at this size, and right now it is (not) visible*.
 pub(super) struct CanvasSlot {
     pub(super) window: Arc<Window>,
+    /// This front appended the canvas, so nobody else reports its density:
+    /// a change of the display's scale is read off winit's event.
+    pub(super) appended: bool,
     /// The server buffer each view reads, by widget: what a redefine keeps
     /// the pictures of (`frame::carry_slots`).
     pub(super) reads: HashMap<i32, i32>,
@@ -178,6 +181,7 @@ impl CanvasSlot {
     pub(super) fn new(window: Arc<Window>) -> Self {
         Self {
             window,
+            appended: false,
             reads: HashMap::new(),
             render: None,
             pending_size: None,
@@ -325,9 +329,16 @@ impl WebApp {
             self.by_winit.remove(&old.window.id());
         }
         let appending = canvas.is_none();
+        // **A canvas this front appends is the window's own**, as an OS
+        // window is natively: created at the size the window declares. One the
+        // page supplied is sized by the page (`WebEvent::Resize`).
+        let (width, height) = appending
+            .then(|| self.host.window_size(def_id))
+            .flatten()
+            .unwrap_or(CANVAS_SIZE);
         let attrs = Window::default_attributes()
             .with_title(format!("clausters-gui {def_id}"))
-            .with_inner_size(LogicalSize::new(CANVAS_SIZE.0 as f64, CANVAS_SIZE.1 as f64))
+            .with_inner_size(LogicalSize::new(width as f64, height as f64))
             // Not focused on creation: winit focuses a new canvas, and a
             // browser scrolls a freshly focused element into view -- so in a
             // document with several components the last one mounted would yank
@@ -341,7 +352,19 @@ impl WebApp {
             Err(e) => return log(&format!("def {def_id}: cannot open a canvas: {e}")),
         };
         self.by_winit.insert(window.id(), def_id);
+        if appending {
+            // Nobody reports this canvas' density, so it is read here, as a
+            // native window reads its display's: without it the surface was
+            // laid out at a scale of 1 over the page's device pixels while a
+            // pointer was read at the page's density, and on a display scaled
+            // 1.25 every press landed a fifth short of its mark.
+            self.host.set_ui_scale(def_id, window.scale_factor() as f32);
+            if let Some((w, h)) = self.host.window_size_px(def_id) {
+                let _ = window.request_inner_size(PhysicalSize::new(w, h));
+            }
+        }
         let mut slot = CanvasSlot::new(window.clone());
+        slot.appended = appending;
         slot.watch_buttons();
         slot.composer = compose::Composer::attach(self.id, def_id);
         self.canvases.insert(def_id, slot);

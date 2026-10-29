@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>clausters: an application's window in a page</title>
+  </head>
+  <body>
+    <pre id="log"></pre>
+    <!--
+      An application's window in a page (clients/web/test.sh, headless,
+      served isolated: `app-window.html?isolated`). The host appends a canvas
+      of its own for an application's window, and that canvas is the
+      window's, as an OS window is natively: it opens at the size the window
+      declares (the audio editor's 1000 x 520; it was a fixed 480 x 420,
+      which crushed the editor), laid out at the page's density, which only
+      the host can read for it. Two presses over the take then measure the
+      body that shows it, in CSS pixels, and it lies inside the canvas.
+      Chrome skews a synthetic event's position under a forced display
+      scale, so the press at a fractional density is checked with real input
+      instead (a press at 1.25 used to land a fifth short of its mark).
+      Verdict beaconed as a fetch, read from the access log.
+    -->
+    <script type="module">
+      import { Session, SoundFile, gui, opfs } from "../dist/index.js";
+
+      const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`).catch(() => {});
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const until = async (test, what, ms = 20_000) => {
+        const end = performance.now() + ms;
+        for (;;) {
+          if (await test()) return;
+          if (performance.now() > end) throw new Error(`timeout: ${what}`);
+          await sleep(20);
+        }
+      };
+
+      // A press and a release at `(x, y)` of `canvas`, in CSS pixels from
+      // its corner: what a hand's click delivers to the canvas.
+      const click = (canvas, x, y) => {
+        const box = canvas.getBoundingClientRect();
+        const at = { clientX: box.x + x, clientY: box.y + y, bubbles: true, composed: true,
+          pointerId: 1, pointerType: "mouse", isPrimary: true };
+        canvas.dispatchEvent(new PointerEvent("pointermove", { ...at, buttons: 0 }));
+        canvas.dispatchEvent(new PointerEvent("pointerdown", { ...at, button: 0, buttons: 1 }));
+        canvas.dispatchEvent(new PointerEvent("pointerup", { ...at, button: 0, buttons: 0 }));
+      };
+
+      try {
+        if (!crossOriginIsolated) throw new Error("the page is not cross-origin isolated");
+        const session = (await Session.embed({ channels: 2 })).activate();
+        const rate = (await session.server.queryInfo()).nominalSampleRate;
+        const frames = 2 * Math.trunc(rate);
+        const samples = new Float32Array(frames).map((_, i) => 0.5 * Math.sin(i * 0.05));
+        await opfs.makeDirectory("out");
+        const write = (name) => SoundFile.write(`out/${name}`, samples, 1, rate, { sampleFormat: "float" });
+        const take = await write("app_window.wav");
+
+        await session.gui();
+        const before = new Set(document.querySelectorAll("canvas"));
+        const editor = await gui.edit(take, { title: "take" });
+        const fresh = () => [...document.querySelectorAll("canvas")].find((c) => !before.has(c));
+        await until(() => fresh() !== undefined, "the window's canvas");
+        const canvas = fresh();
+
+        // **The window's declared size**, as a native window opens at it.
+        const box = canvas.getBoundingClientRect();
+        if (Math.abs(box.width - 1000) > 1 || Math.abs(box.height - 520) > 1) {
+          throw new Error(`the window's canvas is ${box.width}x${box.height}, not 1000x520`);
+        }
+        log(`sized: the window's canvas is ${box.width}x${box.height}, as declared`);
+
+        // **A press lands where it is drawn**: two presses over the take
+        // measure the body that shows its two seconds, in CSS pixels.
+        await sleep(1500);
+        const y = 0.5 * box.height;
+        const at = async (x) => {
+          click(canvas, x, y);
+          await sleep(300);
+          return editor.cursor();
+        };
+        const [x1, x2] = [0.4 * box.width, 0.6 * box.width];
+        const [t1, t2] = [await at(x1), await at(x2)];
+        if (!(t2 > t1)) throw new Error(`two presses put the cursor at ${t1} and then ${t2}`);
+        const body = (x2 - x1) * (2.0 / (t2 - t1));
+        if (body >= box.width) {
+          throw new Error(`the take's body measures ${body.toFixed(0)} CSS pixels in a canvas ` +
+            `of ${box.width}: a press is read at another scale than the one it is drawn at`);
+        }
+        log(`pressed: ${t1.toFixed(3)} s and ${t2.toFixed(3)} s, a body of ${body.toFixed(0)} px`);
+
+        verdict("PASS: an application's window opened at its declared size and a press on " +
+          "it landed where it is drawn");
+        await editor.close();
+      } catch (error) {
+        verdict(`FAIL: ${error?.message ?? error}`);
+      }
+    </script>
+  </body>
+</html>

@@ -435,6 +435,18 @@ code that keeps it lives.
   host's `/gui_closed`; a canvas the page handed over is the page's and stays.
   Kept on the page, it went on showing the last frame of a window that no
   longer existed.
+- **An application's window in a page is a window, as on the screen.** The
+  canvas the host appends for it opens at the size the window declares and
+  is laid out at the page's density, read by the host since nobody else
+  reports it (`host::web::canvas`); at a fixed 480 x 420 laid out at a scale
+  of 1, the editor was crushed and a press at a fractional density landed
+  off its mark.
+- **What moves is drawn over the picture, never through it.** A frame drawn
+  because a playhead or a meter moved copies the kept picture and draws the
+  live layers in their boxes (`frame::underlay`); each pass ends with its
+  scissor over the whole target, since WebGL resolves and presents by a blit
+  the scissor clips, and a pass that ended on a box left that box
+  transparent in a page.
 - **A correction addresses only what the window drew.** A prop set after a
   turn -- the play cursor, the level meter -- names a widget of the window as
   it was last drawn; a widget the window was asked for and did not draw

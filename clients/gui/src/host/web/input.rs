@@ -409,6 +409,14 @@ impl WebApp {
                 }
                 slot.request_redraw();
             }
+            // A canvas this front appended follows the display's scale as a
+            // native window does; a page's own is told by the page.
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                if self.canvases.get(&def).is_some_and(|slot| slot.appended) {
+                    self.host.set_ui_scale(def, scale_factor as f32);
+                    self.request_redraw(def);
+                }
+            }
             // The keyboard's own path, for a modifier held with no pointer
             // event to carry it -- a Ctrl+Z over a focused canvas. The pointer
             // events are the other writer of the same three flags, and the
