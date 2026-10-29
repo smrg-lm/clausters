@@ -5595,3 +5595,29 @@ wrong.
   counted. Seen once in some thirty runs of the suite under full load and
   not in twenty more; what the reader holds at that wrap is the question
   (a ring that read the old loop's end, refilled as a locate would be).
+
+- ⬜ **The second audio editor window does not play** *(found 2026-10-28
+  by the user, in the native eye pass of `G44c`)*. Two windows opened from
+  a script, `edit(a)` then `edit(b)` over two ten-minute stereo files: the
+  first plays, the second's play does nothing. Not looked into yet; the
+  lifecycle example plays in both of its windows, so what differs (the
+  length, the order of opening, the files) is the first thing to find.
+
+- ⬜ **A save that cannot fit its file fails late, and its message is cut**
+  *(found 2026-10-28 by the user, saving a take pasted to four and a half
+  hours over the `.wav` it was opened from)*. Six gigabytes of stereo float
+  do not fit a WAV, and the render found it at 40 %, after writing four:
+  `pcm` refuses a WAV past 4 GB only at the write that crosses it. The
+  field's answer is RF64, the WAV extension made for exactly this, kept
+  under its `.wav` name: a save into a `.wav` that will not fit is written
+  as RF64 (decided 2026-10-28), and the length is known before the render
+  starts. The status line shows the refusal cut at the window's width, so
+  the reason never reached the screen; it was read in the host's log.
+
+- ⬜ **A save cannot be cancelled** *(found 2026-10-28 by the user, the
+  same save)*. The progress window's Cancel stays inactive and the status
+  line reads `call_off refused`. A save renders into the working folder
+  and moves its render over the file only when it is done, so a save
+  cancelled before the moves leaves the file as it was and the partial
+  render to delete: it is as cancellable as any other render, and a long
+  take is when it is needed.

@@ -126,6 +126,18 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
+- ⬜ **The second audio editor window does not play**, **A save that
+  cannot fit its file fails late, and its message is cut** and **A save
+  cannot be cancelled** *(`crates/clausters-apps/PLAN.md`, Found by use)*.
+  All three found in `G44c`'s native eye pass; the second is decided
+  (RF64 past 4 GB under a `.wav` name).
+
+- ⬜ **A paste blinks the audio editor's picture, in a short take as in a
+  long one** and **A spectrogram of a server buffer may draw nothing in a
+  host that cannot map it** *(`clients/gui/PLAN.md`, Found by use)*. The
+  first found in `G44c`'s native eye pass; the second now seen in a page,
+  blank and, zoomed, misplaced.
+
 - ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare, and before `X34` only if it
