@@ -5758,6 +5758,37 @@ wrong.
   so the handler has none in either client. The audio editor's handler marks
   through its application, which is the shape to follow.
 
+- ⬜ **A box of samples is not the audio editor's view of its take** *(found
+  2026-10-29 by the user, zooming into a box of the multitrack on its
+  application: the peaks stay at the bucket they first came at, and the
+  samples are never reached)*. The audio editor draws a take through the
+  signal view's slot, which notes what of the span it shows its summary
+  does not answer (`frame::owed`), and the host reads that finer -- a finer
+  summary, then the samples. The multitrack draws its boxes another way:
+  each take's signal body into the mesh, a join span by span from the
+  takes it reads (`draw_spans`), and a spectral box through texture bodies
+  of its own. None of the three owes anything, so nothing finer is ever
+  asked; natively it never showed while a take was a mapped server buffer,
+  read whole. **The fix is the view, not the read**: a box is the audio
+  editor's view of its take, placed -- its slot keyed by the take, drawn
+  over the box's rectangle on the box's window onto the take (its start,
+  its rate, its loop's runs), owing and landing as the audio editor's
+  does. A join is a list of parts like the audio editor's take, so it is
+  drawn as one too, and the spectral view, the layers and the zoom to the
+  samples come with the view rather than being written again. What the
+  multitrack keeps is what is its own: where a box is, its frame, its
+  fades' veil, its label and its grips.
+
+- ⬜ **The multitrack's cursors are not the audio editor's** *(found
+  2026-10-29 by the user, the same pass)*. Placing the position cursor and
+  what a play, a stop, a loop and a pass that ends do with it are written
+  for the audio editor (`docs/app-behavior.md`, "The cursor moves the
+  music" and the rules beside it) and carried out by its playback
+  (`audio_playback::space`, `Pass`, `follow`, `cue`, `locate`); the
+  multitrack's playback has its own versions of each, in seconds, and they
+  differ. The rules are one: the policy moves where both playbacks read it,
+  and the multitrack keeps only the unit it counts in.
+
 - ⬜ **A box drawn as its page opens its roll** *(found 2026-10-29 by
   the user, the eye pass over the multitrack on its application)*. With the
   boxes of notes drawn as scores, a double click on one opened the score

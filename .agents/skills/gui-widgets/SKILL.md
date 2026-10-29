@@ -7,6 +7,41 @@ description: Domain knowledge for designing and implementing the Clausters GUI's
 
 This skill is the widget-level companion of [[clausters-gui]] (the track map: protocol, architecture, rendering machinery) — what [[ugen-dsp]] is to the server's UGens. It covers what each graphical element *is*: its algorithm, visual parameters, data source and implementation pattern. `clients/gui/PLAN.md` wins on milestone scoping, staging and design rationale.
 
+## Adapt the view that exists; never write a second one
+
+**The rule** (`AGENTS.md`, "What is built is adapted, never written again"):
+a structure that already has a view is drawn by *that* view wherever it
+appears, whatever the application around it does with it. A box of samples
+in the multitrack, a clip, a segment, a lane of a stacked editor are all the
+audio editor's view of a take, placed: the same element, the same data, the
+same pipeline (its slot, its owed reads, its detail and its samples, its
+spectral layers), and the same cursor rules. The application around it owns
+only what is its own -- where the box sits, its frame, its fades' veil, its
+label and its grips.
+
+How to apply it, before writing any picture:
+
+1. **Find the view that draws the structure already** (`host/elements/`,
+   `host/graphics/`), and the machinery around it: how it declares what it
+   needs, how it owes a finer read, how a reply lands in it, how its slot
+   is filled. That machinery is part of the view.
+2. **If it does not fit, extend it**: a window onto it (a start, a rate, a
+   loop's runs), a rectangle it is placed in, a key that tells two of them
+   apart. The extension is written once, in the view, and the old caller
+   keeps working.
+3. **A path drawn beside it is the defect, even a short one.** The
+   multitrack once drew its takes through the signal body into the mesh,
+   its joins span by span, and its spectral boxes through textures of its
+   own: three pictures of a take, none of which owed a finer read, so a
+   zoom never reached the samples the audio editor reaches -- and a fourth
+   presentation would have been a fourth copy. Found by the user
+   2026-10-29; the record is `crates/clausters-apps/PLAN.md`, "A box of
+   samples is not the audio editor's view of its take".
+4. **The same for behavior**: a transport, a cursor, a pass that ends, a
+   gesture. The audio editor's rules are written in `docs/app-behavior.md`;
+   another application meets them by calling what carries them out, not
+   by re-deriving them in its own units.
+
 ## The extension recipe (every new widget follows it)
 
 Adding a widget is **never a protocol change** — the generic GuiDef node (`{id, type, ...props, children}`) already carries it; an unknown type is laid out but not painted. And since the K track it is not eight passes either: a leaf is **one object implementing one trait**, so the checklist below is short because the crate was made to make it short. `clients/gui/PLAN.md` (the K track) has the rationale; `docs/architecture.md` §"Adding a widget" has the long form.

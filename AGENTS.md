@@ -178,6 +178,19 @@ is here because of that:
   renderer does) and every client binds the same one. Two implementations of
   one rule is how the same data comes to look different in two places, and it
   is never found by a compiler.
+- **What is built is adapted, never written again.** A function, a view or
+  a behavior the project already has is the one a new place uses: where it
+  does not fit, it is extended -- a parameter, a window onto it, a hook --
+  and the new place calls it. A second version written beside it, however
+  small, is the defect. It holds across applications most of all: a box of
+  samples in the multitrack *is* the audio editor's view of its take,
+  placed, however different the job it does, so its zoom to the samples,
+  its spectral view and its cursors come with that view and are never
+  rebuilt; the multitrack keeps only what is its own (where a box is, its
+  frame, its fades, its grips). Before writing a picture, a read, a
+  transport rule or a gesture, find the one that exists and say in the
+  change why it could not be reused if it was not. The `gui-widgets` skill
+  says how for views.
 
 ### The packages move together
 
