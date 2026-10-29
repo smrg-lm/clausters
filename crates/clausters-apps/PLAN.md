@@ -5804,6 +5804,22 @@ wrong.
   multitrack's playback has its own versions of each, in seconds, and they
   differ. The rules are one: the policy moves where both playbacks read it,
   and the multitrack keeps only the unit it counts in.
+  **The shape, decided 2026-10-29:** a module `clausters_editing::pass`
+  holds `Pass` (`Until { end: Option<u64>, back }`, an end of `None` being
+  a multitrack pass that runs on), `space(looping, selection, cursor,
+  end: Option<u64>)`, and `Passes`, the rolling and looping state whose
+  `play`, `set_pass`, `follow`, `resume`, `pause`, `stop`, `cue` and
+  `locate` answer transport `Op`s through a frame-to-sample crossing the
+  playback hands in. `AudioEditorPlayback` keeps its focus and viewed-file
+  rules and carries `Passes` out on the file in focus. `MultitrackPlayback`
+  drops `play_pass`, `set_loop` and its own `cue`, counts in samples at its
+  rate, and keeps of its own only `End` (open, the contents, a marker:
+  what it hands `space` as `end`) and re-marking a pass that runs to the
+  contents when a sync moves them. The multitrack editor's `selection`
+  let go puts the cursor at its start and follows the loop, and a click
+  moves the music while it plays, as the audio editor's gestures do; the
+  coordinator (`multitrack_runs`) computes the pass with `space` from the
+  range, the cursor and the playback's end.
 
 - ⬜ **A box drawn as its page opens its roll** *(found 2026-10-29 by
   the user, the eye pass over the multitrack on its application)*. With the
