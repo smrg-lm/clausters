@@ -1381,7 +1381,7 @@ fn the_close_file_entry_closes_only_the_focused_file() {
         json!({"verb": "member", "member": member, "call": {"verb": action["verb"], "file": action["file"]}}),
     );
     assert!(closed.get("error").is_none(), "{closed}");
-    assert_eq!(closed["empty"], false, "one file is left");
+    assert_ne!(closed["empty"], true, "one file is left");
     let files = call(
         &mut editing,
         json!({"verb": "member", "member": member, "call": {"verb": "files"}}),

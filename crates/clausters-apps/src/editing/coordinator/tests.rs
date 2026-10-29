@@ -179,7 +179,7 @@ impl Client {
         let ran = editing.start(
             member,
             &action,
-            action["lease"] == true,
+            None,
             &mut Disk {
                 trace: &mut self.trace,
                 fail: &mut self.fail,
@@ -209,7 +209,7 @@ impl Client {
             member,
             pending["run"].as_u64().unwrap_or(0),
             result,
-            false,
+            None,
             &mut Disk {
                 trace: &mut self.trace,
                 fail: &mut self.fail,
@@ -252,7 +252,11 @@ impl Client {
 
 /// The file in focus as the editor binds it.
 fn binding(editing: &mut Editing, member: MemberId) -> Value {
-    member_call(editing, member, json!({"verb": "binding"}))
+    serde_json::from_str(&call_json(
+        editing,
+        &json!({"verb": "member", "member": member, "call": {"verb": "binding"}}).to_string(),
+    ))
+    .unwrap()
 }
 
 /// A cut of 20 frames from frame 10 of the file in focus, from its picture.

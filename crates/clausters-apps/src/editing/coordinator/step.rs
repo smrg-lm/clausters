@@ -2,6 +2,7 @@
 //! context or the editor called, a playback verb carried out, or an await
 //! handed to the caller.
 
+use super::actions as arms;
 use super::run::*;
 use super::*;
 
@@ -12,13 +13,13 @@ impl Session {
         member: MemberId,
         id: u64,
         task: Task,
-        effects: &mut Vec<Value>,
+        effects: &mut Vec<Said>,
         ids: &mut IdSpaces,
     ) -> Flow {
         let window = self.runs.get(&id).is_some_and(|run| run.window);
         match task {
-            Task::Effect(value) => {
-                effects.push(value);
+            Task::Effect(said) => {
+                effects.push(said);
                 Flow::Next
             }
             Task::Answer(value) => {
@@ -35,12 +36,16 @@ impl Session {
             }
             Task::Destination => {
                 if let Some(run) = self.runs.get_mut(&id) {
-                    run.result = json!({"destination": run.completed["destination"]});
+                    let destination = run
+                        .completed
+                        .as_ref()
+                        .and_then(|completed| completed.destination.clone());
+                    run.result = json!({"destination": destination});
                 }
                 Flow::Next
             }
             Task::Finally(Cleanup::Lease) => {
-                effects.push(tagged("lease", json!({})));
+                effects.push(Said::Lease);
                 Flow::Next
             }
             // reached without a failure: nothing to handle
@@ -54,60 +59,59 @@ impl Session {
                 }
                 Err(failure) => Flow::Fail(failure),
             },
-            Task::VerbTake(call) => {
-                let answer = member_call(editing, member, call);
-                if answer["error"] == NO_FILE {
-                    return Flow::Fail(Failure::Own(Raise::Value, NO_FILE.into()));
+            Task::VerbTake(action) => {
+                let at = audio::FileAt::File(action.file);
+                match editing.audio_file_verb(member, action.verb, at) {
+                    Ok(outcome) => {
+                        self.push(
+                            id,
+                            vec![Task::Take {
+                                outcome: Box::new(outcome),
+                                lease: false,
+                            }],
+                        );
+                        Flow::Next
+                    }
+                    Err(error) => Flow::Fail(Failure::Own(Raise::Value, error)),
                 }
-                self.push(
-                    id,
-                    vec![Task::Take {
-                        outcome: answer,
-                        lease: false,
-                    }],
-                );
-                Flow::Next
             }
             Task::Bound {
-                outcome,
+                mut outcome,
                 close_file,
                 lease,
             } => {
                 let mut tasks = Vec::new();
                 // a closed file's renders: its history went with it
-                if truthy(&outcome["deleteFiles"]) {
-                    tasks.push(effect("delete", json!({"files": outcome["deleteFiles"]})));
+                let deleted = std::mem::take(&mut outcome.delete_files);
+                if !deleted.is_empty() {
+                    tasks.push(Task::Effect(Said::Delete(deleted)));
                 }
                 if close_file {
                     tasks.push(Task::RetainPlayback);
                 }
-                if outcome["close"] == true {
+                if outcome.close {
                     tasks.push(Task::Close { closed: false });
                     tasks.push(Task::Answer(json!(false)));
                     self.push(id, tasks);
                     return Flow::Next;
                 }
-                if outcome["focusChanged"] == true && outcome["binding"].is_null() {
+                let binding = outcome.binding.clone().unwrap_or(Value::Null);
+                if outcome.focus_changed && binding.is_null() {
                     // the last file closed: the editor stays, with none
                     self.paused = false;
                     tasks.push(effect("bind", json!({"binding": null})));
-                } else if outcome["focusChanged"] == true {
+                } else if outcome.focus_changed {
                     // the file in focus brings back the span and the loop
                     // switch it left, which are its own
                     self.paused = false;
-                    tasks.push(effect("bind", json!({"binding": outcome["binding"]})));
+                    tasks.push(effect("bind", json!({"binding": binding})));
                     tasks.push(Task::Sound);
                     // a pass in progress goes on: the window only looks elsewhere
                     tasks.push(Task::Rolling(Rolled::View {
-                        frame: outcome["binding"]["cursor"].as_u64().unwrap_or(0),
+                        frame: binding["cursor"].as_u64().unwrap_or(0),
                     }));
                 }
-                let mut rest = outcome;
-                rest["steps"] = json!([]);
-                tasks.push(Task::TakeRest {
-                    outcome: rest,
-                    lease,
-                });
+                tasks.push(Task::TakeRest { outcome, lease });
                 self.push(id, tasks);
                 Flow::Next
             }
@@ -123,65 +127,57 @@ impl Session {
                 Flow::Next
             }
             Task::TakeCompleted => {
-                let completed = self
+                let outcome = self
                     .runs
                     .get(&id)
-                    .map(|run| run.completed.clone())
+                    .and_then(|run| run.completed.as_ref())
+                    .and_then(|completed| completed.outcome.clone())
                     .unwrap_or_default();
-                let outcome = completed.get("outcome").cloned().unwrap_or(json!({}));
                 if let Some(run) = self.runs.get_mut(&id) {
-                    run.changed = outcome["changed"] == true;
+                    run.changed = outcome.changed;
                 }
                 self.push(
                     id,
                     vec![Task::Take {
-                        outcome,
+                        outcome: Box::new(outcome),
                         lease: false,
                     }],
                 );
                 Flow::Next
             }
-            Task::PublishClipboard(outcome) => Flow::Await(
-                Await::Clipboard {
-                    document: outcome["clipboard"].clone(),
-                    ready: outcome["clipboardReady"] == true,
-                },
-                Resume::Clipboard,
-            ),
-            Task::Cut(outcome) => {
-                self.push(id, vec![Task::CutAct(outcome)]);
-                Flow::Next
+            Task::PublishClipboard { document, ready } => {
+                Flow::Await(Await::Clipboard { document, ready }, Resume::Clipboard)
             }
-            Task::CutAct(outcome) => {
-                let continued = door(
-                    editing,
-                    json!({"verb": "act", "member": member, "call": outcome["clipboardCut"]}),
-                );
-                let mut next = continued.get("outcome").cloned().unwrap_or(json!({}));
-                if next["answer"].is_object() {
-                    next["answer"]["seq"] = match &outcome["answer"]["seq"] {
-                        Value::Null => json!(0),
-                        seq => seq.clone(),
+            // a cut's second half, once its copy is on the clipboard
+            Task::Cut(outcome) => {
+                let Some(cut) = outcome.clipboard_cut.clone() else {
+                    return Flow::Next;
+                };
+                let continued = editing.prepare_finish_cut(member, &cut);
+                let version = continued.version;
+                let mut next = arms::audio_outcome(continued.outcome);
+                use clausters_editing::conversation::Answer as Told;
+                if let Some(Told::Ack { seq, .. } | Told::Push { seq, .. }) = next.answer.as_mut() {
+                    *seq = match outcome.answer.as_ref() {
+                        Some(Told::Ack { seq, .. } | Told::Push { seq, .. }) => *seq,
+                        _ => 0,
                     };
                 }
                 if let Some(run) = self.runs.get_mut(&id) {
-                    run.changed = next["changed"] == true;
+                    run.changed = next.changed;
                 }
-                let mut tasks = vec![effect("version", json!({"version": continued["version"]}))];
+                let mut tasks = vec![effect("version", json!({"version": version}))];
                 tasks.push(Task::Take {
-                    outcome: next,
+                    outcome: std::mem::take(&mut next),
                     lease: false,
                 });
-                tasks.extend(release(&continued["freed"]));
+                tasks.extend(release(continued.freed));
                 self.push(id, tasks);
                 Flow::Next
             }
-            Task::Stat(check) => Flow::Await(
-                Await::Stat(check["paths"].clone()),
-                Resume::Stat {
-                    seq: check["seq"].clone(),
-                },
-            ),
+            Task::Stat(check) => {
+                Flow::Await(Await::Stat(check.paths), Resume::Stat { seq: check.seq })
+            }
             Task::Read(mut files) => {
                 let Some(file) = files.pop_front() else {
                     return Flow::Next;
@@ -189,24 +185,25 @@ impl Session {
                 if !files.is_empty() {
                     self.push(id, vec![Task::Read(files)]);
                 }
-                let request = match file.get("shape") {
-                    Some(shape) => json!({"shape": shape}),
-                    None => json!({"path": file["path"]}),
-                };
-                Flow::Await(Await::Shape(request), Resume::Read)
+                Flow::Await(Await::Shape(file), Resume::Read)
             }
             Task::AddFile(file) => {
-                let mut call = file;
-                call["verb"] = json!("add_file");
-                let answer = member_call(editing, member, call);
-                let mut tasks = Vec::new();
-                if has(&answer, "error") {
-                    tasks.extend(release(&answer["freed"]));
-                }
-                tasks.push(Task::Take {
-                    outcome: answer,
-                    lease: false,
-                });
+                let tasks = match editing.add_audio_file(member, &file) {
+                    Ok(operated) => vec![
+                        Task::Operation {
+                            command: None,
+                            prepared: Some(Box::new(operated)),
+                            repairing: false,
+                        },
+                        Task::TakeCompleted,
+                    ],
+                    Err((error, freed)) => {
+                        if !freed.is_empty() {
+                            effects.push(Said::Release(freed));
+                        }
+                        return Flow::Fail(Failure::Own(Raise::Value, error));
+                    }
+                };
                 self.push(id, tasks);
                 Flow::Next
             }
@@ -217,45 +214,49 @@ impl Session {
             } => {
                 let answer = match prepared {
                     Some(prepared) => prepared,
-                    None => door(
-                        editing,
-                        json!({"verb": "operation", "action": "prepare", "member": member,
-                            "command": command.unwrap_or(json!({}))}),
-                    ),
+                    None => Box::new(editing.audio_operation(OperationCall::Prepare {
+                        member,
+                        command: command.unwrap_or(AudioCommand::Open),
+                    })),
                 };
                 self.push(id, vec![Task::OperationAnswer { answer, repairing }]);
                 Flow::Next
             }
             Task::OperationAnswer { answer, repairing } => {
-                if answer["complete"] != true {
-                    if answer["accepted"] == false {
+                if !answer.protocol.complete {
+                    if answer.protocol.accepted == Some(false) {
                         return Flow::Fail(Failure::Own(
                             Raise::Runtime,
                             "the operation is no longer available".into(),
                         ));
                     }
-                    if let Some(error) = answer["error"].as_str() {
-                        return Flow::Fail(Failure::Own(Raise::Value, error.into()));
+                    if let Some(error) = &answer.protocol.error {
+                        return Flow::Fail(Failure::Own(Raise::Value, error.clone()));
                     }
+                    let Some(prepared) = answer.protocol.batch else {
+                        return Flow::Fail(Failure::Own(
+                            Raise::Runtime,
+                            "the operation handed out no batch".into(),
+                        ));
+                    };
+                    let rendered = rendered_files(&prepared.steps);
                     return Flow::Await(
-                        Await::Steps(answer.get("steps").cloned().unwrap_or(json!([]))),
+                        Await::Steps(prepared.steps),
                         Resume::Batch {
-                            ticket: answer["ticket"].clone(),
-                            batch: answer["batch"].clone(),
+                            ticket: prepared.ticket,
+                            batch: prepared.batch,
                             repairing,
-                            member: answer["member"]
-                                .as_u64()
-                                .and_then(|m| MemberId::try_from(m).ok()),
-                            rendered: rendered_files(&answer["steps"]),
+                            member: prepared.member,
+                            rendered,
                         },
                     );
                 }
                 // the audio editor's work leaves nothing to recover: a
                 // refused operation is repaired at once
-                if has(&answer, "repair") {
-                    let answer = door(
-                        editing,
-                        json!({"verb": "operation", "action": "repaired", "ticket": answer["repair"]}),
+                if let Some(ticket) = answer.protocol.repair {
+                    let answer = Box::new(
+                        editing
+                            .audio_operation(OperationCall::Control(Control::Repaired { ticket })),
                     );
                     self.push(id, vec![Task::OperationDone { answer, repairing }]);
                     return Flow::Next;
@@ -264,63 +265,71 @@ impl Session {
                 Flow::Next
             }
             Task::OperationDone { answer, repairing } => {
-                if has(&answer, "version") {
-                    effects.push(tagged("version", json!({"version": answer["version"]})));
+                if let Some(version) = answer.protocol.version {
+                    effects.push(Said::Window(tagged("version", json!({"version": version}))));
                 }
-                if has(&answer, "echo") {
-                    effects.push(tagged("operationEcho", json!({"echo": answer["echo"]})));
+                if let Some(echo) = &answer.protocol.echo {
+                    effects.push(Said::Window(tagged("echo", json!({"answer": echo.answer}))));
                 }
-                if truthy(&answer["freed"]) {
-                    effects.push(tagged("release", json!({"freed": answer["freed"]})));
+                if let Some(freed) = answer.freed.clone().filter(|f| !f.is_empty()) {
+                    effects.push(Said::Release(freed));
                 }
+                let committed = answer.protocol.committed == Some(true);
+                let repaired = repairing && answer.repaired;
+                let refusal = (!committed && !repaired).then(|| {
+                    let reason = answer
+                        .protocol
+                        .reason
+                        .clone()
+                        .or_else(|| answer.outcome.as_ref().and_then(arms::answer_reason))
+                        .unwrap_or_else(|| "the operation was refused".into());
+                    (answer.protocol.echo.is_none(), reason)
+                });
+                let told = answer
+                    .outcome
+                    .as_ref()
+                    .map(|outcome| outcome.answer.clone());
                 if let Some(run) = self.runs.get_mut(&id) {
-                    run.completed = answer.clone();
-                    run.result = json!({"completed": answer.clone()});
+                    run.result = json!({"completed": answer});
+                    run.completed = Some(answer);
                 }
-                if answer["committed"] != true && !(repairing && answer["repaired"] == true) {
-                    if !has(&answer, "echo") {
-                        effects.push(tagged(
+                if let Some((unechoed, reason)) = refusal {
+                    if unechoed {
+                        effects.push(Said::Window(tagged(
                             "echo",
-                            json!({"answer": answer["outcome"]["answer"]}),
-                        ));
+                            json!({"answer": told.flatten()}),
+                        )));
                     }
-                    let reason = answer["reason"]
-                        .as_str()
-                        .or_else(|| answer["outcome"]["answer"]["reason"].as_str())
-                        .unwrap_or("the operation was refused")
-                        .to_string();
                     return Flow::Fail(Failure::Own(Raise::Command, reason));
                 }
                 Flow::Next
             }
             Task::Sound => {
-                let file = member_call(editing, member, json!({"verb": "playback"}));
-                if file["active"] == false || !file.is_object() {
-                    return Flow::Next;
+                let file = editing.audio(member).and_then(AudioEditor::playback_file);
+                match file.filter(|file| file.active) {
+                    Some(file) => {
+                        self.push(id, vec![Task::SyncSound(file), Task::TellMeters]);
+                        Flow::Next
+                    }
+                    None => Flow::Next,
                 }
-                let tasks = vec![Task::SyncSound(file), Task::TellMeters];
-                self.push(id, tasks);
-                Flow::Next
             }
             Task::SyncSound(file) => {
-                if file["active"] == false {
+                if !file.active {
                     return Flow::Next;
                 }
                 self.sync_held(editing, member, id, &file, ids)
             }
             Task::TellMeters => {
-                let meters = self.meters();
-                let answer =
-                    member_call(editing, member, json!({"verb": "sync", "meters": meters}));
+                let meters = self.playback.meters();
+                let corrections = editing
+                    .audio_mut(member)
+                    .map(|editor| editor.sync_meters(meters))
+                    .unwrap_or_default();
                 // the window's meter, drawn before the playback said where it
                 // writes, reads there from now on
                 if window {
-                    for correction in answer["corrections"].as_array().into_iter().flatten() {
-                        effects.push(tagged(
-                            "set",
-                            json!({"widget": correction["widget"], "props": correction["props"]}),
-                        ));
-                    }
+                    effects.extend(corrections.into_iter().map(set));
                 }
                 Flow::Next
             }
@@ -328,18 +337,13 @@ impl Session {
                 if !window {
                     return Flow::Next;
                 }
-                let state = self.state();
-                let answer = member_call(
-                    editing,
-                    member,
-                    json!({"verb": "playing", "file": state["playing"], "meters": state["meters"]}),
-                );
-                for correction in answer["corrections"].as_array().into_iter().flatten() {
-                    effects.push(tagged(
-                        "set",
-                        json!({"widget": correction["widget"], "props": correction["props"]}),
-                    ));
-                }
+                let playing = self.playback.playing().map(|f| f as i64);
+                let meters = self.playback.meters();
+                let corrections = editing
+                    .audio_mut(member)
+                    .map(|editor| editor.playing(playing, Some(meters)))
+                    .unwrap_or_default();
+                effects.extend(corrections.into_iter().map(set));
                 Flow::Next
             }
             // the engine says whether it rolls
@@ -399,30 +403,23 @@ impl Session {
                 match steps {
                     Err(error) => Flow::Fail(Failure::Own(Raise::Runtime, error)),
                     Ok(steps) if steps.is_empty() => Flow::Next,
-                    Ok(steps) => Flow::Await(
-                        Await::Steps(clausters_editing::apply::steps_json(&steps)),
-                        Resume::Steps,
-                    ),
+                    Ok(steps) => Flow::Await(Await::Steps(steps), Resume::Steps),
                 }
             }
             Task::RetainPlayback => {
-                let result = door(
-                    editing,
-                    json!({"verb": "retainMember", "member": member, "kind": "playback"}),
-                );
-                self.push(id, release(&result["freed"]).into_iter().collect());
+                let freed = editing.retain_audio_playback(member);
+                self.push(id, release(freed).into_iter().collect());
                 Flow::Next
             }
             Task::DropPlayback => {
-                let result = door(
-                    editing,
-                    json!({"verb": "dropRoot", "root": {"kind": "playback", "owner": member}}),
-                );
-                self.push(id, release(&result["freed"]).into_iter().collect());
+                let freed = editing.drop_audio_playback(member);
+                self.push(id, release(freed).into_iter().collect());
                 Flow::Next
             }
             Task::Close { closed } => {
-                member_call(editing, member, json!({"verb": "detach_view"}));
+                if let Some(editor) = editing.audio_mut(member) {
+                    editor.detach_view();
+                }
                 self.push(
                     id,
                     vec![
@@ -454,4 +451,12 @@ impl Session {
         json!({"playing": self.playback.playing(), "meters": self.meters(),
             "rolling": self.playback.rolling(), "focus": self.playback.focus()})
     }
+}
+
+/// A correction of the window's, as the effect that sets it.
+fn set(correction: clausters_editing::conversation::Correction) -> Said {
+    Said::Window(tagged(
+        "set",
+        json!({"widget": correction.widget, "props": correction.props}),
+    ))
 }

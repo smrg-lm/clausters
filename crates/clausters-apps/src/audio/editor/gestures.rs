@@ -97,9 +97,12 @@ impl AudioEditor {
             return match self.copy_span(values, out) {
                 Ok(()) => {
                     if tag == "copy_cut" && out.clipboard.is_some() {
-                        out.clipboard_cut =
-                            Some(json!({"verb":"finish_cut", "file":self.focused_file(),
-                            "beforeRevision":self.file.revision, "values":values}));
+                        out.clipboard_cut = Some(FinishCut {
+                            file: self.focused_file(),
+                            before_revision: self.file.revision,
+                            values: values.to_vec(),
+                            seq: 0,
+                        });
                     }
                     (None, Vec::new())
                 }

@@ -31,13 +31,14 @@ pub enum Result {
 }
 
 /// One ordered group of existing server steps, with no inferred allocations.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Batch {
     /// Member whose executor owns this endpoint.
     pub member: u32,
     /// The endpoint on which these steps run.
     pub server: ServerInstance,
     /// The existing send/wait vocabulary, interpreted by an adapter.
+    #[serde(serialize_with = "serialize_steps")]
     pub steps: Vec<Step>,
 }
 

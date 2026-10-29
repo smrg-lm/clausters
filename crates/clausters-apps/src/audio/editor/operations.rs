@@ -391,7 +391,7 @@ impl Application for AudioEditor {
             *seq = request.seq;
         }
         if let Some(continuation) = outcome.clipboard_cut.as_mut() {
-            continuation["seq"] = json!(request.seq);
+            continuation.seq = request.seq;
         }
         outcome.steps = None;
         outcome.planned_steps.clear();
@@ -457,8 +457,10 @@ impl Application for AudioEditor {
             if focus {
                 delta.outcome.answer =
                     Some(conversation::answer(0, 0, None, self.focus_corrections()));
-                delta.outcome.playback_update =
-                    Some(json!({"file":self.playback_file(),"publish":true}));
+                delta.outcome.playback_update = self.playback_file().map(|file| PlaybackUpdate {
+                    file,
+                    publish: true,
+                });
             }
             return Completion {
                 committed: true,
@@ -627,10 +629,13 @@ impl Application for AudioEditor {
         }
         delta.outcome.prepared_complete = true;
         if applied && delta.outcome.changed && self.window_state.active {
-            delta.outcome.playback_update = self.over_file(
-                delta.target.object,
-                |editor| json!({"file":editor.playback_file(),"publish":current_view}),
-            );
+            delta.outcome.playback_update = self
+                .over_file(delta.target.object, |editor| editor.playback_file())
+                .flatten()
+                .map(|file| PlaybackUpdate {
+                    file,
+                    publish: current_view,
+                });
         }
         Completion {
             committed: applied,
@@ -1081,7 +1086,7 @@ mod tests {
         };
         assert_eq!(seq, 0);
         assert!(corrections.iter().all(|correction| correction.widget != 18));
-        assert_eq!(completion.outcome.playback_update.unwrap()["publish"], true);
+        assert!(completion.outcome.playback_update.unwrap().publish);
         assert!(!completion.outcome.restructure);
     }
 

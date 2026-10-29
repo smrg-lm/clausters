@@ -3,6 +3,7 @@
 
 use super::run::*;
 use super::*;
+use crate::turn::Kind;
 
 impl Session {
     /// **An outcome, carried out**, up to its file binding: what the clients'
@@ -10,14 +11,14 @@ impl Session {
     pub(super) fn take(
         &mut self,
         id: u64,
-        outcome: Value,
+        mut outcome: Box<Outcome>,
         lease: bool,
     ) -> Result<Vec<Task>, Failure> {
-        if has(&outcome, "operation") {
+        if let Some(prepared) = outcome.operation.take() {
             let mut tasks = vec![
                 Task::Operation {
                     command: None,
-                    prepared: Some(outcome["operation"].clone()),
+                    prepared: Some(Box::new(Operated::prepared(prepared))),
                     repairing: false,
                 },
                 Task::TakeCompleted,
@@ -27,37 +28,33 @@ impl Session {
             }
             return Ok(tasks);
         }
-        if let Some(error) = outcome["error"].as_str() {
-            return Err(Failure::Own(Raise::Value, error.into()));
-        }
-        if matches!(outcome["turn"].as_str(), None | Some("nothing")) {
+        if outcome.turn == Kind::Nothing {
             if let Some(run) = self.runs.get_mut(&id) {
                 run.changed = false;
                 run.result = json!(false);
             }
             return Ok(if lease {
-                vec![effect("lease", json!({}))]
+                vec![Task::Effect(Said::Lease)]
             } else {
                 Vec::new()
             });
         }
-        let action = &outcome["fileAction"];
-        if !action.is_null() && outcome.get("binding").is_none() {
+        let action = outcome.file_action;
+        if let Some(action) = action.filter(|_| outcome.binding.is_none()) {
             return Ok(vec![
-                effect("echo", json!({"answer": outcome["answer"]})),
-                Task::VerbTake(json!({"verb": action["verb"], "file": action["file"]})),
+                effect("echo", json!({"answer": outcome.answer})),
+                Task::VerbTake(action),
             ]);
         }
-        let close_file = action["verb"] == "close_file";
+        let close_file = action.is_some_and(|a| a.verb == FileVerb::CloseFile);
         let mut tasks = Vec::new();
-        if close_file {
-            tasks.push(Task::Playback(Op::CloseFile(
-                action["file"].as_u64().unwrap_or(0),
-            )));
+        if let Some(action) = action.filter(|_| close_file) {
+            tasks.push(Task::Playback(Op::CloseFile(action.file as u64)));
         }
-        if outcome.get("binding").is_some() {
-            if truthy(&outcome["steps"]) {
-                tasks.push(Task::Steps(outcome["steps"].clone()));
+        if outcome.binding.is_some() {
+            let steps = std::mem::take(&mut outcome.planned_steps);
+            if !steps.is_empty() {
+                tasks.push(Task::Steps(steps));
             }
             tasks.push(Task::Bound {
                 outcome,
@@ -75,40 +72,40 @@ impl Session {
     pub(super) fn take_rest(
         &mut self,
         id: u64,
-        outcome: Value,
+        mut outcome: Box<Outcome>,
         lease: bool,
         window: bool,
     ) -> Vec<Task> {
         let mut tasks = Vec::new();
-        if has(&outcome, "layers") {
-            tasks.push(effect("layers", json!({"layers": outcome["layers"]})));
+        if let Some(layers) = &outcome.layers {
+            tasks.push(effect("layers", json!({"layers": layers})));
         }
         // **A view placed in a lane of its own** (the stacked views, or back
         // to one): the window is drawn again and the host keeps what is its own.
-        if outcome["restructure"] == true && window {
+        if outcome.restructure && window {
             tasks.push(effect("publish", json!({})));
             // the def carries no preview: each view is handed it again
             tasks.push(Task::Sound);
         }
         if let Some(run) = self.runs.get_mut(&id) {
-            run.changed = outcome["changed"] == true;
+            run.changed = outcome.changed;
         }
         // **The steps are the caller's to carry out**: the renders that make
         // the files the turn's list reads.
-        let steps = outcome.get("steps").cloned().unwrap_or(json!([]));
-        let copied = has(&outcome, "clipboard");
-        if truthy(&steps) {
+        let steps = std::mem::take(&mut outcome.planned_steps);
+        if !steps.is_empty() {
             tasks.push(Task::Steps(steps));
         }
-        if copied {
-            tasks.push(Task::PublishClipboard(outcome.clone()));
-            if has(&outcome, "clipboardCut") {
+        if let Some(document) = outcome.clipboard.clone() {
+            tasks.push(Task::PublishClipboard {
+                document,
+                ready: outcome.clipboard_ready,
+            });
+            if outcome.clipboard_cut.is_some() {
                 tasks.push(Task::Cut(outcome.clone()));
             }
-        }
-        if copied {
             tasks.push(Task::Catch(Handler::Clipboard {
-                outcome: outcome.clone(),
+                answer: outcome.answer.clone(),
             }));
         }
         if lease {
@@ -123,75 +120,71 @@ impl Session {
         &mut self,
         editing: &mut Editing,
         member: MemberId,
-        mut outcome: Value,
+        mut outcome: Box<Outcome>,
         changed: bool,
     ) -> Vec<Task> {
         let mut tasks = Vec::new();
-        if has(&outcome, "newFile") || has(&outcome, "openFile") {
-            tasks.push(effect("echo", json!({"answer": outcome["answer"]})));
-            outcome["answer"] = Value::Null;
+        if outcome.new_file.is_some() || outcome.open_file.is_some() {
+            tasks.push(effect("echo", json!({"answer": outcome.answer})));
+            outcome.answer = None;
         }
-        if has(&outcome, "newFile") {
-            tasks.push(Task::Read(VecDeque::from([
-                json!({"shape": outcome["newFile"]}),
-            ])));
+        if let Some(shape) = outcome.new_file {
+            tasks.push(Task::Read(VecDeque::from([Wanted::Shape(shape)])));
         }
-        if has(&outcome, "openFile") {
-            tasks.push(Task::Read(paths(&outcome["openFile"]["paths"])));
+        if let Some(open) = &outcome.open_file {
+            tasks.push(Task::Read(paths(&open.paths)));
         }
-        if has(&outcome, "checkDisk") {
-            tasks.push(Task::Stat(outcome["checkDisk"].clone()));
+        if let Some(check) = outcome.check_disk.take() {
+            tasks.push(Task::Stat(check));
         }
-        if has(&outcome, "playbackUpdate") {
-            let update = &outcome["playbackUpdate"];
-            tasks.push(Task::SyncSound(update["file"].clone()));
-            if update["publish"] == true {
+        if let Some(update) = outcome.playback_update {
+            tasks.push(Task::SyncSound(update.file));
+            if update.publish {
                 tasks.push(Task::Sound);
             }
         }
         if changed {
             tasks.push(effect("changed", json!({})));
-            if outcome["preparedComplete"] != true {
+            if !outcome.prepared_complete {
                 tasks.push(Task::Sound);
             }
         }
-        if has(&outcome, "play") {
+        if let Some(play) = outcome.play {
             // The loop switch rides beside the space bar and `L`: a pass that
             // loops is the switch on.
             self.paused = false;
-            tasks.push(Task::Rolling(Rolled::Space(outcome["play"].clone())));
+            tasks.push(Task::Rolling(Rolled::Space(play)));
         }
-        if has(&outcome, "pass") {
+        if let Some(pass) = outcome.pass {
             // `L`: the pass in progress ends as the switch now says; a stopped
             // playback reads it on its next play.
-            tasks.push(Task::Playback(Op::pass(&outcome["pass"])));
+            tasks.push(Task::Playback(Op::Pass(Some(pass))));
         }
-        if has(&outcome, "follow") {
+        if let Some(follow) = outcome.follow {
             // A selection redrawn while this take loops: the loop is over the
             // new span, and the head goes into it once the sweep is let go.
             // Whether it loops, and whether it is this take, is the playback's
             // to say.
-            let follow = &outcome["follow"];
             tasks.push(Task::Playback(Op::Follow {
                 file: file_id(editing, member).map_or(0, |f| f as u64),
-                from: follow["from"].as_u64().unwrap_or(0),
-                to: follow["to"].as_u64().unwrap_or(0),
-                place: follow["place"] == true,
+                from: follow.from,
+                to: follow.to,
+                place: follow.place,
             }));
         }
-        if let Some(cue) = outcome["cue"].as_u64() {
+        if let Some(cue) = outcome.cue {
             tasks.push(Task::Rolling(Rolled::Cue(cue)));
         }
-        if has(&outcome, "locate") {
-            tasks.push(effect("locate", json!({"at": outcome["locate"]})));
+        if let Some(at) = outcome.locate {
+            tasks.push(effect("locate", json!({"at": at})));
         }
-        if !has(&outcome, "clipboardCut") {
-            tasks.push(effect("echo", json!({"answer": outcome["answer"]})));
+        if outcome.clipboard_cut.is_none() {
+            tasks.push(effect("echo", json!({"answer": outcome.answer})));
         }
-        if outcome["focusChanged"] == true {
+        if outcome.focus_changed {
             tasks.push(Task::ShowTransport);
         }
-        if outcome["close"] == true {
+        if outcome.close {
             tasks.push(Task::Close { closed: false });
         }
         tasks.push(Task::Answer(json!(changed)));

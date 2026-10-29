@@ -282,50 +282,35 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
             json!({ "recorded": taken, "version": editing.version() })
         }
         "member" => {
-            editing.select_member(member);
-            editing.sync_resources();
-            let before = match editing.member(member) {
-                Some(Member::Audio(editor)) => Some(editor.focused_file()),
-                _ => None,
-            };
-            let inner = get(&request, "call")
+            let call = get(&request, "call");
+            let inner = call
                 .get("verb")
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string();
-            if inner == "close_file"
-                && let Some(seat) = editing.seats.get(member as usize)
-                && let Member::Audio(editor) = &seat.member
-            {
-                let file = if let Some(index) = request["call"]["index"].as_u64() {
-                    editor.file_at(index as usize)
-                } else {
-                    Some(
-                        request["call"]["file"]
-                            .as_i64()
-                            .unwrap_or(editor.focused_file()),
-                    )
-                };
-                if file.is_some_and(|object| {
-                    editing
-                        .audio_runtime
-                        .operations
-                        .busy(crate::application::operations::Target {
-                            member,
-                            object,
-                            server: seat.server,
-                        })
-                }) {
-                    return json!({"error":"the file has pending work; close after it completes"});
-                }
-            }
-            if inner == "add_file" && matches!(editing.member(member), Some(Member::Audio(_))) {
-                return editing.prepare_add_file(member, &get(&request, "call"));
-            }
             if matches!(inner.as_str(), "event" | "apply") {
                 return json!({});
             }
-            let mut call = get(&request, "call");
+            if matches!(editing.member(member), Some(Member::Audio(_))) {
+                if inner == "add_file" {
+                    return editing.prepare_add_file(member, &call);
+                }
+                if audio::turns(&inner) {
+                    return match editing.audio_verb(member, &call) {
+                        Ok(outcome) => {
+                            let mut value = to_value(&outcome);
+                            if let Some(editor) = editing.audio(member) {
+                                editor.turn_extras(&inner, &mut value);
+                            }
+                            value
+                        }
+                        Err(error) => json!({ "error": error }),
+                    };
+                }
+            }
+            editing.select_member(member);
+            editing.sync_resources();
+            let mut call = call;
             if let Some(map) = call.as_object_mut() {
                 map.insert("version".into(), json!(editing.version));
             }
@@ -343,13 +328,6 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
                 _ => json!({}),
             };
             editing.select_member(member);
-            let after = match editing.member(member) {
-                Some(Member::Audio(editor)) => Some(editor.focused_file()),
-                _ => None,
-            };
-            if before != after {
-                editing.version += 1;
-            }
             let mut value = answer;
             if inner == "window" {
                 value["actions"] = editing.action_states(member);
@@ -358,20 +336,10 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
                 value["binding"]["structure"] = json!(editing.structure(member));
                 value["binding"]["version"] = json!(editing.version);
             }
-            // The switch moved the version, and the answer is how the host
-            // learns it: its next gesture names this one.
+            // The answer is how the host learns the version: its next
+            // gesture names this one.
             if let Some(answer) = value.get_mut("answer").filter(|a| a.is_object()) {
                 answer["docVersion"] = json!(editing.version);
-            }
-            if inner == "close_file"
-                && value.get("error").is_none()
-                && let Some(file) = value["fileAction"]["file"].as_i64()
-            {
-                editing.close_audio_file(member, file);
-                editing.sync_resources();
-                if value["close"] != true {
-                    editing.select_member(member);
-                }
             }
             value
         }
@@ -557,11 +525,6 @@ fn joined(editing: &mut Editing, key: &str, member: Member) -> Value {
 /// A turn's answer as JSON.
 fn to_json<T: Serialize>(value: &T) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "{}".into())
-}
-
-/// A turn's answer as a value.
-fn to_value<T: Serialize>(value: &T) -> Value {
-    serde_json::to_value(value).unwrap_or_else(|_| json!({}))
 }
 
 /// What a member's text door answered, read.

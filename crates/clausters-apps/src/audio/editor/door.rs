@@ -296,8 +296,18 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
         .unwrap_or_default();
     // **A verb that acts on a file needs one open**; the editor's own -- its
     // window, its file list, adding a file, the conversation -- do not.
-    if !editor.open_files.open && !EMPTY_VERBS.contains(&verb) {
-        return json!({ "error": NO_FILE_OPEN });
+    if let Some(error) = refusal(editor, verb) {
+        return json!({ "error": error });
+    }
+    if let Some(turned) = editor.turn_verb(&request, version) {
+        return match turned {
+            Ok(outcome) => {
+                let mut value = serde_json::to_value(outcome).unwrap_or_default();
+                editor.turn_extras(verb, &mut value);
+                value
+            }
+            Err(error) => json!({"error": error}),
+        };
     }
     match verb {
         "sync" => {
@@ -311,38 +321,6 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
                 });
             }
             json!({"corrections": editor.meter_corrections()})
-        }
-        verb @ ("layers" | "show_layer" | "hide_layer" | "solo_layer" | "layer_alpha"
-        | "view_wave" | "view_spectrogram" | "view_both") => {
-            match editor.layer_verb(verb, &request) {
-                Ok(mut outcome) => {
-                    outcome.version = version;
-                    outcome.answer = Some(conversation::answer(
-                        0,
-                        version,
-                        None,
-                        editor.layer_corrections(),
-                    ));
-                    let mut value = serde_json::to_value(outcome).unwrap();
-                    value["measure"] = json!(editor.file.presentation.layers.to_wire());
-                    value
-                }
-                Err(error) => json!({"error": error}),
-            }
-        }
-        verb @ ("layer" | "layer_take") => {
-            let name = if verb == "layer_take" {
-                Some("take")
-            } else {
-                request.get("name").and_then(Value::as_str)
-            };
-            match name.map(|name| editor.edit_layer(name)).transpose() {
-                Ok(corrections) => {
-                    json!({"turn": "route", "layer": editor.file.presentation.edit_layer,
-                    "answer": conversation::answer(0, version, None, corrections.unwrap_or_default())})
-                }
-                Err(error) => json!({"error": error}),
-            }
         }
         "window" => {
             editor.window_state.files_widget = request
@@ -382,9 +360,7 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
             json!({})
         }
         "detach_view" => {
-            editor.window_state.active = false;
-            editor.window_state.window = None;
-            editor.window_state.binding_generation += 1;
+            editor.detach_view();
             json!({})
         }
         // the panel's widgets are numbered with the dialogs'
@@ -394,16 +370,6 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
             json!({"dialogs": names})
         }
         "spectrogram" => json!({"spectrogram": editor.spectrogram()}),
-        "show_spectrogram_settings"
-        | "hide_spectrogram_settings"
-        | "toggle_spectrogram_settings" => {
-            editor.window_state.settings_visible = match request["verb"].as_str().unwrap() {
-                "show_spectrogram_settings" => true,
-                "hide_spectrogram_settings" => false,
-                _ => !editor.window_state.settings_visible,
-            };
-            json!({"turn": "route", "restructure": true})
-        }
         "folded" => json!({"folded": editor.folded()}),
         "file" if !editor.open_files.open => json!({"empty": true}),
         "file" => editor.file(),
@@ -427,92 +393,14 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
                 Err(error) => json!({"error": error}),
             }
         }
-        "focus_file" | "close_file" => {
-            let verb = request["verb"].as_str().unwrap();
-            editor.refresh_files();
-            let file = if let Some(index) = request.get("index") {
-                match index
-                    .as_u64()
-                    .and_then(|i| editor.open_files.rows.get(i as usize))
-                    .and_then(|f| f["id"].as_i64())
-                {
-                    Some(id) => id,
-                    None => return json!({"error": "the file index is outside the open files"}),
-                }
-            } else {
-                request
-                    .get("file")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(editor.file.id.0)
-            };
-            let before = editor.file.id.0;
-            let result = if verb == "focus_file" {
-                editor.focus_file(file).map(|()| Vec::<String>::new())
-            } else {
-                editor.close_file(file).map(|closed| closed.files)
-            };
-            match result {
-                // The last file closed leaves the editor open with none:
-                // `binding` is null and the window is drawn again empty.
-                Ok(files) => {
-                    let empty = !editor.open_files.open;
-                    let moved = before != editor.file.id.0;
-                    json!({"turn": "route", "deleteFiles": files, "binding": editor.binding(), "focusChanged": moved || empty,
-                    "restructure": true, "fileAction": {"verb": verb, "file": file}, "empty": empty,
-                    "answer": moved.then(|| conversation::answer(0, editor.window_state.conversation.applied, None, editor.focus_corrections()))})
-                }
-                Err(error) => json!({"error": error}),
-            }
-        }
-        "open_file" => {
-            let paths = request.get("paths").or_else(|| request.get("path"));
-            let paths = match paths {
-                Some(Value::String(path)) if !path.is_empty() => vec![json!(path)],
-                Some(Value::Array(paths))
-                    if paths
-                        .iter()
-                        .all(|p| p.as_str().is_some_and(|p| !p.is_empty())) =>
-                {
-                    paths.clone()
-                }
-                _ => return json!({"error": "open_file needs a path or an array of paths"}),
-            };
-            json!({"turn": "route", "openFile": {"paths": paths}})
-        }
         "playing" => {
-            editor.window_state.playing = request.get("file").and_then(Value::as_i64);
-            if let Ok(facts) = serde_json::from_value::<Facts>(request.clone())
-                && let Some(meters) = facts.meters
-            {
-                editor.set_meters(meters.map(|m| (m.bus, m.channels)));
-            }
-            let mut corrections = editor.files_corrections();
-            // with no file open the window draws no take, pane or meter
-            if !editor.open_files.open {
-                return json!({"corrections": corrections});
-            }
-            let anchor = editor.playhead_anchor();
-            let targets: BTreeSet<_> = editor.pictures().chain(editor.window_state.pane).collect();
-            corrections.extend(targets.into_iter().map(|widget| Correction {
-                widget: i64::from(widget),
-                props: json!({"playhead_at": anchor}),
-            }));
-            corrections.extend(editor.meter_corrections());
-            json!({"corrections": corrections})
-        }
-        "show_files" | "hide_files" | "toggle_files" => {
-            editor.window_state.files_visible = match request["verb"].as_str().unwrap() {
-                "show_files" => true,
-                "hide_files" => false,
-                _ => !editor.window_state.files_visible,
-            };
-            json!({"turn": "route", "restructure": true})
+            let meters = serde_json::from_value::<Facts>(request.clone())
+                .ok()
+                .and_then(|facts| facts.meters)
+                .map(|meters| meters.map(|m| (m.bus, m.channels)));
+            json!({"corrections": editor.playing(request.get("file").and_then(Value::as_i64), meters)})
         }
         "envelope" => json!({"points": editor.envelope_quads(false)}),
-        "show_envelope" | "setautomation" | "apply_envelope" | "fold_channel" | "solo_channel"
-        | "show_all_channels" | "set_spectrogram" => {
-            serde_json::to_value(editor.act(&request, version)).unwrap_or_default()
-        }
         "props" if editor.window_state.envelope_widget == Some(widget) => editor
             .envelope_corrections()
             .first()
@@ -525,11 +413,9 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
             Value::Object(props)
         }
         "props" => Value::Object(props(widget)),
-        "event" => {
-            let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
-            serde_json::to_value(editor.event(&event, version)).unwrap_or_default()
-        }
-        "playback" => editor.playback_file(),
+        "playback" => editor
+            .playback_file()
+            .map_or_else(|| json!({"active": false}), |file| json!(file)),
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }),
         // the list as data, written out: a query, which costs the list
         "segments" => sources::wire_list(
@@ -538,34 +424,6 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
             editor.file.channels,
             editor.file.rate,
         ),
-        // **What of `files` is this editor's scratch**: the ones in its
-        // working folder, which a failed render may take away; nothing else,
-        // a file the user named least of all.
-        "scratch" => {
-            let folder = editor
-                .window_state
-                .workspace
-                .as_deref()
-                .map(|w| format!("{}/", w.trim_end_matches('/')));
-            let files: Vec<&str> = request["files"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .filter(|f| {
-                    folder
-                        .as_deref()
-                        .is_some_and(|w| f.starts_with(w) && !f[w.len()..].contains(".."))
-                })
-                .collect();
-            json!({"files": files})
-        }
-        "on_disk" => {
-            let reason = editor.on_disk(&request["stamps"]);
-            let seq = request["seq"].as_i64().unwrap_or(0);
-            json!({"turn": "route",
-                "answer": conversation::answer(seq, version, reason, Vec::new())})
-        }
         "span" => {
             let span = get("span")
                 .as_array()
@@ -578,9 +436,339 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
         }
         "play" => json!(editor.space()),
         "looping" => {
-            editor.file.presentation.looping = get("on").as_bool().unwrap_or(false);
+            editor.set_looping(get("on").as_bool().unwrap_or(false));
             json!({})
         }
         _ => json!({}),
+    }
+}
+
+/// Where a file verb finds its file: a row of the list, a file by its
+/// number, or the file in focus.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum FileAt {
+    /// A row of the open files' list, from zero.
+    Index(usize),
+    /// A file, by its number.
+    File(i64),
+    /// The file in focus.
+    Focused,
+}
+
+impl FileAt {
+    /// Where `request` (`index` or `file`) names.
+    pub(crate) fn of(request: &Value) -> FileAt {
+        if let Some(index) = request.get("index").filter(|i| !i.is_null()) {
+            return FileAt::Index(index.as_u64().map_or(usize::MAX, |i| i as usize));
+        }
+        request
+            .get("file")
+            .and_then(Value::as_i64)
+            .map_or(FileAt::Focused, FileAt::File)
+    }
+}
+
+/// The paths an `open_file` request names: `paths`, a path or an array, or
+/// why it names none.
+pub(crate) fn open_paths(request: &Value) -> Result<Vec<String>, String> {
+    let paths = request.get("paths").or_else(|| request.get("path"));
+    match paths {
+        Some(Value::String(path)) if !path.is_empty() => Ok(vec![path.clone()]),
+        Some(Value::Array(paths))
+            if paths
+                .iter()
+                .all(|p| p.as_str().is_some_and(|p| !p.is_empty())) =>
+        {
+            Ok(paths
+                .iter()
+                .filter_map(|p| p.as_str().map(str::to_string))
+                .collect())
+        }
+        _ => Err("open_file needs a path or an array of paths".into()),
+    }
+}
+
+/// **The verbs that come to an outcome** ([`AudioEditor::turn_verb`]).
+const TURN_VERBS: &[&str] = &[
+    "layers",
+    "show_layer",
+    "hide_layer",
+    "solo_layer",
+    "layer_alpha",
+    "view_wave",
+    "view_spectrogram",
+    "view_both",
+    "layer",
+    "layer_take",
+    "show_spectrogram_settings",
+    "hide_spectrogram_settings",
+    "toggle_spectrogram_settings",
+    "show_files",
+    "hide_files",
+    "toggle_files",
+    "focus_file",
+    "close_file",
+    "open_file",
+    "show_envelope",
+    "setautomation",
+    "apply_envelope",
+    "fold_channel",
+    "solo_channel",
+    "show_all_channels",
+    "set_spectrogram",
+    "event",
+    "on_disk",
+];
+
+/// Whether `verb` comes to an outcome.
+pub(crate) fn turns(verb: &str) -> bool {
+    TURN_VERBS.contains(&verb)
+}
+
+/// **Why `verb` is refused by an editor**, if it is: a verb that acts on a
+/// file, with none open.
+pub(crate) fn refusal(editor: &AudioEditor, verb: &str) -> Option<&'static str> {
+    (!editor.open_files.open && !EMPTY_VERBS.contains(&verb)).then_some(NO_FILE_OPEN)
+}
+
+impl AudioEditor {
+    /// **A verb that comes to an outcome**, as a script or the window's
+    /// list calls it -- a layer or a view, a file focused or closed, files
+    /// asked open, a panel shown or put away, an edit of the gain curve or
+    /// the channels, a gesture -- or `None` for one that reads or sets
+    /// without a turn.
+    pub(crate) fn turn_verb(
+        &mut self,
+        request: &Value,
+        version: i64,
+    ) -> Option<Result<Outcome, String>> {
+        let verb = request
+            .get("verb")
+            .and_then(Value::as_str)
+            .filter(|verb| turns(verb))?;
+        let route = |restructure| Outcome {
+            turn: Kind::Route,
+            restructure,
+            ..Outcome::default()
+        };
+        Some(match verb {
+            "layers" | "show_layer" | "hide_layer" | "solo_layer" | "layer_alpha" | "view_wave"
+            | "view_spectrogram" | "view_both" => {
+                self.layer_verb(verb, request).map(|mut outcome| {
+                    outcome.version = version;
+                    outcome.answer = Some(conversation::answer(
+                        0,
+                        version,
+                        None,
+                        self.layer_corrections(),
+                    ));
+                    outcome
+                })
+            }
+            "layer" | "layer_take" => {
+                let name = if verb == "layer_take" {
+                    Some("take")
+                } else {
+                    request.get("name").and_then(Value::as_str)
+                };
+                name.map(|name| self.edit_layer(name))
+                    .transpose()
+                    .map(|corrections| Outcome {
+                        answer: Some(conversation::answer(
+                            0,
+                            version,
+                            None,
+                            corrections.unwrap_or_default(),
+                        )),
+                        ..route(false)
+                    })
+            }
+            "show_spectrogram_settings"
+            | "hide_spectrogram_settings"
+            | "toggle_spectrogram_settings" => {
+                self.window_state.settings_visible = match verb {
+                    "show_spectrogram_settings" => true,
+                    "hide_spectrogram_settings" => false,
+                    _ => !self.window_state.settings_visible,
+                };
+                Ok(route(true))
+            }
+            "show_files" | "hide_files" | "toggle_files" => {
+                self.window_state.files_visible = match verb {
+                    "show_files" => true,
+                    "hide_files" => false,
+                    _ => !self.window_state.files_visible,
+                };
+                Ok(route(true))
+            }
+            "focus_file" => self.file_verb(FileVerb::FocusFile, FileAt::of(request)),
+            "close_file" => self.file_verb(FileVerb::CloseFile, FileAt::of(request)),
+            "open_file" => open_paths(request).map(|paths| Outcome {
+                open_file: Some(OpenFiles { paths }),
+                ..route(false)
+            }),
+            "show_envelope" | "setautomation" | "apply_envelope" | "fold_channel"
+            | "solo_channel" | "show_all_channels" | "set_spectrogram" => {
+                Ok(self.act(request, version))
+            }
+            "event" => {
+                let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
+                Ok(self.event(&event, version))
+            }
+            "on_disk" => Ok(self.disk_answer(
+                &request["stamps"],
+                request["seq"].as_i64().unwrap_or(0),
+                version,
+            )),
+            _ => return None,
+        })
+    }
+
+    /// What the JSON door adds to a [`Self::turn_verb`]'s outcome: the
+    /// stack a layer verb left, and the layer an edit goes to.
+    pub(crate) fn turn_extras(&self, verb: &str, value: &mut Value) {
+        match verb {
+            "layers" | "show_layer" | "hide_layer" | "solo_layer" | "layer_alpha" | "view_wave"
+            | "view_spectrogram" | "view_both" => {
+                value["measure"] = json!(self.file.presentation.layers.to_wire());
+            }
+            "layer" | "layer_take" => value["layer"] = json!(self.file.presentation.edit_layer),
+            _ => {}
+        }
+    }
+
+    /// **A file of the list focused or closed**, `at` where the request
+    /// names it. The last file closed leaves the editor open with none:
+    /// `binding` is null, `empty` true, and the window is drawn again.
+    pub(crate) fn file_verb(&mut self, verb: FileVerb, at: FileAt) -> Result<Outcome, String> {
+        self.refresh_files();
+        let file = match at {
+            FileAt::Index(index) => self
+                .open_files
+                .rows
+                .get(index)
+                .and_then(|f| f["id"].as_i64())
+                .ok_or("the file index is outside the open files")?,
+            FileAt::File(file) => file,
+            FileAt::Focused => self.file.id.0,
+        };
+        let before = self.file.id.0;
+        let delete_files = match verb {
+            FileVerb::FocusFile => {
+                self.focus_file(file)?;
+                Vec::new()
+            }
+            FileVerb::CloseFile => self.close_file(file)?.files,
+        };
+        let empty = !self.open_files.open;
+        let moved = before != self.file.id.0;
+        Ok(Outcome {
+            turn: Kind::Route,
+            delete_files,
+            binding: Some(self.binding()),
+            focus_changed: moved || empty,
+            restructure: true,
+            file_action: Some(FileAction { verb, file }),
+            empty,
+            answer: moved.then(|| {
+                conversation::answer(
+                    0,
+                    self.window_state.conversation.applied,
+                    None,
+                    self.focus_corrections(),
+                )
+            }),
+            ..Outcome::default()
+        })
+    }
+
+    /// **What the window's look on disk found**: `stamps`, each open file's,
+    /// taken in, and the window's message `seq` answered.
+    pub(crate) fn disk_answer(&mut self, stamps: &Value, seq: i64, version: i64) -> Outcome {
+        let reason = self.on_disk(stamps);
+        Outcome {
+            turn: Kind::Route,
+            answer: Some(conversation::answer(seq, version, reason, Vec::new())),
+            ..Outcome::default()
+        }
+    }
+
+    /// The span the space bar plays in the file in focus, in seconds, or
+    /// `None` with no selection or no file.
+    pub(crate) fn span_seconds(&self) -> Option<(f64, f64)> {
+        let (start, end) = self.file.presentation.selection?;
+        (self.open_files.open && end > start)
+            .then(|| (start as f64 / self.file.rate, end as f64 / self.file.rate))
+    }
+
+    /// The file in focus's loop switch.
+    pub(crate) fn looping(&self) -> bool {
+        self.open_files.open && self.file.presentation.looping
+    }
+
+    /// The file in focus's loop switch, as a script sets it.
+    pub(crate) fn set_looping(&mut self, on: bool) {
+        self.file.presentation.looping = on;
+    }
+
+    /// **Where the playback's meter writes**, as it says once it has its
+    /// buses: the window's meter corrected to read there.
+    pub(crate) fn sync_meters(&mut self, meters: Option<(i32, usize)>) -> Vec<Correction> {
+        self.window_state.meters = meters;
+        self.meter_corrections()
+    }
+
+    /// **What plays now**: `file` (or none), its meter `meters` when the
+    /// playback said; the list's play mark, the play cursor and the meter
+    /// corrected to it.
+    pub(crate) fn playing(
+        &mut self,
+        file: Option<i64>,
+        meters: Option<Option<(i32, usize)>>,
+    ) -> Vec<Correction> {
+        self.window_state.playing = file;
+        if let Some(meters) = meters {
+            self.set_meters(meters);
+        }
+        let mut corrections = self.files_corrections();
+        // with no file open the window draws no take, pane or meter
+        if !self.open_files.open {
+            return corrections;
+        }
+        let anchor = self.playhead_anchor();
+        let targets: BTreeSet<_> = self.pictures().chain(self.window_state.pane).collect();
+        corrections.extend(targets.into_iter().map(|widget| Correction {
+            widget: i64::from(widget),
+            props: json!({"playhead_at": anchor}),
+        }));
+        corrections.extend(self.meter_corrections());
+        corrections
+    }
+
+    /// The window is gone: the editor draws nowhere.
+    pub(crate) fn detach_view(&mut self) {
+        self.window_state.active = false;
+        self.window_state.window = None;
+        self.window_state.binding_generation += 1;
+    }
+
+    /// **What of `files` is this editor's scratch**: the ones in its
+    /// working folder, which a failed render may take away; nothing else, a
+    /// file the user named least of all.
+    pub(crate) fn scratch(&self, files: &[String]) -> Vec<String> {
+        let folder = self
+            .window_state
+            .workspace
+            .as_deref()
+            .map(|w| format!("{}/", w.trim_end_matches('/')));
+        files
+            .iter()
+            .filter(|f| {
+                folder
+                    .as_deref()
+                    .is_some_and(|w| f.starts_with(w) && !f[w.len()..].contains(".."))
+            })
+            .cloned()
+            .collect()
     }
 }

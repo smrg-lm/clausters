@@ -11352,14 +11352,27 @@ awaits is the context's (`Editing::start`, `land`, `query`), over what only
 the caller does (`editing::Caller`: a file's header, the files on disk, steps
 carried out on its turn, files deleted, renders called off), and the one await
 handed back is a render, which the application runs on a thread of its own and
-lands. Awaits and answers are typed; the context's and the editor's doors have a
-form over values that the coordinator calls; the playback's JSON door went.
+lands. Awaits and answers are typed; the playback's JSON door went.
+
+**And the vocabulary went after it (2026-10-29).** The first pass left the
+coordinator calling the context and the editor by their doors over values
+(`{"verb": "binding"}`, `{"verb": "operation", "action": "pendingRepairs"}`),
+which is the same vocabulary without the text. The coordinator now calls them
+by methods: an action enters typed (`AudioAction`, read once from the door's
+JSON by `Editing::start`), an outcome is the editor's `Outcome` with typed
+fields (the file a window named, the files to open, a new file's shape, the
+disk to look at, a cut's second half), an operation's answer is the
+protocol's (`application::runtime::Protocol`) and the member's end of it
+(`Operated`), and what the application carries out of a run (files deleted,
+renders called off, a clipboard lease let go, by its number now) is typed
+apart from the window's effects. The JSON doors read a request into those
+calls and write the answer out, so a client's answer is the same.
 
 **What stays JSON, and why.** The window's effects, since the host draws them
-as it draws any client's GuiDef and props; the editor's outcomes, since a
-client's door (`/gui_app_call`) answers the same ones; and every door a client
-or the C ABI binds. A typed form of those is a change of the protocol, not of
-this design.
+as it draws any client's GuiDef and props; a run's result and a client's
+answers, since a client's door (`/gui_app_call`) reads them; the facts an
+editor is built from; and every door a client or the C ABI binds. A typed form
+of those is a change of the protocol, not of this design.
 
 **What it keeps out of the multitrack's way.** The engine reads a take per
 reader, not per audio file (`HeldTake::reader`), the application that holds

@@ -64,7 +64,7 @@ enum Note {
         token: u64,
         run: u64,
         result: Result<(), String>,
-        lease: bool,
+        lease: Option<u64>,
     },
 }
 
@@ -198,15 +198,15 @@ impl App {
     }
 
     /// **Starts `action` on member `member`** and carries it as far as
-    /// it goes; `token` comes back with its end. `lease` says the action
-    /// holds the clipboard lease its event was prepared with.
+    /// it goes; `token` comes back with its end. `lease` is the clipboard
+    /// lease its event was prepared with (`Editing::exchange_event`).
     pub fn act(
         &mut self,
         editing: &mut Editing,
         member: MemberId,
         action: Value,
         token: u64,
-        lease: bool,
+        lease: Option<u64>,
     ) -> Ran {
         let ran = editing.start(
             member,
@@ -267,7 +267,7 @@ impl App {
         // thing asked of it, and its window is told as a window's run is.
         for member in editing.stopped() {
             let playing = json!({"verb": "playing", "window": true});
-            out.push(self.act(editing, member, playing, 0, false));
+            out.push(self.act(editing, member, playing, 0, None));
         }
         out
     }
@@ -278,7 +278,7 @@ impl App {
         member: MemberId,
         token: u64,
         ran: clausters_apps::editing::Ran,
-        lease: bool,
+        lease: Option<u64>,
     ) -> Ran {
         if let Some(render) = ran.render {
             self.hand_off(member, token, render.run, render.steps, lease);
@@ -293,7 +293,14 @@ impl App {
 
     /// **A render carried out off the application's turn**: the steps on a
     /// thread of their own, their progress and their end said back.
-    fn hand_off(&mut self, member: MemberId, token: u64, run: u64, steps: Vec<Step>, lease: bool) {
+    fn hand_off(
+        &mut self,
+        member: MemberId,
+        token: u64,
+        run: u64,
+        steps: Vec<Step>,
+        lease: Option<u64>,
+    ) {
         let tx = self.notes.0.clone();
         let waker = self.waker.clone();
         let live = Arc::new(AtomicBool::new(true));

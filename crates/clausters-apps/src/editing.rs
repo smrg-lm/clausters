@@ -50,6 +50,7 @@ use crate::points::editor::{self as points, PointsEditor};
 use crate::score::editor::{self as score, ScoreEditor};
 use crate::turn::{Event, Kind, Record, int};
 
+mod audio_calls;
 mod audio_operations;
 mod caller;
 mod coordinator;
@@ -252,7 +253,7 @@ pub enum Effect {
         /// The member.
         member: MemberId,
         /// The edited file's playback projection, independent of view focus.
-        file: Value,
+        file: audio::PlaybackFile,
     },
     /// A notes editor applied the step to the sequence it shares: its holder
     /// reads the change through its own handle, and there is nothing to carry
@@ -1041,7 +1042,8 @@ impl Editing {
                             kept.push((id, Kept::Audio(target, before)));
                             if let Some(file) = result {
                                 stepped = true;
-                                out.effects.push(Effect::Audio { member, file });
+                                out.effects
+                                    .extend(file.map(|file| Effect::Audio { member, file }));
                             }
                         }
                     }
@@ -1194,3 +1196,8 @@ impl Kept {
 
 #[cfg(test)]
 mod tests;
+
+/// An answer as a value, for a door to write out.
+fn to_value<T: Serialize>(value: &T) -> Value {
+    serde_json::to_value(value).unwrap_or_else(|_| json!({}))
+}

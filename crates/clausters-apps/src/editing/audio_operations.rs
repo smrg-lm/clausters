@@ -1,24 +1,41 @@
-//! Boundary decoding for the typed audio lifecycle. No recursive dispatch.
+//! **An audio member's operations**: prepared, handed out a batch at a time
+//! and completed through the context's typed calls ([`Editing::audio_operation`]),
+//! which its coordinator makes; the JSON door only reads a request into one
+//! and writes its answer out.
 use super::*;
-use crate::application::runtime::{Control, Dispatch, PendingWalk};
+use crate::application::operations::{Batch, Prepared};
+use crate::application::runtime::{Control, Dispatch, Echo, PendingWalk, Protocol};
 use crate::application::{
     operations::{Result as OperationResult, Ticket},
     services::Application,
 };
 use audio::operations::{Command, Request};
-use clausters_editing::apply::steps_json;
+
+/// **One call of an audio member's operations**: one prepared from its
+/// command, or a control of one under way.
+pub(crate) enum OperationCall {
+    /// An operation of member `member`, from `command`.
+    Prepare {
+        member: MemberId,
+        command: AudioCommand,
+    },
+    /// A batch settled, a repair asked for, a cancel.
+    Control(Control),
+}
 
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
-enum OperationCall {
+enum PrepareCall {
     Prepare {
         member: MemberId,
         command: AudioCommand,
     },
 }
-#[derive(Deserialize)]
+
+/// **What an audio member's operation is asked to do.**
+#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-enum AudioCommand {
+pub(crate) enum AudioCommand {
     Open,
     Save {
         path: Option<String>,
@@ -34,6 +51,73 @@ enum AudioCommand {
 }
 fn float_format() -> String {
     "float".into()
+}
+
+/// The ids an operation's repair hands back, once its recovery settled.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub(crate) struct Returned {
+    pub member: u32,
+    pub server: ServerInstance,
+    pub buffers: Vec<i64>,
+}
+
+/// **What an audio operation's call answers**: the protocol's answer, and
+/// what the audio member's own end adds to it -- the outcome it committed
+/// or refused with, where a save wrote, the history step it took, and the
+/// takes it let go of.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Operated {
+    #[serde(flatten)]
+    pub protocol: Protocol,
+    /// A repair settled: the refusal is answered now.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub repaired: bool,
+    /// The member's outcome.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<audio::Outcome>,
+    /// Where a save wrote, or the file's own target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination: Option<Value>,
+    /// Steps that put a committed operation's server back as it was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<Batch>,
+    /// The history step a walk took.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stepped: Option<Stepped>,
+    /// The ids a repair handed back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub returned: Option<Returned>,
+    /// The takes nothing reaches any more.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freed: Option<Vec<Freed>>,
+}
+
+impl Operated {
+    fn error(error: impl Into<String>) -> Operated {
+        Operated {
+            protocol: Protocol {
+                error: Some(error.into()),
+                ..Protocol::default()
+            },
+            ..Operated::default()
+        }
+    }
+
+    fn protocol(protocol: Protocol) -> Operated {
+        Operated {
+            protocol,
+            ..Operated::default()
+        }
+    }
+
+    /// The batch a prepared operation hands out first.
+    pub(crate) fn prepared(prepared: Prepared) -> Operated {
+        Operated::protocol(Protocol {
+            batch: Some(prepared),
+            ..Protocol::default()
+        })
+    }
 }
 
 impl Editing {
@@ -95,21 +179,30 @@ impl Editing {
         Ok(ticket)
     }
 
-    pub(super) fn prepare_add_file(&mut self, member: MemberId, request: &Value) -> Value {
+    /// **A file added to audio member `member`**: `request` is the file's
+    /// shape and path, as its header was read. Answers the operation that
+    /// opens it, or why it cannot be, with the takes the refusal let go of.
+    pub(crate) fn add_audio_file(
+        &mut self,
+        member: MemberId,
+        request: &Value,
+    ) -> Result<Operated, (String, Vec<Freed>)> {
         let request = match self.member(member) {
             Some(Member::Audio(editor)) => editor.with_folder(request),
             _ => request.clone(),
         };
-        let file = match audio::new_json(&request.to_string()) {
-            Ok(file) => file,
-            Err(error) => return json!({"error":error}),
-        };
+        let file = audio::new_json(&request.to_string()).map_err(|e| (e, Vec::new()))?;
         match self.prepare_audio(member, Command::AddFile(Box::new(file)), 0) {
-            Ok(ticket) => json!({"turn":"route", "operation":self.audio_next(ticket)}),
-            Err(error) => {
-                let freed = self.release();
-                json!({"error":error,"freed":freed})
-            }
+            Ok(ticket) => Ok(self.audio_next(ticket)),
+            Err(error) => Err((error, self.release())),
+        }
+    }
+
+    /// [`Self::add_audio_file`], as the door answers it.
+    pub(super) fn prepare_add_file(&mut self, member: MemberId, request: &Value) -> Value {
+        match self.add_audio_file(member, request) {
+            Ok(operated) => json!({"turn":"route", "operation": to_value(&operated)}),
+            Err((error, freed)) => json!({"error":error,"freed":freed}),
         }
     }
 
@@ -154,6 +247,16 @@ impl Editing {
             _ => return None,
         };
         Some(self.prepare_audio_turn(member, command, request["seq"].as_i64().unwrap_or(0)))
+    }
+
+    /// [`Self::prepare_audio_action`]'s `finish_cut`, typed.
+    pub(super) fn prepare_audio_cut(&mut self, member: MemberId, cut: &audio::FinishCut) -> Turned {
+        let command = Command::FinishCut {
+            file: cut.file,
+            revision: cut.before_revision,
+            values: cut.values.clone(),
+        };
+        self.prepare_audio_turn(member, command, cut.seq)
     }
 
     fn prepare_audio_turn(&mut self, member: MemberId, command: Command, seq: i64) -> Turned {
@@ -222,7 +325,7 @@ impl Editing {
         }
     }
 
-    fn audio_next(&mut self, ticket: Ticket) -> Value {
+    fn audio_next(&mut self, ticket: Ticket) -> Operated {
         let dispatch = self.audio_runtime.next(ticket);
         self.dispatch_audio(dispatch)
     }
@@ -230,15 +333,32 @@ impl Editing {
     fn dispatch_audio(
         &mut self,
         dispatch: Dispatch<audio::operations::Commit, audio::Outcome>,
-    ) -> Value {
+    ) -> Operated {
         match dispatch {
             Dispatch::Finish(finished) => self.finish_audio(finished),
-            Dispatch::Response(response) => response,
+            Dispatch::Response(response) => Operated::protocol(response),
             Dispatch::Repaired(repair) => {
                 let freed = self.release();
                 let echo = repair.echo(self.version);
-                json!({"complete":true,"committed":false,"repaired":true,"outcome":repair.outcome,"echo":echo,"returned":{"member":repair.ticket.target.member,"server":repair.ticket.target.server,"buffers":repair.returned},
-                    "reason":repair.reason,"freed":freed,"version":self.version})
+                Operated {
+                    protocol: Protocol {
+                        complete: true,
+                        committed: Some(false),
+                        echo,
+                        reason: Some(repair.reason),
+                        version: Some(self.version),
+                        ..Protocol::default()
+                    },
+                    repaired: true,
+                    outcome: Some(repair.outcome),
+                    returned: Some(Returned {
+                        member: repair.ticket.target.member,
+                        server: repair.ticket.target.server,
+                        buffers: repair.returned,
+                    }),
+                    freed: Some(freed),
+                    ..Operated::default()
+                }
             }
         }
     }
@@ -246,16 +366,16 @@ impl Editing {
     fn finish_audio(
         &mut self,
         finished: crate::application::operations::Finished<audio::operations::Commit>,
-    ) -> Value {
+    ) -> Operated {
         if let Some(walk) = self.audio_runtime.take_walk(finished.ticket) {
             return self.finish_audio_walk(finished, walk);
         }
         let target = finished.ticket.target;
         let Some(seat) = self.seats.get_mut(target.member as usize) else {
-            return json!({"error":"the operation owner is absent"});
+            return Operated::error("the operation owner is absent");
         };
         let Member::Audio(editor) = &mut seat.member else {
-            return json!({"error":"the operation owner is absent"});
+            return Operated::error("the operation owner is absent");
         };
         let ticket = finished.ticket;
         let failure = finished.result.clone();
@@ -266,19 +386,19 @@ impl Editing {
             &mut self.version,
         );
         if !completion.committed {
-            return self.audio_runtime.refuse_turn(
+            return Operated::protocol(self.audio_runtime.refuse_turn(
                 ticket,
                 failure,
                 completion,
                 &self.services.resources,
                 self.version,
-            );
+            ));
         }
         let mut outcome = completion.outcome;
         let recovery = if self.services.resources.valid(target.server) {
-            steps_json(&completion.recovery)
+            completion.recovery
         } else {
-            json!([])
+            Vec::new()
         };
         let destination = outcome.saved.clone().unwrap_or_else(|| {
             editor
@@ -293,7 +413,23 @@ impl Editing {
             binding["version"] = json!(self.version);
         }
         let freed = self.release();
-        json!({"complete":true,"committed":completion.committed,"destination":destination,"outcome":outcome,"recovery":{"member":target.member,"server":target.server,"steps":recovery},"freed":freed,"version":self.version})
+        Operated {
+            protocol: Protocol {
+                complete: true,
+                committed: Some(completion.committed),
+                version: Some(self.version),
+                ..Protocol::default()
+            },
+            destination: Some(destination),
+            outcome: Some(outcome),
+            recovery: Some(Batch {
+                member: target.member,
+                server: target.server,
+                steps: recovery,
+            }),
+            freed: Some(freed),
+            ..Operated::default()
+        }
     }
 
     pub(super) fn prepare_audio_walk(&mut self, direction: Direction) -> Option<Stepped> {
@@ -335,8 +471,8 @@ impl Editing {
                         Some(Ok(plan)) => {
                             let file = editor
                                 .over_file(object, |editor| editor.playback_file())
-                                .unwrap();
-                            previews.push(Effect::Audio { member, file });
+                                .flatten();
+                            previews.extend(file.map(|file| Effect::Audio { member, file }));
                             plans.push((member, plan));
                         }
                         _ => {
@@ -373,8 +509,9 @@ impl Editing {
                     stepped
                 }
                 Err(refused) => self.refused_audio_walk(
-                    refused["reason"]
-                        .as_str()
+                    refused
+                        .reason
+                        .as_deref()
                         .unwrap_or("the history step was refused"),
                 ),
             });
@@ -412,12 +549,22 @@ impl Editing {
         &mut self,
         finished: crate::application::operations::Finished<audio::operations::Commit>,
         walk: PendingWalk<audio::operations::Commit>,
-    ) -> Value {
+    ) -> Operated {
         match self.settle_audio_walk(finished, walk) {
-            Ok((stepped, echo, freed)) => {
-                json!({"complete":true,"committed":stepped.stepped,"stepped":stepped,"echo":echo,"recoveries":[],"freed":freed,"version":self.version})
-            }
-            Err(refused) => refused,
+            Ok((stepped, echo, freed)) => Operated {
+                protocol: Protocol {
+                    complete: true,
+                    committed: Some(stepped.stepped),
+                    echo,
+                    recoveries: Some(Vec::new()),
+                    version: Some(self.version),
+                    ..Protocol::default()
+                },
+                stepped: Some(stepped),
+                freed: Some(freed),
+                ..Operated::default()
+            },
+            Err(refused) => Operated::protocol(*refused),
         }
     }
 
@@ -428,20 +575,20 @@ impl Editing {
         &mut self,
         finished: crate::application::operations::Finished<audio::operations::Commit>,
         walk: PendingWalk<audio::operations::Commit>,
-    ) -> Result<(Stepped, Value, Vec<Freed>), Value> {
+    ) -> Result<(Stepped, Option<Echo>, Vec<Freed>), Box<Protocol>> {
         let decision = crate::application::walks::finish(self, finished, walk);
         let (ticket, receipt) = (decision.ticket, decision.receipt);
         let mut stepped = match decision.result {
             Ok(stepped) => stepped,
             Err(refused) => {
-                return Err(self.audio_runtime.refuse_walk(
+                return Err(Box::new(self.audio_runtime.refuse_walk(
                     ticket,
                     decision.additional_targets,
                     receipt,
                     refused,
                     &self.services.resources,
                     self.version,
-                ));
+                )));
             }
         };
         let echo = self.audio_runtime.finish_walk(
@@ -453,25 +600,19 @@ impl Editing {
         );
         let mut freed = std::mem::take(&mut stepped.freed);
         freed.extend(self.release());
-        Ok((stepped, json!(echo), freed))
+        Ok((stepped, echo, freed))
     }
 
-    pub(super) fn audio_operation_json(&mut self, request: &Value) -> Value {
-        if request["action"] != "prepare" {
-            let control = match serde_json::from_value::<Control>(request.clone()) {
-                Ok(control) => control,
-                Err(error) => return json!({"error":error.to_string()}),
-            };
-            let dispatch =
-                self.audio_runtime
-                    .control(&mut self.services.resources, control, self.version);
-            return self.dispatch_audio(dispatch);
-        }
-        let request = match serde_json::from_value::<OperationCall>(request.clone()) {
-            Ok(request) => request,
-            Err(error) => return json!({"error":error.to_string()}),
-        };
-        match request {
+    /// **One call of an audio member's operations**: an operation prepared
+    /// and its first batch handed out, or a control of one under way.
+    pub(crate) fn audio_operation(&mut self, call: OperationCall) -> Operated {
+        match call {
+            OperationCall::Control(control) => {
+                let dispatch =
+                    self.audio_runtime
+                        .control(&mut self.services.resources, control, self.version);
+                self.dispatch_audio(dispatch)
+            }
             OperationCall::Prepare { member, command } => {
                 let command = match command {
                     AudioCommand::Open => Command::Open,
@@ -481,15 +622,38 @@ impl Editing {
                     },
                     AudioCommand::Edit { event } => match self.decode_audio_event(member, &event) {
                         Some(command) => command,
-                        None => return json!({"error":"the event is not a sample operation"}),
+                        None => return Operated::error("the event is not a sample operation"),
                     },
                     AudioCommand::Restore { payload } => Command::Restore(Opaque(payload)),
                 };
                 match self.prepare_audio(member, command, 0) {
                     Ok(ticket) => self.audio_next(ticket),
-                    Err(error) => json!({"error":error}),
+                    Err(error) => Operated::error(error),
                 }
             }
+        }
+    }
+
+    /// [`Self::audio_operation`] over the JSON door: `action` `prepare`, or a
+    /// control's.
+    pub(super) fn audio_operation_json(&mut self, request: &Value) -> Value {
+        let call = if request["action"] == "prepare" {
+            serde_json::from_value::<PrepareCall>(request.clone())
+                .map(
+                    |PrepareCall::Prepare { member, command }| OperationCall::Prepare {
+                        member,
+                        command,
+                    },
+                )
+                .map_err(|e| e.to_string())
+        } else {
+            serde_json::from_value::<Control>(request.clone())
+                .map(OperationCall::Control)
+                .map_err(|e| e.to_string())
+        };
+        match call {
+            Ok(call) => to_value(&self.audio_operation(call)),
+            Err(error) => json!({"error": error}),
         }
     }
 }

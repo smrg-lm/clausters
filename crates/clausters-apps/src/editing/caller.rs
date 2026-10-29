@@ -13,6 +13,7 @@
 use clausters_editing::apply::Step;
 use serde_json::{Value, json};
 
+use super::coordinator::AudioAction;
 use super::{Editing, Member, MemberId};
 use clausters_core::ids::IdSpaces;
 
@@ -89,19 +90,35 @@ pub struct Ran {
 
 impl Editing {
     /// **Starts `action` on member `member`** and carries it as far as it
-    /// goes: to its end, or to a render it hands back. `lease` says the
-    /// action holds the clipboard lease its event was prepared with; `ids`
-    /// are the engine's, which a member's playback is allocated from.
+    /// goes: to its end, or to a render it hands back. `action` is read
+    /// here, once, from the door's JSON (`{"verb", ...}`, `"window": true`
+    /// when a window asked it); `lease` is the clipboard lease its event
+    /// was prepared with ([`Editing::exchange_event`]); `ids` are the
+    /// engine's, which a member's playback is allocated from.
     pub fn start(
         &mut self,
         member: MemberId,
         action: &Value,
-        lease: bool,
+        lease: Option<u64>,
         caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {
         match self.member(member) {
-            Some(Member::Audio(_)) => self.audio_act(member, action, lease, caller, ids),
+            Some(Member::Audio(_)) => match AudioAction::read(action) {
+                Ok((mut action, window)) => {
+                    if let AudioAction::Event { lease: leased, .. } = &mut action {
+                        *leased |= lease.is_some();
+                    }
+                    self.audio_act(member, action, window, lease, caller, ids)
+                }
+                Err(message) => Ran {
+                    end: Some(Err(Raised {
+                        kind: "value".into(),
+                        message,
+                    })),
+                    ..Ran::default()
+                },
+            },
             _ => refused(),
         }
     }
@@ -113,7 +130,7 @@ impl Editing {
         member: MemberId,
         run: u64,
         result: Result<(), String>,
-        lease: bool,
+        lease: Option<u64>,
         caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {

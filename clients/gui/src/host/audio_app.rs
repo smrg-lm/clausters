@@ -309,7 +309,7 @@ impl App {
                         member,
                         json!({"verb": "closed"}),
                         0,
-                        false,
+                        None,
                     );
                 }
                 self.forget(def_id);
@@ -395,7 +395,7 @@ impl App {
             member,
             json!({"verb": "open", "empty": empty, "window": true}),
             0,
-            false,
+            None,
         );
         first.effects.extend(ran.effects);
         first.end = ran.end;
@@ -414,16 +414,8 @@ impl App {
         let Some(member) = self.windows.get(&def_id).map(|w| w.member) else {
             return;
         };
-        let prepared = self.app.call(
-            &mut self.editing,
-            &json!({"verb": "exchange", "action": "event", "member": member, "args": args}),
-        );
-        let lease = prepared.get("lease").is_some_and(|l| !l.is_null());
-        let mut action = json!({"verb": "event", "addr": addr, "window": true,
-            "args": prepared["args"]});
-        if lease {
-            action["lease"] = json!(true);
-        }
+        let (args, lease) = self.editing.exchange_event(args, Default::default());
+        let action = json!({"verb": "event", "addr": addr, "window": true, "args": args});
         let ran = self.app.act(&mut self.editing, member, action, 0, lease);
         self.said(def_id, ran, true);
     }
@@ -464,9 +456,7 @@ impl App {
             action["window"] = json!(true);
             let token = self.next_token;
             self.next_token += 1;
-            let ran = self
-                .app
-                .act(&mut self.editing, member, action, token, false);
+            let ran = self.app.act(&mut self.editing, member, action, token, None);
             let answered = match ran.end.as_ref().map(ended) {
                 Some(answer) => Some((reply, answer)),
                 None => {

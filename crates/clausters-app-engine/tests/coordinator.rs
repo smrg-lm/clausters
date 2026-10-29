@@ -89,14 +89,14 @@ impl Client {
         self.member(json!({"verb": "window", "widget": PICTURE}));
         let opened = self.run(
             json!({"verb": "open", "empty": false, "window": true}),
-            false,
+            None,
         );
         assert!(opened.is_ok(), "{opened:?}");
     }
 
     /// **Starts an action** and answers its token: what it said so far is
     /// taken in, and it may still be waiting on a render.
-    fn start(&mut self, action: Value, lease: bool) -> (u64, Ran) {
+    fn start(&mut self, action: Value, lease: Option<u64>) -> (u64, Ran) {
         let token = self.next_token;
         self.next_token += 1;
         let member = self.member;
@@ -128,7 +128,7 @@ impl Client {
     }
 
     /// **One action, carried out to its end.**
-    fn run(&mut self, action: Value, lease: bool) -> Result<Value, String> {
+    fn run(&mut self, action: Value, lease: Option<u64>) -> Result<Value, String> {
         let (token, ran) = self.start(action, lease);
         match ran.end {
             Some(end) => end.map_err(|raised| raised.message),
@@ -188,16 +188,10 @@ impl Client {
 
     /// **The action of one `/gui_event`**, its clipboard lease taken first,
     /// as the host's application thread does.
-    fn event(&mut self, args: Vec<Value>) -> (Value, bool) {
-        let member = self.member;
-        let prepared = self
-            .call(json!({"verb": "exchange", "action": "event", "member": member, "args": args}));
-        let lease = prepared.get("lease").is_some_and(|l| !l.is_null());
-        let mut action = json!({"verb": "event", "addr": "/gui_event",
-            "args": prepared["args"], "window": true});
-        if lease {
-            action["lease"] = json!(true);
-        }
+    fn event(&mut self, args: Vec<Value>) -> (Value, Option<u64>) {
+        let (args, lease) = self.editing.exchange_event(args, Default::default());
+        let action = json!({"verb": "event", "addr": "/gui_event",
+            "args": args, "window": true});
         (action, lease)
     }
 
@@ -214,7 +208,7 @@ impl Client {
     fn save(&mut self, path: &str) -> Result<Value, String> {
         self.run(
             json!({"verb": "save", "request": {"path": path, "format": "float"}}),
-            false,
+            None,
         )
     }
 
@@ -625,7 +619,7 @@ fn a_file_not_read_in_place_is_decoded_and_heard() {
     client.member(json!({"verb": "window", "widget": PICTURE}));
     let ran = client.run(
         json!({"verb": "open", "empty": false, "window": true}),
-        false,
+        None,
     );
     assert!(ran.is_ok(), "{ran:?}");
     let heard = client.heard();
@@ -664,7 +658,7 @@ fn a_save_called_off_leaves_the_file_as_it_was() {
     let before = std::fs::read(&client.take).unwrap();
     let (token, ran) = client.start(
         json!({"verb": "save", "request": {"path": null, "format": "float"}}),
-        false,
+        None,
     );
     assert!(ran.end.is_none(), "the save is a render on its way");
     client.verb(2, "call_off").unwrap();

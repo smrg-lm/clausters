@@ -6,8 +6,8 @@ use super::{
     resources::{Resources, ServerInstance},
     services::{Application, Completion, Services},
 };
-use serde::Deserialize;
-use serde_json::{Value, json};
+use clausters_editing::conversation::Answer;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Control messages common to all applications, decoded at the JSON boundary.
@@ -44,6 +44,89 @@ pub enum Reply {
     Cancelled,
 }
 
+/// **A gesture's answer, given once its operation settles**: the member
+/// whose window asked, and what that window is told.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Echo {
+    /// The member whose window asked.
+    pub member: u32,
+    /// What it is told.
+    pub answer: Answer,
+}
+
+/// A repair still kept, as `pendingRepairs` lists it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PendingRepair {
+    /// The operation it repairs.
+    pub ticket: Ticket,
+    /// Why it is kept.
+    pub reason: String,
+    /// Whether an executor carries it out now.
+    pub running: bool,
+}
+
+/// **What the protocol answers**, typed: a refusal, a batch handed out, the
+/// repairs kept, or an operation that came to its end. Only the fields of
+/// the answer it is are set; the JSON door writes it out as it stands.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Protocol {
+    /// Whether a control was taken: `false` for one that names nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted: Option<bool>,
+    /// A cancel taken while a batch is still in flight.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub draining: bool,
+    /// Why a control was refused, where it says.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// **A batch handed out**, for its executor to carry out.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub batch: Option<Prepared>,
+    /// The repairs kept for a member.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repairs: Option<Vec<PendingRepair>>,
+    /// The operation came to its end.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub complete: bool,
+    /// Whether its end committed it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub committed: Option<bool>,
+    /// The repair its refusal is kept as.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repair: Option<Ticket>,
+    /// The repair's steps, one batch per server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recoveries: Option<Vec<Batch>>,
+    /// Why it did not commit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// The asking gesture's answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub echo: Option<Echo>,
+    /// The context's version after it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<i64>,
+    /// The operation a failed repair is of.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ticket: Option<Ticket>,
+}
+
+impl Protocol {
+    /// A control that names nothing.
+    pub fn refused() -> Protocol {
+        Protocol {
+            accepted: Some(false),
+            ..Protocol::default()
+        }
+    }
+
+    /// Whether a batch is handed out (the operation has not ended).
+    pub fn waits(&self) -> bool {
+        !self.complete && self.batch.is_some()
+    }
+}
+
 /// A failed operation retains both its resource lease and original answer.
 #[derive(Debug)]
 pub struct Repair<O> {
@@ -62,26 +145,36 @@ pub struct Repair<O> {
 }
 impl<O> Repair<O> {
     /// The original gesture's answer, carrying the repair's reason.
-    pub fn echo(&self, version: i64) -> Option<Value> {
-        self.receipt.map(|(member, seq)| {
-            json!({"member": member, "answer": clausters_editing::conversation::answer(
-                seq, version, Some(self.reason.clone()), Vec::new())})
+    pub fn echo(&self, version: i64) -> Option<Echo> {
+        self.receipt.map(|(member, seq)| Echo {
+            member,
+            answer: clausters_editing::conversation::answer(
+                seq,
+                version,
+                Some(self.reason.clone()),
+                Vec::new(),
+            ),
         })
     }
 
-    /// Serialize existing steps only at the executor boundary.
-    pub fn response(&self, resources: &Resources, version: i64) -> Value {
+    /// The repair, as its executor is handed it: the batches of the servers
+    /// still there.
+    pub fn response(&self, resources: &Resources, version: i64) -> Protocol {
         let recoveries = self
             .batches
             .iter()
             .filter(|batch| resources.valid(batch.server))
-            .map(|batch| {
-                json!({"member":batch.member,"server":batch.server,
-                "steps":clausters_editing::apply::steps_json(&batch.steps)})
-            })
-            .collect::<Vec<_>>();
-        json!({"complete":true,"committed":false,"repair":self.ticket,
-            "recoveries":recoveries,"reason":self.reason,"version":version})
+            .cloned()
+            .collect();
+        Protocol {
+            complete: true,
+            committed: Some(false),
+            repair: Some(self.ticket),
+            recoveries: Some(recoveries),
+            reason: Some(self.reason.clone()),
+            version: Some(version),
+            ..Protocol::default()
+        }
     }
 }
 
@@ -92,7 +185,7 @@ pub enum Dispatch<C, O> {
     /// Recovery settled; collection and domain refusal may now be published.
     Repaired(Repair<O>),
     /// A protocol response requiring no domain policy.
-    Response(Value),
+    Response(Protocol),
 }
 
 /// One application's typed work registry; it owns no resource graph.
@@ -203,7 +296,7 @@ impl<C, O> Runtime<C, O> {
         completion: Completion<O>,
         resources: &Resources,
         version: i64,
-    ) -> Value
+    ) -> Protocol
     where
         O: crate::turn::Turned,
     {
@@ -239,7 +332,7 @@ impl<C, O> Runtime<C, O> {
         refused: super::walks::Refused,
         resources: &Resources,
         version: i64,
-    ) -> Value
+    ) -> Protocol
     where
         O: crate::turn::Turned,
     {
@@ -272,16 +365,16 @@ impl<C, O> Runtime<C, O> {
         receipt: Option<(u32, i64)>,
         reason: Option<String>,
         version: i64,
-    ) -> Option<Value> {
+    ) -> Option<Echo> {
         Operations::<C>::release(resources, ticket);
-        receipt.map(|(member, seq)| {
-            json!({"member": member, "answer": clausters_editing::conversation::answer(
-                seq, version, reason, Vec::new())})
+        receipt.map(|(member, seq)| Echo {
+            member,
+            answer: clausters_editing::conversation::answer(seq, version, reason, Vec::new()),
         })
     }
 
     /// Store an explicit recovery plan, retaining the operation's pending root.
-    pub fn repair(&mut self, repair: Repair<O>, resources: &Resources, version: i64) -> Value {
+    pub fn repair(&mut self, repair: Repair<O>, resources: &Resources, version: i64) -> Protocol {
         let response = repair.response(resources, version);
         self.repairing.insert(repair.ticket.id);
         self.repairs.insert(repair.ticket.id, repair);
@@ -291,20 +384,20 @@ impl<C, O> Runtime<C, O> {
     /// Hand out a batch once, or finish an effect-free operation.
     pub fn next(&mut self, ticket: Ticket) -> Dispatch<C, O> {
         if let Some((batch, work)) = self.operations.next(ticket) {
-            Dispatch::Response(
-                serde_json::to_value(Prepared {
+            Dispatch::Response(Protocol {
+                batch: Some(Prepared {
                     member: work.member,
                     ticket,
                     batch,
                     server: work.server,
                     steps: work.steps,
-                })
-                .expect("prepared steps are serializable"),
-            )
+                }),
+                ..Protocol::default()
+            })
         } else if let Some(finished) = self.operations.finish_ready(ticket) {
             Dispatch::Finish(finished)
         } else {
-            Dispatch::Response(json!({"accepted":false}))
+            Dispatch::Response(Protocol::refused())
         }
     }
 
@@ -334,11 +427,15 @@ impl<C, O> Runtime<C, O> {
             }
             Control::Cancel { ticket } => {
                 if !self.operations.cancel(ticket) {
-                    return Dispatch::Response(json!({"accepted":false}));
+                    return Dispatch::Response(Protocol::refused());
                 }
                 match self.operations.finish_ready(ticket) {
                     Some(finished) => Dispatch::Finish(finished),
-                    None => Dispatch::Response(json!({"accepted":true,"draining":true})),
+                    None => Dispatch::Response(Protocol {
+                        accepted: Some(true),
+                        draining: true,
+                        ..Protocol::default()
+                    }),
                 }
             }
             Control::Repaired { ticket } => {
@@ -349,16 +446,29 @@ impl<C, O> Runtime<C, O> {
                     || !self.repairing.contains(&ticket.id)
                     || !self.operations.finish_abort(resources, ticket)
                 {
-                    return Dispatch::Response(json!({"accepted":false}));
+                    return Dispatch::Response(Protocol::refused());
                 }
                 self.repairing.remove(&ticket.id);
                 Dispatch::Repaired(self.repairs.remove(&ticket.id).unwrap())
             }
             Control::PendingRepairs { member } => {
-                Dispatch::Response(json!({"repairs":self.repairs.values()
-                .filter(|repair| repair.ticket.target.member == member || repair.batches.iter().any(|batch| batch.member == member))
-                .map(|repair| json!({"ticket":repair.ticket,"reason":repair.reason,"running":self.repairing.contains(&repair.ticket.id)}))
-                .collect::<Vec<_>>()}))
+                let repairs = self
+                    .repairs
+                    .values()
+                    .filter(|repair| {
+                        repair.ticket.target.member == member
+                            || repair.batches.iter().any(|batch| batch.member == member)
+                    })
+                    .map(|repair| PendingRepair {
+                        ticket: repair.ticket,
+                        reason: repair.reason.clone(),
+                        running: self.repairing.contains(&repair.ticket.id),
+                    })
+                    .collect();
+                Dispatch::Response(Protocol {
+                    repairs: Some(repairs),
+                    ..Protocol::default()
+                })
             }
             Control::RetryRepair { ticket } => {
                 let Some(repair) = self
@@ -366,12 +476,13 @@ impl<C, O> Runtime<C, O> {
                     .get(&ticket.id)
                     .filter(|repair| repair.ticket == ticket)
                 else {
-                    return Dispatch::Response(json!({"accepted":false}));
+                    return Dispatch::Response(Protocol::refused());
                 };
                 if !self.repairing.insert(ticket.id) {
-                    return Dispatch::Response(
-                        json!({"accepted":false,"error":"the repair already has an executor"}),
-                    );
+                    return Dispatch::Response(Protocol {
+                        error: Some("the repair already has an executor".into()),
+                        ..Protocol::refused()
+                    });
                 }
                 Dispatch::Response(repair.response(resources, version))
             }
@@ -381,17 +492,23 @@ impl<C, O> Runtime<C, O> {
                     .get_mut(&ticket.id)
                     .filter(|repair| repair.ticket == ticket)
                 else {
-                    return Dispatch::Response(json!({"accepted":false}));
+                    return Dispatch::Response(Protocol::refused());
                 };
                 if !self.repairing.remove(&ticket.id) {
-                    return Dispatch::Response(json!({"accepted":false}));
+                    return Dispatch::Response(Protocol::refused());
                 }
                 repair.reason = format!("{}; recovery is pending: {}", repair.reason, reason);
                 let echo = repair.echo(version);
                 repair.receipt = None;
-                Dispatch::Response(
-                    json!({"complete":true,"committed":false,"reason":repair.reason,"echo":echo,"version":version,"ticket":ticket}),
-                )
+                Dispatch::Response(Protocol {
+                    complete: true,
+                    committed: Some(false),
+                    reason: Some(repair.reason.clone()),
+                    echo,
+                    version: Some(version),
+                    ticket: Some(ticket),
+                    ..Protocol::default()
+                })
             }
         }
     }
@@ -585,18 +702,16 @@ mod tests {
             1,
         );
         assert!(
-            matches!(pending, Dispatch::Response(v) if v["repairs"][0]["ticket"]["id"] == ticket.id && v["repairs"][0]["running"] == true)
+            matches!(pending, Dispatch::Response(v) if v.repairs.as_ref().unwrap()[0].ticket.id == ticket.id && v.repairs.as_ref().unwrap()[0].running)
         );
         let foreign = first_runtime.control(
             &mut services.resources,
             Control::PendingRepairs { member: 20 },
             1,
         );
+        assert!(matches!(foreign, Dispatch::Response(v) if v.repairs.as_ref().unwrap().is_empty()));
         assert!(
-            matches!(foreign, Dispatch::Response(v) if v["repairs"].as_array().unwrap().is_empty())
-        );
-        assert!(
-            matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v["accepted"] == false)
+            matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v.accepted == Some(false))
         );
         for _ in 0..2 {
             first_runtime.control(
@@ -610,13 +725,13 @@ mod tests {
             assert!(first_runtime.operations.busy(ticket.target));
             assert!(services.resources.collect().is_empty());
             assert!(
-                matches!(first_runtime.control(&mut services.resources, Control::Repaired { ticket }, 1), Dispatch::Response(v) if v["accepted"] == false)
+                matches!(first_runtime.control(&mut services.resources, Control::Repaired { ticket }, 1), Dispatch::Response(v) if v.accepted == Some(false))
             );
             assert!(
-                matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v["repair"]["id"] == ticket.id)
+                matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v.repair.as_ref().unwrap().id == ticket.id)
             );
             assert!(
-                matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v["accepted"] == false)
+                matches!(first_runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v.accepted == Some(false))
             );
         }
         assert!(matches!(
@@ -626,7 +741,7 @@ mod tests {
         assert!(!first_runtime.operations.busy(ticket.target));
         assert_eq!(services.resources.collect()[0].id.buffer, 10);
         assert!(
-            matches!(first_runtime.control(&mut services.resources, Control::Repaired { ticket }, 1), Dispatch::Response(v) if v["accepted"] == false)
+            matches!(first_runtime.control(&mut services.resources, Control::Repaired { ticket }, 1), Dispatch::Response(v) if v.accepted == Some(false))
         );
         assert!(services.resources.collect().is_empty());
     }
@@ -674,10 +789,10 @@ mod tests {
         assert!(!runtime.operations.busy(ticket.target));
         assert!(services.resources.collect().is_empty());
         assert!(
-            matches!(runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v["accepted"] == false)
+            matches!(runtime.control(&mut services.resources, Control::RetryRepair { ticket }, 1), Dispatch::Response(v) if v.accepted == Some(false))
         );
         assert!(
-            matches!(runtime.control(&mut services.resources, Control::Complete { ticket, batch:0, result:Reply::Success }, 1), Dispatch::Response(v) if v["accepted"] == false)
+            matches!(runtime.control(&mut services.resources, Control::Complete { ticket, batch:0, result:Reply::Success }, 1), Dispatch::Response(v) if v.accepted == Some(false))
         );
         let mut next = operation(10, 2);
         next.target.server.generation += 1;

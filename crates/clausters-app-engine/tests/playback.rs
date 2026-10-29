@@ -360,7 +360,7 @@ fn act(
     member: u32,
     action: serde_json::Value,
 ) -> clausters_app_engine::app::Ran {
-    let mut ran = app.act(editing, member, action, 7, false);
+    let mut ran = app.act(editing, member, action, 7, None);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     let mut effects = std::mem::take(&mut ran.effects);
     let deadline = std::time::Instant::now() + Duration::from_secs(20);

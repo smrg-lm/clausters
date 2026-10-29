@@ -110,13 +110,16 @@ impl AudioEditor {
         self.open_file_state(file).map(|f| f.rate)
     }
 
-    pub(crate) fn playback_file(&self) -> Value {
-        // with no file open there is nothing to sound
-        if !self.open_files.open {
-            return json!({"active": false});
-        }
-        json!({"id":self.file.id, "channels":self.file.channels,
-            "frames":self.length(), "rate":self.file.rate, "active":self.window_state.active})
+    /// The file in focus as its playback sounds it; `None` with no file
+    /// open, which has nothing to sound.
+    pub(crate) fn playback_file(&self) -> Option<PlaybackFile> {
+        self.open_files.open.then(|| PlaybackFile {
+            id: self.file.id.0,
+            channels: self.file.channels,
+            frames: self.length(),
+            rate: self.file.rate,
+            active: self.window_state.active,
+        })
     }
 
     /// The file in focus as a client binds it, or `null` with no file open.
@@ -510,9 +513,11 @@ impl AudioEditor {
             Said::Accept => match open.form {
                 Form::New => match dialogs::new_shape(&open) {
                     Ok((channels, frames, rate)) => {
-                        out.new_file = Some(json!({
-                            "channels": channels, "frames": frames, "rate": rate,
-                        }));
+                        out.new_file = Some(Shape {
+                            channels,
+                            frames,
+                            rate,
+                        });
                         None
                     }
                     Err(why) => Some(why),
@@ -578,7 +583,9 @@ fn open_paths(paths: &[String], out: &mut Outcome) -> Option<String> {
     if paths.is_empty() {
         return Some("select one or more files to open".into());
     }
-    out.open_file = Some(json!({ "paths": paths }));
+    out.open_file = Some(OpenFiles {
+        paths: paths.to_vec(),
+    });
     None
 }
 

@@ -3,41 +3,38 @@
 
 use super::run::*;
 use super::*;
-
-/// The verbs a script plays the transport with, which need a file open.
-const TRANSPORT: &[&str] = &[
-    "playing", "play", "pause", "stop", "locate", "span", "looping",
-];
+use crate::editing::Turned;
+use crate::turn::{Event, Kind};
 
 impl Session {
     pub(super) fn start(
         &mut self,
         editing: &mut Editing,
         member: MemberId,
-        action: &Value,
+        action: AudioAction,
+        window: bool,
         ids: &mut IdSpaces,
     ) -> Answer {
         let id = self.next;
         self.next += 1;
         let mut run = Run {
-            window: action["window"] == true,
+            window,
             ..Default::default()
         };
-        let verb = action["verb"].as_str().unwrap_or_default();
-        if TRANSPORT.contains(&verb) && file_id(editing, member).is_none() {
+        if action.transport() && file_id(editing, member).is_none() {
             return Answer::refused(id, Raise::Value, NO_FILE);
         }
-        let tasks: Vec<Task> = match verb {
-            "open" => {
+        let tasks: Vec<Task> = match action {
+            AudioAction::Open { empty } => {
                 if self.playback.transport().is_none()
                     && let Err(error) = self.playback.alloc_transport(ids)
                 {
                     return Answer::refused(id, Raise::Runtime, &error.to_string());
                 }
                 let mut tasks = Vec::new();
-                if action["empty"] != true {
+                if !empty {
                     tasks.push(Task::Operation {
-                        command: Some(json!({"kind": "open"})),
+                        command: Some(AudioCommand::Open),
                         prepared: None,
                         repairing: false,
                     });
@@ -49,121 +46,122 @@ impl Session {
                 tasks
             }
             // **The window's work called off** (its progress panel's button,
-            // or Escape): the client stops the renders under way, each before
+            // or Escape): the caller stops the renders under way, each before
             // its next piece, and a batch that stops so deletes what it wrote.
-            "event" if action["args"][3] == "call_off" => {
-                vec![effect("call_off", json!({}))]
+            AudioAction::Event { args, .. }
+                if args.get(3).and_then(Value::as_str) == Some("call_off") =>
+            {
+                vec![Task::Effect(Said::CallOff)]
             }
-            "event" => {
-                let turned = door(
-                    editing,
-                    json!({"verb": "event", "member": member,
-                        "addr": action["addr"], "args": action["args"]}),
-                );
-                self.turned(&mut run, turned, action["lease"] == true)
+            AudioAction::Event { addr, args, lease } => {
+                let event = Event { addr, args };
+                let turned = editing
+                    .prepare_audio_event(member, &event)
+                    .or_else(|| editing.event(member, &event));
+                match turned {
+                    Some(turned) => self.turned(&mut run, turned, lease),
+                    None => Vec::new(),
+                }
             }
-            "act" => {
-                let turned = door(
-                    editing,
-                    json!({"verb": "act", "member": member, "call": action["call"]}),
-                );
-                let outcome = turned.get("outcome").cloned().unwrap_or(json!({}));
-                run.changed = outcome["changed"] == true;
+            AudioAction::Act { call } => {
+                let turned = editing
+                    .prepare_audio_action(member, &call)
+                    .or_else(|| editing.act(member, &call));
+                let Some(turned) = turned else {
+                    run.tasks.push_back(Task::Reason(None));
+                    self.runs.insert(id, run);
+                    return self.drive(editing, member, id, ids);
+                };
+                let version = turned.version;
+                let outcome = audio_outcome(turned.outcome);
+                run.changed = outcome.changed;
+                let reason = answer_reason(&outcome);
                 let mut tasks = vec![
-                    effect("version", json!({"version": turned["version"]})),
+                    effect("version", json!({"version": version})),
                     Task::Take {
-                        outcome: outcome.clone(),
+                        outcome,
                         lease: false,
                     },
                 ];
-                tasks.extend(release(&turned["freed"]));
-                run.reason = Some(outcome["answer"]["reason"].clone());
-                tasks.push(Task::Reason(outcome["answer"]["reason"].clone()));
+                tasks.extend(release(turned.freed));
+                tasks.push(Task::Reason(reason));
                 tasks
             }
-            "verb" => {
-                let answer = member_call(editing, member, action["call"].clone());
-                if answer["error"] == NO_FILE {
-                    return Answer::refused(id, Raise::Value, NO_FILE);
-                }
-                run.changed = answer["changed"] == true;
-                run.reason = Some(answer["answer"]["reason"].clone());
+            AudioAction::Verb { call } => {
+                let outcome = match editing.audio_verb(member, &call) {
+                    Ok(outcome) => Box::new(outcome),
+                    Err(error) if error == NO_FILE => {
+                        return Answer::refused(id, Raise::Value, NO_FILE);
+                    }
+                    Err(error) => {
+                        return Answer::refused(id, Raise::Value, &error);
+                    }
+                };
+                run.changed = outcome.changed;
+                let reason = answer_reason(&outcome);
                 vec![
                     Task::Take {
-                        outcome: answer.clone(),
+                        outcome,
                         lease: false,
                     },
-                    Task::Reason(answer["answer"]["reason"].clone()),
+                    Task::Reason(reason),
                 ]
             }
-            "save" => {
-                let mut command = json!({"kind": "save"});
-                if let (Some(map), Value::Object(request)) =
-                    (command.as_object_mut(), &action["request"])
-                {
-                    map.extend(request.clone());
-                }
-                vec![
-                    Task::Operation {
-                        command: Some(command),
-                        prepared: None,
-                        repairing: false,
-                    },
-                    Task::TakeCompleted,
-                    Task::Destination,
-                ]
-            }
-            "operation" => vec![Task::Operation {
-                command: action.get("command").filter(|c| !c.is_null()).cloned(),
-                prepared: action.get("prepared").filter(|p| !p.is_null()).cloned(),
-                repairing: action["repairing"] == true,
+            AudioAction::Save { path, format } => vec![
+                Task::Operation {
+                    command: Some(AudioCommand::Save { path, format }),
+                    prepared: None,
+                    repairing: false,
+                },
+                Task::TakeCompleted,
+                Task::Destination,
+            ],
+            AudioAction::Operation {
+                command,
+                prepared,
+                repairing,
+            } => vec![Task::Operation {
+                command,
+                prepared,
+                repairing,
             }],
-            "retry" => {
-                let pending = door(
-                    editing,
-                    json!({"verb": "operation", "action": "pendingRepairs", "member": member}),
-                );
-                pending["repairs"]
-                    .as_array()
+            AudioAction::Retry => {
+                let pending = editing
+                    .audio_operation(OperationCall::Control(Control::PendingRepairs { member }));
+                pending
+                    .protocol
+                    .repairs
+                    .unwrap_or_default()
                     .into_iter()
-                    .flatten()
                     .map(|repair| {
-                        let prepared = door(
-                            editing,
-                            json!({"verb": "operation", "action": "retryRepair",
-                                "ticket": repair["ticket"]}),
-                        );
+                        let prepared =
+                            editing.audio_operation(OperationCall::Control(Control::RetryRepair {
+                                ticket: repair.ticket,
+                            }));
                         Task::Operation {
                             command: None,
-                            prepared: Some(prepared),
+                            prepared: Some(Box::new(prepared)),
                             repairing: true,
                         }
                     })
                     .collect()
             }
-            "openFile" => {
-                let answer = member_call(
-                    editing,
-                    member,
-                    json!({"verb": "open_file", "paths": action["paths"]}),
-                );
-                if let Some(error) = answer["error"].as_str() {
-                    return Answer::refused(id, Raise::Value, error);
-                }
-                vec![Task::Read(paths(&answer["openFile"]["paths"]))]
+            AudioAction::OpenFile { request } => match audio::open_paths(&request) {
+                Ok(paths) => vec![Task::Read(super::paths(&paths))],
+                Err(error) => return Answer::refused(id, Raise::Value, &error),
+            },
+            AudioAction::NewFile { shape } => {
+                vec![Task::Read(VecDeque::from([run::Wanted::Shape(shape)]))]
             }
-            "newFile" => vec![Task::Read(VecDeque::from([
-                json!({"shape": action["shape"]}),
-            ]))],
-            "sound" => vec![Task::Sound],
-            "syncSound" => vec![Task::SyncSound(action["file"].clone())],
-            "close" => vec![Task::Close { closed: false }],
-            "closed" => vec![Task::Close { closed: true }],
-            "playing" => vec![Task::Rolling(Rolled::Playing {
+            AudioAction::Sound => vec![Task::Sound],
+            AudioAction::SyncSound { file } => vec![Task::SyncSound(file)],
+            AudioAction::Close => vec![Task::Close { closed: false }],
+            AudioAction::Closed => vec![Task::Close { closed: true }],
+            AudioAction::Playing => vec![Task::Rolling(Rolled::Playing {
                 was: self.playback.rolling(),
             })],
-            "play" => self.script_play(editing, member, action["at"].as_f64()),
-            "pause" => {
+            AudioAction::Play { at } => self.script_play(editing, member, at),
+            AudioAction::Pause => {
                 let mut tasks = Vec::new();
                 if self.focused(editing, member) {
                     tasks.push(Task::Playback(Op::Pause));
@@ -172,7 +170,7 @@ impl Session {
                 }
                 tasks
             }
-            "stop" => {
+            AudioAction::Stop => {
                 self.paused = false;
                 if self.focused(editing, member) {
                     self.script_stop(editing, member)
@@ -180,34 +178,30 @@ impl Session {
                     vec![Task::Rolling(Rolled::Stop)]
                 }
             }
-            "locate" => self.script_locate(editing, member, action["at"].as_f64().unwrap_or(0.0)),
-            "span" => {
-                let span = action["span"]
-                    .as_array()
-                    .and_then(|s| Some((s.first()?.as_f64()?, s.get(1)?.as_f64()?)));
-                let band = member_call(
-                    editing,
-                    member,
-                    json!({"verb": "span", "span": span.map(|(a, b)| json!([a, b]))}),
-                );
+            AudioAction::Locate { at } => self.script_locate(editing, member, at),
+            AudioAction::Span { span, show } => {
+                let band = editing
+                    .audio_mut(member)
+                    .map(|editor| editor.set_span(span))
+                    .unwrap_or_default();
                 let mut tasks = Vec::new();
-                if action["show"] != false {
+                if show {
                     tasks.push(effect(
                         "band",
-                        json!({"sel_start": band["sel_start"], "sel_len": band["sel_len"]}),
+                        json!({"sel_start": band.0, "sel_len": band.1}),
                     ));
                 }
                 tasks.extend(self.follow(editing, member));
                 tasks
             }
-            "looping" => {
-                let on = action["on"] == true;
-                member_call(editing, member, json!({"verb": "looping", "on": on}));
+            AudioAction::Looping { on } => {
+                if let Some(editor) = editing.audio_mut(member) {
+                    editor.set_looping(on);
+                }
                 let mut tasks = self.follow(editing, member);
                 tasks.push(effect("looping", json!({"on": on})));
                 tasks
             }
-            other => return Answer::refused(id, Raise::Value, &format!("no audio verb {other:?}")),
         };
         run.tasks.extend(tasks);
         self.runs.insert(id, run);
@@ -215,26 +209,33 @@ impl Session {
     }
 
     /// What a message to the member came to, as the event handling did.
-    pub(super) fn turned(&mut self, run: &mut Run, turned: Value, lease: bool) -> Vec<Task> {
-        let outcome = turned.get("outcome").cloned().unwrap_or(json!({}));
-        let mut tasks = vec![effect("version", json!({"version": turned["version"]}))];
-        if outcome["turn"] == "closed" {
+    pub(super) fn turned(&mut self, run: &mut Run, turned: Turned, lease: bool) -> Vec<Task> {
+        let Turned {
+            outcome,
+            stepped,
+            freed,
+            version,
+            ..
+        } = turned;
+        let outcome = audio_outcome(outcome);
+        let mut tasks = vec![effect("version", json!({"version": version}))];
+        if outcome.turn == Kind::Closed {
             tasks.push(Task::Close { closed: true });
             tasks.push(Task::Answer(json!(false)));
             return tasks;
         }
-        if outcome["turn"] == "step" {
-            tasks.push(Task::Stepped(
-                turned.get("stepped").cloned().unwrap_or(json!({})),
-            ));
-            tasks.push(effect("echo", json!({"answer": outcome["answer"]})));
-            tasks.extend(release(&turned["freed"]));
+        if outcome.turn == Kind::Step {
+            if let Some(stepped) = stepped {
+                tasks.push(Task::Stepped(Box::new(stepped)));
+            }
+            tasks.push(effect("echo", json!({"answer": outcome.answer})));
+            tasks.extend(release(freed));
             tasks.push(Task::Sound);
             return tasks;
         }
-        run.changed = outcome["changed"] == true;
+        run.changed = outcome.changed;
         tasks.push(Task::Take { outcome, lease });
-        tasks.extend(release(&turned["freed"]));
+        tasks.extend(release(freed));
         tasks
     }
 
@@ -259,7 +260,10 @@ impl Session {
             tasks.extend(self.script_locate(editing, member, at));
         }
         let play = space(editing, member);
-        tasks.push(Task::Playback(Op::play(file_id(editing, member), &play)));
+        tasks.push(Task::Playback(Op::play(
+            file_id(editing, member),
+            play.as_ref(),
+        )));
         tasks.push(Task::ShowTransport);
         tasks
     }
@@ -267,7 +271,7 @@ impl Session {
     pub(super) fn script_stop(&mut self, editing: &mut Editing, member: MemberId) -> Vec<Task> {
         let play = space(editing, member);
         vec![
-            Task::Playback(Op::stop(file_id(editing, member), &play)),
+            Task::Playback(Op::stop(file_id(editing, member), play.as_ref())),
             Task::ShowTransport,
         ]
     }
@@ -278,10 +282,9 @@ impl Session {
         member: MemberId,
         at: f64,
     ) -> Vec<Task> {
-        let frame = match editing.member_mut(member) {
-            Some(Member::Audio(editor)) => editor.set_cursor(at),
-            _ => 0,
-        };
+        let frame = editing
+            .audio_mut(member)
+            .map_or(0, |editor| editor.set_cursor(at));
         vec![
             effect("cursor", json!({"at": at})),
             Task::Rolling(Rolled::Locate(frame)),
@@ -293,8 +296,8 @@ impl Session {
         if !self.focused(editing, member) {
             return Vec::new();
         }
-        let play = space(editing, member);
-        vec![Task::Playback(Op::pass(&play["pass"]))]
+        let pass = space(editing, member).map(|play| play.pass);
+        vec![Task::Playback(Op::Pass(pass))]
     }
 
     /// **The file in focus sounds on the engine**: its list handed to the
@@ -305,13 +308,11 @@ impl Session {
         editing: &mut Editing,
         member: MemberId,
         id: u64,
-        file: &Value,
+        file: &PlaybackFile,
         ids: &mut IdSpaces,
     ) -> Flow {
         let rate = self.rate;
-        let Some(wanted) = file["id"].as_u64() else {
-            return Flow::Next;
-        };
+        let wanted = file.id as u64;
         let take = match editing.member(member) {
             Some(Member::Audio(editor)) => editor
                 .held_takes(rate, |file, _| file == wanted)
@@ -326,8 +327,8 @@ impl Session {
             Ok(buffers) => buffers,
             Err(e) => return Flow::Fail(Failure::Own(Raise::Runtime, e)),
         };
-        let frames = file["frames"].as_u64().unwrap_or(0);
-        let take_rate = file["rate"].as_f64().unwrap_or(0.0);
+        let frames = file.frames;
+        let take_rate = file.rate;
         if let Err(e) = self
             .playback
             .sync_streams(wanted, buffers, frames, take_rate, rate, ids)
@@ -359,9 +360,9 @@ impl Session {
             Rolled::Space(play) => vec![
                 // whichever file plays stops, and the one shown comes into focus
                 if rolling {
-                    Task::Playback(Op::stop(file, &play))
+                    Task::Playback(Op::stop(file, Some(&play)))
                 } else {
-                    Task::Playback(Op::play(file, &play))
+                    Task::Playback(Op::play(file, Some(&play)))
                 },
                 Task::ShowTransport,
             ],
@@ -369,10 +370,9 @@ impl Session {
             // focus rolling goes on from the cursor, its pass ending as the
             // switch says from there; stopped, the transport stands on it.
             Rolled::Cue(frame) if rolling && self.focused(editing, member) => {
-                let play = space(editing, member);
                 let mut tasks = vec![Task::Playback(Op::Locate(frame))];
-                if play["pass"].is_object() {
-                    tasks.push(Task::Playback(Op::pass(&play["pass"])));
+                if let Some(play) = space(editing, member) {
+                    tasks.push(Task::Playback(Op::Pass(Some(play.pass))));
                 }
                 tasks.push(Task::ShowTransport);
                 tasks
@@ -398,5 +398,22 @@ impl Session {
                 },
             )],
         }
+    }
+}
+
+/// An audio member's outcome, out of the context's.
+pub(super) fn audio_outcome(outcome: super::super::Outcome) -> Box<Outcome> {
+    match outcome {
+        super::super::Outcome::Audio(outcome) => outcome,
+        _ => Box::default(),
+    }
+}
+
+/// Why the turn did not do what it asked, as its answer says.
+pub(super) fn answer_reason(outcome: &Outcome) -> Option<String> {
+    use clausters_editing::conversation::Answer as Told;
+    match &outcome.answer {
+        Some(Told::Ack { reason, .. } | Told::Push { reason, .. }) => reason.clone(),
+        _ => None,
     }
 }

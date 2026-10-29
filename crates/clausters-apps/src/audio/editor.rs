@@ -121,6 +121,94 @@ pub(crate) fn edits_contents(verb: &str) -> bool {
     )
 }
 
+/// **The file in focus, as its playback sounds it**: its identity, its
+/// shape and whether a window shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct PlaybackFile {
+    /// The file, as the editor numbers its open files.
+    pub id: i64,
+    /// How many channels it is.
+    pub channels: u32,
+    /// How many frames it comes to, at its own rate.
+    pub frames: u64,
+    /// Its rate.
+    pub rate: f64,
+    /// Whether a window shows it.
+    pub active: bool,
+}
+
+/// **A file played again after an edit**: the file, and whether the window
+/// is told so.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct PlaybackUpdate {
+    /// The file.
+    pub file: PlaybackFile,
+    /// Whether the edit was the file in view's.
+    pub publish: bool,
+}
+
+/// What a window asks of a file in the editor's list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileVerb {
+    /// The file comes into focus.
+    FocusFile,
+    /// The file is closed.
+    CloseFile,
+}
+
+/// **A file of the list the window named**: what it asks, and the file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct FileAction {
+    /// What it asks.
+    pub verb: FileVerb,
+    /// The file.
+    pub file: i64,
+}
+
+/// Files the window asked to open, each read by its caller.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct OpenFiles {
+    /// Their paths.
+    pub paths: Vec<String>,
+}
+
+/// **A new file's shape**, as the New form says it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct Shape {
+    /// How many channels.
+    pub channels: u32,
+    /// How many frames.
+    pub frames: u64,
+    /// Its rate.
+    pub rate: f64,
+}
+
+/// **The files to look at on disk**, the window having come back: the
+/// paths, and the message its answer is for.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct CheckDisk {
+    /// The open files' paths.
+    pub paths: Vec<String>,
+    /// The window's message.
+    pub seq: i64,
+}
+
+/// **A cut's second half**, committed once its copy is on the clipboard:
+/// the span the copy took from the file, at the revision it took it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "verb", rename = "finish_cut", rename_all = "camelCase")]
+pub struct FinishCut {
+    /// The file cut.
+    pub file: i64,
+    /// Its revision when the copy was taken.
+    pub before_revision: u64,
+    /// The gesture's values.
+    pub values: Vec<Value>,
+    /// The gesture's message.
+    pub seq: i64,
+}
+
 /// **What one turn came to.**
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,7 +220,7 @@ pub struct Outcome {
     pub layers: Option<Value>,
     /// Playback update for the original object, independent of current focus.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub playback_update: Option<Value>,
+    pub playback_update: Option<PlaybackUpdate>,
     /// This completion's effects were selected by the operation coordinator.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub prepared_complete: bool,
@@ -214,20 +302,27 @@ pub struct Outcome {
     /// **A new file was asked for** in the window (`newFile`): `{channels,
     /// frames, rate}`, for the client to open -- a file is the client's to hold.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub new_file: Option<Value>,
+    pub new_file: Option<Shape>,
     /// **A file was asked to be opened** in the window (`openFile`):
     /// `{path}`, for the client to open as it opens a new one.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub open_file: Option<Value>,
+    pub open_file: Option<OpenFiles>,
     /// The file binding the client focuses or closes, chosen by the app.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_action: Option<Value>,
+    pub file_action: Option<FileAction>,
+    /// **The files a closed file leaves to delete**: its renders, its
+    /// history gone with it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub delete_files: Vec<String>,
+    /// Whether the editor holds no file now.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub empty: bool,
     /// **The files to look at on disk** (`checkDisk`), the window having come
     /// back: `{paths, seq}`, the open files read from the disk, for the
     /// client to `stat` and hand to the `on_disk` verb, which answers the
     /// window's `seq`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub check_disk: Option<Value>,
+    pub check_disk: Option<CheckDisk>,
     /// **A copy**: the clipboard document naming the copy the application
     /// keeps, for the caller to put on the host's clipboard
     /// (`/gui_clipboard`).
@@ -238,7 +333,7 @@ pub struct Outcome {
     pub clipboard_ready: bool,
     /// A cut continuation, committed only after copy and publication succeed.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub clipboard_cut: Option<Value>,
+    pub clipboard_cut: Option<FinishCut>,
 }
 
 turn::turned!(Outcome);
@@ -318,7 +413,10 @@ impl Converse for AudioEditor {
                     .and_then(Value::as_u64)
                     .and_then(|i| self.open_files.rows.get(i as usize))
             {
-                out.file_action = Some(json!({"verb": "focus_file", "file": file["id"]}));
+                out.file_action = file["id"].as_i64().map(|file| FileAction {
+                    verb: FileVerb::FocusFile,
+                    file,
+                });
             }
             out.answer = Some(conversation::answer(
                 message.seq,
@@ -350,7 +448,10 @@ impl Converse for AudioEditor {
                 ));
             } else {
                 // answered by `on_disk`, with what was found
-                out.check_disk = Some(json!({"paths": paths, "seq": message.seq}));
+                out.check_disk = Some(CheckDisk {
+                    paths,
+                    seq: message.seq,
+                });
             }
             return true;
         }
@@ -378,7 +479,10 @@ impl Converse for AudioEditor {
                 self.window_state.settings_visible = !self.window_state.settings_visible;
                 out.restructure = true;
             } else {
-                out.file_action = Some(json!({"verb": "close_file", "file": self.file.id.0}));
+                out.file_action = Some(FileAction {
+                    verb: FileVerb::CloseFile,
+                    file: self.file.id.0,
+                });
             }
             out.answer = Some(conversation::answer(
                 message.seq,
@@ -1668,6 +1772,7 @@ mod files;
 pub mod operations;
 mod sources;
 pub(crate) use door::call_value;
+pub(crate) use door::{FileAt, open_paths, refusal, turns};
 pub use door::{call_json, new_json};
 pub(crate) use sources::peaks_beside;
 

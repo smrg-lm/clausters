@@ -49,21 +49,56 @@ pub(super) enum Flow {
     Fail(Failure),
 }
 
+/// **What the application carries out of a run**, in order with the
+/// window's effects: one of the window's, or the application's own.
+#[derive(Clone, Debug)]
+pub(crate) enum Said {
+    /// An effect of the window's, `{"kind", ...}`.
+    Window(Value),
+    /// Takes nothing reaches any more: their renders deleted.
+    Release(Vec<Freed>),
+    /// Files to delete: a closed file's renders, a failed batch's scratch.
+    Delete(Vec<String>),
+    /// The member's renders under way called off.
+    CallOff,
+    /// The event's clipboard lease let go.
+    Lease,
+}
+
+/// **A file a run reads in**: one at a path, its header read, or a new
+/// one of a shape.
+#[derive(Clone, Debug)]
+pub(super) enum Wanted {
+    Path(String),
+    Shape(Shape),
+}
+
 /// **What a run waits on**, for its driver to do in place or hand back.
 #[derive(Clone, Debug)]
 pub(super) enum Await {
-    /// Steps to carry out, in the JSON a runner walks: a playback's, a
-    /// turn's, or an operation's batch.
-    Steps(Value),
-    /// A file to add: `{"path"}`, whose header is read, or a new file's
-    /// `{"shape"}`.
-    Shape(Value),
+    /// Steps to carry out: a playback's, a turn's, or an operation's batch.
+    Steps(Vec<Step>),
+    /// A file to add, its header read or its shape said.
+    Shape(Wanted),
     /// The files at these paths, as they are on disk.
-    Stat(Value),
+    Stat(Vec<String>),
     /// A history step the context took, to carry out.
-    Stepped(Value),
+    Stepped(Box<super::super::Stepped>),
     /// A copy's clipboard document, to publish unless `ready`.
-    Clipboard { document: Value, ready: bool },
+    Clipboard { document: String, ready: bool },
+}
+
+/// **What an await came to**, as its driver hands it back.
+#[derive(Clone, Debug)]
+pub(super) enum Came {
+    /// Done, with nothing to read.
+    Done,
+    /// A file's facts, as the editor reads a file it opens.
+    File(Value),
+    /// The files looked at on disk, each path to its stamp.
+    Stamps(Value),
+    /// A history step carried out: whether anything changed.
+    Stepped(bool),
 }
 
 /// **How far a run went**: the effects it said, and its end or what it
@@ -71,15 +106,15 @@ pub(super) enum Await {
 #[derive(Debug)]
 pub(super) struct Answer {
     pub(super) run: u64,
-    pub(super) effects: Vec<Value>,
+    pub(super) effects: Vec<Said>,
     pub(super) end: End,
 }
 
 /// A run's end, or what it waits on.
 #[derive(Debug)]
 pub(super) enum End {
-    /// It ended with its result.
-    Done(Value),
+    /// It ended with its result, and the operation it completed last.
+    Done(Value, Option<Box<Operated>>),
     /// It ended on a failure, unwound.
     Failed(Failure),
     /// It waits.
@@ -102,18 +137,18 @@ impl Answer {
 pub(super) enum Resume {
     /// Steps carried out: nothing to read, a failure unwinds.
     Steps,
-    /// One file read into buffers, to add.
+    /// One file read, to add.
     Read,
     /// The open files looked at on disk, the window having come back: the
     /// stamps go to the editor, which answers the window's `seq`.
-    Stat { seq: Value },
+    Stat { seq: i64 },
     /// An operation's batch carried out: complete it. The files its renders
     /// write go if it fails, where they are the editor's scratch.
     Batch {
-        ticket: Value,
-        batch: Value,
+        ticket: crate::application::operations::Ticket,
+        batch: usize,
         repairing: bool,
-        member: Option<MemberId>,
+        member: MemberId,
         rendered: Vec<String>,
     },
     /// A history step carried out: whether it changed anything.
@@ -128,7 +163,7 @@ pub(super) enum Rolled {
     /// The focused file is viewed again at its cursor.
     View { frame: u64 },
     /// The space bar: stop a rolling pass or play one.
-    Space(Value),
+    Space(Play),
     /// The position cursor moved: the play cursor goes with it.
     Cue(u64),
     /// A script asked whether it plays.
@@ -145,52 +180,56 @@ pub(super) enum Rolled {
 pub(super) enum Task {
     /// An outcome to carry out (`lease`: the event's clipboard lease rides
     /// on it).
-    Take { outcome: Value, lease: bool },
-    /// A member verb a file action names, its answer carried out.
-    VerbTake(Value),
+    Take { outcome: Box<Outcome>, lease: bool },
+    /// A file of the list the window named, focused or closed, its outcome
+    /// carried out.
+    VerbTake(FileAction),
     /// The binding of a turn that names one, past its steps.
     Bound {
-        outcome: Value,
+        outcome: Box<Outcome>,
         close_file: bool,
         lease: bool,
     },
     /// The rest of an outcome, past its file binding.
-    TakeRest { outcome: Value, lease: bool },
+    TakeRest { outcome: Box<Outcome>, lease: bool },
     /// The tail of an outcome, past its steps and its clipboard.
-    TakeTail(Value),
+    TakeTail(Box<Outcome>),
     /// The completed operation's outcome, carried out.
     TakeCompleted,
     /// A save's result: where it wrote.
     Destination,
     /// The run's result: whether the take changed, and why a verb refused.
-    Reason(Value),
+    Reason(Option<String>),
     /// An operation, from its command or as prepared.
     Operation {
-        command: Option<Value>,
-        prepared: Option<Value>,
+        command: Option<AudioCommand>,
+        prepared: Option<Box<Operated>>,
         repairing: bool,
     },
     /// An operation's answer, looked at.
-    OperationAnswer { answer: Value, repairing: bool },
+    OperationAnswer {
+        answer: Box<Operated>,
+        repairing: bool,
+    },
     /// What an operation came to, reflected.
-    OperationDone { answer: Value, repairing: bool },
+    OperationDone {
+        answer: Box<Operated>,
+        repairing: bool,
+    },
     /// The clipboard document a copy left, published.
-    PublishClipboard(Value),
+    PublishClipboard { document: String, ready: bool },
     /// A cut committed once its copy is on the clipboard.
-    Cut(Value),
-    /// A cut's continuation, once the buffers are topped up.
-    CutAct(Value),
+    Cut(Box<Outcome>),
     /// Files read and added, one at a time.
-    Read(VecDeque<Value>),
-    /// The files a window coming back reads, looked at on disk
-    /// (`checkDisk`: `{paths, seq}`).
-    Stat(Value),
+    Read(VecDeque<Wanted>),
+    /// The files a window coming back reads, looked at on disk.
+    Stat(CheckDisk),
     /// A read file added to the editor.
     AddFile(Value),
     /// Make what sounds be the take as it now is.
     Sound,
     /// One file's playback brought in step.
-    SyncSound(Value),
+    SyncSound(PlaybackFile),
     /// The window told where its level is read from.
     TellMeters,
     /// The window's play cursor and the list's play mark corrected.
@@ -203,18 +242,18 @@ pub(super) enum Task {
     RetainPlayback,
     /// The member's playback root dropped.
     DropPlayback,
-    /// Steps to carry out, in the JSON a runner walks.
-    Steps(Value),
+    /// Steps to carry out.
+    Steps(Vec<Step>),
     /// A history step to carry out.
-    Stepped(Value),
+    Stepped(Box<super::super::Stepped>),
     /// The window closed (`closed`: by the host, not asked).
     Close { closed: bool },
     /// A cleanup that runs whether or not the run fails.
     Finally(Cleanup),
     /// A handler for a failure of what precedes it.
     Catch(Handler),
-    /// An effect, emitted in order.
-    Effect(Value),
+    /// An effect, said in order.
+    Effect(Said),
     /// A result the run answers.
     Answer(Value),
 }
@@ -228,8 +267,10 @@ pub(super) enum Cleanup {
 #[derive(Clone, Debug)]
 pub(super) enum Handler {
     /// A copy that failed before or while it was published: the window is
-    /// told why.
-    Clipboard { outcome: Value },
+    /// told why, with the copy's answer.
+    Clipboard {
+        answer: Option<clausters_editing::conversation::Answer>,
+    },
 }
 
 /// **One action in progress.**
@@ -240,11 +281,9 @@ pub(super) struct Run {
     /// Whether the take changed, as the outcome being carried out says.
     pub(super) changed: bool,
     /// What the last operation completed with.
-    pub(super) completed: Value,
+    pub(super) completed: Option<Box<Operated>>,
     /// Whether the window is open on a host.
     pub(super) window: bool,
-    /// Why a verb refused, answered with the run's first effects.
-    pub(super) reason: Option<Value>,
     pub(super) result: Value,
 }
 
@@ -262,83 +301,83 @@ impl Session {
         editing: &mut Editing,
         member: MemberId,
         id: u64,
-        result: Result<Value, String>,
+        result: Result<Came, String>,
         ids: &mut IdSpaces,
     ) -> Answer {
         let Some(waiting) = self.runs.get_mut(&id).and_then(|run| run.waiting.take()) else {
             return Answer::refused(id, Raise::Runtime, "no run is waiting under that number");
         };
-        let (result, failed) = match &result {
-            Ok(result) => (result.clone(), None),
-            Err(reason) => (Value::Null, Some(reason.as_str())),
-        };
         let mut effects = Vec::new();
-        match (waiting, failed) {
+        match (waiting, result) {
             // a batch that failed is the operation's to hear, not raised
             (
                 Resume::Batch {
                     ticket,
                     batch,
                     repairing,
-                    member,
+                    member: owner,
                     rendered,
                 },
-                failed,
+                result,
             ) => {
                 // **A failed batch leaves nothing on disk.** Its renders up to
                 // the failure wrote files no list will name -- the pieces of a
                 // reverse of a day before the disk filled -- and they would sit
                 // in the working folder until the editor closed.
-                if failed.is_some()
-                    && let Some(member) = member.filter(|_| !rendered.is_empty())
-                {
-                    let scratch = member_call(
-                        editing,
-                        member,
-                        json!({"verb": "scratch", "files": rendered}),
-                    );
-                    if truthy(&scratch["files"]) {
-                        effects.push(json!({"kind": "delete", "files": scratch["files"]}));
+                if result.is_err() && !rendered.is_empty() {
+                    let scratch = editing
+                        .audio(owner)
+                        .map(|editor| editor.scratch(&rendered))
+                        .unwrap_or_default();
+                    if !scratch.is_empty() {
+                        effects.push(Said::Delete(scratch));
                     }
                 }
-                let status = match failed {
-                    Some(reason) => json!({"status": "failed", "reason": reason}),
-                    None => json!({"status": "success"}),
+                let result = match result {
+                    Ok(_) => Reply::Success,
+                    Err(reason) => Reply::Failed(reason),
                 };
-                let answer = door(
-                    editing,
-                    json!({"verb": "operation", "action": "complete", "ticket": ticket,
-                        "batch": batch, "result": status}),
+                let answer = editing.audio_operation(OperationCall::Control(Control::Complete {
+                    ticket,
+                    batch,
+                    result,
+                }));
+                self.push(
+                    id,
+                    vec![Task::OperationAnswer {
+                        answer: Box::new(answer),
+                        repairing,
+                    }],
                 );
-                self.push(id, vec![Task::OperationAnswer { answer, repairing }]);
             }
             // A look that failed finds nothing changed: the window's event
             // is answered all the same.
-            (Resume::Stat { seq }, failed) => {
-                let stamps = if failed.is_some() {
-                    json!({})
-                } else {
-                    result["stamps"].clone()
+            (Resume::Stat { seq }, result) => {
+                let stamps = match result {
+                    Ok(Came::Stamps(stamps)) => stamps,
+                    _ => json!({}),
                 };
-                let answer = member_call(
-                    editing,
-                    member,
-                    json!({"verb": "on_disk", "stamps": stamps, "seq": seq}),
-                );
+                let version = editing.version();
+                let answer = editing
+                    .audio_mut(member)
+                    .map(|editor| editor.disk_answer(&stamps, seq, version).answer);
                 self.push(
                     id,
-                    vec![effect("echo", json!({"answer": answer["answer"]}))],
+                    vec![effect("echo", json!({"answer": answer.flatten()}))],
                 );
             }
-            (_, Some(reason)) => {
-                return self.unwind(editing, id, Failure::Client(reason.to_string()), effects);
+            (_, Err(reason)) => {
+                return self.unwind(editing, id, Failure::Client(reason), effects);
             }
-            (Resume::Steps, None) => {}
-            (Resume::Clipboard, None) => {}
-            (Resume::Read, None) => self.push(id, vec![Task::AddFile(result.clone())]),
-            (Resume::Stepped, None) => {
+            (Resume::Steps | Resume::Clipboard, Ok(_)) => {}
+            (Resume::Read, Ok(came)) => {
+                if let Came::File(file) = came {
+                    self.push(id, vec![Task::AddFile(file)]);
+                }
+            }
+            (Resume::Stepped, Ok(came)) => {
                 if let Some(run) = self.runs.get_mut(&id) {
-                    run.result = json!(result["changed"] == true);
+                    run.result = json!(matches!(came, Came::Stepped(true)));
                 }
             }
         }
@@ -366,7 +405,7 @@ impl Session {
                 return Answer {
                     run: id,
                     effects,
-                    end: End::Done(run.result),
+                    end: End::Done(run.result, run.completed),
                 };
             };
             match self.step(editing, member, id, task, &mut effects, ids) {
@@ -395,19 +434,37 @@ impl Session {
         editing: &Editing,
         id: u64,
         failure: Failure,
-        mut effects: Vec<Value>,
+        mut effects: Vec<Said>,
     ) -> Answer {
         let run = self.runs.remove(&id).unwrap_or_default();
         for task in run.tasks {
             match task {
-                Task::Finally(Cleanup::Lease) => effects.push(tagged("lease", json!({}))),
-                Task::Catch(Handler::Clipboard { outcome }) if has(&outcome, "clipboard") => {
-                    let mut answer = outcome["answer"].clone();
-                    if answer.is_object() {
-                        answer["reason"] = json!(failure.reason());
-                        answer["docVersion"] = json!(editing.version());
-                    }
-                    effects.push(tagged("echo", json!({"answer": answer})));
+                Task::Finally(Cleanup::Lease) => effects.push(Said::Lease),
+                Task::Catch(Handler::Clipboard { answer }) => {
+                    use clausters_editing::conversation::Answer as Told;
+                    let version = editing.version();
+                    let why = Some(failure.reason().to_string());
+                    let answer = match answer {
+                        Some(Told::Ack { seq, .. }) => Told::Ack {
+                            seq,
+                            doc_version: version,
+                            reason: why,
+                        },
+                        Some(Told::Push {
+                            seq, corrections, ..
+                        }) => Told::Push {
+                            seq,
+                            doc_version: version,
+                            reason: why,
+                            corrections,
+                        },
+                        _ => Told::Ack {
+                            seq: 0,
+                            doc_version: version,
+                            reason: why,
+                        },
+                    };
+                    effects.push(Said::Window(tagged("echo", json!({"answer": answer}))));
                 }
                 _ => {}
             }
@@ -464,29 +521,20 @@ pub(super) enum Op {
 
 impl Op {
     /// What the space bar asks, `play` as the editor reads it: a play of
-    /// `file` from where it starts.
-    pub(super) fn play(file: Option<i64>, play: &Value) -> Op {
+    /// `file` from where it starts; one that did not read with no file open.
+    pub(super) fn play(file: Option<i64>, play: Option<&Play>) -> Op {
         Op::Play {
             file: file.map_or(0, |f| f as u64),
-            start: play["start"].as_u64().unwrap_or(0),
-            pass: pass_of(&play["pass"]),
+            start: play.map_or(0, |p| p.start),
+            pass: play.map(|p| p.pass),
         }
     }
 
     /// A stop going back to where `play` says.
-    pub(super) fn stop(file: Option<i64>, play: &Value) -> Op {
+    pub(super) fn stop(file: Option<i64>, play: Option<&Play>) -> Op {
         Op::Stop {
             file: file.map(|f| f as u64),
-            back: play["back"].as_u64().unwrap_or(0),
+            back: play.map_or(0, |p| p.back),
         }
     }
-
-    /// The pass `pass` says.
-    pub(super) fn pass(pass: &Value) -> Op {
-        Op::Pass(pass_of(pass))
-    }
-}
-
-fn pass_of(pass: &Value) -> Option<Pass> {
-    serde_json::from_value(pass.clone()).ok()
 }

@@ -47,16 +47,19 @@
 //!
 //! # The vocabulary
 //!
-//! Effects, each `{"kind", ...}`: `version` (the context's version), `echo`
-//! (an answer to the window), `set` (props on a widget), `publish` (the
-//! window drawn again), `band` and `looping` (the selection band and the loop switch a script set),
-//! `bind` (the file in focus, or none), `layers`, `cursor` (the
-//! position a script placed), `locate` (the position a hand placed),
-//! `changed` (the data changed in this gesture), `delete` (files to delete:
-//! a closed file's renders), `release` (in each `freed` entry's `files`,
-//! renders nothing names any more, to delete, as a turn hands them back),
-//! `operationEcho`, `lease` (the event's clipboard lease), `closeWindow` and
-//! `closedWindow`.
+//! An action enters typed ([`AudioAction`]), read once from the door's JSON
+//! by [`Editing::start`]; everything the coordinator asks of the context
+//! and the editor it asks by their methods, and reads their answers as the
+//! types they are. JSON is left only where a window or a client reads it:
+//! the window's effects, each `{"kind", ...}` -- `version` (the context's
+//! version), `echo` (an answer to the window), `set` (props on a widget),
+//! `publish` (the window drawn again), `band` and `looping` (the selection
+//! band and the loop switch a script set), `bind` (the file in focus, or
+//! none), `layers`, `cursor` (the position a script placed), `locate` (the
+//! position a hand placed), `changed` (the data changed in this gesture),
+//! `closeWindow` and `closedWindow` -- and a run's result. What is the
+//! application's (files to delete, renders called off, a lease let go) is
+//! a [`Said`] its driver carries out.
 //!
 //! Awaits ([`run::Await`]): steps to carry out, a file to add (its header
 //! read, or a new file's shape), the files on disk, a history step, a
@@ -66,12 +69,18 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use clausters_core::ids::IdSpaces;
-use clausters_editing::apply::Medium;
+use clausters_editing::apply::{Medium, Step};
 use clausters_editing::audio_playback::AudioEditorPlayback;
 use serde_json::{Value, json};
 
-use super::{Editing, Member, MemberId};
+use super::audio_operations::{AudioCommand, Operated, OperationCall};
+use super::{Editing, Freed, Member, MemberId};
+use crate::application::runtime::{Control, Reply};
+use crate::audio::editor::{
+    self as audio, AudioEditor, CheckDisk, FileAction, FileVerb, Outcome, Play, PlaybackFile, Shape,
+};
 
+mod action;
 mod actions;
 mod driver;
 mod outcome;
@@ -80,7 +89,8 @@ mod step;
 #[cfg(test)]
 mod tests;
 
-use run::{Answer, Run, Task};
+pub(crate) use action::AudioAction;
+use run::{Answer, Run, Said, Task};
 
 /// Why a verb that acts on a file is refused by an editor with none open.
 const NO_FILE: &str = "no file is open";
@@ -182,7 +192,8 @@ fn audio_member(editing: &Editing, member: MemberId) -> Result<(), String> {
 fn begin(
     editing: &mut Editing,
     member: MemberId,
-    action: &Value,
+    action: AudioAction,
+    window: bool,
     ids: &mut IdSpaces,
 ) -> Result<Answer, String> {
     audio_member(editing, member)?;
@@ -193,7 +204,7 @@ fn begin(
         .or_else(|| Session::new(editing))
         .ok_or("the audio editor has no engine")?;
     editing.note_playing(member, session.playback.playing());
-    let answer = session.start(editing, member, action, ids);
+    let answer = session.start(editing, member, action, window, ids);
     editing.note_playing(member, session.playback.playing());
     editing.sessions.insert(member, session);
     Ok(answer)
@@ -204,7 +215,7 @@ fn resume(
     editing: &mut Editing,
     member: MemberId,
     run: u64,
-    result: Result<Value, String>,
+    result: Result<run::Came, String>,
     ids: &mut IdSpaces,
 ) -> Result<Answer, String> {
     audio_member(editing, member)?;
@@ -244,12 +255,15 @@ fn query(editing: &mut Editing, member: MemberId, query: &str) -> Value {
     if let Err(error) = audio_member(editing, member) {
         return json!({ "error": error });
     }
-    let binding = member_call(editing, member, json!({"verb": "binding"}));
+    let (span, looping) = editing
+        .audio(member)
+        .map(|editor| (editor.span_seconds(), editor.looping()))
+        .unwrap_or_default();
     match (editing.sessions.get(&member), query) {
         (Some(session), "transport") => json!({
             "transport": session.playback.transport(),
-            "span": binding["span"],
-            "looping": binding["looping"] == true,
+            "span": span.map(|(start, end)| [start, end]),
+            "looping": looping,
             "paused": session.paused,
             "focused": session.focused(editing, member),
             "state": session.state(),
@@ -275,51 +289,35 @@ fn query(editing: &mut Editing, member: MemberId, query: &str) -> Value {
 
 /// **What the space bar plays** in the file in focus, under its own loop
 /// switch: where a pass starts, how it ends and where a stop goes back to;
-/// `null` with no file open.
-fn space(editing: &Editing, member: MemberId) -> Value {
-    match editing.member(member) {
-        Some(Member::Audio(editor)) if editor.has_file() => json!(editor.space()),
-        _ => Value::Null,
-    }
+/// `None` with no file open.
+fn space(editing: &Editing, member: MemberId) -> Option<Play> {
+    editing
+        .audio(member)
+        .filter(|editor| editor.has_file())
+        .map(AudioEditor::space)
 }
 
 /// The focused file's identity, or `None` with no file open.
 fn file_id(editing: &Editing, member: MemberId) -> Option<i64> {
-    match editing.member(member) {
-        Some(Member::Audio(editor)) if editor.has_file() => Some(editor.focused_file()),
-        _ => None,
-    }
+    editing
+        .audio(member)
+        .filter(|editor| editor.has_file())
+        .map(AudioEditor::focused_file)
 }
 
 /// **The files a batch's renders write**: each render's output and the peaks
 /// beside it, as the editor names them.
-fn rendered_files(steps: &Value) -> Vec<String> {
+fn rendered_files(steps: &[Step]) -> Vec<String> {
     let mut out = Vec::new();
-    for render in steps
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|s| s.get("render"))
-    {
-        if let Some(path) = render["path"].as_str().filter(|p| !p.is_empty()) {
-            out.push(path.to_string());
-            out.push(crate::audio::editor::peaks_beside(path));
+    for step in steps {
+        if let Step::Render(render) = step
+            && !render.path.is_empty()
+        {
+            out.push(render.path.clone());
+            out.push(crate::audio::editor::peaks_beside(&render.path));
         }
     }
     out
-}
-
-/// One verb of the member's own door, through the context's.
-fn member_call(editing: &mut Editing, member: MemberId, call: Value) -> Value {
-    door(
-        editing,
-        json!({"verb": "member", "member": member, "call": call}),
-    )
-}
-
-/// One verb of the context's door, read as a value.
-fn door(editing: &mut Editing, request: Value) -> Value {
-    super::door::call_value(editing, request)
 }
 
 fn tagged(kind: &str, fields: Value) -> Value {
@@ -330,36 +328,20 @@ fn tagged(kind: &str, fields: Value) -> Value {
     value
 }
 
+/// A window's effect, as a task.
 fn effect(kind: &str, fields: Value) -> Task {
-    Task::Effect(tagged(kind, fields))
-}
-
-fn has(value: &Value, key: &str) -> bool {
-    value.get(key).is_some_and(|v| !v.is_null())
-}
-
-fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Array(a) => !a.is_empty(),
-        Value::Object(o) => !o.is_empty(),
-        Value::String(s) => !s.is_empty(),
-        Value::Number(n) => n.as_f64() != Some(0.0),
-    }
+    Task::Effect(Said::Window(tagged(kind, fields)))
 }
 
 /// A release of what nothing reaches, when there is anything in it.
-fn release(freed: &Value) -> Option<Task> {
-    truthy(freed).then(|| effect("release", json!({"freed": freed.clone()})))
+fn release(freed: Vec<Freed>) -> Option<Task> {
+    (!freed.is_empty()).then_some(Task::Effect(Said::Release(freed)))
 }
 
 /// The paths of an open request, each one file to read.
-fn paths(paths: &Value) -> VecDeque<Value> {
+fn paths(paths: &[String]) -> VecDeque<run::Wanted> {
     paths
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|path| json!({"path": path}))
+        .iter()
+        .map(|path| run::Wanted::Path(path.clone()))
         .collect()
 }
