@@ -81,21 +81,28 @@
         // start, so the page waits for it rather than for a fixed time.
         let midSize = 0;
         let midData = 0;
+        let midHead = 0;
         for (let waited = 0; waited < 1200 && midData === 0; waited += 100) {
           await wait(100);
           if (!(await opfs.exists(PATH))) continue;
           // the header first: it is written after the run it counts, so the
           // size read after it covers it, while another run may land
           // between a size read first and the header
-          const head = await opfs.readRange(PATH, 0, 44);
-          midData = head.byteLength === 44 ? new DataView(head.buffer).getUint32(40, true) : 0;
+          // the data chunk wherever the header puts it: a WAV written here
+          // keeps an RF64's room before its format
+          const head = await opfs.readRange(PATH, 0, 128);
+          const at = [...head.keys()].find((i) =>
+            String.fromCharCode(...head.subarray(i, i + 4)) === "data");
+          midHead = at === undefined ? 0 : at + 8;
+          midData = at === undefined || head.byteLength < at + 8
+            ? 0 : new DataView(head.buffer, head.byteOffset).getUint32(at + 4, true);
           midSize = await opfs.sizeOf(PATH);
         }
         const midTake = await Buffer.read(PATH, { server });
         const midFrames = midTake.frames;
         midTake.free();
         log(`mid-take: ${midSize} bytes, header says ${midData} of data, read back ${midFrames} frames`);
-        const midOk = midData > 0 && midData <= midSize - 44 && midFrames > 0;
+        const midOk = midData > 0 && midData <= midSize - midHead && midFrames > 0;
         await wait(700);
         recording.free();
         // The final flush is owed to the stream being gone; give the worker a
@@ -105,7 +112,7 @@
         const size = await opfs.sizeOf(PATH);
         const head = await opfs.readRange(PATH, 0, 4);
         const riff = String.fromCharCode(...head);
-        const frames = (size - 44) / 4;
+        const frames = (size - (midHead || 44)) / 4;
         log(`wrote ${PATH}: ${size} bytes, ${riff}, ~${(frames / 48000).toFixed(2)} s`);
 
         // 2) Stream it back and measure the bus it lands on. This is the part
