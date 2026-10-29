@@ -501,6 +501,17 @@ impl WidgetKind {
         self.as_element_mut()?.picture_mut(key)
     }
 
+    /// The keys of the pictures this kind draws ([`Element::picture_keys`]).
+    pub fn picture_keys(&self) -> Vec<super::element::SlotKey> {
+        self.as_element()
+            .map_or_else(Vec::new, |el| el.picture_keys())
+    }
+
+    /// The GPU slot picture `key` draws into ([`Element::picture_slot`]).
+    pub fn picture_slot(&self, key: super::element::SlotKey) -> Option<super::element::SlotKind> {
+        self.as_element()?.picture_slot(key)
+    }
+
     /// The measured-axis facet of whatever element this kind holds, or `None`.
     pub fn as_measured(&self) -> Option<&dyn Measured> {
         self.as_element()?.measured()

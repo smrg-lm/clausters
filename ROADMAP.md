@@ -310,8 +310,7 @@ its plan; the plan is where its acceptance is read.
   calls what it removes.
   Before `X25`, which should port this lifecycle.
   The eye pass over `X34` left entries in the apps plan's Found by use,
-  taken before `S23`: "A spectral box over a list reads no columns", then
-  "The roll's passes are not the shared rules".
+  taken before `S23`: "The roll's passes are not the shared rules".
   **Related:** found moving the editor onto files, and taken
   after `X32`: the apps plan's "A page decodes no compressed file when it
   opens" (Found by use). After it: the apps plan's "Working on one channel of a take" (Future

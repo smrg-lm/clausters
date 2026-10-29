@@ -65,7 +65,7 @@ pub(crate) trait Front {
     fn window_open(&self, def_id: i32) -> bool;
     /// Puts `data` into the GPU slot widget `widget_id` of window `def_id`
     /// claimed, answering the extent it loaded ([`frame::place_in_slot`]).
-    fn place_slot(&mut self, def_id: i32, widget_id: i32, data: Loaded) -> Option<usize>;
+    fn place_slot(&mut self, def_id: i32, at: (i32, SlotKey), data: Loaded) -> Option<usize>;
     /// Lets go of the samples geometry slot `key` of widget `widget_id`
     /// holds, so the element is their sole owner and rewrites them in place rather
     /// than copying the whole take first.
@@ -77,7 +77,7 @@ pub(crate) trait Front {
     /// a list since redefined**, `frames` long now, answering whether it
     /// holds any: a view that does keeps drawing them and owes the new
     /// list's, over the take as long as it is now.
-    fn stale_columns(&self, def_id: i32, widget_id: i32, frames: usize) -> bool;
+    fn stale_columns(&self, def_id: i32, at: (i32, SlotKey), frames: usize) -> bool;
     /// How many frames the picture widget `widget_id` of window `def_id`
     /// draws, or `None` while it draws none.
     fn picture_frames(&self, def_id: i32, widget_id: i32) -> Option<usize>;
@@ -260,15 +260,19 @@ pub(crate) trait Front {
             first.origin(),
             first.hop()
         );
-        self.place_slot(done.def_id, done.widget_id, Loaded::Stfts(done.stfts));
+        self.place_slot(
+            done.def_id,
+            (done.widget_id, done.picture),
+            Loaded::Stfts(done.stfts),
+        );
         self.redraw_window(done.def_id);
     }
 
     /// **A spectrogram of a list, before its columns are asked**: a view
     /// that holds a texture of the list keeps it and owes the new list's,
-    /// and one that holds none is given one dark column over the whole take,
-    /// which its first draw finds too coarse and asks past. The axis knows
-    /// the take's length from here on.
+    /// and one that holds none is given one dark column over the whole take
+    /// ([`frame::dark_columns`]), which its first draw finds too coarse and
+    /// asks past. The axis knows the take's length from here on.
     fn place_column_texture(
         &mut self,
         want: WaveWant,
@@ -276,6 +280,7 @@ pub(crate) trait Front {
         channels: usize,
         sample_rate: f64,
     ) {
+        let at = (want.widget_id, SlotKey::SELF);
         let Some(Some(SlotKind::Texture {
             window_size,
             sample_rate: declared,
@@ -288,27 +293,14 @@ pub(crate) trait Front {
         else {
             return;
         };
-        if !self.stale_columns(want.def_id, want.widget_id, frames) {
+        if !self.stale_columns(want.def_id, at, frames) {
             let rate = if declared > 0.0 {
                 declared as f32
             } else {
                 sample_rate as f32
             };
-            let bins = window_size / 2;
-            let stfts = (0..channels.max(1))
-                .filter_map(|_| {
-                    crate::spectrogram::Stft::of_span(
-                        vec![0.0; bins],
-                        bins,
-                        0,
-                        frames.max(1),
-                        window_size,
-                        rate,
-                        frames,
-                    )
-                })
-                .collect();
-            self.place_slot(want.def_id, want.widget_id, Loaded::Stfts(stfts));
+            let stfts = frame::dark_columns(window_size, rate, frames, channels);
+            self.place_slot(want.def_id, at, Loaded::Stfts(stfts));
         }
         self.redraw_window(want.def_id);
         self.finish_placement(want, frames, sample_rate);
@@ -415,7 +407,11 @@ pub(crate) trait Front {
                     // ...and the element keeps the same pyramid, so a copy over
                     // a fetched buffer reads the samples it is drawing.
                     self.keep(want, &Loaded::Peaks(data.clone()));
-                    self.place_slot(want.def_id, want.widget_id, Loaded::Peaks(data));
+                    self.place_slot(
+                        want.def_id,
+                        (want.widget_id, SlotKey::SELF),
+                        Loaded::Peaks(data),
+                    );
                 }
                 Some(SlotKind::Texture {
                     window_size,
@@ -433,7 +429,11 @@ pub(crate) trait Front {
                         (window_size, hop, wintype),
                         rate,
                     );
-                    self.place_slot(want.def_id, want.widget_id, Loaded::Stfts(stfts));
+                    self.place_slot(
+                        want.def_id,
+                        (want.widget_id, SlotKey::SELF),
+                        Loaded::Stfts(stfts),
+                    );
                 }
                 // Mesh-drawn (a clip's take, a plot): the samples go home to
                 // the element, which makes of them whatever it draws from. A
@@ -537,7 +537,11 @@ pub(crate) trait Front {
             );
             if self.window_open(want.def_id) {
                 if geometry {
-                    self.place_slot(want.def_id, want.widget_id, Loaded::Peaks(data.clone()));
+                    self.place_slot(
+                        want.def_id,
+                        (want.widget_id, SlotKey::SELF),
+                        Loaded::Peaks(data.clone()),
+                    );
                 }
                 self.redraw_window(want.def_id);
             }
@@ -684,7 +688,11 @@ pub(crate) trait Front {
             );
             self.release_slot(def_id, widget_id, SlotKey::SELF);
             if self.window_open(def_id) && geometry {
-                self.place_slot(def_id, widget_id, Loaded::Peaks(body.clone()));
+                self.place_slot(
+                    def_id,
+                    (widget_id, SlotKey::SELF),
+                    Loaded::Peaks(body.clone()),
+                );
             }
             self.keep(want, &Loaded::Peaks(body));
             self.finish_placement(want, frames, sample_rate);
@@ -1098,17 +1106,19 @@ pub(crate) trait Front {
                     },
                 ),
                 Owed::Columns(mut span) => {
-                    // the element's own hop, which only it knows
-                    if let Some(Some(SlotKind::Texture { hop, wintype, .. })) = self
+                    // the picture's own hop, which only it knows
+                    if let Some(SlotKind::Texture { hop, wintype, .. }) = self
                         .host()
                         .window_def(def_id)
                         .and_then(|t| t.find(widget_id))
-                        .map(|w| w.bulk_target().kind.needs().slot)
+                        .and_then(|w| w.bulk_target().kind.picture_slot(key))
                     {
                         span.analysis = hop;
                         span.wintype = wintype;
                     }
-                    self.fetches().columns.want(bufnum, def_id, widget_id, span)
+                    self.fetches()
+                        .columns
+                        .want(bufnum, def_id, (widget_id, key), span)
                 }
             };
             if let Some(msg) = msg {

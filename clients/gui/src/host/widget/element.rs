@@ -2202,6 +2202,19 @@ pub trait Element: fmt::Debug {
         }
     }
 
+    /// **The keys of the pictures this element draws**: its own alone by
+    /// default, and one per view for an element that holds several.
+    fn picture_keys(&self) -> Vec<SlotKey> {
+        vec![SlotKey::SELF]
+    }
+
+    /// **The GPU slot picture `key` draws into** -- what a read for that
+    /// picture is shaped by, such as the analysis its columns are asked
+    /// at. This element's own for [`SlotKey::SELF`], the default.
+    fn picture_slot(&self, key: SlotKey) -> Option<SlotKind> {
+        (key == SlotKey::SELF).then(|| self.needs().slot).flatten()
+    }
+
     /// **The measured axis of this element's own**, or `None` (the default).
     ///
     /// The second facet: an axis in hertz needs no history behind it (every bin

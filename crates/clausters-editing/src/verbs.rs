@@ -285,8 +285,8 @@ pub const AUDIO: &[Verb] = &[
 pub const MULTITRACK_SCOPE: &str = "multitrack";
 
 /// **What the multitrack editor adds**: its transport's two other buttons,
-/// where a pass ends, its rows' own commands, how its boxes of notes are
-/// drawn, and the automatic crossfade.
+/// where a pass ends, its rows' own commands, how its boxes of samples and
+/// of notes are drawn, and the automatic crossfade.
 pub const MULTITRACK: &[Verb] = &[
     verb("pause", &[], "Pause"),
     verb("stop", &[], "Stop"),
@@ -295,6 +295,10 @@ pub const MULTITRACK: &[Verb] = &[
     verb("add_track", &[], "Add track"),
     verb("reset_heights", &[], "Reset track heights"),
     verb("compact_tracks", &[], "Compact tracks"),
+    // a box of samples is the audio editor's view of its take, and is drawn
+    // as either of that view's pictures
+    choice("views", "view_wave", &["W"], "Waveform"),
+    choice("views", "view_spectrogram", &["S"], "Spectrogram"),
     choice("notes", "notes_roll", &[], "Notes as rolls"),
     choice("notes", "notes_score", &[], "Notes as scores"),
 ];

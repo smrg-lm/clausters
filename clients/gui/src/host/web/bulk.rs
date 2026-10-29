@@ -256,11 +256,23 @@ impl WebApp {
     /// def's canvas: a slot right away when that device is up, else stashed and
     /// replayed on `GpuReady`.
     pub(super) fn place_bulk(&mut self, def_id: i32, widget_id: i32, data: Loaded) {
+        self.place_bulk_at(def_id, (widget_id, SlotKey::SELF), data);
+    }
+
+    /// [`Self::place_bulk`] into picture `key` of widget `widget_id`: a
+    /// multitrack's box is a picture of its own, whose take is not the
+    /// widget's navigation.
+    pub(super) fn place_bulk_at(
+        &mut self,
+        def_id: i32,
+        (widget_id, key): (i32, SlotKey),
+        data: Loaded,
+    ) {
         let Some(slot) = self.canvases.get_mut(&def_id) else {
             return; // the canvas was detached while the fetch was in flight
         };
         let Some(render) = slot.render.as_mut() else {
-            slot.pending_bulk.push((widget_id, data));
+            slot.pending_bulk.push(((widget_id, key), data));
             return;
         };
         // The shared placement: a pyramid fills a geometry slot, analyses fill a
@@ -268,14 +280,16 @@ impl WebApp {
         // place (`frame::place_in_slot`).
         let total = frame::place_in_slot(
             data,
-            (widget_id, SlotKey::SELF),
+            (widget_id, key),
             &render.gpu,
             &render.renderers,
             &mut render.waveforms,
             &mut render.spectrograms,
         );
         // The loaded extent joins the widget's navigation group.
-        if let Some(total) = total {
+        if key == SlotKey::SELF
+            && let Some(total) = total
+        {
             self.host.set_take_total(widget_id, total);
         }
     }

@@ -20,6 +20,8 @@ struct Probe {
     sent: RefCell<Vec<OscMessage>>,
     /// The analyses placed in a texture slot, by widget, in order.
     textures: Vec<(i32, Vec<crate::spectrogram::Stft>)>,
+    /// Which picture of its widget each of [`Probe::textures`] went to.
+    pictures: Vec<SlotKey>,
 }
 
 impl Front for Probe {
@@ -43,9 +45,15 @@ impl Front for Probe {
     fn window_open(&self, _def_id: i32) -> bool {
         true
     }
-    fn place_slot(&mut self, _def_id: i32, widget_id: i32, data: Loaded) -> Option<usize> {
+    fn place_slot(
+        &mut self,
+        _def_id: i32,
+        (widget_id, key): (i32, SlotKey),
+        data: Loaded,
+    ) -> Option<usize> {
         if let Loaded::Stfts(stfts) = data {
             self.textures.push((widget_id, stfts));
+            self.pictures.push(key);
         }
         None
     }
@@ -53,7 +61,7 @@ impl Front for Probe {
     fn take_owed(&self, _def_id: i32) -> Vec<(i32, SlotKey, Owed)> {
         Vec::new()
     }
-    fn stale_columns(&self, _def_id: i32, _widget_id: i32, _frames: usize) -> bool {
+    fn stale_columns(&self, _def_id: i32, _at: (i32, SlotKey), _frames: usize) -> bool {
         false
     }
     fn picture_frames(&self, _def_id: i32, _widget_id: i32) -> Option<usize> {
@@ -599,7 +607,11 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     assert!(span.hop.is_power_of_two() && span.hop <= per_px && span.hop * 2 > per_px);
     assert_eq!(span.start, 0);
     assert_eq!(span.window, 512);
-    let ask = probe.fetches.columns.want(key, 1, 40, span).expect("asked");
+    let ask = probe
+        .fetches
+        .columns
+        .want(key, 1, (40, SlotKey::SELF), span)
+        .expect("asked");
     probe.to_server(ask);
     let replies = probe.pump(&local);
     assert!(replies >= 1, "{replies}");
@@ -840,6 +852,111 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
             "the view alone: {shown:?}"
         );
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **A multitrack's spectral box is its view's spectrogram**, read as the
+/// audio editor's view of a list is: the box's view fills its picture with
+/// the dark column, and the columns its draw asks for are asked of the
+/// take's list and placed under that picture's key, never the widget's.
+#[test]
+fn a_spectral_boxs_columns_are_asked_and_placed_under_its_key() {
+    let dir =
+        std::env::temp_dir().join(format!("clausters-gui-box-columns-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let frames = 1 << 14;
+    let (a, a_peaks, _) = sine_file(&dir, "tone", frames, 1_000.0);
+    let def = format!(
+        r#"{{"type":"window","title":"w","children":[
+             {{"id":40,"type":"multitrack","view":"spectrogram",
+               "tracks":["one","",100,0,0,1,1],
+               "clips":["a","one",0,{frames},0,"",1],
+               "lists":{{"1":{{"channels":1,"sample_rate":48000,"parts":[
+                 {{"path":"{a}","peaks":"{a_peaks}","start":0,"frames":{frames},
+                   "source_channels":1,"source_frames":{frames},"source_rate":48000}}]}}}}}}]}}"#
+    );
+    let mut probe = Probe::default();
+    let local = Local::default();
+    probe.host.set_disk_link(Box::new(local.clone()));
+    probe.host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![OscType::Int(1), OscType::String(def)],
+        }),
+        from(),
+    );
+    let mt = |probe: &Probe| {
+        probe
+            .host
+            .window_def(1)
+            .and_then(|t| t.find(40))
+            .map(|w| w.kind.clone())
+            .expect("the multitrack")
+    };
+    let take = *mt(&probe)
+        .needs()
+        .takes
+        .first()
+        .expect("the take's list named");
+    let box_key = *mt(&probe)
+        .picture_keys()
+        .iter()
+        .find(|k| **k != SlotKey::SELF)
+        .expect("the box's view");
+    assert!(matches!(
+        mt(&probe).picture_slot(box_key),
+        Some(crate::host::widget::element::SlotKind::Texture { .. })
+    ));
+    let fills = probe
+        .host
+        .window_def_mut(1)
+        .and_then(|t| t.find_mut(40))
+        .and_then(|w| w.kind.as_element_mut())
+        .and_then(|el| el.slotted_mut())
+        .map(|s| s.fills())
+        .expect("the multitrack fills");
+    let [(key, crate::host::widget::element::SlotFill::Texture(dark))] = &fills[..] else {
+        panic!("one fill, the box's dark column: {}", fills.len())
+    };
+    assert_eq!(*key, box_key, "under the box's key");
+    assert!(dark[0].is_span() && dark[0].n_frames() == 1);
+    assert_eq!(dark[0].total_samples(), frames);
+
+    let nav = crate::viewport::View {
+        start: 0.0,
+        len: frames as f64,
+    };
+    let Some(crate::host::frame::Owed::Columns(span)) = crate::host::frame::columns_owed_of(
+        &dark[0],
+        Some(&dark[0]),
+        None,
+        &nav,
+        200.0,
+        (512, 256, 0),
+    ) else {
+        panic!("the columns are owed")
+    };
+    let ask = probe
+        .fetches
+        .columns
+        .want(take, 1, (40, box_key), span)
+        .expect("asked");
+    assert!(
+        probe
+            .fetches
+            .columns
+            .want(take, 1, (40, SlotKey(box_key.0 + 1)), span)
+            .is_some(),
+        "another box's ask is its own"
+    );
+    probe.to_server(ask);
+    probe.pump(&local);
+    assert!(
+        probe.pictures.contains(&box_key) && !probe.pictures.contains(&SlotKey::SELF),
+        "placed in the box's picture: {:?}",
+        probe.pictures
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

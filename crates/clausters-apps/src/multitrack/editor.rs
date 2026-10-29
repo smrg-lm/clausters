@@ -310,6 +310,10 @@ pub struct MultitrackEditor {
     /// **How a box of notes is drawn**: `"roll"`, or `"score"` -- its page,
     /// each note at its time. The window's own, like its zoom.
     notes_view: String,
+    /// **How a box of samples is drawn**: `"trace"`, its waveform, or
+    /// `"spectrogram"` -- the audio editor's view of its take, which draws
+    /// either. The window's own, like `notes_view`.
+    samples_view: &'static str,
     /// **The engraver the boxes' pages are engraved with**: a score its
     /// holder hands over for that and nothing else ([`bind_engraver`]). With
     /// none, a box of notes is drawn as its roll whatever the view.
@@ -387,6 +391,7 @@ impl MultitrackEditor {
             grid: crate::DEFAULT_GRID,
             snap: true,
             notes_view: ROLL.into(),
+            samples_view: WAVE,
             #[cfg(feature = "notation")]
             engraver: None,
             #[cfg(feature = "notation")]
@@ -441,6 +446,8 @@ impl MultitrackEditor {
                 STOP_AT_END_VERB => stops_at_end,
                 NOTES_ROLL_VERB => Some(self.notes_view == ROLL),
                 NOTES_SCORE_VERB => Some(self.notes_view == SCORE),
+                VIEW_WAVE_VERB => Some(self.samples_view == WAVE),
+                VIEW_SPECTROGRAM_VERB => Some(self.samples_view == SPECTROGRAM),
                 _ => None,
             },
         )
@@ -1005,7 +1012,7 @@ impl MultitrackEditor {
 
     /// Whether a message on `widget` tagged `tag` is this editor's to answer:
     /// one of its widgets, or its window's own `play` and `loop` -- the space
-    /// bar and `L` -- and the `pause` and `stop` of its menu.
+    /// bar and `L` -- and the verbs of its menu that are the editor's.
     pub fn answers(&self, widget: i32, tag: &str) -> bool {
         self.owns(widget)
             || (self.window == Some(widget)
@@ -1020,6 +1027,8 @@ impl MultitrackEditor {
                         | crate::notes::editor::SNAP_VERB
                         | NOTES_ROLL_VERB
                         | NOTES_SCORE_VERB
+                        | VIEW_WAVE_VERB
+                        | VIEW_SPECTROGRAM_VERB
                 ))
     }
 
@@ -1099,6 +1108,8 @@ impl MultitrackEditor {
         if widget == multitrack && !props.is_empty() {
             // how a box of notes is drawn, and its page where it is one
             props.insert("notes_view".into(), json!(self.notes_view));
+            // and how a box of samples is: its take's waveform or spectrogram
+            props.insert("view".into(), json!(self.samples_view));
             #[cfg(feature = "notation")]
             if let Some(scores) = self.scores() {
                 props.insert("scores".into(), scores);
@@ -1385,6 +1396,28 @@ impl MultitrackEditor {
         // state, so nothing is recorded and the picture is corrected
         if self.window.map(i64::from) == Some(widget) && tag == crate::notes::editor::SNAP_VERB {
             self.snap = !self.snap;
+            let corrections = self
+                .widget
+                .map(|id| {
+                    vec![Correction {
+                        widget: i64::from(id),
+                        props: Value::Object(self.picture(id)),
+                    }]
+                })
+                .unwrap_or_default();
+            return (None, corrections);
+        }
+        // **The View menu's two ways to draw a box of samples**, the audio
+        // editor's two views of a take: the window's own state, so nothing
+        // is recorded and the picture is corrected
+        if self.window.map(i64::from) == Some(widget)
+            && matches!(tag, VIEW_WAVE_VERB | VIEW_SPECTROGRAM_VERB)
+        {
+            self.samples_view = if tag == VIEW_SPECTROGRAM_VERB {
+                SPECTROGRAM
+            } else {
+                WAVE
+            };
             let corrections = self
                 .widget
                 .map(|id| {
@@ -1683,6 +1716,16 @@ pub const SCORE: &str = "score";
 pub const NOTES_ROLL_VERB: &str = "notes_roll";
 /// The window verb that draws them as pages.
 pub const NOTES_SCORE_VERB: &str = "notes_score";
+
+/// A box of samples drawn as its take's waveform: the `view` word.
+const WAVE: &str = "trace";
+/// ...and as its spectrogram.
+const SPECTROGRAM: &str = "spectrogram";
+/// The window verb that draws the boxes of samples as waveforms, the audio
+/// editor's own.
+pub const VIEW_WAVE_VERB: &str = "view_wave";
+/// The window verb that draws them as spectrograms.
+pub const VIEW_SPECTROGRAM_VERB: &str = "view_spectrogram";
 
 /// **The window's stop**: halt and go back to the mark -- the menu's Stop.
 pub const STOP_VERB: &str = "stop";
@@ -2412,6 +2455,25 @@ mod tests {
             json!({ "cursor": 4.0 * SR }),
             "the ruler reports the editor's own copy"
         );
+    }
+
+    /// **A box of samples is drawn as either of the audio editor's pictures
+    /// of its take**: the View menu's two verbs set the window's `view`,
+    /// which edits nothing, and the menu shows which is on.
+    #[test]
+    fn the_view_menu_draws_the_boxes_of_samples_as_waveforms_or_spectrograms() {
+        let mut ed = editor();
+        assert_eq!(ed.picture(40)["view"], "trace");
+        let out = ed.event(&event(39, 2, 1, VIEW_SPECTROGRAM_VERB, vec![]), 1);
+        assert!(!out.changed && out.record.is_none());
+        assert_eq!(ed.picture(40)["view"], "spectrogram");
+        let told = serde_json::to_value(&out.answer).unwrap();
+        assert!(told.to_string().contains("spectrogram"), "{told}");
+        let actions = ed.actions(false, false, None);
+        assert!(actions[VIEW_SPECTROGRAM_VERB].checked == Some(true));
+        assert!(actions[VIEW_WAVE_VERB].checked == Some(false));
+        ed.event(&event(39, 3, 1, VIEW_WAVE_VERB, vec![]), 1);
+        assert_eq!(ed.picture(40)["view"], "trace");
     }
 
     /// **A selection let go puts the position cursor at its start**, the

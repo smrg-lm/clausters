@@ -2760,3 +2760,58 @@ fn a_listed_take_is_asked_for_by_its_list_and_its_summary_reaches_its_body() {
         "the take's own body holds what was read"
     );
 }
+
+/// **The View menu draws a box of samples as either of the audio editor's
+/// pictures of its take**: setting `view` makes each take's body again in
+/// it, keeping the key the host gave its list, and each box's view with it
+/// -- a spectrogram of a list starting from the dark column, under the
+/// box's key.
+#[test]
+fn a_box_turns_from_its_waveform_to_its_spectrogram_keeping_its_take() {
+    use crate::host::widget::element::{SlotFill, SlotKind};
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "one", 0, 1000, 0, "", 1],
+            "lists": {"1": {"channels": 1, "sample_rate": 48000.0, "parts": [
+                {"path": "/take.wav", "start": 0, "frames": 1000,
+                 "source_channels": 1, "source_frames": 1000, "source_rate": 48000.0}]}}}"#,
+    ));
+    for body in mt.secondary_samples() {
+        assert!(body.name_list(-7));
+    }
+    let key = mt.views["a"].key;
+    mt.fills();
+    assert!(matches!(
+        mt.picture_slot(key),
+        Some(SlotKind::Geometry { .. })
+    ));
+    assert!(mt.set("view", &Value::from("spectrogram")));
+    assert!(matches!(
+        mt.picture_slot(key),
+        Some(SlotKind::Texture { .. })
+    ));
+    assert_eq!(mt.views["a"].key, key, "the same box, the same picture");
+    assert_eq!(
+        mt.picture(key).and_then(|p| p.source_buffer()),
+        Some(-7),
+        "the list keeps the key the host gave it"
+    );
+    let fills = mt.fills();
+    assert!(
+        fills
+            .iter()
+            .any(|(k, f)| *k == key && matches!(f, SlotFill::Texture(_))),
+        "the box's spectrogram starts from the dark column"
+    );
+    assert!(
+        mt.fills()
+            .iter()
+            .all(|(_, f)| !matches!(f, SlotFill::Texture(_))),
+        "once"
+    );
+    assert!(mt.set("view", &Value::from("trace")));
+    assert!(matches!(
+        mt.picture_slot(key),
+        Some(SlotKind::Geometry { .. })
+    ));
+}

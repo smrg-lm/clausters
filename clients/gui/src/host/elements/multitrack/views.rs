@@ -14,6 +14,7 @@
 //! grid under the span it shows.
 
 use super::*;
+use crate::host::frame;
 
 /// **One box's view of its take**: the signal element it is drawn through,
 /// under the slot key that addresses its picture, and the take it is of.
@@ -22,6 +23,9 @@ pub(super) struct BoxView {
     pub key: SlotKey,
     pub source: i32,
     pub body: SignalElement,
+    /// Whether its spectrogram of a list was handed the dark column it
+    /// starts from ([`frame::dark_columns`]).
+    pub started: bool,
 }
 
 impl Multitrack {
@@ -36,21 +40,22 @@ impl Multitrack {
         let names: HashSet<&str> = self.clips.iter().map(|c| c.name.as_str()).collect();
         self.views.retain(|name, _| names.contains(name.as_str()));
         for clip in &self.clips {
-            if self
-                .views
-                .get(&clip.name)
-                .is_some_and(|v| v.source == clip.source)
-            {
-                continue;
-            }
             let Some(take) = self.takes.get(&clip.source) else {
                 continue;
             };
-            let key = match self.views.get(&clip.name) {
-                Some(view) => view.key,
+            // a view of the take as it is named: the list a host keyed after
+            // the view was made is what its reads are asked of
+            let held = self.views.get(&clip.name);
+            if held.is_some_and(|v| {
+                v.source == clip.source && v.body.source_buffer() == take.source_buffer()
+            }) {
+                continue;
+            }
+            let (key, started) = match held {
+                Some(view) => (view.key, view.started && view.source == clip.source),
                 None => {
                     self.next_view += 1;
-                    SlotKey(self.next_view)
+                    (SlotKey(self.next_view), false)
                 }
             };
             self.views.insert(
@@ -59,6 +64,7 @@ impl Multitrack {
                     key,
                     source: clip.source,
                     body: fresh(take),
+                    started,
                 },
             );
         }
@@ -73,7 +79,47 @@ impl Multitrack {
             return;
         };
         for view in self.views.values_mut().filter(|v| v.source == source) {
+            // what it had read was of the take before; the columns it holds
+            // are kept until the ones it asks next replace them
             view.body = fresh(take);
+        }
+    }
+
+    /// **Every box of samples drawn as `view`** now: each take's body made
+    /// again in it, carrying what it had read of the same take as a redefine
+    /// carries it -- a list's key always, and its summary where the new
+    /// picture is of the same form -- and every view of it made afresh. A
+    /// take whose picture changed form is asked for again.
+    pub(super) fn set_view(&mut self, view: Presentation) {
+        if view == self.view {
+            return;
+        }
+        self.view = view;
+        let sources: Vec<i32> = self.takes.keys().copied().collect();
+        for source in sources {
+            let made = match self.listed.get(&source) {
+                Some(list) => props::take_list_body(list, view),
+                None => self
+                    .takes
+                    .get(&source)
+                    .and_then(|t| t.source_buffer())
+                    .map(|bufnum| take_body(bufnum, view)),
+            };
+            let (Some(mut made), Some(was)) = (made, self.takes.get(&source)) else {
+                continue;
+            };
+            if !made.carry_resolved(was)
+                && let Some(bufnum) = made.source_buffer()
+            {
+                self.asked.remove(&bufnum);
+            }
+            self.takes.insert(source, made);
+        }
+        for view in self.views.values_mut() {
+            if let Some(take) = self.takes.get(&view.source) {
+                view.body = fresh(take);
+                view.started = false;
+            }
         }
     }
 
@@ -172,16 +218,32 @@ impl Multitrack {
     /// has its view by the frame that draws it.
     pub(super) fn view_fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
         self.sync_views();
-        self.views
-            .values_mut()
-            .flat_map(|view| {
-                let key = view.key;
-                view.body
-                    .fills()
-                    .into_iter()
-                    .map(move |(_, fill)| (key, fill))
-            })
-            .collect()
+        let mut out = Vec::new();
+        for view in self.views.values_mut() {
+            let key = view.key;
+            out.extend(view.body.fills().into_iter().map(|(_, fill)| (key, fill)));
+            // **A spectrogram of a list starts from the dark column**, as a
+            // window's view of a list does: its first draw asks the columns
+            // of what it shows, under this view's key
+            if !view.started
+                && let Some(SlotKind::Texture {
+                    window_size,
+                    sample_rate,
+                    ..
+                }) = view.body.slot_kind()
+                && let Some(list) = view.body.segments()
+            {
+                let rate = if sample_rate > 0.0 {
+                    sample_rate as f32
+                } else {
+                    list.sample_rate as f32
+                };
+                let dark = frame::dark_columns(window_size, rate, list.frames, list.channels);
+                out.push((key, SlotFill::Texture(dark)));
+                view.started = true;
+            }
+        }
+        out
     }
 }
 

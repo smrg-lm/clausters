@@ -951,6 +951,31 @@ pub(crate) fn columns_owed(
     )
 }
 
+/// **The picture a list's spectrogram starts from**: one dark column per
+/// channel over the whole take of `frames`, analyzed at `window_size` and
+/// `sample_rate`, which a first draw finds too coarse and asks columns past.
+pub(crate) fn dark_columns(
+    window_size: usize,
+    sample_rate: f32,
+    frames: usize,
+    channels: usize,
+) -> Vec<crate::spectrogram::Stft> {
+    let bins = window_size / 2;
+    (0..channels.max(1))
+        .filter_map(|_| {
+            crate::spectrogram::Stft::of_span(
+                vec![0.0; bins],
+                bins,
+                0,
+                frames.max(1),
+                window_size,
+                sample_rate,
+                frames,
+            )
+        })
+        .collect()
+}
+
 /// [`columns_owed`] of the transform a slot draws, the picture of the whole
 /// take it has, the length of the take when its list changed since, and the
 /// analysis the view asks for.

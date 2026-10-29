@@ -570,11 +570,11 @@ impl Front for App {
         self.windows.contains_key(&def_id)
     }
 
-    fn place_slot(&mut self, def_id: i32, widget_id: i32, data: Loaded) -> Option<usize> {
+    fn place_slot(&mut self, def_id: i32, at: (i32, SlotKey), data: Loaded) -> Option<usize> {
         let ws = self.windows.get_mut(&def_id)?;
         frame::place_in_slot(
             data,
-            (widget_id, SlotKey::SELF),
+            at,
             &ws.gpu,
             &ws.renderers,
             &mut ws.waveforms,
@@ -592,13 +592,13 @@ impl Front for App {
         }
     }
 
-    fn stale_columns(&self, def_id: i32, widget_id: i32, frames: usize) -> bool {
+    fn stale_columns(&self, def_id: i32, at: (i32, SlotKey), frames: usize) -> bool {
         let Some(ws) = self.windows.get(&def_id) else {
             return false;
         };
         let slots = &ws.spectrograms;
         slots
-            .get(&(widget_id, SlotKey::SELF))
+            .get(&at)
             .is_some_and(|slot| slot.keeps_columns(frames))
     }
 

@@ -390,6 +390,16 @@ export class MultitrackEditor implements WindowOver {
         return this.verb("compact_tracks");
     }
 
+    /** Draw every box of samples as its take's waveform, as the audio editor draws a take: the window's `view_wave`. */
+    viewWave(): boolean {
+        return this.verb("view_wave");
+    }
+
+    /** Draw every box of samples as its take's spectrogram, as the audio editor draws a take: the window's `view_spectrogram`. */
+    viewSpectrogram(): boolean {
+        return this.verb("view_spectrogram");
+    }
+
     // ---- the grid, and how a box of notes is drawn ----
 
     /** One verb of the window's editor (`grid`, `sync`, `notesView`), and its answer. */

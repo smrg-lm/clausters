@@ -405,6 +405,16 @@ class MultitrackEditor:
         (`verb`)."""
         return self.verb("compact_tracks")
 
+    def view_wave(self) -> bool:
+        """Draw every box of samples as its take's waveform, as the audio
+        editor draws a take: the window's ``view_wave`` (`verb`)."""
+        return self.verb("view_wave")
+
+    def view_spectrogram(self) -> bool:
+        """Draw every box of samples as its take's spectrogram, as the audio
+        editor draws a take: the window's ``view_spectrogram`` (`verb`)."""
+        return self.verb("view_spectrogram")
+
     # ---- the grid, and how a box of notes is drawn ----
 
     def _editor(self, call: dict):

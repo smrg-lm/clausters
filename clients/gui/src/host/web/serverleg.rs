@@ -408,8 +408,8 @@ impl Front for WebApp {
         self.canvases.contains_key(&def_id)
     }
 
-    fn place_slot(&mut self, def_id: i32, widget_id: i32, data: Loaded) -> Option<usize> {
-        self.place_bulk(def_id, widget_id, data);
+    fn place_slot(&mut self, def_id: i32, at: (i32, SlotKey), data: Loaded) -> Option<usize> {
+        self.place_bulk_at(def_id, at, data);
         None
     }
 
@@ -424,13 +424,13 @@ impl Front for WebApp {
         }
     }
 
-    fn stale_columns(&self, def_id: i32, widget_id: i32, frames: usize) -> bool {
+    fn stale_columns(&self, def_id: i32, at: (i32, SlotKey), frames: usize) -> bool {
         let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) else {
             return false;
         };
         let slots = &render.spectrograms;
         slots
-            .get(&(widget_id, SlotKey::SELF))
+            .get(&at)
             .is_some_and(|slot| slot.keeps_columns(frames))
     }
 

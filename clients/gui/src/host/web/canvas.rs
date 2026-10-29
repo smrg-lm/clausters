@@ -113,7 +113,7 @@ pub(super) struct CanvasSlot {
     pub(super) histories: HashMap<i32, live::BusHistory>,
     /// Fetched waveforms/spectrograms that arrived before the GPU was ready,
     /// placed on `GpuReady` (plots need no GPU and are placed immediately).
-    pub(super) pending_bulk: Vec<(i32, Loaded)>,
+    pub(super) pending_bulk: Vec<((i32, crate::host::widget::element::SlotKey), Loaded)>,
     /// The hidden editable element that owns the keyboard while a text widget
     /// is focused, so the browser composes for it (`compose`). `None` on a
     /// document that would not have one, which costs only composition.

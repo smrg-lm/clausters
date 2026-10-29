@@ -188,7 +188,13 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "reset_heights"),
             entry(app, "compact_tracks"),
         ]);
-        // how a box of notes is drawn: the window's own, like its zoom
+        // how a box of samples is drawn, the audio editor's two pictures of
+        // a take, and how a box of notes is: the window's own, like its zoom
+        view.extend([
+            sep(),
+            entry(app, "view_wave"),
+            entry(app, "view_spectrogram"),
+        ]);
         view.extend([sep(), entry(app, "notes_roll"), entry(app, "notes_score")]);
     }
 
@@ -479,6 +485,8 @@ mod tests {
             "compact_tracks",
             "notes_roll",
             "notes_score",
+            "view_wave",
+            "view_spectrogram",
         ] {
             assert!(
                 multitrack.contains(&verb.into()),

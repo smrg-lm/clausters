@@ -609,6 +609,15 @@ impl Multitrack {
                     .collect();
                 true
             }
+            // **How a box of samples is drawn**: its take's waveform or its
+            // spectrogram, the audio editor's two pictures of a take
+            "view" => match v.as_str().and_then(Presentation::parse) {
+                Some(view) => {
+                    self.set_view(view);
+                    true
+                }
+                None => false,
+            },
             // **How a box of notes is drawn**, the widget's own switch.
             "notes_view" => match v.as_str().and_then(NotesView::parse) {
                 Some(view) => {

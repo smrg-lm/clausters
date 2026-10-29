@@ -38,7 +38,7 @@ use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Pl
 use crate::host::structures::clips::{self as model, Clip, TrackRow};
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, Input, KeyInput, Loaded, Needs, OnAxis, Samples, SlotFill,
-    SlotFrame, SlotKey, Slotted, Swept, Take, TimeSpace, Verb,
+    SlotFrame, SlotKey, SlotKind, Slotted, Swept, Take, TimeSpace, Verb,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
@@ -671,6 +671,19 @@ impl Element for Multitrack {
         }
         self.view_of_mut(key)
             .map(|v| &mut v.body as &mut dyn Samples)
+    }
+
+    fn picture_keys(&self) -> Vec<SlotKey> {
+        std::iter::once(SlotKey::SELF)
+            .chain(self.views.values().map(|v| v.key))
+            .collect()
+    }
+
+    fn picture_slot(&self, key: SlotKey) -> Option<SlotKind> {
+        if key == SlotKey::SELF {
+            return self.needs().slot;
+        }
+        self.view_of(key).and_then(|v| v.body.slot_kind())
     }
 
     fn on_axis(&self) -> Option<&dyn OnAxis> {

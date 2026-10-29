@@ -84,6 +84,8 @@ The verdict is one of three:
 | `multitrack` | `add_track` | `Tracks.add` | `Tracks.add` | **api** — on the structure: `multitrack.tracks.add()` |
 | `multitrack` | `reset_heights` | `MultitrackEditor.reset_heights` | `MultitrackEditor.resetHeights` | **api** |
 | `multitrack` | `compact_tracks` | `MultitrackEditor.compact_tracks` | `MultitrackEditor.compactTracks` | **api** |
+| `multitrack` | `view_wave` | `MultitrackEditor.view_wave` | `MultitrackEditor.viewWave` | **api** |
+| `multitrack` | `view_spectrogram` | `MultitrackEditor.view_spectrogram` | `MultitrackEditor.viewSpectrogram` | **api** |
 | `multitrack` | `notes_roll` | `MultitrackEditor.notes_view` | `MultitrackEditor.notesView` | **api** — `notes_view = "roll"` |
 | `multitrack` | `notes_score` | `MultitrackEditor.notes_view` | `MultitrackEditor.notesView` | **api** — `notes_view = "score"` |
 | `score` | `entry` | `ScoreEditor.entry` | `ScoreEditor.entry` | **api** |

@@ -1036,8 +1036,8 @@ impl WebApp {
                 self.build_resources(def_id);
                 // Bulk data that finished downloading while the device was
                 // still coming up gets its GPU slots now.
-                for (widget_id, data) in pending {
-                    self.place_bulk(def_id, widget_id, data);
+                for (at, data) in pending {
+                    self.place_bulk_at(def_id, at, data);
                 }
                 self.request_redraw(def_id);
             }

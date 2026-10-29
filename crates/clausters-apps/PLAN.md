@@ -5785,7 +5785,7 @@ wrong.
   join is a list of its parts. The summary is shared, so a second box of a
   take costs what its zoom holds.
 
-- ⬜ **A spectral box over a list reads no columns** *(found 2026-10-29
+- ✅ **A spectral box over a list reads no columns** *(found 2026-10-29
   making the boxes the audio editor's view)*. A box's view draws a
   spectrogram as the audio editor's does, and over a server buffer's
   samples it analyzes them; over a list -- every take on the application --
@@ -5794,6 +5794,15 @@ wrong.
   key of the view that owes them. Keying that path as the reads past a
   summary were keyed is what a spectral view of the multitrack waits on,
   with the verb that offers it.
+  **Fixed 2026-10-29.** A column ask carries the picture's key and is one
+  per picture, its analysis read off that picture's slot
+  (`Element::picture_slot`), and its columns land in that picture's slot.
+  The dark column a list's spectrogram starts from is one function
+  (`frame::dark_columns`) that the window's view places when its list is
+  known and a box's view hands over in its own fill. The multitrack
+  application offers `view_wave` and `view_spectrogram`, the audio editor's
+  verbs, which set the widget's `view`; the widget makes each take's body
+  again in it, carrying the list's key as a redefine does.
 
 - ✅ **The multitrack's cursors are not the audio editor's** *(found
   2026-10-29 by the user, the same pass)*. Placing the position cursor and

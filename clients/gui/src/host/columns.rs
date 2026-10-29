@@ -25,6 +25,7 @@
 
 use clausters_core::osc::{OscMessage, OscType};
 
+use crate::host::widget::element::SlotKey;
 use crate::spectrogram::Stft;
 
 /// One view's columns on their way.
@@ -32,6 +33,7 @@ struct ColumnsAsk {
     key: i32,
     def_id: i32,
     widget_id: i32,
+    picture: SlotKey,
     start: usize,
     hop: usize,
     columns: usize,
@@ -78,6 +80,8 @@ impl ColumnsAsk {
 pub(crate) struct ColumnsDone {
     pub def_id: i32,
     pub widget_id: i32,
+    /// Which of the widget's pictures asked.
+    pub picture: SlotKey,
     pub key: i32,
     pub stfts: Vec<Stft>,
 }
@@ -112,7 +116,7 @@ impl ColumnAsks {
         &mut self,
         key: i32,
         def_id: i32,
-        widget_id: i32,
+        (widget_id, picture): (i32, SlotKey),
         span: ColumnSpan,
     ) -> Option<OscMessage> {
         if span.columns == 0 {
@@ -121,7 +125,7 @@ impl ColumnAsks {
         if let Some(on_way) = self
             .asks
             .iter_mut()
-            .find(|a| a.def_id == def_id && a.widget_id == widget_id)
+            .find(|a| a.def_id == def_id && a.widget_id == widget_id && a.picture == picture)
         {
             on_way.abandoned |= (on_way.window, on_way.analysis, on_way.wintype)
                 != (span.window, span.analysis, span.wintype);
@@ -131,6 +135,7 @@ impl ColumnAsks {
             key,
             def_id,
             widget_id,
+            picture,
             start: span.start,
             hop: span.hop.max(1),
             columns: span.columns,
@@ -183,6 +188,7 @@ impl ColumnAsks {
                 Some(ColumnsDone {
                     def_id: ask.def_id,
                     widget_id: ask.widget_id,
+                    picture: ask.picture,
                     key: ask.key,
                     stfts: Vec::new(),
                 }),
@@ -238,6 +244,7 @@ impl ColumnAsks {
             Some(ColumnsDone {
                 def_id: ask.def_id,
                 widget_id: ask.widget_id,
+                picture: ask.picture,
                 key: ask.key,
                 stfts,
             }),
@@ -300,9 +307,9 @@ mod tests {
     #[test]
     fn a_views_columns_are_handed_over_whole_after_as_many_replies_as_they_take() {
         let mut asks = ColumnAsks::default();
-        assert!(asks.want(-2, 1, 7, span(500, 5)).is_some());
+        assert!(asks.want(-2, 1, (7, SlotKey::SELF), span(500, 5)).is_some());
         // A second ask for the same view waits for the first to land.
-        assert!(asks.want(-2, 1, 7, span(900, 5)).is_none());
+        assert!(asks.want(-2, 1, (7, SlotKey::SELF), span(900, 5)).is_none());
         let (next, done) = asks.on_reply(&reply(500, 3, 255));
         let next = next.expect("the rest is asked for");
         assert_eq!(next.args[1], OscType::Long(800));
@@ -318,7 +325,7 @@ mod tests {
         assert_eq!(stft.column(0)[0], 1.0);
         assert_eq!(stft.column(4)[0], 0.0);
         // Landed, the view may ask again.
-        assert!(asks.want(-2, 1, 7, span(900, 5)).is_some());
+        assert!(asks.want(-2, 1, (7, SlotKey::SELF), span(900, 5)).is_some());
     }
 
     /// **An ask of an analysis the view no longer wants is let go** at its
@@ -328,28 +335,31 @@ mod tests {
     #[test]
     fn an_ask_of_another_analysis_is_let_go_at_its_next_answer() {
         let mut asks = ColumnAsks::default();
-        assert!(asks.want(-2, 1, 7, span(500, 5)).is_some());
-        assert!(asks.want(-2, 1, 7, span(900, 5)).is_none());
+        assert!(asks.want(-2, 1, (7, SlotKey::SELF), span(500, 5)).is_some());
+        assert!(asks.want(-2, 1, (7, SlotKey::SELF), span(900, 5)).is_none());
         let (next, _) = asks.on_reply(&reply(500, 1, 9));
         assert!(next.is_some(), "a view that moved is answered on");
         let other = ColumnSpan {
             analysis: 2,
             ..span(500, 5)
         };
-        assert!(asks.want(-2, 1, 7, other).is_none(), "one on its way");
+        assert!(
+            asks.want(-2, 1, (7, SlotKey::SELF), other).is_none(),
+            "one on its way"
+        );
         let (next, done) = asks.on_reply(&reply(600, 1, 9));
         assert!(next.is_none(), "nothing more asked");
         let done = done.expect("handed over for a redraw");
         assert!(done.stfts.is_empty());
         assert!(!asks.pending());
-        assert!(asks.want(-2, 1, 7, other).is_some());
+        assert!(asks.want(-2, 1, (7, SlotKey::SELF), other).is_some());
     }
 
     #[test]
     fn a_reply_nobody_waits_for_and_an_ask_gone_quiet_are_let_go() {
         let mut asks = ColumnAsks::default();
         assert_eq!(asks.on_reply(&reply(0, 1, 1)).1.map(|d| d.key), None);
-        asks.want(-2, 1, 7, span(0, 5));
+        asks.want(-2, 1, (7, SlotKey::SELF), span(0, 5));
         asks.tick(3);
         asks.tick(3);
         assert!(asks.pending());
