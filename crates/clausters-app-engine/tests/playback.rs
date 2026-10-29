@@ -1101,3 +1101,94 @@ fn a_pass_that_ends_on_its_own_is_taken_in() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_dir_all(&workspace);
 }
+
+/// **A second window plays as the first does**: two files open in two
+/// members of one application, over its one engine, and the second plays
+/// its own take after the first played and stopped. Each member's playback
+/// has a transport of its own, and the groups each one governs are its own.
+#[test]
+fn a_second_window_plays_on_the_engine_the_first_holds() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::Editing;
+    use serde_json::json;
+
+    let (first_path, _) = take("first-window");
+    let (second_path, values) = take("second-window");
+    let workspace = std::env::temp_dir().join(format!("app-engine-ws2-{}", std::process::id()));
+    std::fs::create_dir_all(&workspace).unwrap();
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let mut app = App::new(Arc::new(Mutex::new(AppEngine::over(handle))));
+    let mut editing = Editing::new();
+    app.hold(&mut editing);
+    let mut open = |app: &mut App, editing: &mut Editing, key: &str, path: &str, window: i64| {
+        let opened = app.call(
+            editing,
+            &json!({"verb": "openAudio", "key": key, "path": path,
+                "workspace": workspace.to_string_lossy(), "frames": FRAMES,
+                "channels": 1, "rate": SR}),
+        );
+        let member = opened["member"].as_u64().expect("an audio member") as u32;
+        for call in [
+            json!({"verb": "sync", "window": window}),
+            json!({"verb": "window", "widget": window + 12}),
+        ] {
+            app.call(
+                editing,
+                &json!({"verb": "member", "member": member, "call": call}),
+            );
+        }
+        act(
+            app,
+            editing,
+            &mut engine,
+            member,
+            json!({"verb": "open", "empty": false}),
+        );
+        member
+    };
+    let first = open(&mut app, &mut editing, "first", &first_path, 900);
+    let second = open(&mut app, &mut editing, "second", &second_path, 1900);
+    let app_engine = Arc::clone(app.engine());
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        first,
+        json!({"verb": "play", "at": 0.0}),
+    );
+    blocks(&mut engine, &app_engine, 40);
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        first,
+        json!({"verb": "stop"}),
+    );
+    blocks(&mut engine, &app_engine, 20);
+    act(
+        &mut app,
+        &mut editing,
+        &mut engine,
+        second,
+        json!({"verb": "play", "at": 0.0}),
+    );
+    let heard = blocks(&mut engine, &app_engine, 150);
+    let (start, from) = rolled(&heard);
+    for (i, &s) in heard.iter().enumerate().skip(from) {
+        assert_eq!(
+            s,
+            values[i - start],
+            "sample {i} of the second window's take"
+        );
+    }
+    let output = app.query(&mut editing, second, "output");
+    assert!(output["levels"][0].as_f64().unwrap() > 0.2, "{output}");
+    let transports = [first, second]
+        .map(|member| app.query(&mut editing, member, "transport")["transport"].clone());
+    assert_ne!(
+        transports[0], transports[1],
+        "each window has a transport of its own"
+    );
+    let _ = std::fs::remove_file(&first_path);
+    let _ = std::fs::remove_file(&second_path);
+}

@@ -33,7 +33,12 @@ impl HeldEngine for Engine {
     fn rate(&self) -> f64 {
         48_000.0
     }
-    fn take(&mut self, take: &HeldTake, ids: &mut IdSpaces) -> Result<Vec<i32>, String> {
+    fn take(
+        &mut self,
+        _member: MemberId,
+        take: &HeldTake,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<i32>, String> {
         self.0
             .lock()
             .unwrap()
@@ -47,13 +52,16 @@ impl HeldEngine for Engine {
             })
             .collect()
     }
-    fn revision(&self, file: u64) -> Option<u64> {
+    fn revision(&self, _member: MemberId, file: u64) -> Option<u64> {
         self.0.lock().unwrap().revisions.get(&file).copied()
     }
-    fn close(&mut self, file: u64, _ids: &mut IdSpaces) {
+    fn close(&mut self, _member: MemberId, file: u64, _ids: &mut IdSpaces) {
         let mut told = self.0.lock().unwrap();
         told.revisions.remove(&file);
         told.closed.push(file);
+    }
+    fn close_member(&mut self, _member: MemberId, _ids: &mut IdSpaces) {
+        self.0.lock().unwrap().revisions.clear();
     }
     fn rolling(&self, _transport: i32) -> bool {
         self.0.lock().unwrap().rolling

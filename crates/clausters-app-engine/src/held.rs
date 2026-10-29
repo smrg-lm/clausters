@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use clausters_apps::editing::MemberId;
 use clausters_apps::editing::held::{HeldEngine, HeldTake};
 use clausters_core::ids::{IdSpaces, Space};
 use clausters_editing::apply::Medium;
@@ -33,7 +34,8 @@ struct Reading {
 pub struct Readers {
     engine: Arc<Mutex<AppEngine>>,
     headers: Headers,
-    readings: HashMap<u64, Reading>,
+    /// By member and the member's own name for the reader.
+    readings: HashMap<(MemberId, u64), Reading>,
     /// What the nodes of the takes it reads fill at its rate, kept across
     /// the takes an edit hands it.
     counts: Arc<Counts>,
@@ -90,25 +92,31 @@ impl HeldEngine for Readers {
         f64::from(self.engine().sample_rate())
     }
 
-    fn take(&mut self, take: &HeldTake, ids: &mut IdSpaces) -> Result<Vec<i32>, String> {
+    fn take(
+        &mut self,
+        member: MemberId,
+        take: &HeldTake,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<i32>, String> {
+        let key = (member, take.reader);
         let channels = take.channels.max(1) as usize;
         // A take of another width is read anew.
         if self
             .readings
-            .get(&take.reader)
+            .get(&key)
             .is_some_and(|r| r.feed.channels() != channels)
-            && let Some(was) = self.readings.remove(&take.reader)
+            && let Some(was) = self.readings.remove(&key)
         {
             self.free(was, ids);
         }
         let list = ReadList::over(&take.list, take.rate, &mut self.headers, &self.counts)
             .inspect_err(|e| tracing::warn!("a take the engine reads: {e}"))?;
         let frames = list.frames();
-        let new = !self.readings.contains_key(&take.reader);
+        let new = !self.readings.contains_key(&key);
         if new {
             let buffers = AppEngine::alloc_take(channels, ids).map_err(|e| e.to_string())?;
             self.readings.insert(
-                take.reader,
+                key,
                 Reading {
                     feed: TakeFeed::start(channels),
                     buffers,
@@ -118,7 +126,7 @@ impl HeldEngine for Readers {
             );
         }
         let engine = Arc::clone(&self.engine);
-        let Some(reading) = self.readings.get_mut(&take.reader) else {
+        let Some(reading) = self.readings.get_mut(&key) else {
             return Err("the take is not read".into());
         };
         reading.feed.set(Arc::new(list));
@@ -131,13 +139,27 @@ impl HeldEngine for Readers {
         Ok(reading.buffers.clone())
     }
 
-    fn revision(&self, reader: u64) -> Option<u64> {
-        self.readings.get(&reader).map(|r| r.revision)
+    fn revision(&self, member: MemberId, reader: u64) -> Option<u64> {
+        self.readings.get(&(member, reader)).map(|r| r.revision)
     }
 
-    fn close(&mut self, reader: u64, ids: &mut IdSpaces) {
-        if let Some(reading) = self.readings.remove(&reader) {
+    fn close(&mut self, member: MemberId, reader: u64, ids: &mut IdSpaces) {
+        if let Some(reading) = self.readings.remove(&(member, reader)) {
             self.free(reading, ids);
+        }
+    }
+
+    fn close_member(&mut self, member: MemberId, ids: &mut IdSpaces) {
+        let gone: Vec<_> = self
+            .readings
+            .keys()
+            .filter(|(m, _)| *m == member)
+            .copied()
+            .collect();
+        for key in gone {
+            if let Some(reading) = self.readings.remove(&key) {
+                self.free(reading, ids);
+            }
         }
     }
 

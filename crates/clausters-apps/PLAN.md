@@ -5596,12 +5596,20 @@ wrong.
   not in twenty more; what the reader holds at that wrap is the question
   (a ring that read the old loop's end, refilled as a locate would be).
 
-- ⬜ **The second audio editor window does not play** *(found 2026-10-28
+- ✅ **The second audio editor window does not play** *(found 2026-10-28
   by the user, in the native eye pass of `G44c`)*. Two windows opened from
   a script, `edit(a)` then `edit(b)` over two ten-minute stereo files: the
   first plays, the second's play does nothing. Not looked into yet; the
   lifecycle example plays in both of its windows, so what differs (the
   length, the order of opening, the files) is the first thing to find.
+  *Fixed 2026-10-28.* Not the second window: whichever played second was
+  silent, its transport rolling over nothing. The engine an application
+  holds keyed its readings by the member's name for a file, and every
+  window numbers its files from one, so the second window's take was read
+  into the first's buffers and its readers played buffers nobody fed. The
+  readings are keyed by member and file now (`HeldEngine` takes the
+  member), and a window's close lets go of all of them, which it never
+  did. `a_second_window_plays_on_the_engine_the_first_holds`.
 
 - ⬜ **A save that cannot fit its file fails late, and its message is cut**
   *(found 2026-10-28 by the user, saving a take pasted to four and a half

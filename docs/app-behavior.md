@@ -34,6 +34,10 @@ code that keeps it lives.
   transport of its own (the clients' `AudioPlayback`, one per editor), so
   playing one window moves the play cursor and the meter of that window only.
   The playback holds several files of one editor and one plays at a time.
+  The engine every window of an application shares reads each window's
+  takes as that window's (`HeldEngine` is keyed by member and file): keyed
+  by the file alone, the second window to play read its take into the
+  first's buffers and played silence.
   **A pass goes on while the window shows another file**: switching files
   does not touch it, the play cursor is not drawn over a file that is not
   the one playing, and the file list marks the one that plays. Stop stops

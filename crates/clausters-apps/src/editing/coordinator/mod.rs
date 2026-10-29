@@ -133,7 +133,7 @@ fn retake(
     // only the files the engine reads, at a revision it does not
     let takes = match editing.member(member) {
         Some(Member::Audio(editor)) => editor.held_takes(rate, |file, revision| {
-            engine.revision(file).is_some_and(|r| r != revision)
+            engine.revision(member, file).is_some_and(|r| r != revision)
         }),
         _ => return,
     };
@@ -143,7 +143,7 @@ fn retake(
         };
         // A list the engine cannot read is the engine's to say (it plays the
         // parts it can); the readers keep the length they had.
-        if let Ok(buffers) = engine.take(&take, ids) {
+        if let Ok(buffers) = engine.take(member, &take, ids) {
             let frames = take_frames(editing, member, take.reader);
             let take_rate = take_rate(editing, member, take.reader);
             // the readers' span set again, or made again at another width

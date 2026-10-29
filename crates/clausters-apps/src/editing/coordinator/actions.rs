@@ -322,7 +322,7 @@ impl Session {
         let (Some(take), Some(engine)) = (take, editing.engine.as_mut()) else {
             return Flow::Next;
         };
-        let buffers = match engine.take(&take, ids) {
+        let buffers = match engine.take(member, &take, ids) {
             Ok(buffers) => buffers,
             Err(e) => return Flow::Fail(Failure::Own(Raise::Runtime, e)),
         };

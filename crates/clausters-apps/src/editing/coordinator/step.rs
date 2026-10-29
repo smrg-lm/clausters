@@ -382,10 +382,16 @@ impl Session {
                     Op::Stop { file: None, back } => Ok(playback.stop(back)),
                     Op::Locate(frame) => Ok(playback.locate(frame)),
                     Op::Cue(frame) => Ok(playback.cue(frame)),
-                    Op::Close => playback.close(ids).map_err(|e| e.to_string()),
+                    Op::Close => {
+                        // the window's readings go with it, as a file's do
+                        if let Some(engine) = editing.engine.as_mut() {
+                            engine.close_member(member, ids);
+                        }
+                        playback.close(ids).map_err(|e| e.to_string())
+                    }
                     Op::CloseFile(file) => {
                         if let Some(engine) = editing.engine.as_mut() {
-                            engine.close(file, ids);
+                            engine.close(member, file, ids);
                         }
                         playback.close_file(file, ids).map_err(|e| e.to_string())
                     }
