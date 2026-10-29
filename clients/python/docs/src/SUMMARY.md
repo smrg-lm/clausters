@@ -124,6 +124,7 @@
       - [points](api/clausters.gui.editing.points.md)
       - [samples](api/clausters.gui.editing.samples.md)
       - [score](api/clausters.gui.editing.score.md)
+      - [session](api/clausters.gui.editing.session.md)
       - [trace](api/clausters.gui.editing.trace.md)
       - [view](api/clausters.gui.editing.view.md)
     - [notation](api/clausters.gui.notation.md)

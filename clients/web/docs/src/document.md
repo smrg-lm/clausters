@@ -144,6 +144,7 @@ why the curve row below names three unrelated types:
 | `edit(x)` where x is | opens | over | its vocabulary |
 |---|---|---|---|
 | a `SoundFile` | `AudioEditor`, the handler of the GUI host's audio editor | a `waveform` | `parts` |
+| a saved `multitrack.Session` | `SessionEditor`, the handler of the GUI host's multitrack | a `multitrack` | `clips`/`tracks` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
@@ -152,6 +153,22 @@ why the curve row below names three unrelated types:
 **An `EventSequence` opens in the notes editor**, `editing.NotesEditor`, and is edited **in place**: it holds the very sequence the page's handle names, so there is nothing to write back. **It plays what it edits**, on its sequence's own transport, so playing it never moves a multitrack nor another roll's sequence: `await editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: `null` by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `yAxis: "hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history. **A page edits the same sequence while the roll is open**, through its objects: the change is a turn of that history, so the roll redraws, the lane plays it, and Ctrl+Z in the window takes it back — `seq.history.entry("humanize", () => { ... })` makes a whole loop one entry. **What the hand marked is the page's to read**: `await roll.selected()` is the events marked on the roll (a click, Shift+click or a marquee) as the `SeqEvent` objects they are, `await roll.select(events)` marks them from the page and `await roll.unselect()` clears — the picture's state, entering no history. The other selection, the time range an Alt+drag sweeps, is the transport's `span`, and `roll.transport` is that transport (see [The transport](transport.md)).
 
 **A roll can paint what is played**: `edit(sequence, { midiIn: true })` asks the host to open its MIDI input and write each incoming note into the roll — on the step cursor while the transport is stopped, at the play line while it plays, held as long as the key. Each is an edit of the sequence like a note a hand drew, so it is in the history and in every other window over it. A native host opens a port named `clausters-gui` to route a keyboard into; the host in a page listens to every MIDI input the browser has, and the browser asks the person's permission for that the first time a roll that listens is opened.
+
+**A saved session opens in the multitrack**, an application the GUI host holds,
+over the session's file: `await edit(await Session.open(path))` (a session saved with
+`await session.save(path)` has a file too; one with none is refused). The session's
+takes are read where they are, never loaded whole: their headers as it opens,
+their peaks as the window draws them -- kept in the session's own `peaks/`
+folder, beside nothing of yours, and measured once when they are missing -- and
+their samples as the transport reads each track's regions, summed where they
+overlap. A box of notes plays the sequence the session holds, and a double
+click on one opens its roll in the same application, one history with the
+multitrack. What comes back, `SessionEditor`, is its
+handler: `transport.play(start, end, { looping: true })`, `pause`, `stop(mark)`,
+`locate(at)`, `playing()`; `undo`, `redo`, `split`, `join`, `quantize` and any
+window verb by name (`verb`); `output()`, each track's meter and the samples
+played as silence (`starved`); and `save(path=None)`, which writes the session
+as the edits have left it, every file inside its folder named relative to it.
 
 **A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
 opens it in a window of its own, on an engine of the application's own, and every gesture,

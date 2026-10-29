@@ -42,6 +42,8 @@ import { PointsEditor, isCurve } from "./points.ts";
 import type { PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { AudioEditor } from "./audio.ts";
+import { SessionEditor } from "./session.ts";
+import { Session as MultitrackSession } from "../../multitrack.ts";
 import { SoundFile } from "../../soundfile.ts";
 import { ScoreEditor, isScore } from "./score.ts";
 import type { Interpretation, Transcription } from "../notation/sheet.ts";
@@ -255,13 +257,15 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
  */
 export async function edit(structure: Node, options?: EditOptions): Promise<NodeEditor>;
 export async function edit(structure: SoundFile, options?: EditOptions): Promise<AudioEditor>;
+export async function edit(structure: MultitrackSession, options?: EditOptions): Promise<SessionEditor>;
 export async function edit(structure: unknown, options?: EditOptions): Promise<Editor<never>>;
 export async function edit(
     structure: unknown,
     options: EditOptions = {},
-): Promise<Editor<never> | NodeEditor | AudioEditor> {
+): Promise<Editor<never> | NodeEditor | AudioEditor | SessionEditor> {
     if (structure instanceof Node) return nodeEditor(structure, options);
     if (structure instanceof SoundFile) return audioEditor(structure, options);
+    if (structure instanceof MultitrackSession) return sessionEditor(structure, options);
     // **A timeline is rendered, and the roll edits what it produced**: the
     // events, as concrete data in the timeline's beats with its map. The
     // timeline itself is code and is left as it was; the sequence is the
@@ -303,6 +307,31 @@ async function audioEditor(file: SoundFile, options: EditOptions): Promise<Audio
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
         openAudio.push(editor);
+    }
+    return editor;
+}
+
+/** The sessions this page opened in the multitrack, which a second `edit` of the same session file finds. */
+const openSessions: SessionEditor[] = [];
+
+/**
+ * **The multitrack over `session`'s file**: the one already open over it, on
+ * the same host when one is named, or a new one. The session is the
+ * application's, opened by the host in a window of its own, and this is its
+ * handler.
+ */
+async function sessionEditor(session: MultitrackSession, options: EditOptions): Promise<SessionEditor> {
+    for (let i = openSessions.length - 1; i >= 0; i--) if (openSessions[i]!.closed) openSessions.splice(i, 1);
+    if (options.open !== false) {
+        const current = openSessions.find((editor) =>
+            editor.path === String(session.path) &&
+            (options.host === undefined || editor.host === options.host));
+        if (current !== undefined) return current;
+    }
+    const editor = new SessionEditor(session, { title: options.title });
+    if (options.open !== false) {
+        await editor.open(options.host, { stage: options.stage });
+        openSessions.push(editor);
     }
     return editor;
 }

@@ -56,6 +56,8 @@
 
 export { Application, BASE_ID } from "./application.ts";
 export { AudioEditor, AudioTransport, readsInPlace } from "./audio.ts";
+export { SessionEditor, SessionTransport } from "./session.ts";
+export type { SavedSession, SessionEditorOptions } from "./session.ts";
 export { ScoreDomain, ScoreEditor, ScoreView, isScore } from "./score.ts";
 export type {
     PageInfo, PageOptions, PageSetup, ScoreEditorOptions, TextOptions,

@@ -55,6 +55,7 @@ opens, which is why the curve row below names three unrelated types:
 | `edit(x)` where x is | opens | over | its vocabulary |
 |---|---|---|---|
 | a `SoundFile` | `AudioEditor`, the handler of the GUI host's audio editor | a `waveform` | `parts` |
+| a saved `multitrack.Session` | `SessionEditor`, the handler of the GUI host's multitrack | a `multitrack` | `clips`/`tracks` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
@@ -66,6 +67,22 @@ opens, which is why the curve row below names three unrelated types:
 
 **A roll can paint what is played**: `edit(sequence, midi_in=True)` asks the host to open its MIDI input and write each incoming note into the roll — on the step cursor while the transport is stopped, at the play line while it plays, held as long as the key. Each is an edit of the sequence like a note a hand drew, so it is in the history and in every other window over it. A native host opens a port named `clausters-gui` to route a keyboard into.
 
+
+**A saved session opens in the multitrack**, an application the GUI host holds,
+over the session's file: `edit(SavedSession.open(path))` (a session saved with
+`session.save(path)` has a file too; one with none is refused). The session's
+takes are read where they are, never loaded whole: their headers as it opens,
+their peaks as the window draws them -- kept in the session's own `peaks/`
+folder, beside nothing of yours, and measured once when they are missing -- and
+their samples as the transport reads each track's regions, summed where they
+overlap. A box of notes plays the sequence the session holds, and a double
+click on one opens its roll in the same application, one history with the
+multitrack. What comes back, `clausters.gui.editing.SessionEditor`, is its
+handler: `transport.play(start, end, looping=True)`, `pause`, `stop(mark)`,
+`locate(at)`, `playing`; `undo`, `redo`, `split`, `join`, `quantize` and any
+window verb by name (`verb`); `output`, each track's meter and the samples
+played as silence (`starved`); and `save(path=None)`, which writes the session
+as the edits have left it, every file inside its folder named relative to it.
 
 **A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
 opens it in a window of its own, on an engine of the application's own, and every gesture,

@@ -48,6 +48,7 @@ from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
 from .audio import AudioEditor
+from .session import SessionEditor
 from ...soundfile import SoundFile
 from .score import ScoreEditor, is_score
 
@@ -59,7 +60,9 @@ def edit(structure, *, sample_rate: float = 0.0,
     Args:
         structure: what to edit: a `clausters.SoundFile` (in the audio
             editor, the GUI host's application, which writes the file only on
-            `save`; a WAV, RF64 or W64 file on disk), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
+            `save`; a WAV, RF64 or W64 file on disk), a saved
+            `clausters.multitrack.Session` (in the multitrack, the GUI host's
+            application, over the session's file: `clausters.gui.editing.SessionEditor`), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
             `clausters.multitrack.Automation`), a `clausters.seq.EventSequence`
             (its notes, in place), a `clausters.seq.Timeline` (rendered into a
             sequence first -- ``until=`` bounds one that does not end -- which
@@ -139,6 +142,14 @@ def edit(structure, *, sample_rate: float = 0.0,
             editor.open(host)
             _open_audio.append(editor)
         return editor
+    if _is_saved_session(structure):
+        # **A saved session is the multitrack application's**, opened by the
+        # host over its file; this is its handler
+        editor = SessionEditor(structure, **options)
+        if open:
+            editor.open(host)
+            _open_sessions.append(editor)
+        return editor
     if _is_buffer(structure):
         raise TypeError(
             "the audio editor edits sound files, and a buffer is loaded on a server "
@@ -184,6 +195,17 @@ def edit(structure, *, sample_rate: float = 0.0,
 #: The audio editors this script opened, which a second `edit` of the same
 #: file finds.
 _open_audio: list = []
+
+#: The sessions this script opened in the multitrack, which a second `edit`
+#: of the same session file finds.
+_open_sessions: list = []
+
+
+def _is_saved_session(structure) -> bool:
+    """Whether ``structure`` is a `clausters.multitrack.Session`."""
+    from ...multitrack import Session as SavedSession
+
+    return isinstance(structure, SavedSession)
 
 
 def _is_buffer(structure) -> bool:
@@ -238,6 +260,11 @@ def _already_open(structure, host, options):
         _open_audio[:] = [e for e in _open_audio if not e.closed]
         return next((e for e in _open_audio
                      if e._file is not None and e._file.path == structure.path
+                     and (host is None or e.host is host)), None)
+    if _is_saved_session(structure):
+        _open_sessions[:] = [e for e in _open_sessions if not e.closed]
+        return next((e for e in _open_sessions
+                     if e.path == str(structure.path)
                      and (host is None or e.host is host)), None)
     kinds = ((is_curve, PointsEditor), (is_events, NotesEditor),
              (is_score, ScoreEditor), (is_multitrack, MultitrackEditor))

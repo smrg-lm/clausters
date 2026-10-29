@@ -11402,3 +11402,42 @@ the close, agree without either knowing the length beforehand. A WAV
 written here is 36 bytes longer than the canonical 44-byte one; every
 reader skips a `JUNK` chunk, and the server's readers already took an
 RF64 named `.wav`.
+
+## A multitrack's tracks are read by its application, from their files (2026-10-29)
+
+*Decided with the user, putting the multitrack on the audio editor's
+modules.* A client's multitrack read every take whole into a server's
+buffer and played each region through a clip of readers over it, which an
+hour-long take, or a session of four, makes a load of gigabytes before the
+first sound.
+
+**A track is one take the application reads.** The multitrack application
+(the GUI host's, as the audio editor is) reads each track's regions from
+their files into a fed stream per channel of the track, as it reads an audio
+file's parts, and the engine plays that stream with one reader per channel
+(`mt.feed`). What a region does to what it reads -- its place, its window,
+its playrate, a loop around its source, its edges and its gain curve -- is
+the core's arithmetic, once (`clausters_core::regions`), heard against the
+old clip reader to 1e-4. So an edit of a track's regions hands the engine a
+new take and makes no node, a session opens in the time its headers take,
+and the process does not grow with its takes.
+
+**What this changed, on purpose.** A region plays by the implicit channel
+map, a mono source at unity on every channel of its track, and a track is as
+wide as its widest region; a mono take on a track that was declared stereo
+is a mono track now, panned into the master as a track is. A region's edges
+keep the multitrack's own rule (each capped at the span), not the audio
+editor's (half the part), so a region sounds as it did. A region's gain
+curve is read per sample, where a clip's was a control bus a block.
+
+**Where the peaks are.** A session's takes keep their peaks in the session's
+own `peaks/` folder, measured once by a render when they are missing, never
+beside the user's files, which a session neither writes nor copies.
+
+**The notes and the roll go with it.** An event lane's feeder is a struct
+the server and the application's engine both hold, so a box of notes plays
+on the application's engine, and its roll opens in the same application, one
+editing context, so an edit in either is one history.
+
+**`--session` opens that application.** The host's own multitrack path, its
+in-process server and its player are no longer started for a session.

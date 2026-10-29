@@ -55,6 +55,7 @@ writes changes.
 
 from .application import BASE_ID, Application
 from .audio import AudioEditor, AudioTransport, reads_in_place
+from .session import SessionEditor, SessionTransport
 from ...history import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
@@ -74,6 +75,8 @@ from .view import View
 
 __all__ = [
     "AudioEditor",
+    "SessionEditor",
+    "SessionTransport",
     "AudioTransport",
     "ATTR",
     "Application",
