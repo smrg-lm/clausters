@@ -417,10 +417,6 @@ impl Slotted for SignalElement {
             .into_iter()
             .collect()
     }
-
-    fn texture_body(&self) -> Option<TextureLook> {
-        SignalElement::texture_body(self)
-    }
 }
 
 impl Samples for SignalElement {
@@ -781,6 +777,7 @@ impl SignalElement {
                 lanes: self.lanes(ctx.metrics),
                 loudness: self.loudness.frame(),
                 look: self.look(),
+                placed: None,
             }),
             _ => None,
         }

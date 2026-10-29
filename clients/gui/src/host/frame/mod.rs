@@ -2299,7 +2299,9 @@ fn upload_heavy(
                 View::full(slot.total_samples())
             })
             .nav;
-            let nav = placed_nav(&nav, item.editor.offset);
+            let nav = item
+                .placed
+                .unwrap_or_else(|| placed_nav(&nav, item.editor.offset));
             let channels = slot.views.len();
             let rows = if item.look.overlay { 1 } else { channels };
             let alpha = item.look.layers.alpha_of(Paint::Spectrogram).unwrap_or(1.0);
@@ -2329,35 +2331,6 @@ fn upload_heavy(
                     renderers,
                     &nav,
                     body.w.max(1.0) as u32,
-                );
-            }
-        }
-    }
-    // The spectral clip bodies: the same texture, uploaded against the clip's
-    // own axis instead of the group's window -- which is the whole difference
-    // between a spectral *view* of a file and a spectral *clip* of it.
-    for item in &collected.spectral_bodies {
-        if let Some(slot) = spectrograms.get_mut(&(item.id, item.key)) {
-            let channels = slot.views.len();
-            for (ch, view) in slot.views.iter_mut().enumerate() {
-                view.set_display(
-                    item.look.db_floor,
-                    item.look.db_ceil,
-                    item.look.freq_scale,
-                    item.look.colormap.max(0) as u32,
-                );
-                view.set_shaping(item.look.normalize, item.look.interpolate, item.look.tuning);
-                view.set_framing(framing_of(
-                    channel_rect(item.rect, channels, ch),
-                    fb_w,
-                    fb_h,
-                ));
-                view.upload(
-                    &gpu.device,
-                    &gpu.queue,
-                    renderers,
-                    &item.local,
-                    item.rect.w.max(1.0) as u32,
                 );
             }
         }
@@ -2419,23 +2392,6 @@ fn draw_heavy(
         }
         for (ch, view) in slot.views.iter().enumerate() {
             let row = item.look.lanes.rect(body, rows, ch.min(rows - 1));
-            let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
-            if w >= 1.0 && h >= 1.0 {
-                pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                view.draw(pass, renderers);
-            }
-        }
-    }
-    for item in &collected.spectral_bodies {
-        let Some(slot) = spectrograms.get(&(item.id, item.key)) else {
-            continue;
-        };
-        if item.rect.w < 1.0 || item.rect.h < 1.0 || !apply_scissor(pass, item.clip, fb_w, fb_h) {
-            continue;
-        }
-        let channels = slot.views.len();
-        for (ch, view) in slot.views.iter().enumerate() {
-            let row = channel_rect(item.rect, channels, ch);
             let (x, y, w, h) = clamp_viewport(row, fb_w, fb_h);
             if w >= 1.0 && h >= 1.0 {
                 pass.set_viewport(x, y, w, h, 0.0, 1.0);

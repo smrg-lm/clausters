@@ -91,7 +91,6 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
         hidden: parse_hidden(props),
         loops: parse_names(props, "loops"),
         rates: parse_rates(props),
-        segments: parse_segments(props),
         meters: parse_meters(props),
         zoom: HashMap::new(),
         curve_zoom: HashMap::new(),
@@ -111,6 +110,8 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
             .and_then(Presentation::parse)
             .unwrap_or(Presentation::Signal),
         takes: HashMap::new(),
+        views: HashMap::new(),
+        next_view: 0,
         listed: HashMap::new(),
         asked: std::collections::HashSet::new(),
         rolls: parse_notes(props)
@@ -124,7 +125,6 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
             .unwrap_or_default(),
         #[cfg(feature = "notation")]
         scores: props.get("scores").map(parse_scores).unwrap_or_default(),
-        pending: HashMap::new(),
         grab: None,
         block: Vec::new(),
         fading: None,
@@ -323,41 +323,6 @@ pub(super) fn parse_names(props: &Map<String, Value>, key: &str) -> Vec<String> 
         .and_then(Value::as_str)
         .map(|s| s.split_whitespace().map(str::to_string).collect())
         .unwrap_or_default()
-}
-
-/// The `segments` prop: the flat `box source start frames rate` quintuple
-/// array -- the spans each join is made of, in the order they play, grouped by
-/// the box they belong to. `frames` is what the span contributes to the join
-/// and `rate` how many frames of its take that is worth, which is one for a
-/// take at the join's own rate.
-///
-/// A trailing partial group is dropped rather than half-read, and so is a span
-/// that reads nothing; a box whose spans are all dropped is not named, so it is
-/// drawn from its own buffer as any box is.
-pub(super) fn parse_segments(props: &Map<String, Value>) -> HashMap<String, Vec<super::Span>> {
-    let Some(Value::Array(items)) = props.get("segments") else {
-        return HashMap::new();
-    };
-    let mut out: HashMap<String, Vec<super::Span>> = HashMap::new();
-    for group in items.as_chunks::<5>().0 {
-        let (Some(name), Some(source)) = (group[0].as_str(), group[1].as_i64()) else {
-            continue;
-        };
-        let frames = group[3].as_f64().unwrap_or(0.0);
-        // A span that states no rate is read frame for frame, which is every
-        // span of a join whose takes are at its own rate.
-        let rate = group[4].as_f64().filter(|r| *r > 0.0).unwrap_or(1.0);
-        if source < 0 || frames <= 0.0 {
-            continue;
-        }
-        out.entry(name.to_string()).or_default().push(super::Span {
-            source: source as i32,
-            start: group[2].as_f64().unwrap_or(0.0).max(0.0),
-            frames,
-            rate,
-        });
-    }
-    out
 }
 
 /// The `rates` prop: the flat `box rate` pairs -- how many frames of its source
@@ -661,10 +626,6 @@ impl Multitrack {
             }
             // **The spans a join is drawn from**, replaced whole like every
             // other list here.
-            "segments" => {
-                self.segments = parse_segments(&parse::as_array_props("segments", v));
-                true
-            }
             // **Where each track's level is read from.** Set like every other
             // list here, and it has to be: the buses are allocated when a track
             // reaches the server, so a track made *after* the window opened --

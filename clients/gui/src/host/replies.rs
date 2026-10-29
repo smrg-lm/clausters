@@ -29,7 +29,7 @@ use super::fetch::{
 };
 use super::frame::{self, Owed};
 use super::instance::Leg;
-use super::widget::element::{Bulk, Loaded, OwedSummary, SlotKind};
+use super::widget::element::{Bulk, Loaded, OwedSummary, SlotKey, SlotKind};
 use super::{Host, diag};
 use crate::waveform::WaveformData;
 
@@ -66,13 +66,13 @@ pub(crate) trait Front {
     /// Puts `data` into the GPU slot widget `widget_id` of window `def_id`
     /// claimed, answering the extent it loaded ([`frame::place_in_slot`]).
     fn place_slot(&mut self, def_id: i32, widget_id: i32, data: Loaded) -> Option<usize>;
-    /// Lets go of the samples the geometry slot of widget `widget_id` holds,
-    /// so the element is their sole owner and rewrites them in place rather
+    /// Lets go of the samples geometry slot `key` of widget `widget_id`
+    /// holds, so the element is their sole owner and rewrites them in place rather
     /// than copying the whole take first.
-    fn release_slot(&mut self, def_id: i32, widget_id: i32);
-    /// The spans the last frame of window `def_id` could not draw, by widget,
-    /// taken so each is asked for once.
-    fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)>;
+    fn release_slot(&mut self, def_id: i32, widget_id: i32, key: SlotKey);
+    /// The spans the last frame of window `def_id` could not draw, by widget
+    /// and by which of its pictures, taken so each is asked for once.
+    fn take_owed(&self, def_id: i32) -> Vec<(i32, SlotKey, Owed)>;
     /// **Marks the columns widget `widget_id` of window `def_id` holds as of
     /// a list since redefined**, `frames` long now, answering whether it
     /// holds any: a view that does keeps drawing them and owes the new
@@ -203,7 +203,12 @@ pub(crate) trait Front {
                             },
                         ) => self.place_level(done),
                         Some(PeaksDone {
-                            purpose: PeaksFor::Detail { def_id, widget_id },
+                            purpose:
+                                PeaksFor::Detail {
+                                    def_id,
+                                    widget_id,
+                                    key,
+                                },
                             bufnum,
                             start,
                             bucket,
@@ -211,8 +216,7 @@ pub(crate) trait Front {
                             ..
                         }) => self.place_detail(
                             bufnum,
-                            def_id,
-                            widget_id,
+                            (def_id, widget_id, key),
                             start as u64,
                             bucket,
                             &stats,
@@ -338,10 +342,11 @@ pub(crate) trait Front {
             FetchStep::Window {
                 bufnum,
                 want,
+                key,
                 start_frame,
                 channels,
                 samples,
-            } => self.place_window(bufnum, want, start_frame, channels, &samples),
+            } => self.place_window(bufnum, want, key, start_frame, channels, &samples),
             FetchStep::Patch {
                 bufnum,
                 start_frame,
@@ -677,7 +682,7 @@ pub(crate) trait Front {
                     .and_then(|w| w.bulk_target().kind.needs().slot),
                 Some(SlotKind::Geometry { .. })
             );
-            self.release_slot(def_id, widget_id);
+            self.release_slot(def_id, widget_id, SlotKey::SELF);
             if self.window_open(def_id) && geometry {
                 self.place_slot(def_id, widget_id, Loaded::Peaks(body.clone()));
             }
@@ -697,6 +702,7 @@ pub(crate) trait Front {
         &mut self,
         bufnum: i32,
         want: WaveWant,
+        key: SlotKey,
         start_frame: usize,
         channels: usize,
         samples: &[f32],
@@ -706,7 +712,7 @@ pub(crate) trait Front {
             samples.len() / channels.max(1),
             want.widget_id
         );
-        self.release_slot(want.def_id, want.widget_id);
+        self.release_slot(want.def_id, want.widget_id, key);
         let took = self
             .host_mut()
             .window_def_mut(want.def_id)
@@ -714,7 +720,7 @@ pub(crate) trait Front {
             .is_some_and(|w| {
                 w.bulk_target_mut()
                     .kind
-                    .as_samples_mut()
+                    .as_picture_mut(key)
                     .is_some_and(|s| s.set_window(start_frame as u64, channels, samples))
             });
         if took {
@@ -739,7 +745,7 @@ pub(crate) trait Front {
             // slot released and not refilled draws nothing, so releasing every
             // one of them blanks every other take in the window.
             for widget_id in self.widgets_drawing(def_id, bufnum) {
-                self.release_slot(def_id, widget_id);
+                self.release_slot(def_id, widget_id, SlotKey::SELF);
             }
             let Some(tree) = self.host_mut().window_def_mut(def_id) else {
                 continue;
@@ -766,8 +772,7 @@ pub(crate) trait Front {
     fn place_detail(
         &mut self,
         bufnum: i32,
-        def_id: i32,
-        widget_id: i32,
+        (def_id, widget_id, key): (i32, i32, SlotKey),
         start: u64,
         bucket: usize,
         stats: &[f32],
@@ -776,7 +781,7 @@ pub(crate) trait Front {
             "buffer {bufnum}: detail of {} bucket(s) of {bucket} at {start} for widget {widget_id}",
             stats.len() / 3
         );
-        self.release_slot(def_id, widget_id);
+        self.release_slot(def_id, widget_id, key);
         let took = self
             .host_mut()
             .window_def_mut(def_id)
@@ -784,7 +789,7 @@ pub(crate) trait Front {
             .is_some_and(|w| {
                 w.bulk_target_mut()
                     .kind
-                    .as_samples_mut()
+                    .as_picture_mut(key)
                     .is_some_and(|s| s.set_detail(start, bucket, stats))
             });
         if took {
@@ -804,7 +809,7 @@ pub(crate) trait Front {
         let mut redraw = Vec::new();
         for def_id in self.host().window_def_ids() {
             for widget_id in self.widgets_drawing(def_id, bufnum) {
-                self.release_slot(def_id, widget_id);
+                self.release_slot(def_id, widget_id, SlotKey::SELF);
             }
             let Some(tree) = self.host_mut().window_def_mut(def_id) else {
                 continue;
@@ -1037,14 +1042,14 @@ pub(crate) trait Front {
                 self.to_server(msg);
             }
         }
-        let mut asked: Vec<(i32, i32, i32, usize, Owed)> = Vec::new();
+        let mut asked: Vec<(i32, i32, SlotKey, i32, usize, Owed)> = Vec::new();
         for &def_id in defs {
-            for (widget_id, owed) in self.take_owed(def_id) {
+            for (widget_id, key, owed) in self.take_owed(def_id) {
                 let Some(el) = self
                     .host()
                     .window_def(def_id)
                     .and_then(|t| t.find(widget_id))
-                    .and_then(|w| w.bulk_target().kind.as_samples())
+                    .and_then(|w| w.bulk_target().kind.as_picture(key))
                 else {
                     continue;
                 };
@@ -1066,15 +1071,16 @@ pub(crate) trait Front {
                 if el.owed_summary().is_some() {
                     continue;
                 }
-                asked.push((def_id, widget_id, bufnum, channels, owed));
+                asked.push((def_id, widget_id, key, bufnum, channels, owed));
             }
         }
-        for (def_id, widget_id, bufnum, channels, owed) in asked {
+        for (def_id, widget_id, key, bufnum, channels, owed) in asked {
             let msg = match owed {
                 Owed::Summary { a, b, bucket, seen } => self.fetches().want_detail(
                     bufnum,
                     def_id,
                     widget_id,
+                    key,
                     (a, b - a),
                     seen,
                     bucket,
@@ -1085,7 +1091,11 @@ pub(crate) trait Front {
                     a,
                     b - a,
                     channels,
-                    SpanUse::Window { def_id, widget_id },
+                    SpanUse::Window {
+                        def_id,
+                        widget_id,
+                        key,
+                    },
                 ),
                 Owed::Columns(mut span) => {
                     // the element's own hop, which only it knows

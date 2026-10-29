@@ -5758,7 +5758,7 @@ wrong.
   so the handler has none in either client. The audio editor's handler marks
   through its application, which is the shape to follow.
 
-- ⬜ **A box of samples is not the audio editor's view of its take** *(found
+- ✅ **A box of samples is not the audio editor's view of its take** *(found
   2026-10-29 by the user, zooming into a box of the multitrack on its
   application: the peaks stay at the bucket they first came at, and the
   samples are never reached)*. The audio editor draws a take through the
@@ -5778,6 +5778,22 @@ wrong.
   samples come with the view rather than being written again. What the
   multitrack keeps is what is its own: where a box is, its frame, its
   fades' veil, its label and its grips.
+  Fixed so: each box holds the signal element the audio editor draws with,
+  made from its take's body and drawn through a slot keyed per box with
+  the box's window onto the take (`SlotFrame::Signal`'s `placed`); a read
+  lands on the view whose key asked for it (`Element::picture`), and a
+  join is a list of its parts. The summary is shared, so a second box of a
+  take costs what its zoom holds.
+
+- ⬜ **A spectral box over a list reads no columns** *(found 2026-10-29
+  making the boxes the audio editor's view)*. A box's view draws a
+  spectrogram as the audio editor's does, and over a server buffer's
+  samples it analyzes them; over a list -- every take on the application --
+  the columns of what is on screen are asked and placed by widget
+  (`Owed::Columns`, `place_columns`, `place_column_texture`), never by the
+  key of the view that owes them. Keying that path as the reads past a
+  summary were keyed is what a spectral view of the multitrack waits on,
+  with the verb that offers it.
 
 - ⬜ **The multitrack's cursors are not the audio editor's** *(found
   2026-10-29 by the user, the same pass)*. Placing the position cursor and

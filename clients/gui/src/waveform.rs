@@ -228,10 +228,16 @@ impl From<Arc<[f32]>> for Samples {
 
 /// One channel's data: its raw samples (possibly empty, for a cache-only view)
 /// plus its peak pyramid.
+///
+/// **Both are shared**, so a second view of one take costs what it holds of
+/// its own -- the window and the finer grid under its zoom -- and never a
+/// copy of the take's summary: a multitrack's boxes over one recording are
+/// each a view of it, at its own place. A write copies the pyramid only
+/// while another view still holds it.
 #[derive(Clone)]
 struct Channel {
     samples: Samples,
-    pyramid: Pyramid,
+    pyramid: Arc<Pyramid>,
     /// **A finer summary over the span being looked at**, when there is one.
     detail: Option<Detail>,
 }
@@ -314,7 +320,7 @@ impl WaveformData {
         Self {
             channels: vec![Channel {
                 samples: samples.into(),
-                pyramid,
+                pyramid: pyramid.into(),
                 detail: None,
             }],
         }
@@ -338,7 +344,7 @@ impl WaveformData {
                 let pyramid = Pyramid::build_from(&*source, base_bucket);
                 Channel {
                     samples: Samples::Shared(source),
-                    pyramid,
+                    pyramid: pyramid.into(),
                     detail: None,
                 }
             })
@@ -371,7 +377,7 @@ impl WaveformData {
                 .zip(summary.into_channels())
                 .map(|(source, pyramid)| Channel {
                     samples: Samples::Shared(source),
-                    pyramid,
+                    pyramid: pyramid.into(),
                     detail: None,
                 })
                 .collect(),
@@ -390,7 +396,7 @@ impl WaveformData {
                 let pyramid = Pyramid::build(&samples, base_bucket);
                 Channel {
                     samples: samples.into(),
-                    pyramid,
+                    pyramid: pyramid.into(),
                     detail: None,
                 }
             })
@@ -408,7 +414,7 @@ impl WaveformData {
         Self {
             channels: vec![Channel {
                 samples: samples.into(),
-                pyramid,
+                pyramid: pyramid.into(),
                 detail: None,
             }],
         }
@@ -424,7 +430,7 @@ impl WaveformData {
             .into_iter()
             .map(|(samples, pyramid)| Channel {
                 samples: samples.into(),
-                pyramid,
+                pyramid: pyramid.into(),
                 detail: None,
             })
             .collect();
@@ -439,7 +445,7 @@ impl WaveformData {
             .into_iter()
             .map(|pyramid| Channel {
                 samples: Samples::Owned(Arc::from([] as [f32; 0])),
-                pyramid,
+                pyramid: pyramid.into(),
                 detail: None,
             })
             .collect();
@@ -573,7 +579,8 @@ impl WaveformData {
             Samples::Owned(owned) => {
                 let mut samples = owned.to_vec();
                 samples[start..start + values.len()].copy_from_slice(values);
-                let ok = channel.pyramid.update_range(&samples, start, values.len());
+                let ok =
+                    Arc::make_mut(&mut channel.pyramid).update_range(&samples, start, values.len());
                 *owned = samples.into();
                 ok
             }
@@ -601,7 +608,7 @@ impl WaveformData {
         let Samples::Shared(source) = &channel.samples else {
             return false;
         };
-        channel.pyramid.update_range_from(&**source, start, len)
+        Arc::make_mut(&mut channel.pyramid).update_range_from(&**source, start, len)
     }
 
     /// **Folds a run of buckets somebody else measured** into the summary --
@@ -662,7 +669,7 @@ impl WaveformData {
                     ms: stats[at + 2],
                 }
             }));
-            if !channel.pyramid.write_buckets(first, &run) {
+            if !Arc::make_mut(&mut channel.pyramid).write_buckets(first, &run) {
                 return false;
             }
         }

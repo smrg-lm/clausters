@@ -42,58 +42,6 @@ impl Multitrack {
         })
     }
 
-    /// **A join, drawn from the takes it reads**, one span at a time.
-    ///
-    /// Each span is a run of one take, and it occupies the stretch of the box
-    /// its place in the join says: the join's frame `c` is the span's first,
-    /// so what the box shows at its own time `t` is the take's frame
-    /// `start + (window + t - c)`. Every span is handed to its take's body over
-    /// the part of the box it covers, exactly as a whole box is handed to one,
-    /// so a span scrolls and trims with the box like any other picture of
-    /// those samples. A span whose take has not arrived draws nothing, and the
-    /// box's frame stands under it until it does.
-    fn draw_spans(&self, d: &mut Draw, cr: Rect, local: &View, clip: &Clip, spans: &[Span]) {
-        let (shown_from, shown_to) = (local.start, local.start + local.len);
-        // The spans are counted in the join's frames and the box in its own
-        // samples, so every crossing between the two goes through the box's
-        // rate -- one, for a join at the rate this multitrack measures in.
-        let rate = self.rate_of(&clip.name);
-        let mut at = 0.0;
-        for span in spans {
-            // The span's stretch of the box, in the box's own time.
-            let from = (at - clip.place.start) / rate;
-            let to = from + span.frames / rate;
-            at += span.frames;
-            let lo = from.max(shown_from).max(0.0);
-            let hi = to.min(shown_to).min(clip.place.dur);
-            if hi <= lo {
-                continue;
-            }
-            let Some(take) = self.takes.get(&span.source) else {
-                continue;
-            };
-            // Frames of **this take** per sample of the box: the box's own
-            // crossing, then the span's. A span at the join's rate contributes
-            // nothing but one.
-            let span_rate = rate * span.rate;
-            let x = |t: f64| cr.x + ((t - local.start) / local.len) as f32 * cr.w;
-            let rect = Rect::new(x(lo), cr.y, x(hi) - x(lo), cr.h);
-            let space = TimeSpace::of(
-                View {
-                    start: lo,
-                    len: hi - lo,
-                },
-                clip.place.dur,
-            )
-            .with_window(SourceWindow {
-                start: span.start - from * span_rate,
-                rate: span_rate,
-                ..SourceWindow::default()
-            });
-            take.draw_body(d, rect, &space);
-        }
-    }
-
     /// **Where each box is on screen, and the slice of its own span it shows** --
     /// the geometry the drawing and the texture pass both read, so a picture
     /// drawn on the mesh and one uploaded to the GPU land on the same pixels.
@@ -221,7 +169,6 @@ impl Multitrack {
     }
 
     pub(super) fn paint(&self, d: &mut Draw, ctx: &Ctx) {
-        let nav = self.view(ctx.time);
         let at = self.track_rects(ctx.rect);
         // A track scrolled off either end is skipped rather than drawn and
         // clipped: `stack` reports every track so a hit test reads the same
@@ -281,47 +228,46 @@ impl Multitrack {
         for (n, cr, local) in self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time) {
             let clip = &self.clips[n];
             track::draw_clip(d, cr, self.selected.contains(&n));
-            // **The take, drawn from the source per visible pixel**, mapped
-            // back through the clip's own window onto it -- which is what makes
-            // the picture scroll and trim *with* the box instead of squashing
-            // into whatever rectangle it currently has. One pyramid however
-            // many clips read it.
-            // **The base view is what its contents are.** Samples draw as the
-            // signal element's body, notes as the roll's -- the very elements
-            // that stand on their own elsewhere, handed the box's own axis and
-            // drawing no chrome of their own. A box with neither draws its
-            // frame and nothing in it, which is the honest picture of a window
-            // onto something nobody loaded.
+            // **The base view is what its contents are.** Samples are the
+            // audio editor's view of the take, drawn in the box's own slot
+            // over the box's window onto it ([`Self::view_slots`]) -- so they
+            // are not drawn here. Notes draw as the roll's body, handed the
+            // box's own axis and drawing no chrome of their own. A box with
+            // neither draws its frame and nothing in it, which is the honest
+            // picture of a window onto something nobody loaded.
+            let Some(roll) = self.rolls.get(&clip.name) else {
+                continue;
+            };
             let space = TimeSpace::of(local, clip.place.dur).with_window(SourceWindow {
                 start: clip.place.start,
-                // Frames of the source per sample of the box: one, unless the
-                // multitrack said this box's source was written at another rate
-                // or that it plays at another speed.
+                // Frames of the sequence per sample of the box: one, unless
+                // the multitrack said this box plays at another speed.
                 rate: self.rate_of(&clip.name),
-                // A box longer than its samples **wraps** where the multitrack says
-                // it loops, and shows nothing past their end where it does not:
-                // the picture is what the box reads, and it reads this.
                 looping: self.wraps(&clip.name),
                 ..SourceWindow::default()
             });
-            if let Some(spans) = self.segments.get(&clip.name) {
-                self.draw_spans(d, cr, &local, clip, spans);
-            } else if let Some(take) = self.takes.get(&clip.source) {
-                take.draw_body(d, cr, &space);
-            } else if let Some(roll) = self.rolls.get(&clip.name) {
-                // **A box of notes has two presentations**: its roll, and
-                // its page -- drawn on the box's own axis, each note at its
-                // time. A box with no page, or a row too low for a staff to
-                // be read, is drawn as its roll.
-                #[cfg(feature = "notation")]
-                let paged = self.notes_view == NotesView::Score
-                    && self.draw_page(d, cr, ctx.rect, ctx.indent, &space, n);
-                #[cfg(not(feature = "notation"))]
-                let paged = false;
-                if !paged {
-                    roll.draw_body(d, cr, &space);
-                }
+            // **A box of notes has two presentations**: its roll, and its
+            // page -- drawn on the box's own axis, each note at its time. A
+            // box with no page, or a row too low for a staff to be read, is
+            // drawn as its roll.
+            #[cfg(feature = "notation")]
+            let paged = self.notes_view == NotesView::Score
+                && self.draw_page(d, cr, ctx.rect, ctx.indent, &space, n);
+            #[cfg(not(feature = "notation"))]
+            let paged = false;
+            if !paged {
+                roll.draw_body(d, cr, &space);
             }
+        }
+    }
+
+    /// **What is drawn over the boxes' pictures**: each box's fades, label
+    /// and grip, the curves, the selection and the position cursor -- over
+    /// the views of the takes, which the frame draws after the boxes.
+    pub(super) fn paint_over(&self, d: &mut Draw, ctx: &Ctx) {
+        let nav = self.view(ctx.time);
+        for (n, cr, local) in self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time) {
+            let clip = &self.clips[n];
             // **The silenced part of its fades, veiled**, read off the box's
             // own fade layer -- the envelope a hand drags -- so the veil moves
             // with the curve while it is dragged, rather than waiting for

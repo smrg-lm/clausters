@@ -624,7 +624,19 @@ impl MultitrackEditor {
         &mut self,
         segments: HashMap<SourceId, Vec<clausters_document::session::Part>>,
     ) {
+        for id in segments.keys() {
+            self.number_join(*id);
+        }
         self.segments.extend(segments);
+    }
+
+    /// **Names a join by its own id**, as a take is named, where the
+    /// application draws the takes from their files: its boxes name it by
+    /// that number, and the window draws it from its list ([`Self::lists`]).
+    fn number_join(&mut self, id: SourceId) {
+        if !self.takes.is_empty() {
+            self.sources.entry(id).or_insert(id.0 as i64);
+        }
     }
 
     /// **Remembers the segments a minted join is made of**, so a join over a
@@ -636,6 +648,7 @@ impl MultitrackEditor {
             return;
         };
         if let clausters_document::session::Location::Segments { parts } = made.source.location {
+            self.number_join(made.id);
             self.segments.insert(made.id, parts);
         }
     }
@@ -703,33 +716,102 @@ impl MultitrackEditor {
     }
 
     /// **The takes the window draws from their files**: each take's file and
-    /// its peaks, as the `segments` list a signal element draws, by the
-    /// number its boxes name it by; `None` while the application resolved
-    /// none.
+    /// its peaks, and each join's parts over the takes' files, as the
+    /// `segments` list a signal element draws, by the number its boxes name
+    /// it by; `None` while the application resolved none.
+    ///
+    /// A join is a take like any other here: the audio editor's view of a
+    /// list of parts, read from the files of the takes it is made of. One
+    /// whose takes are not all resolved is left out, and its boxes draw
+    /// their frames and nothing in them until they are.
     pub fn lists(&self) -> Option<Value> {
+        use clausters_document::session::Part;
         if self.takes.is_empty() {
             return None;
         }
-        let lists: Map<String, Value> = self
+        let files: crate::audio::editor::sources::Sources = self
             .takes
             .iter()
             .map(|(id, file)| {
-                let list = json!({
-                    "channels": file.channels.max(1),
-                    "sample_rate": file.rate,
-                    "parts": [{
-                        "path": &*file.path,
-                        "start": 0,
-                        "frames": file.frames,
-                        "source_channels": file.channels,
-                        "source_frames": file.frames,
-                        "source_rate": file.rate,
-                        "peaks": file.peaks.as_deref(),
-                    }],
+                (
+                    *id,
+                    crate::audio::editor::sources::FileSource {
+                        path: file.path.to_string(),
+                        peaks: file.peaks.as_deref().unwrap_or_default().to_string(),
+                        frames: file.frames,
+                        channels: file.channels,
+                        rate: file.rate,
+                        render: false,
+                    },
+                )
+            })
+            .collect();
+        // a part with no range reads its take whole, as a list's part names
+        // its span of the file
+        let spanned = |part: &Part| {
+            let mut part = part.clone();
+            if part.source.range.is_none() {
+                let frames = self.takes.get(&part.source.source).map_or(0, |t| t.frames);
+                part.source.range = Some(clausters_document::Range {
+                    start: 0,
+                    end: frames,
                 });
+            }
+            part
+        };
+        let whole = |id: &SourceId, _: &clausters_document::parts::TakeFile| {
+            vec![spanned(&Part {
+                source: clausters_document::SourceRef {
+                    source: *id,
+                    lifetime: clausters_document::Lifetime::External,
+                    generation: 0,
+                    range: None,
+                },
+                fade_in: 0,
+                fade_out: 0,
+                fade_in_shape: Default::default(),
+                fade_out_shape: Default::default(),
+                channels: None,
+            })]
+        };
+        let mut lists: Map<String, Value> = self
+            .takes
+            .iter()
+            .map(|(id, file)| {
+                let list = crate::audio::editor::sources::wire_list(
+                    &whole(id, file),
+                    &files,
+                    file.channels.max(1),
+                    file.rate,
+                );
                 (id.0.to_string(), list)
             })
             .collect();
+        for (id, parts) in &self.segments {
+            let mut takes = parts.iter().map(|p| self.takes.get(&p.source.source));
+            if takes.clone().any(|t| t.is_none()) {
+                continue;
+            }
+            let Some(Some(first)) = takes.next() else {
+                continue;
+            };
+            let channels = parts
+                .iter()
+                .filter_map(|p| self.takes.get(&p.source.source))
+                .map(|t| t.channels)
+                .max()
+                .unwrap_or(1);
+            let parts: Vec<Part> = parts.iter().map(spanned).collect();
+            lists.insert(
+                id.0.to_string(),
+                crate::audio::editor::sources::wire_list(
+                    &parts,
+                    &files,
+                    channels.max(1),
+                    first.rate,
+                ),
+            );
+        }
         Some(Value::Object(lists))
     }
 
@@ -2075,7 +2157,17 @@ mod tests {
             ..Multitrack::default()
         };
         let mut editor = MultitrackEditor::new(multitrack, SR, 1);
-        editor.set_sources(HashMap::from([(SourceId(1), 7)]));
+        editor.set_takes(HashMap::from([(
+            SourceId(1),
+            clausters_document::parts::TakeFile {
+                path: "/work/take.wav".into(),
+                peaks: Some("/work/take.peaks".into()),
+                channels: 1,
+                // long enough for the box behind the halves to read on
+                frames: 3 * SR as u64,
+                rate: SR,
+            },
+        )]));
         editor.chrome(None, Transport::Unnumbered, "multitrack", (1000, 560));
         editor.window(40, 41);
         editor.set_window(Some(39));
@@ -2086,34 +2178,33 @@ mod tests {
         };
         let made = made["id"].clone();
 
-        // **And the window is told what the join is made of**, so it draws the
-        // joined box from the take it reads rather than waiting for a buffer
-        // the server has yet to build: two spans of buffer 7, the take's second
-        // half and then its first, in the order they play.
+        // **And the window is told what the join is made of**: a list of
+        // two parts of the take's file, its second half and then its first,
+        // in the order they play -- drawn as the audio editor draws a file
+        // made of parts, from the take's own peaks.
         let props = editor.props(40);
-        let segments = props["segments"]
+        let list = &props["lists"][made.as_u64().expect("an id").to_string()];
+        let parts: Vec<(Value, Value, Value)> = list["parts"]
             .as_array()
-            .unwrap_or_else(|| panic!("segments in {props:?}"));
-        // Frames, and frames are whole: a span is a count of them. The fifth
-        // of each quintuple is how many frames of the take one frame of the
-        // join is -- one here, since the take is at the session's own rate.
+            .unwrap_or_else(|| panic!("the join is listed: {props:?}"))
+            .iter()
+            .map(|p| (p["path"].clone(), p["start"].clone(), p["frames"].clone()))
+            .collect();
         let half = json!(SR as u64);
         assert_eq!(
-            segments.as_slice(),
+            parts,
             [
-                json!("12"),
-                json!(7),
-                half.clone(),
-                half.clone(),
-                json!(1.0),
-                json!("12"),
-                json!(7),
-                json!(0),
-                half,
-                json!(1.0),
-            ]
-            .as_slice(),
-            "the joined box, drawn from the take it is spans of"
+                (json!("/work/take.wav"), half.clone(), half.clone()),
+                (json!("/work/take.wav"), json!(0), half),
+            ],
+            "the joined box, drawn from the parts of the take it is made of"
+        );
+        assert_eq!(list["parts"][0]["peaks"], json!("/work/take.peaks"));
+        // ...and its box names it by its own id, as a take's names the take.
+        let clips = props["clips"].as_array().expect("clips");
+        assert!(
+            clips.chunks(7).any(|c| c[0] == json!("12") && c[6] == made),
+            "the joined box names the join: {clips:?}"
         );
 
         let second = editor.event(

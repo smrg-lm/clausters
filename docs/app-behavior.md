@@ -114,6 +114,15 @@ code that keeps it lives.
   every widget takes -- so a toolbar answered as the multitrack grew to fill
   the window.
 
+- **A box of samples is the audio editor's view of its take.** Each box in
+  the multitrack draws its take through the view the audio editor draws a
+  file with, placed in the box at the box's window onto the take (its
+  start, its rate, its laps), so it zooms down to the samples and reads
+  past its summary as that window does. A join is a take made of parts,
+  drawn the same way. The multitrack draws only what is its own around the
+  picture: the box's frame, fades, label and grips, the curves, the
+  selection and the cursor, over the picture.
+
 - **Four words, each its own question.** A **view** is one picture of an
   object on a lane (the waveform, the spectrogram). A **visualization layer** is
   a measure drawn inside one view, on that view's vertical (peak, RMS). An **edit layer** is a body a hand edits, superposed on a view in a

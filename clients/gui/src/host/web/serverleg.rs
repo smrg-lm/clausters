@@ -413,12 +413,12 @@ impl Front for WebApp {
         None
     }
 
-    fn release_slot(&mut self, def_id: i32, widget_id: i32) {
+    fn release_slot(&mut self, def_id: i32, widget_id: i32, key: SlotKey) {
         if let Some(slot) = self
             .canvases
             .get_mut(&def_id)
             .and_then(|c| c.render.as_mut())
-            .and_then(|r| r.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
+            .and_then(|r| r.waveforms.get_mut(&(widget_id, key)))
         {
             slot.view.release_data();
         }
@@ -444,20 +444,20 @@ impl Front for WebApp {
             .map(|slot| slot.view.total_samples())
     }
 
-    fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)> {
+    fn take_owed(&self, def_id: i32) -> Vec<(i32, SlotKey, Owed)> {
         let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) else {
             return Vec::new();
         };
         render
             .waveforms
             .iter()
-            .filter_map(|((widget_id, _key), slot)| slot.owed.take().map(|o| (*widget_id, o)))
+            .filter_map(|((widget_id, key), slot)| slot.owed.take().map(|o| (*widget_id, *key, o)))
             .chain(
                 render
                     .spectrograms
                     .iter()
-                    .filter_map(|((widget_id, _key), slot)| {
-                        slot.owed.take().map(|o| (*widget_id, o))
+                    .filter_map(|((widget_id, key), slot)| {
+                        slot.owed.take().map(|o| (*widget_id, *key, o))
                     }),
             )
             .collect()

@@ -38,7 +38,7 @@ use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Pl
 use crate::host::structures::clips::{self as model, Clip, TrackRow};
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, Input, KeyInput, Loaded, Needs, OnAxis, Samples, SlotFill,
-    SlotKey, Slotted, Swept, Take, TextureBody, TimeSpace, Verb,
+    SlotFrame, SlotKey, Slotted, Swept, Take, TimeSpace, Verb,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
@@ -58,10 +58,12 @@ mod hand;
 mod props;
 mod rows;
 mod verbs;
+mod views;
 
 // The children share one type and see each other's helpers: what one question
 // needs of another's answer is named rather than re-derived.
 use hand::{Block, Fading, Grab, Sizing};
+use views::{BoxView, take_frames};
 
 /// **How a box of notes is drawn**: the presentation its contents take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -106,22 +108,6 @@ const GAP: f32 = 4.0;
 
 /// A track's thickness when nothing says otherwise.
 const LANE_H: f32 = 96.0;
-
-/// **One span of a join**: a run of one take, as the `segments` prop names it.
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct Span {
-    /// The server buffer the span reads.
-    pub source: i32,
-    /// The frame of that take the span starts at.
-    pub start: f64,
-    /// How many frames **of the join** it contributes.
-    pub frames: f64,
-    /// **How many frames of its take one frame of the join is**: one, unless
-    /// that take was written at another rate, which a join reads through
-    /// rather than converting -- the same ratio the server's stitch reads it
-    /// by, so the picture and the sound are one statement.
-    pub rate: f64,
-}
 
 /// **How far a drag reaches for a neighbour's edge**, in device pixels.
 ///
@@ -243,14 +229,6 @@ pub struct Multitrack {
     /// source, on this multitrack's axis: the picture, the edge a hand pulls
     /// and the reader that sounds all cross by this one number.
     pub(super) rates: HashMap<String, f64>,
-    /// **The spans each join is made of**, by box name -- the `segments` prop.
-    ///
-    /// A box named here is drawn from the takes these spans read, span by span,
-    /// and its own source is never fetched: a join owns no samples, so the
-    /// picture is of the takes it is spans of, which are already drawn, and the
-    /// box is whole the moment the join is made instead of empty until its
-    /// buffer has been built and downloaded.
-    pub(super) segments: HashMap<String, Vec<Span>>,
     /// Which layers are **not drawn**, by curve name. What is hidden is not
     /// edited either, so hiding the layer in hand hands it back to the
     /// placement.
@@ -306,6 +284,14 @@ pub struct Multitrack {
     /// a picture, not a second implementation of one: what changes between the
     /// standalone view and this is the axis it is handed, and nothing else.
     takes: HashMap<i32, SignalElement>,
+    /// **Each box's view of its take**, by box name: the audio editor's
+    /// view, drawn at the box's window onto the take through a slot of its
+    /// own ([`views`]). Made from the take's body, so the summary is read once
+    /// however many boxes show it.
+    views: HashMap<String, BoxView>,
+    /// The last slot key a view was given; a view keeps its key for as long
+    /// as its box is there.
+    next_view: i64,
     /// **The takes drawn from their files' peaks**, by the number a box
     /// names its source by: each one's list, as the `lists` prop said it.
     /// Its body names the list ([`props::take_list_body`]) and asks for no buffer:
@@ -340,18 +326,6 @@ pub struct Multitrack {
     /// is drawn as its roll.
     #[cfg(feature = "notation")]
     scores: HashMap<String, ScoreBody>,
-    /// **The samples a spectral box owes its slot**, by buffer -- kept when they
-    /// land and transformed by the next [`Slotted::fills`], which takes them.
-    ///
-    /// A time-frequency picture is a texture, and a texture is uploaded rather
-    /// than drawn. The samples are kept rather than the analysis because the
-    /// element is cloned on a redefine and an analysis is neither cloneable nor
-    /// worth cloning; they are held only until the next tick asks.
-    ///
-    /// It is the multitrack's and not the body element's because a body over a
-    /// *server buffer* resolves its samples as a pyramid -- the right answer for
-    /// a trace, and nothing a transform can read.
-    pending: HashMap<i32, (Vec<f32>, usize)>,
     /// The drag in flight. **The state lives in the element**; the machine
     /// keeps only the sequence.
     grab: Option<Grab>,
@@ -377,7 +351,6 @@ impl Default for Multitrack {
             holding: None,
             loops: Vec::new(),
             rates: HashMap::new(),
-            segments: HashMap::new(),
             meters: HashMap::new(),
             zoom: HashMap::new(),
             curve_zoom: HashMap::new(),
@@ -392,13 +365,14 @@ impl Default for Multitrack {
             label: None,
             view: Presentation::Signal,
             takes: HashMap::new(),
+            views: HashMap::new(),
+            next_view: 0,
             listed: HashMap::new(),
             asked: HashSet::new(),
             rolls: HashMap::new(),
             notes_view: NotesView::default(),
             #[cfg(feature = "notation")]
             scores: HashMap::new(),
-            pending: HashMap::new(),
             grab: None,
             block: Vec::new(),
             fading: None,
@@ -512,6 +486,9 @@ impl Element for Multitrack {
         self.note_width((ctx.rect.w - ctx.indent).max(0.0));
         within(d, ctx.rect, |d| self.paint(d, ctx));
     }
+    fn draw_over(&self, d: &mut Draw, ctx: &Ctx) {
+        within(d, ctx.rect, |d| self.paint_over(d, ctx));
+    }
     fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
         within(d, ctx.rect, |d| self.paint_live(d, ctx));
     }
@@ -579,16 +556,10 @@ impl Element for Multitrack {
     /// Named once each, because the fetch is keyed by buffer and two clips over
     /// one recording are one download.
     fn needs(&self) -> Needs {
-        // **A join asks for the takes it reads, not for itself**: its spans
-        // are drawn from those, so its own buffer would be a second download
-        // of samples already on screen.
         let mut takes: Vec<i32> = self
             .clips
             .iter()
-            .flat_map(|c| match self.segments.get(&c.name) {
-                Some(spans) => spans.iter().map(|s| s.source).collect::<Vec<_>>(),
-                None => vec![c.source],
-            })
+            .map(|c| c.source)
             .filter(|n| *n >= 0 && !self.listed.contains_key(n))
             .collect();
         // **A take drawn from its file asks by its list**, the key the host
@@ -684,6 +655,24 @@ impl Element for Multitrack {
         Some(self)
     }
 
+    /// **A box's view, by the key its slot was drawn under** -- where a read
+    /// past its summary lands; [`SlotKey::SELF`] is the multitrack, which
+    /// takes its takes.
+    fn picture(&self, key: SlotKey) -> Option<&dyn Samples> {
+        if key == SlotKey::SELF {
+            return Some(self);
+        }
+        self.view_of(key).map(|v| &v.body as &dyn Samples)
+    }
+
+    fn picture_mut(&mut self, key: SlotKey) -> Option<&mut dyn Samples> {
+        if key == SlotKey::SELF {
+            return Some(self);
+        }
+        self.view_of_mut(key)
+            .map(|v| &mut v.body as &mut dyn Samples)
+    }
+
     fn on_axis(&self) -> Option<&dyn OnAxis> {
         Some(self)
     }
@@ -752,52 +741,24 @@ impl OnAxis for Multitrack {
 }
 
 impl Slotted for Multitrack {
-    /// **The spectral boxes**, each over its own take's texture: a
-    /// time-frequency picture samples one, so it is drawn in the GPU pass and
-    /// not into the mesh -- and this element holds several, one per buffer its
-    /// boxes are windows onto, which is why they are named by a key.
-    ///
-    /// Empty unless the widget's `view` asks for one, and empty for a box whose
-    /// take has not arrived: a picture of nothing is the frame around it.
-    fn texture_bodies(&self, ctx: &Ctx) -> Vec<TextureBody> {
-        self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
-            .into_iter()
-            .filter_map(|(n, rect, local)| {
-                let clip = self.clips.get(n)?;
-                let look = self.takes.get(&clip.source)?.texture_body()?;
-                Some(TextureBody {
-                    key: SlotKey(i64::from(clip.source)),
-                    rect,
-                    local,
-                    look,
-                })
-            })
-            .collect()
+    /// **What each box's view has for its slot**, under the view's own key:
+    /// the take's summary, the window and the grid its zoom read, or the
+    /// analysis a spectral view samples -- whatever the audio editor's view
+    /// of a take fills its slot with.
+    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
+        self.view_fills()
     }
 
-    /// **What each take body has for its slot**, under the buffer it draws.
-    ///
-    /// One entry per source rather than per box: the analysis is the take's, so
-    /// six boxes over one recording are one upload -- the same rule that makes
-    /// them one download.
-    fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
-        let pending: Vec<(i32, (Vec<f32>, usize))> = self.pending.drain().collect();
-        pending
-            .into_iter()
-            .filter_map(|(bufnum, (samples, channels))| {
-                let body = self.takes.get(&bufnum)?;
-                let stfts = crate::host::frame::stft_channels(
-                    crate::host::frame::deinterleave(&samples, channels),
-                    (
-                        body.spectral.fft_size,
-                        body.spectral.hop,
-                        body.spectral.wintype,
-                    ),
-                    body.editor.sample_rate,
-                );
-                Some((SlotKey(i64::from(bufnum)), SlotFill::Texture(stfts)))
-            })
-            .collect()
+    /// **The boxes' views, each in its box** ([`Self::view_slots`]).
+    fn slots(&self, ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
+        self.view_slots(ctx)
+    }
+
+    /// The card let go of every view's picture: each hands it over again.
+    fn slot_dropped(&mut self) {
+        for view in self.views.values_mut() {
+            Slotted::slot_dropped(&mut view.body);
+        }
     }
 }
 
@@ -819,6 +780,7 @@ impl Multitrack {
             self.takes.remove(gone);
         }
         self.listed = lists;
+        self.sync_views();
     }
 }
 
@@ -830,33 +792,26 @@ impl Samples for Multitrack {
     /// resolving a pyramid means is its answer and not a second copy of one.
     fn bulk_of(&mut self, bufnum: i32, data: Loaded) -> bool {
         let view = self.view;
-        // **The transform happens here for a spectral box**, because a body
-        // over a server buffer resolves its samples as a pyramid -- the right
-        // answer for a trace, and nothing a transform can read. The loader does
-        // exactly this for a standalone spectral view, from the same samples.
-        if view == Presentation::TimeFrequency
-            && let Loaded::Raw { samples, channels } = &data
-        {
-            self.pending
-                .insert(bufnum, (samples.clone(), (*channels).max(1)));
-        }
         // **A list's summary goes to the body that named it**: a take drawn
         // from its file is keyed by its source, and asked for by its list.
-        if let Some(body) = self
+        let source = self
             .takes
-            .iter_mut()
+            .iter()
             .find(|(n, body)| self.listed.contains_key(n) && body.source_buffer() == Some(bufnum))
-            .map(|(_, body)| body)
-        {
-            return body.bulk(data);
-        }
+            .map_or(bufnum, |(n, _)| *n);
         // **The unlabelled door**, because a body element asked for one source
         // and not for several: the plural ask is this widget's, and by the time
         // the samples reach the body they are the only ones it wanted.
-        self.takes
-            .entry(bufnum)
+        let took = self
+            .takes
+            .entry(source)
             .or_insert_with(|| take_body(bufnum, view))
-            .bulk(data)
+            .bulk(data);
+        // ...and every box of that take views it as it now stands.
+        if took {
+            self.refresh_views(source);
+        }
+        took
     }
 
     fn ask_takes(&mut self, all: bool) -> Vec<i32> {

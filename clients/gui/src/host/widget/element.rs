@@ -195,20 +195,6 @@ pub struct TextureLook {
     pub analysis: (usize, usize, i32),
 }
 
-/// One time-frequency picture a container draws **inside itself**: which of its
-/// slots the texture is, where it goes, and the window onto it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TextureBody {
-    /// Which of the element's slots holds the analysis.
-    pub key: SlotKey,
-    /// Where the picture goes, in window pixels.
-    pub rect: Rect,
-    /// The slice of the box's own span its rectangle shows.
-    pub local: crate::viewport::View,
-    /// How it is coloured and scaled.
-    pub look: TextureLook,
-}
-
 /// **An element's own measured x axis**: the body its picture is drawn in, the
 /// surface the axis answers to the pointer on, and the window it stands at.
 ///
@@ -849,6 +835,10 @@ impl TimeSpace {
 }
 
 /// What a claimed slot is fed this frame, with its resolved drawing rules.
+// A frame's description, built and read in one pass: the signal case is
+// nearly every slot there is, so boxing it would allocate per slot per frame
+// to shrink the rare shader's.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum SlotFrame {
     /// The shader slot: where in the placement to draw, the current source
@@ -907,6 +897,17 @@ pub enum SlotFrame {
         /// How a texture layer is coloured and scaled. Meaningless where the
         /// stack has none, and cheap enough to state anyway.
         look: TextureLook,
+        /// **The span of the samples a container placed this picture over**,
+        /// in the picture's own frames -- `None` for a view standing on its
+        /// own, which draws at its navigation group's window.
+        ///
+        /// It is what makes a multitrack's box the audio editor's view of its
+        /// take rather than a second picture of it: the same layers, read and
+        /// zoomed to the samples as that view is, drawn at the box's own
+        /// window onto the take. A placed picture draws its layers and
+        /// nothing else -- the rulers, the selection and the playhead are the
+        /// container's, drawn around it.
+        placed: Option<crate::viewport::View>,
     },
 }
 
@@ -2177,6 +2178,30 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **The view of samples a slot of this element draws**, by the
+    /// [`SlotKey`] it was described under -- where a read asked for that
+    /// picture lands: the span a zoom went past its summary into, the finer
+    /// grid under it.
+    ///
+    /// An element with one picture answers [`SlotKey::SELF`] with its own
+    /// [`samples`](Element::samples), which is the default. One that holds
+    /// several -- a multitrack's boxes, each the audio editor's view of its
+    /// take -- answers each by its key, so each is read and zoomed as that
+    /// view is.
+    fn picture(&self, key: SlotKey) -> Option<&dyn Samples> {
+        (key == SlotKey::SELF).then(|| self.samples()).flatten()
+    }
+
+    /// [`picture`](Element::picture), mutably -- the half a read lands
+    /// through.
+    fn picture_mut(&mut self, key: SlotKey) -> Option<&mut dyn Samples> {
+        if key == SlotKey::SELF {
+            self.samples_mut()
+        } else {
+            None
+        }
+    }
+
     /// **The measured axis of this element's own**, or `None` (the default).
     ///
     /// The second facet: an axis in hertz needs no history behind it (every bin
@@ -2419,33 +2444,6 @@ pub trait OnAxis {
 /// boxes -- declare what they want, hand over what they have, and are told when
 /// the card let go of it.
 pub trait Slotted {
-    /// **The look of a body whose picture is a texture**, or `None` (the
-    /// default) for one that draws into the shared mesh
-    /// ([`draw_body`](Element::draw_body)).
-    ///
-    /// The one body the frame cannot let draw itself: a time-frequency picture
-    /// samples an uploaded texture, so it goes to the GPU pass with the clip's
-    /// own axis and the clip's id -- the key its slot was filled under.
-    fn texture_body(&self) -> Option<TextureLook> {
-        None
-    }
-
-    /// **The time-frequency pictures this element wants drawn inside itself**,
-    /// each in its own rectangle and against its own local axis -- empty for
-    /// every element but the one that holds boxes.
-    ///
-    /// A spectral picture samples a texture, so it is drawn in the GPU pass and
-    /// not into the shared mesh: an element that draws one of its own says so
-    /// through [`slots`](Slotted::slots), and an element that holds *several*
-    /// -- a multitrack's boxes over several takes -- says so here, because each
-    /// is a window onto a different texture at a different place.
-    ///
-    /// The key names which of this element's slots the picture comes from, so
-    /// the pair `(widget id, key)` addresses it exactly as a slot is addressed.
-    fn texture_bodies(&self, _ctx: &Ctx) -> Vec<TextureBody> {
-        Vec::new()
-    }
-
     /// What the GPU slots this element claimed draw this frame, each under the
     /// [`SlotKey`] that addresses it **within the element**. Empty for an
     /// element that claimed none, which is the default. An element that claims

@@ -12,7 +12,7 @@
 use super::SignalElement;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{TextureLook, TimeSpace};
+use crate::host::widget::element::TimeSpace;
 use crate::host::widget::{GestureMap, GestureStep};
 
 impl SignalElement {
@@ -24,14 +24,6 @@ impl SignalElement {
         self.caps
             .navigable
             .then(|| GestureMap::of_plans(&[Select], &[Pan], &[Select], &[Select]))
-    }
-
-    /// The look of a time-frequency body, which the frame draws for the
-    /// element because it samples a texture: it goes to the GPU pass keyed by
-    /// the clip's id, against the clip's own axis. Every other presentation
-    /// draws itself ([`Self::draw_body`]).
-    pub fn texture_body(&self) -> Option<TextureLook> {
-        self.is_texture_view().then(|| self.look())
     }
 
     /// The take, drawn into a clip's rectangle against the clip's local axis:

@@ -20,6 +20,8 @@ use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscType};
 
+use crate::host::widget::element::SlotKey;
+
 /// Samples per `/buffer_getRange` request when pulling a server buffer: **8 kB
 /// of reply**, and the number is the carrier's rather than the buffer's.
 ///
@@ -182,7 +184,12 @@ pub(crate) enum SpanUse {
     /// A view zoomed past what its summary can answer, and which view it is:
     /// two views of one take are at two zooms over two spans, so a window is
     /// one view's and names it.
-    Window { def_id: i32, widget_id: i32 },
+    Window {
+        def_id: i32,
+        widget_id: i32,
+        /// Which of the widget's pictures ([`SlotKey`]).
+        key: SlotKey,
+    },
     /// **Another peer wrote here and said so** (`/buffer_touched`). The span
     /// comes back for every view of that buffer, not only the one that asked:
     /// what arrives is the buffer's own samples, so any picture of it is
@@ -211,6 +218,8 @@ pub(crate) enum FetchStep {
     Window {
         bufnum: i32,
         want: WaveWant,
+        /// Which of the asker's pictures ([`SlotKey`]).
+        key: SlotKey,
         start_frame: usize,
         channels: usize,
         samples: Vec<f32>,
@@ -290,7 +299,12 @@ pub(crate) enum PeaksFor {
     /// it, for every view of that buffer at that level.
     Summary,
     /// **A finer grid over the span one view is showing**, for that view.
-    Detail { def_id: i32, widget_id: i32 },
+    Detail {
+        def_id: i32,
+        widget_id: i32,
+        /// Which of the widget's pictures ([`SlotKey`]).
+        key: SlotKey,
+    },
 }
 
 /// **A summary asked for, over a span at one bucket**: the take's own at the
@@ -593,13 +607,21 @@ impl BufferFetches {
                     channels: fetch.channels,
                     samples: fetch.samples,
                 },
-                (start_frame, SpanUse::Window { def_id, widget_id }) => FetchStep::Window {
+                (
+                    start_frame,
+                    SpanUse::Window {
+                        def_id,
+                        widget_id,
+                        key,
+                    },
+                ) => FetchStep::Window {
                     bufnum,
                     want: WaveWant {
                         def_id,
                         widget_id,
                         shape_only: false,
                     },
+                    key,
                     start_frame,
                     channels: fetch.channels,
                     samples: fetch.samples,
@@ -743,6 +765,7 @@ impl BufferFetches {
         bufnum: i32,
         def_id: i32,
         widget_id: i32,
+        key: SlotKey,
         (start, frames): (usize, usize),
         seen: (usize, usize),
         bucket: usize,
@@ -752,7 +775,11 @@ impl BufferFetches {
             return None;
         }
         let (start, frames) = align_span(start, frames, bucket);
-        let purpose = PeaksFor::Detail { def_id, widget_id };
+        let purpose = PeaksFor::Detail {
+            def_id,
+            widget_id,
+            key,
+        };
         if let Some(old) = self.peaks.iter().position(|a| a.purpose == purpose) {
             let old = &self.peaks[old];
             if old.bufnum == bufnum
@@ -1118,7 +1145,11 @@ mod tests {
 
     /// A span asked for by one view, which is what a zoom is.
     fn window(def_id: i32, widget_id: i32) -> SpanUse {
-        SpanUse::Window { def_id, widget_id }
+        SpanUse::Window {
+            def_id,
+            widget_id,
+            key: SlotKey::SELF,
+        }
     }
 
     fn ints(msg: &OscMessage) -> Vec<i32> {
@@ -1251,6 +1282,7 @@ mod tests {
             start_frame,
             channels: got_channels,
             samples,
+            ..
         } = step
         else {
             panic!("a finished span is a window");
@@ -1730,13 +1762,31 @@ mod tests {
     fn a_detail_grid_is_one_conversation_per_view() {
         let mut fetches = BufferFetches::default();
         let msg = fetches
-            .want_detail(7, 1, 100, (4_096, 8_192), (4_096, 12_288), 32, 2)
+            .want_detail(
+                7,
+                1,
+                100,
+                SlotKey::SELF,
+                (4_096, 8_192),
+                (4_096, 12_288),
+                32,
+                2,
+            )
             .expect("the grid asks");
         assert_eq!(msg.addr, "/buffer_peaks");
         assert_eq!(ints(&msg), vec![7, 32, 4_096, 8_192]);
         assert!(
             fetches
-                .want_detail(7, 1, 100, (4_096, 8_192), (4_096, 12_288), 32, 2)
+                .want_detail(
+                    7,
+                    1,
+                    100,
+                    SlotKey::SELF,
+                    (4_096, 8_192),
+                    (4_096, 12_288),
+                    32,
+                    2
+                )
                 .is_none(),
             "the same grid is already on its way"
         );
@@ -1744,14 +1794,23 @@ mod tests {
         // covers what is on screen, so it is let land rather than replaced.
         assert!(
             fetches
-                .want_detail(7, 1, 100, (5_120, 8_192), (8_000, 10_000), 32, 2)
+                .want_detail(
+                    7,
+                    1,
+                    100,
+                    SlotKey::SELF,
+                    (5_120, 8_192),
+                    (8_000, 10_000),
+                    32,
+                    2
+                )
                 .is_none(),
             "the grid on its way covers the view"
         );
         // Another view of the same take, at its own zoom over its own span.
         assert!(
             fetches
-                .want_detail(7, 1, 200, (0, 8_192), (0, 8_192), 64, 2)
+                .want_detail(7, 1, 200, SlotKey::SELF, (0, 8_192), (0, 8_192), 64, 2)
                 .is_some()
         );
 
@@ -1767,7 +1826,8 @@ mod tests {
             done.purpose,
             PeaksFor::Detail {
                 def_id: 1,
-                widget_id: 100
+                widget_id: 100,
+                key: SlotKey::SELF,
             }
         );
         assert_eq!(
@@ -1828,7 +1888,16 @@ mod tests {
         let far = 3_000_000_000usize;
         let mut fetches = BufferFetches::default();
         let msg = fetches
-            .want_detail(-2, 1, 10, (far, 8_192), (far, far + 8_192), 64, 1)
+            .want_detail(
+                -2,
+                1,
+                10,
+                SlotKey::SELF,
+                (far, 8_192),
+                (far, far + 8_192),
+                64,
+                1,
+            )
             .expect("the grid asks");
         assert_eq!(
             msg.args[2..],
@@ -1857,18 +1926,18 @@ mod tests {
     fn a_detail_grid_is_asked_for_on_whole_buckets() {
         let mut fetches = BufferFetches::default();
         let msg = fetches
-            .want_detail(3, 1, 10, (1_000, 500), (1_000, 1_500), 64, 1)
+            .want_detail(3, 1, 10, SlotKey::SELF, (1_000, 500), (1_000, 1_500), 64, 1)
             .expect("the grid asks");
         assert_eq!(ints(&msg), vec![3, 64, 960, 576]);
         // Nothing to summarize: a span shorter than one bucket.
         assert!(
             fetches
-                .want_detail(3, 1, 10, (0, 32), (0, 32), 64, 1)
+                .want_detail(3, 1, 10, SlotKey::SELF, (0, 32), (0, 32), 64, 1)
                 .is_none()
         );
         assert!(
             fetches
-                .want_detail(3, 1, 10, (0, 640), (0, 640), 0, 1)
+                .want_detail(3, 1, 10, SlotKey::SELF, (0, 640), (0, 640), 0, 1)
                 .is_none()
         );
     }

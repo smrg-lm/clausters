@@ -560,14 +560,20 @@ pub(super) fn draw_timeline_meshes(
             (_, true) => nyquist * 2.0,
             _ => inputs.world.sample_rate,
         };
-        draw_time_ruler(
-            &mut Draw::new(mesh, m, th),
-            item.rect,
-            body,
-            &nav,
-            rate,
-            &item.editor,
-        );
+        // **A placed picture is its container's to rule**: a box draws its
+        // layers inside the box, and the axis, the gutter and what stands
+        // over them are the multitrack's.
+        let own = item.placed.is_none();
+        if own {
+            draw_time_ruler(
+                &mut Draw::new(mesh, m, th),
+                item.rect,
+                body,
+                &nav,
+                rate,
+                &item.editor,
+            );
+        }
         // The rows are the lanes and the channels are the data: the count comes
         // from whichever picture resolved, and overlaid traces share one row
         // (and one vertical) however many channels there are.
@@ -595,7 +601,7 @@ pub(super) fn draw_timeline_meshes(
         }
         // In a pane the gutter is the body in hand's: a take not in hand
         // leaves it to the curve that is, folded strip names included.
-        if item.editor.ruler_y != RulerY::Off && item.rules_y {
+        if own && item.editor.ruler_y != RulerY::Off && item.rules_y {
             for ch in 0..rows {
                 let row = look.lanes.rect(body, rows, ch);
                 // A folded row is a strip with the channel's name where its
@@ -644,8 +650,11 @@ pub(super) fn draw_timeline_meshes(
             }
         }
         // The picture itself, placed on the *local* window: a member of a group
-        // draws its own samples where it sits.
-        let local = placed_nav(&nav, item.editor.offset);
+        // draws its own samples where it sits, and a picture a container
+        // placed draws the span of them it was placed over.
+        let local = item
+            .placed
+            .unwrap_or_else(|| placed_nav(&nav, item.editor.offset));
         if let Some(slot) = wave {
             // **The picture says when it has stopped resolving.** A column
             // finer than the summary's bucket can only be drawn from something
@@ -786,6 +795,9 @@ pub(super) fn draw_timeline_meshes(
         // The active frequency scale, named over the view (the live views'
         // corner slot) -- log/mel/bark are not tellable apart from the tick
         // spacing at a glance. Only where a texture is what the axis measures.
+        if !own {
+            continue;
+        }
         if axis == Domain::Frequency {
             crate::host::graphics::corner_text(
                 &mut Draw::new(over, m, th),

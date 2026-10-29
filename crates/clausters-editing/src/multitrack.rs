@@ -310,58 +310,6 @@ pub fn tracks(multitrack: &Multitrack) -> Vec<Value> {
     out
 }
 
-/// **The spans each join on screen is made of**, as the widget's flat
-/// `box source start frames rate` quintuples: the take each span reads, the
-/// frame of it the span starts at, how many frames of **the join** it
-/// contributes, and how many frames of that take one frame of the join is --
-/// one, unless the take was written at another rate, which a join reads
-/// through rather than converting (`clausters_core`'s stitch says the same
-/// thing to the server).
-///
-/// What lets a join be drawn from the takes it is spans of instead of from its
-/// own buffer, which owns no samples and is built on the server after the edit
-/// that made it: the picture is whole the moment the join is, and the join's
-/// buffer is never downloaded. A box whose source is not a join this caller
-/// knows is not named; nor is one with a span this caller cannot resolve to a
-/// buffer and a length, which is then drawn from its own buffer as any box is.
-pub fn segments(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
-    let mut out = Vec::new();
-    for box_ in picture::boxes(multitrack) {
-        let Some(parts) = box_.source.and_then(|id| look.sources.parts(id)) else {
-            continue;
-        };
-        let spans: Option<Vec<[Value; 5]>> = parts
-            .iter()
-            .map(|part| {
-                let source = part.source.source;
-                let bufnum = look.sources.bufnum(source);
-                let (start, frames) = match &part.source.range {
-                    Some(range) => (range.start, range.len()),
-                    None => (0, look.sources.frames(source)?),
-                };
-                // The span reads `frames` of its take; what it contributes to
-                // the join is that span crossed by the take's own rate, which
-                // is the number the picture steps by.
-                let rate = span_rate(look, part.source.source, box_.source);
-                let contributed = (frames as f64 / rate).round().max(0.0) as u64;
-                (bufnum >= 0 && frames > 0 && contributed > 0).then(|| {
-                    [
-                        json!(box_.region.0.to_string()),
-                        json!(bufnum),
-                        json!(start),
-                        json!(contributed),
-                        json!(rate),
-                    ]
-                })
-            })
-            .collect();
-        if let Some(spans) = spans {
-            out.extend(spans.into_iter().flatten());
-        }
-    }
-    out
-}
-
 /// **How many frames of a box's source one sample of the box is**: the source's
 /// own rate against the axis the box is measured on, times the box's playrate.
 ///
@@ -394,20 +342,6 @@ pub fn rates(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
         }
     }
     out
-}
-
-/// **How many frames of a span's take one frame of the join is**: the take's
-/// own rate against the join's, which is what a part of a join at another rate
-/// is read through -- on the server by `dsp::stitch` and here by the drawing,
-/// off the same two numbers.
-fn span_rate(look: &Look<'_>, part: SourceId, join: Option<SourceId>) -> f64 {
-    let take = look.source_rate(Some(part));
-    let whole = look.source_rate(join);
-    if take > 0.0 && whole > 0.0 {
-        take / whole
-    } else {
-        1.0
-    }
 }
 
 pub fn clips(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
@@ -637,7 +571,6 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     out.insert("hidden".into(), json!(hidden(multitrack)));
     out.insert("loops".into(), json!(loops(multitrack)));
     out.insert("rates".into(), Value::Array(rates(multitrack, look)));
-    out.insert("segments".into(), Value::Array(segments(multitrack, look)));
     out.insert("notes".into(), Value::Array(notes(multitrack, look)));
     out
 }

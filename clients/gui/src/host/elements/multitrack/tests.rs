@@ -205,17 +205,18 @@ fn a_box_of_notes_is_a_roll_and_a_box_of_samples_is_a_take() {
     );
 }
 
-/// **A spectral box is a texture of its own**, named by the take it draws:
-/// a time-frequency picture samples one, so it goes to the GPU pass rather
-/// than into the mesh, and this element holds one per buffer its boxes are
-/// windows onto.
+/// **A spectral box is the audio editor's spectral view of its take**: the
+/// box's view draws its stack with the texture in it, at the box's window,
+/// and fills that texture under the view's own slot -- nothing of the
+/// multitrack's own analyzes or draws it.
 #[test]
-fn a_spectral_box_names_the_take_its_texture_is() {
-    use crate::host::widget::element::SlotKey;
+fn a_spectral_box_is_its_views_spectrogram() {
+    use crate::host::graphics::signal::layers::Paint;
+    use crate::host::widget::element::{SlotFill, SlotFrame};
     let mut mt = from_props(&props(
         r#"{"view": "spectrogram",
             "tracks": ["one", "", 100, 0, 0, 1.0, 1],
-            "clips": ["a", "one", 0, 48000, 0, "", 3]}"#,
+            "clips": ["a", "one", 0, 4096, 0, "", 3]}"#,
     ));
     let world = crate::host::world::World::default();
     let metrics = crate::host::metrics::Metrics::default();
@@ -225,14 +226,20 @@ fn a_spectral_box_names_the_take_its_texture_is() {
         rect: Rect::new(0.0, 0.0, 800.0, 200.0),
         indent: 0.0,
         scale: 1.0,
-        time: None,
+        time: Some(TimeSpace::of(
+            View {
+                start: 0.0,
+                len: 4096.0,
+            },
+            4096.0,
+        )),
         clip: None,
         focused: false,
         hovered: false,
         clock: 0.0,
     };
     assert!(
-        mt.texture_bodies(&ctx).is_empty(),
+        mt.slots(&ctx).is_empty(),
         "a picture of nothing is the frame around it"
     );
     mt.bulk_of(
@@ -242,12 +249,22 @@ fn a_spectral_box_names_the_take_its_texture_is() {
             channels: 1,
         },
     );
-    let bodies = mt.texture_bodies(&ctx);
-    assert_eq!(bodies.len(), 1, "one box, one picture");
-    assert_eq!(bodies[0].key, SlotKey(3), "named by the take it draws");
-    let fills = mt.fills();
-    assert_eq!(fills.len(), 1, "and one upload, however many boxes read it");
-    assert_eq!(fills[0].0, SlotKey(3));
+    let key = mt.views["a"].key;
+    let slots = mt.slots(&ctx);
+    assert!(
+        matches!(
+            slots.as_slice(),
+            [(k, SlotFrame::Signal { layers, placed: Some(_), .. })]
+                if *k == key && layers.has(Paint::Spectrogram)
+        ),
+        "the box's view, with its texture: {slots:?}"
+    );
+    assert!(
+        mt.fills()
+            .iter()
+            .any(|(k, f)| *k == key && matches!(f, SlotFill::Texture(_))),
+        "and its texture, under the view's own slot"
+    );
 }
 
 /// The pitch window a roll body is fitted to is the crate's rule, so a box
@@ -2195,66 +2212,28 @@ fn the_grip_a_drag_is_holding_does_not_depend_on_the_pointer() {
     );
 }
 
-/// **A join asks for the takes it reads, not for itself** -- and draws from
-/// them -- while a box that is not a join asks for its own buffer as always.
+/// **A join is a list of the parts it is made of**, asked for, drawn and
+/// bounded as a take drawn from its file is: its box names no buffer to
+/// fetch, and an edge stops where the list does, known the moment the list
+/// is named and before any of its summary has arrived.
 #[test]
-fn a_join_asks_for_the_takes_its_spans_read_and_not_for_its_own_buffer() {
-    let mt = from_props(&props(
-        r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1],
-            "clips": ["join", "one", 0, 400, 0, "", 9,
-                      "plain", "one", 400, 100, 0, "", 5],
-            "segments": ["join", 7, 200, 200, 1, "join", 7, 0, 200, 1]}"#,
-    ));
-    assert_eq!(
-        mt.needs().takes,
-        vec![5, 7],
-        "the join's spans read buffer 7, and buffer 9 is never fetched"
-    );
-    let spans = &mt.segments["join"];
-    assert_eq!(spans.len(), 2, "in the order they play");
-    assert_eq!(
-        (spans[0].source, spans[0].start, spans[0].frames),
-        (7, 200.0, 200.0)
-    );
-    assert_eq!(
-        (spans[1].source, spans[1].start, spans[1].frames),
-        (7, 0.0, 200.0)
-    );
-}
-
-/// **A span that reads nothing is dropped**, and a box whose spans are all
-/// dropped is not named, so it is drawn from its own buffer.
-#[test]
-fn a_span_that_reads_nothing_is_dropped() {
-    let mt = from_props(&props(
-        r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1],
-            "clips": ["join", "one", 0, 400, 0, "", 9],
-            "segments": ["join", -1, 0, 200, 1, "join", 7, 0, 0, 1, "join", 7]}"#,
-    ));
-    assert!(mt.segments.is_empty());
-    assert_eq!(mt.needs().takes, vec![9], "back to the box's own buffer");
-}
-
-/// **A join stops at its spans.** A join's own buffer is never fetched -- it is
-/// drawn from the takes its spans read -- so a bound asked of the takes found
-/// nothing for it, and an edge drag pulled a join past the end of its samples
-/// while every other box stopped at its last frame. Its length is the sum of
-/// its spans, known before any sample has arrived.
-#[test]
-fn a_join_is_trimmed_no_further_than_its_spans() {
+fn a_join_is_a_list_and_its_box_stops_where_the_list_does() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    // Two 300-frame spans of take 0; the join's own buffer, 5, is never asked for.
+    // Two 300-frame parts of one file, the second half first.
     let mut mt = from_props(&props(
         r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 400, 0, "", 5],
-            "segments": ["a", 0, 0, 300, 1, "a", 0, 300, 300, 1]}"#,
+            "lists": {"5": {"channels": 1, "sample_rate": 48000.0, "parts": [
+                {"path": "/take.wav", "start": 300, "frames": 300,
+                 "source_channels": 1, "source_frames": 600, "source_rate": 48000.0},
+                {"path": "/take.wav", "start": 0, "frames": 300,
+                 "source_channels": 1, "source_frames": 600, "source_rate": 48000.0}]}}}"#,
     ));
-    assert_eq!(
-        mt.needs().takes,
-        vec![0],
-        "a join asks for the takes it reads"
+    assert!(
+        mt.needs().takes.is_empty(),
+        "a join asks for its list once the host names it, never for a buffer"
     );
     assert_eq!(mt.contents_of(0).total, Some(600.0));
 
@@ -2268,8 +2247,106 @@ fn a_join_is_trimmed_no_further_than_its_spans() {
     mt.release(far, true, &input(&m, rect, len));
     assert_eq!(
         mt.clips[0].place.dur, 600.0,
-        "the edge stops where the spans end"
+        "the edge stops where the list ends"
     );
+}
+
+/// **A box of samples is the audio editor's view of its take, placed**: a
+/// view per box, made from the take's body and filled under a slot key of
+/// its own, drawn in the box over the box's window onto the take -- and
+/// what a read past the summary brings lands on that box's view and no
+/// other, since two boxes over one take show two spans of it.
+#[test]
+fn each_box_is_its_own_view_of_its_take_drawn_at_its_window() {
+    use crate::host::widget::element::{Loaded, SlotFill, SlotFrame, SlotKey};
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "one", 0, 400, 100, "", 1,
+                      "b", "one", 500, 400, 600, "", 1],
+            "lists": {"1": {"channels": 1, "sample_rate": 48000.0, "parts": [
+                {"path": "/take.wav", "start": 0, "frames": 1000,
+                 "source_channels": 1, "source_frames": 1000, "source_rate": 48000.0}]}}}"#,
+    ));
+    for body in mt.secondary_samples() {
+        assert!(body.name_list(-7));
+    }
+    // The take's summary, as the disk answers a list: peaks, no samples.
+    let samples: Vec<f32> = (0..1000).map(|i| (i as f32 / 100.0).sin()).collect();
+    mt.bulk_of(
+        -7,
+        Loaded::Peaks(std::sync::Arc::new(
+            crate::waveform::WaveformData::with_multi_pyramid(
+                clausters_core::peaks::MultiPyramid::build_interleaved(&samples, 1, 64),
+            ),
+        )),
+    );
+    let (a, b) = (mt.views["a"].key, mt.views["b"].key);
+    assert_ne!(a, b, "a slot each");
+    assert!(a != SlotKey::SELF && b != SlotKey::SELF);
+    let fills: Vec<SlotKey> = mt
+        .fills()
+        .into_iter()
+        .filter(|(_, f)| matches!(f, SlotFill::Geometry(_)))
+        .map(|(k, _)| k)
+        .collect();
+    assert!(
+        fills.contains(&a) && fills.contains(&b),
+        "each view fills its own slot: {fills:?}"
+    );
+    assert!(mt.fills().is_empty(), "and once, until it changes");
+
+    let world = crate::host::world::World::default();
+    let metrics = Metrics::default();
+    let ctx = Ctx {
+        world: &world,
+        metrics: &metrics,
+        rect: Rect::new(0.0, 0.0, 1000.0, 200.0),
+        indent: 0.0,
+        scale: 1.0,
+        time: Some(TimeSpace::of(
+            View {
+                start: 0.0,
+                len: 1000.0,
+            },
+            1000.0,
+        )),
+        clip: None,
+        focused: false,
+        hovered: false,
+        clock: 0.0,
+    };
+    let placed: Vec<(SlotKey, f32, View)> = mt
+        .slots(&ctx)
+        .into_iter()
+        .filter_map(|(key, frame)| match frame {
+            SlotFrame::Signal {
+                body,
+                placed: Some(window),
+                ..
+            } => Some((key, body.x, window)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(placed.len(), 2, "one placed picture per box: {placed:?}");
+    let (_, ax, aw) = placed.iter().find(|p| p.0 == a).expect("box a");
+    let (_, bx, bw) = placed.iter().find(|p| p.0 == b).expect("box b");
+    assert!(ax < bx, "each where its box is");
+    assert_eq!(
+        (aw.start, aw.len),
+        (100.0, 400.0),
+        "a's window onto the take"
+    );
+    assert_eq!((bw.start, bw.len), (600.0, 400.0), "b's");
+
+    // A run of samples read for box b lands on b's view, and only there.
+    assert!(
+        mt.picture_mut(b)
+            .expect("b's view")
+            .set_window(600, 1, &[0.5; 400])
+    );
+    let refilled: Vec<SlotKey> = mt.fills().into_iter().map(|(k, _)| k).collect();
+    assert_eq!(refilled, vec![b], "only b's picture changed");
+    assert!(mt.picture(SlotKey(i64::MAX)).is_none());
 }
 
 /// **A box whose source was written at another rate is bounded in its own
@@ -2541,6 +2618,7 @@ fn a_box_paints_its_fades_and_none_under_a_pixel() {
         let mut mesh = Mesh::new();
         let theme = Theme::default();
         mt.draw(&mut Draw::new(&mut mesh, &metrics, &theme), &ctx);
+        mt.draw_over(&mut Draw::new(&mut mesh, &metrics, &theme), &ctx);
         mesh.vertex_count()
     };
     let trapezoid = |fade_in: f64, fade_out: f64| {

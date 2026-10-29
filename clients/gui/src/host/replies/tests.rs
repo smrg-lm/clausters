@@ -9,7 +9,7 @@ use super::Front;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::Owed;
 use crate::host::instance::Leg;
-use crate::host::widget::element::Loaded;
+use crate::host::widget::element::{Loaded, SlotKey};
 use crate::host::{ClientId, GUI_DEF, GUI_SET, Host};
 
 /// A front that keeps what it was told to send, and a window that is open.
@@ -49,8 +49,8 @@ impl Front for Probe {
         }
         None
     }
-    fn release_slot(&mut self, _def_id: i32, _widget_id: i32) {}
-    fn take_owed(&self, _def_id: i32) -> Vec<(i32, Owed)> {
+    fn release_slot(&mut self, _def_id: i32, _widget_id: i32, _key: SlotKey) {}
+    fn take_owed(&self, _def_id: i32) -> Vec<(i32, SlotKey, Owed)> {
         Vec::new()
     }
     fn stale_columns(&self, _def_id: i32, _widget_id: i32, _frames: usize) -> bool {

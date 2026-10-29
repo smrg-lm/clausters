@@ -31,18 +31,6 @@ pub(super) struct RulerItem {
     pub(super) body: Option<Rect>,
 }
 
-pub(super) struct SpectralBodyItem {
-    pub(super) id: i32,
-    /// Which of the widget's pictures this is -- the pair `(id, key)` addresses
-    /// a slot, so a view holding several boxes over several takes has one entry
-    /// per take rather than one per widget.
-    pub(super) key: SlotKey,
-    pub(super) rect: Rect,
-    pub(super) local: View,
-    pub(super) clip: Option<Rect>,
-    pub(super) look: crate::host::widget::element::TextureLook,
-}
-
 /// **What a placed editor-grade signal view draws**, as the element stated it:
 /// its layer stack and everything the layers are mapped through.
 ///
@@ -107,6 +95,10 @@ pub(super) struct TimelineItem {
     /// a pane only while it is the body the gutter is ruled for
     /// ([`crate::host::layers::child_rules_y`]).
     pub(super) rules_y: bool,
+    /// The span of the samples a container placed this picture over, in its
+    /// own frames ([`SlotFrame::Signal`]'s `placed`); `None` draws at the
+    /// group's window, with the view's chrome.
+    pub(super) placed: Option<View>,
 }
 
 /// A placed `canvas` widget, copied out of the host tree: its viewport body, the
@@ -125,7 +117,6 @@ pub(super) struct CanvasFrame {
 /// released, so the meshes and GPU uploads never touch the host tree.
 pub(super) struct Collected {
     pub(super) timeline_items: Vec<TimelineItem>,
-    pub(super) spectral_bodies: Vec<SpectralBodyItem>,
     pub(super) ruler_items: Vec<RulerItem>,
     pub(super) canvas_frames: Vec<CanvasFrame>,
 }
@@ -142,7 +133,6 @@ pub(super) fn collect_widgets(
     theme: &Theme,
 ) -> Collected {
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
-    let mut spectral_bodies: Vec<SpectralBodyItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     for p in placed {
@@ -266,24 +256,6 @@ pub(super) fn collect_widgets(
                 // claimed slot draws this frame. The set of slots is closed and
                 // is the frame's, so this match is over pipelines the window
                 // already has -- never over what the element is.
-                // The time-frequency pictures a container draws **inside**
-                // itself, each over its own box: they sample a texture, so they
-                // go to the GPU pass rather than into the mesh, keyed by the
-                // slot they come from.
-                if let Some(id) = p.widget.id
-                    && let Some(slotted) = el.slotted()
-                {
-                    for body in slotted.texture_bodies(&ctx) {
-                        spectral_bodies.push(SpectralBodyItem {
-                            id,
-                            key: body.key,
-                            rect: body.rect,
-                            local: body.local,
-                            clip: p.clip,
-                            look: body.look,
-                        });
-                    }
-                }
                 for (key, slot) in p.widget.id.into_iter().flat_map(|id| {
                     el.slotted()
                         .map(|s| s.slots(&ctx))
@@ -295,7 +267,7 @@ pub(super) fn collect_widgets(
                     // A timeline slot is half an item: the element said where
                     // its picture goes and at what vertical window, the axis
                     // says the rest (the chrome every group member shares).
-                    let mut timeline = |body: Rect, look: TimelineLook| {
+                    let mut timeline = |body: Rect, look: TimelineLook, window: Option<View>| {
                         el.note_width(body.w);
                         if let Some(editor) = p.widget.kind.editor() {
                             timeline_items.push(TimelineItem {
@@ -303,17 +275,27 @@ pub(super) fn collect_widgets(
                                 key: slot_key,
                                 rect: p.rect,
                                 body,
-                                clip: p.clip,
+                                // A placed picture is cut to its container:
+                                // a box scrolled half off the stack is not
+                                // drawn over what stands beside it.
+                                clip: match window {
+                                    Some(_) => Some(p.clip.map_or(p.rect, |c| c.intersect(p.rect))),
+                                    None => p.clip,
+                                },
                                 ink,
                                 theme: p.widget.theme.clone(),
                                 look,
                                 editor: editor.clone(),
                                 pending: el.pending_edit().cloned(),
-                                axis_owned: p.pane(placed).is_none(),
-                                written: el.samples().and_then(Samples::written),
+                                axis_owned: p.pane(placed).is_none() && window.is_none(),
+                                written: match window {
+                                    Some(_) => el.picture(slot_key).and_then(Samples::written),
+                                    None => el.samples().and_then(Samples::written),
+                                },
                                 rules_y: p.pane(placed).is_none_or(|(owner, index)| {
                                     crate::host::layers::child_rules_y(owner, index)
                                 }),
+                                placed: window,
                             });
                         }
                     };
@@ -339,6 +321,7 @@ pub(super) fn collect_widgets(
                             lanes,
                             loudness,
                             look,
+                            placed: window,
                         } => timeline(
                             body,
                             TimelineLook {
@@ -351,6 +334,7 @@ pub(super) fn collect_widgets(
                                 loudness,
                                 look,
                             },
+                            window,
                         ),
                     }
                 }
@@ -370,7 +354,6 @@ pub(super) fn collect_widgets(
 
     Collected {
         timeline_items,
-        spectral_bodies,
         ruler_items,
         canvas_frames,
     }

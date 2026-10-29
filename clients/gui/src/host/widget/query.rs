@@ -290,15 +290,6 @@ impl WidgetKind {
         self.as_element().and_then(Element::gesture_map)
     }
 
-    /// **The look of a body whose picture is a texture** -- the one body the
-    /// frame routes to the GPU pass itself, keyed by the clip that holds it
-    /// ([`Slotted::texture_body`]).
-    pub fn texture_body(&self) -> Option<super::element::TextureLook> {
-        self.as_element()
-            .and_then(Element::slotted)
-            .and_then(Slotted::texture_body)
-    }
-
     /// **What this widget reserves left of its body** on a shared time axis: a
     /// lane's header, a roll's keyboard, an element's value ruler. A
     /// `timeruler` asks for nothing -- it has no chrome, it only labels whatever
@@ -496,6 +487,18 @@ impl WidgetKind {
     /// summary refresh and a view's own request go through.
     pub fn as_samples_mut(&mut self) -> Option<&mut dyn Samples> {
         self.as_element_mut()?.samples_mut()
+    }
+
+    /// **The view of samples slot `key` of this kind's element draws**
+    /// ([`Element::picture`]) -- its own samples for
+    /// [`SlotKey::SELF`](super::element::SlotKey::SELF).
+    pub fn as_picture(&self, key: super::element::SlotKey) -> Option<&dyn Samples> {
+        self.as_element()?.picture(key)
+    }
+
+    /// [`as_picture`](WidgetKind::as_picture), mutably.
+    pub fn as_picture_mut(&mut self, key: super::element::SlotKey) -> Option<&mut dyn Samples> {
+        self.as_element_mut()?.picture_mut(key)
     }
 
     /// The measured-axis facet of whatever element this kind holds, or `None`.
