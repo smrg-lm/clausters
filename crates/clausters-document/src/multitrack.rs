@@ -52,6 +52,7 @@ pub mod edit;
 pub mod handle;
 pub mod nodes;
 pub mod picture;
+pub mod read;
 
 /// Anything a newer writer wrote that this build has no field for, carried so a
 /// round trip through an older reader does not lose it.

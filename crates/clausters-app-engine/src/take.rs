@@ -9,6 +9,12 @@
 //! [`PartSpan::read_with`] composes a frame from its source through the
 //! part's map, rate and fades, and [`Reader`] reads a span of a PCM file.
 //!
+//! A multitrack's track is read the same way, from its regions rather than
+//! from parts back to back ([`PlacedRead`]): each region is a window onto
+//! its source placed on the track, read through the core's
+//! [`RegionSpan::read_with`], and the regions that cross a frame are summed.
+//! What a reading thread renders is either ([`TakeRead`]).
+//!
 //! [`TakeFeed`] is one take's reading: a fed stream per channel of the take,
 //! each mono, and one thread of the application serving all of them. A
 //! request is a frame and an epoch from that channel's reader, and the
@@ -27,6 +33,7 @@ use clausters_core::threads::Spawned;
 use clausters::dsp::ListWrap;
 use clausters::dsp::fed::{Fed, Feeder, feed};
 use clausters_core::pcm::{Layout, Reader};
+use clausters_core::regions::RegionSpan;
 use clausters_core::segments::{Cut, FadeShape, PartSpan, rate_between};
 use clausters_document::clipboard::SegmentPart;
 use clausters_document::parts::tree::Node;
@@ -295,6 +302,230 @@ impl ReadList {
     }
 }
 
+/// **What a region reads**, as its reader holds it: a file's layout, or a
+/// join's parts read as a take of their own.
+#[derive(Debug)]
+enum Source {
+    File(Arc<Layout>),
+    Parts(ReadList),
+}
+
+/// **A multitrack's track as it is read**: its regions, each a window onto
+/// a source placed on the track's frames, and what each source is.
+///
+/// A frame is the sum of the regions that cross it. They are kept by where
+/// they start, with the longest one's length, so the regions that cross a
+/// span are found by two searches and read one by one: a track of
+/// thousands of regions costs, per turn, the regions under the span.
+#[derive(Debug)]
+pub struct PlacedRead {
+    regions: Vec<RegionSpan>,
+    sources: Vec<Arc<Source>>,
+    longest: u64,
+    channels: usize,
+    frames: u64,
+}
+
+impl PlacedRead {
+    /// **`list` read as a track `channels` wide**, each file's header read
+    /// once through `headers`, a join's parts read at the join's own rate
+    /// (each region's step counts the source's rate). A file that cannot be
+    /// read is a refusal naming it; a region whose source the list does not
+    /// hold is silent.
+    pub fn over(
+        list: &clausters_apps::editing::held::PlacedList,
+        channels: usize,
+        headers: &mut Headers,
+        counts: &Arc<Counts>,
+    ) -> Result<PlacedRead, String> {
+        use clausters_apps::editing::held::PlacedSource;
+        let mut read: HashMap<SourceId, (Arc<Source>, usize)> = HashMap::new();
+        for (id, source) in list.sources.iter() {
+            let (source, frames) = match source {
+                PlacedSource::File(file) => {
+                    let layout = headers.layout(&file.path)?;
+                    let frames = layout.frames as usize;
+                    (Source::File(layout), frames)
+                }
+                PlacedSource::Parts(parts) => {
+                    let parts = ReadList::over(parts, parts.rate, headers, counts)?;
+                    let frames = parts.frames() as usize;
+                    (Source::Parts(parts), frames)
+                }
+            };
+            read.insert(*id, (Arc::new(source), frames));
+        }
+        let mut regions = Vec::new();
+        let mut sources = Vec::new();
+        for placed in list.regions.iter() {
+            let Some((source, frames)) = read.get(&placed.source) else {
+                continue;
+            };
+            let span = RegionSpan::new(placed.cut.clone(), *frames);
+            if span.end() > span.first() {
+                regions.push(span);
+                sources.push(Arc::clone(source));
+            }
+        }
+        let mut order: Vec<usize> = (0..regions.len()).collect();
+        order.sort_by_key(|&i| regions[i].first());
+        let regions: Vec<RegionSpan> = order.iter().map(|&i| regions[i].clone()).collect();
+        let sources: Vec<Arc<Source>> = order.iter().map(|&i| Arc::clone(&sources[i])).collect();
+        let longest = regions
+            .iter()
+            .map(|r| r.end() - r.first())
+            .max()
+            .unwrap_or(0);
+        Ok(PlacedRead {
+            regions,
+            sources,
+            longest,
+            channels: channels.max(1),
+            frames: list.frames,
+        })
+    }
+
+    /// How many frames the track comes to.
+    pub fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    /// How many channels it is.
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+    /// The regions that cross frames `a..b`, by index.
+    fn crossing(&self, a: u64, b: u64) -> impl Iterator<Item = usize> + '_ {
+        let low = a.saturating_sub(self.longest);
+        let from = self.regions.partition_point(|r| r.first() < low);
+        let to = self.regions.partition_point(|r| r.first() < b);
+        (from..to).filter(move |&i| self.regions[i].end() > a)
+    }
+
+    /// **Renders `n` frames of channel `channel` from `at` into `out`**:
+    /// every region that crosses them, summed; silence where none does.
+    fn render(&self, at: u64, n: usize, channel: usize, out: &mut Vec<f32>, files: &mut Files) {
+        out.clear();
+        out.resize(n, 0.0);
+        let end = at + n as u64;
+        let mut fetched: Vec<f32> = Vec::new();
+        for i in self.crossing(at, end) {
+            let region = &self.regions[i];
+            let Some(&src_ch) = region.cut().map.get(channel) else {
+                continue;
+            };
+            if src_ch < 0 {
+                continue;
+            }
+            let src_ch = src_ch as usize;
+            let (lo, hi) = (region.first().max(at), region.end().min(end));
+            let mut k = lo;
+            while k < hi {
+                let run = region.run_end(k, hi);
+                let (s0, s1) = region.source_span(k, run);
+                // the first frame, where a loop's last frame reads towards it
+                let head = if region.cut().looping && s1 >= region.src_frames() && s0 > 0 {
+                    self.fetch(i, src_ch, 0, 1, &mut fetched, files);
+                    fetched.first().copied().unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                self.fetch(i, src_ch, s0, s1, &mut fetched, files);
+                for j in k..run {
+                    out[(j - at) as usize] += region.read_with(j, channel, |f, _| {
+                        if f >= s0 && f < s1 {
+                            fetched.get(f - s0).copied().unwrap_or(0.0)
+                        } else if f == 0 {
+                            head
+                        } else {
+                            0.0
+                        }
+                    });
+                }
+                k = run;
+            }
+        }
+    }
+
+    /// **Source frames `s0..s1` of region `i`'s source, channel `channel`**,
+    /// into `into`, one sample a frame; what does not read is silence.
+    fn fetch(
+        &self,
+        i: usize,
+        channel: usize,
+        s0: usize,
+        s1: usize,
+        into: &mut Vec<f32>,
+        files: &mut Files,
+    ) {
+        into.clear();
+        if s1 <= s0 {
+            return;
+        }
+        match &*self.sources[i] {
+            Source::File(layout) => {
+                let width = layout.channels.max(1);
+                let span = files.read(layout, s0 as u64, s1 - s0);
+                into.extend(
+                    (0..s1 - s0).map(|f| span.get(f * width + channel).copied().unwrap_or(0.0)),
+                );
+            }
+            Source::Parts(parts) => {
+                let channel = channel.min(parts.channels().saturating_sub(1));
+                parts.render(s0 as u64, s1 - s0, channel, into, files);
+            }
+        }
+    }
+}
+
+/// **What a reading thread renders**: a take's parts back to back, or a
+/// track's regions placed on it.
+#[derive(Debug, Clone)]
+pub enum TakeRead {
+    /// An audio editor's take.
+    Parts(Arc<ReadList>),
+    /// A multitrack's track.
+    Placed(Arc<PlacedRead>),
+}
+
+impl From<Arc<ReadList>> for TakeRead {
+    fn from(list: Arc<ReadList>) -> Self {
+        TakeRead::Parts(list)
+    }
+}
+
+impl From<Arc<PlacedRead>> for TakeRead {
+    fn from(list: Arc<PlacedRead>) -> Self {
+        TakeRead::Placed(list)
+    }
+}
+
+impl TakeRead {
+    /// How many frames it comes to.
+    pub fn frames(&self) -> u64 {
+        match self {
+            TakeRead::Parts(list) => list.frames(),
+            TakeRead::Placed(list) => list.frames(),
+        }
+    }
+
+    /// How many channels it is.
+    pub fn channels(&self) -> usize {
+        match self {
+            TakeRead::Parts(list) => list.channels(),
+            TakeRead::Placed(list) => list.channels(),
+        }
+    }
+
+    fn render(&self, at: u64, n: usize, channel: usize, out: &mut Vec<f32>, files: &mut Files) {
+        match self {
+            TakeRead::Parts(list) => list.render(at, n, channel, out, files),
+            TakeRead::Placed(list) => list.render(at, n, channel, out, files),
+        }
+    }
+}
+
 /// **The headers of the files a take names**, read once each.
 #[derive(Debug, Default)]
 pub struct Headers {
@@ -362,11 +593,11 @@ struct Served {
 /// application's turn may be a page's main thread, which cannot wait on one
 /// the reader holds. The newest list placed wins; the reader takes it once.
 #[derive(Debug, Default)]
-struct Handed(AtomicPtr<ReadList>);
+struct Handed(AtomicPtr<TakeRead>);
 
 impl Handed {
     /// Places `list`, dropping one the reader had not taken yet.
-    fn put(&self, list: Arc<ReadList>) {
+    fn put(&self, list: Arc<TakeRead>) {
         let old = self
             .0
             .swap(Arc::into_raw(list).cast_mut(), Ordering::AcqRel);
@@ -378,7 +609,7 @@ impl Handed {
     }
 
     /// The list placed since the last take, if one was.
-    fn take(&self) -> Option<Arc<ReadList>> {
+    fn take(&self) -> Option<Arc<TakeRead>> {
         let new = self.0.swap(std::ptr::null_mut(), Ordering::AcqRel);
         // SAFETY: as in `put`: the swap made this pointer ours alone.
         (!new.is_null()).then(|| unsafe { Arc::from_raw(new) })
@@ -440,8 +671,8 @@ impl TakeFeed {
 
     /// **Reads `list` from now on**: every channel's reader fades from what
     /// its ring holds into a refill of it, from where it is.
-    pub fn set(&self, list: Arc<ReadList>) {
-        self.placed.put(list);
+    pub fn set(&self, list: impl Into<TakeRead>) {
+        self.placed.put(Arc::new(list.into()));
         for shared in &self.shared {
             shared.generation.fetch_add(1, Ordering::AcqRel);
         }
@@ -469,7 +700,7 @@ fn serve(mut feeders: Vec<Feeder>, placed: Arc<Handed>, stop: Arc<AtomicBool>) {
         feeder.wake_me();
     }
     let mut served: Vec<Served> = feeders.iter().map(|_| Served::default()).collect();
-    let mut list: Option<Arc<ReadList>> = None;
+    let mut list: Option<Arc<TakeRead>> = None;
     let mut files = Files {
         open: Vec::new(),
         span: Vec::new(),

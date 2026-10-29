@@ -18,8 +18,9 @@ use clausters_apps::editing::held::{HeldEngine, HeldTake};
 use clausters_core::ids::{IdSpaces, Space};
 use clausters_editing::apply::Medium;
 
-use crate::take::{Counts, Headers, ReadList, TakeFeed};
+use crate::take::{Counts, Headers, PlacedRead, ReadList, TakeFeed, TakeRead};
 use crate::{AppEngine, EngineMedium};
+use clausters_apps::editing::held::HeldList;
 
 /// One reader's reading: its feed, the buffers its readers play, and the list
 /// it reads.
@@ -109,8 +110,18 @@ impl HeldEngine for Readers {
         {
             self.free(was, ids);
         }
-        let list = ReadList::over(&take.list, take.rate, &mut self.headers, &self.counts)
-            .inspect_err(|e| tracing::warn!("a take the engine reads: {e}"))?;
+        let list: TakeRead = match &take.list {
+            HeldList::Parts(list) => {
+                ReadList::over(list, take.rate, &mut self.headers, &self.counts)
+                    .map(Arc::new)?
+                    .into()
+            }
+            HeldList::Placed(list) => {
+                PlacedRead::over(list, channels, &mut self.headers, &self.counts)
+                    .map(Arc::new)?
+                    .into()
+            }
+        };
         let frames = list.frames();
         let new = !self.readings.contains_key(&key);
         if new {
@@ -129,7 +140,7 @@ impl HeldEngine for Readers {
         let Some(reading) = self.readings.get_mut(&key) else {
             return Err("the take is not read".into());
         };
-        reading.feed.set(Arc::new(list));
+        reading.feed.set(list);
         if new || reading.frames != frames {
             let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
             engine.install_take(&reading.feed, frames, &reading.buffers);

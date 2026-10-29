@@ -292,7 +292,7 @@ pub fn tabulate(first: f64, last: f64, step: f64, value: impl Fn(f64) -> f64) ->
 /// `origin` is the second the curve's own axis starts at: a track's automation
 /// is on the timeline and a clip's is the box's own time, which is the whole
 /// difference between the two places a curve lives.
-fn curves(
+pub(crate) fn curves(
     automation: &[Automation<Second>],
     origin: f64,
     step: f64,

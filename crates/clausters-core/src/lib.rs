@@ -139,6 +139,7 @@ pub mod plugin_catalog;
 pub mod plugin_shm;
 pub mod pvprog;
 pub mod ratio;
+pub mod regions;
 pub mod registry;
 pub mod resample;
 pub mod rng;
