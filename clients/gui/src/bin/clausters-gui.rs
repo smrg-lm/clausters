@@ -24,12 +24,10 @@ use clausters_gui::host::theme::Theme;
 use clausters_gui::host::transport::{self, DEFAULT_PORT};
 use clausters_gui::host::{Host, ServerLeg, gui};
 
-// Feeding a window a GuiDef this binary built: the standalone boot does it.
-#[cfg(feature = "standalone")]
+// Feeding a window a GuiDef this binary built: both the standalone boot and
+// `--session` do it, and only the first needs the server crate.
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
-#[cfg(feature = "standalone")]
 use clausters_gui::host::ClientId;
-#[cfg(feature = "standalone")]
 use std::net::Ipv4Addr;
 
 // The standalone boot links the server crate directly (the `standalone`
@@ -83,9 +81,9 @@ usage:
                             meters/scopes, and the **samples** -- a take is
                             drawn by mapping it and edited by storing into it,
                             with nothing sent either way. Point it at the audio
-                            server's own --shm path. With --score it is where
-                            the editor's samples go, and what a player is
-                            started against (`clausters --shm <path>`);
+                            server's own --shm path. With --session it is where
+                            this editor's own samples go, and what a player
+                            is started against (`clausters --shm <path>`);
                             without one a path is picked and logged. Unix only
       --id-share <i/of>     the share of the audio server's node ids, buses
                             and buffers this host allocates from: share i of
@@ -96,32 +94,35 @@ usage:
                             what a host watching a live server wants;
                             `transport` is the transport's position, which
                             holds while stopped, jumps on a locate and wraps in
-                            a loop -- what an editor wants. An application's
-                            window draws its own transport's. The wire
-                            spelling is /gui_headClock.
+                            a loop -- what an editor wants. --session implies
+                            `transport`. The wire spelling is /gui_headClock.
       --data-dir <dir>      data directory for the GuiDef store (named GuiDefs
                             persist there; /gui_load reads from it). Defaults to
                             the same place the server uses ($CLAUSTERS_DATA_DIR,
                             $XDG_DATA_HOME/clausters, ~/.local/share/clausters).
-      --session <file>      open a session file in the multitrack editor, with
-                            **this host as its owner**: its takes are read from
-                            disk (their peaks kept in the session's peaks/
-                            folder), edited, undone and played here, on an
-                            engine this host opens on the machine's output, and
-                            saved to --save-to
+      --session <file>      open a session file (the format the Python client
+                            writes) and draw its document as a multitrack, with
+                            **this host as its owner**: gestures are applied
+                            here, undone here and saved here, with no language
+                            client anywhere. The third writer.
+                            It opens an on-demand server in this process to own
+                            the samples, and plays through the server --server
+                            points at -- which is a separate process holding
+                            the devices, and the only one that can record.
       --score <file>        open a score (MEI, MusicXML, ABC -- what the engraver
                             reads) in the score editor, with this host as its
                             owner: edited and undone here, and Ctrl+S writes it
                             as MEI to --save-to. Built with the `score` feature,
                             which links the engraver (libverovio); with
-                            `standalone` too it plays, through a player, on
-                            the server's default def
+                            `standalone` too it plays, through a player as
+                            --session does, on the server's default def
       --audio [file]        open the audio editor, over a sound file (a WAV,
                             W64 or RF64) or over none, with this host as its
                             owner: edited, played and saved here, on an engine
                             this host opens on the machine's output
       --save-to <file>      where Ctrl+S writes the session (or the score), and
-                            the close form's Save. Without it nothing is
+                            the close form's Save: a window with changes not
+                            saved asks before it closes. Without it nothing is
                             written: overwriting the file you opened is a
                             decision, not a default
       --standalone [name]   boot the saved GuiDef <name> against an embedded
@@ -559,10 +560,19 @@ fn run(args: &[String]) -> Result<(), String> {
         ));
     }
 
-    // A session: the multitrack editor, with this host as its owner -- its
-    // application, its engine and its takes' reading are in this process.
+    // A session: the host opens a document and owns it. No store, no embedded
+    // server and no script -- the multitrack is not played yet, which is what
+    // separates this from `--standalone` and is named in the plan rather than
+    // implied here.
     if let Some(path) = session_path {
-        return run_multitrack(&path, save_to.as_deref(), udp_bind, look);
+        return run_session(&path, save_to.as_deref(), udp_bind, look, shm, server, {
+            let mut host = Host::new();
+            host.set_id_share(cli_id_share).map_err(|e| e.to_string())?;
+            // A session editor's time is the transport's, which is what the
+            // head reads unless the launch said otherwise.
+            host.set_head_clock(cli_head.unwrap_or(HeadClock::Transport(0)));
+            host
+        });
     }
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
@@ -772,32 +782,6 @@ fn run_audio(path: Option<&str>, udp_bind: SocketAddr, look: Look) -> Result<(),
     gui::run(host, Arc::new(socket), None, None, None)
 }
 
-/// **Opens the multitrack editor over a session**, with this host as its
-/// owner: its application reads the session's takes from disk and plays its
-/// tracks on an engine this host opens on the machine's output; Save writes
-/// where `--save-to` says, and nowhere without it.
-fn run_multitrack(
-    path: &str,
-    save_to: Option<&str>,
-    udp_bind: SocketAddr,
-    look: Look,
-) -> Result<(), String> {
-    let mut host = Host::new();
-    look.apply(&mut host);
-    let name = Path::new(path)
-        .file_name()
-        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
-    let title = match save_to {
-        Some(_) => name,
-        None => format!("{name} (read-only: no --save-to)"),
-    };
-    host.open_multitrack_saving_to(path, save_to, &title)
-        .map_err(|e| format!("--session: {e}"))?;
-    let socket =
-        UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
-    gui::run(host, Arc::new(socket), None, None, None)
-}
-
 /// Opens a score in the score editor, with this host as its **owner**: the
 /// engraver reads the file, the applications crate's editor draws and edits it,
 /// and Ctrl+S writes it as MEI where `--save-to` says.
@@ -845,6 +829,159 @@ fn run_score(
     host.open_score(shared, &title, (960, 720), save_to.map(Into::into))
         .ok_or_else(|| "--score: the editor could not open a window".to_string())?;
     tracing::info!("score: opened {path}");
+    let socket =
+        UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
+    gui::run(host, Arc::new(socket), bus, None, None)
+}
+
+/// Opens a session and draws it, with this host as its **owner**.
+///
+/// The third writer, and the shortest statement of what that means: a document
+/// is read with the crate every writer reads it with, drawn as an ordinary
+/// GuiDef, and edited by gestures this host applies to itself. Nothing here
+/// parses the format, decides what an edit means or remembers an inverse --
+/// those are the crate's, which is the whole reason a session survives being
+/// passed between writers.
+fn run_session(
+    path: &str,
+    save_to: Option<&str>,
+    udp_bind: SocketAddr,
+    look: Look,
+    #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] shm: Option<String>,
+    #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] player: Option<String>,
+    // Made by the caller, with the launch's clock and id share: the session's
+    // load allocates its buffers from it before anything else exists.
+    mut host: Host,
+) -> Result<(), String> {
+    use clausters_gui::host::document::{Owner, sources, tree};
+
+    let owner = Owner::open(path)?;
+
+    // **The samples, before the picture.** A document says what plays when and
+    // never where its samples are; the session's table says that, and a host
+    // that can read it draws takes instead of empty rectangles. The buffers are
+    // read first and waited for, because a clip's fetch starts the moment the
+    // tree is handed over and would ask the server for a buffer it has not
+    // filled yet.
+    let beside = Path::new(path).parent().unwrap_or(Path::new("."));
+    let load = owner
+        .session
+        .as_ref()
+        // **One buffer space.** The session's sources take their numbers from
+        // the host's, and a curve's table or a join a hand mints later take
+        // theirs from the same one, so neither writes over the other.
+        .map(|session| sources::plan(session, beside, host.ids_mut()))
+        .unwrap_or_default();
+    for (id, why) in &load.unresolved {
+        tracing::warn!("session: source {} is not loadable: {why}", id.0);
+    }
+
+    #[cfg(feature = "standalone")]
+    // The player is held, not used: it is a process this editor may own, and
+    // dropping it is what stops it when the window closes.
+    let (bus, _player) = attach_server(&mut host, &load, shm, player)?;
+    #[cfg(not(feature = "standalone"))]
+    let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
+    #[cfg(not(feature = "standalone"))]
+    if !load.messages.is_empty() {
+        tracing::warn!(
+            "session: {} take(s) will draw empty -- this clausters-gui was built without \
+             standalone support, so there is no server to read them into (rebuild with \
+             `--features standalone`)",
+            load.messages.len()
+        );
+    }
+
+    let name = |p: &str| {
+        Path::new(p)
+            .file_name()
+            .map_or_else(|| p.to_string(), |n| n.to_string_lossy().into_owned())
+    };
+    // **The title says where a save goes**, because nothing else on screen can:
+    // a window that edits a file and cannot say which one leaves the reader to
+    // guess, and "read-only" is worth saying outright rather than discovering
+    // by pressing the key and watching nothing happen.
+    let title = match save_to {
+        Some(out) => format!("{} -> {}", name(path), name(out)),
+        None => format!("{} (read-only: no --save-to)", name(path)),
+    };
+    let def_id = 1;
+    let mut owner = owner.with_takes(load.takes.clone());
+    // **A multitrack opens in the multitrack editor's own window**, the one a script
+    // and a page open: the ruler above the multitrack, the multitrack, the transport row.
+    // It is the applications crate's, so this host composes nothing of its own
+    // for it. The ids start past the window's own: a GuiDef's id *is* its root
+    // widget's, so a child numbered 1 beside a def 1 collides and the registry
+    // drops the whole subtree -- which is an empty window and one line in the
+    // log.
+    //
+    // A session written before the turn is a tree rather than a multitrack, and it
+    // still draws through the tree's own walk, with a take editor per source
+    // under the tracks.
+    let (def, drawn_clips, drawn_tracks, editors) = if owner.draws_multitrack() {
+        let def = owner.open_editor(def_id, &title, (1000, 640));
+        let shown = owner.shown();
+        (def, shown.clips.len(), shown.tracks.len(), 0)
+    } else {
+        let drawn = tree::draw(
+            &owner.document,
+            &tree::Look {
+                first_id: def_id + 1,
+                takes: Some(&load.takes),
+                ..tree::Look::default()
+            },
+            &title,
+        );
+        // The take editors are bound one by one -- each is a widget drawing a
+        // node -- and the multitrack is bound once: the multitrack names its tracks
+        // and clips by the nodes' own numbers, so there is nothing per clip to
+        // record.
+        for bound in &drawn.bindings {
+            owner.bind(bound.widget, bound.node);
+        }
+        owner.bind_multitrack(drawn.widget);
+        let editors = drawn.bindings.len();
+        (
+            drawn.def,
+            drawn.picture.clips.len(),
+            drawn.picture.tracks.len(),
+            editors,
+        )
+    };
+
+    // Saving is **Ctrl+S**, a user's action rather than an exit's side effect --
+    // and it writes only where `--save-to` named a file, since overwriting what
+    // you opened is a decision.
+    if let Some(out) = save_to {
+        owner = owner.saving_to(out);
+    }
+    look.apply(&mut host);
+    host.owner = Some(
+        owner
+            .with_units_per_beat(tree::Look::default().units_per_beat)
+            .with_units_per_second(tree::Look::default().units_per_second),
+    );
+    let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: "/gui_def".into(),
+            args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
+        }),
+        origin,
+    );
+    // **The multitrack sounds from the moment it opens**, and by the same call an
+    // edit makes: a reader per region, following the transport, silent until a
+    // hand presses play because the governed group is created stopped.
+    let readers = host.sound_multitrack();
+    tracing::info!(
+        "session: opened {path} -- {drawn_clips} clip(s) on {drawn_tracks} track(s), \
+         {editors} take editor(s), {readers} reader(s)",
+    );
+    match save_to {
+        Some(out) => tracing::info!("session: Ctrl+S writes {out}"),
+        None => tracing::info!("session: read-only -- pass --save-to <file> for Ctrl+S to write"),
+    }
+
     let socket =
         UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
     gui::run(host, Arc::new(socket), bus, None, None)
