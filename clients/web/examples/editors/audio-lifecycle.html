@@ -52,8 +52,9 @@ a span of <code>a.wav</code>; <b>paste second</b> pastes it into
 <code>d.wav</code> (mono into mono). <b>close origin</b> closes
 <code>a.wav</code> in <code>first</code>, and <b>paste second</b> again still
 pastes: the copy outlives the file it came from. <b>paste stereo</b> pastes the
-mono copy into <code>b.wav</code> and is refused -- a paste never converts
-channels -- and <code>b.wav</code> is unchanged. Copy text in any other program
+mono copy into <code>b.wav</code>, the same tone on both of its channels at
+full level: a mono block is duplicated into a wider take, and a wider one is
+mixed into a mono take. Copy text in any other program
 and press Ctrl+V over a take: text stays text, the paste is refused, and the
 window's status line says why.<br>
 
@@ -197,7 +198,8 @@ for nothing.</div>
         const undoInSecond = () => second.undo();
 
         // The clipboard: a copy is the clipboard's, not the file's -- it
-        // outlives the file it came from, and a paste never converts it.
+        // outlives the file it came from, and a paste fits it to the take
+        // it lands in.
         const copyFirst = async () => {
           await first.focusFile(0);
           await first.select(new segments.Segment(await first.file(), Math.round(0.2 * await first.sampleRate()), 0.3));

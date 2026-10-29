@@ -29,8 +29,9 @@ file has an order of its own, and an edit is undone only where it was made.
 span of ``a.wav``; ``paste_second()`` pastes it into ``d.wav`` (mono into
 mono). ``close_origin()`` closes ``a.wav`` in ``first``, and
 ``paste_second()`` again still pastes: the copy outlives the file it came
-from. ``paste_stereo()`` pastes the mono copy into ``b.wav`` and is refused --
-a paste never converts channels -- and ``b.wav`` is unchanged. Copy text in
+from. ``paste_stereo()`` pastes the mono copy into ``b.wav``, the same tone
+on both of its channels at full level: a mono block is duplicated into a
+wider take, and a wider one is mixed into a mono take. Copy text in
 any other program and press Ctrl+V over a take: text stays text, the paste is
 refused, and the window's status line says why.
 
@@ -173,7 +174,7 @@ def undo_in_second():
 # ## The clipboard
 #
 # A copy is the clipboard's, not the file's: it outlives the file it came
-# from, and a paste never converts it.
+# from, and a paste fits it to the take it lands in.
 
 # %%
 def copy_first():
@@ -194,7 +195,7 @@ def close_origin():
 
 
 def paste_stereo():
-    """Paste the mono copy into ``b.wav``: refused, and ``b.wav`` unchanged."""
+    """Paste the mono copy into ``b.wav``: on both of its channels."""
     first.focus_file(0)
     first.paste()
 
