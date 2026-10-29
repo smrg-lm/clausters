@@ -134,7 +134,9 @@ impl SignalElement {
     /// the span shown whatever pyramid it keeps for its trace.
     fn own_analyzable(&self) -> Option<(Vec<f32>, usize)> {
         let data = self.source.data()?;
-        if data.segments.is_some() {
+        // a list's take is known by its key where its segments are not
+        // mapped (a page's): its columns are asked, never analyzed here
+        if data.segments.is_some() || data.buffer.is_some_and(crate::host::disk::is_list_key) {
             return None;
         }
         if !data.samples.is_empty() {

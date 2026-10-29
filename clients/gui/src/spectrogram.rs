@@ -680,23 +680,39 @@ impl SpectrogramView {
 
     /// **The samples this view's columns cover**: everything for a transform
     /// of a whole signal and for a ring, and for one of a span from where it
-    /// is drawn to the end of its last column.
+    /// is drawn to the end of its last column. Nothing lies before a take's
+    /// start or past its end, so a span from the take's first frame is drawn
+    /// from the start and one whose windows reach the end is drawn to it, as
+    /// a whole transform is: its first and last columns reach the edges
+    /// rather than leaving half a window dark there.
     pub fn covers(&self) -> (f64, f64) {
         if !self.stft.is_span() {
             return (f64::NEG_INFINITY, f64::INFINITY);
         }
         let a = self.drawn_origin();
-        (a, a + (self.stft.n_frames() * self.stft.hop()) as f64)
+        let b = a + (self.stft.n_frames() * self.stft.hop()) as f64;
+        (
+            if self.stft.origin() == 0 {
+                f64::NEG_INFINITY
+            } else {
+                a
+            },
+            if self.reaches_end() { f64::INFINITY } else { b },
+        )
+    }
+
+    /// Whether its last window reaches the take's end: what is left past it
+    /// is shorter than a hop, the most a transform of the whole take leaves.
+    fn reaches_end(&self) -> bool {
+        let s = &self.stft;
+        let last = s.origin() + s.n_frames().saturating_sub(1) * s.hop() + s.window_size();
+        last + s.hop() > s.total_samples()
     }
 
     /// Whether its columns cover the whole of the take it is a picture of:
     /// what its windows were analyzed over, wherever they are drawn.
     pub fn is_whole(&self) -> bool {
-        if !self.stft.is_span() {
-            return true;
-        }
-        let a = self.stft.origin();
-        a == 0 && a + self.stft.n_frames() * self.stft.hop() >= self.stft.total_samples()
+        !self.stft.is_span() || (self.stft.origin() == 0 && self.reaches_end())
     }
 
     /// The picture of the whole take drawn under this one (see the field).

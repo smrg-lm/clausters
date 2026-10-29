@@ -842,3 +842,33 @@ fn a_lists_spectrogram_is_analyzed_from_its_files_over_the_span_shown() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **A file's texture is its list's columns and a server buffer's is a run
+/// it reads back**: a list key is asked columns and never a run to analyze,
+/// whether or not its segments are mapped, and a server buffer the other
+/// way round. A page's file once read its whole take back and drew that
+/// instead of its columns, blank under a zoom and half a window dark at
+/// its start.
+#[test]
+fn a_texture_is_asked_of_what_answers_it() {
+    use crate::host::columns::ColumnSpan;
+    use crate::host::disk::FIRST_LIST_KEY;
+    let columns = Owed::Columns(ColumnSpan {
+        start: 0,
+        hop: 128,
+        columns: 750,
+        window: 2048,
+        analysis: 0,
+        wintype: 0,
+        sample_rate: 48_000.0,
+        total: 96_000,
+    });
+    let run = Owed::Run { a: 0, b: 96_000 };
+    let trace = Owed::Samples { a: 0, b: 4_000 };
+    assert!(super::answers(FIRST_LIST_KEY, &columns));
+    assert!(!super::answers(FIRST_LIST_KEY, &run));
+    assert!(super::answers(FIRST_LIST_KEY, &trace));
+    assert!(!super::answers(7, &columns));
+    assert!(super::answers(7, &run));
+    assert!(super::answers(7, &trace));
+}

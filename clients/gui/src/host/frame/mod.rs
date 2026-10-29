@@ -114,6 +114,10 @@ pub(crate) struct WaveformSlot {
 pub(crate) enum Owed {
     /// The run of samples to read back, `[a, b)` in frames.
     Samples { a: usize, b: usize },
+    /// **The run of samples a texture analyzes**, `[a, b)` in frames: read
+    /// back as [`Owed::Samples`] is, and asked only of a server buffer,
+    /// since a list answers its texture's columns instead.
+    Run { a: usize, b: usize },
     /// The span to summarize, `[a, b)` in frames, and the bucket to measure it
     /// at -- finer than the view's own, and coarse enough that one grid holds
     /// the whole span. `seen` is the part of it on screen: a grid already on
@@ -886,7 +890,7 @@ pub(crate) fn texture_owed(view: &WaveformView, nav: &View, written: Option<u64>
         return None;
     }
     let (a, b) = span(nav.len * OWED_REACH);
-    Some(Owed::Samples { a, b })
+    Some(Owed::Run { a, b })
 }
 
 /// **The columns a texture of a span owes the view `nav`**, `width` pixels
@@ -2615,6 +2619,38 @@ mod tests {
         );
     }
 
+    /// **A span is drawn to the take's edges it reaches**: a run read back
+    /// from the take's first frame is drawn from the start and one whose
+    /// windows reach the end to it, as a whole transform is, where they once
+    /// left half a window dark (a strip at the start of a page's
+    /// spectrogram). A run inside the take is drawn where its columns are.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn a_span_reaches_the_edges_of_the_take_it_reaches() {
+        let Ok(gpu) = pollster::block_on(Gpu::offscreen(64, 64, 1)) else {
+            eprintln!("no adapter on this machine: nothing to draw offscreen with");
+            return;
+        };
+        let renderers = Renderers::new(&gpu.device, gpu.target());
+        let total = 96_000;
+        let run = |a: usize, b: usize| {
+            let samples: Vec<f32> = (a..b).map(|k| (k as f32 * 0.05).sin()).collect();
+            let stft = Stft::compute(&samples, 2048, 128, 48_000.0).placed_at(a, total);
+            spectrogram_slot(vec![stft], &gpu, &renderers).expect("a slot")
+        };
+        let whole = run(0, total);
+        assert_eq!(whole.views[0].covers(), (f64::NEG_INFINITY, f64::INFINITY));
+        assert!(whole.views[0].is_whole(), "the run is the whole take");
+        let (a, b) = run(0, 30_000).views[0].covers();
+        assert!(a == f64::NEG_INFINITY && b < 30_000.0, "from the start");
+        let (a, b) = run(60_000, total).views[0].covers();
+        assert!(a > 60_000.0 && b == f64::INFINITY, "to the end");
+        let inside = run(20_000, 40_000);
+        let (a, b) = inside.views[0].covers();
+        assert!(a > 20_000.0 && b < 40_000.0, "where its columns are");
+        assert!(!inside.views[0].is_whole());
+    }
+
     /// **A picture of the whole take by an analysis left is kept, and going
     /// back to that analysis draws it again with nothing asked**: over the
     /// whole take the view becomes it, over a span the overview does, and
@@ -3718,7 +3754,7 @@ mod tests {
         assert_eq!(owed(&told, &wide, 800.0, None), None, "the trace's answer");
         assert_eq!(
             texture_owed(&told, &wide, None),
-            Some(Owed::Samples { a: 0, b: frames }),
+            Some(Owed::Run { a: 0, b: frames }),
             "the texture's: the whole take, which the view shows"
         );
         let mut data = summary();
@@ -3736,7 +3772,7 @@ mod tests {
         let middle = long / 2 - TEXTURE_SPAN / 2;
         assert_eq!(
             texture_owed(&told, &all, None),
-            Some(Owed::Samples {
+            Some(Owed::Run {
                 a: middle,
                 b: middle + TEXTURE_SPAN
             })

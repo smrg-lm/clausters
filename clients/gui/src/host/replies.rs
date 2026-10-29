@@ -33,6 +33,20 @@ use super::widget::element::{Bulk, Loaded, OwedSummary, SlotKind};
 use super::{Host, diag};
 use crate::waveform::WaveformData;
 
+/// **Whether the source `bufnum` answers `owed`**: columns are asked of a
+/// list, which analyzes its files over the span, and a run to analyze only
+/// of a server buffer, which has no columns to give. A file in a page is a
+/// list by its key even where its segments are not mapped, so its texture is
+/// never analyzed from the samples its trace read back.
+pub(crate) fn answers(bufnum: i32, owed: &Owed) -> bool {
+    let list = crate::host::disk::is_list_key(bufnum);
+    match owed {
+        Owed::Columns(_) => list,
+        Owed::Run { .. } => !list,
+        Owed::Samples { .. } | Owed::Summary { .. } => true,
+    }
+}
+
 /// **What a front supplies** so the replies can be read once: the host, the
 /// fetch machine, its windows' GPU slots, its redraw and its way out.
 pub(crate) trait Front {
@@ -1037,9 +1051,7 @@ pub(crate) trait Front {
                 let Some(bufnum) = el.source_buffer() else {
                     continue;
                 };
-                // Columns are asked of a list, which answers them; a server
-                // buffer's texture is analyzed from the samples it reads back.
-                if matches!(owed, Owed::Columns(_)) && el.segments().is_none() {
+                if !answers(bufnum, &owed) {
                     continue;
                 }
                 // Columns are asked of the list, which knows its own shape.
@@ -1068,7 +1080,7 @@ pub(crate) trait Front {
                     bucket,
                     channels,
                 ),
-                Owed::Samples { a, b } => self.fetches().want_span(
+                Owed::Samples { a, b } | Owed::Run { a, b } => self.fetches().want_span(
                     bufnum,
                     a,
                     b - a,

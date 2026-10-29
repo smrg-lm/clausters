@@ -210,7 +210,15 @@ code that keeps it lives.
   range of levels they span. No column is finer than the hop between
   the analysis's windows, so a zoom past it draws the same windows wider and
   analyzes nothing; and a column is drawn centred on the windows it was
-  measured from, so a click lights the block it is in.
+  measured from, so a click lights the block it is in. Nothing lies before
+  a take's start or past its end, so the first and last columns reach the
+  edges rather than leaving half a window dark there.
+- **A list's spectrogram is its columns, wherever the host runs.** A file is
+  a list whether or not its segments are mapped (in a page they are not), so
+  its texture is asked of the list as columns and never analyzed from
+  samples the view read back for its trace. Reading a run back to analyze it
+  is for a server buffer drawn from its summary, which has no columns to
+  ask.
 - **A view switch draws what the other view left.** Moving between the
   waveform and the spectrogram keeps both pictures of a take: the summary
   with the finer grid a zoom grew in it, and the columns, whole take and
