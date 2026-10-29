@@ -11473,3 +11473,19 @@ order, and the copy is brought to the window's after each of the page's own
 changes and steps and when the window closes. What a hand does in the window
 reaches the page's reads only then. The surface is the same in both clients;
 this one difference is named in the web client's prose and its plan.
+
+## The server keeps no command an application's editing made (2026-10-29)
+
+*Decided by the user 2026-10-29, auditing what is left of `S23`.* "The
+server is the module of audio functions, not of editing logic" (2026-10-22)
+is read to the letter: every command the server grew for an editing
+application goes, whoever else came to use it. So `/buffer_stitch` goes
+whole, joins over buffers as well as lists over files, with `/buffer_parts`;
+`/buffer_peaks` goes with the summary the server kept on every buffer, and
+a host draws a server buffer from samples it reads, summarized with the
+core's measure; `PeaksOut` and `/transport_cue` go. What a live client plays
+and records with stays: a buffer's reads and writes, `/buffer_touch` (a
+peer's write announced) and `/buffer_stream` (a recording's progress), and
+the transport's play, stop, locate, loop, end mark, fade and follow. The
+applications measure, read and join their takes themselves, with the core's
+functions (root `PLAN.md`, `S23`).
