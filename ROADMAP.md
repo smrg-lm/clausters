@@ -320,18 +320,6 @@ its plan; the plan is where its acceptance is read.
   | 1 | `X34` — The multitrack over the same modules | `crates/clausters-apps/PLAN.md` |
   | 2 | `S23` — The server keeps no editing commands, widened | root `PLAN.md` |
 
-- ⬜ **`G44` — a take's picture is read at the level it is drawn, out of
-  summaries kept once** (`G44c`) *(`clients/gui/PLAN.md`, "G44 — A
-  take's picture is read at the level it is drawn, out of summaries kept
-  once")*. Its eye pass goes beside the turn above: a page redraws a take from its
-  start after every edit, slower the longer the take, because the host walks
-  the finest summary of the whole take. The server's half shipped (every
-  buffer keeps its summary, a join composes it, any bucket is answered from
-  it), and so did the host's (a view asks at the level it is drawn at, and an
-  edit replaces the picture whole); what is left is the eye pass.
-  Before `X25`, since the other editors' lifecycle draws through the same
-  path.
-
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
   sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening
