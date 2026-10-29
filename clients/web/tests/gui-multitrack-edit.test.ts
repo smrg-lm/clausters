@@ -1,1157 +1,207 @@
-// Editing a **multitrack**: the picture, the report and the history.
+// `MultitrackEditor`: the handler of the multitrack the GUI host holds, over
+// a saved session or over a multitrack handed to it whole, with the same
+// cases as the Python client's `tests/test_gui_multitrack_edit.py`.
 //
-// `MultitrackEditor` is the multitrack as one of the fundamental structures --
-// which is what gives it the undo every other editor has. What is checked here
-// is the seam rather than the mapping: the mapping is the crate's
-// (`multitrackProps`/`editingIntake`, the same one the standalone host draws
-// and reads with), so what could still be wrong is this client's half -- the axis
-// a box crosses to, which buffer a source was read into, and whether a report
-// that means several edits lands as **one** entry.
-//
-// The mirror of `clients/python/tests/test_gui_multitrack_edit.py`, case for
-// case. Needs the core wasm staged (`./build.sh`); run with `npm test`.
+// What is checked is this client's half: which call each member makes
+// through the application door (`GuiHost.openApp`, `GuiHost.callApp`), how
+// it reads the answer, and the page's multitrack forwarding its changes to
+// the window's while it is open. What the application does with a call is
+// the host's and is tested there (`clients/gui/src/host/audio_editor.rs`).
 
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import test from "node:test";
 
+import { MultitrackEditor, edit } from "../src/gui/editing/index.ts";
+import type { GuiHost } from "../src/gui/host.ts";
+import { Multitrack, Session as SavedSession } from "../src/multitrack.ts";
 import { loadCore } from "../src/base/core.ts";
-import { multitrackPlan, MultitrackPlayback, StepRunner } from "../src/core/clausters_core_web.js";
-import {
-    MultitrackEditor, MultitrackView, NotesEditor, Playback, edit,
-} from "../src/gui/editing/index.ts";
-import { Editing } from "../src/history.ts";
-import { ScoreEditor } from "../src/gui/editing/score.ts";
-import { setEngraverUrl } from "../src/gui/notation/index.ts";
-import { MultitrackDomain, Sources } from "../src/gui/editing/multitrack.ts";
-import { Content, Multitrack, Tempo } from "../src/multitrack.ts";
-import type { Region, Track } from "../src/multitrack.ts";
-import { Event } from "../src/seq/event.ts";
-import { EventSequence } from "../src/seq/sequence.ts";
-import { Transport } from "../src/defs/server/transport.ts";
 
 await loadCore();
 
-const SR = 48_000.0;
-
-function window(source: number, start = 0.0, duration = 2.0): Content {
-    return Content.onto({
-        source: { source, lifetime: "session", generation: 0 },
-        start,
-        duration,
-    });
-}
+type Call = Record<string, any>;
 
 /**
- * Two tracks, as a session file holds them: the first (10, its take lane 11)
- * holding two regions (12, 13), the second (20, 21) one (22). The ids are the
- * file's, and the wire names rows and boxes by them.
+ * A host that answers the door from a table, and records the calls. Its
+ * window holds a multitrack of its own, which a `handle` call reads and edits
+ * as the application's does.
  */
-function twoTracks(): Record<string, unknown> {
-    const region = (id: number, position: number) =>
-        ({ id, position, length: 2.0, content: window(1).write() });
-    return { tracks: [
-        { id: 10, name: "one", take_lanes: [{ id: 11, regions: [region(12, 0.0), region(13, 4.0)] }] },
-        { id: 20, name: "two", take_lanes: [{ id: 21, regions: [region(22, 0.0)] }] },
-    ] };
-}
+class FakeHost {
+    calls: (["open", string, Record<string, unknown>] | ["call", number, Call])[] = [];
+    verbs: [number, string][] = [];
+    open = new Set<number>();
+    held: Multitrack | null = null;
+    recorded: [string | undefined, unknown[]][] = [];
+    closedHandler: (() => void) | null = null;
+    left: unknown = null;
+    answers: Record<string, unknown> = {
+        playing: true,
+        save: { destination: "/songs/song.json" },
+        output: { tracks: { "1": [0.5] }, starved: 0 },
+        history: { canUndo: true, canRedo: false, undoLabel: "rename", redoLabel: null },
+    };
 
-/** {@link twoTracks}, read. */
-function multitrack(): Multitrack {
-    return Multitrack.read(twoTracks());
-}
+    constructor(answers: Record<string, unknown> = {}) {
+        Object.assign(this.answers, answers);
+    }
 
-/** The track the wire names `id`. */
-function track(held: Multitrack, id: number): Track {
-    return [...held.tracks].find((t) => t.ident === id)!;
-}
+    async openApp(app: string, options: Record<string, unknown> = {}): Promise<number> {
+        this.calls.push(["open", app, { ...options }]);
+        this.held = Multitrack.read((options.multitrack ?? {}) as Record<string, unknown>);
+        this.open.add(9);
+        return 9;
+    }
 
-/** Every region, in track then take lane then position order. */
-function regionsOf(held: Multitrack): Region[] {
-    return [...held.regions()];
-}
-
-/** An editor with no window: what is checked here is the seam, and opening one
- * would need a host. */
-function editor(held: Multitrack, sources: Record<number, number> = { 1: 7 }): MultitrackEditor {
-    return new MultitrackEditor(held, { sampleRate: SR, sources });
-}
-
-/** What the widget is told to draw, without opening a window. */
-function props(ed: MultitrackEditor): Record<string, unknown> {
-    ed.draw();
-    const wid = [...ed.view!.widgets.keys()][0];
-    return ed.view!.props(ed, wid) as Record<string, unknown>;
-}
-
-function clips(ed: MultitrackEditor): unknown[][] {
-    const flat = props(ed).clips as unknown[];
-    const out: unknown[][] = [];
-    for (let i = 0; i + 7 <= flat.length; i += 7) out.push(flat.slice(i, i + 7));
-    return out;
-}
-
-/** One `"clips"` report, as the widget would send it. */
-function report(ed: MultitrackEditor, boxes: [string, string, number, number][]): boolean {
-    ed.draw();
-    const wid = [...ed.view!.widgets.keys()][0];
-    const values: unknown[] = [];
-    for (const [name, row, at, dur] of boxes) values.push(name, row, at, dur, 0.0, "", 7);
-    return (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "clips", ...values]);
-}
-
-const near = (a: number, b: number, why?: string) =>
-    assert.ok(Math.abs(a - b) < 1e-6, why ?? `${a} != ${b}`);
-
-// ---- the picture ----
-
-test("a row per track and a box per region", () => {
-    const ed = editor(multitrack());
-    const rows = props(ed).tracks as unknown[];
-    assert.deepEqual([rows[0], rows[7]], ["10", "20"], "named by their track ids");
-    assert.equal(rows[1], "one");
-    const boxes = clips(ed);
-    assert.deepEqual(boxes.map((b) => b[0]), ["12", "13", "22"]);
-    assert.deepEqual(boxes.map((b) => b[1]), ["10", "10", "20"]);
-    // A beat is a second at the reader's default, so a region at beat 4 is at
-    // four seconds' worth of frames.
-    near(Number(boxes[1][2]), 4.0 * SR);
-    near(Number(boxes[1][3]), 2.0 * SR);
-    assert.equal(boxes[0][6], 7, "the buffer its source was read into");
-});
-
-test("the widget is told the flat rows and not one row per number", () => {
-    // The props are already the wire's, so the node is made from them rather
-    // than through the `multitrack` builder there used to be -- whose
-    // `lanes`/`clips` were the *tuples* a page types, and which flattened an
-    // already-flat list a second time: seven rows named `10`, `one`, `96`, `false`, `false`, `1`, `false`.
-    //
-    // Found 2026-09-09 reading the two clients against each other, which is the
-    // only place it was visible: every test read `view.props` and none read the
-    // tree that is actually published.
-    const ed = editor(multitrack());
-    const drawn = (ed.draw() as unknown as { children: Record<string, unknown>[] })
-        .children.find((c) => c.type === "multitrack")!;
-    assert.equal((drawn.tracks as unknown[]).length, 2 * 7, "two tracks, seven numbers each");
-    assert.deepEqual((drawn.tracks as unknown[]).slice(0, 3), ["10", "one", 96.0]);
-    assert.equal((drawn.clips as unknown[]).length, 3 * 7, "three regions, seven numbers each");
-    assert.deepEqual((drawn.clips as unknown[]).slice(0, 2), ["12", "10"]);
-});
-
-test("the multitrack is ruled from above by a strip of its own", () => {
-    // An editor is where a position is read, and the widget draws no ruler -- so
-    // the view places one above it, on the multitrack's own axis.
-    //
-    // The two have to be in **one navigation group**: an unlinked widget is a
-    // group of one keyed by itself, so a ruler that joined nothing would pan and
-    // zoom away from the tracks it is ruling.
-    const children = (editor(multitrack()).draw() as unknown as {
-        children: Record<string, unknown>[];
-    }).children.filter((c) => c.type !== "layout");
-    const ruler = children[0];
-    const multitrackNode = children[1];
-    assert.equal(ruler.type, "field", "the free-standing time ruler, above");
-    assert.equal(multitrackNode.type, "multitrack");
-    const x = (ruler.axes as { x: Record<string, unknown> }).x;
-    assert.equal(x.link, multitrackNode.link, "one axis, not two");
-    assert.equal(x.unit, "beats");
-});
-
-test("the position cursor is kept and told and is not an edit", () => {
-    // A click on the time ruler places the **position cursor**, and what arrives
-    // is `"locate"` with where it landed.
-    //
-    // It is where a playback starts and where a paste lands, so the editor keeps
-    // it -- the playhead is where the *music* is and moves on its own, and an
-    // anchor that moved on its own would not be an anchor. It is not an edit and
-    // reaches no history.
-    const ed = editor(multitrack());
-    ed.draw();
-    // **It arrives on the ruler**, which is where it is placed and nowhere else
-    // -- so the strip is a named widget of this picture like any other, or the
-    // one gesture that places the cursor would land outside the only object
-    // that could hear it.
-    const view = ed.view as MultitrackView;
-    const rid = view.ruler!;
-    assert.ok((ed as unknown as { owns(id: number): boolean }).owns(rid), "the ruler is this view's");
-    const told: number[] = [];
-    ed.onLocate = (beat) => told.push(beat);
-    assert.equal(
-        (ed as unknown as { route(args: unknown[]): boolean }).route([rid, "locate", 4.0 * SR]),
-        false,
-        "placing is not an edit",
-    );
-    near(ed.cursor!, 4.0);
-    assert.equal(told.length, 1);
-    near(told[0], 4.0);
-    // And a multitrack opens with the reader at the top: the cursor is stated, so
-    // there is somewhere to play from before anything is clicked.
-    const fresh = editor(multitrack());
-    fresh.draw();
-    const start = (fresh.view as MultitrackView).props(fresh, (fresh.view as MultitrackView).ruler!);
-    assert.equal(start.cursor, 0.0);
-    // Once placed it is reported from the editor's own copy, so a resync does
-    // not drag the mark back to the start.
-    near(Number(view.props(ed, rid).cursor), 4.0 * SR);
-});
-
-/** A host that adopts what it is told, the way the real one does. */
-class AdoptingHost {
-    names: string[] | null = null;
-    rows: string[] | null = null;
-    pushes = 0;
-    push(_seq: number, corrections: [number, Record<string, unknown>][]): void {
-        this.pushes += 1;
-        for (const [, props] of corrections) {
-            const clips = props.clips as unknown[] | undefined;
-            const rows = props.tracks as unknown[] | undefined;
-            if (clips) this.names = clips.filter((_v, i) => i % 7 === 0).map(String);
-            if (rows) this.rows = rows.filter((_v, i) => i % 7 === 0).map(String);
+    async callApp(window: number | { id: number }, call: Call): Promise<unknown> {
+        const id = typeof window === "number" ? window : window.id;
+        this.calls.push(["call", id, call]);
+        if (call.query !== undefined) return this.answers[call.query];
+        const doing = call.do as Call;
+        if (doing.verb === "handle") {
+            const { verb, ...args } = doing.call as Call;
+            if (verb === "record") {
+                this.recorded.push([doing.label, args.legs as unknown[]]);
+                return true;
+            }
+            const answer = this.held!.call(verb, args);
+            if (verb === "apply" && doing.record !== false) this.recorded.push([doing.label, [args.intent]]);
+            return answer;
         }
-    }
-    ack(): void {}
-    held = new Map<number, Record<string, unknown>>();
-    set(wid: number, props: Record<string, unknown>): void {
-        this.held.set(wid, { ...this.held.get(wid), ...props });
-    }
-    async query(wid: number): Promise<{ type: string; props: Record<string, unknown> }> {
-        return { type: "multitrack", props: { ...this.held.get(wid) } };
-    }
-}
-
-function wired(ed: MultitrackEditor): AdoptingHost {
-    const host = new AdoptingHost();
-    const inner = ed as unknown as {
-        app: { host: unknown };
-        windowId: number | null;
-    };
-    // Through the application, which is what an `open` would do: it is the
-    // window set that adopts a host, and it hands it to each editor's echo.
-    inner.app.host = host;
-    inner.windowId = 1;
-    ed.draw();
-    return host;
-}
-
-test("a name the host minted is answered with the one the multitrack kept", () => {
-    // The host makes a **track** from a double click and a **box** from a
-    // split, and in both it mints the word while the document mints the id.
-    //
-    // Until the picture goes back the two are naming the same thing
-    // differently, and a name the multitrack does not know is not ignored -- it is
-    // read as something *new*. So the next report about that box minted it
-    // again, and again after that.
-    const held = multitrack();
-    const ed = editor(held);
-    const host = wired(ed);
-    const wid = [...ed.view!.widgets.keys()][0];
-    const ids = () =>
-        regionsOf(held).map((r) => r.ident);
-    const apply = (seq: number, tag: string, values: unknown[]) =>
-        ed.apply("/gui_event", [
-            wid,
-            seq,
-            (ed as unknown as { version: number }).version,
-            tag,
-            ...values,
-        ]);
-
-    const payload: unknown[] = [];
-    for (const box of clips(ed)) {
-        if (box[0] === "12") {
-            const first = [...box];
-            first[3] = 1.0 * SR;
-            payload.push(...first);
-            payload.push("white 2", box[1], 1.0 * SR, 1.0 * SR, 1.0 * SR, "", box[6]);
-        } else {
-            payload.push(...box);
+        if (doing.verb === "close") {
+            this.closeWindow();
+            return false;
         }
+        return this.answers[doing.verb];
     }
-    apply(1, "clips", payload);
-    const split = ids();
-    assert.equal(split.length, 4, "the split landed");
-    assert.equal(host.pushes, 1, "and the picture went back with it");
-    assert.deepEqual(host.names, split.map(String), "under the ids the multitrack kept");
 
-    // The next gesture, reported with the names the host was just given.
-    const again: unknown[] = [];
-    clips(ed).forEach((box, i) => {
-        const row = [...box];
-        row[0] = host.names![i];
-        row[2] = Number(row[2]) + 1000.0;
-        again.push(...row);
+    /** The window goes, as the host says it: what it left the multitrack as rides with the close. */
+    closeWindow(): void {
+        this.left = this.held!.write();
+        this.open.delete(9);
+        this.closedHandler?.();
+    }
+
+    closedWith(): unknown {
+        return this.left;
+    }
+
+    verb(window: number | { id: number }, verb: string): void {
+        this.verbs.push([typeof window === "number" ? window : window.id, verb]);
+    }
+
+    isOpen(id: number): boolean {
+        return this.open.has(id);
+    }
+
+    async waitWhile(pred: () => boolean): Promise<boolean> {
+        return !pred();
+    }
+
+    setClosedHandler(_id: number, handler: (() => void) | null): void {
+        this.closedHandler = handler;
+    }
+
+    last(): Call {
+        return this.calls[this.calls.length - 1]![2] as Call;
+    }
+}
+
+function aSession(path = "/songs/song.json"): SavedSession {
+    const session = new SavedSession();
+    session.path = path;
+    return session;
+}
+
+test("edit opens a saved session in the multitrack application", async () => {
+    const host = new FakeHost();
+    const editor = await edit(aSession(), { host: host as unknown as GuiHost });
+    assert.ok(editor instanceof MultitrackEditor);
+    assert.deepEqual(host.calls[0], ["open", "multitrack", { title: "song.json", path: "/songs/song.json" }]);
+    assert.ok(editor.window !== null && !editor.closed);
+    assert.equal(await edit(aSession(), { host: host as unknown as GuiHost }), editor, "a second edit finds it");
+});
+
+test("a session with no file is refused", () => {
+    assert.throws(() => new MultitrackEditor(new SavedSession()), /save it first/);
+});
+
+test("a multitrack opens as an untitled session", async () => {
+    const host = new FakeHost();
+    const multitrack = new Multitrack();
+    multitrack.tracks.add("drums");
+    const editor = await edit(multitrack, { host: host as unknown as GuiHost });
+    assert.ok(editor instanceof MultitrackEditor);
+    const [, app, options] = host.calls[0] as ["open", string, Record<string, any>];
+    assert.equal(app, "multitrack");
+    assert.equal(options.title, "Untitled");
+    assert.equal(options.multitrack.tracks[0].name, "drums");
+    assert.equal(editor.path, null);
+    assert.equal(editor.session, null);
+    assert.equal(await edit(multitrack, { host: host as unknown as GuiHost }), editor, "a second edit finds it");
+});
+
+test("the page's multitrack is the window's while it is open", async () => {
+    const host = new FakeHost();
+    const multitrack = new Multitrack();
+    const track = multitrack.tracks.add("a");
+    const editor = await edit(multitrack, { host: host as unknown as GuiHost });
+    // a change is an edit of the window's, recorded under its label
+    track.name = "b";
+    assert.equal(track.name, "b", "the page's copy holds it at once");
+    await editor.output();
+    assert.equal((host.held!.call("track", { id: track.ident }) as Call).name, "b");
+    assert.notEqual(host.recorded[host.recorded.length - 1]![0], undefined);
+    // a block is one entry, recorded when it ends
+    multitrack.history.entry("tidy", () => {
+        track.muted = true;
+        track.name = "c";
     });
-    apply(2, "clips", again);
-    assert.deepEqual(ids(), split, "nothing was minted a second time");
-
-    // And a track made in the host: the same rule.
-    const rows = [...(props(ed).tracks as unknown[]), "track 1", "three", 96.0, 0, 0, 1.0, 0];
-    apply(3, "tracks", rows);
-    assert.deepEqual(host.rows, [...held.tracks].map((t) => String(t.ident)));
-    assert.equal(held.tracks.length, 3);
+    await editor.output();
+    const [label, legs] = host.recorded[host.recorded.length - 1]!;
+    assert.equal(label, "tidy");
+    assert.equal(legs.length, 2);
+    const history = multitrack.history as { undoLabel(): Promise<string | null>; canUndo(): Promise<boolean> };
+    assert.equal(await history.undoLabel(), "rename");
+    assert.equal(await history.canUndo(), true);
+    // the window goes, and the multitrack holds what it left it as
+    const tracks = (host.held!.write().tracks as Call[]).map((t) => ({ ...t, name: "last" }));
+    host.held!.call("apply", { intent: { intent: "settracks", tracks } });
+    host.closeWindow();
+    assert.ok(editor.closed);
+    assert.equal(track.name, "last");
+    track.name = "mine again";
+    assert.equal(track.name, "mine again", "and it is the page's again");
 });
 
-test("rewind puts the cursor back at the top", () => {
-    // The cursor's own verb. Stop goes back to the **mark** -- which is what
-    // tells it from pause -- so with nothing else the way back to the top is
-    // finding beat zero on screen and clicking it.
-    const ed = editor(multitrack());
-    ed.cursor = 12.0;
-    ed.rewind();
-    assert.equal(ed.cursor, 0.0);
+test("the transport and the save are calls to the application", async () => {
+    const host = new FakeHost();
+    const editor = new MultitrackEditor(aSession("/songs/other.json"), { title: "mix" });
+    await editor.open(host as unknown as GuiHost);
+    await editor.transport.play(1.0, 2.0, { looping: true });
+    assert.deepEqual(host.last(), { do: { verb: "play", looping: true, range: [1.0, 2.0] } });
+    await editor.transport.stop(0.5);
+    assert.deepEqual(host.last(), { do: { verb: "stop", mark: 0.5 } });
+    await editor.transport.locate(3.0);
+    assert.deepEqual(host.last(), { do: { verb: "locate", at: 3.0 } });
+    assert.equal(await editor.transport.playing(), true);
+    assert.equal((await editor.output()).starved, 0);
+    assert.equal(await editor.save("/songs/song.json"), "/songs/song.json");
+    assert.deepEqual(host.last(), { do: { verb: "save", path: "/songs/song.json" } });
+    assert.ok(editor.undo());
+    assert.deepEqual(host.verbs[host.verbs.length - 1], [9, "undo"]);
+    assert.ok(editor.split());
+    assert.deepEqual(host.verbs[host.verbs.length - 1], [9, "split"]);
 });
 
-test("buffer zero is a buffer", () => {
-    // The first buffer an allocator hands out is a buffer, and a box over it
-    // draws -- `|| -1` said it did not, so the first take a page loaded was the
-    // one take its boxes could not draw.
-    //
-    // Found by use 2026-09-10, on the box the example loads first.
-    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: { bufnum: 0 } } });
-    assert.equal(ed.bridge.sources.bufnum(1), 0);
-    assert.ok(clips(ed).every((b) => b[6] === 0), "the boxes over it name it");
-    assert.equal(ed.bridge.sources.bufnum(9), -1, "and a source nobody loaded is none");
-});
-
-test("a source nobody loaded draws an empty box", () => {
-    const ed = editor(multitrack(), {});
-    assert.ok(
-        clips(ed).every((b) => b[6] === -1),
-        "negative and not zero: buffer 0 is a buffer",
-    );
-});
-
-test("a region over a sequence draws its notes", () => {
-    // A source that is an `EventSequence` has no buffer, and the boxes over it
-    // draw its notes: in each box's own frames, named by the region.
-    const notes = new EventSequence([
-        [0.0, new Event({ midinote: 60, sustain: 0.5 })],
-        [1.0, new Event({ midinote: 64, sustain: 0.5 })],
-    ]);
-    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
-    assert.ok(clips(ed).every((b) => b[6] === -1), "no buffer behind it");
-    const flat = props(ed).notes as unknown[];
-    const drawn: unknown[][] = [];
-    for (let i = 0; i + 6 <= flat.length; i += 6) drawn.push(flat.slice(i, i + 6));
-    assert.deepEqual(drawn.map((n) => n[0]), ["12", "12", "13", "13", "22", "22"]);
-    assert.deepEqual(drawn[0].slice(1, 4), [0.0, 0.5 * SR, 60.0]);
-    assert.deepEqual(drawn[1].slice(1, 4), [SR, 0.5 * SR, 64.0]);
-});
-
-test("a page turns the crossfade off without a menu", () => {
-    // The automatic crossfade is the multitrack's, not the menu's: a page turns
-    // it off through the multitrack, and that is a turn of the editor's history
-    // like the menu's -- recorded, drawn, undone.
-    const held = multitrack();
-    const ed = editor(held);
-    const host = wired(ed);
-    const context = Editing.of(held);
-    context.attach(ed); // what an open does: the window is a view
-    const pushed = host.pushes;
-    held.crossfade = false;
-    assert.equal(context.undoLabel, "crossfade overlaps");
-    assert.ok(host.pushes > pushed, "the window is corrected");
-    assert.ok(ed.undo());
-    assert.ok(held.crossfade);
-});
-
-test("a page's change to a sequence a box reads is the multitrack's turn", () => {
-    // The multitrack claims the sequences its boxes read, so a page's change to
-    // one is recorded in the multitrack's order, the boxes draw it, and the
-    // multitrack's Ctrl+Z takes it back.
-    const notes = new EventSequence([[0.0, new Event({ midinote: 60, sustain: 0.5 })]]);
-    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
-    const host = wired(ed);
-    const context = Editing.of(notes);
-    context.attach(ed); // what an open does: the window is a view
-    const told: boolean[] = [];
-    ed.onChange = () => told.push(true);
-    const pushed = host.pushes;
-    notes.events.item(0).set("midinote", 67);
-    assert.ok(context.undoLabel === "set midinote" && told.length === 1);
-    assert.ok(host.pushes > pushed, "the window is corrected");
-    assert.equal((props(ed).notes as unknown[])[3], 67, "the box draws the note where it now is");
-    assert.ok(ed.undo());
-    assert.equal(notes.events.item(0).get("midinote"), 60);
-});
-
-test("a tempo moves no box", () => {
-    // The multitrack is in seconds: a box is drawn at its seconds times the
-    // rate, and a tempo the multitrack holds is a ruler's to read.
-    const held = multitrack();
-    held.setTempo(new Tempo({ at: 0.0, tempo: 1.0 }));
-    held.setTempo(new Tempo({ at: 4.0, tempo: 0.5 }));
-    const boxes = clips(editor(held));
-    const atFour = boxes.find((b) => b[0] === "13")!;
-    near(Number(atFour[2]), 4.0 * SR, "four seconds in");
-    near(Number(atFour[3]), 2.0 * SR, "two seconds long, whatever the tempo");
-});
-
-// ---- the report, and the history ----
-
-test("a move reaches the multitrack and undoes", () => {
-    const held = multitrack();
-    const ed = editor(held);
-    assert.ok(report(ed, [
-        ["12", "10", 2.0 * SR, 2.0 * SR],
-        ["13", "10", 4.0 * SR, 2.0 * SR],
-        ["22", "20", 0.0, 2.0 * SR],
-    ]));
-    near(track(held, 10).takeLanes.item(0).regions.item(0).position, 2.0);
-    assert.ok(ed.undo());
-    near(track(held, 10).takeLanes.item(0).regions.item(0).position, 0.0);
-    assert.ok(ed.redo());
-    near(track(held, 10).takeLanes.item(0).regions.item(0).position, 2.0);
-});
-
-test("a block move is one entry", () => {
-    // A report is the multitrack, so one message can mean several edits -- and they are
-    // one thing a hand did, so Ctrl+Z walks back over all of it.
-    const held = multitrack();
-    const ed = editor(held);
-    assert.ok(report(ed, [
-        ["12", "10", 2.0 * SR, 2.0 * SR],
-        ["13", "10", 6.0 * SR, 2.0 * SR],
-        ["22", "20", 0.0, 2.0 * SR],
-    ]));
-    // Read through the multitrack each time: an edit replaces what the multitrack holds,
-    // so a reference taken before one is a reference to what it held then.
-    const at = () => [...track(held, 10).takeLanes.item(0).regions].map((r) => r.position);
-    assert.deepEqual(at(), [2.0, 6.0]);
-    assert.ok(ed.undo());
-    assert.deepEqual(at(), [0.0, 4.0], "both back, in one step");
-});
-
-test("a clip that crossed changes track and undoes", () => {
-    const held = multitrack();
-    const ed = editor(held);
-    assert.ok(report(ed, [
-        ["12", "20", 0.0, 2.0 * SR],
-        ["13", "10", 4.0 * SR, 2.0 * SR],
-        ["22", "20", 0.0, 2.0 * SR],
-    ]));
-    assert.ok([...track(held, 20).takeLanes.item(0).regions].some((r) => r.ident === 12));
-    assert.ok(ed.undo());
-    assert.ok([...track(held, 10).takeLanes.item(0).regions].some((r) => r.ident === 12));
-});
-
-test("a box the multitrack does not know becomes a region", () => {
-    // A split names its halves after the box they came from, which is no region
-    // id -- and that is how a new box is told from a moved one.
-    const held = multitrack();
-    const ed = editor(held);
-    assert.ok(report(ed, [
-        ["12", "10", 0.0, 1.0 * SR],
-        ["12 2", "10", 1.0 * SR, 1.0 * SR],
-        ["13", "10", 4.0 * SR, 2.0 * SR],
-        ["22", "20", 0.0, 2.0 * SR],
-    ]));
-    const ids = [...track(held, 10).takeLanes.item(0).regions].map((r) => r.ident);
-    assert.equal(ids.length, 3, "the two that stayed and the new one");
-    assert.ok(ids.includes(12) && ids.includes(13), "it took an unused id");
-    assert.ok(ed.undo());
-    assert.equal(track(held, 10).takeLanes.item(0).regions.length, 2);
-});
-
-test("a report of what holds is not an edit", () => {
-    const held = multitrack();
-    const ed = editor(held);
-    assert.equal(report(ed, [
-        ["12", "10", 0.0, 2.0 * SR],
-        ["13", "10", 4.0 * SR, 2.0 * SR],
-        ["22", "20", 0.0, 2.0 * SR],
-    ]), false);
-    assert.equal(ed.undo(), false, "and nothing was recorded to undo");
-});
-
-test("the strip is the multitrack's and undoes", () => {
-    const held = multitrack();
-    const ed = editor(held);
-    ed.draw();
-    const wid = [...ed.view!.widgets.keys()][0];
-    assert.ok(
-        (ed as unknown as { route(args: unknown[]): boolean }).route([
-            wid, "tracks",
-            "10", "", 96.0, 0, 0, 1.0, 0,
-            "20", "", 96.0, 1, 0, 0.5, 0,
-        ]),
-    );
-    assert.equal(track(held, 20).muted, true);
-    near(track(held, 20).level, 0.5);
-    assert.equal(track(held, 10).muted, false, "the one nobody touched is untouched");
-    assert.ok(ed.undo());
-    assert.equal(track(held, 20).muted, false);
-});
-
-test("edit opens a multitrack", async () => {
-    // `edit` dispatches on what the structure is, and a multitrack is one of the
-    // structures it opens now that its picture and its reading are the crate's.
-    const ed = await edit(multitrack(), { sampleRate: SR, open: false });
-    assert.ok(ed instanceof MultitrackEditor);
-});
-
-test("two windows over one multitrack walk one stack", () => {
-    const held = multitrack();
-    const one = editor(held);
-    const two = editor(held);
-    assert.ok(report(one, [
-        ["12", "10", 2.0 * SR, 2.0 * SR],
-        ["13", "10", 4.0 * SR, 2.0 * SR],
-        ["22", "20", 0.0, 2.0 * SR],
-    ]));
-    assert.ok(two.undo(), "the history is the data's, not the window's");
-    near(track(held, 10).takeLanes.item(0).regions.item(0).position, 0.0);
-});
-
-// ---- the curves: the light views, in the two places one lives ----
-
-/** The same multitrack, with a track automation on the first track and an envelope
- * inside its first box. */
-function curved(): Multitrack {
-    const data = twoTracks() as { tracks: Record<string, unknown>[] };
-    const first = data.tracks[0]!;
-    first.automation = [{
-        id: 30, name: "gain", target: { ctl: "gain", max: 2.0 },
-        points: [{ at: 0.0, value: 1.0 }, { at: 4.0, value: 0.0, data: { shape: 5, curve: 4.0 } }],
-        visible: true,
-    }];
-    const box = ((first.take_lanes as Record<string, unknown>[])[0]!.regions as Record<string, unknown>[])[0]!;
-    box.automation = [{
-        id: 31, name: "env", target: { ctl: "amp" }, points: [{ at: 0.0, value: 0.0 }], visible: true,
-    }];
-    return Multitrack.read(data);
-}
-
-test("a track curve is a row and a box curve is a layer", () => {
-    // The same curve in two places, and the place is the whole difference: a
-    // track's runs the timeline under its row, a region's is drawn inside its
-    // box. So they reach the widget as two props, not one with a flag.
-    const drawn = props(editor(curved()));
-    const curves = drawn.curves as unknown[];
-    const layers = drawn.layers as unknown[];
-    assert.deepEqual(curves.slice(0, 3), ["30", "10", "gain"], "the track it is under");
-    assert.equal(curves[4], 2.0, "the domain, read out of the target");
-    assert.equal(curves.length, 6, "one row, six numbers");
-    assert.deepEqual(layers.slice(0, 3), ["31", "12", "env"], "the box it is inside");
-    assert.equal(layers.length % 5, 0, "a layer states no height");
-    // And every box of samples has its fade envelope as a layer of its own.
-    const fades: unknown[][] = [];
-    for (let i = 0; i < layers.length; i += 5) {
-        if (String(layers[i]).startsWith("fade:")) fades.push(layers.slice(i, i + 5));
-    }
-    assert.ok(fades.length > 0);
-    for (const f of fades) assert.equal(f[0], `fade:${f[1]}`);
-    assert.equal(layers.length / 5, 1 + fades.length);
-});
-
-test("every curve's points travel in one list on this window's axis", () => {
-    const flat = props(editor(curved())).points as unknown[];
-    const points: unknown[][] = [];
-    for (let i = 0; i + 5 <= flat.length; i += 5) {
-        if (!String(flat[i]).startsWith("fade:")) points.push(flat.slice(i, i + 5));
-    }
-    assert.deepEqual(points.map((p) => p[0]), ["30", "30", "31"]);
-    // A beat is a second at the reader's default, so the second break-point of
-    // `gain` is at four seconds' worth of frames.
-    near(Number(points[1][1]), 4.0 * SR);
-    assert.equal(points[1][3], 5.0);
-    assert.equal(points[1][4], 4.0, "the shape is carried");
-});
-
-test("a point dragged is one edit and the curve that did not move is not", () => {
-    // The report is every curve there is, so what it means is the difference --
-    // and an undo puts the shape back, since the crate carries a point's data
-    // without reading it.
-    const written = curved();
-    const ed = editor(written);
-    ed.draw();
-    const wid = [...ed.view!.widgets.keys()][0];
-    const flat = [...(props(ed).points as unknown[])];
-    flat[2] = 0.25; // the first point of `gain`, moved
-    assert.ok((ed as unknown as { route(args: unknown[]): boolean })
-        .route([wid, "points", ...flat]));
-    const gain = () => [...written.tracks.item(0).automation].find((a) => a.id === 30)!;
-    near(Number(gain().points[0].value), 0.25);
-    assert.deepEqual(gain().points[1].data, { shape: 5, curve: 4.0 });
-    const env = written.tracks.item(0).takeLanes.item(0).regions.item(0).automation.item(0);
-    assert.equal(env.points[0].value, 0.0, "the curve nobody touched");
-
-    assert.ok(ed.undo());
-    near(Number(gain().points[0].value), 1.0);
-});
-
-test("a curve the multitrack hid is drawn nowhere", () => {
-    // Which curves a person had open is part of reopening the multitrack as they
-    // left it, so it is read out of the document rather than kept in the view.
-    const written = curved();
-    written.tracks.item(0).automation.item(0).visible = false;
-    assert.equal(props(editor(written)).hidden, "30");
-});
-
-test("a gesture that changed the data says so once", () => {
-    // The page's door onto an edit: one call per gesture however many edits it
-    // took, because that is what a hand did -- and a window is not exempt from
-    // being told about its own gesture.
-    const ed = editor(multitrack());
-    let told = 0;
-    ed.onChange = () => {
-        told += 1;
-    };
-
-    /** One `/gui_event`, through the door the host uses. */
-    const gesture = (boxes: [string, string, number, number][]): boolean => {
-        ed.draw();
-        const wid = [...ed.view!.widgets.keys()][0];
-        const values: unknown[] = [];
-        for (const [name, row, at, dur] of boxes) values.push(name, row, at, dur, 0.0, "", 7);
-        return ed.apply("/gui_event", [wid, 0, 0, "clips", ...values]);
-    };
-
-    // A block move: two clips, one gesture.
-    assert.ok(gesture([["12", "10", 1.0 * SR, 2.0 * SR],
-                       ["13", "10", 5.0 * SR, 2.0 * SR],
-                       ["22", "20", 0.0, 2.0 * SR]]));
-    assert.equal(told, 1);
-
-    assert.ok(ed.undo());
-    assert.equal(told, 2, "a step of the history changed the data too");
-
-    // A report of what already holds is not a change, so nothing is said.
-    assert.ok(!gesture([["12", "10", 0.0, 2.0 * SR],
-                        ["13", "10", 4.0 * SR, 2.0 * SR],
-                        ["22", "20", 0.0, 2.0 * SR]]));
-    assert.equal(told, 2);
-});
-
-test("a layer's points are its box's own time", () => {
-    // A track automation runs the timeline and is measured from the origin; a
-    // clip envelope is drawn inside its box and is measured from where that box
-    // starts. It is the one thing that differs between the two on the wire.
-    const data = twoTracks() as { tracks: Record<string, unknown>[] };
-    // The box at four seconds on the second track, with an envelope of its own.
-    const late = ((data.tracks[1]!.take_lanes as Record<string, unknown>[])[0]!
-        .regions as Record<string, unknown>[])[0]!;
-    late.position = 4.0;
-    late.automation = [{ id: 40, name: "fade", visible: true,
-                         points: [{ at: 0.0, value: 0.0 }, { at: 2.0, value: 1.0 }] }];
-    data.tracks[0]!.automation = [{ id: 41, name: "gain", visible: true,
-                                    points: [{ at: 4.0, value: 0.5 }] }];
-    const written = Multitrack.read(data);
-
-    const ed = editor(written);
-    const flat = props(ed).points as unknown[];
-    const points = new Map<string, number[]>();
-    for (let i = 0; i + 5 <= flat.length; i += 5) {
-        const at = points.get(String(flat[i])) ?? [];
-        at.push(Number(flat[i + 1]));
-        points.set(String(flat[i]), at);
-    }
-    assert.deepEqual(points.get("40"), [0.0, 2.0 * SR], "from the box's start");
-    assert.deepEqual(points.get("41"), [4.0 * SR], "from the origin");
-
-    // ...and back: a point dragged inside the box comes back as a beat from the
-    // box's start, not from the multitrack's.
-    ed.draw();
-    const wid = [...ed.view!.widgets.keys()][0];
-    const edited = [...flat];
-    for (let i = 0; i + 5 <= edited.length; i += 5) {
-        if (edited[i] === "40" && edited[i + 1] === 0.0) edited[i + 2] = 0.25;
-    }
-    assert.ok((ed as unknown as { route(args: unknown[]): boolean })
-        .route([wid, "points", ...edited]));
-    // The multitrack is re-read on an edit, so the region is looked up again.
-    const fade = written.tracks.item(1).takeLanes.item(0).regions.item(0).automation.item(0);
-    near(Number(fade.points[0].at), 0.0);
-    near(Number(fade.points[0].value), 0.25);
-    near(Number(fade.points[1].at), 2.0);
-});
-
-// ---- what the multitrack is heard as ----
-
-/**
- * The instance plan for an editor's multitrack, the way `Playback` asks for it.
- *
- * The plan itself is the crate's and is tested there; what these check is the
- * **crossing** -- that this client hands it the multitrack, the axis and the source
- * table it actually holds, which is the half a client can get wrong on its own.
- */
-/**
- * The plan's shape, as much of it as these tests read.
- *
- * Local rather than imported: the plan is the crate's and the Python client
- * reads it as plain data, so a type mirroring it in the package surface was one
- * client restating what the other does not.
- */
-interface Plan {
-    graph: string;
-    channels: number;
-    widths: [number, number][];
-    tracks: {
-        track: number;
-        channels: number;
-        gain: number;
-        mute: number;
-        clips: {
-            region: number;
-            slot: string;
-            gain: number;
-            mute: number;
-            readers: {
-                channel: number;
-                buffer: number;
-                at: number;
-                span: number;
-                start: number;
-                looping: boolean;
-                rate: number;
-            }[];
-            curves: { id: number; port: string; at: number; step: number; table: number[] }[];
-        }[];
-        curves: { id: number; port: string; at: number; step: number; table: number[] }[];
-    }[];
-}
-
-function plan(ed: MultitrackEditor): Plan {
-    return JSON.parse(
-        multitrackPlan(
-            JSON.stringify(ed.structure.write()),
-            ed.bridge.rate,
-            JSON.stringify(ed.bridge.sources.table()),
-        ),
-    ) as Plan;
-}
-
-test("a box is planned in frames from where its window opens", () => {
-    // The crossing from the multitrack to the readers: a box is **placed** in
-    // frames of the transport and its window **opens** at a second of its
-    // source, which is the frame the buffer's own rate makes of it -- the
-    // reader crosses that one with `BufSampleRate`, since the buffer is what
-    // knows the rate its samples were written at. A trimmed box reads on
-    // rather than restarting.
-    const ed = editor(multitrack());
-    const region = ed.structure.tracks.item(0).takeLanes.item(0).regions.item(1);
-    region.content = window(1, 0.5, 2.0);
-    const reader = plan(ed).tracks[0].clips[1].readers[0];
-    assert.equal(reader.buffer, 7, "the buffer the source was read into");
-    near(reader.at, 4.0 * SR);            // a beat is a second here
-    near(reader.span, 2.0 * SR);
-    near(reader.start, 0.5);              // where the window opens, in its seconds
-    near(reader.rate, 1.0);               // and at its own pitch
-    assert.equal(reader.looping, false);
-});
-
-test("a muted box and an unloaded source are not read", () => {
-    // Two different answers: a muted box is planned at nothing, and a box whose
-    // source nobody loaded is not planned at all -- the second is a multitrack that
-    // arrived without its takes, which is not the same as a silent one.
-    const ed = editor(multitrack());
-    const region = ed.structure.tracks.item(0).takeLanes.item(0).regions.item(0);
-    region.muted = true;
-    assert.equal(plan(ed).tracks[0].clips[0].mute, 1.0);
-
-    region.muted = false;
-    region.content = window(9);        // a source the table has no buffer for
-    const planned = plan(ed).tracks[0].clips.map((c) => c.region);
-    assert.ok(!planned.includes(region.ident));
-});
-
-test("the source table carries the width that picks the wiring", () => {
-    // A mono take is panned into its track and a stereo one is balanced, so
-    // which clip def a box goes in follows from the source's width -- and the
-    // width is the client's to report, since only it loaded the samples.
-    const ed = editor(multitrack());
-    const table = ed.bridge.sources.table();
-    assert.equal(table["1"].buffer, 7);
-    assert.ok(table["1"].channels >= 1);
-    assert.equal(table["9"], undefined, "a source nobody loaded is not in it");
-    assert.ok(plan(ed).tracks[0].clips[0].slot.startsWith("clips."));
-});
-
-test("the mixer rules reach the plan and a solo silences the rest", () => {
-    // The document holds the flags and never reads them: what a track
-    // contributes is the mixer's rule, and the mixer is in the crate -- so both
-    // clients get the same answer instead of each writing one.
-    const ed = editor(multitrack());
-    const [one, two] = ed.structure.tracks;
-    assert.equal(plan(ed).tracks[0].gain, 1.0, "a track that said nothing is at full");
-    assert.equal(plan(ed).tracks[0].mute, 0.0);
-
-    one.level = 0.25;
-    near(plan(ed).tracks[0].gain, 0.25);
-
-    one.muted = true;
-    assert.equal(plan(ed).tracks[0].mute, 1.0);
-    one.muted = false;
-
-    two.soloed = true;
-    assert.equal(plan(ed).tracks[0].mute, 1.0, "another track is soloed");
-    assert.equal(plan(ed).tracks[1].mute, 0.0);
-});
-
-test("a metered track names the buses the host reads", () => {
-    // The meters are the playback's and the strip is the host's, so what the
-    // widget carries is *where to look*: a lane, the level run and the mark
-    // run, and how many channels each is.
-    //
-    // The host reads those buses itself every frame, which is why a level that
-    // moves every block costs no message at all.
-    const ed = editor(multitrack());
-    assert.deepEqual(props(ed).meters, [], "a multitrack nobody plays has no meters");
-    (ed as unknown as { playback: unknown }).playback = {
-        meters: new Map([[10, [40, 2]]]),
-    };
-    assert.deepEqual(props(ed).meters, ["10", 40, 42, 2]);
-});
-
-test("the playback sends the crate's steps and waits where they say", async () => {
-    // **What is left in a client is a socket, and waiting on it.**
-    //
-    // What a multitrack needs, the messages that carry it out and how it is played
-    // are the crate's (`MultitrackPlayback`), and so is which reply releases what
-    // (`StepRunner`), tested there because they are one implementation for
-    // every endpoint. This is the other half: the message a step waits on goes
-    // out as the request whose reply is handed back, a barrier included, and a
-    // 64-bit sample goes out as one.
-    const log: unknown[][] = [];
-    const value = (arg: unknown): unknown => (Array.isArray(arg) ? arg[1] : arg);
-    const server = {
-        sendMsg: (addr: string, ...args: unknown[]) => log.push(["send", addr, ...args]),
-        // Answers as a server does: a barrier with its id, a command with its
-        // own name and the index it was sent with.
-        request: async (addr: string, args: unknown[]) => {
-            log.push(["request", addr, ...args]);
-            if (addr === "/server_sync") return { addr: "/server_sync.reply", args: args.map(value) };
-            return { addr: "/done", args: [addr, ...args.slice(0, 1).map(value)] };
-        },
-    };
-    const playback = Object.create(Playback.prototype) as Playback;
-    const held = playback as unknown as {
-        server: unknown;
-        runner: unknown;
-        run: (answer: string) => Promise<void>;
-    };
-    held.server = server;
-    held.runner = new StepRunner();
-
-    await held.run(JSON.stringify({
-        steps: [
-            { send: { addr: "/buffer_alloc", args: [{ i: 3 }, { i: 2 }, { i: 1 }] } },
-            { await: { command: "/buffer_alloc", index: 3 } },
-            { send: { addr: "/buffer_setRange", args: [{ i: 3 }, { i: 0 }, { b: [0.5, 1.0] }] } },
-            { sync: 1 },
-        ],
-    }));
-    assert.deepEqual(
-        log.map((entry) => entry.slice(0, 2)),
-        [["request", "/buffer_alloc"], ["send", "/buffer_setRange"], ["request", "/server_sync"]],
-        "the fill waits for the allocation",
-    );
-
-    const multitrack = new MultitrackPlayback(8192);
-    log.length = 0;
-    await held.run(multitrack.locate(2.0));
-    assert.equal(log.length, 1);
-    assert.deepEqual(log[0]!.slice(0, 2), ["request", "/transport_locateSample"]);
-    assert.deepEqual(log[0]![2], ["i", 0], "the multitrack's transport, first");
-    assert.deepEqual(
-        log[0]![3],
-        ["h", BigInt(multitrack.secsToSamples(2.0))],
-        "a sample rides as 64 bits",
-    );
-
-    // Where a pass ends is the crate's, read back through the binding; with no
-    // contents there is no end to mark, so nothing is sent -- and a marker is
-    // its own place.
-    (playback as unknown as { instance: unknown }).instance = multitrack;
-    log.length = 0;
-    assert.equal(playback.end, null);
-    playback.end = "contents";
-    assert.equal(playback.end, "contents");
-    assert.equal(log.length, 0, "no contents, nothing to mark");
-    playback.end = 2.5;
-    assert.equal(playback.end, 2.5);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(log.length, 1);
-    assert.equal(log[0]![1], "/transport_end");
-});
-
-test("a verb nobody awaited does not cross the next one on the runner", async () => {
-    // A page does not block: a cue right after the window opens is still
-    // waiting on its reply when a play comes, and the runner holds one
-    // sequence. The second walk starts when the first is done, in order.
-    const log: string[] = [];
-    const server = {
-        sendMsg: (addr: string) => log.push(`send ${addr}`),
-        request: async (addr: string, args: unknown[]) => {
-            log.push(`request ${addr}`);
-            await new Promise((resolve) => setTimeout(resolve, 5));
-            log.push(`reply ${addr}`);
-            return { addr: "/done", args: [addr, ...args.slice(0, 1).map((a) => (Array.isArray(a) ? a[1] : a))] };
-        },
-    };
-    const playback = Object.create(Playback.prototype) as Playback;
-    const held = playback as unknown as {
-        server: unknown;
-        runner: unknown;
-        run: (answer: string) => Promise<void>;
-    };
-    held.server = server;
-    held.runner = new StepRunner();
-    const multitrack = new MultitrackPlayback(8192);
-
-    const cue = held.run(multitrack.locate(1.0));
-    await held.run(multitrack.playPass(JSON.stringify({ range: null, looping: false })));
-    await cue;
-    assert.deepEqual(log.slice(0, 2), ["request /transport_locateSample", "reply /transport_locateSample"],
-        "the play waits for the cue it came after");
-    assert.ok(log.includes("reply /transport_play"), "and then goes out whole");
-});
-
-
-test("the source table says how long a source is when its buffer does", () => {
-    // A box longer than its source is cut where the source ends, and only the
-    // client that loaded the samples knows how long they are: a buffer that
-    // states its frames and its rate gives the table a duration, and a bare
-    // number gives none.
-    const table = new Sources([
-        [1, { bufnum: 7, channels: 1, frames: 24_000, sampleRate: 48_000 }],
-        [2, 8],
-    ]).table();
-    assert.equal(table["1"].duration, 0.5);
-    assert.equal(table["2"].duration, undefined);
-});
-
-test("a double click on a box of notes opens its roll", () => {
-    // The roll opens over the very sequence the box reads, in the
-    // multitrack's context, so the two are one undo order; a box of samples
-    // opens nothing.
-    const notes = new EventSequence([[0.0, new Event({ midinote: 60, sustain: 0.5 })]]);
-    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
-    ed.draw();
-    const wid = [...ed.view!.widgets.keys()][0];
-    (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "open", "12"]);
-    const roll = ed.rolls.get(1);
-    assert.ok(roll instanceof NotesEditor && roll.structure === notes);
-    const contextOf = (e: object) => (e as unknown as { editing: unknown }).editing;
-    assert.equal(contextOf(roll), contextOf(ed), "one context, one undo order");
-
-    const audio = editor(multitrack());
-    audio.draw();
-    (audio as unknown as { route(args: unknown[]): boolean }).route([
-        [...audio.view!.widgets.keys()][0], "open", "12",
-    ]);
-    assert.equal(audio.rolls.size, 0);
-});
-
-test("a box of notes is drawn as its page and opens on it", async (t) => {
-    // `notesView` draws every box of notes as a score: the crate reads the
-    // box's sequence, engraves it with the score this page hands it, and
-    // states the page with the time of each note in the box's own frames. A
-    // double click then opens the score editor over the sequence.
-    const engraver = new URL("../vendor/verovio/verovio.js", import.meta.url);
-    if (!existsSync(engraver)) {
-        t.skip("no engraver: run third_party/build-verovio-wasm.sh");
-        return;
-    }
-    setEngraverUrl(engraver.href);
-    const notes = new EventSequence([
-        [0.0, new Event({ midinote: 60, dur: 1.0 })],
-        [1.0, new Event({ midinote: 64, dur: 1.0 })],
-    ]);
-    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
-    assert.equal(ed.notesView, "roll");
-    ed.notesView = "score";
-    assert.equal(props(ed).scores, undefined, "nothing engraves until it is handed an engraver");
-    await ed.engrave();
-    const drawn = props(ed) as unknown as {
-        notes_view: string;
-        notes: unknown[];
-        scores: Record<string, { prims: unknown[]; glyphs: object; anchors: (string | number)[] }>;
-    };
-    assert.equal(drawn.notes_view, "score");
-    const page = drawn.scores["12"];
-    // an engraved page: the staff's lines and the two noteheads
-    assert.ok(page.prims.length > 5 && Object.keys(page.glyphs).length > 0);
-    const anchors = new Map<string, number>();
-    for (let i = 0; i < page.anchors.length; i += 2) {
-        anchors.set(String(page.anchors[i]), Number(page.anchors[i + 1]));
-    }
-    assert.equal(anchors.get("n1"), 0);
-    assert.ok(Math.abs(anchors.get("n2")! - SR) < 1e-6);
-    assert.ok(drawn.notes.length > 0, "the roll is still stated: a low row falls back to it");
-    assert.throws(() => {
-        ed.notesView = "tablature" as "score";
-    }, /no view/);
-
-    ed.draw();
-    const wid = [...ed.view!.widgets.keys()][0];
-    (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "open", "12"]);
-    // the page is read before its editor is up
-    for (let i = 0; i < 50 && !ed.rolls.has(1); i += 1) await new Promise((r) => setTimeout(r, 10));
-    const pageEditor = ed.rolls.get(1);
-    assert.ok(pageEditor instanceof ScoreEditor && pageEditor.structure === notes);
-    const contextOf = (e: object) => (e as unknown as { editing: unknown }).editing;
-    assert.equal(contextOf(pageEditor), contextOf(ed), "one context, one undo order");
-    // at open, too
-    const again = new MultitrackEditor(multitrack(), {
-        sampleRate: SR, sources: { 1: notes }, notesView: "score",
-    });
-    await again.engrave();
-    assert.ok(props(again).scores !== undefined);
-});
-
-test("a join the history let go of is freed and leaves the table", async () => {
-    // The context hands a multitrack's released joins back by source id, under
-    // the multitrack's member; its domain frees the buffer it built for each
-    // and drops it from the table, and leaves the takes alone.
-    await loadCore();
-    let freed = false;
-    const join = { free: () => { freed = true; } };
-    const domain = new MultitrackDomain({ sources: new Sources(new Map<number, number | object>([[1, 7], [5, join]])) } as never);
-    const editing = new Editing();
-    (editing as unknown as { handlers: Map<number, unknown> }).handlers.set(3, { structure: null, handler: domain });
-    editing.release([{ member: 3, sources: [5] }]);
-    assert.ok(freed);
-    assert.deepEqual([...domain.bridge.sources.buffers], [[1, 7]]);
-});
-
-/** A playback that records what the transport asks of it. */
-function recording() {
-    const calls: unknown[][] = [];
-    const held = new Map<number, Transport>();
-    const playback = {
-        calls,
-        playing: false,
-        end: null,
-        meters: new Map(),
-        transportId: 0,
-        server: {
-            transportAt: (n: number) => {
-                if (!held.has(n)) held.set(n, new Transport(playback.server as never, n));
-                return held.get(n)!;
-            },
-        },
-        async refresh() { return playback; },
-        async play(pass: { range?: unknown; looping?: boolean } = {}) {
-            calls.push(["play", pass.range ?? null, pass.looping ?? false]);
-        },
-        async setLoop(pass: { range?: unknown; looping?: boolean } = {}) {
-            calls.push(["loop", pass.range ?? null, pass.looping ?? false]);
-        },
-        pause() { calls.push(["pause"]); },
-        cue(at: number) { calls.push(["cue", at]); },
-        locate(at: number) { calls.push(["locate", at]); },
-    };
-    return playback;
-}
-
-test("the multitrack transport keeps its span and loop and draws them", async () => {
-    // The transport's span is the band a sweep leaves and the loop switch is
-    // L's, kept stopped, read by the next play.
-    const ed = editor(multitrack());
-    const host = wired(ed);
-    const playback = recording();
-    (ed as unknown as { playback: unknown }).playback = playback;
-    const transport = ed.transport!;
-    assert.equal(transport, ed.transport, "one transport, one object");
-    await transport.loop(1.0, 3.0);
-    assert.deepEqual(transport.span, [1.0, 3.0]);
-    assert.ok(transport.looping);
-    assert.deepEqual(playback.calls.at(-1), ["loop", [1.0, 3.0], true]);
-    const shown = props(ed);
-    assert.deepEqual([shown.sel_start, shown.sel_len], [SR, 2 * SR], "the band a sweep leaves");
-    assert.equal(host.held.get(ed.multitrackWidget!)?.looping, 1, "the window's L switch");
-    await transport.play();
-    assert.deepEqual(playback.calls.at(-1), ["play", [1.0, 3.0], true]);
-    await transport.unloop();
-    assert.ok(!transport.looping);
-    assert.deepEqual(transport.span, [1.0, 3.0]);
-    const wid = [...ed.view!.widgets.keys()][0];
-    (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "selection", 0.0, 2 * SR]);
-    assert.deepEqual(transport.span, [0.0, 2.0], "a sweep is the transport's span");
-});
-
-test("the end switch flips where a pass ends", async () => {
-    // The window's `stop_at_end` -- its key, the Transport menu's entry and the
-    // tool beside Loop -- flips the playback's end: a pass that rolled on stops
-    // where the contents end, and one that stopped rolls on.
-    const ed = editor(multitrack());
-    wired(ed);
-    const playback = recording();
-    (ed as unknown as { playback: unknown }).playback = playback;
-    const route = (args: unknown[]) =>
-        (ed as unknown as { route(args: unknown[]): boolean }).route(args);
-    const settled = () => (ed as unknown as { transported: Promise<void> }).transported;
-    route([1, "stop_at_end"]);
-    await settled();
-    assert.equal(playback.end, "contents");
-    route([1, "stop_at_end"]);
-    await settled();
-    assert.equal(playback.end, null);
-    (playback as { end: unknown }).end = 12.0;
-    route([1, "stop_at_end"]);
-    await settled();
-    assert.equal(playback.end, null, "a marker is an end too, and is let go");
-});
-
-test("what the multitrack holds is its regions", async () => {
-    const held = multitrack();
-    const ed = editor(held);
-    wired(ed);
-    const regions = regionsOf(held);
-    assert.deepEqual(await ed.selected(), []);
-    await ed.select(regions.slice(1));
-    assert.deepEqual(await ed.selected(), regions.slice(1));
-    await ed.unselect();
-    assert.deepEqual(await ed.selected(), []);
-});
-
-
-// ---- a page's change, beside the window ----
-
-test("a page's change is the editor's turn and its undo takes it back", () => {
-    // The page and the window hold one multitrack: a change made through the
-    // objects is recorded in the history the window walks, so its Ctrl+Z takes
-    // it back -- and the object reads what the multitrack holds after either.
-    const held = multitrack();
-    const ed = editor(held);
-    const box = track(held, 10).takeLanes.item(0).regions.item(0);
-    box.position = 1.5;
-    assert.equal(held.history.undoLabel, "move a region");
-    assert.ok(ed.undo());
-    near(box.position, 0.0);
-    assert.ok(ed.redo());
-    near(box.position, 1.5);
-});
-
-test("a page's block is one entry the window undoes", () => {
-    const held = multitrack();
-    const ed = editor(held);
-    const lane = track(held, 10).takeLanes.item(0);
-    const [first, second] = [...lane.regions];
-    held.history.entry("tidy", () => {
-        first!.position = 1.0;
-        second!.length = 1.0;
-        track(held, 20).muted = true;
-    });
-    assert.equal(held.history.undoLabel, "tidy");
-    assert.ok(ed.undo());
-    near(first!.position, 0.0);
-    near(second!.length, 2.0);
-    assert.equal(track(held, 20).muted, false);
-});
-
-test("a gesture leaves the page's objects reading what it did", () => {
-    // There is nothing to write back: the region a page holds is a view of the
-    // one the window moved.
-    const held = multitrack();
-    const ed = editor(held);
-    const box = track(held, 10).takeLanes.item(0).regions.item(0);
-    assert.ok(report(ed, [
-        ["12", "20", 3.0 * SR, 2.0 * SR],
-        ["13", "10", 4.0 * SR, 2.0 * SR],
-        ["22", "20", 0.0, 2.0 * SR],
-    ]));
-    near(box.position, 3.0);
-    assert.equal(box.track, track(held, 20));
+test("the grid is the window's", async () => {
+    const host = new FakeHost({ verb: { grid: 0.5, snap: true, view: "roll", set: true } });
+    const editor = await edit(aSession(), { host: host as unknown as GuiHost });
+    assert.equal(await editor.grid(), 0.5);
+    assert.equal(await editor.snapToGrid(), true);
+    await editor.setGrid(0.25);
+    assert.deepEqual(host.last(), { do: { verb: "verb", call: { verb: "sync", grid: 0.25 } } });
+    await editor.setSnapToGrid(false);
+    assert.deepEqual(host.last(), { do: { verb: "verb", call: { verb: "sync", snap: false } } });
+    assert.equal(await editor.notesView(), "roll");
+    await editor.setNotesView("score");
+    assert.deepEqual(host.last(), { do: { verb: "verb", call: { verb: "notesView", view: "score" } } });
 });

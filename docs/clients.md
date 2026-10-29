@@ -163,10 +163,11 @@ not drawn — a cord *is* a bus). Direction is structural, read from the def (a
 control feeding an `In` is an inlet, one feeding an `Out` an outlet), so dragging
 an outlet onto an inlet draws the cord (see [Design decisions](decisions.md)).
 
-The client side of all this is `edit(multitrack)`: it opens the multitrack
-editor the shared crates draw and edit, and the edit-backs land on the document —
-so the picture is not a copy of the multitrack, it *is* the multitrack. Its user
-documentation is the document chapter of each client's book.
+The client side of all this is `edit(session)` (or `edit(multitrack)`, an
+untitled session): the GUI host opens the multitrack, its application, which
+the shared crates draw and edit, and the client is its handler — so the picture
+is not a copy of the multitrack, it *is* the multitrack. Its user documentation
+is the document chapter of each client's book.
 
 **Playing any of these views is one shared object**, not a per-view transport:
 `clausters.gui.PlayheadSync` keeps the views' line in step with what plays, and

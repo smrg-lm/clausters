@@ -1,6 +1,8 @@
 # Manual check: span, selected and transport in the three editors.
 # Run the cells in order inside one Python session (clausters-editor or
-# `python -i`). Each block says what to look at.
+# `python -i`). Each block says what to look at. The multitrack's pass over a
+# range is its transport's `play(start, end, looping=...)`, and what a script
+# holds of it is the multitrack itself, the window's while it is open.
 
 # %% Setup: one server, one host
 import math
@@ -8,9 +10,9 @@ import math
 import pathlib
 
 from clausters import Session, SoundFile
-from clausters.defs import Buffer
 from clausters.gui import edit
-from clausters.multitrack import Content, Multitrack
+from clausters.multitrack import Content, Multitrack, Source
+from clausters.multitrack import Session as SavedSession
 from clausters.segments import Segment
 from clausters.seq import EventSequence
 from clausters.seq.event import Event
@@ -49,13 +51,13 @@ print(n.selected)
 print(n.selected)
 n.unselect()                  # nothing marked
 
-# %% MULTITRACK 1: two takes in two tracks
+# %% MULTITRACK 1: two takes in two tracks, saved as a session
+out = pathlib.Path(__file__).resolve().parents[1] / "out"
+out.mkdir(exist_ok=True)
 frames = int(2.0 * rate)
-high = Buffer.from_samples([0.3 * math.sin(2 * math.pi * 660.0 * i / rate)
-                            for i in range(frames)], 1, rate, server=server)
-higher = Buffer.from_samples([0.3 * math.sin(2 * math.pi * 990.0 * i / rate)
-                              for i in range(frames)], 1, rate, server=server)
-server.sync()
+for name, freq in (("span_selected-660.wav", 660.0), ("span_selected-990.wav", 990.0)):
+    SoundFile.write(out / name, [0.3 * math.sin(2 * math.pi * freq * i / rate)
+                                 for i in range(frames)], 1, rate, sample_format="float")
 mt = Multitrack()
 a = mt.tracks.add("one").active_take_lane.regions.add(
     0.0, 2.0, Content.onto({"source": {"source": 1, "lifetime": "session",
@@ -65,32 +67,24 @@ b = mt.tracks.add("two").active_take_lane.regions.add(
     2.0, 2.0, Content.onto({"source": {"source": 2, "lifetime": "session",
                                        "generation": 0},
                             "start": 0.0, "duration": 2.0}), name="990")
-m = edit(mt, sample_rate=rate, server=server, sources={1: high, 2: higher},
-         title="multitrack")
+saved = SavedSession(multitrack=mt)
+saved.sources[1] = Source.file("span_selected-660.wav").shaped(1, frames, rate)
+saved.sources[2] = Source.file("span_selected-990.wav").shaped(1, frames, rate)
+saved.save(out / "span_selected.json")
+m = edit(saved, title="multitrack")
 mtt = m.transport
 mtt.play()                # 660 then 990, the line moves
 
-# %% MULTITRACK 2: span and loop from the script
+# %% MULTITRACK 2: a pass over a range, looped, from the script
 mtt.stop()
-mtt.span = (1.0, 3.0)     # the band appears over 1..3 s
-mtt.loop()                # L turns on
-mtt.play()                # end of 660, start of 990, repeated
+mtt.play(1.0, 3.0, looping=True)  # end of 660, start of 990, repeated
 
-# %% MULTITRACK 3: stop the loop; sweep by hand (Alt+drag) and read it
-mtt.unloop()
+# %% MULTITRACK 3: stop the loop; the script's multitrack is the window's
 mtt.stop()
-print(mtt.span)           # the band you swept, in seconds
-
-# %% MULTITRACK 4: selected
-m.select([b])             # the 990 box is held
-print(m.selected)
-# click the other box by hand and run:
-print(m.selected)
-m.unselect()
+b.position = 2.5          # the 990 box moves in the window
+print(a.name, b.position)
 
 # %% AUDIO 1: a take, its transport
-out = pathlib.Path(__file__).resolve().parents[1] / "out"
-out.mkdir(exist_ok=True)
 take = SoundFile.write(out / "span_selected.wav",
                        [math.exp(-1.5 * i / frames) * 0.5
                         * math.sin(2 * math.pi * 880.0 * i / rate)

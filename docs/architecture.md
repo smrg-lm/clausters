@@ -1184,13 +1184,13 @@ transport row's buttons and the window's space bar are the editor's, so a click,
 a key and a script's `toggle` are one path. It answers rather than performs what
 belongs to a running system: the editing context records the entry in the one
 history it holds, and a client or the host makes the minted source and sends the
-transport's steps. Both clients open it as a
-member of an editing context (`clausters_apps::editing`, reached through
-`clausters_apps_editing_*` / `EditingCore`), whose verbs cross as JSON; the
-application the GUI host holds runs the same context
-(`clausters_app_engine::app::App`), where a roll opened from a box is a notes
+transport's steps. The application the GUI host holds opens it as a member of
+an editing context (`clausters_apps::editing`, run by
+`clausters_app_engine::app::App`), where a roll opened from a box is a notes
 member beside the multitrack, so a box moved and a note edited in its roll undo
-in one order there too.
+in one order; a client is its handler through the application door, and a
+script's multitrack reads and edits the member's while the window is open
+(`handle`, recorded in the same history).
 
 The **score editor** (`clausters_apps::score`, behind the crate's `notation`
 feature) opens a symbolic score and edits it **in place**: what it holds is the

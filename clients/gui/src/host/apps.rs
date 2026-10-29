@@ -104,7 +104,8 @@ impl Host {
     }
 
     /// **The multitrack editor opened for a client**, over the session its
-    /// options name (`path`), or over none; or why not.
+    /// options name (`path`), over a multitrack they hand over whole
+    /// (`multitrack`, an untitled session), or over none; or why not.
     #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     fn open_app_multitrack(
         &mut self,
@@ -116,12 +117,20 @@ impl Host {
         let path = options["path"].as_str();
         let title = options["title"].as_str().unwrap_or("Multitrack");
         let reply = super::audio_app::Reply::Client(from, seq);
-        if let Err(message) = self.open_app_for(
-            super::audio_app::AppKind::Multitrack,
-            path,
-            title,
-            Some(reply),
-        ) {
+        // a multitrack handed over whole is an untitled session; a path, the
+        // session at it
+        let opened = match (&options["multitrack"], path) {
+            (Value::Object(_), None) => {
+                self.open_multitrack_over(options["multitrack"].clone(), title, Some(reply))
+            }
+            _ => self.open_app_for(
+                super::audio_app::AppKind::Multitrack,
+                path,
+                title,
+                Some(reply),
+            ),
+        };
+        if let Err(message) = opened {
             effects.push(HostEffect::Reply(app_reply(
                 seq,
                 Err(("value".into(), message)),

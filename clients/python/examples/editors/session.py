@@ -3,8 +3,8 @@
 
 A multitrack says what plays when; a *session* is that plus the table saying where
 its samples live, and the format lives in the shared crate precisely so that
-more than one program can write it. This writes one, reads it back, and reopens
-its take onto a running server -- the loop a save and an open actually are.
+more than one program can write it. This writes one, reads it back, and opens
+it in the multitrack -- the loop a save and an open actually are.
 
 What it shows, in the order the cells run:
 
@@ -21,10 +21,11 @@ What it shows, in the order the cells run:
   has to be able to say without blocking or deciding for the person: a file that
   is there, samples nobody wrote down, and a working copy whose destructive edit
   is still open. The cell prints which sources are in which state.
-- **Reading it back.** The session is loaded and its table resolved: each file
-  it names is read onto the server **once per source**, however many regions
-  draw it, and the region that names it plays. A source the table calls volatile
-  comes back frozen -- drawn, placed, silent -- rather than as a lie.
+- **Reading it back.** The session is opened and handed to the multitrack, the
+  GUI host's application, which resolves its table: each file it names is read
+  **once per source**, however many regions draw it, and the regions that name
+  it play. A source the table calls volatile comes back unresolved -- drawn,
+  placed, silent -- rather than as a lie.
 - **What is the multitrack's and what is the view's.** A muted track reopens muted,
   because mute is the multitrack's. A track's *height* is not: it says nothing
   about what the multitrack is, so no session carries it.
@@ -43,8 +44,9 @@ The two files it writes go to ``examples/out/`` (``session.json`` and
 ``session-take.wav``), the git-ignored directory every generator in this tree
 writes to.
 
-**What it needs:** nothing running -- the example boots its own server for the
-reopening cell, and writes its own WAV.
+**What it needs:** nothing running -- the example writes its own WAV, and the
+GUI host it opens holds its own engine. A display and a GPU adapter for the
+reopening cell.
 
 Run it as a script, or step through the cells. Install once, from the repo
 root::
@@ -59,12 +61,10 @@ import math
 import os
 import struct
 import sys
-import time
 import wave
 
-import clausters
+from clausters.gui import edit
 from clausters.multitrack import Content, Multitrack, Session, Source, Span, Tempo, View
-from clausters.play import play
 
 SAMPLE_RATE = 48_000
 
@@ -221,74 +221,44 @@ print(f"  dangling:   {session.dangling()}  (named by the multitrack, absent fro
       "the table)")
 
 # %% [markdown]
-# ## Read back, onto a running server
+# ## Read back, in the multitrack
 #
-# Reopening is two steps: the file gives the multitrack and its table, and the table
-# is resolved. Each file is read **once per source**, however many regions name
-# it -- two regions over one take are two windows onto one buffer, and reading
-# it twice would give them two that drift apart on the first edit.
+# Reopening is two steps: the file gives the multitrack and its table, and the
+# multitrack resolves the table as it opens. Each file is read **once per
+# source**, however many regions name it -- two regions over one take are two
+# windows onto one take, and reading it twice would give them two that drift
+# apart on the first edit.
 
 # %%
-def reopen(live=None) -> tuple:
-    """Reads the session back and resolves its table onto the server of
-    `live`, a running `clausters.Session`.
-
-    Returns the multitrack and the buffers by source id. A source the table cannot
-    locate is simply absent from the second: half a session is worth opening,
-    and the region that names it comes back placed and silent rather than the
-    whole file failing.
-    """
-    reopened = Session.open(path)
-    if live is None:
-        return reopened, {}
-    #: The table is loaded by the shared crate, the same load the GUI host runs
-    #: on `--session`: relative paths against the folder the session was opened
-    #: from, and a volatile source left out with a warning.
-    return reopened, reopened.load(live.server)
-
-
 def run() -> None:
-    """Reopen the session, report it, and play what its first region names."""
-    # `clausters.Session` is the running server and its clock; the `Session`
-    # imported above is the file.
-    with clausters.Session.live().activate() as live:
-        reopened, buffers = reopen(live)
-        live.server.sync()
-        print(f"reopened {os.path.basename(path)}: "
-              f"{len(reopened.multitrack.tracks)} tracks, "
-              f"{len(buffers)} source(s) read, "
-              f"{reopened.volatile()} still volatile")
-        #: The window comes back too, and it is *not* the multitrack: the track
-        #: heights and the grid are the person's, and a reader that ignored
-        #: them would open the same music into a window that had forgotten
-        #: everything about how it was left.
-        first_track = reopened.multitrack.tracks[0]
-        for window in reopened.views:
-            print(f"  window {window.name!r}: grid {window.quant:g}, "
-                  f"{first_track.name!r} at height {window.track(first_track).height}")
-
-        for track in reopened.multitrack.tracks:
-            state = " (muted)" if track.muted else ""
-            for region in track.active_take_lane.regions:
-                print(f"  {region.position:6.2f}  {track.name}{state}: "
-                      f"{region.name or 'unnamed'} "
-                      f"({region.length:.0f} s)")
-
-        # The two regions of the first track name one source, and there is one
-        # buffer behind them.
-        first = first_track.active_take_lane.regions[0]
-        named = first.content.window["source"]["source"]
-        buffer = buffers.get(named)
-        if buffer is None:
-            print("  the take's file was not found, so nothing plays")
-            return
-        print(f"  playing source {named} from {buffer}")
-        play(buffer, server=live.server)
-        time.sleep(take_seconds + 0.5)
+    """Reopen the session, report it, open it in the multitrack and play it."""
+    reopened = Session.open(path)
+    print(f"reopened {os.path.basename(path)}: "
+          f"{len(reopened.multitrack.tracks)} tracks, "
+          f"{reopened.volatile()} still volatile")
+    #: The window comes back too, and it is *not* the multitrack: the track
+    #: heights and the grid are the person's, and a reader that ignored them
+    #: would open the same music into a window that had forgotten everything
+    #: about how it was left.
+    first_track = reopened.multitrack.tracks[0]
+    for window in reopened.views:
+        print(f"  window {window.name!r}: grid {window.quant:g}, "
+              f"{first_track.name!r} at height {window.track(first_track).height}")
+    for track in reopened.multitrack.tracks:
+        state = " (muted)" if track.muted else ""
+        for region in track.active_take_lane.regions:
+            print(f"  {region.position:6.2f}  {track.name}{state}: "
+                  f"{region.name or 'unnamed'} ({region.length:.0f} s)")
+    #: The multitrack reads the take from the file beside the session, relative
+    #: to its folder, and plays it: the regions of the first track name one
+    #: source, and one take is read behind them.
+    editor = edit(reopened, title="session")
+    editor.transport.play()
+    editor.wait()
 
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up -- run() to reopen the session and hear what it names")
+    print("up -- run() to reopen the session in the multitrack and hear what it names")

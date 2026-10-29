@@ -51,7 +51,7 @@ use std::sync::Mutex;
 use crate::out::{fill_then, text};
 use clausters_document::{
     Against, Body, Document, Grouping, Intent, Mapping, Node, NodeId, Opaque, Rules, Selection,
-    SourceId, Unit, apply as apply_intent,
+    Unit, apply as apply_intent,
 };
 
 /// A document handle safe to share across the binding's threads.
@@ -594,68 +594,6 @@ pub unsafe extern "C" fn clausters_mixer_defs(
         // A number, so it is not the same taste twice in two clients.
         "meterHold": clausters_core::mixer::METER_HOLD,
     })) else {
-        return 0;
-    };
-    // SAFETY: forwarded from this function's own contract. A pure read, so
-    // there is nothing to commit.
-    unsafe { fill_then(answer.as_bytes(), out, out_cap, || {}) }
-}
-
-/// **What to instantiate to play a multitrack**, as JSON -- the instance plan.
-///
-/// `multitrack` is a multitrack and `sources` a JSON object from source id to
-/// `{"buffer": n, "channels": n}`: where a source's samples actually are on a
-/// running server, which is the one fact about a multitrack that is not in the
-/// multitrack. No tempo is asked for: a multitrack is placed in seconds.
-///
-/// The answer names the graph to instantiate, the tracks in the order they are
-/// shown, and for each clip which slot it goes in and which frames its readers
-/// play. Three rules live in it and each was written twice before it did:
-/// seconds crossed to frames at the rate, the source's width picking the
-/// clip's wiring, and what a solo anywhere does to everything else -- which the
-/// document deliberately does not hold, since it records that a track was
-/// *marked* and what a mark does to the others is a mixer's question.
-///
-/// `0` for a multitrack or a source table that will not parse.
-///
-/// Sizes with a null `out` and fills with a second call, like the rest of the
-/// JSON surface.
-///
-/// # Safety
-/// `multitrack` and `sources` must be null or readable for their lengths, and `out`
-/// null or writable for `out_cap` bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn clausters_multitrack_plan(
-    multitrack: *const u8,
-    multitrack_len: usize,
-    sample_rate: f64,
-    sources: *const u8,
-    sources_len: usize,
-    out: *mut u8,
-    out_cap: usize,
-) -> usize {
-    // SAFETY: forwarded from this function's own contract.
-    let (Some(multitrack), Some(sources)) = (unsafe { text(multitrack, multitrack_len) }, unsafe {
-        text(sources, sources_len)
-    }) else {
-        return 0;
-    };
-    let Ok(multitrack) =
-        serde_json::from_str::<clausters_document::multitrack::Multitrack>(&multitrack)
-    else {
-        return 0;
-    };
-    let Ok(table) = serde_json::from_str::<
-        std::collections::HashMap<String, clausters_document::multitrack::nodes::SourceInfo>,
-    >(&sources) else {
-        return 0;
-    };
-    let table = table
-        .into_iter()
-        .filter_map(|(id, info)| id.parse::<u64>().ok().map(|id| (SourceId(id), info)))
-        .collect();
-    let plan = clausters_document::multitrack::nodes::plan(&multitrack, sample_rate, &table);
-    let Ok(answer) = serde_json::to_string(&plan) else {
         return 0;
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so

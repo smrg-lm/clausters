@@ -1,1054 +1,187 @@
-"""Editing a **multitrack**: the picture, the report and the history.
+"""`MultitrackEditor`: the handler of the multitrack the GUI host holds, over
+a saved session or over a multitrack handed to it whole.
 
-`clausters.gui.editing.MultitrackEditor` is the multitrack as one of the
-fundamental structures -- which is what gives it the undo every other editor has.
-What is checked here is the seam rather than the mapping: the mapping is the
-crate's (`clausters._native.multitrack_props`/`editing_intake`, the same one
-the standalone host draws and reads with), so what could still be wrong is this
-client's half -- the axis a box crosses to, which buffer a source was read into,
-and whether a report that means several edits lands as **one** entry.
+What is checked is this client's half: which call each member makes through
+the application door (`GuiHost.open_app`, `GuiHost.call_app`), how it reads
+the answer, and the script's multitrack reading and writing the window's while
+it is open. What the application does with a call is the host's and is tested
+there (`clients/gui/src/host/audio_editor.rs`).
 """
 
 import pytest
 
 from clausters import _native
+from clausters.gui import edit
+from clausters.gui.editing import MultitrackEditor
+from clausters.multitrack import Multitrack
+from clausters.multitrack import Session as SavedSession
 
-from clausters.gui.editing import MultitrackEditor, Sources, edit
-from clausters.multitrack import Content, Multitrack, Tempo
 
-SR = 48_000.0
+class FakeHost:
+    """A host that answers the door from a table, and records the calls. Its
+    window holds a multitrack of its own, which a ``handle`` call reads and
+    edits as the application's does."""
 
+    def __init__(self, answers=None):
+        self.calls: list = []
+        self.verbs: list = []
+        self._open: set = set()
+        self.held = None
+        self.recorded: list = []
+        self.closed_handler = None
+        self.answers = {
+            "playing": True,
+            "save": {"destination": "/songs/song.json"},
+            "output": {"tracks": {"1": [0.5]}, "starved": 0},
+            "history": {"canUndo": True, "canRedo": False, "undoLabel": "rename",
+                        "redoLabel": None},
+            **(answers or {}),
+        }
 
-def picture(tree: dict) -> dict:
-    """The view a window edits: the node its `main` names, which stands under
-    the toolbar of a window with chrome -- or, in one with none, its first."""
-    main = tree.get("main")
-
-    def find(node):
-        if node.get("id") == main:
-            return node
-        for child in node.get("children", ()):
-            found = find(child)
-            if found is not None:
-                return found
+    @property
+    def loop(self):
         return None
 
-    found = find(tree) if main is not None else None
-    return found if found is not None else tree["children"][0]
-
-
-def window(source: int, start: float = 0.0, duration: float = 2.0) -> Content:
-    return Content.onto({"source": {"source": source, "lifetime": "session",
-                                    "generation": 0},
-                         "start": start, "duration": duration})
-
-
-def two_tracks() -> dict:
-    """Two tracks, as a session file holds them: the first (10, its take lane
-    11) holding two regions (12, 13), the second (20, 21) one (22). The ids are
-    the file's, and the wire names rows and boxes by them."""
-    def region(id: int, at: float) -> dict:
-        return {"id": id, "position": at, "length": 2.0, "content": window(1).write()}
-    return {"tracks": [
-        {"id": 10, "name": "one", "take_lanes": [
-            {"id": 11, "regions": [region(12, 0.0), region(13, 4.0)]}]},
-        {"id": 20, "name": "two", "take_lanes": [{"id": 21, "regions": [region(22, 0.0)]}]}]}
-
-
-def multitrack() -> Multitrack:
-    """`two_tracks`, read."""
-    return Multitrack.read(two_tracks())
-
-
-def track(held: Multitrack, id: int):
-    """The track the wire names ``id``."""
-    return next(t for t in held.tracks if t._id == id)
-
-
-def editor(multitrack: Multitrack, **options) -> MultitrackEditor:
-    """An editor with no window: what is checked here is the seam, and opening
-    one would need a host."""
-    return MultitrackEditor(multitrack, sample_rate=SR, sources={1: 7}, **options)
-
-
-def props(ed: MultitrackEditor) -> dict:
-    """What the widget is told to draw, without opening a window."""
-    ed.draw()
-    wid = next(iter(ed.view.widgets))
-    return ed.view.props(ed, wid)
-
-
-def clips(ed: MultitrackEditor) -> list:
-    flat = props(ed)["clips"]
-    return [flat[i:i + 7] for i in range(0, len(flat), 7)]
-
-
-def report(ed: MultitrackEditor, boxes) -> bool:
-    """One `"clips"` report, as the widget would send it."""
-    ed.draw()
-    wid = next(iter(ed.view.widgets))
-    values = []
-    for name, row, at, dur in boxes:
-        values += [name, row, at, dur, 0.0, "", 7]
-    return ed._route([wid, "clips", *values])
-
-
-# ---- the picture ----
-
-def test_a_row_per_track_and_a_box_per_region():
-    ed = editor(multitrack())
-    rows = props(ed)["tracks"]
-    assert [rows[0], rows[7]] == ["10", "20"], "named by their track ids"
-    assert rows[1] == "one"
-    boxes = clips(ed)
-    assert [b[0] for b in boxes] == ["12", "13", "22"]
-    assert [b[1] for b in boxes] == ["10", "10", "20"]
-    # A beat is a second at the reader's default, so a region at beat 4 is at
-    # four seconds' worth of frames.
-    assert boxes[1][2] == pytest.approx(4.0 * SR)
-    assert boxes[1][3] == pytest.approx(2.0 * SR)
-    assert boxes[0][6] == 7, "the buffer its source was read into"
-
-
-def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
-    """The props are already the wire's, so the node is made from them rather
-    than through the `multitrack` builder there used to be -- whose
-    `lanes`/`clips` were the *tuples* a script types, and which flattened an
-    already-flat list a second time: seven rows named `10`, `one`, `96.0`, `False`, `False`, `1.0`,
-    `False`.
-
-    Found 2026-09-09 reading the two clients against each other, which is the
-    only place it was visible: every test here read `view.props` and none read
-    the tree that is actually published.
-    """
-    ed = editor(multitrack())
-    drawn = next(c for c in ed.draw()["children"] if c["type"] == "multitrack")
-    assert len(drawn["tracks"]) == 2 * 7, "two tracks, seven numbers each"
-    assert drawn["tracks"][:3] == ["10", "one", 96.0]
-    assert len(drawn["clips"]) == 3 * 7, "three regions, seven numbers each"
-    assert drawn["clips"][:2] == ["12", "10"]
-
-
-def test_the_multitrack_is_ruled_from_above_by_a_strip_of_its_own():
-    """An editor is where a position is read, and the widget draws no ruler --
-    so the view places one above it, on the multitrack's own axis.
-
-    The two have to be in **one navigation group**: an unlinked widget is a
-    group of one keyed by itself, so a ruler that joined nothing would pan and
-    zoom away from the tracks it is ruling.
-    """
-    children = [c for c in editor(multitrack()).draw()["children"] if c["type"] != "layout"]
-    ruler, multitrack_node = children[0], children[1]
-    assert ruler["type"] == "field", "the free-standing time ruler, above"
-    assert multitrack_node["type"] == "multitrack"
-    assert ruler["axes"]["x"]["link"] == multitrack_node["link"], "one axis, not two"
-    assert ruler["axes"]["x"]["unit"] == "beats"
-
-
-def test_the_position_cursor_is_kept_and_told_and_is_not_an_edit():
-    """A click on the time ruler places the **position cursor**, and what
-    arrives is `"locate"` with where it landed.
-
-    It is where a playback starts and where a paste lands, so the editor keeps
-    it -- the playhead is where the *music* is and moves on its own, and an
-    anchor that moved on its own would not be an anchor. It is not an edit and
-    reaches no history.
-    """
-    ed = editor(multitrack())
-    ed.draw()
-    # **It arrives on the ruler**, which is where it is placed and nowhere else
-    # -- so the strip is a named widget of this picture like any other, or the
-    # one gesture that places the cursor would land outside the only object
-    # that could hear it.
-    rid = ed.view.ruler
-    assert ed._owns(rid), "the ruler is this view's"
-    told = []
-    ed.on_locate = told.append
-    assert ed._route([rid, "locate", 4.0 * SR]) is False, "placing is not an edit"
-    assert ed.cursor == pytest.approx(4.0), "in the editor's units, which are beats"
-    assert told == [pytest.approx(4.0)]
-    # And a multitrack opens with the reader at the top: the cursor is stated, so
-    # there is somewhere to play from before anything is clicked.
-    fresh = editor(multitrack())
-    fresh.draw()
-    assert fresh.view.props(fresh, fresh.view.ruler)["cursor"] == 0.0
-    # Once placed it is reported from the editor's own copy, so a resync does
-    # not drag the mark back to the start.
-    assert ed.view.props(ed, ed.view.ruler)["cursor"] == pytest.approx(4.0 * SR)
-
-
-def test_buffer_zero_is_a_buffer():
-    """The first buffer an allocator hands out is a buffer, and a box over it
-    draws -- `x or -1` said it did not, so the first take a script loaded was
-    the one take its boxes could not draw.
-
-    Found by use 2026-09-10, on the box the example loads first.
-    """
-    class Held:
-        bufnum = 0
-
-    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: Held()})
-    assert ed.bridge.sources.bufnum(1) == 0
-    assert all(b[6] == 0 for b in clips(ed)), "the boxes over it name it"
-    assert ed.bridge.sources.bufnum(9) == -1, "and a source nobody loaded is none"
-
-
-def test_a_source_nobody_loaded_draws_an_empty_box():
-    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={})
-    assert all(b[6] == -1 for b in clips(ed)), \
-        "negative and not zero: buffer 0 is a buffer"
-
-
-def test_a_region_over_a_sequence_draws_its_notes():
-    """A source that is an `EventSequence` has no buffer, and the boxes over it
-    draw its notes: in each box's own frames, named by the region."""
-    from clausters.seq import EventSequence
-    from clausters.seq.event import Event
-
-    notes = EventSequence([(0.0, Event(midinote=60, sustain=0.5)),
-                           (1.0, Event(midinote=64, sustain=0.5))])
-    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
-    assert all(b[6] == -1 for b in clips(ed)), "no buffer behind it"
-    flat = props(ed)["notes"]
-    drawn = [flat[i:i + 6] for i in range(0, len(flat), 6)]
-    assert [n[0] for n in drawn] == ["12", "12", "13", "13", "22", "22"]
-    assert drawn[0][1:4] == [0.0, pytest.approx(0.5 * SR), 60.0]
-    assert drawn[1][1:4] == [pytest.approx(SR), pytest.approx(0.5 * SR), 64.0]
-
-
-def test_a_double_click_on_a_box_of_notes_opens_its_roll():
-    """The roll opens over the very sequence the box reads, in the
-    multitrack's context, so the two are one undo order; a box of samples
-    opens nothing."""
-    from clausters.gui.editing import NotesEditor
-    from clausters.seq import EventSequence
-    from clausters.seq.event import Event
-
-    notes = EventSequence([(0.0, Event(midinote=60, sustain=0.5))])
-    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
-    ed.draw()
-    wid = next(iter(ed.view.widgets))
-    ed._route([wid, "open", "12"])
-    roll = ed.rolls[1]
-    assert isinstance(roll, NotesEditor) and roll.structure is notes
-    assert roll._editing is ed._editing, "one context, one undo order"
-
-    audio = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: 7})
-    audio.draw()
-    audio._route([next(iter(audio.view.widgets)), "open", "12"])
-    assert audio.rolls == {}
-
-
-def test_a_box_of_notes_is_drawn_as_its_page_and_opens_on_it():
-    """`notes_view` draws every box of notes as a score: the crate reads the
-    box's sequence, engraves it with the score this client hands it, and
-    states the page with the time of each note in the box's own frames. A
-    double click then opens the score editor over the sequence."""
-    from clausters import _native
-    from clausters.gui.editing import ScoreEditor
-    from clausters.seq import EventSequence
-    from clausters.seq.event import Event
-
-    if not _native.has_engraver():
-        pytest.skip("no engraver: build libverovio and stage it")
-    notes = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
-                           (1.0, Event(midinote=64, dur=1.0))])
-    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
-    assert ed.notes_view == "roll" and "scores" not in props(ed)
-    ed.notes_view = "score"
-    drawn = props(ed)
-    assert drawn["notes_view"] == "score"
-    page = drawn["scores"]["12"]
-    # an engraved page: the staff's lines and the two noteheads
-    assert len(page["prims"]) > 5 and page["glyphs"]
-    anchors = dict(zip(page["anchors"][0::2], page["anchors"][1::2]))
-    assert anchors["n1"] == 0.0 and anchors["n2"] == pytest.approx(SR)
-    assert "notes" in drawn, "the roll is still stated: a low row falls back to it"
-    with pytest.raises(ValueError, match="no view"):
-        ed.notes_view = "tablature"
-
-    ed.draw()
-    ed._route([next(iter(ed.view.widgets)), "open", "12"])
-    page_editor = ed.rolls[1]
-    assert isinstance(page_editor, ScoreEditor) and page_editor.structure is notes
-    assert page_editor._editing is ed._editing, "one context, one undo order"
-    # at open, too
-    again = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes},
-                             notes_view="score")
-    assert "scores" in props(again)
-
-
-def test_a_script_turns_the_crossfade_off_without_a_menu():
-    """**The automatic crossfade is the multitrack's, not the menu's**: a
-    script turns it off through the multitrack, and that is a turn of the
-    editor's history like the menu's -- recorded, drawn, undone."""
-    held = multitrack()
-    ed = editor(held)
-    host = _wired(ed)
-    ed._editing.attach(ed)          # what an open does: the window is a view
-    pushed = host.pushes
-    held.crossfade = False
-    assert ed._editing.undo_label == "crossfade overlaps"
-    assert host.pushes > pushed, "the window is corrected"
-    assert ed.undo()
-    assert held.crossfade
-
-
-def test_a_scripts_change_to_a_sequence_a_box_reads_is_the_multitracks_turn():
-    """The multitrack claims the sequences its boxes read, so a script's
-    change to one is recorded in the multitrack's order, the boxes draw it,
-    and the multitrack's Ctrl+Z takes it back."""
-    from clausters.seq import EventSequence
-    from clausters.seq.event import Event
-
-    notes = EventSequence([(0.0, Event(midinote=60, sustain=0.5))])
-    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
-    host = _wired(ed)
-    ed._editing.attach(ed)          # what an open does: the window is a view
-    told = []
-    ed.on_change = lambda: told.append(True)
-    pushed = host.pushes
-    notes.events[0]["midinote"] = 67
-    assert ed._editing.undo_label == "set midinote" and told == [True]
-    assert host.pushes > pushed, "the window is corrected"
-    assert props(ed)["notes"][3] == 67.0, "the box draws the note where it now is"
-    assert ed.undo()
-    assert notes.events[0]["midinote"] == 60
-
-
-def test_a_tempo_moves_no_box():
-    """The multitrack is in seconds: a box is drawn at its seconds times the
-    rate, and a tempo the multitrack holds is a ruler's to read."""
-    held = multitrack()
-    held.set_tempo(Tempo(at=0.0, tempo=1.0))
-    held.set_tempo(Tempo(at=4.0, tempo=0.5))
-    boxes = clips(editor(held))
-    at_four = next(b for b in boxes if b[0] == "13")
-    assert at_four[2] == pytest.approx(4.0 * SR), "four seconds in"
-    assert at_four[3] == pytest.approx(2.0 * SR), "two seconds long, whatever the tempo"
-
-
-# ---- the report, and the history ----
-
-def test_a_move_reaches_the_multitrack_and_undoes():
-    held = multitrack()
-    ed = editor(held)
-    assert report(ed, [("12", "10", 2.0 * SR, 2.0 * SR),
-                       ("13", "10", 4.0 * SR, 2.0 * SR),
-                       ("22", "20", 0.0, 2.0 * SR)])
-    assert track(held, 10).take_lanes[0].regions[0].position == pytest.approx(2.0)
-    assert ed.undo()
-    assert track(held, 10).take_lanes[0].regions[0].position == pytest.approx(0.0)
-    assert ed.redo()
-    assert track(held, 10).take_lanes[0].regions[0].position == pytest.approx(2.0)
-
-
-def test_a_block_move_is_one_entry():
-    """A report is the multitrack, so one message can mean several edits -- and they
-    are one thing a hand did, so `Ctrl`+`Z` walks back over all of it."""
-    held = multitrack()
-    ed = editor(held)
-    assert report(ed, [("12", "10", 2.0 * SR, 2.0 * SR),
-                       ("13", "10", 6.0 * SR, 2.0 * SR),
-                       ("22", "20", 0.0, 2.0 * SR)])
-    # Read through the multitrack each time: an edit replaces what the multitrack holds,
-    # so a reference taken before one is a reference to what it held then.
-    at = lambda: [r.position for r in track(held, 10).take_lanes[0].regions]
-    assert at() == pytest.approx([2.0, 6.0])
-    assert ed.undo()
-    assert at() == pytest.approx([0.0, 4.0]), "both back, in one step"
-
-
-def test_a_clip_that_crossed_changes_track_and_undoes():
-    held = multitrack()
-    ed = editor(held)
-    assert report(ed, [("12", "20", 0.0, 2.0 * SR),
-                       ("13", "10", 4.0 * SR, 2.0 * SR),
-                       ("22", "20", 0.0, 2.0 * SR)])
-    assert any(r._id == 12 for r in track(held, 20).take_lanes[0].regions)
-    assert ed.undo()
-    assert any(r._id == 12 for r in track(held, 10).take_lanes[0].regions)
-
-
-def test_a_box_the_multitrack_does_not_know_becomes_a_region():
-    """A split names its halves after the box they came from, which is no
-    region id -- and that is how a new box is told from a moved one."""
-    held = multitrack()
-    ed = editor(held)
-    assert report(ed, [("12", "10", 0.0, 1.0 * SR),
-                       ("12 2", "10", 1.0 * SR, 1.0 * SR),
-                       ("13", "10", 4.0 * SR, 2.0 * SR),
-                       ("22", "20", 0.0, 2.0 * SR)])
-    lane = track(held, 10).take_lanes[0]
-    assert len(lane.regions) == 3, "the two that stayed and the new one"
-    assert {r._id for r in lane.regions} > {12, 13}, "it took an unused id"
-    del lane
-    assert ed.undo()
-    assert len(track(held, 10).take_lanes[0].regions) == 2
-
-
-def test_a_report_of_what_holds_is_not_an_edit():
-    held = multitrack()
-    ed = editor(held)
-    assert not report(ed, [("12", "10", 0.0, 2.0 * SR),
-                           ("13", "10", 4.0 * SR, 2.0 * SR),
-                           ("22", "20", 0.0, 2.0 * SR)])
-    assert not ed.undo(), "and nothing was recorded to undo"
-
-
-def test_the_strip_is_the_multitracks_and_undoes():
-    held = multitrack()
-    ed = editor(held)
-    ed.draw()
-    wid = next(iter(ed.view.widgets))
-    assert ed._route([wid, "tracks",
-                      "10", "", 96.0, 0, 0, 1.0, 0,
-                      "20", "", 96.0, 1, 0, 0.5, 0])
-    assert track(held, 20).muted
-    assert track(held, 20).level == pytest.approx(0.5)
-    assert not track(held, 10).muted, "the one nobody touched is untouched"
-    assert ed.undo()
-    assert not track(held, 20).muted
-
-
-def test_edit_opens_a_multitrack():
-    """`edit` dispatches on what the structure is, and a multitrack is one of the
-    structures it opens now that its picture and its reading are the crate's."""
-    ed = edit(multitrack(), sample_rate=SR, open=False, sources={1: 7})
-    assert isinstance(ed, MultitrackEditor)
-
-
-def test_two_windows_over_one_multitrack_walk_one_stack():
-    held = multitrack()
-    one, two = editor(held), editor(held)
-    assert report(one, [("12", "10", 2.0 * SR, 2.0 * SR),
-                        ("13", "10", 4.0 * SR, 2.0 * SR),
-                        ("22", "20", 0.0, 2.0 * SR)])
-    assert two.undo(), "the history is the data's, not the window's"
-    assert track(held, 10).take_lanes[0].regions[0].position == pytest.approx(0.0)
-
-
-# ---- the curves: the light views, in the two places one lives ----
-
-def curved() -> Multitrack:
-    """The same multitrack, with a track automation on the first track and an
-    envelope inside its first box."""
-    data = two_tracks()
-    data["tracks"][0]["automation"] = [
-        {"id": 30, "name": "gain", "target": {"ctl": "gain", "max": 2.0},
-         "points": [{"at": 0.0, "value": 1.0},
-                    {"at": 4.0, "value": 0.0, "data": {"shape": 5, "curve": 4.0}}],
-         "visible": True}]
-    data["tracks"][0]["take_lanes"][0]["regions"][0]["automation"] = [
-        {"id": 31, "name": "env", "target": {"ctl": "amp"},
-         "points": [{"at": 0.0, "value": 0.0}], "visible": True}]
-    return Multitrack.read(data)
-
-
-def test_a_track_curve_is_a_row_and_a_box_curve_is_a_layer():
-    """The same curve in two places, and the place is the whole difference: a
-    track's runs the timeline under its row, a region's is drawn inside its
-    box. So they reach the widget as two props, not one with a flag."""
-    ed = editor(curved())
-    drawn = props(ed)
-    assert drawn["curves"][:3] == ["30", "10", "gain"], "the track it is under"
-    assert drawn["curves"][4] == 2.0, "the domain, read out of the target"
-    assert len(drawn["curves"]) == 6, "one row, six numbers"
-    assert drawn["layers"][:3] == ["31", "12", "env"], "the box it is inside"
-    layers = [drawn["layers"][i:i + 5] for i in range(0, len(drawn["layers"]), 5)]
-    assert len(drawn["layers"]) % 5 == 0, "a layer states no height"
-    # And every box of samples has its fade envelope as a layer of its own.
-    fades = [layer for layer in layers if str(layer[0]).startswith("fade:")]
-    assert [f[0] for f in fades] == [f"fade:{f[1]}" for f in fades] and fades
-    assert len(layers) == 1 + len(fades)
-
-
-def test_every_curve_s_points_travel_in_one_list_on_this_window_s_axis():
-    ed = editor(curved())
-    flat = props(ed)["points"]
-    points = [flat[i:i + 5] for i in range(0, len(flat), 5)
-              if not str(flat[i]).startswith("fade:")]
-    assert [p[0] for p in points] == ["30", "30", "31"]
-    # A beat is a second at the reader's default, so the second break-point of
-    # `gain` is at four seconds' worth of frames.
-    assert points[1][1] == pytest.approx(4.0 * SR)
-    assert points[1][3] == 5.0 and points[1][4] == 4.0, "the shape is carried"
-
-
-def test_a_point_dragged_is_one_edit_and_the_curve_that_did_not_move_is_not():
-    """The report is every curve there is, so what it means is the difference --
-    and an undo puts the shape back, since the crate carries a point's data
-    without reading it."""
-    written = curved()
-    ed = editor(written)
-    ed.draw()
-    wid = next(iter(ed.view.widgets))
-    flat = list(props(ed)["points"])
-    flat[2] = 0.25   # the first point of `gain`, moved
-    assert ed._route([wid, "points", *flat])
-    gain = next(a for a in written.tracks[0].automation if a._id == 30)
-    assert gain.points[0]["value"] == pytest.approx(0.25)
-    assert gain.points[1]["data"] == {"shape": 5, "curve": 4.0}
-    env = written.tracks[0].take_lanes[0].regions[0].automation[0]
-    assert env.points[0]["value"] == 0.0, "the curve nobody touched"
-
-    assert ed.undo()
-    gain = next(a for a in written.tracks[0].automation if a._id == 30)
-    assert gain.points[0]["value"] == pytest.approx(1.0)
-
-
-def test_a_curve_the_multitrack_hid_is_drawn_nowhere():
-    """Which curves a person had open is part of reopening the multitrack as they
-    left it, so it is read out of the document rather than kept in the view."""
-    written = curved()
-    written.tracks[0].automation[0].visible = False
-    assert props(editor(written))["hidden"] == "30"
-
-
-def test_a_curve_shown_from_the_menu_is_one_edit_and_undoes():
-    """A curve shown from a context menu's check is reported as `shown`, read
-    into the multitrack's own verb and recorded: an undo hides it again. The
-    same edit a script makes by setting `visible`."""
-    written = curved()
-    written.tracks[0].automation[0].visible = False
-    ed = editor(written)
-    ed.draw()
-    wid = next(iter(ed.view.widgets))
-    assert ed._route([wid, "shown", "30", 1])
-    assert written.tracks[0].automation[0].visible
-    assert "30" not in props(ed)["hidden"].split()
-    assert ed.undo()
-    assert not written.tracks[0].automation[0].visible
-
-
-def test_a_gesture_that_changed_the_data_says_so_once():
-    """The script's door onto an edit: one call per gesture however many edits
-    it took, because that is what a hand did -- and a window is not exempt from
-    being told about its own gesture."""
-    ed = editor(multitrack())
-    told = []
-    ed.on_change = lambda: told.append(1)
-
-    def gesture(boxes) -> bool:
-        """One `/gui_event`, through the door the host uses."""
-        ed.draw()
-        wid = next(iter(ed.view.widgets))
-        values = []
-        for name, row, at, dur in boxes:
-            values += [name, row, at, dur, 0.0, "", 7]
-        return ed.apply("/gui_event", [wid, 0, 0, "clips", *values])
-
-    # A block move: two clips, one gesture.
-    assert gesture([("12", "10", 1.0 * SR, 2.0 * SR),
-                    ("13", "10", 5.0 * SR, 2.0 * SR),
-                    ("22", "20", 0.0, 2.0 * SR)])
-    assert len(told) == 1
-
-    assert ed.undo()
-    assert len(told) == 2, "a step of the history changed the data too"
-
-    # A report of what already holds is not a change, so nothing is said.
-    assert not gesture([("12", "10", 0.0, 2.0 * SR),
-                        ("13", "10", 4.0 * SR, 2.0 * SR),
-                        ("22", "20", 0.0, 2.0 * SR)])
-    assert len(told) == 2
-
-
-def test_a_layer_s_points_are_its_box_s_own_time():
-    """A track automation runs the timeline and is measured from the origin; a
-    clip envelope is drawn inside its box and is measured from where that box
-    starts. It is the one thing that differs between the two on the wire."""
-    data = two_tracks()
-    # The box at four seconds on the second track, with an envelope of its own.
-    late = data["tracks"][1]["take_lanes"][0]["regions"][0]
-    late["position"] = 4.0
-    late["automation"] = [{"id": 40, "name": "fade", "visible": True,
-                           "points": [{"at": 0.0, "value": 0.0},
-                                      {"at": 2.0, "value": 1.0}]}]
-    data["tracks"][0]["automation"] = [{"id": 41, "name": "gain", "visible": True,
-                                        "points": [{"at": 4.0, "value": 0.5}]}]
-    written = Multitrack.read(data)
-
-    ed = editor(written)
-    flat = props(ed)["points"]
-    points = {}
-    for i in range(0, len(flat), 5):
-        points.setdefault(flat[i], []).append(flat[i + 1])
-    assert points["40"] == [0.0, pytest.approx(2.0 * SR)], "from the box's start"
-    assert points["41"] == [pytest.approx(4.0 * SR)], "from the origin"
-
-    # ...and back: a point dragged inside the box comes back as a beat from the
-    # box's start, not from the multitrack's.
-    ed.draw()
-    wid = next(iter(ed.view.widgets))
-    edited = list(flat)
-    for i in range(0, len(edited), 5):
-        if edited[i] == "40" and edited[i + 1] == 0.0:
-            edited[i + 2] = 0.25
-    assert ed._route([wid, "points", *edited])
-    # The multitrack is re-read on an edit, so the region is looked up again.
-    fade = written.tracks[1].take_lanes[0].regions[0].automation[0]
-    assert fade.points[0]["at"] == pytest.approx(0.0)
-    assert fade.points[0]["value"] == pytest.approx(0.25)
-    assert fade.points[1]["at"] == pytest.approx(2.0)
-
-
-# ---- what the multitrack is heard as ----
-
-def _plan(ed) -> dict:
-    """The instance plan for an editor's multitrack, the way `Playback` asks for it.
-
-    The plan itself is the crate's and is tested there; what these check is the
-    **crossing** -- that this client hands it the multitrack, the axis and the source
-    table it actually holds, which is the half a client can get wrong on its
-    own.
-    """
-    from clausters import _native
-
-    return _native.multitrack_plan(ed.structure.write(), ed.bridge.rate,
-                                   ed.bridge.sources.table())
-
-
-def test_a_box_is_planned_in_frames_from_where_its_window_opens():
-    """The crossing from the multitrack to the readers: a box is **placed** in
-    frames of the transport and its window **opens** at a second of its source,
-    which is the frame the buffer's own rate makes of it -- the reader crosses
-    that one with `BufSampleRate`, since the buffer is what knows the rate its
-    samples were written at. A trimmed box reads on rather than restarting."""
-    ed = editor(multitrack())
-    region = ed.structure.tracks[0].take_lanes[0].regions[1]
-    region.content = window(1, start=0.5, duration=2.0)
-    reader = _plan(ed)["tracks"][0]["clips"][1]["readers"][0]
-    assert reader["buffer"] == 7, "the buffer the source was read into"
-    assert reader["at"] == pytest.approx(4.0 * SR), "a beat is a second here"
-    assert reader["span"] == pytest.approx(2.0 * SR)
-    assert reader["start"] == pytest.approx(0.5), "where the window opens, in its seconds"
-    assert reader["rate"] == pytest.approx(1.0), "and at its own pitch"
-    assert reader["looping"] is False
-
-
-def test_a_muted_box_and_an_unloaded_source_are_not_read():
-    """Two different answers: a muted box is planned at nothing, and a box whose
-    source nobody loaded is not planned at all -- the second is a multitrack that
-    arrived without its takes, which is not the same as a silent one."""
-    ed = editor(multitrack())
-    region = ed.structure.tracks[0].take_lanes[0].regions[0]
-    region.muted = True
-    assert _plan(ed)["tracks"][0]["clips"][0]["mute"] == 1.0
-
-    region.muted = False
-    region.content = window(9)          # a source the table has no buffer for
-    planned = [c["region"] for c in _plan(ed)["tracks"][0]["clips"]]
-    assert region._id not in planned
-
-
-def test_the_source_table_carries_the_width_that_picks_the_wiring():
-    """A mono take is panned into its track and a stereo one is balanced, so
-    which clip def a box goes in follows from the source's width -- and the width
-    is the client's to report, since only it loaded the samples."""
-    ed = editor(multitrack())
-    table = ed.bridge.sources.table()
-    assert table[1]["buffer"] == 7
-    assert table[1]["channels"] >= 1
-    assert 9 not in table, "a source nobody loaded is not in it"
-    assert _plan(ed)["tracks"][0]["clips"][0]["slot"].startswith("clips.")
-
-
-def test_the_mixer_rules_reach_the_plan_and_a_solo_silences_the_rest():
-    """The document holds the flags and never reads them: what a track
-    contributes is the mixer's rule, and the mixer is in the crate -- so both
-    clients get the same answer instead of each writing one."""
-    ed = editor(multitrack())
-    p = ed.structure
-    one, two = p.tracks
-    assert _plan(ed)["tracks"][0]["gain"] == 1.0, "a track that said nothing is at full"
-    assert _plan(ed)["tracks"][0]["mute"] == 0.0
-
-    one.config = {"level": 0.25}
-    assert _plan(ed)["tracks"][0]["gain"] == pytest.approx(0.25)
-
-    one.muted = True
-    assert _plan(ed)["tracks"][0]["mute"] == 1.0
-    one.muted = False
-
-    two.soloed = True
-    assert _plan(ed)["tracks"][0]["mute"] == 1.0, "another track is soloed"
-    assert _plan(ed)["tracks"][1]["mute"] == 0.0
-
-
-def test_rewind_puts_the_cursor_back_at_the_top():
-    """The cursor's own verb. Stop goes back to the **mark** -- which is what
-    tells it from pause -- so with nothing else the way back to the top is
-    finding beat zero on screen and clicking it."""
-    ed = editor(multitrack())
-    ed.cursor = 12.0
-    ed.rewind()
-    assert ed.cursor == 0.0
-
-
-class _AdoptingHost:
-    """A host that adopts what it is told, the way the real one does: it keeps
-    the names of the last picture pushed to it."""
-
-    def __init__(self):
-        self.names = None
-        self.rows = None
-        self.pushes = 0
-
-    def push(self, seq, *corrections, doc_version=0, reason=None):
-        self.pushes += 1
-        for _wid, props in corrections:
-            if "clips" in props:
-                self.names = list(props["clips"][::7])
-            if "tracks" in props:
-                self.rows = list(props["tracks"][::7])
-
-    def ack(self, seq, doc_version=0, reason=None):
-        pass
-
-    def set(self, wid, **props):
-        self.__dict__.setdefault("props", {}).setdefault(wid, {}).update(props)
-
-    def query(self, wid, timeout=1.0):
-        from clausters.gui.host import WidgetInfo
-
-        return WidgetInfo("multitrack", dict(self.__dict__.get("props", {}).get(wid, {})))
-
-
-def _wired(ed) -> _AdoptingHost:
-    """An editor answering a host, without opening a window."""
-    host = _AdoptingHost()
-    # Through the application, which is what an `open` would do: it is the
-    # window set that adopts a host, and it hands it to each editor's echo.
-    ed._host = host
-    ed._window = 1
-    ed.draw()
-    return host
-
-
-def test_a_name_the_host_minted_is_answered_with_the_one_the_multitrack_kept():
-    """The host makes a **track** from a double click and a **box** from a
-    split, and in both it mints the word while the document mints the id.
-
-    Until the picture goes back the two are naming the same thing differently,
-    and a name the multitrack does not know is not ignored -- it is read as
-    something *new*. So the next report about that box minted it again, and
-    again after that: a split box took a fresh id on every drag, losing
-    whatever was hung on it, and a box dropped on a track the host had just
-    made landed on a track nobody had.
-    """
-    held = multitrack()
-    ed = editor(held)
-    host = _wired(ed)
-    wid = next(iter(ed.view.widgets))
-
-    def ids():
-        return [r._id for t in held.tracks for lane in t.take_lanes for r in lane.regions]
-
-    def boxes():
-        flat = props(ed)["clips"]
-        return [flat[i:i + 7] for i in range(0, len(flat), 7)]
-
-    # A split, reported as the host reports one: the second half under a name
-    # the host minted and the client never said.
-    payload = []
-    for box in boxes():
-        if box[0] == "12":
-            first = list(box)
-            first[3] = 1.0 * SR
-            payload += first
-            payload += ["white 2", box[1], 1.0 * SR, 1.0 * SR, 1.0 * SR, "", box[6]]
-        else:
-            payload += list(box)
-    ed.apply("/gui_event", [wid, 1, ed._version, "clips", *payload])
-    split = ids()
-    assert len(split) == 4, "the split landed"
-    assert host.pushes == 1, "and the picture went back with it"
-    assert host.names == [str(i) for i in split], "under the ids the multitrack kept"
-
-    # The next gesture, reported with the names the host was just given: the
-    # boxes are the same boxes.
-    payload = []
-    for name, box in zip(host.names, boxes()):
-        row = list(box)
-        row[0] = name
-        row[2] = float(row[2]) + 1000.0
-        payload += row
-    ed.apply("/gui_event", [wid, 2, ed._version, "clips", *payload])
-    assert ids() == split, "nothing was minted a second time"
-
-    # And a track made in the host: the same rule, and the `meters` prop rides
-    # with it -- a track that reached the server has buses to read.
-    rows = list(props(ed)["tracks"]) + ["track 1", "three", 96.0, 0, 0, 1.0, 0]
-    ed.apply("/gui_event", [wid, 3, ed._version, "tracks", *rows])
-    assert host.rows == [str(t._id) for t in held.tracks]
-    assert len(held.tracks) == 3
-
-
-def test_a_track_made_in_the_host_is_a_track_in_the_plan():
-    """A double click on a header makes a track, and what the host sends back
-    is the rows as they now stand. The claim here is the other half: what the
-    host adds is added on the **server** too, empty or not.
-
-    A track with nothing on it is still a strip, a fader and a meter -- it is
-    where the next box will land, and a multitrack that only instantiated the tracks
-    that happened to have boxes would build them at the moment a box was
-    dropped, which is the one moment it must not.
-    """
-    ed = editor(multitrack())
-    ed.draw()
-    wid = next(iter(ed.view.widgets))
-    rows = list(props(ed)["tracks"]) + ["0", "three", 96.0, 0, 0, 1.0, 0]
-    assert ed._route([wid, "tracks", *rows])
-    planned = _plan(ed)["tracks"]
-    assert [t["track"] for t in planned] == [10, 20, 23]
-    assert planned[2]["clips"] == [], "and it is planned empty rather than left out"
-
-
-def test_a_metered_track_names_the_buses_the_host_reads():
-    """The meters are the playback's and the strip is the host's, so what the
-    widget carries is *where to look*: a lane, the level run and the mark run,
-    and how many channels each is.
-
-    The host reads those buses itself every frame, which is why a level that
-    moves every block costs no message at all.
-    """
-    class FakePlayback:
-        meters = {10: (40, 2)}
-
-    ed = editor(multitrack())
-    assert props(ed)["meters"] == [], "a multitrack nobody plays has no meters"
-    ed.playback = FakePlayback()
-    assert props(ed)["meters"] == ["10", 40, 42, 2]
-
-
-def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
-    """**What is left in a client is a socket, and waiting on it.**
-
-    What a multitrack needs, the messages that carry it out and how it is played are
-    the crate's (`clausters._native.MultitrackPlayback`), and so is which reply
-    releases what (`clausters._native.StepRunner`), tested there because they
-    are one implementation for every endpoint. This is the other half: the
-    message a step waits on goes out as the request whose reply is handed back,
-    a barrier included, and a 64-bit sample goes out as one.
-    """
-    from clausters.base import _osclib
-    from clausters.gui.editing.playback import Playback
-
-    class Server:
-        """Answers as a server does: a barrier with its id, a command with its
-        own name and the index it was sent with."""
-
-        def __init__(self):
-            self.log = []
-
-        def send_msg(self, addr, *args):
-            self.log.append(("send", addr) + args)
-
-        def request(self, addr, *args, expect=None, timeout=None):
-            self.log.append(("request", addr) + args)
-            if addr == "/server_sync":
-                return "/server_sync.reply", list(args)
-            return "/done", [addr, *args[:1]]
-
-    playback = object.__new__(Playback)
-    playback.server = Server()
-    playback._runner = _native.StepRunner()
-    playback._run([
-        {"send": {"addr": "/buffer_alloc", "args": [{"i": 3}, {"i": 2}, {"i": 1}]}},
-        {"await": {"command": "/buffer_alloc", "index": 3}},
-        {"send": {"addr": "/buffer_setRange",
-                  "args": [{"i": 3}, {"i": 0}, {"b": [0.5, 1.0]}]}},
-        {"sync": 1},
-    ])
-    kinds = [entry[:2] for entry in playback.server.log]
-    assert kinds == [("request", "/buffer_alloc"), ("send", "/buffer_setRange"),
-                     ("request", "/server_sync")], "the fill waits for the allocation"
-
-    multitrack = _native.MultitrackPlayback()
-    playback.server.log.clear()
-    playback._run(multitrack.locate(2.0))
-    (entry,) = playback.server.log
-    assert entry[:2] == ("request", "/transport_locateSample")
-    assert entry[2] == 0, "the multitrack's transport, first"
-    assert isinstance(entry[3], _osclib.Int64), "a sample rides as 64 bits"
-    assert entry[3].value == multitrack.secs_to_samples(2.0)
-
-    # Where a pass ends is the crate's, read back through the binding; with no
-    # contents there is no end to mark, so nothing is sent -- and a marker is
-    # its own place.
-    playback._instance = multitrack
-    playback.server.log.clear()
-    assert playback.end is None
-    playback.end = "contents"
-    assert playback.end == "contents"
-    assert playback.server.log == [], "no contents, nothing to mark"
-    playback.end = 2.5
-    assert playback.end == 2.5
-    (entry,) = playback.server.log
-    assert entry[1] == "/transport_end"
-
-
-def test_the_source_table_says_how_long_a_source_is_when_its_buffer_does():
-    """A box longer than its source is cut where the source ends, and only the
-    client that loaded the samples knows how long they are: a buffer that
-    states its frames and its rate gives the table a duration, and a bare
-    number gives none."""
-    from types import SimpleNamespace
-
-    from clausters.gui.editing.multitrack import Sources
-    table = Sources({1: SimpleNamespace(bufnum=7, channels=1, frames=24_000,
-                                        sample_rate=48_000.0),
-                     2: 8}).table()
-    assert table[1]["duration"] == 0.5
-    assert "duration" not in table[2]
-
-
-def test_a_join_the_history_let_go_of_is_freed_and_leaves_the_table():
-    # The context hands a multitrack's released joins back by source id, under
-    # the multitrack's member; its domain frees the buffer it built for each
-    # and drops it from the table, and leaves the takes alone.
-    from types import SimpleNamespace
-
-    from clausters.gui.editing import Editing, MultitrackDomain
-
-    class Join:
-        freed = False
-
-        def free(self):
-            self.freed = True
-
-    join = Join()
-    domain = MultitrackDomain(SimpleNamespace(sources=Sources({1: 7, 5: join})))
-    editing = Editing()
-    editing._handlers[3] = (None, domain)
-    editing.release([{"member": 3, "sources": [5]}])
-    assert join.freed
-    assert domain.bridge.sources.buffers == {1: 7}
-
-
-class _RecordingPlayback:
-    """A playback that records what the transport asks of it."""
-
-    def __init__(self):
-        from clausters.defs import Transport
-
-        self.calls = []
-        self.playing = False
-        self.end = None
-        self.meters = {}
-        held = {}
-        self.server = type("S", (), {
-            "transport_at": lambda _s, n: held.setdefault(n, Transport(self.server, n)),
-        })()
-        self._instance = type("I", (), {"transport": lambda _s: 0})()
-
-    def play(self, range=None, looping=False):
-        self.calls.append(("play", range, looping))
-
-    def set_loop(self, range=None, looping=False):
-        self.calls.append(("loop", range, looping))
-
-    def pause(self):
-        self.calls.append(("pause",))
-
-    def cue(self, at):
-        self.calls.append(("cue", at))
-
-    def locate(self, at):
-        self.calls.append(("locate", at))
-
-
-def test_the_multitrack_transport_keeps_its_span_and_loop_and_draws_them():
-    """The multitrack's transport: its span is the band a sweep
-    leaves and the loop switch is L's, kept stopped, read by the next play."""
-    ed = editor(multitrack())
-    host = _wired(ed)
-    ed.playback = _RecordingPlayback()
-    transport = ed.transport
-    assert transport is ed.transport, "one transport, one object"
-    transport.loop(1.0, 3.0)
-    assert transport.span == (1.0, 3.0) and transport.looping
-    assert ed.playback.calls[-1] == ("loop", (1.0, 3.0), True)
-    shown = props(ed)
-    assert (shown["sel_start"], shown["sel_len"]) == (SR, 2 * SR), "the band a sweep leaves"
-    assert host.props[ed.multitrack_widget]["looping"] == 1, "the window's L switch"
-    transport.play()
-    assert ed.playback.calls[-1] == ("play", (1.0, 3.0), True)
-    transport.unloop()
-    assert not transport.looping and transport.span == (1.0, 3.0)
-    wid = next(iter(ed.view.widgets))
-    ed._route([wid, "selection", 0.0, 2 * SR])
-    assert transport.span == (0.0, 2.0), "a sweep is the transport's span"
-
-
-def test_the_end_switch_flips_where_a_pass_ends():
-    """The window's ``stop_at_end`` -- its key, the Transport menu's entry and
-    the tool beside Loop -- flips the playback's end: a pass that rolled on
-    stops where the contents end, and one that stopped rolls on."""
-    ed = editor(multitrack())
-    _wired(ed)
-    ed.playback = _RecordingPlayback()
-    ed._route([1, "stop_at_end"])
-    assert ed.playback.end == "contents"
-    ed._route([1, "stop_at_end"])
-    assert ed.playback.end is None
-    ed.playback.end = 12.0
-    ed._route([1, "stop_at_end"])
-    assert ed.playback.end is None, "a marker is an end too, and is let go"
-
-
-def test_what_the_multitrack_holds_is_its_regions():
-    held = multitrack()
-    ed = editor(held)
-    _wired(ed)
-    regions = [r for t in held.tracks for lane in t.take_lanes for r in lane.regions]
-    assert ed.selected == []
-    ed.select(regions[1:])
-    assert ed.selected == regions[1:]
-    ed.unselect()
-    assert ed.selected == []
-
-
-
-# ---- a script's change, beside the window ----
-
-def test_a_scripts_change_is_the_editors_turn_and_its_undo_takes_it_back():
-    """The script and the window hold one multitrack: a change made through the
-    objects is recorded in the history the window walks, so its Ctrl+Z takes
-    it back -- and the object reads what the multitrack holds after either."""
-    held = multitrack()
-    ed = editor(held)
-    box = track(held, 10).take_lanes[0].regions[0]
-    box.position = 1.5
-    assert ed._editing.undo_label == "move a region"
-    assert ed.undo()
-    assert box.position == pytest.approx(0.0)
-    assert ed.redo()
-    assert box.position == pytest.approx(1.5)
-
-
-def test_a_scripts_block_is_one_entry_the_window_undoes():
-    held = multitrack()
-    ed = editor(held)
-    first, second = track(held, 10).take_lanes[0].regions
-    with held.history("tidy"):
-        first.position = 1.0
-        second.length = 1.0
-        track(held, 20).muted = True
-    assert ed._editing.undo_label == "tidy"
-    assert ed.undo()
-    assert (first.position, second.length) == (pytest.approx(0.0), pytest.approx(2.0))
-    assert not track(held, 20).muted
-
-
-def test_a_gesture_leaves_the_scripts_objects_reading_what_it_did():
-    """There is nothing to write back: the region a script holds is a view of
-    the one the window moved."""
-    held = multitrack()
-    ed = editor(held)
-    box = track(held, 10).take_lanes[0].regions[0]
-    assert report(ed, [("12", "20", 3.0 * SR, 2.0 * SR),
-                       ("13", "10", 4.0 * SR, 2.0 * SR),
-                       ("22", "20", 0.0, 2.0 * SR)])
-    assert box.position == pytest.approx(3.0) and box.track is track(held, 20)
+    def open_app(self, app, options=None, timeout=5.0):
+        options = dict(options or {})
+        self.calls.append(("open", app, options))
+        self.held = _native.MultitrackHandle(options.get("multitrack", {}))
+        self._open.add(9)
+        return 9
+
+    def call_app(self, window, call, timeout=None):
+        self.calls.append(("call", int(window), call))
+        if "query" in call:
+            return self.answers.get(call["query"])
+        do = call["do"]
+        if do["verb"] == "handle":
+            asked = dict(do["call"])
+            if asked["verb"] == "record":
+                self.recorded.append((do.get("label"), asked["legs"]))
+                return True
+            answer = self.held.call(**asked)
+            if asked["verb"] == "apply" and do.get("record", True):
+                self.recorded.append((do.get("label"), [asked["intent"]]))
+            return answer
+        if do["verb"] == "close":
+            self.close_window()
+            return False
+        return self.answers.get(do["verb"])
+
+    def close_window(self):
+        """The window goes, as the host says it: what it left the multitrack
+        as rides with the close."""
+        self.left = self.held.call("state")
+        self._open.discard(9)
+        if self.closed_handler is not None:
+            self.closed_handler[1]()
+
+    def _closed_with(self, window):
+        return getattr(self, "left", None)
+
+    def verb(self, window, verb):
+        self.verbs.append((int(window), verb))
+
+    def _wait_while(self, pred, timeout=None):
+        return not pred()
+
+    def _set_closed_handler(self, window, func):
+        self.closed_handler = (window, func)
+
+
+def a_session(path="/songs/song.json") -> SavedSession:
+    session = SavedSession()
+    session.path = path
+    return session
+
+
+def test_edit_opens_a_saved_session_in_the_multitrack_application():
+    host = FakeHost()
+    editor = edit(a_session(), host=host)
+    assert isinstance(editor, MultitrackEditor)
+    assert host.calls[0] == ("open", "multitrack",
+                             {"title": "song.json", "path": "/songs/song.json"})
+    assert editor.window is not None and not editor.closed
+    assert edit(a_session(), host=host) is editor, "a second edit finds it"
+
+
+def test_a_session_with_no_file_is_refused():
+    with pytest.raises(ValueError, match="save it first"):
+        MultitrackEditor(SavedSession())
+
+
+def test_a_multitrack_opens_as_an_untitled_session():
+    host = FakeHost()
+    multitrack = Multitrack()
+    multitrack.tracks.add("drums")
+    editor = edit(multitrack, host=host)
+    assert isinstance(editor, MultitrackEditor)
+    _, app, options = host.calls[0]
+    assert app == "multitrack" and options["title"] == "Untitled"
+    assert options["multitrack"]["tracks"][0]["name"] == "drums"
+    assert editor.path is None and editor.session is None
+    assert edit(multitrack, host=host) is editor, "a second edit finds it"
+
+
+def test_the_scripts_multitrack_is_the_windows_while_it_is_open():
+    host = FakeHost()
+    multitrack = Multitrack()
+    track = multitrack.tracks.add("a")
+    editor = edit(multitrack, host=host)
+    # a read answers what the window holds
+    host.held.call("apply", intent={"intent": "settracks", "tracks": [
+        dict(multitrack.write()["tracks"][0], name="by hand")]})
+    assert track.name == "by hand"
+    # a change is an edit of the window's, recorded under its label
+    track.name = "b"
+    assert host.held.call("track", id=track._id)["name"] == "b"
+    assert host.recorded[-1][0] is not None
+    # a block is one entry, recorded when it ends
+    with multitrack.history("tidy"):
+        track.muted = True
+        track.name = "c"
+    label, legs = host.recorded[-1]
+    assert label == "tidy" and len(legs) == 2
+    assert multitrack.history.undo_label == "rename"
+    assert multitrack.history.can_undo
+    # the window goes, and the multitrack holds what it left it as
+    host.held.call("apply", intent={"intent": "settracks", "tracks": [
+        dict(host.held.call("state")["tracks"][0], name="last")]})
+    host.close_window()
+    assert editor.closed
+    assert track.name == "last"
+    track.name = "mine again"
+    assert track.name == "mine again", "and it is the script's again"
+
+
+def test_the_transport_and_the_save_are_calls_to_the_application():
+    host = FakeHost()
+    editor = MultitrackEditor(a_session("/songs/other.json"), title="mix")
+    editor.open(host)
+    editor.transport.play(1.0, 2.0, looping=True)
+    assert host.calls[-1][2] == {"do": {"verb": "play", "looping": True,
+                                        "range": [1.0, 2.0]}}
+    editor.transport.stop(0.5)
+    assert host.calls[-1][2] == {"do": {"verb": "stop", "mark": 0.5}}
+    editor.transport.locate(3.0)
+    assert host.calls[-1][2] == {"do": {"verb": "locate", "at": 3.0}}
+    assert editor.transport.playing
+    assert editor.output["starved"] == 0
+    assert editor.save("/songs/song.json") == "/songs/song.json"
+    assert host.calls[-1][2] == {"do": {"verb": "save", "path": "/songs/song.json"}}
+    assert editor.undo() and host.verbs[-1] == (9, "undo")
+    assert editor.split() and host.verbs[-1] == (9, "split")
+
+
+def test_the_grid_is_the_windows():
+    host = FakeHost({"verb": {"grid": 0.5, "snap": True, "view": "roll", "set": True}})
+    editor = edit(a_session(), host=host)
+    assert editor.grid == 0.5 and editor.snap_to_grid
+    editor.grid = 0.25
+    assert host.calls[-1][2] == {"do": {"verb": "verb", "call": {"verb": "sync", "grid": 0.25}}}
+    editor.snap_to_grid = False
+    assert host.calls[-1][2] == {"do": {"verb": "verb", "call": {"verb": "sync", "snap": False}}}
+    assert editor.notes_view == "roll"
+    editor.notes_view = "score"
+    assert host.calls[-1][2] == {"do": {"verb": "verb",
+                                        "call": {"verb": "notesView", "view": "score"}}}

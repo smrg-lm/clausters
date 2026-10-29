@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 95
+CORE_ABI_VERSION = 96
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -281,39 +281,12 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_intake.restype = ctypes.c_size_t
-    lib.clausters_editing_stitch.argtypes = [
-        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
-        u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_stitch.restype = ctypes.c_size_t
-    lib.clausters_editing_load.argtypes = [
-        u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_load.restype = ctypes.c_size_t
     lib.clausters_editing_event_curves.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_event_curves.restype = ctypes.c_size_t
-    lib.clausters_editing_instance_new.restype = ctypes.c_void_p
-    lib.clausters_editing_instance_free.argtypes = [ctypes.c_void_p]
-    lib.clausters_editing_instance_reconcile.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
-        u8p_early, ctypes.c_size_t, ctypes.c_float,
-        u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_instance_reconcile.restype = ctypes.c_size_t
-    lib.clausters_editing_instance_teardown.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_instance_teardown.restype = ctypes.c_size_t
-    lib.clausters_editing_instance_meters.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_instance_meters.restype = ctypes.c_size_t
     lib.clausters_editing_default_tempo.restype = ctypes.c_double
     lib.clausters_editing_default_tempo.argtypes = []
-    lib.clausters_editing_playback_new.restype = ctypes.c_void_p
-    lib.clausters_editing_playback_new.argtypes = [ctypes.c_size_t]
     lib.clausters_editing_runner_new.restype = ctypes.c_void_p
     lib.clausters_editing_runner_new.argtypes = []
     lib.clausters_editing_runner_free.argtypes = [ctypes.c_void_p]
@@ -322,7 +295,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_runner_call.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_free.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_notes_playback_new.restype = ctypes.c_void_p
     lib.clausters_editing_notes_playback_new.argtypes = [ctypes.c_int32]
     lib.clausters_editing_notes_playback_free.argtypes = [ctypes.c_void_p]
@@ -350,51 +322,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_document_multitrack_call.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_sync.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
-        u8p_early, ctypes.c_size_t, ctypes.c_float, ctypes.c_void_p,
-        u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_playback_sync.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_notes.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_void_p,
-        u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_playback_notes.restype = ctypes.c_size_t
-    for name in ("play", "pause", "meters"):
-        fn = getattr(lib, f"clausters_editing_playback_{name}")
-        fn.argtypes = [ctypes.c_void_p, u8p_early, ctypes.c_size_t]
-        fn.restype = ctypes.c_size_t
-    for name in ("stop", "locate", "cue"):
-        fn = getattr(lib, f"clausters_editing_playback_{name}")
-        fn.argtypes = [ctypes.c_void_p, ctypes.c_double, u8p_early, ctypes.c_size_t]
-        fn.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_play_pass.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t]
-    lib.clausters_editing_playback_play_pass.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_set_loop.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t]
-    lib.clausters_editing_playback_set_loop.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_set_end.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t]
-    lib.clausters_editing_playback_set_end.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_end.argtypes = [
-        ctypes.c_void_p, u8p_early, ctypes.c_size_t]
-    lib.clausters_editing_playback_end.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_close.argtypes = [
-        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_editing_playback_close.restype = ctypes.c_size_t
-    lib.clausters_editing_playback_set_rolling.argtypes = [ctypes.c_void_p, ctypes.c_int32]
-    lib.clausters_editing_playback_set_rolling.restype = None
-    lib.clausters_editing_playback_rolling.argtypes = [ctypes.c_void_p]
-    lib.clausters_editing_playback_rolling.restype = ctypes.c_int32
-    lib.clausters_editing_playback_transport.argtypes = [ctypes.c_void_p]
-    lib.clausters_editing_playback_transport.restype = ctypes.c_int32
-    lib.clausters_editing_playback_secs_to_samples.argtypes = [ctypes.c_void_p, ctypes.c_double]
-    lib.clausters_editing_playback_secs_to_samples.restype = ctypes.c_int64
-    lib.clausters_editing_playback_samples_to_secs.argtypes = [ctypes.c_void_p, ctypes.c_int64]
-    lib.clausters_editing_playback_samples_to_secs.restype = ctypes.c_double
     lib.clausters_editing_conversation_read.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
         u8p_early, ctypes.c_size_t,
@@ -420,14 +347,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_apps_editing_open_notes.restype = ctypes.c_size_t
-    lib.clausters_apps_editing_open_multitrack.argtypes = [
-        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_apps_editing_open_multitrack.restype = ctypes.c_size_t
-    lib.clausters_apps_editing_bind_sequence.argtypes = [
-        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
-    ]
-    lib.clausters_apps_editing_bind_sequence.restype = ctypes.c_size_t
     lib.clausters_apps_samples_measures.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
@@ -827,11 +746,6 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_mixer_defs.argtypes = [
         u8p, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
-    lib.clausters_multitrack_plan.restype = ctypes.c_size_t
-    lib.clausters_multitrack_plan.argtypes = [
-        u8p, ctypes.c_size_t, ctypes.c_double,
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
-    ]
     lib.clausters_history_new.restype = ctypes.c_void_p
     lib.clausters_history_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
     lib.clausters_history_free.restype = None
@@ -1068,10 +982,6 @@ def _configure_notation(lib: ctypes.CDLL) -> None:
         lib.clausters_apps_editing_open_score.restype = size
         lib.clausters_apps_editing_open_score.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, u8p, size, u8p, size,
-        ]
-        lib.clausters_apps_editing_bind_engraver.restype = size
-        lib.clausters_apps_editing_bind_engraver.argtypes = [
-            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, u8p, size,
         ]
         lib.clausters_apps_editing_open_score_over.restype = size
         lib.clausters_apps_editing_open_score_over.argtypes = [
@@ -1592,8 +1502,7 @@ def multitrack_props(multitrack: dict, rate: float, sources: dict) -> dict:
     function of something *else*: the position cursor, the meter buses, the
     widget's own chrome.
 
-    ``sources`` is the same table `multitrack_plan` takes, because what a box is
-    drawn from and what it is played from are the same samples.
+    ``sources`` is source id -> what a box is drawn from.
     """
     _lib = lib()
     body = json.dumps(multitrack).encode("utf-8")
@@ -1638,31 +1547,6 @@ def editing_intake(domain: str, tag: str, **request) -> dict:
     return json.loads(raw) if raw else {}
 
 
-def editing_stitch(source: dict, held: dict) -> "dict | None":
-    """**What a source made of spans comes to** -- the buffer a join is,
-    resolved against the caller's table (`clausters_editing_stitch`).
-
-    One reading for every endpoint that builds a minted join, so the width,
-    the spans and the channel map a narrow part fills the join with are the
-    crate's and not this client's.
-
-    Args:
-        source: a source-table entry, as a minted source rides on an intent.
-        held: source id -> ``{"buffer", "channels", "frames"}``.
-
-    Returns:
-        ``{"channels", "rate", "frames", "parts": [{"buffer", "start",
-        "frames", "fadeIn", "fadeOut", "channels"}]}``, or ``None`` where there
-        is nothing to make: not a join, or a part over a source nobody loaded.
-    """
-    _lib = lib()
-    body = json.dumps(source).encode("utf-8")
-    table = json.dumps({str(k): v for k, v in held.items()}).encode("utf-8")
-    raw = size_then_fill(_lib.clausters_editing_stitch, as_u8(body), len(body),
-                         as_u8(table), len(table))
-    return json.loads(raw) if raw else None
-
-
 def editing_event_curves(request: dict) -> dict:
     """**A played event's curves, as the values a client sends** -- the
     ``/node_set``s of every instant of one window
@@ -1688,27 +1572,6 @@ def editing_event_curves(request: dict) -> dict:
     body = json.dumps(request).encode("utf-8")
     raw = size_then_fill(lib().clausters_editing_event_curves, as_u8(body), len(body))
     return json.loads(raw) if raw else {}
-
-
-def editing_load(session: dict, beside: str, buffers: list) -> dict:
-    """**A session's sources, loaded** -- the steps that read every take and
-    stitch every join into the buffers set aside (`clausters_editing_load`).
-
-    Args:
-        session: the session as the crate writes it.
-        beside: the folder its relative paths are read against.
-        buffers: buffer numbers set aside; one per source in the table is
-            always enough.
-
-    Returns:
-        ``{"takes": {id: {"buffer", "channels", "frames"}}, "steps",
-        "unresolved": [[id, why]], "unused": [n]}``, or ``{"error"}`` when
-        ``session`` is not one.
-    """
-    body = json.dumps({"session": session, "beside": str(beside),
-                       "buffers": [int(n) for n in buffers]}).encode("utf-8")
-    raw = size_then_fill(lib().clausters_editing_load, as_u8(body), len(body))
-    return json.loads(raw) if raw else {"error": "the load answered nothing"}
 
 
 def editing_default_tempo() -> float:
@@ -1746,174 +1609,6 @@ class StepRunner:
         raw = size_then_fill(lib().clausters_editing_runner_call,
                              ctypes.c_void_p(self._handle), as_u8(body), len(body))
         return json.loads(raw) if raw else {}
-
-
-class MultitrackPlayback:
-    """**One multitrack, as it is playing** (`clausters_editing_playback_*`): its
-    instance, its applier and its transport, answering every verb as steps.
-
-    A step is ``{"send": {"addr", "args"}}``, ``{"await": {"command",
-    "index"}}`` after a send whose ``/done`` the rest waits for, or ``{"sync":
-    id}`` for a barrier; the caller sends and waits. Nothing about *how* a multitrack
-    is played is decided by the caller: the default tempo, a locate's sample,
-    what a stop and a pause send.
-
-    Where the multitrack is made and how the transport is bound are the crate's
-    too, the same for every endpoint: a group at the top, bound as the
-    transport's, with the multitrack inside it.
-
-    Args:
-        chunk: how many samples one ``/buffer_setRange`` carries.
-    """
-
-    def __init__(self, *, chunk: int = 8192):
-        self._handle = lib().clausters_editing_playback_new(max(1, int(chunk)))
-
-    def __del__(self):
-        self.free()
-
-    def free(self) -> None:
-        """Free the bookkeeping. Not the nodes: `close` answers the steps that
-        free those."""
-        handle, self._handle = getattr(self, "_handle", None), None
-        if handle:
-            lib().clausters_editing_playback_free(ctypes.c_void_p(handle))
-
-    def _steps(self, fn, *args) -> list:
-        if not self._handle:
-            return []
-        raw = size_then_fill(fn, ctypes.c_void_p(self._handle), *args)
-        answer = json.loads(raw.decode("utf-8")) if raw else {"steps": []}
-        if "error" in answer:
-            raise ValueError(answer["error"])
-        return answer["steps"]
-
-    def sync(self, multitrack: dict, sample_rate: float, sources: dict, gain: float,
-             ids: "IdSpaces") -> list:
-        """The steps that make what sounds be what ``multitrack`` says, allocating
-        from ``ids``.
-
-        Raises:
-            ValueError: when an id space is exhausted; nothing changes then.
-        """
-        body = json.dumps(multitrack).encode("utf-8")
-        table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
-        return self._steps(lib().clausters_editing_playback_sync,
-                           as_u8(body), len(body), float(sample_rate),
-                           as_u8(table), len(table), float(gain),
-                           ctypes.c_void_p(ids._handle))
-
-    def notes(self, placed: dict, ids: "IdSpaces") -> list:
-        """The steps that give the multitrack's notes regions to its event lane:
-        ``placed`` is what the multitrack editor's ``notes`` verb answers under
-        ``placed`` -- the events and the curves over their channels -- and the
-        graphs the curves play through allocate from ``ids``
-        (`clausters_editing_playback_notes`).
-
-        Raises:
-            ValueError: when an id space is exhausted; nothing changes then.
-        """
-        body = json.dumps(placed).encode("utf-8")
-        return self._steps(lib().clausters_editing_playback_notes, as_u8(body), len(body),
-                           ctypes.c_void_p(ids._handle))
-
-    def play(self) -> list:
-        """The steps that roll the transport."""
-        return self._steps(lib().clausters_editing_playback_play)
-
-    def play_pass(self, range=None, looping: bool = False) -> list:
-        """The steps of the space bar's play: from ``range`` (``(start, end)``
-        in seconds) to its end, or the loop switch over the range or the whole
-        multitrack, or a plain play."""
-        body = json.dumps({"range": list(range) if range is not None else None,
-                           "looping": bool(looping)}).encode("utf-8")
-        return self._steps(lib().clausters_editing_playback_play_pass, as_u8(body), len(body))
-
-    def set_loop(self, range=None, looping: bool = False) -> list:
-        """The steps the loop switch asks while the multitrack plays: the pass
-        in progress loops over ``range`` (``(start, end)`` in seconds) or the
-        whole multitrack, or goes on to its end, from where the transport
-        stands; stopped, none (`clausters_editing_playback_set_loop`)."""
-        body = json.dumps({"range": list(range) if range is not None else None,
-                           "looping": bool(looping)}).encode("utf-8")
-        return self._steps(lib().clausters_editing_playback_set_loop, as_u8(body), len(body))
-
-    def pause(self) -> list:
-        """The steps that freeze the multitrack and zero its meters."""
-        return self._steps(lib().clausters_editing_playback_pause)
-
-    def stop(self, mark: float) -> list:
-        """The steps that halt and go back to the mark at ``mark`` seconds."""
-        return self._steps(lib().clausters_editing_playback_stop, float(mark))
-
-    def locate(self, secs: float) -> list:
-        """The steps that put the transport at ``secs`` of the multitrack."""
-        return self._steps(lib().clausters_editing_playback_locate, float(secs))
-
-    def cue(self, secs: float) -> list:
-        """The steps that cue a stopped transport at ``secs`` -- none for a
-        rolling one."""
-        return self._steps(lib().clausters_editing_playback_cue, float(secs))
-
-    def set_end(self, end) -> list:
-        """The steps that set where a pass ends, going back to the position
-        cursor: ``None`` (it rolls on), ``"contents"`` or seconds (an end
-        marker)."""
-        body = json.dumps(end).encode("utf-8")
-        return self._steps(lib().clausters_editing_playback_set_end, as_u8(body), len(body))
-
-    def close(self, ids: "IdSpaces") -> list:
-        """The steps that free everything the multitrack made."""
-        return self._steps(lib().clausters_editing_playback_close,
-                           ctypes.c_void_p(ids._handle))
-
-    def meters(self) -> list:
-        """``[{"track", "bus", "channels"}]``: the meter bus runs by track."""
-        if not self._handle:
-            return []
-        raw = size_then_fill(lib().clausters_editing_playback_meters,
-                             ctypes.c_void_p(self._handle))
-        return json.loads(raw.decode("utf-8")) if raw else []
-
-    def set_rolling(self, rolling: bool) -> None:
-        """Say whether the transport is rolling, when the engine said so."""
-        if self._handle:
-            lib().clausters_editing_playback_set_rolling(
-                ctypes.c_void_p(self._handle), 1 if rolling else 0)
-
-    def rolling(self) -> bool:
-        """Whether the transport was last told to roll."""
-        return bool(self._handle) and bool(
-            lib().clausters_editing_playback_rolling(ctypes.c_void_p(self._handle)))
-
-    def transport(self) -> int:
-        """The transport the multitrack plays on."""
-        if not self._handle:
-            return 0
-        return int(lib().clausters_editing_playback_transport(ctypes.c_void_p(self._handle)))
-
-    def end(self):
-        """Where a pass ends: ``None``, ``"contents"`` or seconds."""
-        if not self._handle:
-            return None
-        raw = size_then_fill(lib().clausters_editing_playback_end,
-                             ctypes.c_void_p(self._handle))
-        return json.loads(raw.decode("utf-8")) if raw else None
-
-    def secs_to_samples(self, secs: float) -> int:
-        """A second of the multitrack as a sample, at the rate it was planned
-        at."""
-        if not self._handle:
-            return 0
-        return int(lib().clausters_editing_playback_secs_to_samples(
-            ctypes.c_void_p(self._handle), float(secs)))
-
-    def samples_to_secs(self, samples: int) -> float:
-        """A sample as a second of the multitrack, at the same rate."""
-        if not self._handle:
-            return 0.0
-        return float(lib().clausters_editing_playback_samples_to_secs(
-            ctypes.c_void_p(self._handle), int(samples)))
 
 
 class NotesPlayback:
@@ -2021,83 +1716,6 @@ class MultitrackHandle:
         return answer
 
 
-class Instance:
-    """**What is sounding of one multitrack**, held across edits.
-
-    The instance projection's state (`clausters_editing_instance_*`). The other
-    two projections are functions of a structure alone and this one is a
-    function of a structure *and* of what a server already holds: a multitrack plays
-    itself from the transport, so the nodes have to **stay**, and what this
-    answers is the **difference**.
-
-    An operation names what it acts on by a **handle** -- a string the crate
-    mints from the document's own ids -- and never by a node id, a bus index or
-    a buffer number: the crate allocates none of those, and the caller keeps
-    the one table from handle to whatever it made.
-    """
-
-    def __init__(self):
-        self._handle = lib().clausters_editing_instance_new()
-
-    def __del__(self):
-        self.close()
-
-    def close(self) -> None:
-        """Free the bookkeeping.
-
-        **Not the nodes**: what a server holds is the server's, so a caller
-        that means to stop the sound calls `teardown` first and applies what it
-        answers.
-        """
-        handle, self._handle = getattr(self, "_handle", None), None
-        if handle:
-            lib().clausters_editing_instance_free(ctypes.c_void_p(handle))
-
-    def reconcile(self, multitrack: dict, sample_rate: float, sources: dict,
-                  gain: float) -> list:
-        """The difference between what is sounding and what ``multitrack`` says.
-
-        The same three arguments `multitrack_plan` takes, plus the master's own
-        level, which is the caller's and not the multitrack's. Everything already
-        right is left alone, which is what lets a hand drag a box without
-        hearing the rest of the multitrack restart.
-        """
-        if not self._handle:
-            return []
-        body = json.dumps(multitrack).encode("utf-8")
-        table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
-        raw = size_then_fill(lib().clausters_editing_instance_reconcile,
-                             ctypes.c_void_p(self._handle), as_u8(body), len(body),
-                             float(sample_rate),
-                             as_u8(table), len(table), ctypes.c_float(gain))
-        return json.loads(raw) if raw else []
-
-    def teardown(self) -> list:
-        """The operations that give back everything this made.
-
-        The multitrack itself is untouched: what an instance holds is nodes, and
-        nodes are not the document.
-        """
-        if not self._handle:
-            return []
-        raw = size_then_fill(lib().clausters_editing_instance_teardown,
-                             ctypes.c_void_p(self._handle))
-        return json.loads(raw) if raw else []
-
-    def meters(self) -> list:
-        """Which control bus run each track's meters write, by track --
-        ``[{"track": id, "bus": handle, "channels": n}]``.
-
-        A run of ``2 * channels``: the level first and the mark that waits
-        after it.
-        """
-        if not self._handle:
-            return []
-        raw = size_then_fill(lib().clausters_editing_instance_meters,
-                             ctypes.c_void_p(self._handle))
-        return json.loads(raw) if raw else []
-
-
 def conversation_read(state: dict, message: dict) -> dict:
     """**What one message from the host is** -- the conversation's first
     decision (`clausters_editing_conversation_read`).
@@ -2169,8 +1787,7 @@ class EditingCore:
     Every verb crosses through `call`, as JSON: ``openMultitrack``,
     ``openAudio`` and ``openNotes`` open an editor under a key and answer its
     ``member`` (a notes editor over a sequence the caller holds opens through
-    `open_notes`, and edits that sequence; `bind_sequence` gives a multitrack
-    member a sequence to draw a source from),
+    `open_notes`, and edits that sequence),
     ``external`` takes in a structure the crate does not apply, ``event`` reads
     and records a member's message, ``step`` walks the history, ``record``
     takes an external member's entry, ``member`` reaches one editor's own verbs,
@@ -2245,47 +1862,6 @@ class EditingCore:
                                  ctypes.c_void_p(sequence._handle),
                                  as_u8(body), len(body))
             return json.loads(raw) if raw else {}
-
-    def open_multitrack(self, multitrack: "MultitrackHandle", **request) -> dict:
-        """Open a multitrack editor over ``multitrack``, which it then edits in
-        place (`clausters_apps_editing_open_multitrack`): ``{"member",
-        "structure"}``, or ``{"error"}``."""
-        with self._lock:
-            if not self._handle:
-                return {}
-            body = json.dumps(request).encode("utf-8")
-            raw = size_then_fill(lib().clausters_apps_editing_open_multitrack,
-                                 ctypes.c_void_p(self._handle), ctypes.c_void_p(multitrack._handle),
-                                 as_u8(body), len(body))
-            return json.loads(raw) if raw else {}
-
-    def bind_engraver(self, member: int, score_handle) -> dict:
-        """Hand the multitrack editor ``member`` the engraver its boxes' pages
-        are engraved with -- the score behind ``score_handle``, made for that
-        (`clausters_apps_editing_bind_engraver`): the member's corrected
-        picture, or ``{}``."""
-        with self._lock:
-            if not self._handle:
-                return {}
-            raw = size_then_fill(lib().clausters_apps_editing_bind_engraver,
-                                 ctypes.c_void_p(self._handle), ctypes.c_uint32(int(member)),
-                                 ctypes.c_void_p(score_handle))
-            return json.loads(raw) if raw else {}
-
-    def bind_sequence(self, sequence: "SequenceHandle", member: int, source: int) -> dict:
-        """Bind a multitrack member's ``source`` to ``sequence``, so a region
-        over it draws the sequence's notes
-        (`clausters_apps_editing_bind_sequence`): the member's corrected
-        picture, or ``{}``."""
-        with self._lock:
-            if not self._handle:
-                return {}
-            body = json.dumps({"member": int(member), "source": int(source)}).encode("utf-8")
-            raw = size_then_fill(lib().clausters_apps_editing_bind_sequence,
-                                 ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
-                                 as_u8(body), len(body))
-            return json.loads(raw) if raw else {}
-
 
 def samples_measures(stack) -> tuple:
     """A measure stack, checked by the crate (`clausters_apps_samples_measures`).
@@ -2490,24 +2066,6 @@ def mixer_defs(widths, master: int = 2) -> dict:
     """
     answer = _read_json(lib().clausters_mixer_defs,
                         [list(pair) for pair in widths], int(master))
-    return answer if isinstance(answer, dict) else {}
-
-
-def multitrack_plan(multitrack: dict, sample_rate: float, sources: dict) -> dict:
-    """What to instantiate to play ``multitrack`` -- the instance plan.
-
-    ``sources`` maps a source id to ``{"buffer": n, "channels": n}``: where a
-    source's samples actually are on a running server, which is the one fact
-    about a multitrack that is not in the multitrack. No tempo is asked for: a multitrack
-    is placed in seconds.
-
-    Three rules live in it and each was written twice before it did: seconds
-    crossed to frames at the rate, the source's width picking the
-    clip's wiring, and what a solo anywhere does to everything else.
-    """
-    table = {str(k): v for k, v in sources.items()}
-    answer = _read_json(lib().clausters_multitrack_plan, multitrack,
-                        float(sample_rate), table)
     return answer if isinstance(answer, dict) else {}
 
 

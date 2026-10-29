@@ -56,8 +56,6 @@
 
 export { Application, BASE_ID } from "./application.ts";
 export { AudioEditor, AudioTransport, readsInPlace } from "./audio.ts";
-export { SessionEditor, SessionTransport } from "./session.ts";
-export type { SavedSession, SessionEditorOptions } from "./session.ts";
 export { ScoreDomain, ScoreEditor, ScoreView, isScore } from "./score.ts";
 export type {
     PageInfo, PageOptions, PageSetup, ScoreEditorOptions, TextOptions,
@@ -75,21 +73,10 @@ export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";
 export { NotesDomain, NotesEditor, NotesView } from "./events.ts";
 export type { NotesEditorOptions } from "./events.ts";
-export {
-    MultitrackDomain,
-    MultitrackEditor,
-    MultitrackView,
-    Sources,
-} from "./multitrack.ts";
-// `Bridge` is a type here and not a value: `MultitrackDomain.bridge` is public,
-// so the reference has to resolve, but a page builds one no more than the Python
-// client's does -- `MultitrackEditor` makes it.
-export type { Bridge, MultitrackEditorOptions } from "./multitrack.ts";
+export { MultitrackEditor, MultitrackTransport } from "./multitrack.ts";
+export type { MultitrackEditorOptions, SavedSession } from "./multitrack.ts";
 export { Marking } from "./marking.ts";
 export type { Marks } from "./marking.ts";
-export { Playback } from "./playback.ts";
-// The plan's own shapes are the crate's and were only ever restated here to
-// read it; what a page sees now is the reconciler's answer.
 export type { End, Pass, RenderStep, Step, StepArg } from "./playback.ts";
 export { PointsDomain, PointsEditor, PointsView } from "./points.ts";
 export type { EditableCurve, PointsEditorOptions, PointsRules } from "./points.ts";

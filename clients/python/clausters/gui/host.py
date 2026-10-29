@@ -196,6 +196,9 @@ class GuiHost:
         #: because both may be registered on one widget at once.
         self._on_interface: dict = {}
         self._on_closed: dict = {}
+        # what an application left each closed window as (`/gui_closed`'s
+        # second argument), until its handler takes it
+        self._left: dict = {}
         #: the ``clausters-gui`` process this host started and owns (`boot`), if
         #: any; stopped by `stop`. ``None`` when connected to a host it did not
         #: start.
@@ -1218,6 +1221,12 @@ class GuiHost:
         else:
             table[tag] = func
 
+    def _closed_with(self, id: int):
+        """What the application in window ``id`` left it as when it closed
+        (the multitrack's, as the document's JSON), once; ``None`` when it
+        said nothing."""
+        return self._left.pop(int(id), None)
+
     def _set_closed_handler(self, id: int, func):
         """Register (or clear) a `clausters.gui.handle.WindowHandle.on_closed`
         callback for window ``id``."""
@@ -1386,6 +1395,8 @@ class GuiHost:
                 return True
         elif addr == "/gui_closed" and args:
             wid = int(args[0])
+            if len(args) > 1:
+                self._left[wid] = json.loads(str(args[1]))
             self._open.discard(wid)
             func = self._on_closed.get(wid)
             if func is not None:

@@ -37,11 +37,11 @@ dispatching on what the structure is -- `AudioEditor` over a
 `PointsEditor` over a curve (a
 `clausters.defs.Bpf`, an `clausters.defs.Env` or a
 `clausters.multitrack.Automation`),
-`NotesEditor` over a `clausters.seq.Timeline`, `MultitrackEditor` over a
-`clausters.multitrack.Multitrack`. Each is `Editor` with its own domain and view
-in it and nothing else, which is what the split was for -- and the multitrack's
-two halves are the *crate's*, so the picture it draws and the report it reads
-are the same ones the standalone host draws and reads.
+`NotesEditor` over a `clausters.seq.Timeline`. Each is `Editor` with its own
+domain and view in it and nothing else, which is what the split was for. A
+`clausters.multitrack.Multitrack` or a saved `clausters.multitrack.Session` is
+the GUI host's multitrack application, and `MultitrackEditor` its handler, as
+`AudioEditor` is the audio editor's.
 A running `clausters.defs.Node` is the one structure that is not a document:
 `NodeEditor` opens its def's controls in a window the shared core generates
 and the host binds to the node, with no history (`controls`).
@@ -55,7 +55,6 @@ writes changes.
 
 from .application import BASE_ID, Application
 from .audio import AudioEditor, AudioTransport, reads_in_place
-from .session import SessionEditor, SessionTransport
 from ...history import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
@@ -64,9 +63,7 @@ from .edit import edit
 from .editor import Editor, not_an_edit
 from .events import NotesDomain, NotesEditor, NotesView
 from .marking import Marking
-from .multitrack import (MultitrackDomain, MultitrackEditor, MultitrackView,
-                         Sources)
-from .playback import Playback
+from .multitrack import MultitrackEditor, MultitrackTransport
 from .points import PointsDomain, PointsEditor, PointsView
 from .samples import MEASURES, measures
 from .score import ScoreDomain, ScoreEditor, ScoreView
@@ -75,8 +72,6 @@ from .view import View
 
 __all__ = [
     "AudioEditor",
-    "SessionEditor",
-    "SessionTransport",
     "AudioTransport",
     "ATTR",
     "Application",
@@ -92,11 +87,8 @@ __all__ = [
     "NodeEditor",
     "NotesEditor",
     "NotesView",
-    "MultitrackDomain",
     "MultitrackEditor",
-    "MultitrackView",
-    "Playback",
-    "Sources",
+    "MultitrackTransport",
     "PointsDomain",
     "PointsEditor",
     "PointsView",

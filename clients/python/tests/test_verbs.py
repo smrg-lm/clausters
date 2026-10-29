@@ -39,6 +39,7 @@ SCOPES = {"AUDIO": "audio", "WINDOW": "window", "MULTITRACK": "multitrack", "SCO
 CLASSES = {
     "Editor": ("clausters.gui.editing.editor", "gui/editing/editor.ts"),
     "MultitrackEditor": ("clausters.gui.editing.multitrack", "gui/editing/multitrack.ts"),
+    "MultitrackTransport": ("clausters.gui.editing.multitrack", "gui/editing/multitrack.ts"),
     "AudioEditor": ("clausters.gui.editing.audio", "gui/editing/audio.ts"),
     "NotesEditor": ("clausters.gui.editing.events", "gui/editing/events.ts"),
     "ScoreEditor": ("clausters.gui.editing.score", "gui/editing/score.ts"),

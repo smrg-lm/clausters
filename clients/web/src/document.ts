@@ -28,8 +28,6 @@ import {
     TempoMap as CoreTempoMap,
     domainCoalesceKey as coreDomainCoalesceKey,
     editingIntake as coreEditingIntake,
-    editingStitch as coreEditingStitch,
-    editingLoad as coreEditingLoad,
     domainEdit as coreDomainEdit,
     domainEditAll as coreDomainEditAll,
 } from "./core/clausters_core_web.js";
@@ -561,87 +559,6 @@ export function editingIntake(
     if (!answer) return { payloads: [], label: "edit" };
     const taken = JSON.parse(answer) as Partial<Intake>;
     return { ...taken, payloads: taken.payloads ?? [], label: taken.label ?? "edit" };
-}
-
-/** One part of a resolved join: a run of one buffer, and its channel map. */
-export interface StitchPart {
-    /** The buffer this span is read from. */
-    buffer: number;
-    /** Its first frame. */
-    start: number;
-    /** How many frames it contributes. */
-    frames: number;
-    /** Frames of fade at its head. */
-    fadeIn: number;
-    /** Frames of fade at its tail. */
-    fadeOut: number;
-    /** The fade in's envelope segment shape, by number. */
-    fadeInShape: number;
-    /** Its curvature, which only the custom-curvature shape reads. */
-    fadeInCurve: number;
-    /** The fade out's envelope segment shape, by number. */
-    fadeOutShape: number;
-    /** Its curvature. */
-    fadeOutCurve: number;
-    /** One entry per channel of the join: the part's channel, or `-1`. */
-    channels: number[];
-}
-
-/** What {@link editingStitch} answers: the buffer a join is. */
-export interface Stitch {
-    /** How wide the join is. */
-    channels: number;
-    /** Its rate, or `0` for the server's. */
-    rate: number;
-    /** How many frames it comes to. */
-    frames: number;
-    /** The parts, in the order they play. */
-    parts: StitchPart[];
-}
-
-/**
- * **What a source made of spans comes to** -- the buffer a join is, resolved
- * against the caller's table.
- *
- * One reading for every endpoint that builds a minted join, so the width, the
- * spans and the channel map a narrow part fills the join with are the crate's
- * and not this client's. `held` is source id -> `{ buffer, channels, frames }`.
- * `undefined` where there is nothing to make: not a join, or a part over a
- * source nobody loaded.
- */
-export function editingStitch(
-    source: Record<string, unknown>,
-    held: Record<string, { buffer: number; channels: number; frames: number }>,
-): Stitch | undefined {
-    const answer = coreEditingStitch(JSON.stringify(source), JSON.stringify(held));
-    if (!answer || answer === "null") return undefined;
-    return JSON.parse(answer) as Stitch;
-}
-
-/** What {@link editingLoad} answers: a session's sources, as a load. */
-export interface Loading {
-    /** What each source became, by source id; 0 where the table states no width or length. */
-    takes: Record<string, { buffer: number; channels: number; frames: number; path?: string }>;
-    /** The steps to walk through a runner: each read and stitch, then its `/done`. */
-    steps: unknown[];
-    /** `[source, why]` for every source that will not load. */
-    unresolved: [number, string][];
-    /** The buffer numbers the load did not take. */
-    unused: number[];
-    /** Set, and nothing else is, when the request named no session. */
-    error?: string;
-}
-
-/**
- * **A session's sources, loaded** -- the steps that read every take and stitch
- * every join into the buffers set aside.
- *
- * `session` is the session as the crate writes it, `beside` the folder its
- * relative paths are read against, and `buffers` the numbers set aside: one per
- * source in the table is always enough.
- */
-export function editingLoad(session: unknown, beside: string, buffers: number[]): Loading {
-    return JSON.parse(coreEditingLoad(JSON.stringify({ session, beside, buffers }))) as Loading;
 }
 
 /** What {@link domainEdit} answers: both directions of one edit. */

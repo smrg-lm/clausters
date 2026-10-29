@@ -40,7 +40,6 @@ pub mod event_curves;
 pub mod events;
 pub mod instance;
 pub mod intake;
-pub mod load;
 pub mod multitrack;
 pub mod note_curves;
 pub mod notes;
@@ -49,7 +48,6 @@ pub mod playback;
 pub mod points;
 pub mod run;
 pub mod samples;
-pub mod sources;
 pub mod verbs;
 
 use serde_json::Value;

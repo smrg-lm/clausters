@@ -44,10 +44,10 @@ The verdict is one of three:
 |---|---|---|---|---|
 | `window` | `undo` | `Editor.undo` | `Editor.undo` | **api** |
 | `window` | `redo` | `Editor.redo` | `Editor.redo` | **api** |
-| `window` | `save` | `AudioEditor.save` `ScoreEditor.save` | `AudioEditor.save` `ScoreEditor.save` | **api** |
+| `window` | `save` | `AudioEditor.save` `MultitrackEditor.save` `ScoreEditor.save` | `AudioEditor.save` `MultitrackEditor.save` `ScoreEditor.save` | **api** |
 | `window` | `close` | `Editor.close` | `Editor.close` | **api** |
 | `window` | `view_all` | `Editor.view_all` | `Editor.viewAll` | **api** |
-| `window` | `play` | `MultitrackEditor.play` `NotesEditor.play` `ScoreEditor.play` | `MultitrackEditor.play` `NotesEditor.play` `ScoreEditor.play` | **api** |
+| `window` | `play` | `MultitrackTransport.play` `NotesEditor.play` `ScoreEditor.play` | `MultitrackTransport.play` `NotesEditor.play` `ScoreEditor.play` | **api** |
 | `window` | `loop` | `Editor.loop` | `Editor.loop` | **api** |
 | `window` | `to_start` | `Editor.to_start` | `Editor.toStart` | **api** — the multitrack's `rewind` also cues a stopped transport there |
 | `window` | `to_end` | `Editor.to_end` | `Editor.toEnd` | **api** |
@@ -77,8 +77,8 @@ The verdict is one of three:
 | `audio` | `apply` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** — the one effect today is the gain envelope |
 | `audio` | `apply_envelope` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** |
 | `audio` | `reverse` | `AudioEditor.reverse` | `AudioEditor.reverse` | **api** |
-| `multitrack` | `pause` | `MultitrackEditor.pause` | `MultitrackEditor.pause` | **api** |
-| `multitrack` | `stop` | `MultitrackEditor.stop` | `MultitrackEditor.stop` | **api** |
+| `multitrack` | `pause` | `MultitrackTransport.pause` | `MultitrackTransport.pause` | **api** |
+| `multitrack` | `stop` | `MultitrackTransport.stop` | `MultitrackTransport.stop` | **api** |
 | `multitrack` | `stop_at_end` | `MultitrackEditor.stop_at_end` | `MultitrackEditor.stopAtEnd` | **api** |
 | `multitrack` | `crossfade` | `Multitrack.crossfade` | `Multitrack.crossfade` | **api** — a default of the multitrack, set on the structure |
 | `multitrack` | `add_track` | `Tracks.add` | `Tracks.add` | **api** — on the structure: `multitrack.tracks.add()` |

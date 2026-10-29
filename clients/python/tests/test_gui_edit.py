@@ -14,8 +14,8 @@ import pytest
 from clausters import TempoMap
 
 from clausters.gui import edit
-from clausters.gui.editing import (AudioEditor, Editing, Marking,
-                                   MultitrackEditor, NotesEditor, PointsEditor)
+from clausters.gui.editing import (AudioEditor, Editing, Marking, NotesEditor,
+                                   PointsEditor)
 from clausters.seq import EventSequence, Timeline
 from clausters.defs.ugens import Bpf, Env
 from clausters.defs import Server
@@ -208,12 +208,11 @@ def test_a_curve_is_drawn_edited_and_read_back_with_no_multitrack():
 
 def test_marking_is_taken_by_the_editors_that_act_on_what_is_marked():
     """`selected`, `select` and `unselect` are a capability an editor takes:
-    the roll, the multitrack and the audio editor have it, and the points
-    editor, where no operation acts on a group of points, has none of it --
-    nor a time range of its own."""
-    for marks in (NotesEditor, MultitrackEditor):
-        assert issubclass(marks, Marking)
-        assert not {"selected", "select", "unselect"} & set(vars(marks))
+    the roll and the audio editor have it, and the points editor, where no
+    operation acts on a group of points, has none of it -- nor a time range
+    of its own."""
+    assert issubclass(NotesEditor, Marking)
+    assert not {"selected", "select", "unselect"} & set(vars(NotesEditor))
     # the audio editor is the host's application, and its handler marks
     # through the application's transport
     assert {"selected", "select", "unselect"} <= set(vars(AudioEditor))

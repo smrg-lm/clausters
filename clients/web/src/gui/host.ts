@@ -335,6 +335,8 @@ export class GuiHost {
      */
     private readonly onInterfaceHandlers = new Map<number, Map<string, () => void>>();
     private readonly onClosedHandlers = new Map<number, () => void>();
+    /** What an application left each closed window as (`/gui_closed`'s second argument), until its handler takes it. */
+    private readonly left = new Map<number, unknown>();
     /**
      * What is waiting for a window to go away -- see {@link GuiHost.waitWhile}.
      * A set of checks rather than one promise, because several callers may be
@@ -1571,6 +1573,19 @@ export class GuiHost {
         else table.set(tag, handler);
     }
 
+    /**
+     * What the application in window `id` left it as when it closed (the
+     * multitrack's, as the document's JSON), once; `null` when it said
+     * nothing.
+     *
+     * @internal
+     */
+    closedWith(id: number): unknown {
+        const left = this.left.get(id) ?? null;
+        this.left.delete(id);
+        return left;
+    }
+
     /** Registers (or clears) the `WindowHandle.onClosed` callback for a window. */
     setClosedHandler(id: number, handler: (() => void) | null): void {
         if (handler === null) this.onClosedHandlers.delete(id);
@@ -1666,6 +1681,7 @@ export class GuiHost {
             if (handler) handler(...(payload as EventArgs));
         } else if (msg.addr === "/gui_closed" && msg.args.length > 0) {
             const id = Number(msg.args[0]);
+            if (msg.args.length > 1) this.left.set(id, JSON.parse(String(msg.args[1])));
             this.opened.delete(id);
             this.fitted.get(id)?.();
             this.fitted.delete(id);

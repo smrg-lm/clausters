@@ -90,6 +90,9 @@ pub(super) enum ToApp {
         key: String,
         title: String,
         path: Option<String>,
+        /// The multitrack to open, as the document's JSON, when it has no
+        /// file: an untitled session.
+        data: Option<Value>,
         /// Where a multitrack's Save writes, when the host that opened it
         /// said: `Some(None)` writes nowhere.
         save_to: Option<Option<String>>,
@@ -311,13 +314,14 @@ impl App {
                 key,
                 title,
                 path,
+                data,
                 save_to,
                 reply,
             } => {
                 let outcome = match kind {
                     AppKind::Audio => self.open(def_id, &key, &title, path.as_deref()),
                     AppKind::Multitrack => {
-                        self.open_multitrack(def_id, &key, &title, path, save_to)
+                        self.open_multitrack(def_id, &key, &title, path, data, save_to)
                     }
                     AppKind::Roll { source, parent } => {
                         self.open_roll(def_id, &title, source, parent)
@@ -423,6 +427,7 @@ impl App {
         key: &str,
         title: &str,
         path: Option<String>,
+        data: Option<Value>,
         save_to: Option<Option<String>>,
     ) -> Result<Vec<String>, String> {
         let workspace = clausters_core::workspace::Workspace::create("multitrack")
@@ -436,7 +441,8 @@ impl App {
         );
         let opened = self.app.call(
             &mut self.editing,
-            &json!({"verb": "openMultitrack", "key": key, "multitrack": {},
+            &json!({"verb": "openMultitrack", "key": key,
+                "multitrack": data.unwrap_or_else(|| json!({})),
                 "rate": rate, "title": title}),
         );
         let member = opened["member"]

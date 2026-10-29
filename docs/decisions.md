@@ -11441,3 +11441,35 @@ editing context, so an edit in either is one history.
 
 **`--session` opens that application.** The host's own multitrack path, its
 in-process server and its player are no longer started for a session.
+
+**The roll plays on a transport of its own.** A roll opened from a box plays
+its sequence on an event lane of a transport the window takes from the
+engine, as a client's notes editor does, so its pass never moves the
+multitrack's.
+
+## A script's multitrack is the window's while it is open (2026-10-29)
+
+*Decided in the plan the user approved for moving the multitrack onto the
+application.* With the multitrack in the GUI host's application, the
+`Multitrack` a script built or read from a session is no longer what any
+editor edits: the window holds one of its own. Two copies that each take
+edits are two multitracks that drift.
+
+**While the window is open the script's multitrack is the window's.** Its
+objects ask the application through the door (`handle`): a read answers what
+the window holds now, and a change made through an object is an edit of the
+window's, recorded in its history under the label the object gives it, so the
+window's Ctrl+Z takes back what the script did. `multitrack.history` is then
+the window's history; a block (`with multitrack.history("tidy")`) applies each
+change as it is made and records them at its end as one entry. **When the
+window goes it hands the multitrack back**: the close carries the multitrack
+as the window left it (`/gui_closed id json`), and the script's multitrack
+holds that from then on, its own again.
+
+**A page cannot read through a promise.** A call to the host is asynchronous
+in the web client and the multitrack's objects answer at once, so a page's
+multitrack keeps a copy: a change is made in it and forwarded to the window in
+order, and the copy is brought to the window's after each of the page's own
+changes and steps and when the window closes. What a hand does in the window
+reaches the page's reads only then. The surface is the same in both clients;
+this one difference is named in the web client's prose and its plan.

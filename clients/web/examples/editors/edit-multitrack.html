@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: edit(multitrack)</title>
+    <title>clausters: edit(session)</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -19,15 +19,16 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>edit(multitrack)</code>: a multitrack of audio and notes,
+      <div id="note"><code>edit(session)</code>: a multitrack of audio and notes,
 drawn, edited and played.
 
 The fourth structure, and the one that holds the other three: a
-<code>Multitrack</code> -- the document the three applications share -- opened with
-<code>gui.edit</code> like a buffer or a timeline. <b>One verb, and the editor is
-the application</b>: the picture, the gestures, the history, the readers on the
-server and the transport are all its, so this page writes a multitrack and hands it
-over.
+<code>Multitrack</code> -- the document the three applications share -- saved as a
+<b>session</b> and opened with <code>gui.edit</code> like a sound file. <b>One verb,
+and the editor is the application</b>: the GUI host opens the multitrack in a
+window of its own, reads the session's takes from their files and plays them on
+an engine of its own; the picture, the gestures, the history and the transport
+are all its, so this page writes a session and hands it over.
 
 <b>Move a box</b>, drag its edge to trim it, drag it onto another track, sweep a
 block and move it as one. <b>Click</b> a box to select it, <b>e</b> to split it
@@ -85,14 +86,13 @@ staff goes back to the roll. A double click on the box then opens the score
 editor over the same sequence. <b>Notes as rolls</b> puts it back.
 
 <b>The keys track is notes.</b> Its box is a window onto an
-<code>EventSequence</code> given among the <code>sources</code> like a buffer: it
-draws the notes its window reads and plays them from the transport's own event
+<code>EventSequence</code> the session holds in the file itself: it draws the
+notes its window reads and plays them from the transport's own event
 lane, so a locate, a loop and a stop are the transport's. <b>A note sounds into
 its box and through the track's strip</b>, as a take does: pull the keys track's
 fader down while it plays, or draw a gain curve under it, and the notes follow
 -- its mute and its meter are over them too. What plays a note is the def its
-events name, the built-in <code>default</code> here, which writes the bus its
-<code>out</code> control says; the track sets it.
+events name, the built-in <code>default</code> here.
 
 <b>Watch the meters</b> while it plays: the strip in each track's header is one
 column per channel, in decibels, over what that track produces <i>after</i> its
@@ -104,14 +104,18 @@ sit in the green and the amber.
 
 <b>The curves are heard.</b> The row under the first track is a track automation
 and the line inside the first box is a clip envelope; each names the
-<code>gain</code> port of the node it sits on -- the same port the header's knob
+<code>gain</code> port of what it sits on -- the same port the header's knob
 writes -- so a point dragged while the multitrack plays is heard where it is drawn.
 
-<b>The last box is a join</b>: one buffer whose samples are spans of two takes,
-crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
-<b>one</b> reader like any other take. Put the cursor inside it and play: the
-reader finds the span it lands in once and reads it like a plain buffer from
-there.</div>
+<b>The comp box is a join</b>: a source whose samples are spans of two takes,
+crossfaded at the seam, which is what a comping pass cut by hand is. The session
+states it as its parts, and the application reads it from the two files.
+<b>The page's multitrack is the window's while it is open</b>: the last step
+moves the bass track's fader from here, and the window's knob moves with it --
+one edit of the window's, which its Ctrl+Z takes back. What the hand does in the
+window reaches the page's multitrack after the page's next change, or when the
+window closes: a call to the host is a promise here, where the script reads the
+window's at every read.</div>
 
       <button id="run">open the multitrack</button>
       <div id="stage"></div>
@@ -120,23 +124,27 @@ there.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_multitrack.py,
-      call for call: the same five takes rendered offline, the same sequence of
-      notes, the same multitrack written plainly, and the same one `edit` over it.
+      call for call: the same five takes rendered offline and written as the
+      same files, the same sequence of notes, the same multitrack written
+      plainly, the same session, and the same one `edit` over it. The files
+      are in the page's own storage (the origin private file system, `opfs`),
+      out/edit_multitrack.json beside its takes, where load-multitrack.html
+      opens it again.
 
-      The platform's differences are the usual two: the host is the wasm one in
-      this tab and draws into an element, and nothing is pumped. The session
-      the script writes into clients/python/examples/out/ this page writes into
-      its own filesystem (the origin private file system, `opfs`), as
-      out/edit_multitrack.json beside its takes, where
-      load-multitrack.html opens it again.
+      The multitrack runs over memory the page shares with its threads, which a
+      browser grants only to a page that is cross-origin isolated, so this one
+      is served with the headers that isolate it. The platform's differences
+      are the usual two: the host is the wasm one in this tab and draws into an
+      element, and nothing is pumped.
 
-      Serve clients/web (the package root) and open
-      /examples/editors/edit-multitrack.html. Build it first: ./build.sh
+      Build first (./build.sh), serve clients/web (the package root) with
+      `python3 tools/serve.py 8000 --isolated`, and open
+      http://localhost:8000/examples/editors/edit-multitrack.html
     -->
     <script type="module">
-      import { Session, opfs } from "../../dist/index.js";
+      import { Session, SoundFile, opfs } from "../../dist/index.js";
       import { gui } from "../../dist/index.js";
-      import { Buffer, Synth, SynthDef } from "../../dist/defs/index.js";
+      import { Synth, SynthDef } from "../../dist/defs/index.js";
       import { line, out, pinkNoise, saw, sine, whiteNoise } from "../../dist/defs/ugens/index.js";
       import { Content, Multitrack, Session as SavedSession, Source } from "../../dist/multitrack.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
@@ -147,7 +155,10 @@ there.</div>
       const SR = 48_000.0;
       const TAKE_DUR = 2.0;
 
-      /** Render `expr` for `secs` seconds offline and hand back its samples. */
+      /**
+       * Render `expr` for `secs` seconds offline, write it beside the session,
+       * and hand back the file's name.
+       */
       async function gentake(name, expr, secs = TAKE_DUR) {
         const session = await Session.nrt();   // beats == seconds
         const server = session.server;
@@ -155,7 +166,9 @@ there.</div>
         const node = new Synth(name, {}, { server });
         server.sendBundleAfter(secs, [["/node_free", node.id]]);
         const stats = await session.render({ sampleRate: SR, channels: 1 });
-        return stats.samples;
+        const file = `edit_multitrack-${name}.wav`;
+        await SoundFile.write(`out/${file}`, stats.samples, 1, SR, { sampleFormat: "float" });
+        return file;
       }
 
       /** The whole of one source, from its start. */
@@ -171,60 +184,38 @@ there.</div>
       const SOURCES = { 1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp",
                         6: "loud" };
 
-      const HALF = Math.floor((TAKE_DUR * SR) / 2);
-      const FADE = Math.floor(0.010 * SR);
-
       async function run() {
         $("run").disabled = true;
+        // a write goes into a directory that is there, as on a disk
+        await opfs.makeDirectory("out");
 
-        // ---- the takes, rendered offline ----
+        // ---- the takes, rendered offline and written as files ----
+        // Written as floats, because the last one is hot on purpose and a
+        // 16-bit file would clip it into a different take.
         const takes = {
-          white: await gentake("t_white", whiteNoise().mul(0.5)),
-          glide: await gentake("t_glide", sine(line(220.0, 440.0, TAKE_DUR)).mul(0.5)),
-          saw: await gentake("t_saw", saw(110.0).mul(0.5)),
-          pink: await gentake("t_pink", pinkNoise().mul(0.5)),
+          white: await gentake("white", whiteNoise().mul(0.5)),
+          glide: await gentake("glide", sine(line(220.0, 440.0, TAKE_DUR)).mul(0.5)),
+          saw: await gentake("saw", saw(110.0).mul(0.5)),
+          pink: await gentake("pink", pinkNoise().mul(0.5)),
           // Deliberately hot, to have something that fills a meter: centred, a
           // mono take comes out 3 dB down a side (the pan law), so 1.4 reads as
           // full scale on the track's meter and the last box is the red one.
-          loud: await gentake("t_loud", sine(330.0).mul(1.4)),
+          loud: await gentake("loud", sine(330.0).mul(1.4)),
         };
-
-        const session = await Session.embed({ latency: 0.1 });
-        const server = session.server;
-        const bufs = {};
-        for (const [name, samples] of Object.entries(takes)) {
-          bufs[name] = await Buffer.fromSamples(samples, 1, SR, { server });
-        }
-        // ---- a fifth take that is a cut ----
-        // The **join**: half of the glide and the second half of the saw, read
-        // as one buffer with a ten-millisecond crossfade at the seam. Two spans
-        // that do not continue each other make a step, and a step is a click
-        // however well the frames are read. A join owns no samples -- it is
-        // spans of the buffers above -- so it refuses every write, and
-        // `Buffer.parts` is how a program asks what one is made of before it
-        // offers to draw it.
-        bufs.comp = await Buffer.stitch(
-          [{ source: bufs.glide, start: 0, frames: HALF, fadeOut: FADE },
-           { source: bufs.saw, start: HALF, frames: HALF, fadeIn: FADE }],
-          { sampleRate: SR, server });
-        await server.sync();
 
         // ---- a sequence of notes ----
         // The one source that is not samples: events with ids, in beats -- one
-        // beat a second here, since it states no tempo map. It is **held, not
-        // copied**: the box over it and the roll a double click opens read this
-        // very object.
+        // beat a second here, since it states no tempo map. The session holds
+        // it in the file.
         const keys = new EventSequence(
           [[0.0, 60], [0.5, 64], [1.0, 67], [1.5, 72]].map(
             ([beat, note]) => [beat, new Event({ midinote: note, sustain: 0.4, amp: 0.2 })]),
         );
 
         // ---- the multitrack ----
-        // A **source id** is what the document names -- never a path and never a
-        // buffer number -- because a multitrack must open in a program that has no
-        // JavaScript in it. Which buffer each source was read into is the one
-        // thing about a multitrack that is not in it, and it travels beside it
-        // in `Sources`.
+        // A **source id** is what the document names -- never a path -- because a
+        // multitrack must open in a program that has no JavaScript in it. Where
+        // each source is, is the session's table below.
         const multitrack = new Multitrack();
         const noise = multitrack.tracks.add("noise");
         const tone = multitrack.tracks.add("tone");
@@ -250,9 +241,7 @@ there.</div>
 
         // **A track automation**: a row of its own under the track, as long as
         // the timeline, because a track's gain does not begin and end with a box.
-        // The target names the **port** it drives on whatever it is on -- the one
-        // shape the document crate reads there, because a curve that named
-        // nothing could only be guessed at.
+        // The target names the **port** it drives on whatever it is on.
         noise.automation.add({ port: "gain" },
                              { points: [[0.0, 1.0], [8.0, 0.2]], name: "gain", visible: true });
 
@@ -262,60 +251,53 @@ there.</div>
         first.automation.add({ port: "gain" },
                              { points: [[0.0, 0.2], [TAKE_DUR, 1.0]], name: "fade", visible: true });
 
-        // ---- the same multitrack, written down as a session ----
-        // The takes above exist only on this page's engine, so a program that
-        // cannot run this page cannot open this multitrack. Written down as a
-        // **session** -- every take as a file, the join as the parts it is made
-        // of, and the multitrack that names them -- it opens with nothing else:
-        // load-multitrack.html reopens it from here. The takes are written as
-        // floats, because the last one is hot on purpose and a 16-bit file would
-        // clip it into a different take. The page's files are in its origin
-        // private file system, `out/` there as `examples/out/` is for a script.
+        // ---- the session ----
+        // The multitrack and where its sources are: every take as a file, named
+        // relative to the session, which keeps the folder movable; the join as
+        // the parts it is made of; the notes in the file itself.
         const FRAMES = Math.trunc(TAKE_DUR * SR);
-        // a server writes into a directory that is there, as on a disk
-        await opfs.makeDirectory("out");
+        const HALF = Math.floor(FRAMES / 2);
+        const FADE = Math.floor(0.010 * SR);
         const ID = Object.fromEntries(Object.entries(SOURCES).map(([id, take]) => [take, Number(id)]));
+
         const saved = new SavedSession();
         saved.multitrack = multitrack;
         for (const [id, take] of Object.entries(SOURCES)) {
-          if (take === "comp") continue;
-          const name = `edit_multitrack-${take}.wav`;
-          await bufs[take].write(`out/${name}`, { sampleFormat: "float" });
-          saved.sources.set(Number(id), Source.file(name).shaped(1, FRAMES, SR));
+          if (take !== "comp") saved.sources.set(Number(id), Source.file(takes[take]).shaped(1, FRAMES, SR));
         }
-        // **The join is its recipe, not its samples**: the same two spans and
-        // fades the `Buffer.stitch` above was made from, so a reader builds the
-        // same buffer.
+
+        // One span of a take, as the join names it: the source, the frames it
+        // contributes, and the fade at its seam.
         const part = (take, start, frames, fades) => ({
           source: { source: ID[take], lifetime: "session", generation: 0,
                     range: { start, end: start + frames } },
           ...fades,
         });
+
+        // **The join is its recipe, not its samples**: half of the glide and the
+        // second half of the saw, with a ten-millisecond crossfade at the seam.
+        // Two spans that do not continue each other make a step, and a step is a
+        // click however well the frames are read.
         saved.sources.set(ID.comp, new Source({ location: { at: "segments", parts: [
           part("glide", 0, HALF, { fade_out: FADE }),
           part("saw", HALF, HALF, { fade_in: FADE }),
         ] } }).shaped(1, 2 * HALF, SR));
-        // **The notes are in the file itself**: a sequence is data the size of
-        // a score, and the table holds the handle, so a save writes what the
-        // roll did to it.
+
         saved.sources.set(7, Source.events(keys));
+
         log(`wrote ${await saved.save("out/edit_multitrack.json")}`);
 
         // ---- one verb ----
-        // A `Multitrack` opens as a `MultitrackEditor` -- one `multitrack` widget
-        // with its own ruler and its own transport row, the crate's picture and
-        // the crate's reading of every gesture. Given a **server** it also
-        // sounds: one resident reader per box, in a group the server's transport
-        // governs, put where the multitrack says on every edit whoever made it.
-        await session.gui();
-        const sources = {};
-        for (const [id, take] of Object.entries(SOURCES)) sources[id] = bufs[take];
-        // ...and the sequence the keys box reads.
-        sources[7] = keys;
-        const editor = await gui.edit(multitrack, {
-          sampleRate: SR, server, sources,
-          title: "multitrack", width: 1000, height: 560, stage: $("stage"),
-        });
+        // A saved session opens in the multitrack, the GUI host's application,
+        // and `edit` answers its handler, a `MultitrackEditor`.
+        const session = await Session.embed();
+        await session.gui();   // the host, which holds the multitrack
+        const editor = await gui.edit(saved, { title: "multitrack", stage: $("stage") });
+
+        // ---- the page's multitrack is the window's ----
+        // A change made here is an edit of the window's: the bass fader moves in
+        // the window, and Ctrl+Z there takes it back.
+        bass.level = 0.5;
 
         log("drag the boxes, click the ruler to place the cursor, play/pause to hear it");
         // The script's ending: there `wait()` blocks so the process stays alive

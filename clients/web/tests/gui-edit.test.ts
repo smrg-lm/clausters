@@ -17,7 +17,7 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import {
-    AudioEditor, Domain, Editing, Editor, Marking, MultitrackEditor, NotesEditor, PointsEditor,
+    AudioEditor, Domain, Editing, Editor, Marking, NotesEditor, PointsEditor,
     View, edit, watch,
 } from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
@@ -176,13 +176,11 @@ test("a curve is drawn, edited and read back with no multitrack", async () => {
 
 test("marking is taken by the editors that act on what is marked", async () => {
     // `selected`, `select` and `unselect` are a capability an editor takes: the
-    // roll, the multitrack and the audio editor have it, and the points editor,
-    // where no operation acts on a group of points, has none of it -- nor a
-    // time range of its own.
-    for (const marks of [NotesEditor, MultitrackEditor]) {
-        for (const word of ["selected", "select", "unselect"] as const) {
-            assert.equal(marks.prototype[word], Marking.prototype[word]);
-        }
+    // roll and the audio editor have it, and the points editor, where no
+    // operation acts on a group of points, has none of it -- nor a time range
+    // of its own.
+    for (const word of ["selected", "select", "unselect"] as const) {
+        assert.equal(NotesEditor.prototype[word], Marking.prototype[word]);
     }
     // the audio editor is the host's application, and its handler marks
     // through the application's transport

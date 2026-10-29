@@ -36,11 +36,9 @@ editors. Press the buttons in order; each step says what to look at.</div>
 
       <div id="multitrack"></div>
       <div>
-        <button id="multitrack1" disabled>multitrack 1: open, play</button>
-        <button id="multitrack2" disabled>multitrack 2: span, loop</button>
-        <button id="multitrack3" disabled>multitrack 3: unloop, read the span</button>
-        <button id="multitrack4" disabled>multitrack 4: selected</button>
-        <button id="multitrack4b" disabled>multitrack 4: read, unselect</button>
+        <button id="multitrack1" disabled>multitrack 1: save, open, play</button>
+        <button id="multitrack2" disabled>multitrack 2: a range, looped</button>
+        <button id="multitrack3" disabled>multitrack 3: stop, move a box</button>
       </div>
 
       <div id="take"></div>
@@ -63,7 +61,10 @@ editors. Press the buttons in order; each step says what to look at.</div>
       The platform's differences are the usual ones: the session is the engine
       in this tab (`Session.embed`), each editor draws into an element of the
       page, a setter that reaches the engine is a method (`setSpan`), and what
-      reads the host is awaited (a roll's and a multitrack's `selected()`).
+      reads the host is awaited (a roll's `selected()`). The multitrack's pass
+      over a range is its transport's `play(start, end, { looping })`, and what
+      a page holds of it is the multitrack itself, the window's while it is
+      open.
 
       The audio editor runs over memory the page shares with its threads,
       which a browser grants only to a page that is cross-origin isolated.
@@ -73,8 +74,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
     -->
     <script type="module">
       import { Session, SoundFile, gui, loadCore, opfs } from "../../dist/index.js";
-      import { Buffer } from "../../dist/defs/index.js";
-      import { Content, Multitrack } from "../../dist/multitrack.js";
+      import { Content, Multitrack, Session as SavedSession, Source } from "../../dist/multitrack.js";
       import { Segment } from "../../dist/segments.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
 
@@ -90,7 +90,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
 
       let session, server, rate;
       let notes, n, t;
-      let frames, high, higher, a, b, mt, m, mtt;
+      let frames, a, b, mt, m, mtt;
       let take, e, at;
 
       // Setup: one server, one host
@@ -143,14 +143,14 @@ editors. Press the buttons in order; each step says what to look at.</div>
         await n.unselect();       // nothing marked
       });
 
-      // MULTITRACK 1: two takes in two tracks
+      // MULTITRACK 1: two takes in two tracks, saved as a session
       step("multitrack1", ["multitrack2"], async () => {
+        await opfs.makeDirectory("out");
         frames = Math.trunc(2.0 * rate);
-        high = await Buffer.fromSamples(Float32Array.from({ length: frames },
-          (_, i) => 0.3 * Math.sin(2 * Math.PI * 660.0 * i / rate)), 1, rate, { server });
-        higher = await Buffer.fromSamples(Float32Array.from({ length: frames },
-          (_, i) => 0.3 * Math.sin(2 * Math.PI * 990.0 * i / rate)), 1, rate, { server });
-        await server.sync();
+        for (const [name, freq] of [["span_selected-660.wav", 660.0], ["span_selected-990.wav", 990.0]]) {
+          await SoundFile.write(`out/${name}`, Float32Array.from({ length: frames },
+            (_, i) => 0.3 * Math.sin(2 * Math.PI * freq * i / rate)), 1, rate, { sampleFormat: "float" });
+        }
         mt = new Multitrack();
         a = mt.tracks.add("one").activeTakeLane.regions.add(
           0.0, 2.0, Content.onto({ source: { source: 1, lifetime: "session", generation: 0 },
@@ -158,41 +158,31 @@ editors. Press the buttons in order; each step says what to look at.</div>
         b = mt.tracks.add("two").activeTakeLane.regions.add(
           2.0, 2.0, Content.onto({ source: { source: 2, lifetime: "session", generation: 0 },
                                    start: 0.0, duration: 2.0 }), { name: "990" });
-        m = await gui.edit(mt, { sampleRate: rate, server, sources: { 1: high, 2: higher },
-                                 title: "multitrack", stage: $("multitrack") });
+        const saved = new SavedSession();
+        saved.multitrack = mt;
+        saved.sources.set(1, Source.file("span_selected-660.wav").shaped(1, frames, rate));
+        saved.sources.set(2, Source.file("span_selected-990.wav").shaped(1, frames, rate));
+        await saved.save("out/span_selected.json");
+        m = await gui.edit(saved, { title: "multitrack", stage: $("multitrack") });
         mtt = m.transport;
         await mtt.play();         // 660 then 990, the line moves
       });
 
-      // MULTITRACK 2: span and loop from the page
+      // MULTITRACK 2: a pass over a range, looped, from the page
       step("multitrack2", ["multitrack3"], async () => {
         await mtt.stop();
-        await mtt.setSpan([1.0, 3.0]); // the band appears over 1..3 s
-        await mtt.loop();         // L turns on
-        await mtt.play();         // end of 660, start of 990, repeated
+        await mtt.play(1.0, 3.0, { looping: true }); // end of 660, start of 990, repeated
       });
 
-      // MULTITRACK 3: stop the loop; sweep by hand (Alt+drag) and read it
-      step("multitrack3", ["multitrack4"], async () => {
-        await mtt.unloop();
+      // MULTITRACK 3: stop the loop; the page's multitrack is the window's
+      step("multitrack3", ["audio1"], async () => {
         await mtt.stop();
-        log(JSON.stringify(mtt.span)); // the band you swept, in seconds
-      });
-
-      // MULTITRACK 4: selected
-      step("multitrack4", ["multitrack4b"], async () => {
-        await m.select([b]);      // the 990 box is held
-        log(JSON.stringify((await m.selected()).map((r) => r.name)));
-      });
-      // click the other box by hand and press:
-      step("multitrack4b", ["audio1"], async () => {
-        log(JSON.stringify((await m.selected()).map((r) => r.name)));
-        await m.unselect();
+        b.position = 2.5;         // the 990 box moves in the window
+        log(`${a.name} ${b.position}`);
       });
 
       // AUDIO 1: a take, its transport
       step("audio1", ["audio2"], async () => {
-        await opfs.makeDirectory("out");
         take = await SoundFile.write("out/span_selected.wav", Float32Array.from({ length: frames },
           (_, i) => Math.exp(-1.5 * i / frames) * 0.5
             * Math.sin(2 * Math.PI * 880.0 * i / rate)), 1, rate, { sampleFormat: "float" });

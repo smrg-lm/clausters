@@ -144,10 +144,10 @@ why the curve row below names three unrelated types:
 | `edit(x)` where x is | opens | over | its vocabulary |
 |---|---|---|---|
 | a `SoundFile` | `AudioEditor`, the handler of the GUI host's audio editor | a `waveform` | `parts` |
-| a saved `multitrack.Session` | `SessionEditor`, the handler of the GUI host's multitrack | a `multitrack` | `clips`/`tracks` |
+| a saved `multitrack.Session` | `MultitrackEditor`, the handler of the GUI host's multitrack | a `multitrack` | `clips`/`tracks` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
-| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`tracks` |
+| a `Multitrack` | `MultitrackEditor`, over an untitled session | a `multitrack` | `clips`/`tracks` |
 | a `Score` (a symbolic score) | `ScoreEditor` | a `score` page | `score` |
 
 **An `EventSequence` opens in the notes editor**, `editing.NotesEditor`, and is edited **in place**: it holds the very sequence the page's handle names, so there is nothing to write back. **It plays what it edits**, on its sequence's own transport, so playing it never moves a multitrack nor another roll's sequence: `await editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: `null` by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: `yAxis: "hz"`, on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history. **A page edits the same sequence while the roll is open**, through its objects: the change is a turn of that history, so the roll redraws, the lane plays it, and Ctrl+Z in the window takes it back — `seq.history.entry("humanize", () => { ... })` makes a whole loop one entry. **What the hand marked is the page's to read**: `await roll.selected()` is the events marked on the roll (a click, Shift+click or a marquee) as the `SeqEvent` objects they are, `await roll.select(events)` marks them from the page and `await roll.unselect()` clears — the picture's state, entering no history. The other selection, the time range an Alt+drag sweeps, is the transport's `span`, and `roll.transport` is that transport (see [The transport](transport.md)).
@@ -163,12 +163,26 @@ folder, beside nothing of yours, and measured once when they are missing -- and
 their samples as the transport reads each track's regions, summed where they
 overlap. A box of notes plays the sequence the session holds, and a double
 click on one opens its roll in the same application, one history with the
-multitrack. What comes back, `SessionEditor`, is its
-handler: `transport.play(start, end, { looping: true })`, `pause`, `stop(mark)`,
-`locate(at)`, `playing()`; `undo`, `redo`, `split`, `join`, `quantize` and any
-window verb by name (`verb`); `output()`, each track's meter and the samples
-played as silence (`starved`); and `save(path=None)`, which writes the session
-as the edits have left it, every file inside its folder named relative to it.
+multitrack. A `Multitrack` opens the same way, as an **untitled session** over
+it: no file behind it until the first `save(path)` names one. What comes back,
+`MultitrackEditor`, is its handler: `transport.play(start, end, { looping: true })`,
+`pause`, `stop(mark)`, `locate(at)`, `playing()`; `undo`, `redo`, `split`,
+`join`, `quantize`, `stopAtEnd`, `resetHeights`, `compactTracks` and any window
+verb by name (`verb`); `grid()`, `snapToGrid()` and `notesView()`, each with
+its setter (`setGrid`, ...); `output()`, each track's meter and the samples
+played as silence (`starved`); and `save(path)`, which writes the session as
+the edits have left it, every file inside its folder named relative to it.
+**The page's multitrack is the window's while it is open**: a change made
+through the objects of the session's `multitrack`, or of the one handed over, is
+made at once in the page and is an edit of the window's, in the order the page
+made them, that its Ctrl+Z takes back; `multitrack.history` is the window's
+history, its steps and reads promises (`multitrack.history.entry("tidy", ...)`
+makes a block one entry). When the window goes, the multitrack holds what the
+window left it as. **What the hand does in the window reaches the page's
+multitrack after the page's next change or step, or when the window closes**: a
+call to the host is a promise, so the multitrack's objects, which answer at
+once, read the copy the page holds; the Python client reads the window's at
+every read.
 
 **A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
 opens it in a window of its own, on an engine of the application's own, and every gesture,
@@ -887,56 +901,41 @@ moved. The multitrack carries **its own version** for exactly that: an editor of
 multitrack is not editing the tree, so one counter for both would make every edit to
 either look like a change to both.
 
-## Editing a multitrack: `edit(multitrack)`, and what it plays
+## Editing a multitrack: `edit(session)`, and what it plays
 
 A `Multitrack` opens with the same verb the others do, and what opens is the
-multitrack **editor**: one widget drawing its own ruler, its own track headers,
-its own automation rows and its own boxes, over the same picture and the same
-reading of a gesture the standalone host uses.
+**multitrack**, the GUI host's application: one widget drawing its own ruler, its
+own track headers, its own automation rows and its own boxes, in a window of the
+host's, playing on an engine of its own.
 
 ```ts
-await session.gui();
-const editor = await gui.edit(multitrack, {
-    sampleRate: 48_000, server, sources: { 1: take, 2: other },
-    title: "multitrack", stage: element,
-});
+const saved = await Session.open(path);   // or a Multitrack, as an untitled session
+const editor = await gui.edit(saved, { title: "multitrack", stage: element });
 ```
 
-`sources` is the one fact about a multitrack that is not in the multitrack: the document
-names a **source id**, never a path and never a buffer number, so which buffer
-each source was read into travels beside it.
+The document names a **source id**, never a path; the session's table says
+where each source is, and the application reads the takes from there -- in a
+page, the page's own storage.
 
-**Given a `server`, the multitrack sounds.** The editor keeps one resident reader per
-box in a group the server's transport governs, and puts them where the multitrack says
-on every edit whoever made it — this window's gesture, a second window over the
-same multitrack, or a step of the history. Moving a box while it plays is one
-`/node_set` on a node that is already running, so it is heard where it was
-dropped with nothing that is sounding cut. The window carries the transport row
-that goes with it (rewind, play/pause, stop, and where the multitrack is), and
-`editor.play()`, `pause()`, `stop()` and `rewind()` are the same verbs from a
-page. **The space bar is play/stop**: a stop goes back to the position
-cursor, so the play cursor lands where the mark is. **Alt and a drag** anywhere on the window marks a **time range**, as a
-drag does in the audio editor: the space bar plays it from its start to its end,
-and the loop switch (**L**) loops it, or the whole multitrack with no range.
-From a page both are the transport's: `editor.transport` is the `Transport` the
-multitrack plays on, in seconds, so `await editor.transport.loop(1, 3)` draws the
-band and turns `L` on, and a range swept by hand reads back as
-`editor.transport.span` (see [The transport](transport.md)). What the hand holds
--- a click, Alt+click or a marquee over the boxes -- is `await editor.selected()`,
-the `Region` objects of this multitrack; `await editor.select(regions)` holds
-them from the page and `await editor.unselect()` holds nothing. **Where a pass ends** is
-the transport's `end`: `null` by default, the transport rolling on past the
-contents; `"contents"`, where the last region ends; or a number of seconds, an
-end marker -- the same three a notes editor's `end` takes, its marker a beat.
-**Shift+L** flips it between rolling on and the contents' end — the Transport
-menu's *Stop at end* and the tool beside Loop are the same verb — and a region
-placed past an end marker takes the marker with it. An end is where a pass
-stops and nothing else: it bounds no view, and a window scrolls and zooms out
-past it. A session keeps it as `Session.end`, in the same three forms, so a
-multitrack opened again stops where it stopped before: the standalone host
-reads and writes it with the file, and a page copies the transport's `end`
-there when it saves. A multitrack opened with no server still edits; it is
-simply not heard.
+**The multitrack sounds.** Each track's regions are read from their files into
+the track's readers, and an edit moves where they are read from without making a
+node, so a box moved while it plays is heard where it was dropped with nothing
+that is sounding cut. The window carries the transport row that goes with it
+(rewind, play/pause, stop, and where the multitrack is), and
+`editor.transport.play()`, `pause()` and `stop()` are the same verbs from a
+page. **The space bar is play/stop**: a stop goes back to the position cursor,
+so the play cursor lands where the mark is. **Alt and a drag** anywhere on the
+window marks a **time range**, as a drag does in the audio editor: the space bar
+plays it from its start to its end, and the loop switch (**L**) loops it, or the
+whole multitrack with no range. From a page a pass over a range is
+`await editor.transport.play(start, end, { looping: true })`. **Where a pass
+ends** is switched by **Shift+L**: rolling on past the contents, or stopping
+where the last region ends — the Transport menu's *Stop at end* and the tool
+beside Loop are the same verb, and `editor.stopAtEnd()` the page's. A region
+placed past an end marker takes the marker with it. An end is where a pass stops
+and nothing else: it bounds no view, and a window scrolls and zooms out past it.
+A session keeps it as `Session.end`, so a multitrack opened again stops where it
+stopped before.
 
 Two cursors, and only one of them is placed: a click on the ruler — or on the
 slack between boxes — puts the **position cursor** down, which is where the next
@@ -945,9 +944,9 @@ so stop goes back to the mark rather than to the top -- and **rewind** is what
 puts the mark itself back at the top, which is a statement about the cursor and
 not about the transport.
 
-**A curve is heard.** A track's level, its mute and its solo reach the readers,
-and so do the automation drawn on a track and the envelope drawn inside a box:
-each names the `gain` port of the node it is on -- the same port the header's
+**A curve is heard.** A track's level, its mute and its solo reach what plays
+it, and so do the automation drawn on a track and the envelope drawn inside a
+box: each names the `gain` port of what it is on -- the same port the header's
 knob writes -- so a point dragged while the multitrack plays is heard where it is
 drawn.
 
@@ -1085,10 +1084,7 @@ session never claims to own the user's file.
 it: `Source.events(notes)` puts an `EventSequence` in the table, and a region
 whose window names that source is a window onto its beats, in seconds through
 its tempo map. The table holds the handle itself, so a save writes what an
-editor did to it. `session.sequences()` hands the handles back, and with what
-`load` answers it is the whole table a multitrack editor is opened with:
-`edit(session.multitrack, { sources: new Map([...await session.load(), ...session.sequences()]) })`.
-Such a box draws the notes it reads and plays them from the transport's event
+editor did to it. `session.sequences()` hands the handles back. Such a box draws the notes it reads and plays them from the transport's event
 lane, into its track: the track's fader, its curves, its mute and its meter are
 over its notes as they are over a take (below, "What a multitrack is as
 nodes"). And **a double click on it opens its roll** — a notes editor over the
@@ -1117,35 +1113,27 @@ one built without a window.
 ## Reopening: structures, not a description
 
 `Session.read` gives the multitrack and its table back, and by itself that is half a
-verb: every take is a bare source number and nothing has loaded it. `load` is
-the other half — what a source *is* in a running system is not the document's to
-decide, so it is said by loading the table into a server:
+verb: every take is a bare source number. The other half — what a source *is*
+while it plays — is the multitrack application's, which resolves the table as
+it opens the session:
 
 ```ts
 const session = await Session.open(path);
-const buffers = await session.load(server);
+const editor = await gui.edit(session);
 ```
 
-The answer is a `Buffer` per source, keyed by source id — the same table an
-editor takes as its `sources`. A relative path is read against the folder the
-session was opened from, on **the server's** filesystem, which is the one that
-reads the files. Each take is read
-**once per source**: two clips over one take are two windows onto one buffer, and
-reading it twice gives them two buffers that drift apart on the first edit. A
-**join** is stitched from the takes it is made of, after they have loaded, so it
-plays the spans the file states; a take only a join reads is loaded for it. What
-is read and in what order is the shared crate's, so the Python client and the GUI
-host open the same session the same way.
+Each take is read from its file **once per source**, a relative path against
+the folder the session was opened from: two clips over one take are two windows
+onto one take, never two copies that drift apart on the first edit. A **join**
+is read from the takes it is made of, so it plays the spans the file states. What
+is read and how is the shared crate's, so the Python client and `clausters-gui
+--session` open the same session the same way.
 
-A *volatile* source is left out with a warning rather than returned as a lie,
-and the rest of the multitrack opens: half a session is worth opening. A file that is
-not there is the server's refusal of its read, and `load` rejects after freeing
-what it had made. And a generator whose reference `defs` does not have keeps what
-it last **rendered** as its floor, which is the same thing a host with no
-language attached shows.
-
-Loading is asynchronous here and not in the Python client, so the `await` is the
-language's and not a different call.
+A *volatile* source opens unresolved rather than as a lie -- its box drawn,
+placed and silent -- and the rest of the multitrack opens: half a session is worth
+opening. And a generator whose reference `defs` does not have keeps what it last
+**rendered** as its floor, which is the same thing a host with no language
+attached shows.
 
 ## Mixing is the multitrack's
 
@@ -1181,16 +1169,18 @@ channel strip every fixed-channel mixer has had for fifty years.
 in -> [pre-fader inserts] -> fader (+ mute) -> pan/width -> [post inserts] -> out
 ```
 
-A **clip** is that strip over its readers, a **track** is that strip over its
-clips, and the **master** is that strip over its tracks. A clip's gain and a
-track's gain are both real and they are different stages -- the first corrects
-the take, the second mixes it -- which is why an envelope on a clip is not
-another name for the track's fader.
+A **track** is that strip over what its regions read, and the **master** is
+that strip over its tracks. A region's own gain, its fades and its envelope are
+read with its samples -- the track's reader sums the regions under the play
+position, each at its gain -- and a region's gain and a track's gain are both
+real and they are different stages: the first corrects the take, the second
+mixes it, which is why an envelope on a region is not another name for the
+track's fader.
 
-**A box of notes is a clip too.** Its notes are voices the transport's event
-lane makes and frees as it plays, and each is told the bus of its box as its
-`out`; the box is the same strip over that bus, where a box of samples is one
-over its readers. So the track's fader, its curves, its mute and its meter are
+**A box of notes is a strip of its own.** Its notes are voices the transport's
+event lane makes and frees as it plays, and each is told the bus of its box as
+its `out`; the box is the same strip over that bus, into its track. So the
+track's fader, its curves, its mute and its meter are
 after a note as they are after a take, and the box has its own. What a note is
 before that is the note's: its def, its velocity, the curves inside it. What
 this asks of a def is the convention an event already has — an `out` control
@@ -1228,12 +1218,12 @@ gain -- one node between a track and the master. That is what lets a meter mean
 something: every track writes into the master's mix, so a meter there would read
 the sum and call it the track. A meter is a **slot** on a strip, so a multitrack
 nobody is looking at holds none, and each one writes one control bus per channel
--- one number a block, with the fall and the peak hold applied on the server, so
-two clients cannot draw two different falls off one signal.
+-- one number a block, with the fall and the peak hold applied by the engine, so
+two windows cannot draw two different falls off one signal.
 
-And the transport plays the multitrack rather than a client stepping it: each reader
-reads the position the engine publishes, so moving a box is one `set` and a
-locate is no message at all.
+And the transport plays the multitrack rather than a client stepping it: each
+track's reader reads the position the engine publishes, so moving a box hands
+the track its regions again and a locate is no message at all.
 
 ## A cut that plays as one reader
 

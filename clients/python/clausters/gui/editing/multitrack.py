@@ -1,893 +1,478 @@
-"""Editing a **multitrack**: its vocabulary, its picture and its editor.
+"""The **multitrack**: its tracks read from their files and played by the
+application the GUI host holds, and this script its handler.
 
-The multitrack, as one of the three fundamental structures gets: a
-`clausters.gui.editing.Domain` that puts a step of the history back onto the
-multitrack, a `clausters.gui.editing.View` that is the editor's window, and an
-editor that is `clausters.gui.editing.Editor` with those two in it.
+The multitrack is one program, and it is not this one. The GUI host opens it
+(`clausters.gui.host.GuiHost.open_app`) in a window of the host's, on an
+engine of the application's own: over a saved session, whose takes are read
+where they are -- their headers when it opens, their samples as the transport
+reads them, their peaks, kept in the session's ``peaks/`` folder, as the
+window draws them -- or over a `clausters.multitrack.Multitrack` handed to it
+whole, an **untitled session** with no file behind it until it is saved.
+What a gesture does, the history, the playback and the save all run in the
+host's process. Every member below is one call to the application
+(`clausters.gui.host.GuiHost.call_app`), and what it answers is read from
+there each time rather than kept here.
 
-**Nothing here decides anything about a turn.** What a message from the host
-is, what a gesture means, how an edit inverts, what the window is and what the
-host is answered with are the shared crate's
-(`clausters._native.EditingCore`), which the standalone host runs and
-the web client binds too. What this adds is what a language owns: which server
-buffer a source was read into, and the socket. The multitrack itself is the
-crate's too: the `clausters.multitrack.Multitrack` a script holds is a handle
-over the one the editor edits, so there is nothing to write back.
+**The script's multitrack is the window's while it is open.** The
+`clausters.multitrack.Multitrack` it was opened over -- the session's, or the
+one handed over -- reads and writes the multitrack the application holds: a
+read answers what the window shows now, a change is an edit of the window's,
+undone by its Ctrl+Z, and ``multitrack.history`` is the window's history.
+When the window goes, the multitrack holds what the window left it as.
 
-**Seconds meet frames through the rate alone.** A multitrack is placed in
-seconds, so a position and a length are each their seconds times the rate, and
-no tempo is involved; the tempo map the multitrack holds
-(`clausters.multitrack.Multitrack.tempo_map`) is what its ruler draws beats and
-bars from, which the shared crate composes.
+A box of notes plays the sequence the session holds for it, and a double
+click on one opens its roll in the same application, one history with the
+multitrack.
 """
 
-from ... import _native
-from ...defs import Buffer, Part
-from ...multitrack import Multitrack
-from .domain import Domain
-from .editor import Editor
-from .marking import Marking
-from .view import View
-
-__all__ = ["MultitrackDomain", "MultitrackEditor", "MultitrackView", "Sources",
-           "is_multitrack"]
-
-#: The names the transport row's three widgets carry. A name and not an id,
-#: because these are the widgets a **hand** addresses and a handler is hung on a
-#: name -- and they are the multitrack's own, so a script's ``extra`` may carry
-#: anything it likes beside them.
-REWIND = "transport_rewind"
-PLAY = "transport_play"
-STOP = "transport_stop"
-CLOCK = "transport_clock"
-
-#: How often the read-out asks the engine where the multitrack is, in seconds. The
-#: *line* asks nothing -- the host draws it from the segment every frame -- so this
-#: is the price of the number beside it and nothing else.
-CLOCK_TICK = 0.05
-
-class Sources:
-    """Which **server buffer** each of the multitrack's sources was read into.
-
-    The one thing about a multitrack that is not in the multitrack: a document names a
-    source and a picture is drawn from a buffer, and only whoever loaded the
-    samples knows they are the same. It is a class rather than a dict so both
-    directions have a name -- a box is *drawn* from a buffer and *read back* into
-    a source.
-    """
-
-    def __init__(self, buffers=None):
-        #: source id -> the buffer number it was read into, or **the object
-        #: that holds it** (a `clausters.defs.Buffer`), since a caller usually
-        #: has the object; `bufnum` reads the number off either.
-        self.buffers = dict(buffers or {})
-
-    def bufnum(self, source) -> int:
-        """The buffer a source was read into; ``-1`` for one nobody loaded.
-
-        **Negative and not zero**, because buffer 0 is a buffer -- the first one
-        an allocator hands out. A source given as an object answers with the
-        buffer it holds, and one that holds none is a box with no samples to
-        draw, which is honest rather than empty.
-        """
-        if source is None:
-            return -1
-        found = self.buffers.get(int(source))
-        if found is None:
-            return -1
-        if isinstance(found, (int, float)):
-            return int(found)
-        # **Buffer 0 is a buffer**, and `x or -1` says it is not: the first
-        # buffer an allocator hands out came back as "nobody loaded this", so
-        # the first take a script loads was the one take its boxes could not
-        # draw. Asked for explicitly instead -- the same sentence the docstring
-        # above has always made.
-        held = getattr(found, "bufnum", None)
-        return -1 if held is None else int(held)
-
-    def held(self) -> dict:
-        """The table as a **join** and a **picture** read it: source id ->
-        ``{"buffer", "channels", "frames", "rate"}``.
-
-        `table` plus the two facts its duration is made of, as numbers of
-        their own. The **length**, which a join needs: a part that
-        names no range contributes the whole of its source, and only whoever
-        loaded it knows how much that is. And the **rate they were written
-        at**, which a picture needs: a box is placed and drawn in the session's
-        samples and filled with its source's frames, and those are the same
-        number only while the two rates are -- a 44.1 kHz take on a 48 kHz
-        session is drawn 8.8% longer than its samples without it. Zero means
-        unknown, and a source that says nothing is read at the session's own
-        rate.
-        """
-        out: dict = {}
-        for source, entry in self.table().items():
-            held = self.buffers[source]
-            entry = dict(entry)
-            # A length only where the object states one as a number: a
-            # timeline's `frames` is not a count, and 0 is read as unknown.
-            frames = getattr(held, "frames", 0)
-            known = isinstance(frames, (int, float)) and not isinstance(frames, bool)
-            entry["frames"] = max(0, int(frames)) if known else 0
-            rate = getattr(held, "sample_rate", 0.0)
-            known = isinstance(rate, (int, float)) and not isinstance(rate, bool)
-            entry["rate"] = max(0.0, float(rate)) if known else 0.0
-            out[source] = entry
-        return out
-
-    def table(self) -> dict:
-        """The whole table as the instance plan reads it: source id ->
-        ``{"buffer": n, "channels": n}``, and ``"duration"`` in seconds when
-        the buffer says how long it is and at what rate -- a box longer than
-        its source is then cut where the source ends, rather than holding its
-        last frame on the track.
-
-        The one fact about a multitrack that is not in the multitrack, handed to the crate
-        so it can say which slot a box goes in -- a mono take is panned into its
-        track and a stereo one is balanced, and that follows from the source's
-        width and nothing else. A source nobody loaded is left out, and a box
-        over it is simply not playing yet.
-        """
-        out: dict = {}
-        for source in self.buffers:
-            bufnum = self.bufnum(source)
-            if bufnum < 0:
-                continue
-            held = self.buffers[source]
-            channels = getattr(held, "channels", 1)
-            entry = {"buffer": bufnum, "channels": max(1, int(channels or 1))}
-            frames = getattr(held, "frames", 0) or 0
-            rate = getattr(held, "sample_rate", 0) or 0
-            if frames > 0 and rate > 0:
-                entry["duration"] = float(frames) / float(rate)
-            out[int(source)] = entry
-        return out
-
-    def sequences(self) -> dict:
-        """The sources that are **event sequences**: source id ->
-        `clausters.seq.EventSequence`. A region over one draws its notes, and a
-        notes editor opened over the same sequence edits what that region
-        draws; it has no buffer, so the tables above leave it out."""
-        from ...seq.sequence import EventSequence
-
-        return {int(source): held for source, held in self.buffers.items()
-                if isinstance(held, EventSequence)}
-
-    def source(self, bufnum: int):
-        """The source a buffer number came from, or ``None``."""
-        for source, held in self.buffers.items():
-            number = held if isinstance(held, (int, float)) else getattr(held, "bufnum", None)
-            if number is not None and int(number) == int(bufnum):
-                return int(source)
-        return None
+import os
 
 
-class Bridge:
-    """What a client adds to the crate's picture: an axis and a buffer table.
-
-    Held by the domain and the view alike, because both cross the same seam --
-    one drawing a box and the other reading one back -- and two copies of the
-    scale is how a box comes back somewhere it was not put.
-    """
-
-    def __init__(self, multitrack: Multitrack, *, sample_rate: float,
-                 sources: "Sources | None" = None, server=None):
-        self.rate = float(sample_rate)
-        self.sources = sources or Sources()
-        #: The server the takes are on, for the one thing an edit needs one
-        #: for: **a source an edit makes**. A join owns no samples, so what
-        #: reaches the server is the list of spans and never the audio.
-        self.server = server
-
-
-class MultitrackDomain(Domain):
-    """A multitrack's vocabulary, as the **history** walks it.
-
-    It reads no gesture and decides no edit: a gesture is the editor's turn,
-    and the turn is the crate's (`clausters._native.EditingCore`).
-    What is left is what the history registers a structure for -- putting a step
-    back onto the multitrack -- and that goes through the same editor, so an undo and
-    an edit apply by one rule.
-    """
-
-    name = _native.MULTITRACK
-
-    def __init__(self, bridge: Bridge):
-        super().__init__()
-        self.bridge = bridge
-        #: The editor this domain was made for.
-        self.editor = None
-
-    def state(self, structure) -> dict:
-        """The multitrack as the crate holds it."""
-        return structure.write()
-
-    def stepped(self, structure, applied: dict) -> None:
-        """Carry out a step of the history the context applied to the
-        multitrack: a source the edit mints. The multitrack itself is the one
-        the script holds, already stepped.
-
-        A join over fragments mints the source its box is a window onto, and a
-        box over a source nothing answers for is left out of the plan. It runs
-        again on a redo, which is right: the source is gone the moment nothing
-        windows it.
-        """
-        self._mint(applied.get("minted"))
-
-    def _mint(self, minted) -> None:
-        """Install a source an edit made, and put it in the table.
-
-        The one place a client answers a document's statement with a server
-        command. A join owns no samples -- it is spans of the takes the table
-        already holds -- so this costs the list of parts and not the audio, and
-        freeing a take something is stitched over does not silence it.
-
-        **What the join is comes from the crate** (`_native.editing_stitch`):
-        its width, its spans and the channel map a narrow part fills it with,
-        read once for every endpoint that builds one. What is left here is
-        the command and the table.
-
-        A part whose source nobody loaded leaves the join unmade rather than
-        half made: a box over it draws empty and does not play, which is what a
-        source nobody answered for has always meant here.
-        """
-        if not isinstance(minted, dict) or minted.get("id") is None:
-            return
-        made = _native.editing_stitch(minted, self.bridge.sources.held())
-        if not made:
-            return
-        parts = [Part(int(p["buffer"]), start=int(p["start"]),
-                      frames=int(p["frames"]), fade_in=int(p["fadeIn"]),
-                      fade_out=int(p["fadeOut"]), channels=list(p["channels"]),
-                      fade_in_shape=int(p["fadeInShape"]),
-                      fade_in_curve=float(p["fadeInCurve"]),
-                      fade_out_shape=int(p["fadeOutShape"]),
-                      fade_out_curve=float(p["fadeOutCurve"]))
-                 for p in made["parts"]]
-        # **Sent rather than waited on.** This runs inside the answer to a
-        # gesture, and a join owns no samples: there is nothing to copy and
-        # nothing to load, so the buffer number is known the moment it is
-        # handed out and blocking on the `/done` would only stall the hand.
-        # **Written over rather than skipped**: the document has just said
-        # what this source is.
-        self.bridge.sources.buffers[int(minted["id"])] = Buffer.stitch(
-            parts, channels=int(made["channels"]),
-            sample_rate=float(made["rate"]), wait=False,
-            server=self.bridge.server)
-
-    def free_sources(self, structure, sources) -> None:
-        """Free joins the context handed back: no box reads one and no undo or
-        redo can put one back. Its buffer is freed and it leaves the table, so
-        the next picture and the next save no longer name it."""
-        for source in sources:
-            held = self.bridge.sources.buffers.pop(int(source), None)
-            if held is not None and hasattr(held, "free"):
-                held.free()
-
-
-class MultitrackView(View):
-    """The multitrack editor's window: the multitrack, ruled from above, with the
-    transport row under it when the multitrack can be heard.
-
-    **The window is the application's**, composed in the shared crate
-    (`clausters._native.EditingCore`), so this client, the web client
-    and the standalone host open the same one. What is left here is the two
-    widget ids a hand's gestures come back on, named like every widget of a
-    picture.
-    """
-
-    def __init__(self, bridge: Bridge, *, link=None, transport: bool = False):
-        super().__init__()
-        self.bridge = bridge
-        #: The navigation group the view joins, so a ruler beside it rules it.
-        self.link = link
-        #: The id of the strip that rules the multitrack, once one has been built.
-        self.ruler: int | None = None
-        #: The id of the multitrack's own widget, once one has been built -- what a
-        #: playhead is drawn on, so whoever moves the line does not have to
-        #: guess which of the two ids is the picture.
-        self.multitrack: int | None = None
-        #: Whether the window carries the transport row. It is the *view's* and
-        #: not a script's ``extra``: a multitrack that can be heard is played from the
-        #: window it is drawn in, and every window over a multitrack has the same
-        #: three controls in the same place.
-        self.transport = bool(transport)
-
-    def build(self, editor) -> dict:
-        # **The ruler is named like any other widget of this picture**, so what
-        # a hand does on it comes back to this editor: the position cursor is
-        # placed on the ruler and nowhere else, and an unnamed strip would put
-        # that one gesture outside the only object that could hear it.
-        wid = self.widget(editor, "multitrack", editor.structure)
-        rid = self.widget(editor, "ruler", editor.structure, "ruler")
-        self.ruler = rid
-        self.multitrack = wid
-        editor._sync_core()
-        tree = editor._call("window", widget=wid, ruler=rid)
-        # **A script's own widgets are its objects**, and a widget built over a
-        # live source keeps a binding no JSON carries -- so they are appended
-        # here rather than composed in the crate.
-        tree["children"] = [*tree.get("children", ()), *editor.extra]
-        return tree
-
-    def props(self, editor, widget_id: int) -> dict:
-        editor._sync_core()
-        return editor._call("props", widget=int(widget_id))
-
-
-def _plain(value):
-    """An event's arguments as JSON carries them. A blob belongs to a widget
-    this editor did not draw, and it crosses as nothing."""
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return None
-    if isinstance(value, (list, tuple)):
-        return [_plain(v) for v in value]
-    return value
-
-
-class _Driver:
-    """**What a multitrack's `clausters.defs.Transport` plays through**: the
-    editor's playback, its positions the multitrack's seconds, and the time
-    range and the loop switch the window shows -- the band a sweep leaves and
-    `L` -- kept here, stopped or rolling, so a script and a hand read and
-    write one state."""
+class MultitrackTransport:
+    """**The multitrack's transport**, as a script plays it: each verb one
+    call to the application, in the multitrack's seconds."""
 
     def __init__(self, editor):
-        self.editor = editor
-        #: The time range ``(start, end)`` in seconds, or ``None``.
-        self.span = None
-        #: Whether the loop switch is on: the span, or the whole multitrack.
-        self.looping = False
+        self._editor = editor
 
     @property
-    def _playback(self):
-        return self.editor.playback
-
     def playing(self) -> bool:
-        return self._playback.playing
+        """Whether the transport rolls."""
+        return bool(self._editor._do("playing"))
 
-    def play(self, at=None) -> None:
-        if at is not None:
-            self.editor.cursor = float(at)
-            self._playback.cue(float(at))
-        self._playback.play(range=self.span, looping=self.looping)
+    def play(self, start: "float | None" = None, end: "float | None" = None,
+             *, looping: bool = False) -> "MultitrackTransport":
+        """**Roll**: over ``start``..``end`` seconds when both are given (and
+        over and over with ``looping``), else from where it stands."""
+        args = {"looping": bool(looping)}
+        if start is not None and end is not None:
+            args["range"] = [float(start), float(end)]
+        self._editor._do("play", **args)
+        return self
 
-    def pause(self) -> None:
-        self._playback.pause()
+    def pause(self) -> "MultitrackTransport":
+        """Hold where it is; a `play` goes on from there."""
+        self._editor._do("pause")
+        return self
 
-    def stop(self) -> None:
-        self.editor.stop()
+    def stop(self, mark: float = 0.0) -> "MultitrackTransport":
+        """Stop, and go back to ``mark`` seconds."""
+        self._editor._do("stop", mark=float(mark))
+        return self
 
-    def locate(self, at: float) -> None:
-        self.editor.cursor = float(at)
-        if self._playback.playing:
-            self._playback.locate(float(at))
-        else:
-            self._playback.cue(float(at))
+    def locate(self, at: float) -> "MultitrackTransport":
+        """Stand the transport at ``at`` seconds."""
+        self._editor._do("locate", at=float(at))
+        return self
+
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Block until the transport stops, or ``timeout`` seconds pass.
+        Answers whether it stopped."""
+        import time
+
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        while self.playing:
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        return True
+
+
+class _RemoteHandle:
+    """**The multitrack while the application has it open**: each verb of
+    the multitrack's handle (`clausters._native.MultitrackHandle`) asked of
+    the application, which answers it over the multitrack its window holds."""
+
+    def __init__(self, editor):
+        self._editor = editor
+
+    def call(self, verb: str, **args):
+        """One verb: its answer. Raises `ValueError` for a refusal."""
+        return self._editor._handle({"verb": verb, **args})
+
+
+class _RemoteHistory:
+    """**The window's history, as the script's multitrack reads it** while
+    the application has it open: the undo order the window walks, which the
+    script's changes are entries of."""
+
+    def __init__(self, editor):
+        self._editor = editor
+
+    def __call__(self, label: str = "edit"):
+        return self._editor._block(str(label))
+
+    def undo(self) -> bool:
+        """Step back over the last entry -- a script's or a window's -- and
+        answer whether anything moved."""
+        return bool(self._editor._do("undo"))
+
+    def redo(self) -> bool:
+        """Step forward again after `undo`; whether anything moved."""
+        return bool(self._editor._do("redo"))
 
     @property
-    def end(self):
-        return self._playback.end
+    def can_undo(self) -> bool:
+        """Whether there is an entry to step back over."""
+        return bool(self._editor._query("history").get("canUndo"))
 
-    def set_end(self, end) -> None:
-        self._playback.end = end
+    @property
+    def can_redo(self) -> bool:
+        """Whether there is an undone entry to step forward into."""
+        return bool(self._editor._query("history").get("canRedo"))
 
-    def free(self) -> None:
-        """Nothing: a multitrack plays on the transport addressed by number,
-        which is nobody's to give back."""
+    @property
+    def undo_label(self) -> "str | None":
+        """What an undo would take back, as a menu names it."""
+        return self._editor._query("history").get("undoLabel")
 
-    def set_span(self, span, *, show: bool = True) -> None:
-        self.span = None if span is None else (float(span[0]), float(span[1]))
-        editor = self.editor
-        editor._sync_core()
-        editor._call("span", span=None if self.span is None else list(self.span))
-        if show:
-            editor.adopt()
-        if self.looping:
-            self._playback.set_loop(range=self.span, looping=True)
+    @property
+    def redo_label(self) -> "str | None":
+        """What a redo would bring back."""
+        return self._editor._query("history").get("redoLabel")
 
-    def set_looping(self, on: bool) -> None:
-        self.looping = bool(on)
-        self._playback.set_loop(range=self.span, looping=self.looping)
-        self.editor._show_looping(self.looping)
+    def __repr__(self) -> str:
+        return f"<UndoHistory, undo {self.undo_label!r}>"
 
 
-class MultitrackEditor(Marking, Editor):
-    """A multitrack on screen, editable back into the `clausters.multitrack.Multitrack`
-    the caller already holds.
+class _Block:
+    """A ``with multitrack.history(label):`` over the open window: every
+    change inside it applied as it is made and recorded at the end as one
+    entry."""
 
-    Nothing is handed back at the end: the object the script passed in *is* the
-    edited one, and reading it after an edit is how a caller sees what a hand
-    did. Being an `clausters.gui.editing.Editor`, it has the history every other
-    editor has -- `undo` and `redo` walk it, and a second window over the same
-    multitrack walks the same one.
+    def __init__(self, editor, label: str):
+        self._editor = editor
+        self._label = label
 
-    **What is marked** (`selected`, `select`, `unselect`) is the regions the
-    hand holds -- a click, Alt+click or a marquee over the boxes -- as the
-    `clausters.multitrack.Region` objects of this multitrack, in the order the
-    boxes are drawn. The picture's, not the multitrack's: it enters no
-    history, and it is empty with no window open. (The time range a sweep
-    leaves is the transport's `span`.)
+    def __enter__(self):
+        editor = self._editor
+        editor._depth += 1
+        if editor._depth == 1:
+            editor._legs = []
+        return self
+
+    def __exit__(self, *exc):
+        editor = self._editor
+        editor._depth -= 1
+        if editor._depth == 0:
+            legs, editor._legs = editor._legs, None
+            if legs and not editor.closed:
+                editor._handle({"verb": "record", "legs": legs}, label=self._label)
+        return False
+
+
+class MultitrackEditor:
+    """**The multitrack the GUI host holds, and this script its handler.**
+
+    `clausters.gui.edit` over a `clausters.multitrack.Session` that has a
+    file, or over a `clausters.multitrack.Multitrack`, answers one, open.
+    Each member is a call to the application in the host's process,
+    answered by it.
+
+    Args:
+        structure: what to open: a `clausters.multitrack.Session`, by the
+            file it was opened from or saved to; or a
+            `clausters.multitrack.Multitrack`, as an untitled session whose
+            first `save` names its file.
+        title: the window's title; the session file's name when not given,
+            ``"Untitled"`` for a multitrack.
+
+    Raises:
+        ValueError: a session with no file: save it first.
     """
 
-    def __init__(self, multitrack: Multitrack, *, sample_rate: float,
-                 sources=None, link=None, server=None,
-                 title: str = "Multitrack", notes_view: str = "roll", **options):
-        bridge = Bridge(multitrack, sample_rate=sample_rate, server=server,
-                        sources=Sources(sources) if not isinstance(sources, Sources)
-                        else sources)
-        #: The axis and the buffer table this window crosses to -- the two things
-        #: about a multitrack that are not in the multitrack.
-        self.bridge = bridge
-        #: What the multitrack **sounds** as, when it can be heard at all:
-        #: `clausters.gui.editing.playback.Playback` over the server this was
-        #: given, and ``None`` for a multitrack opened with none. A multitrack nobody can
-        #: play still edits, which is why it is an argument and not a
-        #: requirement.
-        self.playback = None
-        domain = MultitrackDomain(bridge)
-        super().__init__(multitrack, sample_rate=sample_rate,
-                         domain=domain,
-                         view=MultitrackView(bridge, link=link,
-                                             transport=server is not None),
-                         title=title, **options)
-        domain.editor = self
-        #: **The editor's turns, in the shared crate**: a member of this multitrack's
-        #: editing context, which reads a message, records what a gesture did
-        #: and takes the steps of the one order the multitrack shares with whatever
-        #: else is open in it.
-        self._member, self._structure_id = self._editing.open_multitrack(
-            f"multitrack:{id(multitrack)}", multitrack, {
-                "rate": float(sample_rate), "link": link,
-                "transport": server is not None, "title": title,
-                "w": int(self.size[0]), "h": int(self.size[1]), "chrome": self.chrome,
-                "notesView": str(notes_view)},
-            domain)
-        for source, sequence in bridge.sources.sequences().items():
-            self._editing.bind_sequence(self._member, source, sequence)
-        #: The score the boxes' pages are engraved with, where this client
-        #: has an engraver: the crate reads each box's sequence and engraves
-        #: it there. Nothing else reads it.
-        self._engraver = None
-        if bridge.sources.sequences() and _native.has_engraver():
-            from ..notation import Score, sheet_from_voice, to_mei
+    def __init__(self, structure, *, title: "str | None" = None):
+        from ...multitrack import Multitrack
 
-            self._engraver = Score(to_mei(sheet_from_voice([])))
-            self._editing.bind_engraver(self._member, self._engraver)
-        self._shown = None
-        #: The rolls a double click opened, by source.
-        self.rolls = {}
-        #: The transport row's ids, once the window has numbered them.
-        self._controls = None
-        #: What the `transport` plays through.
-        self._driver = _Driver(self)
-        if server is not None:
-            from .playback import Playback
-
-            self.playback = Playback(self, server=server)
-
-    @property
-    def transport(self):
-        """**The multitrack's transport**, as the object a script plays: a
-        `clausters.defs.Transport` whose verbs (``play``, ``pause``,
-        ``stop``, ``locate``, ``loop``, ``wait``) and ``span`` speak the
-        multitrack's seconds -- the span is the band an Alt+drag sweeps, the
-        loop switch is `L`, and each side reads what the other set. ``None``
-        for a multitrack opened with no server."""
-        if self.playback is None:
-            return None
-        transport = self.playback.server.transport_at(self.playback._instance.transport())
-        transport._driver = self._driver
-        return transport
-
-    # ---- what the hand marked ----
-
-    def _marked(self) -> list:
-        """The regions the hand holds, by the names the host holds."""
-        held = self._marks(self.multitrack_widget)
-        if not held:
-            return []
-        regions = {str(r._id): r for r in self.structure.regions()}
-        return [regions[name] for name in held if name in regions]
-
-    def _mark(self, regions) -> None:
-        """Hold ``regions`` in the window."""
-        self._set_marks(self.multitrack_widget, [str(r._id) for r in regions or ()])
-
-    def _show_looping(self, on: bool) -> None:
-        """The window's loop switch, as `L` leaves it."""
-        if self._host is not None and self._window is not None and self.multitrack_widget is not None:
-            self._host.set(self.multitrack_widget, looping=1 if on else 0)
-
-    @property
-    def multitrack_widget(self) -> "int | None":
-        """The id of the multitrack's own widget -- what a playhead is drawn on.
-        ``None`` before the picture has been drawn once."""
-        return getattr(self.view, "multitrack", None)
-
-    # ---- the crate's turns ----
-
-    def _sync_core(self) -> None:
-        """Hand the core what this client holds: the buffer table, the meters,
-        the cursor and the window. The multitrack is the one it already
-        edits."""
-        playback = self.playback
-        meters = [] if playback is None else [
-            {"track": int(track), "bus": int(bus), "channels": int(channels)}
-            for track, (bus, channels) in playback.meters.items()]
-        self._call(
-            "sync",
-            sources={str(k): v for k, v in self.bridge.sources.held().items()},
-            meters=meters, cursor=self.cursor, window=self._window,
-            controls=self._controls)
-
-    def _call(self, verb: str, **args) -> dict:
-        """One verb of this editor's member, through the context."""
-        return self._editing.member(self._member, verb, **args)
-
-    def _deliver(self, addr: str, args) -> bool:
-        self._sync_core()
-        turned = self._editing.event(self._member, str(addr), _plain(list(args)))
-        outcome = turned.get("outcome") or {}
-        if outcome.get("turn") == "closed":
-            return self._closed()
-        if outcome.get("turn") == "step":
-            # **The step is the context's, already taken**; what is left is
-            # carrying it out, and the acknowledgement the crate wrote -- with
-            # the reason when nothing could apply it.
-            stepped = self.app.stepped(turned.get("stepped") or {}, self)
-            self.echo.send(outcome.get("answer"))
-            return stepped
-        changed = self._take(outcome)
-        # **A join the edit let go of** -- the redo it dropped was the last
-        # entry naming it -- is freed once the turn is carried out.
-        self._editing.release(turned.get("freed"))
-        return changed
-
-    def _route(self, args) -> bool:
-        """One ``/gui_event`` payload, with the stamp already taken off: the
-        same turn as a message, unstamped."""
-        self._sync_core()
-        wid, tag, values = args[0], args[1], list(args[2:])
-        turned = self._editing.event(self._member, "/gui_event",
-                                     _plain([wid, 0, 0, tag, *values]))
-        changed = self._take(turned.get("outcome") or {})
-        self._editing.release(turned.get("freed"))
-        return changed
-
-    def _take(self, outcome: dict) -> bool:
-        """Carry out what a turn came to, and answer the host. Returns whether
-        the multitrack changed."""
-        if outcome.get("turn") in (None, "nothing"):
-            return False
-        for minted in outcome.get("minted") or ():
-            self.domain._mint(minted)
-        changed = bool(outcome.get("changed"))
-        if changed:
-            # **The entry is already recorded and the version moved**, and the
-            # multitrack the script holds is the one edited: all the crate's.
-            self.dirty = True
-            self._editing.changed()
-        if outcome.get("locate") is not None:
-            # **Whoever has the transport is told**: this editor, and the multitrack
-            # it is composed inside when it is one.
-            self.cursor = float(outcome["locate"])
-            self.locate(self.cursor)
-            if self.composed_in is not None:
-                self.composed_in.locate(self.cursor)
-            if callable(self.on_locate):
-                self.on_locate(self.cursor)
-        if outcome.get("selection") is not None:
-            # A sweep's time range is the transport's span: what the space
-            # bar plays and the loop repeats, and what a script reads.
-            swept = outcome["selection"]
-            start, length = float(swept.get("start", 0.0)), float(swept.get("len", 0.0))
-            self._driver.span = (start, start + length) if length > 0 else None
-        if outcome.get("cursor") is not None:
-            self.cursor = float(outcome["cursor"])
-        if outcome.get("transport") is not None:
-            self._transport(outcome["transport"])
-        if outcome.get("open") is not None:
-            self.open_roll(int(outcome["open"]))
-        self.echo.send(outcome.get("answer"))
-        self._closing(outcome)
-        return changed
-
-    @property
-    def grid(self) -> float:
-        """**The grid a box lands on, in beats** -- ``0.25`` for a
-        sixteenth, its default, and ``0`` for none. A grid is a length in
-        beats, read through the tempo map, so its lines move with the tempo:
-        what a drag snaps to and `quantize` writes into the multitrack. The
-        window's own, like its zoom: setting it is no edit. Set it to choose
-        another: ``editor.grid = 0.5``."""
-        return float(self._call("grid").get("grid", 0.0))
-
-    @grid.setter
-    def grid(self, beats: float) -> None:
-        self._call("sync", grid=float(beats))
-        self.adopt()
-
-    @property
-    def snap_to_grid(self) -> bool:
-        """**Whether a hand snaps to the grid** -- the snap-to-grid switch,
-        on until it is turned off. Off, a drag, a paste and a split land where
-        the hand puts them; `quantize` still moves onto the grid. The window's
-        own, like its grid: G in the window and the View menu flip it, and
-        setting it is no edit: ``editor.snap_to_grid = False``."""
-        return bool(self._call("grid").get("snap", True))
-
-    @snap_to_grid.setter
-    def snap_to_grid(self, on: bool) -> None:
-        self._call("sync", snap=bool(on))
-        self.adopt()
-
-    @property
-    def notes_view(self) -> str:
-        """**How a box of notes is drawn**: ``"roll"``, a piano roll fitted
-        to the box, or ``"score"`` -- its page, the sequence read as notation
-        (`clausters.gui.notation.Score.from_events`) and drawn on the box's
-        own axis, every note at its time, in line with the other tracks. The
-        first clef and key signature stand before the box's first note and
-        stay in view, and a row too low for a staff to be read is drawn as a
-        roll. The window's own, like its zoom: setting it is no edit. The
-        View menu's *Notes as rolls* and *Notes as scores* are the same
-        switch, and a double click on a box opens the editor of the view it
-        is drawn in. Without an engraver in this client every box is a
-        roll."""
-        return str(self._call("notesView").get("view", "roll"))
-
-    @notes_view.setter
-    def notes_view(self, view: str) -> None:
-        if not self._call("notesView", view=str(view)).get("set"):
-            raise ValueError(
-                f"no view {view!r} of a box of notes: it is drawn as 'roll' or 'score'")
-        self.adopt()
-
-    def open_roll(self, source: int):
-        """**Open the roll over source ``source``**, a sequence among this
-        editor's `sources` -- what a double click on a box of notes asks for.
-
-        The notes editor opens in this multitrack's window set and editing
-        context, so it is one undo order with the multitrack, and an edit in
-        the roll redraws every box over that sequence and is heard from the
-        transport's lane. A roll already open over the sequence is left as it
-        is. Where the boxes are drawn as scores (`notes_view`) what opens is
-        the score editor over the sequence, on its page. Returns the
-        `clausters.gui.editing.NotesEditor` or the
-        `clausters.gui.editing.ScoreEditor`, or ``None`` when the source is
-        not a sequence."""
-        sequence = self.bridge.sources.sequences().get(int(source))
-        if sequence is None:
-            return None
-        open_roll = self.rolls.get(int(source))
-        if open_roll is not None and open_roll._window is not None:
-            return open_roll
-        from .events import NotesEditor
-        from .score import ScoreEditor
-
-        server = None if self.playback is None else self.playback.server
-        if self.notes_view == "score" and self._engraver is not None:
-            # a box drawn as its page opens on its page
-            roll = ScoreEditor.over(sequence, server=server, app=self.app,
-                                    context=self._editing,
-                                    title=f"{self.title}: score")
+        if isinstance(structure, Multitrack):
+            self._session = None
+            self._multitrack = structure
+            self._path = None
+            default = "Untitled"
         else:
-            roll = NotesEditor(sequence, sample_rate=self.bridge.rate, server=server,
-                               app=self.app, context=self._editing,
-                               title=f"{self.title}: notes")
-        self.rolls[int(source)] = roll
-        if self._host is not None:
-            roll.open(self._host)
-        return roll
+            path = getattr(structure, "path", None)
+            if path is None:
+                raise ValueError(
+                    "the multitrack opens a session from its file, and this one has "
+                    "none: save it first (`session.save(path)`)")
+            self._session = structure
+            self._multitrack = structure.multitrack
+            self._path = str(path)
+            default = os.path.basename(self._path)
+        #: The window's title.
+        self.title = str(title) if title is not None else default
+        self._host = None
+        self._window = None
+        self._local = None
+        self._on_closed = None
+        self._depth = 0
+        self._legs = None
 
-    def reflect_step(self) -> None:
-        """Draw what a history walk left behind: every widget corrected, and the
-        host told once."""
-        self.dirty = True
-        self._sync_core()
-        self.echo.send(self._call("resync"))
+    # ---- the window ----
 
-    def adopt(self) -> None:
-        """Another view of this multitrack edited it: bring this window in step."""
-        if self._host is None or self._window is None:
+    def open(self, host=None):
+        """**Ask the host to open the multitrack**, on ``host`` or the ambient
+        one, and answer its window. One already open answers the window it
+        has. From then on the multitrack it was opened over is the window's
+        (the module's docstring)."""
+        if self._window is not None:
+            return self._window
+        from ..handle import WindowHandle
+        from .application import _resolve_host
+
+        host = _resolve_host(host, None)
+        if self._path is not None:
+            options = {"title": self.title, "path": self._path}
+        else:
+            options = {"title": self.title, "multitrack": self._multitrack.write()}
+        window = host.open_app("multitrack", options)
+        self._host = host
+        self._window = WindowHandle(host, int(window), {})
+        self._window.on_closed(self._closed)
+        # the script's multitrack reads and writes the window's from now on
+        self._local = self._multitrack._mt
+        self._multitrack._mt = _RemoteHandle(self)
+        # the host's loop delivers the window's close from now on
+        host.loop
+        return self._window
+
+    def _closed(self) -> None:
+        """The window went: the multitrack holds what it left it as."""
+        self._settle()
+        if self._on_closed is not None:
+            self._on_closed()
+
+    def _settle(self) -> None:
+        """Hand the script's multitrack back, once the window is gone."""
+        if self._local is None:
             return
-        self._sync_core()
-        self.echo.send(self._call("resync"))
+        from ... import _native
 
-    # ---- the multitrack, heard ----
+        left = self._host._closed_with(int(self._window))
+        local, self._local = self._local, None
+        self._multitrack._mt = _native.MultitrackHandle(left) if left is not None else local
 
-    def open(self, host=None, id: "int | None" = None):
-        """Open the window, and hang the transport row on the playback.
+    @property
+    def multitrack(self):
+        """The `clausters.multitrack.Multitrack` it was opened over: the
+        window's while it is open."""
+        return self._multitrack
 
-        The wiring is here rather than in the constructor because that is where
-        the window comes into being: `clausters.gui.edit` builds the editor and
-        opens it in two steps, so a multitrack has its readers before it has a screen
-        -- which is the right order anyway, since a multitrack can be played by a
-        script that never draws it.
-        """
-        window = super().open(host, id)
-        if self.playback is not None and self._window is not None:
-            self.playback.attach(self._host, self._window)
-            # **The transport row's buttons are the editor's**, like the multitrack
-            # and its ruler: a click on one is a turn the core reads, so it
-            # learns their ids once the window has numbered them.
-            self._controls = {key: int(self.window[name].id)
-                              for key, name in (("rewind", REWIND), ("play", PLAY),
-                                                ("stop", STOP), ("clock", CLOCK))}
-            self._tick()
-            self._host.clock.sched(CLOCK_TICK, self._tick)
-            self._tell_meters()
-        return window
+    @property
+    def session(self):
+        """The `clausters.multitrack.Session` it was opened over, or ``None``
+        for an untitled one."""
+        return self._session
 
-    def _plays_on(self):
-        return None if self.playback is None else self.playback.server
+    @property
+    def path(self) -> "str | None":
+        """The session file it opened, or ``None`` for an untitled one."""
+        return self._path
 
-    def _tell_meters(self) -> None:
-        """**Tell the window where the multitrack's meters are.**
+    @property
+    def host(self):
+        """The `clausters.gui.host.GuiHost` it is open on, or ``None``."""
+        return self._host
 
-        The window is composed before anything sounds -- a multitrack can be played
-        by a script that never draws it -- so the buses are only known once the
-        playback has made the tracks. Without this the strips read nothing until
-        some *unrelated* turn happens to push the picture, which is a gesture
-        that may never come: the multitrack plays, the levels move, and every column
-        stays at the floor.
-        """
-        if self.playback is None or self.multitrack_widget is None:
-            return
-        meters = self.view.props(self, self.multitrack_widget).get("meters")
-        if meters:
-            self._host.set(self.multitrack_widget, meters=meters)
+    @property
+    def window(self):
+        """The open window's handle, or ``None``."""
+        return self._window
 
-    def _tick(self):
-        """The read-out, and the one round trip: the position is the engine's.
+    @property
+    def closed(self) -> bool:
+        """Whether the window is gone."""
+        return self._window is None or self._window.closed
 
-        Returns the delay until the next reading, or ``None`` once the window is
-        gone -- which is how a scheduled tick stops without anybody stopping it.
-        """
-        if self.closed or self.playback is None:
-            return None
-        self._sync_core()
-        text = self._call("clock", position=float(self.playback.position))["text"]
-        if text != self._shown:
-            self.window[CLOCK].set(text=text)
-            self._shown = text
-        return CLOCK_TICK
+    def wait(self, timeout: "float | None" = None) -> bool:
+        """Hold the calling thread until the window is closed: ``True`` when
+        it closed, ``False`` when ``timeout`` ran out first."""
+        if self._window is None:
+            return True
+        done = self._window.wait(timeout)
+        if done:
+            self._settle()
+        return done
 
-    def toggle(self):
-        """Play, or pause where it stands. A pause freezes the governed group,
-        so playing again continues rather than starting over."""
-        self._sync_core()
-        self._take(self._call("toggle"))
+    def on_closed(self, func) -> "MultitrackEditor":
+        """Call ``func()`` when the window is closed, and return ``self``.
+        ``None`` clears it."""
+        self._opened()
+        self._on_closed = func
+        return self
+
+    def close(self) -> "MultitrackEditor":
+        """Close the window, and what plays it."""
+        if not self.closed:
+            self._do("close")
+            self._host._wait_while(lambda: not self.closed, 5.0)
+        self._settle()
+        return self
+
+    def _opened(self):
+        if self._window is None:
+            raise RuntimeError("open() the multitrack first")
+        return self._window
+
+    # ---- the door ----
+
+    def _call(self, call: dict, timeout: "float | None" = None):
+        """One call to the application, and its answer."""
+        return self._host.call_app(self._opened(), call, timeout)
+
+    def _query(self, name: str) -> dict:
+        return self._call({"query": name}) or {}
+
+    def _do(self, verb: str, **args):
+        """One action of the multitrack, carried to its end, and its result."""
+        return self._call({"do": {"verb": verb, **args}})
+
+    def _handle(self, call: dict, *, label: "str | None" = None):
+        """One verb of the multitrack's handle, asked of the window's. An edit
+        inside a ``with multitrack.history(...)`` block is applied now and
+        recorded when the block ends."""
+        if self.closed:
+            self._settle()
+            return self._multitrack._mt.call(**call)
+        args = {"call": call}
+        if label is not None:
+            args["label"] = label
+        block = self._legs is not None and call.get("verb") == "apply"
+        if block:
+            args["record"] = False
+        answer = self._do("handle", **args)
+        if block and isinstance(answer, dict) and answer.get("applied") \
+                and "current" in answer:
+            self._legs.append({"forward": call["intent"], "backward": answer["current"]})
+        return answer
+
+    def _edit(self, intent: dict, label: str) -> dict:
+        """A change the script's multitrack makes: an edit of the window's,
+        under ``label``."""
+        return self._handle({"verb": "apply", "intent": intent}, label=label)
+
+    def _block(self, label: str) -> _Block:
+        return _Block(self, label)
+
+    @property
+    def _history(self) -> _RemoteHistory:
+        return _RemoteHistory(self)
+
+    # ---- the window's verbs ----
+
+    def verb(self, name: str) -> bool:
+        """**Perform the window's verb ``name``**, as its key, its menu entry
+        or its tool would (``docs/verbs.md``). Answers whether it was asked:
+        ``False`` with no window open."""
+        if self.closed:
+            return False
+        self._host.verb(self._window, str(name))
+        return True
+
+    def undo(self) -> bool:
+        """Step the history back one edit (`verb`)."""
+        return self.verb("undo")
+
+    def redo(self) -> bool:
+        """Step the history forward again (`verb`)."""
+        return self.verb("redo")
 
     def split(self) -> bool:
-        """Split what is held at the cursor -- the window's ``split`` (`verb`)."""
+        """Split the box under the cursor: the window's ``split`` (`verb`)."""
         return self.verb("split")
 
     def join(self) -> bool:
-        """Join a touching run of what is held -- the window's ``join`` (`verb`)."""
+        """Join the selected boxes: the window's ``join`` (`verb`)."""
         return self.verb("join")
 
     def quantize(self) -> bool:
-        """Quantize what is selected to the grid -- the window's ``quantize`` (`verb`)."""
+        """Move the selected boxes onto the grid: the window's ``quantize``
+        (`verb`)."""
         return self.verb("quantize")
 
     def stop_at_end(self) -> bool:
-        """Whether a pass stops where the contents end, on or off -- the window's ``stop_at_end`` (`verb`)."""
+        """Switch whether a pass stops where the contents end: the window's
+        ``stop_at_end`` (`verb`)."""
         return self.verb("stop_at_end")
 
     def reset_heights(self) -> bool:
-        """Every track back to its default height -- the window's ``reset_heights`` (`verb`)."""
+        """Give every track its default height back: the window's
+        ``reset_heights`` (`verb`)."""
         return self.verb("reset_heights")
 
     def compact_tracks(self) -> bool:
-        """Every track at its smallest height -- the window's ``compact_tracks`` (`verb`)."""
+        """Fit every track into the window: the window's ``compact_tracks``
+        (`verb`)."""
         return self.verb("compact_tracks")
 
-    def rewind(self):
-        """Put the **position cursor** back at the top, and cue a stopped
-        transport there.
+    # ---- the grid, and how a box of notes is drawn ----
 
-        The cursor's own verb, not the transport's: it is where the next play
-        starts, and stop goes back to it rather than to the top. A hand that
-        has been working at bar forty otherwise has to find the top on screen
-        to get back to it.
-        """
-        self._sync_core()
-        self._take(self._call("rewind"))
+    def _editor(self, call: dict):
+        """One verb of the window's editor (``grid``, ``sync``,
+        ``notesView``), and its answer."""
+        return self._do("verb", call=call) or {}
 
-    def _transport(self, verb: dict) -> None:
-        """Carry out what a turn asked the transport to do, on the playback."""
-        if self.playback is None:
-            return
-        kind = verb.get("verb")
-        if kind == "toggle":
-            # The engine is asked first: a transport another client stopped is
-            # stopped, whatever this window last told it.
-            if self.playback.playing:
-                self.playback.pause()
-            else:
-                self.playback.play()
-        elif kind == "playStop":
-            # The space bar: a stop goes back to the position cursor, so the
-            # play cursor lands where the reader left the mark; a play is the
-            # time range a sweep left, and the loop switch over it.
-            self._driver.looping = bool(verb.get("looping"))
-            if self.playback.playing:
-                self.playback.stop()
-            else:
-                self.playback.play(range=verb.get("range"),
-                                   looping=bool(verb.get("looping")))
-        elif kind == "loop":
-            # `L`: the pass in progress loops, or stops looping, from where it
-            # stands; a stopped transport reads the switch on its next play.
-            self._driver.looping = bool(verb.get("looping"))
-            self.playback.set_loop(range=verb.get("range"),
-                                   looping=bool(verb.get("looping")))
-        elif kind == "stop":
-            self.playback.stop()
-        elif kind == "stopAtEnd":
-            # The end switch: a pass that rolled on stops where the contents
-            # end, and one that stopped -- there or at a marker -- rolls on.
-            self.playback.end = "contents" if self.playback.end is None else None
-        elif kind == "cue":
-            self.locate(float(verb.get("secs", 0.0)))
+    @property
+    def grid(self) -> float:
+        """The grid a box snaps to and `quantize` moves it onto, in beats."""
+        return float(self._editor({"verb": "grid"}).get("grid", 0.0))
 
-    def play(self):
-        """Play the multitrack from where the position cursor is."""
-        if self.playback is not None:
-            self.playback.play()
+    @grid.setter
+    def grid(self, beats: float) -> None:
+        self._editor({"verb": "sync", "grid": float(beats)})
 
-    def pause(self):
-        """Freeze the multitrack where it stands."""
-        if self.playback is not None:
-            self.playback.pause()
+    @property
+    def snap_to_grid(self) -> bool:
+        """Whether a box the hand moves snaps to the grid."""
+        return bool(self._editor({"verb": "grid"}).get("snap"))
 
-    def stop(self):
-        """Halt and go back to the mark the position cursor is on."""
-        self._sync_core()
-        self._take(self._call("stop"))
+    @snap_to_grid.setter
+    def snap_to_grid(self, on: bool) -> None:
+        self._editor({"verb": "sync", "snap": bool(on)})
 
-    def locate(self, at: float):
-        """The position cursor was placed at ``at`` seconds: cue a stopped
-        transport there and leave a rolling one alone."""
-        if self.playback is not None:
-            self.playback.cue(at)
+    @property
+    def notes_view(self) -> str:
+        """How a box of notes is drawn: ``"roll"`` or ``"score"``."""
+        return str(self._editor({"verb": "notesView"}).get("view"))
 
-    def data_changed(self) -> None:
-        """The multitrack changed, whoever changed it: put the readers where it now
-        says they are, and then tell the script.
+    @notes_view.setter
+    def notes_view(self, view: str) -> None:
+        if not self._editor({"verb": "notesView", "view": str(view)}).get("set"):
+            raise ValueError(f"no notes view {view!r}: a box of notes is drawn "
+                             "as a 'roll' or a 'score'")
 
-        The readers go first because the script's own handler may look at what is
-        sounding, and because a multitrack is a statement: making it true again is not
-        a reaction to an edit, it is the same call the first one was.
-        """
-        if self.playback is not None:
-            self.playback.sync()
-        self._answer_with_the_picture()
-        super().data_changed()
+    # ---- the transport, and what is heard ----
 
-    def _answer_with_the_picture(self) -> None:
-        """**A name the host minted is answered with the one the multitrack kept.**
+    @property
+    def transport(self) -> MultitrackTransport:
+        """**The multitrack's transport** (`MultitrackTransport`)."""
+        return MultitrackTransport(self)
 
-        The host mints the word for a track it made or a box it split, and the
-        document mints the id; the crate compares what the host was last told
-        with what the multitrack now holds and answers with the picture when they
-        differ (`settle`). It runs after the readers are synced and a minted
-        source has its buffer, so the box that windows it draws.
-        """
-        if self._host is None or self._window is None:
-            return
-        self._sync_core()
-        self.echo.send(self._call("settle"))
+    @property
+    def output(self) -> dict:
+        """**What the engine plays**: each track's meter levels by track id
+        (``tracks``), and the samples played as silence for want of a frame
+        read in time since the engine opened (``starved``)."""
+        return self._query("output")
 
-    def close(self):
-        """Close this multitrack's window, and its playback with it."""
-        if self.playback is not None:
-            self.playback.close()
-        super().close()
+    # ---- saving ----
+
+    def save(self, path: "str | None" = None) -> str:
+        """**Write the session as the edits have left it**: over the file it
+        was opened from, or, given a ``path``, there, which a later `save`
+        then writes over. An untitled one needs a ``path`` the first time.
+        Every file inside the session's folder is written relative to it.
+        Answers the path written."""
+        args = {} if path is None else {"path": str(path)}
+        answer = self._do("save", **args) or {}
+        written = answer.get("destination", path if path is not None else self._path)
+        if written is not None:
+            self._path = str(written)
+        return written
 
 
 def is_multitrack(structure) -> bool:
-    """Whether `edit` should open this as a multitrack."""
+    """Whether ``structure`` is a `clausters.multitrack.Multitrack`."""
+    from ...multitrack import Multitrack
+
     return isinstance(structure, Multitrack)

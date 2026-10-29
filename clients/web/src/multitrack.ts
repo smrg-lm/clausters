@@ -64,27 +64,62 @@
 
 import {
     JsMultitrack,
-    StepRunner,
     editingDefaultTempo,
     multitrackNames as coreNames,
     multitrackProps as coreProps,
     sessionMigrate,
 } from "./core/clausters_core_web.js";
 import { TempoMap } from "./base/time.ts";
-import { Buffer } from "./defs/buffer.ts";
 import { quads } from "./defs/ugens/env.ts";
 import type { Curve as CurveSpec, PointsLike } from "./defs/ugens/env.ts";
-import type { Server } from "./defs/server/index.ts";
 import { resolveServer } from "./defs/wire.ts";
-import { FIRST_VERSION, SESSION_FORMAT, editingLoad } from "./document.ts";
+import { FIRST_VERSION, SESSION_FORMAT } from "./document.ts";
 import { requireCore } from "./base/core.ts";
 import { UndoHistory, contexts, keyOf } from "./history.ts";
 import { readFileAt, writeFileAt } from "./base/files.ts";
 import { EventSequence } from "./seq/sequence.ts";
-import { runSteps } from "./steps.ts";
 
 /** Whatever a newer writer wrote and this build has no field for. */
 export type Extra = Record<string, unknown>;
+
+/**
+ * **The window a multitrack is open in**, as the multitrack sees it: the
+ * multitrack editor, which a change made through the multitrack's objects
+ * is forwarded to.
+ *
+ * @internal
+ */
+export interface WindowOver {
+    /** Whether the window is gone. */
+    readonly closed: boolean;
+    /** The window's history. */
+    readonly history: WindowHistory;
+    /** A change made here, `current` the edit that puts it back, as an edit of the window's. */
+    forward(intent: Extra, label: string, current: unknown): void;
+}
+
+/**
+ * **The window's history, as a page's multitrack reads it** while the
+ * multitrack application has it open: the undo order the window walks,
+ * which the page's changes are entries of. Its steps and its reads are
+ * promises, since the window's history is in the host's process.
+ */
+export interface WindowHistory {
+    /** Runs `run`, and makes every change inside it **one** entry, labelled `label`. */
+    entry<T>(label: string, run: () => T): T;
+    /** Steps back over the last entry -- a page's or a window's -- and resolves whether anything moved. */
+    undo(): Promise<boolean>;
+    /** Steps forward again after `undo`; whether anything moved. */
+    redo(): Promise<boolean>;
+    /** Whether there is an entry to step back over. */
+    canUndo(): Promise<boolean>;
+    /** Whether there is an undone entry to step forward into. */
+    canRedo(): Promise<boolean>;
+    /** What an undo would take back, as a menu names it. */
+    undoLabel(): Promise<string | null>;
+    /** What a redo would bring back. */
+    redoLabel(): Promise<string | null>;
+}
 
 /** A file's text, where `base/files.ts` keeps files. */
 async function readText(path: string): Promise<string> {
@@ -94,12 +129,6 @@ async function readText(path: string): Promise<string> {
 /** Writes a file's text where {@link readText} reads it. */
 async function writeText(path: string, text: string): Promise<void> {
     await writeFileAt(path, new TextEncoder().encode(text));
-}
-
-/** The folder a path is in, `.` for a bare name. */
-function folderOf(path: string): string {
-    const cut = path.lastIndexOf("/");
-    return cut < 0 ? "." : cut === 0 ? "/" : path.slice(0, cut);
 }
 
 /** Everything in `written` except the keys this build knows. */
@@ -1559,7 +1588,12 @@ export class Span {
  * own: they are read as values and written whole through what holds them.
  */
 export class Multitrack implements CurveHolder {
-    readonly #mt: JsMultitrack;
+    #mt: JsMultitrack;
+    /**
+     * The multitrack editor whose window has this multitrack open, which a
+     * change made through its objects is forwarded to. @internal
+     */
+    window: WindowOver | null = null;
 
     /** What {@link Multitrack.read} hands the constructor, for the one call it makes. */
     static #reading: Extra | null = null;
@@ -1589,6 +1623,17 @@ export class Multitrack implements CurveHolder {
     /** The handle a multitrack editor opens over. @internal */
     get handle(): JsMultitrack {
         return this.#mt;
+    }
+
+    /**
+     * **Holds `written` from now on**, the document's JSON: what the window
+     * that had it open says it is now. The objects a page holds stay the
+     * same objects.
+     *
+     * @internal
+     */
+    holdWritten(written: Extra): void {
+        this.#mt = new JsMultitrack(JSON.stringify(written ?? {}));
     }
 
     /** One verb of the multitrack's door; throws with the crate's error. @internal */
@@ -1653,18 +1698,23 @@ export class Multitrack implements CurveHolder {
      * {@link Multitrack.applyIntent} answers; throws with the multitrack's
      * reason when it refuses. `label` is what an undo would call it.
      *
-     * A multitrack with a history -- one an editor is open on, or one a page
-     * asked for {@link Multitrack.history} -- takes the change as a turn of
-     * it: recorded, and every window over it redrawn. One with none just
-     * changes.
+     * A multitrack the multitrack application has open is the window's: the
+     * change is made here and forwarded to the window, an edit of its
+     * history, in the order the page made them. One with a history of this
+     * page's -- one it asked for {@link Multitrack.history} -- takes the
+     * change as a turn of it: recorded, and every view over it redrawn. One
+     * with none just changes.
      *
      * @internal
      */
     editIntent(intent: Extra, label: string): { applied: boolean; reason?: string } {
         const context = contexts.get(this);
-        const answer = context === undefined
-            ? this.applyIntent(intent, false)
+        const window = this.window !== null && !this.window.closed ? this.window : null;
+        const answer = window !== null || context === undefined
+            ? this.applyIntent(intent, window !== null)
             : context.scriptEdit(this, intent, label);
+        // the window's is the multitrack: the change is an edit of the window's
+        if (window !== null && answer.applied) window.forward(intent, label, (answer as { current?: unknown }).current);
         if (!answer.applied && answer.reason) throw new Error(`clausters: ${answer.reason}`);
         return answer;
     }
@@ -1715,9 +1765,11 @@ export class Multitrack implements CurveHolder {
      * first ask. From then on every change made through the multitrack's
      * objects is an entry of it, and a turn the windows over it see;
      * `mt.history.entry("tidy", () => ...)` makes everything inside it one
-     * entry.
+     * entry. While the multitrack application has it open it is the window's
+     * history ({@link WindowHistory}), which its Ctrl+Z walks.
      */
-    get history(): UndoHistory {
+    get history(): UndoHistory | WindowHistory {
+        if (this.window !== null && !this.window.closed) return this.window.history;
         return new UndoHistory(this);
     }
 
@@ -2493,8 +2545,8 @@ export class Session {
 
     /**
      * A session read from the file at `path`, remembering where it came from:
-     * {@link Session.load} reads relative paths against that file's folder, and
-     * {@link Session.save} writes back to it.
+     * the multitrack application reads relative paths against that file's
+     * folder (`edit`), and {@link Session.save} writes back to it.
      *
      * The path is on the filesystem `Buffer.read` names -- the disk under node,
      * and the page's own storage (`opfs`) in a tab.
@@ -2527,8 +2579,7 @@ export class Session {
 
     /**
      * The sources that are sequences of events: source id -> `EventSequence`,
-     * the handles the table holds. With what {@link Session.load} answers, the
-     * whole table a multitrack editor is opened with.
+     * the handles the table holds.
      */
     sequences(): Map<number, EventSequence> {
         const out = new Map<number, EventSequence>();
@@ -2646,61 +2697,6 @@ export class Session {
         session.extra = rest(written, "format", "multitrack", "arrangement", "views",
                              "end", "document", "sources", "provenance");
         return session;
-    }
-
-    /**
-     * Loads the sources the multitrack names into `server`: every take read from its
-     * file, and every join stitched from the takes it is made of once those are
-     * there.
-     *
-     * What each source *is* in a running system is not the document's to decide,
-     * and loading is the half of reopening a session that says it: a server
-     * buffer per source. What is read and in what order is the shared crate's
-     * (`editingLoad`), so a session opens the same here, in the Python client
-     * and in the GUI host.
-     *
-     * `beside` is the folder a relative path is read against -- the session
-     * file's own, on **the server's** filesystem; when omitted, the folder of
-     * the file the session was opened from or saved to, else the current one.
-     * The answer maps source id to
-     * {@link Buffer} for every source that loaded (a sequence of events takes
-     * none: {@link Session.sequences} hands those over); a source that cannot -- a
-     * volatile one, one the table does not hold, a join over a take that did not
-     * load -- is left out and named in a warning. Rejects when the server refuses
-     * a read or a stitch (a file that is not there), after freeing what the load
-     * had made.
-     */
-    async load(
-        server?: Server,
-        { beside, timeout }: { beside?: string; timeout?: number } = {},
-    ): Promise<Map<number, Buffer>> {
-        beside ??= this.path === null ? "." : folderOf(this.path);
-        const srv = resolveServer(server);
-        const aside = [...this.sources.keys()].map(() => srv.buffers.alloc());
-        const plan = editingLoad(this.write(), beside, aside);
-        if (plan.error !== undefined) {
-            for (const bufnum of aside) srv.buffers.free(bufnum);
-            throw new Error(`clausters: ${plan.error}`);
-        }
-        for (const bufnum of plan.unused) srv.buffers.free(bufnum);
-        for (const [id, why] of plan.unresolved) {
-            console.warn(`clausters: source ${id} is not loadable: ${why}`);
-        }
-        const buffers = new Map<number, Buffer>();
-        for (const [id, take] of Object.entries(plan.takes)) {
-            const buffer = new Buffer(take.buffer, take.frames, Math.max(1, take.channels), 0.0, srv);
-            if (take.path !== undefined) buffer.path = take.path;
-            buffers.set(Number(id), buffer);
-        }
-        try {
-            await runSteps(srv, new StepRunner(), plan.steps, { to: "samples", timeout });
-        } catch (error) {
-            for (const buffer of buffers.values()) buffer.free();
-            throw error;
-        }
-        // The shape is the file's, so it is read back rather than trusted.
-        for (const buffer of buffers.values()) await buffer.info(timeout);
-        return buffers;
     }
 }
 

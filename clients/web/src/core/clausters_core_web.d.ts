@@ -75,20 +75,6 @@ export class EditingCore {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Hands the multitrack editor `member` the engraver its boxes' pages are
-     * engraved with -- the C ABI's `clausters_apps_editing_bind_engraver`.
-     * `score` is one the caller made for that and reads no more. Answers the
-     * member's picture corrected.
-     */
-    bindEngraver(member: number, score: Score): string;
-    /**
-     * Binds a multitrack member's source to `sequence`, so a region over it
-     * draws the sequence's notes -- the C ABI's
-     * `clausters_apps_editing_bind_sequence`. `request` is `{"member",
-     * "source"}`; the answer is the member's corrected picture, or `{}`.
-     */
-    bindSequence(sequence: JsEventSequence, request: string): string;
-    /**
      * One verb, as `clausters_apps::editing::call_json` documents.
      */
     call(request: string): string;
@@ -96,12 +82,6 @@ export class EditingCore {
      * An empty context.
      */
     constructor();
-    /**
-     * Opens a multitrack editor over `multitrack`, which it then edits in
-     * place -- the C ABI's `clausters_apps_editing_open_multitrack`. `request`
-     * carries the `key` and what the editor is built from.
-     */
-    openMultitrack(multitrack: JsMultitrack, request: string): string;
     /**
      * Opens a notes editor over `sequence`, which it then edits in place --
      * the C ABI's `clausters_apps_editing_open_notes`. `request` carries the
@@ -345,40 +325,6 @@ export class IdSpaces {
     static score(max_nodes: number, audio_buses: number, outputs: number, control_buses: number, buffers: number, transports: number, event_buses: number): IdSpaces;
 }
 
-export class Instance {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * **Which control bus run each track's meters write**, by track:
-     * `[{"track": id, "bus": handle, "channels": n}]`, a run of
-     * `2 * channels` -- the level first and the mark that waits after it.
-     */
-    meters(): string;
-    /**
-     * A new instance: nothing of the multitrack is sounding yet.
-     */
-    constructor();
-    /**
-     * **The difference between what is sounding and what the multitrack says**, as
-     * the JSON list of operations a client applies.
-     *
-     * The same three arguments `multitrackPlan` takes -- the multitrack, the rate
-     * and the source table --
-     * plus the master's own level, which is the caller's and not the multitrack's.
-     *
-     * An operation names what it acts on by a **handle**, never by a node id,
-     * a bus index or a buffer number: this allocates none of those, and the
-     * client keeps the one table from handle to whatever it made.
-     */
-    reconcile(multitrack: string, sample_rate: number, sources: string, gain: number): string;
-    /**
-     * **Everything this made, given back** -- the operations that stop the
-     * multitrack. The multitrack itself is untouched: what an instance holds is nodes,
-     * and nodes are not the document.
-     */
-    teardown(): string;
-}
-
 /**
  * JS face: a sequence of events (`clausters_document::EventSequence`), every
  * verb through one JSON door, as the C ABI's `clausters_document_sequence_*`.
@@ -437,98 +383,6 @@ export class MpeAssigner {
      * members.
      */
     noteOn(key: number): number | undefined;
-}
-
-/**
- * **One multitrack, as it is playing**: its instance, its applier and its
- * transport, answering every verb as steps (JSON).
- */
-export class MultitrackPlayback {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * The steps that free everything the multitrack made.
-     */
-    close(ids: IdSpaces): string;
-    /**
-     * The steps that cue a stopped transport at `secs`.
-     */
-    cue(secs: number): string;
-    /**
-     * Where a pass ends, as its JSON: `null`, `"contents"` or seconds.
-     */
-    end(): string;
-    /**
-     * The steps that put the transport at `secs` of the multitrack.
-     */
-    locate(secs: number): string;
-    /**
-     * The meters the multitrack writes, as JSON.
-     */
-    meters(): string;
-    /**
-     * A playback; `chunk` is how many samples one fill carries. Where the
-     * multitrack is made and how the transport is bound are the crate's.
-     */
-    constructor(chunk: number);
-    /**
-     * What the multitrack's notes regions play, as its event lane's data,
-     * the graphs its curves play through allocating from `ids` -- the C
-     * ABI's `clausters_editing_playback_notes`.
-     */
-    notes(placed: string, ids: IdSpaces): string;
-    /**
-     * The steps that freeze the multitrack and zero its meters.
-     */
-    pause(): string;
-    /**
-     * The steps that roll the transport.
-     */
-    play(): string;
-    /**
-     * The steps of the space bar's play: `pass` the JSON `{"range": [start,
-     * end] | null, "looping": bool}`, seconds of the multitrack.
-     */
-    playPass(pass: string): string;
-    /**
-     * Whether the transport was last told to roll.
-     */
-    rolling(): boolean;
-    /**
-     * A sample as a second of the multitrack.
-     */
-    samplesToSecs(samples: number): number;
-    /**
-     * A second of the multitrack as a sample.
-     */
-    secsToSamples(secs: number): number;
-    /**
-     * The steps that set where a pass ends: `end` the JSON `null`,
-     * `"contents"` or seconds (an end marker). One that names none answers
-     * no steps.
-     */
-    setEnd(end: string): string;
-    /**
-     * The steps the loop switch asks while the multitrack plays: `pass` as
-     * for `playPass` -- the C ABI's `clausters_editing_playback_set_loop`.
-     */
-    setLoop(pass: string): string;
-    /**
-     * Says whether the transport is rolling.
-     */
-    setRolling(rolling: boolean): void;
-    /**
-     * The steps that halt and go back to the mark.
-     */
-    stop(mark: number): string;
-    /**
-     * The steps that make what sounds be what the multitrack says.
-     */
-    sync(multitrack: string, sample_rate: number, sources: string, gain: number, ids: IdSpaces): string;
-    /**
-     * The transport the multitrack plays on.
-     */
-    transport(): number;
 }
 
 /**
@@ -1353,26 +1207,6 @@ export function editingEventCurves(request: string): string;
 export function editingIntake(domain: string, tag: string, request: string): string;
 
 /**
- * JS face: **a session's sources, loaded** -- the steps that read every take
- * and stitch every join into the buffers the caller set aside.
- *
- * `request` is `{"session", "beside", "buffers"}` as JSON; the answer is what
- * each source became, the steps, what will not load and why, and the numbers
- * left over.
- */
-export function editingLoad(request: string): string;
-
-/**
- * JS face: **what a source made of spans comes to** -- the buffer a join is,
- * resolved against the caller's table.
- *
- * `source` is a source-table entry as JSON and `held` the table, source id to
- * `{"buffer", "channels", "frames"}`; the answer is the join's width, rate,
- * length and parts, or `null` where there is nothing to make.
- */
-export function editingStitch(source: string, held: string): string;
-
-/**
  * The engraver's options for one page, as the JSON object it is configured
  * with: `scale` (staff size), `pageWidth` (the page units a score wraps into
  * systems at) and an optional JSON object merged over them.
@@ -1633,21 +1467,6 @@ export function mpeZoneMessages(upper: boolean, members: number): Uint8Array;
  * when the two stop agreeing.
  */
 export function multitrackNames(multitrack: string): string;
-
-/**
- * **What to instantiate to play a multitrack** -- the instance plan, or an empty
- * string for a multitrack that will not parse.
- *
- * `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
- * where a source's samples actually are on a running server, which is the one
- * fact about a multitrack that is not in the multitrack. No tempo is asked for: a
- * multitrack is placed in seconds.
- *
- * Three rules live in it and each was written twice before it did: seconds
- * crossed to frames at the rate, the source's width picking the
- * clip's wiring, and what a solo anywhere does to everything else.
- */
-export function multitrackPlan(multitrack: string, sample_rate: number, sources: string): string;
 
 /**
  * JS face: **a multitrack as the props the multitrack widget is drawn with**, as a
@@ -2025,11 +1844,9 @@ export interface InitOutput {
     readonly __wbg_editingcore_free: (a: number, b: number) => void;
     readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
-    readonly __wbg_instance_free: (a: number, b: number) => void;
     readonly __wbg_jseventsequence_free: (a: number, b: number) => void;
     readonly __wbg_jsmultitrack_free: (a: number, b: number) => void;
     readonly __wbg_mpeassigner_free: (a: number, b: number) => void;
-    readonly __wbg_multitrackplayback_free: (a: number, b: number) => void;
     readonly __wbg_notesplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
@@ -2071,13 +1888,8 @@ export interface InitOutput {
     readonly editingDefaultTempo: () => number;
     readonly editingEventCurves: (a: number, b: number) => [number, number];
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly editingLoad: (a: number, b: number) => [number, number];
-    readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly editingcore_bindEngraver: (a: number, b: number, c: number) => [number, number];
-    readonly editingcore_bindSequence: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_call: (a: number, b: number, c: number) => [number, number];
     readonly editingcore_new: () => number;
-    readonly editingcore_openMultitrack: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_openNotes: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_openScore: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_openScoreOver: (a: number, b: number, c: number, d: number, e: number) => [number, number];
@@ -2118,10 +1930,6 @@ export interface InitOutput {
     readonly idspaces_nodeEnded: (a: number, b: number) => number;
     readonly idspaces_release: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly idspaces_score: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
-    readonly instance_meters: (a: number) => [number, number];
-    readonly instance_new: () => number;
-    readonly instance_reconcile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
-    readonly instance_teardown: (a: number) => [number, number];
     readonly interpretation: () => [number, number, number, number];
     readonly itemId: (a: number, b: number) => number;
     readonly jseventsequence_call: (a: number, b: number, c: number) => [number, number];
@@ -2150,27 +1958,7 @@ export interface InitOutput {
     readonly mpeassigner_noteOff: (a: number, b: number, c: number) => void;
     readonly mpeassigner_noteOn: (a: number, b: number) => number;
     readonly multitrackNames: (a: number, b: number) => [number, number];
-    readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly multitrackProps: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly multitrackplayback_close: (a: number, b: number) => [number, number];
-    readonly multitrackplayback_cue: (a: number, b: number) => [number, number];
-    readonly multitrackplayback_end: (a: number) => [number, number];
-    readonly multitrackplayback_locate: (a: number, b: number) => [number, number];
-    readonly multitrackplayback_meters: (a: number) => [number, number];
-    readonly multitrackplayback_new: (a: number) => number;
-    readonly multitrackplayback_notes: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly multitrackplayback_pause: (a: number) => [number, number];
-    readonly multitrackplayback_play: (a: number) => [number, number];
-    readonly multitrackplayback_playPass: (a: number, b: number, c: number) => [number, number];
-    readonly multitrackplayback_rolling: (a: number) => number;
-    readonly multitrackplayback_samplesToSecs: (a: number, b: number) => number;
-    readonly multitrackplayback_secsToSamples: (a: number, b: number) => number;
-    readonly multitrackplayback_setEnd: (a: number, b: number, c: number) => [number, number];
-    readonly multitrackplayback_setLoop: (a: number, b: number, c: number) => [number, number];
-    readonly multitrackplayback_setRolling: (a: number, b: number) => void;
-    readonly multitrackplayback_stop: (a: number, b: number) => [number, number];
-    readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
-    readonly multitrackplayback_transport: (a: number) => number;
     readonly node_editor: (a: number, b: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly notesplayback_call: (a: number, b: number, c: number, d: number, e: number) => [number, number];
@@ -2274,6 +2062,7 @@ export interface InitOutput {
     readonly tempomap_dump: (a: number) => [number, number];
     readonly tempomap_env: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly tempomap_fromChanges: (a: number, b: number, c: number) => number;
+    readonly tempomap_isEmpty: (a: number) => number;
     readonly tempomap_last: (a: number) => [number, number];
     readonly tempomap_len: (a: number) => number;
     readonly tempomap_load: (a: number, b: number) => number;
@@ -2313,7 +2102,6 @@ export interface InitOutput {
     readonly amp_of_velocity: (a: number) => number;
     readonly velocity_of_amp: (a: number) => number;
     readonly widgetids_contains: (a: number, b: number) => number;
-    readonly tempomap_isEmpty: (a: number) => number;
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;
     readonly clausters_midi_read_clip: (a: number, b: number, c: number) => number;

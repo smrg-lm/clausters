@@ -206,37 +206,6 @@ class Editing:
         self.version = int(turned.get("version", self.version))
         return turned
 
-    def open_multitrack(self, key: str, multitrack, request: dict, handler) -> tuple:
-        """**Open a multitrack editor over ``multitrack``** -- a
-        `clausters.multitrack.Multitrack`, which the editor then edits in place
-        -- as the structure ``key`` names, and answer its ``(member, identity)``.
-
-        Raises:
-            ValueError: the crate refused the request, with its reason.
-        """
-        answer = self.core.open_multitrack(multitrack._mt, key=str(key), **request)
-        if "error" in answer or "member" not in answer:
-            raise ValueError(answer.get("error", "the context opened nothing"))
-        member, identity = int(answer["member"]), int(answer["structure"])
-        self._handlers[member] = (multitrack, handler)
-        self._structures.setdefault(id(multitrack), (multitrack, member, identity))
-        self.claim(multitrack)
-        return member, identity
-
-    def bind_sequence(self, member: int, source: int, sequence) -> dict:
-        """**Bind a multitrack member's ``source`` to ``sequence``** -- a
-        `clausters.seq.EventSequence` -- so a region over it draws the
-        sequence's notes; answers the member's corrected picture. The sequence
-        is claimed: a script's change to it is a turn of this context."""
-        self.claim(sequence)
-        return self.core.bind_sequence(sequence._seq, int(member), int(source))
-
-    def bind_engraver(self, member: int, score) -> dict:
-        """**Hand a multitrack member the engraver its boxes' pages are
-        engraved with** -- a `clausters.gui.notation.Score` made for that and
-        read no more; answers the member's corrected picture."""
-        return self.core.bind_engraver(int(member), score._h)
-
     def claim(self, structure) -> None:
         """**Make this the structure's context**, so `Editing.of` and the
         structure's own `UndoHistory` answer it. An editor opened in a context

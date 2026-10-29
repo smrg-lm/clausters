@@ -320,6 +320,10 @@ impl Editing {
                     _ => return refused("value", "the member is not a multitrack"),
                 };
                 self.sound(member, tracks, ids);
+                // what the window shows changed with it: drawn again
+                if matches!(action["call"]["verb"].as_str(), Some("sync" | "notesView")) {
+                    ran.effects.push(effect("resync", json!({})));
+                }
                 Ok(serde_json::from_str(&answer).unwrap_or(Value::Null))
             }
             "play" => {
@@ -348,15 +352,34 @@ impl Editing {
                 Ok(Value::Null)
             }
             "playing" => Ok(json!(self.multitrack_rolling(tracks))),
+            "handle" => self.multitrack_handle(member, tracks, action, ids, &mut ran),
+            "undo" | "redo" => {
+                let direction = if verb == "undo" {
+                    clausters_document::history::Direction::Undo
+                } else {
+                    clausters_document::history::Direction::Redo
+                };
+                let stepped = self.step(direction);
+                for corrected in &stepped.corrections {
+                    ran.effects
+                        .push(effect("echo", json!({"answer": corrected.answer})));
+                }
+                if stepped.stepped {
+                    self.sound(member, tracks, ids);
+                    self.sound_rolls(ids);
+                    ran.effects.push(effect("resync", json!({})));
+                }
+                Ok(json!(stepped.stepped))
+            }
             "close" | "closed" => {
                 self.close_tracks(member, tracks, ids);
-                ran.effects.push(effect(
+                ran.effects.push(self.closing(
+                    member,
                     if verb == "closed" {
                         "closedWindow"
                     } else {
                         "closeWindow"
                     },
-                    json!({}),
                 ));
                 Ok(json!(false))
             }
@@ -369,6 +392,89 @@ impl Editing {
             message,
         }));
         ran
+    }
+
+    /// **A script's call on the multitrack this member holds**, while its
+    /// window has it: `call` is one verb of the multitrack's handle
+    /// (`clausters_document::multitrack::handle`), answered as the handle
+    /// answers it. An `apply` is an edit of the window's: recorded in the
+    /// history under `label` -- or, with `record: false`, applied and left
+    /// for a `record` call that makes a script's block one entry, its
+    /// `legs` (`{"forward", "backward"}`) in order -- sounded, and the
+    /// window drawn again.
+    fn multitrack_handle(
+        &mut self,
+        member: MemberId,
+        tracks: &mut Tracks,
+        action: &Value,
+        ids: &mut IdSpaces,
+        ran: &mut Ran,
+    ) -> Result<Value, String> {
+        use crate::turn::{Leg, Record};
+        use clausters_document::multitrack::handle;
+
+        let call = &action["call"];
+        let label = action["label"].as_str().unwrap_or("edit").to_string();
+        let Some(Member::Multitrack(editor)) = self.member(member) else {
+            return Err("the member is not a multitrack".into());
+        };
+        let leg = |forward: Value, backward: Value| Leg {
+            holds_forward: editor.joins_named(&forward),
+            holds_backward: editor.joins_named(&backward),
+            key: String::new(),
+            forward: json!({ "edit": forward }),
+            backward,
+        };
+        if call["verb"] == "record" {
+            let legs: Vec<Leg> = call["legs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|l| leg(l["forward"].clone(), l["backward"].clone()))
+                .collect();
+            let taken = !legs.is_empty() && self.record(member, &Record { label, legs }, false);
+            return Ok(json!(taken));
+        }
+        let shared = editor.shared();
+        let request = call.to_string();
+        let answer: Value = {
+            let mut multitrack = shared.lock().unwrap_or_else(|e| e.into_inner());
+            serde_json::from_str(&handle::call_json(&mut multitrack, &request))
+                .unwrap_or(Value::Null)
+        };
+        if let Some(error) = answer["error"].as_str() {
+            return Err(error.to_string());
+        }
+        if !handle::mutates(&request) || answer["applied"] != true {
+            return Ok(answer);
+        }
+        let entry = match (action["record"] != false, answer.get("current")) {
+            (true, Some(current)) => Some(Record {
+                label,
+                legs: vec![leg(call["intent"].clone(), current.clone())],
+            }),
+            _ => None,
+        };
+        let taken = entry.is_some_and(|record| self.record(member, &record, false));
+        if !taken {
+            self.moved();
+        }
+        self.sound(member, tracks, ids);
+        ran.effects.push(effect("resync", json!({})));
+        Ok(answer)
+    }
+
+    /// **The window's closing effect** (`closeWindow` or `closedWindow`),
+    /// carrying the multitrack as the window leaves it: what a script that
+    /// held it goes on holding.
+    fn closing(&self, member: MemberId, kind: &str) -> Value {
+        let multitrack = match self.member(member) {
+            Some(Member::Multitrack(editor)) => {
+                serde_json::to_value(&*editor.multitrack()).unwrap_or(Value::Null)
+            }
+            _ => Value::Null,
+        };
+        effect(kind, json!({ "multitrack": multitrack }))
     }
 
     /// Whether the multitrack's transport rolls, as the engine says now.
@@ -402,7 +508,7 @@ impl Editing {
             Kind::Nothing => return json!(false),
             Kind::Closed => {
                 self.close_tracks(member, tracks, ids);
-                ran.effects.push(effect("closedWindow", json!({})));
+                ran.effects.push(self.closing(member, "closedWindow"));
                 return json!(false);
             }
             Kind::Step => {
@@ -492,7 +598,7 @@ impl Editing {
         }
         if outcome.close {
             self.close_tracks(member, tracks, ids);
-            ran.effects.push(effect("closeWindow", json!({})));
+            ran.effects.push(self.closing(member, "closeWindow"));
         }
         json!(outcome.changed)
     }
@@ -624,6 +730,12 @@ impl Editing {
             "transport" => json!({
                 "transport": tracks.playback.transport(),
                 "rolling": self.multitrack_rolling(&mut tracks),
+            }),
+            "history" => json!({
+                "canUndo": self.can_undo(),
+                "canRedo": self.can_redo(),
+                "undoLabel": self.undo_label(),
+                "redoLabel": self.redo_label(),
             }),
             "output" => {
                 let engine = self.engine.as_ref();

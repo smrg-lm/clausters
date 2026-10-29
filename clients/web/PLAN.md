@@ -5160,3 +5160,25 @@ sound.
   the window the host opened on a canvas of its own takes the element's
   canvas and box, and the host removes the canvas it had appended.
   `tests/app-window.html` opens one into a stage.
+
+- ⬜ **A page's multitrack reads the window only after its own next change**
+  *(found 2026-10-29, porting the live multitrack handle)*. The Python client
+  reads the window's multitrack at every read; a page's objects answer at once,
+  so they read a copy brought to the window's after each of the page's changes
+  and steps, and when the window closes (`docs/decisions.md`, "A script's
+  multitrack is the window's while it is open"). What the hand does in the
+  window between those is not in the page's reads. Closing it needs the
+  application to tell the page each change of the window's, or reads that are
+  promises.
+
+- ⬜ **`editors/span_selected` differs from its twin outside the
+  multitrack** *(found 2026-10-29, auditing the pair after rewriting its
+  multitrack cells)*. `scripts/audit-example-pairs.py` reports `job` at the
+  page's start and `file` and three `span` reads in the audio cells, none of
+  them declared in `docs/example-parity.md`; they predate the multitrack's
+  rewrite.
+
+- ⬜ **`seq.html` fails in Firefox on a note's start** *(found 2026-10-29,
+  the Firefox pass over the pages)*: `note starts[1] = 0.418s, expected
+  ~0.25s`, in headless Firefox only; Chrome passes it.
+

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>clausters: the multitrack in a page</title>
+  </head>
+  <body>
+    <div id="stage" style="width: 900px; height: 420px"></div>
+    <pre id="log"></pre>
+    <!--
+      The multitrack in a page (clients/web/test.sh, headless, served
+      isolated: `multitrack-editor.html?isolated`). The page is cross-origin
+      isolated, so its host is the applications' build and holds the
+      multitrack as the native host does: the application on a thread of its
+      own, reading the session's takes from the page's storage into the rings
+      its engine plays, in an AudioWorklet over the same memory. The calls are
+      the example's (examples/editors/load-multitrack.html): a session written
+      with its takes, `edit` over it, a pass looped across the seams of three
+      files, a change the page makes heard in the window, and the close.
+      Verdict beaconed as a fetch, read from the access log.
+    -->
+    <script type="module">
+      import { Session, SoundFile, gui, opfs } from "../dist/index.js";
+      import { Content, Multitrack, Session as SavedSession, Source } from "../dist/multitrack.js";
+
+      const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`).catch(() => {});
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const until = async (test, what, ms = 20_000) => {
+        const end = performance.now() + ms;
+        for (;;) {
+          if (await test()) return;
+          if (performance.now() > end) {
+            throw new Error(`timeout: ${typeof what === "function" ? await what() : what}`);
+          }
+          await sleep(20);
+        }
+      };
+
+      try {
+        if (!crossOriginIsolated) throw new Error("the page is not cross-origin isolated");
+        const session = (await Session.embed({ channels: 2 })).activate();
+        const rate = (await session.server.queryInfo()).nominalSampleRate;
+
+        // Three takes of half a second, a tone each, written as files of the
+        // page's storage beside the session.
+        const SECS = 0.5;
+        const frames = Math.trunc(SECS * rate);
+        await opfs.makeDirectory("out");
+        const multitrack = new Multitrack();
+        const track = multitrack.tracks.add("comp");
+        const saved = new SavedSession();
+        saved.multitrack = multitrack;
+        const regions = [];
+        for (const [i, freq] of [[1, 440.0], [2, 550.0], [3, 660.0]]) {
+          const samples = Float32Array.from({ length: frames },
+            (_, n) => 0.5 * Math.sin(2 * Math.PI * freq * n / rate));
+          const name = `multitrack_page-${i}.wav`;
+          await SoundFile.write(`out/${name}`, samples, 1, rate, { sampleFormat: "float" });
+          saved.sources.set(i, Source.file(name).shaped(1, frames, rate));
+          regions.push(track.activeTakeLane.regions.add((i - 1) * SECS, SECS, Content.onto({
+            source: { source: i, lifetime: "session", generation: 0 },
+            start: 0.0, duration: SECS,
+          }), { name: `take ${i}` }));
+        }
+        await saved.save("out/multitrack_page.json");
+
+        await session.gui();
+        const editor = await gui.edit(saved, { title: "session", stage: document.getElementById("stage") });
+        log("opened: the session, its takes read where they are");
+
+        // **A loop across the seams of three files sounds, and no frame is
+        // missing**: the span from a quarter second to a second and a quarter
+        // crosses both seams, and is still playing well after a pass of it
+        // would have ended; the track's meter reads the takes, and the
+        // engine played no silence for want of a frame.
+        const starvedBefore = (await editor.output()).starved;
+        await editor.transport.play(0.25, 1.25, { looping: true });
+        await until(() => editor.transport.playing(), "the loop to play");
+        await sleep(600);
+        const output = await editor.output();
+        await sleep(1_400);
+        if (!(await editor.transport.playing())) throw new Error("the loop ended like a pass");
+        const levels = Object.values(output.tracks ?? {})[0] ?? [];
+        if (!(Math.max(0, ...levels) > 0.05)) {
+          throw new Error(`the multitrack's engine played no take: ${JSON.stringify(output)}`);
+        }
+        const starved = (await editor.output()).starved - starvedBefore;
+        if (starved !== 0) throw new Error(`the loop played ${starved} samples of silence`);
+        await editor.transport.stop();
+        log(`played: a loop across the seams of three files at ${Math.max(...levels).toFixed(3)}, ` +
+          "no frame missing");
+
+        // **The page's multitrack is the window's**: a box moved here is moved
+        // in the window, and the window's history takes it back.
+        regions[2].position = 1.5;
+        await editor.output();
+        const history = multitrack.history;
+        if (!(await history.canUndo())) throw new Error("the page's change is no entry of the window's");
+        if (!(await history.undo())) throw new Error("the window's undo moved nothing");
+        if (regions[2].position !== 1.0) {
+          throw new Error(`the undo left the box at ${regions[2].position}`);
+        }
+        regions[2].position = 1.25;
+        await editor.output();
+        log("edited: a box moved from the page is an entry of the window's history");
+
+        // **The close hands the multitrack back**, as the window left it.
+        await editor.close();
+        if (!editor.closed) throw new Error("the window stayed open");
+        if (regions[2].position !== 1.25) {
+          throw new Error(`the window left the box at ${regions[2].position}`);
+        }
+        regions[0].name = "mine again";
+        if (regions[0].name !== "mine again") throw new Error("the multitrack is not the page's again");
+        log("closed: the multitrack is the page's again, as the window left it");
+
+        verdict("PASS: the multitrack opened a session from the page's storage, looped " +
+          "across the seams of three files with no frame missing on an engine of its own, " +
+          "took a change the page made into its history, and handed the multitrack back " +
+          "as it left it");
+      } catch (error) {
+        verdict(`FAIL: ${error?.message ?? error}`);
+      }
+    </script>
+  </body>
+</html>

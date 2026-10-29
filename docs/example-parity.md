@@ -476,6 +476,12 @@ in the middle of an example.
 | web | `push` | the clip envelope added to the first box's automation: `Array.push`, which the audit reads as the host's `push`. The script's `list.append` is the same line and is no call on the client |
 | web | `set` ×3 | an entry of the saved session's source table: the table is a `Map`, so the page sets it with `Map.set`, which the audit reads as a node's `set`. The script assigns a dict key, which is no call |
 
+### `editors/span_selected`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `set` ×2 | an entry of the saved session's source table: the table is a `Map`, so the page sets it with `Map.set`, which the audit reads as a node's `set`. The script assigns a dict key, which is no call |
+
 ### `basics/verbs`
 
 | Only in | Call | Why |

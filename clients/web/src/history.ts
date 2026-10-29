@@ -285,8 +285,8 @@ export class Editing {
     // ---- members ----
 
     /**
-     * **Open an editor in this context** -- `verb` is `"openMultitrack"`,
-     * `"openAudio"` or `"openPoints"` -- as the structure `key` names, and answer its member and
+     * **Open an editor in this context** -- `verb` is `"openAudio"` or
+     * `"openPoints"` -- as the structure `key` names, and answer its member and
      * identity. `handler` is what carries a step out for it: the editor's
      * domain. Throws with the crate's reason when it refuses the request.
      */
@@ -304,32 +304,6 @@ export class Editing {
         const opened = { member: Number(answer.member), identity: Number(answer.structure) };
         this.handlers.set(opened.member, { structure, handler });
         if (!this.structures.has(structure)) this.structures.set(structure, opened);
-        return opened;
-    }
-
-    /**
-     * **Open a multitrack editor over `multitrack`** -- a `Multitrack`, which
-     * the editor then edits in place -- as the structure `key` names, and
-     * answer its member and identity. Throws with the crate's reason when it
-     * refuses.
-     */
-    openMultitrack(
-        key: string,
-        multitrack: Multitrack,
-        request: Record<string, unknown>,
-        handler: StepHandler | null,
-    ): { member: number; identity: number } {
-        if (this.#core === null) throw new Error("clausters: this context is closed");
-        const answer = JSON.parse(
-            this.#core.openMultitrack(multitrack.handle, JSON.stringify({ key, ...request })),
-        ) as Record<string, unknown>;
-        if (typeof answer.error === "string" || answer.member === undefined) {
-            throw new Error(`clausters: ${String(answer.error ?? "the context opened nothing")}`);
-        }
-        const opened = { member: Number(answer.member), identity: Number(answer.structure) };
-        this.handlers.set(opened.member, { structure: multitrack, handler });
-        if (!this.structures.has(multitrack)) this.structures.set(multitrack, opened);
-        this.claim(multitrack);
         return opened;
     }
 
@@ -428,32 +402,6 @@ export class Editing {
         if (turned === null) return {};
         this.version = Number(turned.version ?? this.version);
         return turned;
-    }
-
-    /**
-     * **Bind a multitrack member's `source` to `sequence`** -- an
-     * `EventSequence` -- so a region over it draws the sequence's notes;
-     * answers the member's corrected picture.
-     */
-    bindSequence(member: number, source: number, sequence: EventSequence): Record<string, unknown> {
-        if (this.#core === null) throw new Error("clausters: this context is closed");
-        this.claim(sequence);
-        return JSON.parse(
-            this.#core.bindSequence(sequence.seq, JSON.stringify({ member, source })),
-        ) as Record<string, unknown>;
-    }
-
-    /**
-     * **Hand a multitrack member the engraver its boxes' pages are engraved
-     * with** -- a `Score` made for that and read no more; answers the
-     * member's corrected picture.
-     */
-    bindEngraver(member: number, score: Score): Record<string, unknown> {
-        if (this.#core === null) throw new Error("clausters: this context is closed");
-        return JSON.parse(this.#core.bindEngraver(member, score.handle)) as Record<
-            string,
-            unknown
-        >;
     }
 
     /**

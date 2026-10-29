@@ -82,6 +82,9 @@ struct AudioWindow {
     takes: Vec<i32>,
     /// The client that opened it through the door, told when it goes.
     opener: Option<ClientId>,
+    /// **What its application left it as**, when it closed: the
+    /// multitrack's, told the opener with the close.
+    last: Option<Value>,
 }
 
 /// **What an engine publishes, as the bus source a window reads**: the
@@ -230,6 +233,7 @@ impl Host {
         self.open_app_saving(
             AppKind::Multitrack,
             Some(path),
+            None,
             title,
             None,
             Some(save_to.map(str::to_string)),
@@ -245,13 +249,32 @@ impl Host {
         title: &str,
         reply: Option<Reply>,
     ) -> Result<i32, String> {
-        self.open_app_saving(kind, path, title, reply, None)
+        self.open_app_saving(kind, path, None, title, reply, None)
+    }
+
+    /// **The multitrack opened over `multitrack`**, the document's JSON, as
+    /// an untitled session: no file behind it, its first save naming one.
+    pub(super) fn open_multitrack_over(
+        &mut self,
+        multitrack: Value,
+        title: &str,
+        reply: Option<Reply>,
+    ) -> Result<i32, String> {
+        self.open_app_saving(
+            AppKind::Multitrack,
+            None,
+            Some(multitrack),
+            title,
+            reply,
+            None,
+        )
     }
 
     fn open_app_saving(
         &mut self,
         kind: AppKind,
         path: Option<&str>,
+        data: Option<Value>,
         title: &str,
         reply: Option<Reply>,
         save_to: Option<Option<String>>,
@@ -277,6 +300,7 @@ impl Host {
                 title: title.to_string(),
                 takes: Vec::new(),
                 opener,
+                last: None,
             },
         );
         let asked = audio.ask(ToApp::Open {
@@ -286,6 +310,7 @@ impl Host {
             key: format!("audio:{structure}"),
             title: title.to_string(),
             path: path.map(str::to_string),
+            data,
             reply,
         });
         if let Err(e) = asked {
@@ -602,11 +627,13 @@ impl Host {
                     self.set_props(def_id, props, &mut fx);
                 }
                 "closeWindow" => {
+                    self.keep_last(def_id, &effect);
                     self.close_audio(def_id);
                     self.pending_effects.extend(fx);
                     return;
                 }
                 "closedWindow" => {
+                    self.keep_last(def_id, &effect);
                     self.forget_audio(def_id);
                     if let Some(audio) = self.audio.as_mut() {
                         let _ = audio.ask(ToApp::Forget { def_id });
@@ -675,20 +702,41 @@ impl Host {
         }
     }
 
-    /// The window is this host's no longer, and whoever opened it is told.
+    /// What a closing effect says the window's structure is now, kept for
+    /// the close's message.
+    fn keep_last(&mut self, def_id: i32, effect: &Value) {
+        if let Some(window) = self
+            .audio
+            .as_mut()
+            .and_then(|audio| audio.windows.get_mut(&def_id))
+            && effect["multitrack"].is_object()
+        {
+            window.last = Some(effect["multitrack"].clone());
+        }
+    }
+
+    /// **The window is this host's no longer, and whoever opened it is
+    /// told**: `/gui_closed`, with what its application left it as when it
+    /// said (the multitrack's, as the document's JSON).
     fn forget_audio(&mut self, def_id: i32) {
         self.window_sources.remove(&def_id);
-        let opener = self
+        let Some(window) = self
             .audio
             .as_mut()
             .and_then(|audio| audio.windows.remove(&def_id))
-            .and_then(|window| window.opener);
-        if let Some(to) = opener {
+        else {
+            return;
+        };
+        if let Some(to) = window.opener {
+            let mut args = vec![OscType::Int(def_id)];
+            if let Some(last) = window.last {
+                args.push(OscType::String(last.to_string()));
+            }
             self.pending_effects.push(HostEffect::Send {
                 to,
                 msg: OscMessage {
                     addr: GUI_CLOSED.into(),
-                    args: vec![OscType::Int(def_id)],
+                    args,
                 },
             });
         }
@@ -859,6 +907,67 @@ mod tests {
         assert_eq!(transport["rolling"], true, "{transport}");
         host.close_audio(def_id);
         assert!(!host.owns_audio(def_id));
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// **A multitrack handed over whole opens as an untitled session**, and
+    /// a script's handle reads and edits the multitrack the window holds:
+    /// an edit is an entry of the window's history, undone there, and the
+    /// first save names the file.
+    #[test]
+    fn a_handed_multitrack_opens_untitled_and_its_handle_edits_it() {
+        let folder = std::env::temp_dir().join(format!("host-untitled-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut host = host();
+        let multitrack = json!({"tracks": [{"id": 1, "name": "a", "takeLanes": [{"id": 2}]}]});
+        let def_id = host
+            .open_multitrack_over(multitrack, "untitled", None)
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let handle = |host: &mut Host, call: Value| {
+            ask(
+                host,
+                def_id,
+                json!({"do": {"verb": "handle", "call": call}}),
+            )
+        };
+        assert_eq!(
+            handle(&mut host, json!({"verb": "ids", "of": "tracks"}))["ids"],
+            json!([1])
+        );
+        let state = handle(&mut host, json!({"verb": "state"}));
+        let mut tracks = state["tracks"].clone();
+        tracks[0]["name"] = json!("b");
+        let applied = handle(
+            &mut host,
+            json!({"verb": "apply", "intent": {"intent": "settracks", "tracks": tracks}}),
+        );
+        assert_eq!(applied["applied"], true, "{applied}");
+        let name =
+            |host: &mut Host| handle(host, json!({"verb": "track", "id": 1}))["name"].clone();
+        assert_eq!(name(&mut host), "b");
+        let history = ask(&mut host, def_id, json!({"query": "history"}));
+        assert_eq!(history["canUndo"], true, "{history}");
+        ask(&mut host, def_id, json!({"do": {"verb": "undo"}}));
+        assert_eq!(
+            name(&mut host),
+            "a",
+            "the window's undo takes the script's edit back"
+        );
+        let path = folder.join("untitled.json");
+        let saved = ask(
+            &mut host,
+            def_id,
+            json!({"do": {"verb": "save", "path": path.to_str().unwrap()}}),
+        );
+        assert!(saved.get("raised").is_none(), "{saved}");
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["multitrack"]["tracks"][0]["name"], "a", "{written}");
+        host.close_audio(def_id);
         let _ = std::fs::remove_dir_all(&folder);
     }
 
@@ -1499,6 +1608,73 @@ mod tests {
         assert_eq!(gone["error"]["type"], "runtime", "{gone}");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(&out);
+    }
+
+    /// **A multitrack a client hands over is told back when its window
+    /// goes**: the `/gui_closed` its opener hears carries the multitrack as
+    /// the window left it, which the script holds on with.
+    #[test]
+    fn a_closed_multitrack_is_told_back_to_its_opener() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_997)));
+        let multitrack = json!({"tracks": [{"id": 1, "name": "a", "takeLanes": [{"id": 2}]}]});
+        let options = json!({"multitrack": multitrack, "title": "untitled"}).to_string();
+        let first = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("multitrack".into()),
+                OscType::String(options),
+            ],
+            client,
+        );
+        let opened = answered(&mut host, first, 1);
+        let window = opened["ok"]["window"].as_i64().expect("a window") as i32;
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
+        let state = ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "handle",
+            "call": {"verb": "state"}}}),
+        );
+        let mut tracks = state["tracks"].clone();
+        tracks[0]["name"] = json!("b");
+        ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "handle", "call": {"verb": "apply",
+            "intent": {"intent": "settracks", "tracks": tracks}}}}),
+        );
+        // the effects are read here, not by `ask`, which drops what it ticks
+        let _rx = host.ask_audio(window, json!({"do": {"verb": "close"}}));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let told = loop {
+            let told = host.take_effects().into_iter().find_map(|e| match e {
+                HostEffect::Send { to, msg } if to == client && msg.addr == GUI_CLOSED => {
+                    Some(msg.args)
+                }
+                _ => None,
+            });
+            if let Some(told) = told {
+                break told;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the opener never heard the close"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(told[0], OscType::Int(window));
+        let Some(OscType::String(last)) = told.get(1) else {
+            panic!("the close carries no multitrack: {told:?}");
+        };
+        let last: Value = serde_json::from_str(last).unwrap();
+        assert_eq!(last["tracks"][0]["name"], "b", "{last}");
     }
 
     /// **A file the editor cannot open is said to whoever asked**, and no

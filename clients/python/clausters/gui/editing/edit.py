@@ -20,14 +20,11 @@ curve, a timeline of events, and a **multitrack**), each of which is a
 else. It dispatches on **what the structure is** rather than on a keyword,
 because that is the question a caller has already answered by holding one.
 
-**A multitrack is one of them.** It used to be excluded on the grounds that a
-multitrack is an application rather than an editor over a structure -- but what
-made that true was that the picture and the reading of a gesture were written
-per client, so a multitrack opened here would have been a second implementation of
-both. They are the crate's now
-(`clausters._native.multitrack_props`/`editing_intake`), so a multitrack is a
-structure with a vocabulary, a picture and an inverse like any other, and
-opening it here is what gives it the history every other editor has.
+**A multitrack is the multitrack application's**, as a sound file is the
+audio editor's: the GUI host opens it, over a saved session's file or over a
+`clausters.multitrack.Multitrack` handed to it whole (an untitled session),
+and this script is its handler (`clausters.gui.editing.MultitrackEditor`).
+The script's multitrack is the window's while it is open.
 
 **A second call over a structure hands back the editor already open on it**
 (of the same kind, and -- for a roll -- over the same axis), with its window as
@@ -40,6 +37,8 @@ updates both. That is not a feature of this verb -- it is what asking the data
 for its history means, and `edit` inherits it for free.
 """
 
+from typing import overload
+
 from ...defs.node import Node
 from ...history import Editing
 from ...seq.timeline import Timeline
@@ -48,9 +47,30 @@ from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
 from .audio import AudioEditor
-from .session import SessionEditor
 from ...soundfile import SoundFile
+from ...multitrack import Multitrack
+from ...multitrack import Session as SavedSession
 from .score import ScoreEditor, is_score
+
+
+@overload
+def edit(structure: Node, *, sample_rate: float = 0.0, host=None,
+         open: bool = True, **options) -> NodeEditor: ...
+
+
+@overload
+def edit(structure: SoundFile, *, sample_rate: float = 0.0, host=None,
+         open: bool = True, **options) -> AudioEditor: ...
+
+
+@overload
+def edit(structure: "SavedSession | Multitrack", *, sample_rate: float = 0.0,
+         host=None, open: bool = True, **options) -> MultitrackEditor: ...
+
+
+@overload
+def edit(structure, *, sample_rate: float = 0.0, host=None,
+         open: bool = True, **options): ...
 
 
 def edit(structure, *, sample_rate: float = 0.0,
@@ -62,13 +82,15 @@ def edit(structure, *, sample_rate: float = 0.0,
             editor, the GUI host's application, which writes the file only on
             `save`; a WAV, RF64 or W64 file on disk), a saved
             `clausters.multitrack.Session` (in the multitrack, the GUI host's
-            application, over the session's file: `clausters.gui.editing.SessionEditor`), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
+            application, over the session's file:
+            `clausters.gui.editing.MultitrackEditor`), a
+            `clausters.multitrack.Multitrack` (in the multitrack, as an
+            untitled session over it, whose first save names its file), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
             `clausters.multitrack.Automation`), a `clausters.seq.EventSequence`
             (its notes, in place), a `clausters.seq.Timeline` (rendered into a
             sequence first -- ``until=`` bounds one that does not end -- which
             the editor's ``sequence`` then holds; the timeline is not changed)
-            a `clausters.multitrack.Multitrack` (the multitrack) or a
-            `clausters.gui.notation.Score` (a symbolic score, on its page, in
+            or a `clausters.gui.notation.Score` (a symbolic score, on its page, in
             place) -- or a running `clausters.defs.Node`, whose def's controls
             open in a generic editor (`clausters.gui.editing.NodeEditor`).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A
@@ -142,13 +164,14 @@ def edit(structure, *, sample_rate: float = 0.0,
             editor.open(host)
             _open_audio.append(editor)
         return editor
-    if _is_saved_session(structure):
-        # **A saved session is the multitrack application's**, opened by the
-        # host over its file; this is its handler
-        editor = SessionEditor(structure, **options)
+    if _is_saved_session(structure) or is_multitrack(structure):
+        # **A multitrack is the multitrack application's**, opened by the
+        # host over a session's file or as an untitled session; this is its
+        # handler
+        editor = MultitrackEditor(structure, **options)
         if open:
             editor.open(host)
-            _open_sessions.append(editor)
+            _open_multitracks.append(editor)
         return editor
     if _is_buffer(structure):
         raise TypeError(
@@ -176,16 +199,12 @@ def edit(structure, *, sample_rate: float = 0.0,
     elif is_score(structure):
         _view(options, ("score",))
         editor = ScoreEditor(structure, **options)
-    elif is_multitrack(structure):
-        # A multitrack states its own tempo, like a timeline.
-        editor = MultitrackEditor(structure, sample_rate=sample_rate or _ambient_rate(),
-                                  **options)
     else:
         raise TypeError(
             f"nothing edits a {type(structure).__name__}: `edit` opens a SoundFile "
             f"(its samples), a curve (anything with to_points/set_points), "
             f"an EventSequence or a Timeline (its notes), "
-            f"a Multitrack (the multitrack) or a Score (its page)."
+            f"a Multitrack or a saved Session (the multitrack) or a Score (its page)."
         )
     if open:
         editor.open(host)
@@ -196,9 +215,9 @@ def edit(structure, *, sample_rate: float = 0.0,
 #: file finds.
 _open_audio: list = []
 
-#: The sessions this script opened in the multitrack, which a second `edit`
-#: of the same session file finds.
-_open_sessions: list = []
+#: The multitracks this script opened, which a second `edit` of the same
+#: session file, or of the same multitrack, finds.
+_open_multitracks: list = []
 
 
 def _is_saved_session(structure) -> bool:
@@ -261,13 +280,15 @@ def _already_open(structure, host, options):
         return next((e for e in _open_audio
                      if e._file is not None and e._file.path == structure.path
                      and (host is None or e.host is host)), None)
-    if _is_saved_session(structure):
-        _open_sessions[:] = [e for e in _open_sessions if not e.closed]
-        return next((e for e in _open_sessions
-                     if e.path == str(structure.path)
+    if _is_saved_session(structure) or is_multitrack(structure):
+        _open_multitracks[:] = [e for e in _open_multitracks if not e.closed]
+        return next((e for e in _open_multitracks
+                     if (e.multitrack is structure or (
+                         _is_saved_session(structure) and structure.path is not None
+                         and e.path == str(structure.path)))
                      and (host is None or e.host is host)), None)
     kinds = ((is_curve, PointsEditor), (is_events, NotesEditor),
-             (is_score, ScoreEditor), (is_multitrack, MultitrackEditor))
+             (is_score, ScoreEditor))
     kind = next((k for test, k in kinds if test(structure)), None)
     if kind is None or isinstance(structure, Timeline):
         return None

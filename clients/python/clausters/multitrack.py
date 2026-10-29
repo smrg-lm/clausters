@@ -64,7 +64,6 @@ Usage::
 """
 
 import json
-import os
 import weakref
 from dataclasses import dataclass, field
 
@@ -1407,8 +1406,8 @@ class Span:
 
 class Multitrack:
     """**The tracks, and the timeline they are placed on** -- a handle over the
-    multitrack the shared crate holds, which a multitrack editor opened on it
-    edits in place.
+    multitrack the shared crate holds, which is the window's while the
+    multitrack application has it open (`clausters.gui.edit`).
 
     What is here rather than on a track is what the **multitrack** has one of: the
     tempo map, the meter map, the markers, the loop. A track has none of them
@@ -1495,20 +1494,35 @@ class Multitrack:
         answered as `_apply` answers; `ValueError` with the multitrack's reason
         when it refuses. ``label`` is what an undo would call it.
 
-        A multitrack with a history -- one an editor is open on, or one a
-        script asked for `history` -- takes the change as a turn of it:
-        recorded, and every window over it redrawn. One with none just
-        changes."""
+        A multitrack the multitrack application has open is the window's:
+        the change is an edit of the window's, recorded in its history. One
+        with a history of this script's -- one a script asked for `history`
+        -- takes the change as a turn of it: recorded, and every view over it
+        redrawn. One with none just changes."""
         from .history import ATTR
 
+        window = self._window()
         context = getattr(self, ATTR, None)
-        if context is None:
+        if window is not None:
+            answer = window._edit(intent, label)
+        elif context is None:
             answer = self._apply(intent, inverse=False)
         else:
             answer = context.script_edit(self, intent, label)
         if not answer.get("applied") and answer.get("reason"):
             raise ValueError(answer["reason"])
         return answer
+
+    def _window(self):
+        """The multitrack editor whose window has this multitrack open, or
+        ``None``."""
+        editor = getattr(self._mt, "_editor", None)
+        if editor is None:
+            return None
+        if editor.closed:
+            editor._settle()
+            return None
+        return editor
 
     # ---- what a history asks of it ----
 
@@ -1528,9 +1542,13 @@ class Multitrack:
         undo order its editors share, made on first ask. From then on every
         change made through the multitrack's objects is an entry of it, and a
         turn the windows over it see; ``with mt.history("tidy"):`` makes
-        everything inside it one entry."""
+        everything inside it one entry. While the multitrack application has
+        it open it is the window's history, which its Ctrl+Z walks."""
         from .history import UndoHistory
 
+        window = self._window()
+        if window is not None:
+            return window._history
         return UndoHistory(self)
 
     def _tracks_written(self) -> list:
@@ -2228,8 +2246,8 @@ class Session:
     @classmethod
     def open(cls, path) -> "Session":
         """A session read from the file at ``path``, remembering where it came
-        from: `load` reads relative paths against that file's folder, and
-        `save` writes back to it."""
+        from: the multitrack application reads relative paths against that
+        file's folder (`clausters.gui.edit`), and `save` writes back to it."""
         with open(path) as f:
             session = cls.read(json.load(f))
         session.path = str(path)
@@ -2257,8 +2275,7 @@ class Session:
 
     def sequences(self) -> dict:
         """The sources that are sequences of events: source id ->
-        `clausters.seq.EventSequence`, the handles the table holds. With what
-        `load` answers, the whole table a multitrack editor is opened with."""
+        `clausters.seq.EventSequence`, the handles the table holds."""
         return {int(id): s.sequence for id, s in self.sources.items()
                 if s.sequence is not None}
 
@@ -2306,78 +2323,6 @@ class Session:
             return False
         source.editing = dict(source.editing, confirmed=True)
         return True
-
-    def load(self, server=None, *, beside: "str | None" = None,
-             timeout: "float | None" = None) -> dict:
-        """Loads the sources the multitrack names into ``server``: every take read
-        from its file, and every join stitched from the takes it is made of
-        once those are there.
-
-        What each source *is* in a running system is not the document's to
-        decide, and loading is the half of reopening a session that says it:
-        a server buffer per source. What is read and in what order is the
-        shared crate's (`clausters._native.editing_load`), so a session opens
-        the same here, in the web client and in the GUI host.
-
-        Args:
-            server: the server to load into; the default one when omitted.
-            beside: the folder a relative path is read against -- the session
-                file's own, which is what keeps a session directory movable.
-                When omitted, the folder of the file the session was opened
-                from or saved to, else the current one.
-            timeout: how long each read may take.
-
-        Returns:
-            Source id -> `clausters.Buffer`, for every source that loaded (a
-            sequence of events takes none: `sequences` hands those over). A
-            source that cannot -- a volatile one, one the table does not hold,
-            a join over a take that did not load -- is left out and named in
-            a warning.
-
-        Raises:
-            CommandError: when the server refuses a read or a stitch -- a file
-                that is not there -- after freeing what the load had made.
-
-        RT only (it waits on each buffer's ``/done``).
-        """
-        import warnings
-
-        from . import _native
-        from ._steps import run_steps
-        from .defs.buffer import Buffer, _resolve
-        from .errors import CommandError
-
-        if beside is None:
-            beside = os.path.dirname(self.path) if self.path else "."
-        srv = _resolve(server)
-        aside = [srv.buffers.alloc() for _ in self.sources]
-        plan = _native.editing_load(self.write(), str(beside), aside)
-        if "error" in plan:
-            for bufnum in aside:
-                srv.buffers.free(bufnum)
-            raise ValueError(plan["error"])
-        for bufnum in plan["unused"]:
-            srv.buffers.free(int(bufnum))
-        for id, why in plan["unresolved"]:
-            warnings.warn(f"source {id} is not loadable: {why}", stacklevel=2)
-        buffers = {}
-        for id, take in plan["takes"].items():
-            buffer = Buffer(int(take["buffer"]), int(take["frames"]),
-                            max(1, int(take["channels"])), server=srv)
-            if "path" in take:
-                buffer.path = str(take["path"])
-            buffers[int(id)] = buffer
-        try:
-            run_steps(srv, _native.StepRunner(), plan["steps"], to="samples",
-                      timeout=timeout)
-        except CommandError:
-            for buffer in buffers.values():
-                buffer.free()
-            raise
-        # The shape is the file's, so it is read back rather than trusted.
-        for buffer in buffers.values():
-            buffer.info(timeout=timeout)
-        return buffers
 
     def write(self) -> dict:
         """The session as the crate's JSON."""

@@ -605,7 +605,7 @@ impl MultitrackEditor {
     /// while an undo or a redo can still name it and comes back to be freed
     /// once none can. A take is not one of them: it is the session's, loaded
     /// from a file, and outlives every edit over it.
-    fn joins_named(&self, payload: &Value) -> Vec<u64> {
+    pub(crate) fn joins_named(&self, payload: &Value) -> Vec<u64> {
         clausters_document::multitrack::edit::intent_of(&Opaque(payload.clone()))
             .map(|intent| intent.sources())
             .unwrap_or_default()
@@ -1665,13 +1665,6 @@ pub fn new_json(request: &str) -> Option<MultitrackEditor> {
     let parsed: New = serde_json::from_str(request).ok()?;
     let multitrack: Multitrack = serde_json::from_value(parsed.multitrack.clone()).ok()?;
     Some(built(super::shared(multitrack), parsed))
-}
-
-/// **An editor over a multitrack a caller shares** -- a binding's handle -- built
-/// from the rest of a JSON request; a `multitrack` in it is not read. `None`
-/// for a request that does not read.
-pub fn over_json(multitrack: super::Shared, request: &str) -> Option<MultitrackEditor> {
-    Some(built(multitrack, serde_json::from_str(request).ok()?))
 }
 
 fn built(multitrack: super::Shared, request: New) -> MultitrackEditor {

@@ -428,28 +428,6 @@ impl Editing {
 }
 
 impl Editing {
-    /// **Opens a multitrack editor over `multitrack`**, shared with the caller:
-    /// the door a binding's multitrack handle opens through, so the editor
-    /// edits the very multitrack the script holds. `request` is what
-    /// [`multitrack::over_json`] reads; the answer is the `openMultitrack` one.
-    pub fn open_multitrack(
-        &mut self,
-        key: &str,
-        multitrack: crate::multitrack::Shared,
-        request: &str,
-    ) -> String {
-        let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
-        if let Some(map) = request.as_object_mut() {
-            map.insert("version".into(), json!(self.version));
-        }
-        match multitrack::over_json(multitrack, &request.to_string()) {
-            Some(editor) => joined(self, key, Member::Multitrack(Box::new(editor))).to_string(),
-            None => json!({ "error": "the request does not read" }).to_string(),
-        }
-    }
-}
-
-impl Editing {
     /// The curve a points editor under `key` already edits, so a second
     /// window over it edits the same one.
     fn shared_curve(&self, key: &str) -> Option<crate::points::Shared> {
@@ -495,19 +473,6 @@ impl Editing {
             Some(Member::Multitrack(editor)) => {
                 editor.bind_engraver(score);
                 to_json(&editor.resync_all(version))
-            }
-            _ => "{}".into(),
-        }
-    }
-
-    /// [`Self::bind_sequence`] off a `{"member", "source"}` request: the one
-    /// door every binding's sequence handle binds through.
-    pub fn bind_sequence_json(&mut self, sequence: Shared, request: &str) -> String {
-        let request = serde_json::from_str::<Value>(request).unwrap_or_default();
-        let number = |key: &str| request.get(key).and_then(Value::as_u64);
-        match (number("member"), number("source")) {
-            (Some(member), Some(source)) => {
-                self.bind_sequence(member as MemberId, SourceId(source), sequence)
             }
             _ => "{}".into(),
         }

@@ -7,14 +7,11 @@
  * dispatches on **what the structure is** rather than on a keyword, because that
  * is the question a caller has already answered by holding one.
  *
- * **A multitrack is one of them.** It used to be excluded on the grounds that a
- * multitrack is an application rather than an editor over a structure -- but what
- * made that true was that the picture and the reading of a gesture were written
- * per client, so a multitrack opened here would have been a second implementation of
- * both. They are the crate's now (`multitrackProps`/`editingIntake`), so a
- * multitrack is a structure with a vocabulary, a picture and an inverse like any
- * other, and opening it here is what gives it the history every other editor
- * has.
+ * **A multitrack is the multitrack application's**, as a sound file is the
+ * audio editor's: the GUI host opens it, over a saved session's file or over
+ * a `Multitrack` handed to it whole (an untitled session), and this page is
+ * its handler ({@link MultitrackEditor}). The page's multitrack is the
+ * window's while it is open.
  *
  * **A second call over a structure hands back the editor already open on it**
  * (of the same kind, and -- for a roll -- over the same axis), with its window
@@ -36,14 +33,12 @@ import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import { MultitrackEditor, isMultitrack } from "./multitrack.ts";
-import type { MultitrackEditorOptions } from "./multitrack.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
 import type { PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { AudioEditor } from "./audio.ts";
-import { SessionEditor } from "./session.ts";
-import { Session as MultitrackSession } from "../../multitrack.ts";
+import { Multitrack, Session as MultitrackSession } from "../../multitrack.ts";
 import { SoundFile } from "../../soundfile.ts";
 import { ScoreEditor, isScore } from "./score.ts";
 import type { Interpretation, Transcription } from "../notation/sheet.ts";
@@ -138,15 +133,6 @@ export interface EditOptions {
      */
     open?: boolean;
     /**
-     * **A multitrack's own two**, ignored by every other structure: which server
-     * buffer each source was read into, and the server the multitrack sounds on.
-     * Given a server the editor keeps a reader per box and draws the transport
-     * row; a multitrack opened with none still edits.
-     */
-    sources?: MultitrackEditorOptions["sources"];
-    /** The multitrack's server. */
-    server?: Server;
-    /**
      * **A curve's own four**, ignored by every other structure: the ranges its
      * values (`min`/`max`) and its times (`start`/`end`) are kept in, each
      * pair both or neither ({@link PointsEditorOptions}).
@@ -215,17 +201,11 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
         viewOf(view, ["score"] as const);
         return new ScoreEditor(structure, rest) as unknown as Editor<never>;
     }
-    if (isMultitrack(structure)) {
-        // A multitrack states its own tempo, like a timeline.
-        return new MultitrackEditor(structure, {
-            sampleRate,
-            ...rest,
-        }) as unknown as Editor<never>;
-    }
     throw new TypeError(
         `nothing edits a ${(structure as object)?.constructor?.name ?? typeof structure}: ` +
             "`edit` opens a SoundFile (its samples), an Automation (its curve), an " +
-            "EventSequence or a Timeline (its notes), a Multitrack (the multitrack) or a " +
+            "EventSequence or a Timeline (its notes), a Multitrack or a saved Session (the " +
+            "multitrack) or a " +
             "Score (its page).",
     );
 }
@@ -234,8 +214,11 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
  * Opens `structure` in an editor of its own kind: a `SoundFile` (in the
  * audio editor, the GUI host's application, answered by its handler, an
  * {@link AudioEditor}; a WAV, RF64 or W64 file on disk), an
- * `Automation` (its curve), a `Timeline` (its notes), a `Multitrack` (the
- * multitrack) or a `Score` (a symbolic score, on its page, in place), or a
+ * `Automation` (its curve), a `Timeline` (its notes), a saved multitrack
+ * `Session` (in the multitrack, the GUI host's application, over the
+ * session's file: {@link MultitrackEditor}), a `Multitrack` (in the
+ * multitrack, as an untitled session over it, whose first save names its
+ * file) or a `Score` (a symbolic score, on its page, in place), or a
  * running `Node`, whose def's controls open in a generic editor
  * ({@link NodeEditor}; it takes `title`, `host` and `stage` only) -- and
  * answers the open editor: the one already open over `structure`, when there
@@ -257,15 +240,17 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
  */
 export async function edit(structure: Node, options?: EditOptions): Promise<NodeEditor>;
 export async function edit(structure: SoundFile, options?: EditOptions): Promise<AudioEditor>;
-export async function edit(structure: MultitrackSession, options?: EditOptions): Promise<SessionEditor>;
+export async function edit(structure: MultitrackSession | Multitrack, options?: EditOptions): Promise<MultitrackEditor>;
 export async function edit(structure: unknown, options?: EditOptions): Promise<Editor<never>>;
 export async function edit(
     structure: unknown,
     options: EditOptions = {},
-): Promise<Editor<never> | NodeEditor | AudioEditor | SessionEditor> {
+): Promise<Editor<never> | NodeEditor | AudioEditor | MultitrackEditor> {
     if (structure instanceof Node) return nodeEditor(structure, options);
     if (structure instanceof SoundFile) return audioEditor(structure, options);
-    if (structure instanceof MultitrackSession) return sessionEditor(structure, options);
+    if (structure instanceof MultitrackSession || isMultitrack(structure)) {
+        return multitrackEditor(structure, options);
+    }
     // **A timeline is rendered, and the roll edits what it produced**: the
     // events, as concrete data in the timeline's beats with its map. The
     // timeline itself is code and is left as it was; the sequence is the
@@ -311,27 +296,35 @@ async function audioEditor(file: SoundFile, options: EditOptions): Promise<Audio
     return editor;
 }
 
-/** The sessions this page opened in the multitrack, which a second `edit` of the same session file finds. */
-const openSessions: SessionEditor[] = [];
+/** The multitracks this page opened, which a second `edit` of the same session file, or of the same multitrack, finds. */
+const openMultitracks: MultitrackEditor[] = [];
 
 /**
- * **The multitrack over `session`'s file**: the one already open over it, on
- * the same host when one is named, or a new one. The session is the
+ * **The multitrack over `structure`**, a session's file or a multitrack
+ * handed over whole (an untitled session): the one already open over it, on
+ * the same host when one is named, or a new one. The multitrack is the
  * application's, opened by the host in a window of its own, and this is its
  * handler.
  */
-async function sessionEditor(session: MultitrackSession, options: EditOptions): Promise<SessionEditor> {
-    for (let i = openSessions.length - 1; i >= 0; i--) if (openSessions[i]!.closed) openSessions.splice(i, 1);
+async function multitrackEditor(
+    structure: MultitrackSession | Multitrack,
+    options: EditOptions,
+): Promise<MultitrackEditor> {
+    for (let i = openMultitracks.length - 1; i >= 0; i--) {
+        if (openMultitracks[i]!.closed) openMultitracks.splice(i, 1);
+    }
     if (options.open !== false) {
-        const current = openSessions.find((editor) =>
-            editor.path === String(session.path) &&
+        const current = openMultitracks.find((editor) =>
+            (editor.multitrack === structure ||
+                (structure instanceof MultitrackSession && structure.path !== null &&
+                    editor.path === String(structure.path))) &&
             (options.host === undefined || editor.host === options.host));
         if (current !== undefined) return current;
     }
-    const editor = new SessionEditor(session, { title: options.title });
+    const editor = new MultitrackEditor(structure, { title: options.title });
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
-        openSessions.push(editor);
+        openMultitracks.push(editor);
     }
     return editor;
 }
@@ -387,7 +380,6 @@ function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | 
         [isCurve, PointsEditor],
         [isEvents, NotesEditor],
         [isScore, ScoreEditor],
-        [isMultitrack, MultitrackEditor],
     ];
     let kind = kinds.find(([test]) => test(structure))?.[1];
     if (kind === undefined || structure instanceof Timeline) return null;

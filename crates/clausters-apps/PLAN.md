@@ -3505,15 +3505,24 @@ over the opened file) carries over.
     `SessionEditor` its handler, the same surface in both (the transport,
     the window's verbs, `output`, `save`), tested against a host that
     answers the door from a table.
-  - ⬜ **The rest of the clients' move**: the script's `Multitrack` a live
-    handle while the application has it open, `edit(multitrack)` an
-    untitled session over it, and then the server path and its symbols
-    removed (`server=`, `sources=`, `Session.load`, `editing_load` and the
-    playback doors only it used), with `docs/bindings.md`, the parity
-    tests and the ABI record; `edit_multitrack` and `load_multitrack`
-    rewritten over a session file and read side by side; and a page that
-    opens a session from its storage (`multitrack-editor.html?isolated`),
-    pre-checked in Firefox.
+  - ✅ **The rest of the clients' move** *(2026-10-29)*. The handler is
+    `MultitrackEditor` in both clients, over a saved session or over a
+    `Multitrack` as an untitled session (the door's `multitrack` option);
+    the script's multitrack is the window's while it is open (the
+    application's `handle`, a block recorded as one entry, the window's
+    history) and holds what the window left it as when it closes
+    (`/gui_closed id json`); a page keeps a copy brought to the window's
+    after each of its own changes (`docs/decisions.md`, "A script's
+    multitrack is the window's while it is open"). The server path went in
+    both clients with its symbols (core ABI v96: the load, the stitch, the
+    multitrack's playback and instance, the plan, and the context's doors
+    that opened and bound a multitrack member), and `clausters_editing`'s
+    `load` and `sources`. `edit_multitrack`, `load_multitrack`, `session`
+    and `span_selected` are written over session files in both clients,
+    and `multitrack-editor.html?isolated` opens a session from the page's
+    storage, loops across the seams of three files with nothing starved,
+    and takes a change of the page's into the window's history, in Chrome
+    and in Firefox.
 
 ## Definition of done (per milestone)
 
@@ -5729,3 +5738,15 @@ wrong.
   What it should become when its window goes (released once the history
   names it no more, or kept and reused by the next roll over the same
   sequence) is still to decide.
+
+- ⬜ **The multitrack's handler marks nothing** *(found 2026-10-29, moving
+  the clients onto the application)*. The clients' own multitrack editor had
+  `selected`, `select` and `unselect` over the boxes, read off the picture it
+  held; the application's editor answers no verb for the boxes the hand holds,
+  so the handler has none in either client. The audio editor's handler marks
+  through its application, which is the shape to follow.
+
+- ⬜ **An untitled multitrack's Save asks for nothing** *(found 2026-10-29,
+  the same work)*. A multitrack handed over whole has no file, and Save from
+  its window says "save it as" on the status line rather than opening the
+  Save as dialog the audio editor opens; a script's `save(path)` names one.

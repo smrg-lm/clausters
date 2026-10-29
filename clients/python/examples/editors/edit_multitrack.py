@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""``edit(multitrack)``: a multitrack of audio and notes, drawn, edited and played.
+"""``edit(session)``: a multitrack of audio and notes, drawn, edited and played.
 
 The fourth structure, and the one that holds the other three: a
 `clausters.multitrack.Multitrack` -- the document the three applications share --
-opened with `clausters.gui.edit` like a buffer or a timeline. **One verb, and
-the editor is the application**: the picture, the gestures, the history, the
-readers on the server and the transport are all its, so this file writes a multitrack
-and hands it over.
+saved as a **session** and opened with `clausters.gui.edit` like a sound file.
+**One verb, and the editor is the application**: the GUI host opens the
+multitrack in a window of its own, reads the session's takes from their files
+and plays them on an engine of its own; the picture, the gestures, the history
+and the transport are all its, so this file writes a session and hands it over.
 
 What to do in the window:
 
@@ -68,17 +69,17 @@ What to do in the window:
   clips, its curves and its fader -- with the peak it reached held beside it.
 
 **The takes are rendered here and the multitrack is written plainly**, which is all
-this file is: six buffers, a sequence of notes, four tracks, seven boxes and two
-curves. Everything after that is `edit`.
+this file is: five takes written as files, a join of two of them, a sequence of
+notes, four tracks, seven boxes and two curves, saved as one session. Everything
+after that is `edit`.
 
-**The keys track is notes.** Its box is a window onto an `EventSequence` given
-among the `sources` like a buffer: it draws the notes its window reads and plays
+**The keys track is notes.** Its box is a window onto an `EventSequence` the
+session holds in the file itself: it draws the notes its window reads and plays
 them from the transport's own event lane, so a locate, a loop and a stop are the
 transport's. **A note sounds into its box and through the track's strip**, as a
 take does: pull the keys track's fader down while it plays, or draw a gain
 curve under it, and the notes follow -- its mute and its meter are over them
-too. What plays a note is the def its events name, the built-in `default` here,
-which writes the bus its `out` control says; the track sets it.
+too. What plays a note is the def its events name, the built-in `default` here.
 
 **The last box is loud on purpose**, so the meter has something to fill: it
 reaches full scale and the top of the column is red, where the boxes before it
@@ -86,19 +87,21 @@ sit in the green and the amber.
 
 **The curves are heard.** The row under the first track is a track automation
 and the line inside the first box is a clip envelope; each names the ``gain``
-port of the node it sits on -- the same port the header's knob writes -- so a
-point dragged while the multitrack plays is heard where it is drawn.
+port of what it sits on -- the same port the header's knob writes -- so a point
+dragged while the multitrack plays is heard where it is drawn.
 
-**The last box is a join**: one buffer whose samples are spans of two takes,
-crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
-**one** reader like any other take. Put the cursor inside it and play: the reader
-finds the span it lands in once and reads it like a plain buffer from there.
+**The comp box is a join**: a source whose samples are spans of two takes,
+crossfaded at the seam, which is what a comping pass cut by hand is. The session
+states it as its parts, and the application reads it from the two files.
 
-**The multitrack is also written down as a session** (``examples/out/``): its takes as
-files, the join as its parts, the notes in the file itself, and the multitrack that
-names them. So
+**The script's multitrack is the window's while it is open**: the last cell
+moves the bass track's fader from here, and the window's knob moves with it --
+one edit of the window's, which its Ctrl+Z takes back.
+
+The session is written to ``clients/python/examples/out/``, so
 ``clausters-gui --session clients/python/examples/out/edit_multitrack.json``
-opens the standalone editor on exactly this material, with no Python behind it.
+opens the same multitrack with no Python behind it, and ``load_multitrack.py``
+reopens it from a script.
 
 Run it as a script (``python edit_multitrack.py``) or cell by cell (``# %%``).
 Needs a display and a GPU adapter.
@@ -106,9 +109,10 @@ Needs a display and a GPU adapter.
 
 # %%
 import os
+import sys
 
-from clausters import Buffer, Session, Synth
-from clausters.defs import Part, SynthDef, out
+from clausters import Session, SoundFile, Synth
+from clausters.defs import SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
 from clausters.gui import edit
 from clausters.multitrack import Content, Multitrack, Source
@@ -118,65 +122,45 @@ from clausters.seq.event import Event
 
 SR = 48_000.0
 TAKE_DUR = 2.0
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "out")
+os.makedirs(OUT, exist_ok=True)
 
 # %% [markdown]
-# ## The takes, rendered offline
-# Four signals, so that one track is told from the next by ear.
+# ## The takes, rendered offline and written as files
+# Five signals, so that one track is told from the next by ear. They are
+# written as floats, because the last one is hot on purpose and a 16-bit file
+# would clip it into a different take. The files go to `examples/out/`, the
+# git-ignored directory every generator in this tree writes to.
 
 # %%
-def gentake(name: str, expr, secs: float = TAKE_DUR) -> list:
-    """Render ``expr`` for ``secs`` seconds offline and hand back its samples."""
+def gentake(name: str, expr, secs: float = TAKE_DUR) -> str:
+    """Render ``expr`` for ``secs`` seconds offline, write it beside the
+    session, and hand back the file's name."""
     session = Session.nrt()          # beats == seconds
     server = session.server
     SynthDef(name, out(0.0, expr)).send(server)
     node = Synth(name, server=server)
     server.send_bundle_after(secs, ("/node_free", node.id))
     stats = session.render(sample_rate=SR, channels=1)
-    return list(stats.samples)
+    file = f"edit_multitrack-{name}.wav"
+    SoundFile.write(os.path.join(OUT, file), list(stats.samples), 1, SR,
+                    sample_format="float")
+    return file
 
 
-TAKES = {"white": gentake("t_white", white_noise() * 0.5),
-         "glide": gentake("t_glide", sine(line(220.0, 440.0, TAKE_DUR)) * 0.5),
-         "saw": gentake("t_saw", saw(110.0) * 0.5),
-         "pink": gentake("t_pink", pink_noise() * 0.5),
+TAKES = {"white": gentake("white", white_noise() * 0.5),
+         "glide": gentake("glide", sine(line(220.0, 440.0, TAKE_DUR)) * 0.5),
+         "saw": gentake("saw", saw(110.0) * 0.5),
+         "pink": gentake("pink", pink_noise() * 0.5),
          #: Deliberately hot, to have something that fills a meter: centred, a
          #: mono take comes out 3 dB down a side (the pan law), so 1.4 reads as
          #: full scale on the track's meter and the last box is the red one.
-         "loud": gentake("t_loud", sine(330.0) * 1.4)}
-
-# %% [markdown]
-# ## The session and the takes on the server
-
-# %%
-session = Session.live(latency=0.1)
-server = session.server
-BUFS = {name: Buffer.from_samples(samples, sample_rate=SR, server=server)
-        for name, samples in TAKES.items()}
-
-# %% [markdown]
-# ## A fifth take that is a cut
-# The **join**: half of the glide and the second half of the saw, read as one
-# buffer with a ten-millisecond crossfade at the seam. Two spans that do not
-# continue each other make a step, and a step is a click however well the frames
-# are read. A join owns no samples -- it is spans of the buffers above -- so it
-# refuses every write, and `clausters.Buffer.parts` is how a program asks what it
-# is made of before it offers to draw one.
-
-# %%
-HALF = int(TAKE_DUR * SR) // 2
-FADE = int(0.010 * SR)
-BUFS["comp"] = Buffer.stitch(
-    [Part(BUFS["glide"], start=0, frames=HALF, fade_out=FADE),
-     Part(BUFS["saw"], start=HALF, frames=HALF, fade_in=FADE)],
-    sample_rate=SR, server=server)
-server.sync()
+         "loud": gentake("loud", sine(330.0) * 1.4)}
 
 # %% [markdown]
 # ## A sequence of notes
 # The one source that is not samples: events with ids, in beats -- one beat a
-# second here, since it states no tempo map. It is **held, not copied**: the box
-# over it, the roll a double click opens and the session below all read this very
-# object.
+# second here, since it states no tempo map. The session holds it in the file.
 
 # %%
 KEYS = EventSequence([(beat, Event(midinote=note, sustain=0.4, amp=0.2))
@@ -185,15 +169,13 @@ KEYS = EventSequence([(beat, Event(midinote=note, sustain=0.4, amp=0.2))
 
 # %% [markdown]
 # ## The multitrack
-# Four tracks, one take lane each, seven boxes. A **source id** is what the document
-# names -- never a path and never a buffer number -- because a multitrack must open in
-# a program that has no Python in it. Which buffer each source was read into is
-# the one thing about a multitrack that is not in the multitrack, and it travels beside it
-# in `clausters.gui.editing.Sources`.
+# Four tracks, one take lane each, seven boxes. A **source id** is what the
+# document names -- never a path -- because a multitrack must open in a program
+# that has no Python in it. Where each source is, is the session's table below.
 
 # %%
-#: source id -> the take it names, so the multitrack and the table below are written
-#: against one list.
+#: source id -> the take it names, so the multitrack and the table below are
+#: written against one list.
 SOURCES = {1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp",
            6: "loud"}
 
@@ -228,9 +210,7 @@ keys.active_take_lane.regions.add(12.0, TAKE_DUR, window(7), name="keys")
 
 #: **A track automation**: a row of its own under the track, as long as the
 #: timeline, because a track's gain does not begin and end with a box. The
-#: target names the **port** it drives on whatever it is on -- the one shape
-#: the document crate reads there, because a curve that named nothing could
-#: only be guessed at.
+#: target names the **port** it drives on whatever it is on.
 noise.automation.add({"port": "gain"}, [(0.0, 1.0), (8.0, 0.2)],
                      name="gain", visible=True)
 
@@ -240,34 +220,21 @@ first.automation.add({"port": "gain"}, [(0.0, 0.2), (TAKE_DUR, 1.0)],
                      name="fade", visible=True)
 
 # %% [markdown]
-# ## The same multitrack, for a host with no Python behind it
-# The takes above exist only on this server, so a program that cannot run this
-# file cannot open this multitrack. Written down as a **session** -- every take as a
-# file, the join as the parts it is made of, and the multitrack that names them -- it
-# opens with nothing else:
-#
-#     clausters-gui --session clients/python/examples/out/edit_multitrack.json
-#
-# which is the standalone editor on exactly this material, and the way to put the
-# two side by side. The takes are written as floats, because the last one is hot
-# on purpose and a 16-bit file would clip it into a different take. The files go
-# to `examples/out/`, the git-ignored directory every generator in this tree
-# writes to; the web twin writes the same session into its page's own storage,
-# where `load-multitrack.html` reopens it.
+# ## The session
+# The multitrack and where its sources are: every take as a file, named
+# relative to the session, which keeps the folder movable; the join as the
+# parts it is made of; the notes in the file itself.
 
 # %%
-OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "out")
-os.makedirs(OUT, exist_ok=True)
 FRAMES = int(TAKE_DUR * SR)
+HALF = FRAMES // 2
+FADE = int(0.010 * SR)
 ID = {take: id for id, take in SOURCES.items()}
 
 saved = SavedSession(multitrack=multitrack)
 for id, take in SOURCES.items():
-    if take == "comp":
-        continue
-    name = f"edit_multitrack-{take}.wav"
-    BUFS[take].write(os.path.join(OUT, name), sample_format="float")
-    saved.sources[id] = Source.file(name).shaped(1, FRAMES, SR)
+    if take != "comp":
+        saved.sources[id] = Source.file(TAKES[take]).shaped(1, FRAMES, SR)
 
 
 def part(take: str, start: int, frames: int, **fades) -> dict:
@@ -278,15 +245,15 @@ def part(take: str, start: int, frames: int, **fades) -> dict:
             **fades}
 
 
-#: **The join is its recipe, not its samples**: the same two spans and fades the
-#: `Buffer.stitch` above was made from, so a reader builds the same buffer.
+#: **The join is its recipe, not its samples**: half of the glide and the second
+#: half of the saw, with a ten-millisecond crossfade at the seam. Two spans that
+#: do not continue each other make a step, and a step is a click however well
+#: the frames are read.
 saved.sources[ID["comp"]] = Source(location={"at": "segments", "parts": [
     part("glide", 0, HALF, fade_out=FADE),
     part("saw", HALF, HALF, fade_in=FADE),
 ]}).shaped(1, 2 * HALF, SR)
 
-#: **The notes are in the file itself**: a sequence is data the size of a score,
-#: and the table holds the handle, so a save writes what the roll did to it.
 saved.sources[7] = Source.events(KEYS)
 
 print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
@@ -294,23 +261,25 @@ print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 # %% [markdown]
 # ## One verb
 #
-# A `clausters.multitrack.Multitrack` opens as a
-# `clausters.gui.editing.MultitrackEditor` -- one `multitrack` widget with its own
-# ruler and its own transport row, the crate's picture and the crate's reading of
-# every gesture. Given a **server** it also sounds: one resident reader per box,
-# in a group the server's transport governs, put where the multitrack says on every
-# edit whoever made it.
+# A saved session opens in the multitrack, the GUI host's application, and
+# `edit` answers its handler, a `clausters.gui.editing.MultitrackEditor`.
 
 # %%
-session.gui()          # the host wired to this session's server
-editor = edit(multitrack, sample_rate=SR, server=server,
-              #: Which buffer each source was read into -- a multitrack names a
-              #: source, and only whoever loaded it holds the take -- and the
-              #: sequence the keys box reads.
-              sources={**{id: BUFS[take] for id, take in SOURCES.items()},
-                       7: KEYS},
-              title="multitrack", width=1000, height=560)
+session = Session.live()
+session.gui()          # the host, which holds the multitrack
+editor = edit(saved, title="multitrack")
+
+# %% [markdown]
+# ## The script's multitrack is the window's
+# A change made here is an edit of the window's: the bass fader moves in the
+# window, and Ctrl+Z there takes it back.
 
 # %%
-editor.wait()
-session.close()
+bass.level = 0.5
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    editor.wait()
+    session.close()
+else:
+    print("open -- edit it in the window; editor.save() writes the session")
