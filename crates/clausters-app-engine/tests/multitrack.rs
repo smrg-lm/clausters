@@ -315,3 +315,133 @@ fn a_multitrack_plays_its_tracks_on_an_engine_it_holds() {
     }
     let _ = std::fs::remove_file(&path);
 }
+
+/// **A multitrack member, driven by the application that holds its engine**:
+/// opened over a take the application resolved, it plays its track on the
+/// engine; a region moved by a route that is not a turn (a script's handle)
+/// is heard where it now is once the multitrack is sounded again, its track's
+/// readers the same nodes.
+#[test]
+fn a_multitrack_member_plays_and_follows_an_edit_in_its_application() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::{Editing, Member};
+
+    let (path, values) = source("member", 48_000, 24_000);
+    let mut region = region(0.0, 0.5, 0.0, 1.0, false);
+    region.fade_in = Some(Fade::of(Second(0.0)));
+    let multitrack = multitrack(region);
+    let expected = read(&multitrack, &path, SR, values.len(), 24_000);
+
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app_engine = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let mut app = App::new(Arc::clone(&app_engine));
+    let mut editing = Editing::new();
+    app.hold(&mut editing);
+    let opened = app.call(
+        &mut editing,
+        &serde_json::json!({"verb": "openMultitrack", "key": "mt",
+            "multitrack": serde_json::to_value(&multitrack).unwrap(), "rate": SR}),
+    );
+    let member = opened["member"].as_u64().expect("opened") as u32;
+    let Some(Member::Multitrack(editor)) = editing.member_mut(member) else {
+        panic!("not a multitrack");
+    };
+    editor.set_takes(HashMap::from([(
+        SourceId(9),
+        TakeFile {
+            path: path.as_str().into(),
+            peaks: None,
+            channels: 1,
+            frames: values.len() as u64,
+            rate: SR,
+        },
+    )]));
+    let ran = app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "open"}),
+        1,
+        None,
+    );
+    assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+    let ran = app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "play"}),
+        2,
+        None,
+    );
+    assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+    let left = blocks(&mut engine, &app_engine, &mut app, &mut editing, 24_000);
+    let first = left.iter().position(|&s| s != 0.0).expect("heard");
+    let rolled = first / BLOCK_SIZE * BLOCK_SIZE;
+    for i in rolled + 256..rolled + 4_000 {
+        assert!((left[i] - expected[i - rolled]).abs() < 1e-5, "sample {i}");
+    }
+    let rolling = app.query(&mut editing, member, "transport");
+    assert_eq!(rolling["rolling"], true, "{rolling}");
+    let output = app.query(&mut editing, member, "output");
+    assert_eq!(output["starved"], 0, "{output}");
+
+    // the region moved a tenth of a second later, by a script's handle
+    app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "stop", "mark": 0.0}),
+        3,
+        None,
+    );
+    let Some(Member::Multitrack(editor)) = editing.member(member) else {
+        panic!("not a multitrack");
+    };
+    let shared = editor.shared();
+    shared.lock().unwrap().tracks[0].take_lanes[0].regions[0].position = Second(0.1);
+    let ran = app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "sound"}),
+        4,
+        None,
+    );
+    assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+    let _ = blocks(&mut engine, &app_engine, &mut app, &mut editing, 4_096);
+    app.act(
+        &mut editing,
+        member,
+        serde_json::json!({"verb": "play"}),
+        5,
+        None,
+    );
+    let left = blocks(&mut engine, &app_engine, &mut app, &mut editing, 24_000);
+    // From the top the region is silent for a tenth of a second: what
+    // sounds before it is at most the stream's fade out of the frames it
+    // kept from before the edit, into the refill of the new take.
+    let early = left[..4_700].iter().fold(0.0f32, |a, b| a.max(b.abs()));
+    assert!(early < 0.01, "the region sounds before it starts: {early}");
+    let late = left[4_800..12_000]
+        .iter()
+        .fold(0.0f32, |a, b| a.max(b.abs()));
+    assert!(late > 0.3, "the region sounds where it is: {late}");
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Blocks of the engine, paced, the application's turn after each: the
+/// left side.
+fn blocks(
+    engine: &mut clausters::server::engine::Engine,
+    app_engine: &Mutex<AppEngine>,
+    app: &mut clausters_app_engine::app::App,
+    editing: &mut clausters_apps::editing::Editing,
+    n: usize,
+) -> Vec<f32> {
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut left = Vec::new();
+    while left.len() < n {
+        engine.process_block(&mut out);
+        let _ = app.landed(editing);
+        let _ = app_engine;
+        left.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
+        std::thread::sleep(std::time::Duration::from_micros(1_333));
+    }
+    left
+}

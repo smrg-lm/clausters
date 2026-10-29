@@ -163,6 +163,7 @@ impl App {
         for freed in editing.forget_audio(member) {
             here.delete(&freed.files);
         }
+        editing.forget_multitrack(member, &mut self.ids);
     }
 
     /// **Whether something under way may land unasked**: a render on its

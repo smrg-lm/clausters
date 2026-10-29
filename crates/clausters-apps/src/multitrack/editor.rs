@@ -261,6 +261,9 @@ pub struct MultitrackEditor {
     /// **The event sequences its notes regions read**, shared with whoever
     /// holds them -- a notes editor opened on one edits what these boxes draw.
     sequences: HashMap<SourceId, crate::notes::Shared>,
+    /// **What each take is on disk**, where the application that holds the
+    /// editor resolved it: the file a track's reader reads its regions from.
+    takes: HashMap<SourceId, clausters_document::parts::TakeFile>,
     meters: Vec<Meter>,
     link: Option<i64>,
     transport: Transport,
@@ -358,6 +361,7 @@ impl MultitrackEditor {
             lengths: HashMap::new(),
             segments: HashMap::new(),
             sequences: HashMap::new(),
+            takes: HashMap::new(),
             meters: Vec::new(),
             link: None,
             transport: Transport::Absent,
@@ -645,6 +649,93 @@ impl MultitrackEditor {
     /// The sequence bound to `source`, when one is.
     pub fn sequence(&self, source: SourceId) -> Option<&crate::notes::Shared> {
         self.sequences.get(&source)
+    }
+
+    /// **What each take is on disk**: the files the application reads the
+    /// tracks' regions from, by source.
+    pub fn set_takes(&mut self, takes: HashMap<SourceId, clausters_document::parts::TakeFile>) {
+        self.takes = takes;
+    }
+
+    /// The file a take is, when the application resolved it.
+    pub fn take(&self, source: SourceId) -> Option<&clausters_document::parts::TakeFile> {
+        self.takes.get(&source)
+    }
+
+    /// **What the tracks' readers read**: each source's shape, and what it
+    /// is -- a take's file, or a join's parts over takes' files, read back to
+    /// back at the rate of its first part's take. A join over a take the
+    /// application has not resolved is left out, and so are the regions over
+    /// it.
+    pub fn read_sources(
+        &self,
+    ) -> (
+        HashMap<SourceId, clausters_document::multitrack::read::SourceShape>,
+        std::collections::BTreeMap<SourceId, crate::editing::held::PlacedSource>,
+    ) {
+        use crate::editing::held::PlacedSource;
+        use clausters_document::multitrack::read::SourceShape;
+        use clausters_document::parts::{FileList, Rates, Tree};
+        let mut shapes = HashMap::new();
+        let mut sources = std::collections::BTreeMap::new();
+        for (id, file) in &self.takes {
+            shapes.insert(
+                *id,
+                SourceShape {
+                    channels: file.channels as usize,
+                    frames: file.frames,
+                    rate: file.rate,
+                },
+            );
+            sources.insert(*id, PlacedSource::File(file.clone()));
+        }
+        for (id, parts) in &self.segments {
+            let files: Option<std::collections::BTreeMap<SourceId, _>> = parts
+                .iter()
+                .map(|part| {
+                    let source = part.source.source;
+                    self.takes.get(&source).map(|file| (source, file.clone()))
+                })
+                .collect();
+            let Some(files) = files else {
+                continue;
+            };
+            let Some(first) = parts.first().and_then(|p| files.get(&p.source.source)) else {
+                continue;
+            };
+            let rate = first.rate;
+            let channels = files.values().map(|f| f.channels).max().unwrap_or(1);
+            let rates: std::collections::BTreeMap<SourceId, f64> =
+                files.iter().map(|(id, f)| (*id, f.rate)).collect();
+            let Ok(tree) = Tree::from_parts(
+                parts,
+                &Rates {
+                    join: rate,
+                    of: &rates,
+                },
+            ) else {
+                continue;
+            };
+            let frames = tree.frames();
+            shapes.insert(
+                *id,
+                SourceShape {
+                    channels: channels as usize,
+                    frames,
+                    rate,
+                },
+            );
+            sources.insert(
+                *id,
+                PlacedSource::Parts(FileList {
+                    channels,
+                    rate,
+                    tree,
+                    files: std::sync::Arc::new(files),
+                }),
+            );
+        }
+        (shapes, sources)
     }
 
     /// Which buffer each source was read into.

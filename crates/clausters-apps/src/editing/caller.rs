@@ -119,6 +119,7 @@ impl Editing {
                     ..Ran::default()
                 },
             },
+            Some(Member::Multitrack(_)) => self.multitrack_act(member, action, ids),
             _ => refused(),
         }
     }
@@ -146,6 +147,7 @@ impl Editing {
     pub fn query(&mut self, member: MemberId, query: &str) -> Value {
         match self.member(member) {
             Some(Member::Audio(_)) => self.audio_query(member, query),
+            Some(Member::Multitrack(_)) => self.multitrack_query(member, query),
             _ => json!({"error": "the member answers no queries"}),
         }
     }

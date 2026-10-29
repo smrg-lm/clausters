@@ -57,6 +57,7 @@ mod coordinator;
 mod door;
 mod exchange;
 pub mod held;
+mod multitrack_runs;
 
 pub use caller::{Caller, Header, Raised, Ran, Render};
 pub use door::call_json;
@@ -353,6 +354,8 @@ pub struct Editing {
     bytes: Option<u64>,
     /// Each audio member's coordinator ([`coordinator`]).
     sessions: std::collections::BTreeMap<MemberId, coordinator::Session>,
+    /// Each multitrack member's playback and its tracks' readers.
+    tracks: std::collections::BTreeMap<MemberId, multitrack_runs::Tracks>,
     /// The file each audio member plays, kept beside its session since a
     /// run holds the session while it decides whether an edit may start.
     audio_playing: std::collections::BTreeMap<MemberId, u64>,
@@ -386,6 +389,7 @@ impl Editing {
             seats: Vec::new(),
             bytes: None,
             sessions: Default::default(),
+            tracks: Default::default(),
             audio_playing: Default::default(),
             engine: None,
             shared: Default::default(),
