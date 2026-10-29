@@ -2,7 +2,7 @@ use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use serde_json::{Map, json};
 
 use super::*;
-use crate::apply::Endpoint;
+use crate::apply::{Applier, Endpoint};
 use crate::notes_playback::Placed;
 
 const RATE: f64 = 1000.0;

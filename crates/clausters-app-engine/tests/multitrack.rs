@@ -224,3 +224,94 @@ fn a_region_read_by_the_application_is_the_clip_it_was() {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+/// **A multitrack plays on an engine the application holds**: its track's
+/// regions read by the application into the track's fed buffers, played by
+/// the track's feed reader through its strip and the master, with nothing
+/// walked. Past the cue and the play's ramp, the output is the track as
+/// the application reads it.
+#[test]
+fn a_multitrack_plays_its_tracks_on_an_engine_it_holds() {
+    use clausters_app_engine::held::Readers;
+    use clausters_apps::editing::held::{HeldEngine, HeldList, HeldTake};
+    use clausters_document::multitrack::nodes::PlannedFeed;
+    use clausters_editing::playback::MultitrackPlayback;
+
+    let (path, values) = source("plays", 48_000, 24_000);
+    let mut region = region(0.0, 0.5, 0.0, 1.0, false);
+    region.fade_in = Some(Fade::of(Second(0.0)));
+    let multitrack = multitrack(region);
+    let expected = read(&multitrack, &path, SR, values.len(), 24_000);
+
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+    let mut readers = Readers::new(Arc::clone(&app));
+    let shapes = HashMap::from([(
+        SourceId(9),
+        SourceShape {
+            channels: 1,
+            frames: values.len() as u64,
+            rate: SR,
+        },
+    )]);
+    let track = track_reads(&multitrack, SR, &shapes, &BTreeSet::new()).remove(0);
+    let sources = BTreeMap::from([(
+        SourceId(9),
+        PlacedSource::File(TakeFile {
+            path: path.as_str().into(),
+            peaks: None,
+            channels: 1,
+            frames: values.len() as u64,
+            rate: SR,
+        }),
+    )]);
+    let take = HeldTake {
+        reader: 1,
+        revision: 1,
+        list: HeldList::Placed(PlacedList {
+            regions: track.regions.into(),
+            sources: Arc::new(sources),
+            frames: track.frames,
+        }),
+        channels: 1,
+        rate: SR,
+    };
+    let buffers = readers.take(0, &take, &mut ids).expect("the take reads");
+    let feeds = HashMap::from([(
+        NodeId(1),
+        PlannedFeed {
+            buffers,
+            frames: track.frames as f64,
+        },
+    )]);
+    let mut playback = MultitrackPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
+    let steps = playback
+        .sync_fed(&multitrack, SR, &feeds, 1.0, &mut ids)
+        .expect("synced");
+    assert!(steps.is_empty(), "nothing to walk: {steps:?}");
+    assert!(playback.play_pass(None, false).is_empty());
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut left = Vec::new();
+    while left.len() < 24_000 {
+        engine.process_block(&mut out);
+        app.lock().unwrap().pump();
+        left.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
+        std::thread::sleep(std::time::Duration::from_micros(1_333));
+    }
+    let first = left
+        .iter()
+        .position(|&s| s != 0.0)
+        .expect("the track was heard");
+    assert!(first < 12_000, "the cue took {first} samples");
+    let rolled = first / BLOCK_SIZE * BLOCK_SIZE;
+    for i in rolled + 256..rolled + 8_000 {
+        let want = expected[i - rolled];
+        assert!(
+            (left[i] - want).abs() < 1e-5,
+            "sample {i}: {} against {want}",
+            left[i]
+        );
+    }
+    let _ = std::fs::remove_file(&path);
+}

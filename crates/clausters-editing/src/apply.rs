@@ -130,6 +130,10 @@ pub trait Medium: std::fmt::Debug {
     fn apply(&mut self, ops: Vec<Op>, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError>;
     /// The first bus of the run a handle became, and how long it is.
     fn bus(&self, handle: &str) -> Option<(i32, usize)>;
+    /// The node a handle became.
+    fn node(&self, handle: &str) -> Option<i32>;
+    /// The buffer a handle became.
+    fn buffer(&self, handle: &str) -> Option<i32>;
     /// How many nodes it is holding.
     fn node_count(&self) -> usize;
 }
@@ -141,6 +145,14 @@ impl<M: Medium + ?Sized> Medium for Box<M> {
 
     fn bus(&self, handle: &str) -> Option<(i32, usize)> {
         (**self).bus(handle)
+    }
+
+    fn node(&self, handle: &str) -> Option<i32> {
+        (**self).node(handle)
+    }
+
+    fn buffer(&self, handle: &str) -> Option<i32> {
+        (**self).buffer(handle)
     }
 
     fn node_count(&self) -> usize {
@@ -155,6 +167,14 @@ impl Medium for Applier {
 
     fn bus(&self, handle: &str) -> Option<(i32, usize)> {
         Applier::bus(self, handle)
+    }
+
+    fn node(&self, handle: &str) -> Option<i32> {
+        Applier::node(self, handle)
+    }
+
+    fn buffer(&self, handle: &str) -> Option<i32> {
+        Applier::buffer(self, handle)
     }
 
     fn node_count(&self) -> usize {
@@ -551,6 +571,44 @@ impl Applier {
             )),
             Op::TransportCue { transport } => {
                 steps.extend(transport_command(transport, "/transport_cue", Vec::new()))
+            }
+            Op::FillBus { handle, value } => {
+                if let Some((bus, channels)) = self.buses.get(&handle).copied() {
+                    steps.push(send(
+                        "/bus_fill",
+                        vec![
+                            OscType::Int(bus),
+                            OscType::Int(channels as i32),
+                            OscType::Float(value),
+                        ],
+                    ));
+                }
+            }
+            Op::Lane {
+                transport,
+                lane,
+                target,
+            } => steps.extend(transport_command(
+                transport,
+                "/lane_new",
+                vec![OscType::Int(lane), OscType::Int(target)],
+            )),
+            Op::LaneSet { lane, data } => {
+                steps.push(send(
+                    "/lane_set",
+                    vec![OscType::Int(lane), OscType::String(data)],
+                ));
+                steps.push(Step::AwaitDone {
+                    command: "/lane_set".into(),
+                    index: None,
+                });
+            }
+            Op::LaneFree { lane } => {
+                steps.push(send("/lane_free", vec![OscType::Int(lane)]));
+                steps.push(Step::AwaitDone {
+                    command: "/lane_free".into(),
+                    index: None,
+                });
             }
         }
         Ok(())

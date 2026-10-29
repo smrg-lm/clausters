@@ -176,6 +176,16 @@ fn is_zero(n: &usize) -> bool {
     *n == 0
 }
 
+/// **A track's own take**, read by whoever holds the multitrack's engine:
+/// the buffer each channel's reader plays, and how long the take lasts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlannedFeed {
+    /// The fed buffer of each channel of the track.
+    pub buffers: Vec<i32>,
+    /// How long the take lasts, in frames.
+    pub frames: f64,
+}
+
 /// One track: its strip and the clips on it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlannedTrack {
@@ -195,6 +205,10 @@ pub struct PlannedTrack {
     pub clips: Vec<PlannedClip>,
     /// The curves over the track.
     pub curves: Vec<PlannedCurve>,
+    /// **The track's take, read by the application** ([`plan_fed`]): its
+    /// regions of samples are this, not clips.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed: Option<PlannedFeed>,
 }
 
 /// The whole multitrack as instances: one graph, and everything else a slot.
@@ -420,6 +434,7 @@ pub fn plan_voiced(
                 mute: track_mute(multitrack, track),
                 clips,
                 curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, sample_rate),
+                feed: None,
             });
             continue;
         };
@@ -547,6 +562,7 @@ pub fn plan_voiced(
             // A track's curves are on the timeline, which is the whole
             // difference between the two places a curve lives.
             curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, sample_rate),
+            feed: None,
         });
     }
 
@@ -557,6 +573,34 @@ pub fn plan_voiced(
         tracks,
         widths,
     }
+}
+
+/// **The plan for a multitrack whose tracks the application reads**: every
+/// track's regions of samples are its take, read into the buffers `feeds`
+/// names by track and played by one reader per channel; its boxes of notes
+/// (`voiced`) are clips over their voices, as in [`plan_voiced`]. A track is
+/// as wide as its take, at most what a strip is written for; one `feeds`
+/// does not name has no take yet and plays its notes alone.
+pub fn plan_fed(
+    multitrack: &Multitrack,
+    sample_rate: f64,
+    voiced: &BTreeSet<NodeId>,
+    feeds: &HashMap<NodeId, PlannedFeed>,
+) -> Plan {
+    let mut plan = plan_voiced(multitrack, sample_rate, &HashMap::new(), voiced);
+    for track in &mut plan.tracks {
+        let Some(feed) = feeds.get(&track.track) else {
+            continue;
+        };
+        let mut feed = feed.clone();
+        feed.buffers.truncate(mixer::MAX_CHANNELS);
+        if !feed.buffers.is_empty() {
+            track.channels = feed.buffers.len();
+            track.slot = mixer::track_slot(track.channels);
+        }
+        track.feed = Some(feed);
+    }
+    plan
 }
 
 #[cfg(test)]

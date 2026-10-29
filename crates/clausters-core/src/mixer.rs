@@ -150,6 +150,11 @@ pub const FADE_OUT_CURVE: &str = "fade_out_curve";
 
 /// The slot a clip's readers fill: one per channel of the source.
 pub const SOURCE_SLOT: &str = "source";
+
+/// **The slot a track's own take is read in** ([`feed_def`]): one reader per
+/// channel of the track, each a fed stream the application reads its regions
+/// into.
+pub const FEED_SLOT: &str = "feed";
 /// The slot a track's clips of a **mono** source fill. There is one clip slot
 /// per source width, because a slot names one def and a mono take and a stereo
 /// take are not the same wiring: the first is panned into the track and the
@@ -221,6 +226,11 @@ pub const METER_SLOT: &str = "meters";
 /// The widths a strip is written for. Past stereo is a downmix table and a
 /// decision about which one, and it is refused rather than guessed.
 pub const MAX_CHANNELS: usize = 2;
+
+/// The name of the feed def: what one channel of a track's take sounds as.
+pub fn feed_name() -> String {
+    format!("{PREFIX}.feed")
+}
 
 /// The name of the reader def: what one channel of one box sounds as.
 pub fn reader_name() -> String {
@@ -441,6 +451,43 @@ pub fn reader_def() -> Value {
             {"kind": "Mul", "inputs": [{"ugen": 21}, {"control": 2}]},
             {"kind": "Out", "inputs": [{"control": 9}, {"ugen": 25}]}
         ]
+    })
+}
+
+/// **One channel of a track's take**, read by the application.
+///
+/// A track's regions -- their windows, playrates, loops, edges and gain
+/// curves -- are the application's to read
+/// (`clausters_core::regions`): it sums them into a fed stream per channel
+/// of the track, and this plays that stream from the transport's position
+/// with a `TransportDiskIn`, as the audio editor plays its take. So a track
+/// is one reader per channel whatever it holds, and an edit of its regions is
+/// a new take handed to the stream, never a node made or freed.
+///
+/// The gate is `0 <= position < span`, `span` being how long the take
+/// lasts; `Out` writes `out + chan`, so each reader lands on its own channel
+/// of the track's mix bus.
+pub fn feed_def() -> Value {
+    json!({
+        "name": feed_name(),
+        "controls": [
+            control(OUT_BUS, 0.0),
+            control(BUF, 0.0),
+            control(CHAN, 0.0),
+            control(SPAN, 0.0),
+        ],
+        "ugens": [
+            {"kind": "TransportPos", "inputs": [{"const": 0.0}]},
+            {"kind": "BinaryOpUGen", "op": "ge", "inputs": [{"ugen": 0}, {"const": 0.0}]},
+            {"kind": "BinaryOpUGen", "op": "lt", "inputs": [{"ugen": 0}, {"control": 3}]},
+            {"kind": "Mul", "inputs": [{"ugen": 1}, {"ugen": 2}]},
+            {"kind": "TransportDiskIn", "inputs": [
+                {"control": 1}, {"control": 2}, {"const": 0.0}, {"const": 0.0},
+                {"const": 0.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 4}, {"ugen": 3}]},
+            {"kind": "Add", "inputs": [{"control": 0}, {"control": 2}]},
+            {"kind": "Out", "inputs": [{"ugen": 6}, {"ugen": 5}]},
+        ],
     })
 }
 
@@ -1078,6 +1125,10 @@ pub fn track_graph(channels: usize, master: usize) -> Result<Value, String> {
     if channels < master {
         surface[PAN] = json!([{"member": 1, "control": PAN}]);
     }
+    // the feed slot's own controls, which each of its readers answers
+    for control in [BUF, CHAN, SPAN] {
+        surface[control] = json!([{"member": 6, "control": control}]);
+    }
     Ok(json!({
         "name": track_name(channels, master),
         "buses": [
@@ -1098,6 +1149,8 @@ pub fn track_graph(channels: usize, master: usize) -> Result<Value, String> {
              "controls": meter_wiring(POST_BUS, channels)},
             {"def": voices_name(channels), "kind": "graph", "slot": VOICE_SLOT,
              "controls": {OUT_BUS: MIX_BUS}},
+            {"def": feed_name(), "slot": FEED_SLOT,
+             "controls": {OUT_BUS: format!("{MIX_BUS}:0")}},
         ],
         "surface": surface,
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }
@@ -1196,7 +1249,7 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
         check(outputs, "strip outputs")?;
     }
 
-    let mut synth = vec![reader_def(), curve_def(), input_def()];
+    let mut synth = vec![reader_def(), curve_def(), input_def(), feed_def()];
     // Every strip: a clip's (source into track), a track's own, a track's way
     // into a master of another width, and the master's.
     for inputs in 1..=MAX_CHANNELS {

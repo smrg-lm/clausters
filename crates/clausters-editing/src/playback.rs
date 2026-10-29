@@ -31,8 +31,8 @@ use clausters_document::multitrack::nodes::{self, SourceInfo};
 use clausters_document::{NodeId, SourceId};
 use serde_json::{Value, json};
 
-use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Step, send, steps_json};
-use crate::instance::Instance;
+use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Medium, Step, steps_json};
+use crate::instance::{Instance, Op};
 use crate::note_curves::{self, NoteCurves};
 use crate::notes_playback::Placement;
 
@@ -63,7 +63,19 @@ pub fn pass_of(json: &str) -> (Option<(f64, f64)>, bool) {
 struct Synced {
     multitrack: Multitrack,
     sources: HashMap<SourceId, SourceInfo>,
+    /// The tracks' takes, when the application reads them ([`MultitrackPlayback::sync_fed`]).
+    feeds: Option<HashMap<NodeId, nodes::PlannedFeed>>,
     gain: f32,
+}
+
+impl Synced {
+    /// The plan it makes at `rate`, with the boxes `voiced` names.
+    fn plan(&self, rate: f64, voiced: &BTreeSet<NodeId>) -> nodes::Plan {
+        match &self.feeds {
+            Some(feeds) => nodes::plan_fed(&self.multitrack, rate, voiced, feeds),
+            None => nodes::plan_voiced(&self.multitrack, rate, &self.sources, voiced),
+        }
+    }
 }
 
 /// The box an event is of, when it is a note of one: a box of a multitrack is
@@ -74,11 +86,13 @@ fn box_of(event: &crate::notes_playback::Placed) -> Option<u64> {
         .flatten()
 }
 
-/// **One multitrack, as it is playing.**
+/// **One multitrack, as it is playing**, its ops carried out in a
+/// [`Medium`]: an endpoint's [`Applier`], whose steps a client walks, or an
+/// engine the application holds, which answers none.
 #[derive(Debug, Clone)]
-pub struct MultitrackPlayback {
+pub struct MultitrackPlayback<M: Medium = Applier> {
     instance: Instance,
-    applier: Applier,
+    applier: M,
     /// The rate the multitrack was last planned at.
     rate: f64,
     /// Whether the transport was last told to roll.
@@ -118,9 +132,17 @@ impl MultitrackPlayback {
     /// A playback that has made nothing yet, carrying out its steps for
     /// `endpoint`.
     pub fn new(endpoint: Endpoint) -> MultitrackPlayback {
+        MultitrackPlayback::in_medium(Applier::new(endpoint))
+    }
+}
+
+impl<M: Medium> MultitrackPlayback<M> {
+    /// A playback that has made nothing yet, carrying out its ops in
+    /// `medium`.
+    pub fn in_medium(medium: M) -> MultitrackPlayback<M> {
         MultitrackPlayback {
             instance: Instance::new(),
-            applier: Applier::new(endpoint),
+            applier: medium,
             rate: 48_000.0,
             rolling: false,
             end: End::Open,
@@ -184,10 +206,11 @@ impl MultitrackPlayback {
             // A tracks' group made again is a new lane, and so is one whose
             // notes are made somewhere else.
             steps.extend(self.free_lane());
-            steps.extend(transport_command(
-                "/lane_new",
-                vec![OscType::Int(group), OscType::Int(target)],
-            ));
+            steps.extend(self.plain(vec![Op::Lane {
+                transport: MULTITRACK_TRANSPORT,
+                lane: group,
+                target,
+            }]));
             self.lane = Some((group, target));
         }
         let routed = self.routed(placed);
@@ -198,14 +221,7 @@ impl MultitrackPlayback {
         steps.extend(self.applier.apply(ops, ids)?);
         let slots = self.curves.slots(&plan, &self.applier);
         let data = crate::notes_playback::data(&routed.events, self.rate, &slots).to_string();
-        steps.push(send(
-            "/lane_set",
-            vec![OscType::Int(group), OscType::String(data)],
-        ));
-        steps.push(Step::AwaitDone {
-            command: "/lane_set".into(),
-            index: None,
-        });
+        steps.extend(self.plain(vec![Op::LaneSet { lane: group, data }]));
         Ok(steps)
     }
 
@@ -227,7 +243,7 @@ impl MultitrackPlayback {
         let Some(synced) = &self.synced else {
             return Ok(Vec::new());
         };
-        let plan = nodes::plan_voiced(&synced.multitrack, self.rate, &synced.sources, &self.voiced);
+        let plan = synced.plan(self.rate, &self.voiced);
         let ops = self.instance.reconcile(&plan, synced.gain);
         self.applier.apply(ops, ids)
     }
@@ -252,13 +268,7 @@ impl MultitrackPlayback {
         let Some((lane, _)) = self.lane.take() else {
             return Vec::new();
         };
-        vec![
-            send("/lane_free", vec![OscType::Int(lane)]),
-            Step::AwaitDone {
-                command: "/lane_free".into(),
-                index: None,
-            },
-        ]
+        self.plain(vec![Op::LaneFree { lane }])
     }
 
     /// **Makes what sounds be what the multitrack says**: the plan at `rate`, the
@@ -273,14 +283,55 @@ impl MultitrackPlayback {
         gain: f32,
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
+        self.synced_from(
+            Synced {
+                multitrack: multitrack.clone(),
+                sources: sources.clone(),
+                feeds: None,
+                gain,
+            },
+            rate,
+            ids,
+        )
+    }
+
+    /// **[`Self::sync`] over a multitrack whose tracks the application
+    /// reads**: each track's regions of samples are its take, read into the
+    /// buffers `feeds` names by track (`nodes::plan_fed`), so an edit of
+    /// its regions makes and frees no node -- the take is handed to the
+    /// engine again and the buffers stay.
+    pub fn sync_fed(
+        &mut self,
+        multitrack: &Multitrack,
+        rate: f64,
+        feeds: &HashMap<NodeId, nodes::PlannedFeed>,
+        gain: f32,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<Step>, IdError> {
+        self.synced_from(
+            Synced {
+                multitrack: multitrack.clone(),
+                sources: HashMap::new(),
+                feeds: Some(feeds.clone()),
+                gain,
+            },
+            rate,
+            ids,
+        )
+    }
+
+    fn synced_from(
+        &mut self,
+        synced: Synced,
+        rate: f64,
+        ids: &mut IdSpaces,
+    ) -> Result<Vec<Step>, IdError> {
         self.rate = rate;
-        let plan = nodes::plan_voiced(multitrack, rate, sources, &self.voiced);
-        let ops = self.instance.reconcile(&plan, gain);
-        self.synced = Some(Synced {
-            multitrack: multitrack.clone(),
-            sources: sources.clone(),
-            gain,
-        });
+        let plan = synced.plan(rate, &self.voiced);
+        let ops = self.instance.reconcile(&plan, synced.gain);
+        let multitrack = synced.multitrack.clone();
+        let multitrack = &multitrack;
+        self.synced = Some(synced);
         let mut steps = self.applier.apply(ops, ids)?;
         // **The transport's ramp**, so a stop rolls the tracks out while the
         // master's way out fades them and a play fades them in: the master is
@@ -288,10 +339,7 @@ impl MultitrackPlayback {
         let fade = secs_to_samples(crate::audio_playback::FADE_SECS, rate);
         if self.fade_sent != Some(fade) {
             self.fade_sent = Some(fade);
-            steps.extend(transport_command(
-                "/transport_fade",
-                vec![OscType::Long(fade)],
-            ));
+            steps.extend(self.command("/transport_fade", vec![OscType::Long(fade)]));
         }
         // An edit that moves the last region moves where a pass stops -- and
         // takes an end marker with it when the contents grow past one
@@ -337,7 +385,7 @@ impl MultitrackPlayback {
             return Vec::new();
         }
         self.end_sent = want;
-        transport_command(
+        self.command(
             "/transport_end",
             want.map_or_else(Vec::new, |(end, back)| {
                 vec![OscType::Long(end), OscType::Long(back)]
@@ -350,7 +398,16 @@ impl MultitrackPlayback {
     pub fn play(&mut self) -> Vec<Step> {
         self.rolling = true;
         self.passed = true;
-        transport_command("/transport_play", vec![])
+        // **Tracks the application reads are cued first**: their readers
+        // stream from disk, and the play waits until they hold the frames
+        // it starts on.
+        let mut steps = if self.synced.as_ref().is_some_and(|s| s.feeds.is_some()) {
+            self.command("/transport_cue", vec![])
+        } else {
+            Vec::new()
+        };
+        steps.extend(self.command("/transport_play", vec![]));
+        steps
     }
 
     /// **The loop switch changed while it plays**: the pass in progress now
@@ -366,7 +423,7 @@ impl MultitrackPlayback {
         let span = range
             .or_else(|| (looping && self.content_end > 0.0).then_some((0.0, self.content_end)));
         if let (true, Some((from, to))) = (looping, span) {
-            let mut steps = transport_command(
+            let mut steps = self.command(
                 "/transport_loop",
                 vec![
                     OscType::Long(self.secs_to_samples(from)),
@@ -375,11 +432,11 @@ impl MultitrackPlayback {
             );
             // A loop does not stop on an end mark the pass began with.
             if self.end_sent.take().is_some() {
-                steps.extend(transport_command("/transport_end", vec![]));
+                steps.extend(self.command("/transport_end", vec![]));
             }
             return steps;
         }
-        let mut steps = transport_command("/transport_loop", vec![]);
+        let mut steps = self.command("/transport_loop", vec![]);
         match range {
             Some((from, to)) => {
                 let want = (
@@ -387,7 +444,7 @@ impl MultitrackPlayback {
                     self.secs_to_samples(self.mark),
                 );
                 self.end_sent = Some(want);
-                steps.extend(transport_command(
+                steps.extend(self.command(
                     "/transport_end",
                     vec![OscType::Long(want.0), OscType::Long(want.1)],
                 ));
@@ -412,7 +469,7 @@ impl MultitrackPlayback {
             .or_else(|| (looping && self.content_end > 0.0).then_some((0.0, self.content_end)));
         match (span, looping) {
             (Some((from, to)), true) => {
-                steps.extend(transport_command(
+                steps.extend(self.command(
                     "/transport_loop",
                     vec![
                         OscType::Long(self.secs_to_samples(from)),
@@ -424,7 +481,7 @@ impl MultitrackPlayback {
                 }
             }
             _ => {
-                steps.extend(transport_command("/transport_loop", vec![]));
+                steps.extend(self.command("/transport_loop", vec![]));
                 match range {
                     Some((from, to)) => {
                         let want = (
@@ -432,7 +489,7 @@ impl MultitrackPlayback {
                             self.secs_to_samples(self.mark),
                         );
                         self.end_sent = Some(want);
-                        steps.extend(transport_command(
+                        steps.extend(self.command(
                             "/transport_end",
                             vec![OscType::Long(want.0), OscType::Long(want.1)],
                         ));
@@ -451,18 +508,17 @@ impl MultitrackPlayback {
     /// go on claiming the last level it wrote. The mark goes with the level.
     pub fn pause(&mut self) -> Vec<Step> {
         self.rolling = false;
-        let mut steps = transport_command("/transport_stop", vec![]);
-        for (_, bus, channels) in self.meters() {
-            steps.push(send(
-                "/bus_fill",
-                vec![
-                    OscType::Int(bus),
-                    OscType::Int(2 * channels as i32),
-                    OscType::Float(0.0),
-                ],
-            ));
-        }
-        steps
+        let mut ops = vec![Op::TransportRun {
+            transport: MULTITRACK_TRANSPORT,
+            rolling: false,
+        }];
+        ops.extend(
+            self.instance
+                .meters()
+                .into_iter()
+                .map(|(_, handle, _)| Op::FillBus { handle, value: 0.0 }),
+        );
+        self.plain(ops)
     }
 
     /// **Halts and goes back to the mark**, not to the top: the next play
@@ -478,7 +534,7 @@ impl MultitrackPlayback {
     /// **Puts the transport at `secs`** of the multitrack. The readers seek in
     /// the engine, so what is sounding carries on from there.
     pub fn locate(&mut self, secs: f64) -> Vec<Step> {
-        transport_command(
+        self.command(
             "/transport_locateSample",
             vec![OscType::Long(self.secs_to_samples(secs))],
         )
@@ -512,6 +568,59 @@ impl MultitrackPlayback {
         ops.extend(self.instance.teardown());
         steps.extend(self.applier.apply(ops, ids)?);
         Ok(steps)
+    }
+
+    /// **A transport command on the multitrack's transport**, as the op
+    /// that carries it out in the medium.
+    fn command(&mut self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
+        let transport = MULTITRACK_TRANSPORT;
+        let long = |i: usize| match args.get(i) {
+            Some(OscType::Long(v)) => *v,
+            _ => 0,
+        };
+        let op = match addr {
+            "/transport_play" => Op::TransportRun {
+                transport,
+                rolling: true,
+            },
+            "/transport_stop" => Op::TransportRun {
+                transport,
+                rolling: false,
+            },
+            "/transport_locateSample" => Op::TransportLocate {
+                transport,
+                sample: long(0),
+            },
+            "/transport_loop" => Op::TransportLoop {
+                transport,
+                span: (args.len() == 2).then(|| (long(0), long(1))),
+            },
+            "/transport_end" => Op::TransportEnd {
+                transport,
+                mark: (args.len() == 2).then(|| (long(0), long(1))),
+            },
+            "/transport_fade" => Op::TransportFade {
+                transport,
+                samples: long(0),
+            },
+            "/transport_cue" => Op::TransportCue { transport },
+            _ => return Vec::new(),
+        };
+        self.plain(vec![op])
+    }
+
+    /// Ops that allocate nothing, carried out in the medium.
+    fn plain(&mut self, ops: Vec<Op>) -> Vec<Step> {
+        let mut none = IdSpaces::new(
+            clausters_core::ids::ServerShape::DEFAULT,
+            clausters_core::ids::IdShare::WHOLE,
+        );
+        self.applier.apply(ops, &mut none).unwrap_or_default()
+    }
+
+    /// The medium its ops are carried out in.
+    pub fn medium(&self) -> &M {
+        &self.applier
     }
 
     /// Says whether the transport is rolling, when the caller learned it from
@@ -568,11 +677,6 @@ impl MultitrackPlayback {
     }
 }
 
-/// A transport command on the multitrack's transport.
-fn transport_command(addr: &str, args: Vec<OscType>) -> Vec<Step> {
-    crate::apply::transport_command(MULTITRACK_TRANSPORT, addr, args)
-}
-
 /// **Steps as the JSON a client is handed**: `{"steps": [...]}`, or
 /// `{"error": "..."}` when an id space was exhausted.
 pub fn answer_json(steps: Result<Vec<Step>, IdError>) -> String {
@@ -625,6 +729,7 @@ pub fn meters_json(playback: &MultitrackPlayback) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::apply::send;
     use clausters_core::ids::{IdShare, ServerShape};
     use clausters_document::multitrack::{Tempo, Track};
     use clausters_document::{Beat, NodeId};

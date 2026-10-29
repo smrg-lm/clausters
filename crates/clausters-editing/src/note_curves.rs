@@ -32,7 +32,7 @@ use clausters_document::multitrack::nodes::{tabulate, value_at};
 use clausters_document::{Point, Second};
 use serde_json::{Value, json};
 
-use crate::apply::Applier;
+use crate::apply::Medium;
 use crate::instance::{Handle, Op, Port, Ports};
 use crate::notes_playback::{PlacedCurve, Placement, SlotNote, Voice, voice_of};
 
@@ -583,7 +583,7 @@ impl NoteCurves {
     /// **The slot each note plays in**, once [`Self::ops`] is applied: its
     /// channel's instance, its slot, and its readers' ports -- a table's
     /// buffer, the frame it starts at, the frames a sample covers.
-    pub fn slots(&self, plan: &CurvePlan, applier: &Applier) -> Vec<Option<SlotNote>> {
+    pub fn slots(&self, plan: &CurvePlan, applier: &dyn Medium) -> Vec<Option<SlotNote>> {
         plan.notes
             .iter()
             .map(|note| {

@@ -55,7 +55,7 @@ use clausters_core::mixer;
 
 use crate::apply::MULTITRACK_TRANSPORT;
 use clausters_document::multitrack::nodes::{
-    Plan, PlannedClip, PlannedCurve, PlannedTrack, SourceInfo,
+    Plan, PlannedClip, PlannedCurve, PlannedFeed, PlannedTrack, SourceInfo,
 };
 
 /// What the crate calls a thing it asked a client to make.
@@ -361,6 +361,37 @@ pub enum Op {
         /// The transport.
         transport: i32,
     },
+    /// **Fill the control bus run a handle became** with `value`
+    /// (`/bus_fill`): a meter zeroed as its transport pauses.
+    FillBus {
+        /// The bus.
+        handle: Handle,
+        /// The value.
+        value: f32,
+    },
+    /// **An event lane on transport `transport`** (`/lane_new`), named by
+    /// node `lane`, its notes made in node `target`.
+    Lane {
+        /// The transport.
+        transport: i32,
+        /// The node the lane is named by.
+        lane: i32,
+        /// The group its notes are made in.
+        target: i32,
+    },
+    /// **A lane's data** (`/lane_set`), as `clausters_core::event_lane`
+    /// reads it.
+    LaneSet {
+        /// The lane.
+        lane: i32,
+        /// Its data.
+        data: String,
+    },
+    /// A lane freed (`/lane_free`): its notes are released.
+    LaneFree {
+        /// The lane.
+        lane: i32,
+    },
 }
 
 /// The multitrack's own instance.
@@ -413,6 +444,10 @@ fn clip_handle(id: u64) -> Handle {
 
 fn reader_handle(region: u64, channel: usize) -> Handle {
     format!("reader:{region}:{channel}")
+}
+
+fn feed_handle(track: u64, channel: usize) -> Handle {
+    format!("feed:{track}:{channel}")
 }
 
 fn curve_handle(id: u64) -> Handle {
@@ -802,6 +837,7 @@ impl Instance {
             }
             self.curves(&track_handle(id), false, id, 0, &track.curves, ops);
             self.clips(id, &track.clips, &clips, ops);
+            self.feed(id, track.feed.as_ref(), ops);
         }
         let gone: Vec<u64> = self
             .tracks
@@ -968,6 +1004,62 @@ impl Instance {
             .collect();
         for id in gone {
             self.free_clip(id, true, ops);
+        }
+    }
+
+    /// **A track's own take**: one reader per channel in its feed slot, its
+    /// buffer and its length set when they move. An edit of the track's
+    /// regions changes neither, so it makes and frees nothing here.
+    fn feed(&mut self, track: u64, feed: Option<&PlannedFeed>, ops: &mut Vec<Op>) {
+        let mut seen = BTreeSet::new();
+        for (channel, buffer) in feed
+            .map(|f| f.buffers.as_slice())
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            let handle = feed_handle(track, channel);
+            seen.insert(handle.clone());
+            let ports: Ports = [
+                (mixer::BUF, f64::from(*buffer)),
+                (mixer::CHAN, channel as f64),
+                (mixer::SPAN, feed.map_or(0.0, |f| f.frames)),
+            ]
+            .into_iter()
+            .map(|(port, value)| (port.to_string(), Port::Number(value)))
+            .collect();
+            match self.readers.get(&handle) {
+                None => ops.push(Op::Slot {
+                    handle: handle.clone(),
+                    target: track_handle(track),
+                    slot: mixer::FEED_SLOT.into(),
+                    ports: ports.clone(),
+                }),
+                Some(sent) => {
+                    let moved = moved(&ports, sent);
+                    if !moved.is_empty() {
+                        ops.push(Op::Set {
+                            handle: handle.clone(),
+                            ports: moved,
+                        });
+                    }
+                }
+            }
+            self.readers.insert(handle, ports);
+        }
+        let prefix = format!("feed:{track}:");
+        let gone: Vec<String> = self
+            .readers
+            .keys()
+            .filter(|handle| handle.starts_with(&prefix) && !seen.contains(*handle))
+            .cloned()
+            .collect();
+        for handle in gone {
+            self.readers.remove(&handle);
+            ops.push(Op::Free {
+                handle,
+                forget: Vec::new(),
+            });
         }
     }
 
@@ -1272,6 +1364,17 @@ impl Instance {
             .map(|(region, _)| *region)
             .collect();
         let mut forget = vec![meter_handle(id, 0), meter_handle(id, 1)];
+        let prefix = format!("feed:{id}:");
+        let feeds: Vec<String> = self
+            .readers
+            .keys()
+            .filter(|handle| handle.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for handle in feeds {
+            self.readers.remove(&handle);
+            forget.push(handle);
+        }
         for region in mine {
             forget.push(clip_handle(region));
             forget.extend(self.reader_handles(region));

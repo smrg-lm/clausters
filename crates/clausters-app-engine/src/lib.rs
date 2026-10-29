@@ -486,9 +486,22 @@ impl EngineMedium {
                     t.add_slot(instance, &slot, node, &ports, cmds).map(|_| ())
                 }
             },
-            Op::Move { .. } => {
-                Err("a slot moved between graphs is not carried out here yet".into())
-            }
+            // A slot moved into another graph instance, re-wired there: the
+            // translator's own `/graph_moveSlot`, which resolves its buses
+            // against the new instance.
+            Op::Move { handle, target } => match (self.node(&handle), self.node(&target)) {
+                (Some(slot), Some(target)) => t.translate(
+                    &clausters::rosc::OscMessage {
+                        addr: "/graph_moveSlot".into(),
+                        args: vec![
+                            clausters::rosc::OscType::Int(slot),
+                            clausters::rosc::OscType::Int(target),
+                        ],
+                    },
+                    cmds,
+                ),
+                _ => Ok(()),
+            },
             Op::Synth {
                 handle,
                 def,
@@ -624,6 +637,19 @@ impl EngineMedium {
                 });
                 Ok(())
             }
+            Op::FillBus { handle, value } => {
+                if let Some((first, channels)) = self.buses.get(&handle).copied() {
+                    cmds.extend((0..channels).map(|offset| Cmd::SetControlBus {
+                        index: first as usize + offset,
+                        value,
+                    }));
+                }
+                Ok(())
+            }
+            // An event lane is fed ahead of the position by a server's
+            // network loop, which an engine the application holds has not:
+            // a box of notes is silent here.
+            Op::Lane { .. } | Op::LaneSet { .. } | Op::LaneFree { .. } => Ok(()),
         };
         if let Err(why) = result {
             tracing::warn!("app engine: {why}");
@@ -652,6 +678,14 @@ impl Medium for EngineMedium {
 
     fn bus(&self, handle: &str) -> Option<(i32, usize)> {
         self.buses.get(handle).copied()
+    }
+
+    fn node(&self, handle: &str) -> Option<i32> {
+        self.nodes.get(handle).copied()
+    }
+
+    fn buffer(&self, handle: &str) -> Option<i32> {
+        self.buffers.get(handle).copied()
     }
 
     fn node_count(&self) -> usize {
