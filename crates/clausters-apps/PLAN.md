@@ -3475,16 +3475,24 @@ over the opened file) carries over.
     release, by hand): four hour-long takes open in 1.3 ms against 18 ms to
     read their peaks, the process grows 22 MB, and a comp of 240 quarter
     seconds plays a minute with nothing starved, sample for sample.
-  - ⬜ **A box of notes plays in the application, and its roll opens
-    there.** An event lane is fed ahead of the transport by a server's
-    network loop (`src/osc/server/lanes.rs`); the application's engine has
-    none, so its medium ignores the lane ops and a box of notes is silent.
-    The feeder is to be shared with the engine an application holds; the
-    roll a double click asks for (the `open` effect) opens a notes member in
-    the same context, in a window of the application's.
-  - ⬜ **`--session` opens the application**, its Owner path, in-process
-    server and player deleted (`Host::open_multitrack_saving_to` is the
-    entry), once the notes play there.
+  - ✅ **A box of notes plays in the application, and its roll opens
+    there** *(2026-10-29)*. The event lanes' feeder is a struct of its own
+    (`osc::server::lanes::EventLanes`) that the server and the engine an
+    application holds both keep, fed on the application's turn; a
+    session's sequences are bound to their boxes and saved as they are; a
+    double click asks the host for a roll window, a notes member over the
+    box's sequence in the same context, whose edits correct the
+    multitrack's box and sound it again.
+  - ✅ **`--session` opens the application** *(2026-10-29)*, on an engine
+    on the machine's output, Save writing where `--save-to` says; the
+    in-process server and the player are no longer started for it.
+  - ⬜ **The host's own multitrack path goes**: the `Owner`'s multitrack
+    (`host/instance.rs`'s `Playing.multitrack`, `mint_sources`,
+    `free_joins`, `sound_multitrack`, `host/answer.rs`'s
+    `answer_multitrack`, `host/document/sources.rs`) and its tests, which
+    nothing opens any more since `--session` moved; what `--score` uses
+    stays. A roll in the application has no transport of its own yet (its
+    space bar plays nothing), which the old path's roll had.
   - ⬜ **Tracks wider than stereo**: a track's take is read as wide as its
     widest region, but its strip is written for one or two channels, so
     `nodes::plan_fed` plays the first two; the matrix onto the master's

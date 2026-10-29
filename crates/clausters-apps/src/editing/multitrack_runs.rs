@@ -651,4 +651,57 @@ impl Editing {
             self.close_tracks(member, &mut tracks, ids);
         }
     }
+
+    /// **A message of a roll's window** -- a notes member opened over a box's
+    /// sequence -- as the editing context takes it: the turn recorded, the
+    /// window answered, every other window the edit moved corrected (the
+    /// multitrack's box over the same notes), and `notes` said when the
+    /// sequence changed, for the holder to sound the multitrack again.
+    pub(crate) fn notes_act(&mut self, member: MemberId, action: &Value) -> Ran {
+        let mut ran = Ran::default();
+        match action["verb"].as_str().unwrap_or_default() {
+            "event" => {
+                let event = Event {
+                    addr: action["addr"].as_str().unwrap_or_default().to_string(),
+                    args: action["args"].as_array().cloned().unwrap_or_default(),
+                };
+                let Some(turned) = self.event(member, &event) else {
+                    ran.end = Some(Ok(json!(false)));
+                    return ran;
+                };
+                let corrections = turned
+                    .corrections
+                    .iter()
+                    .chain(turned.stepped.iter().flat_map(|s| &s.corrections));
+                for corrected in corrections {
+                    ran.effects
+                        .push(effect("echo", json!({"answer": corrected.answer})));
+                }
+                let super::Outcome::Notes(outcome) = turned.outcome else {
+                    ran.end = Some(Ok(json!(false)));
+                    return ran;
+                };
+                if outcome.turn == Kind::Closed {
+                    ran.effects.push(effect("closedWindow", json!({})));
+                }
+                let stepped = turned.stepped.as_ref().is_some_and(|s| s.stepped);
+                if stepped {
+                    ran.effects.push(effect("resync", json!({})));
+                }
+                ran.effects
+                    .push(effect("echo", json!({"answer": outcome.answer})));
+                if outcome.changed || stepped {
+                    ran.effects.push(effect("notes", json!({})));
+                }
+                ran.end = Some(Ok(json!(outcome.changed)));
+            }
+            "closed" | "close" => {
+                ran.effects.push(effect("closedWindow", json!({})));
+                ran.end = Some(Ok(json!(false)));
+            }
+            "open" => ran.end = Some(Ok(Value::Null)),
+            other => return refused("value", format!("no roll verb {other:?}")),
+        }
+        ran
+    }
 }

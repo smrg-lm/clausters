@@ -120,6 +120,7 @@ impl Editing {
                 },
             },
             Some(Member::Multitrack(_)) => self.multitrack_act(member, action, caller, ids),
+            Some(Member::Notes(_)) => self.notes_act(member, action),
             _ => refused(),
         }
     }

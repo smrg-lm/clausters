@@ -295,6 +295,26 @@ impl Host {
         Ok(def_id)
     }
 
+    /// **The roll over box of notes `source` of multitrack window `parent`**,
+    /// in a window of its own that goes when the multitrack's does; one
+    /// already open is left as it is.
+    fn open_roll_of(&mut self, parent: i32, source: u64) {
+        let open = self.audio.as_ref().is_some_and(|audio| {
+            audio
+                .windows
+                .values()
+                .any(|w| w.kind == (AppKind::Roll { source, parent }))
+        });
+        if open || !self.owns_audio(parent) {
+            return;
+        }
+        let title = format!("notes {source}");
+        match self.open_app_for(AppKind::Roll { source, parent }, None, &title, None) {
+            Ok(def_id) => self.depend(def_id, parent),
+            Err(why) => diag::warn!("roll: {why}"),
+        }
+    }
+
     /// **Asks window `def_id`'s editor `call`** from this process, answered
     /// on the channel this returns: a member's verb, a query or an action, as
     /// the door's [`GUI_APP_CALL`] takes them.
@@ -408,6 +428,7 @@ impl Host {
                     let msg = super::apps::app_reply(seq, answer);
                     self.pending_effects.push(HostEffect::Send { to, msg });
                 }
+                FromApp::Roll { parent, source } => self.open_roll_of(parent, source),
             }
         }
     }
@@ -458,6 +479,7 @@ impl Host {
         let roles = match kind {
             AppKind::Audio => ROLES,
             AppKind::Multitrack => super::audio_app::MULTITRACK_ROLES,
+            AppKind::Roll { .. } => &["widget"],
         };
         for role in roles.iter().map(|r| (*r).to_string()) {
             let Some(id) = self.own_widget(structure, AUDIO, &role) else {
@@ -480,7 +502,7 @@ impl Host {
                 ids["widget"].as_i64().unwrap_or(0) as i32,
                 ids["lane"].as_i64().unwrap_or(0) as i32,
             ],
-            AppKind::Multitrack => Vec::new(),
+            AppKind::Multitrack | AppKind::Roll { .. } => Vec::new(),
         };
         let Some(audio) = self.audio.as_mut() else {
             return;
@@ -841,6 +863,99 @@ mod tests {
         assert_eq!(transport["rolling"], true, "{transport}");
         host.close_audio(def_id);
         assert!(!host.owns_audio(def_id));
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// **A double click on a box of notes opens its roll in the
+    /// application**: a window of its own over the box's sequence, which
+    /// goes when the multitrack's does.
+    #[test]
+    fn a_box_of_notes_opens_its_roll_in_the_application() {
+        use clausters_document::events::{Event, EventSequence};
+        use clausters_document::multitrack::{
+            Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
+        };
+        use clausters_document::session::{Location, Session, Source};
+        use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
+
+        let folder = std::env::temp_dir().join(format!("host-roll-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut source = Source::file("", Lifetime::Session);
+        source.location = Location::Events {
+            sequence: Box::new(EventSequence::new(vec![Event::new(
+                0.0,
+                json!({"midinote": 72, "dur": 0.5}),
+            )])),
+        };
+        let content = Content::Window {
+            window: RegionWindow {
+                source: SourceRef {
+                    source: SourceId(5),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                },
+                start: 0.0,
+                duration: 1.0,
+            },
+            playrate: 1.0,
+            args: Opaque::none(),
+            looping: false,
+        };
+        let mut track = Track::new(NodeId(1), NodeId(2));
+        track.take_lanes[0] = TakeLane {
+            regions: vec![Region::new(
+                NodeId(3),
+                clausters_document::Second(0.0),
+                clausters_document::Second(1.0),
+                content,
+            )],
+            ..TakeLane::new(NodeId(2))
+        };
+        let session = Session::new(Document::empty())
+            .with_multitrack(Multitrack {
+                tracks: vec![track],
+                ..Multitrack::default()
+            })
+            .with_source(SourceId(5), source);
+        let path = folder.join("notes.json");
+        std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+
+        let mut host = host();
+        let def_id = host
+            .open_multitrack(Some(path.to_str().unwrap()), "notes")
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let widget = host.own_widget_id(structure, AUDIO, "widget").unwrap();
+        let open = host.event_message(
+            widget,
+            1,
+            vec![OscType::String("open".into()), OscType::String("3".into())],
+        );
+        assert!(
+            host.deliver(def_id, &open),
+            "the gesture is the multitrack's"
+        );
+        let mut roll = None;
+        until(&mut host, "the roll never opened", |h| {
+            roll = h.audio.as_ref().and_then(|audio| {
+                audio
+                    .windows
+                    .iter()
+                    .find(|(_, w)| matches!(w.kind, AppKind::Roll { source: 5, .. }))
+                    .map(|(id, _)| *id)
+            });
+            roll.is_some_and(|roll| h.window_def(roll).is_some())
+        });
+        host.close_audio(def_id);
+        let roll = roll.unwrap();
+        until(&mut host, "the roll stayed open", |h| {
+            h.window_def(roll).is_none()
+        });
         let _ = std::fs::remove_dir_all(&folder);
     }
 

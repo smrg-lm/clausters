@@ -68,6 +68,9 @@ pub(super) enum AppKind {
     Audio,
     /// The multitrack editor, over a session.
     Multitrack,
+    /// **The roll over a box of notes** of multitrack window `parent`: a
+    /// notes member over the box's sequence (`source`), in the same context.
+    Roll { source: u64, parent: i32 },
 }
 
 /// The widget roles a multitrack window is numbered with: the multitrack,
@@ -146,6 +149,9 @@ pub(super) enum FromApp {
         end: Option<Result<Value, Raised>>,
         say: bool,
     },
+    /// **A box of notes in multitrack window `parent` asked for its roll**
+    /// (`source`, the sequence it reads): the host opens a window for it.
+    Roll { parent: i32, source: u64 },
     /// An answer for a client of the door.
     Reply {
         to: ClientId,
@@ -313,6 +319,9 @@ impl App {
                     AppKind::Multitrack => {
                         self.open_multitrack(def_id, &key, &title, path, save_to)
                     }
+                    AppKind::Roll { source, parent } => {
+                        self.open_roll(def_id, &title, source, parent)
+                    }
                 };
                 self.out.send(
                     self.editing.said(),
@@ -451,6 +460,66 @@ impl App {
         Ok(Vec::new())
     }
 
+    /// **The roll over the box of notes `source` of multitrack window
+    /// `parent`**: a notes member over the very sequence the multitrack's
+    /// boxes read, in the same context, so an edit in either is one history.
+    fn open_roll(
+        &mut self,
+        def_id: i32,
+        title: &str,
+        source: u64,
+        parent: i32,
+    ) -> Result<Vec<String>, String> {
+        use clausters_apps::editing::Member;
+        let parent = self
+            .windows
+            .get(&parent)
+            .map(|w| w.member)
+            .ok_or("the multitrack's window is gone")?;
+        let shared = match self.editing.member(parent) {
+            Some(Member::Multitrack(editor)) => editor
+                .sequence(clausters_document::SourceId(source))
+                .cloned()
+                .ok_or("the box reads no sequence")?,
+            _ => return Err("the window is not a multitrack's".into()),
+        };
+        let rate = f64::from(
+            self.app
+                .engine()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .sample_rate(),
+        );
+        let request = json!({"rate": rate, "title": title, "w": 1000, "h": 520}).to_string();
+        let opened: Value = serde_json::from_str(&self.editing.open_notes(
+            &format!("sequence:{source}"),
+            shared,
+            &request,
+        ))
+        .unwrap_or_default();
+        let member = opened["member"]
+            .as_u64()
+            .and_then(|m| MemberId::try_from(m).ok())
+            .ok_or("the roll did not open")?;
+        let workspace = clausters_core::workspace::Workspace::create("roll")
+            .map_err(|e| format!("the working folder: {e}"))?;
+        self.windows.insert(
+            def_id,
+            Window {
+                member,
+                kind: AppKind::Roll { source, parent: 0 },
+                session: None,
+                save_to: None,
+                ids: None,
+                widgets: Vec::new(),
+                _workspace: workspace,
+                actions: None,
+                empty: false,
+            },
+        );
+        Ok(Vec::new())
+    }
+
     /// **A multitrack window bound**: the editor told its window, its
     /// transport row and its title, the window drawn, and the session opened
     /// and sounded.
@@ -506,8 +575,21 @@ impl App {
         else {
             return;
         };
-        if kind == AppKind::Multitrack {
-            return self.bind_multitrack(def_id, member, &ids, session, save_to);
+        match kind {
+            AppKind::Multitrack => {
+                return self.bind_multitrack(def_id, member, &ids, session, save_to);
+            }
+            AppKind::Roll { .. } => {
+                self.member_call(member, json!({"verb": "sync", "window": def_id}));
+                let first = Ran {
+                    member,
+                    token: 0,
+                    effects: vec![json!({"kind": "publish"})],
+                    end: Some(Ok(Value::Null)),
+                };
+                return self.said(def_id, first, true);
+            }
+            AppKind::Audio => {}
         }
         self.member_call(
             member,
@@ -647,13 +729,45 @@ impl App {
     /// props, and the actions' readings when they moved.
     fn said(&mut self, def_id: i32, ran: Ran, say: bool) {
         let mut effects = Vec::with_capacity(ran.effects.len());
+        let mut notes = false;
         for mut effect in ran.effects {
             match effect["kind"].as_str().unwrap_or_default() {
                 "publish" => effect["def"] = self.window_def(def_id),
                 "resync" => effect["props"] = self.props(def_id),
+                // a box of notes asked for its roll: the host makes its window
+                "open" => {
+                    if let Some(source) = effect["source"].as_u64() {
+                        self.out.send(
+                            Vec::new(),
+                            FromApp::Roll {
+                                parent: def_id,
+                                source,
+                            },
+                        );
+                    }
+                    continue;
+                }
+                // a roll's sequence changed: the multitrack plays it again
+                "notes" => {
+                    notes = true;
+                    continue;
+                }
                 _ => {}
             }
             effects.push(effect);
+        }
+        if notes {
+            let multitracks: Vec<MemberId> = self
+                .windows
+                .values()
+                .filter(|w| w.kind == AppKind::Multitrack)
+                .map(|w| w.member)
+                .collect();
+            for member in multitracks {
+                let _ = self
+                    .app
+                    .act(&mut self.editing, member, json!({"verb": "sound"}), 0, None);
+            }
         }
         let actions = self.actions(def_id);
         self.out.send(
