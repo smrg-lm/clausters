@@ -581,12 +581,17 @@ impl App {
             }
             AppKind::Roll { .. } => {
                 self.member_call(member, json!({"verb": "sync", "window": def_id}));
-                let first = Ran {
+                // its own transport, taken now: what its play cursor reads
+                let ran = self
+                    .app
+                    .act(&mut self.editing, member, json!({"verb": "open"}), 0, None);
+                let mut first = Ran {
                     member,
                     token: 0,
                     effects: vec![json!({"kind": "publish"})],
-                    end: Some(Ok(Value::Null)),
+                    end: ran.end,
                 };
+                first.effects.extend(ran.effects);
                 return self.said(def_id, first, true);
             }
             AppKind::Audio => {}

@@ -306,8 +306,8 @@ its plan; the plan is where its acceptance is read.
   surviving work carries over. In that order, now that the application
   holds its engine, its take is shared blocks and it reads and draws its
   takes: the multitrack on the same modules, its parts left in order in
-  its plan (the host's own multitrack path removed, wider tracks, then the
-  clients as its handler); and the server's cleaning last, once nothing
+  its plan (the clients as its handler, then tracks wider than stereo
+  with the matrix onto the master); and the server's cleaning last, once nothing
   calls what it removes.
   Before `X25`, which should port this lifecycle.
   **Related:** found moving the editor onto files, and taken

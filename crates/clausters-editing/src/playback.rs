@@ -573,40 +573,10 @@ impl<M: Medium> MultitrackPlayback<M> {
     /// **A transport command on the multitrack's transport**, as the op
     /// that carries it out in the medium.
     fn command(&mut self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
-        let transport = MULTITRACK_TRANSPORT;
-        let long = |i: usize| match args.get(i) {
-            Some(OscType::Long(v)) => *v,
-            _ => 0,
-        };
-        let op = match addr {
-            "/transport_play" => Op::TransportRun {
-                transport,
-                rolling: true,
-            },
-            "/transport_stop" => Op::TransportRun {
-                transport,
-                rolling: false,
-            },
-            "/transport_locateSample" => Op::TransportLocate {
-                transport,
-                sample: long(0),
-            },
-            "/transport_loop" => Op::TransportLoop {
-                transport,
-                span: (args.len() == 2).then(|| (long(0), long(1))),
-            },
-            "/transport_end" => Op::TransportEnd {
-                transport,
-                mark: (args.len() == 2).then(|| (long(0), long(1))),
-            },
-            "/transport_fade" => Op::TransportFade {
-                transport,
-                samples: long(0),
-            },
-            "/transport_cue" => Op::TransportCue { transport },
-            _ => return Vec::new(),
-        };
-        self.plain(vec![op])
+        match crate::apply::transport_op(MULTITRACK_TRANSPORT, addr, &args) {
+            Some(op) => self.plain(vec![op]),
+            None => Vec::new(),
+        }
     }
 
     /// Ops that allocate nothing, carried out in the medium.

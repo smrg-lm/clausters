@@ -658,6 +658,46 @@ pub(crate) fn send(addr: &str, args: Vec<OscType>) -> Step {
     })
 }
 
+/// **A transport command as the op that carries it out** in a medium, or
+/// `None` for an address no op names: `/transport_play`, `/transport_stop`,
+/// `/transport_locateSample`, `/transport_loop` and `/transport_end` (each
+/// with its two samples, or none to clear), `/transport_fade` and
+/// `/transport_cue`.
+pub(crate) fn transport_op(transport: i32, addr: &str, args: &[OscType]) -> Option<Op> {
+    let long = |i: usize| match args.get(i) {
+        Some(OscType::Long(v)) => *v,
+        _ => 0,
+    };
+    Some(match addr {
+        "/transport_play" => Op::TransportRun {
+            transport,
+            rolling: true,
+        },
+        "/transport_stop" => Op::TransportRun {
+            transport,
+            rolling: false,
+        },
+        "/transport_locateSample" => Op::TransportLocate {
+            transport,
+            sample: long(0),
+        },
+        "/transport_loop" => Op::TransportLoop {
+            transport,
+            span: (args.len() == 2).then(|| (long(0), long(1))),
+        },
+        "/transport_end" => Op::TransportEnd {
+            transport,
+            mark: (args.len() == 2).then(|| (long(0), long(1))),
+        },
+        "/transport_fade" => Op::TransportFade {
+            transport,
+            samples: long(0),
+        },
+        "/transport_cue" => Op::TransportCue { transport },
+        _ => return None,
+    })
+}
+
 /// A command on `transport` whose `/done` the rest waits for: the transport's
 /// id in front, where every transport command carries it. Both playbacks
 /// drive their transport through it.

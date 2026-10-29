@@ -863,8 +863,9 @@ mod tests {
     }
 
     /// **A double click on a box of notes opens its roll in the
-    /// application**: a window of its own over the box's sequence, which
-    /// goes when the multitrack's does.
+    /// application**: a window of its own over the box's sequence, played
+    /// on a transport of its own by the space bar, which goes when the
+    /// multitrack's does.
     #[test]
     fn a_box_of_notes_opens_its_roll_in_the_application() {
         use clausters_document::events::{Event, EventSequence};
@@ -947,8 +948,23 @@ mod tests {
             });
             roll.is_some_and(|roll| h.window_def(roll).is_some())
         });
-        host.close_audio(def_id);
         let roll = roll.unwrap();
+        // **Its play cursor is a transport of its own**, not the multitrack's
+        let clocks::HeadClock::Transport(transport) = host.head_clock_of(roll, None) else {
+            panic!("the roll's play cursor reads no transport");
+        };
+        assert_ne!(transport, 0, "the multitrack's transport is not the roll's");
+        // and the space bar plays the roll there, and stops it
+        let rolling =
+            |host: &mut Host| ask(host, roll, json!({"query": "transport"}))["rolling"].clone();
+        assert_eq!(rolling(&mut host), false);
+        let play = host.event_message(roll, 2, host.play_verb());
+        assert!(host.deliver(roll, &play), "the space bar is the roll's");
+        until(&mut host, "the roll never played", |h| rolling(h) == true);
+        let play = host.event_message(roll, 3, host.play_verb());
+        assert!(host.deliver(roll, &play));
+        until(&mut host, "the roll never stopped", |h| rolling(h) == false);
+        host.close_audio(def_id);
         until(&mut host, "the roll stayed open", |h| {
             h.window_def(roll).is_none()
         });

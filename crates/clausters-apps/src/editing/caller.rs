@@ -120,7 +120,7 @@ impl Editing {
                 },
             },
             Some(Member::Multitrack(_)) => self.multitrack_act(member, action, caller, ids),
-            Some(Member::Notes(_)) => self.notes_act(member, action),
+            Some(Member::Notes(_)) => self.notes_act(member, action, ids),
             _ => refused(),
         }
     }
@@ -150,6 +150,7 @@ impl Editing {
         match self.member(member) {
             Some(Member::Audio(_)) => self.audio_query(member, query),
             Some(Member::Multitrack(_)) => self.multitrack_query(member, query),
+            Some(Member::Notes(_)) => self.notes_query(member, query),
             _ => json!({"error": "the member answers no queries"}),
         }
     }

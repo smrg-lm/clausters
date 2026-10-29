@@ -56,7 +56,7 @@ use clausters_document::{EventSequence, Point, Second};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::apply::{Applier, Endpoint, Step};
+use crate::apply::{Applier, Endpoint, Medium, Step};
 use crate::instance::Op;
 use crate::note_curves::{self, NoteCurves};
 use crate::playback::End;
@@ -386,10 +386,12 @@ fn map(sequence: &EventSequence) -> TempoMap {
         .unwrap_or_else(|| TempoMap::new(1.0))
 }
 
-/// **The notes editor, as it is playing.**
+/// **The notes editor, as it is playing**, carrying its ops out in `M`: a
+/// server's messages by default ([`Applier`]), or an engine an application
+/// holds.
 #[derive(Clone, Debug)]
-pub struct NotesPlayback {
-    applier: Applier,
+pub struct NotesPlayback<M: Medium = Applier> {
+    applier: M,
     /// The transport it plays on, once it has one.
     transport: Option<i32>,
     /// Whether the transport was taken from the id spaces, and so is given
@@ -413,17 +415,7 @@ impl NotesPlayback {
     /// A playback that has made nothing yet and holds no transport: it takes
     /// one of its own the first time it needs it ([`Self::alloc_transport`]).
     pub fn new() -> Self {
-        Self {
-            applier: Applier::new(Endpoint::default()),
-            transport: None,
-            owned: true,
-            rolling: false,
-            lane: None,
-            back: 0,
-            end: End::Open,
-            end_sent: None,
-            curves: NoteCurves::new(CURVES),
-        }
+        NotesPlayback::in_medium(Applier::new(Endpoint::default()))
     }
 
     /// A playback on transport `transport`, which is the caller's to name and
@@ -433,6 +425,24 @@ impl NotesPlayback {
             transport: Some(transport),
             owned: false,
             ..Self::new()
+        }
+    }
+}
+
+impl<M: Medium> NotesPlayback<M> {
+    /// A playback that carries its ops out in `medium`, has made nothing
+    /// yet and holds no transport.
+    pub fn in_medium(medium: M) -> NotesPlayback<M> {
+        NotesPlayback {
+            applier: medium,
+            transport: None,
+            owned: true,
+            rolling: false,
+            lane: None,
+            back: 0,
+            end: End::Open,
+            end_sent: None,
+            curves: NoteCurves::new(CURVES),
         }
     }
 
@@ -479,13 +489,26 @@ impl NotesPlayback {
         self.rolling = rolling;
     }
 
-    /// A command of its transport; nothing before it has one, since there is
-    /// nothing of this playback's on the server yet.
-    fn command(&self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
-        match self.transport {
-            Some(transport) => crate::apply::transport_command(transport, addr, args),
+    /// A command of its transport, as the op that carries it out in the
+    /// medium; nothing before it has one, since there is nothing of this
+    /// playback's made yet.
+    fn command(&mut self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
+        match self
+            .transport
+            .and_then(|transport| crate::apply::transport_op(transport, addr, &args))
+        {
+            Some(op) => self.plain(vec![op]),
             None => Vec::new(),
         }
+    }
+
+    /// Ops that allocate nothing, carried out in the medium.
+    fn plain(&mut self, ops: Vec<Op>) -> Vec<Step> {
+        let mut none = IdSpaces::new(
+            clausters_core::ids::ServerShape::DEFAULT,
+            clausters_core::ids::IdShare::WHOLE,
+        );
+        self.applier.apply(ops, &mut none).unwrap_or_default()
     }
 
     /// The editor's structure and its lane, the first time: the group that
@@ -515,10 +538,11 @@ impl NotesPlayback {
         else {
             return Ok(steps);
         };
-        steps.extend(self.command(
-            "/lane_new",
-            vec![OscType::Int(group), OscType::Int(follows)],
-        ));
+        steps.extend(self.plain(vec![Op::Lane {
+            transport,
+            lane: group,
+            target: follows,
+        }]));
         // The transport is the editor's, and whatever end it was left with is
         // not this playback's: a pass is open until it is asked otherwise.
         steps.extend(self.command("/transport_end", vec![]));
@@ -547,13 +571,7 @@ impl NotesPlayback {
         let mut steps = self.applier.apply(ops, ids)?;
         let slots = self.curves.slots(&plan, &self.applier);
         let data = data(&placement.events, rate, &slots).to_string();
-        steps.extend([
-            crate::apply::send("/lane_set", vec![OscType::Int(lane), OscType::String(data)]),
-            Step::AwaitDone {
-                command: "/lane_set".into(),
-                index: None,
-            },
-        ]);
+        steps.extend(self.plain(vec![Op::LaneSet { lane, data }]));
         Ok(steps)
     }
 
@@ -792,11 +810,7 @@ impl NotesPlayback {
         let mut steps = Vec::new();
         if let Some(lane) = self.lane.take() {
             steps.extend(self.pause());
-            steps.push(crate::apply::send("/lane_free", vec![OscType::Int(lane)]));
-            steps.push(Step::AwaitDone {
-                command: "/lane_free".into(),
-                index: None,
-            });
+            steps.extend(self.plain(vec![Op::LaneFree { lane }]));
             steps.extend(self.command("/transport_loop", vec![]));
             steps.extend(self.command("/transport_end", vec![]));
             let mut ops = self.curves.teardown();

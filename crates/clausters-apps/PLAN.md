@@ -3486,13 +3486,15 @@ over the opened file) carries over.
   - ✅ **`--session` opens the application** *(2026-10-29)*, on an engine
     on the machine's output, Save writing where `--save-to` says; the
     in-process server and the player are no longer started for it.
-  - ⬜ **The host's own multitrack path goes**: the `Owner`'s multitrack
-    (`host/instance.rs`'s `Playing.multitrack`, `mint_sources`,
-    `free_joins`, `sound_multitrack`, `host/answer.rs`'s
-    `answer_multitrack`, `host/document/sources.rs`) and its tests, which
-    nothing opens any more since `--session` moved; what `--score` uses
-    stays. A roll in the application has no transport of its own yet (its
-    space bar plays nothing), which the old path's roll had.
+  - ✅ **The host's own multitrack path goes** *(2026-10-29)*: the
+    `Owner`'s multitrack, its rolls, its tree drawn onto the multitrack
+    widget, its sources loaded into an in-process server and its joins
+    stitched there, with their tests; the `Owner` keeps the score editors
+    `--score` opens. A roll in the application plays on a transport of its
+    own (`editing/roll_runs.rs`): taken when its window opens, the space
+    bar playing its sequence there on the engine, an edit or an undo heard
+    while it plays (`NotesPlayback` over any medium, as the multitrack's
+    playback is).
   - ⬜ **Tracks wider than stereo**: a track's take is read as wide as its
     widest region, but its strip is written for one or two channels, so
     `nodes::plan_fed` plays the first two; the matrix onto the master's
@@ -5706,3 +5708,24 @@ wrong.
   written to its end before the call was heard. An offline render now
   checks it after each run, a second of the score
   (`render_to_wav_while`), and the save's render is let go there.
+
+- ⬜ **A lane's commands skip the queue a cue holds** *(found 2026-10-29,
+  putting a box of notes on the application's engine)*. The engine an
+  application holds keeps the commands that follow a cue until the disk
+  readers are ready, so a play waits for its first blocks; `EngineMedium`
+  hands a lane's `new`, `set` and `free` straight to the engine's lanes
+  instead, so a lane set after a cue and before its play is fed ahead of
+  the commands queued behind that cue. Nothing heard so far depends on the
+  order, since a lane is fed from the transport's position; a play that
+  starts a lane and a cue in one turn should keep the order it was asked
+  in.
+
+- ⬜ **A roll's notes member outlives its window** *(found 2026-10-29,
+  giving the application's roll a transport)*. Closing a roll frees its
+  playback and its transport, and the notes member stays in the editing
+  context with the editor it held. Its edits are in the history shared with
+  the multitrack, so the member cannot simply leave: an undo walked from
+  the multitrack's window over one of them must still find what it edits.
+  What it should become when its window goes (released once the history
+  names it no more, or kept and reused by the next roll over the same
+  sequence) is still to decide.

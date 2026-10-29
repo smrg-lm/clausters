@@ -544,17 +544,13 @@ fn a_session_opens_from_its_files_and_saves_relative_paths() {
 /// **A box of notes plays in the application**: a session's sequence, bound
 /// to the box over it, is the transport's event lane, fed on the
 /// application's turn, and its notes sound through the box's track.
-#[test]
-fn a_box_of_notes_plays_on_an_engine_the_application_holds() {
-    use clausters_app_engine::app::App;
-    use clausters_apps::editing::Editing;
+/// **A session of one box of notes** over source 5, four notes in its first
+/// second, written into `folder`; answers its path.
+fn notes_session(folder: &std::path::Path) -> std::path::PathBuf {
     use clausters_document::events::{Event, EventSequence};
     use clausters_document::session::{Location, Session, Source};
     use clausters_document::{Document, Lifetime};
 
-    let folder = std::env::temp_dir().join(format!("mt-notes-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&folder);
-    std::fs::create_dir_all(&folder).unwrap();
     let notes: Vec<Event> = (0..4)
         .map(|n| {
             Event::new(
@@ -599,6 +595,18 @@ fn a_box_of_notes_plays_on_an_engine_the_application_holds() {
         .with_source(SourceId(5), source);
     let path = folder.join("notes.json");
     std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn a_box_of_notes_plays_on_an_engine_the_application_holds() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::Editing;
+
+    let folder = std::env::temp_dir().join(format!("mt-notes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = notes_session(&folder);
 
     let (mut engine, handle) = engine_pair(SR as f32, 2);
     let app_engine = Arc::new(Mutex::new(AppEngine::over(handle)));
@@ -628,5 +636,90 @@ fn a_box_of_notes_plays_on_an_engine_the_application_holds() {
     let left = blocks(&mut engine, &app_engine, &mut app, &mut editing, 24_000);
     let heard = left.iter().fold(0.0f32, |a, b| a.max(b.abs()));
     assert!(heard > 0.01, "the notes are heard: {heard}");
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// **A roll plays on a transport of its own**: a notes member over the
+/// box's sequence takes a transport when its window opens, and the space
+/// bar plays its notes there while the multitrack stands still.
+#[test]
+fn a_roll_plays_its_notes_on_a_transport_of_its_own() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::{Editing, Member};
+
+    let folder = std::env::temp_dir().join(format!("mt-roll-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = notes_session(&folder);
+
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let app_engine = Arc::new(Mutex::new(AppEngine::over(handle)));
+    let mut app = App::new(Arc::clone(&app_engine));
+    let mut editing = Editing::new();
+    app.hold(&mut editing);
+    let opened = app.call(
+        &mut editing,
+        &serde_json::json!({"verb": "openMultitrack", "key": "mt", "multitrack": {}, "rate": SR}),
+    );
+    let multitrack = opened["member"].as_u64().unwrap() as u32;
+    let ran = app.act(
+        &mut editing,
+        multitrack,
+        serde_json::json!({"verb": "open", "session": path.to_str().unwrap()}),
+        1,
+        None,
+    );
+    assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+
+    // the roll, over the very sequence the box reads
+    let shared = match editing.member(multitrack) {
+        Some(Member::Multitrack(editor)) => editor.sequence(SourceId(5)).cloned().unwrap(),
+        _ => panic!("not a multitrack"),
+    };
+    let request = serde_json::json!({"rate": SR, "title": "roll"}).to_string();
+    let opened: serde_json::Value =
+        serde_json::from_str(&editing.open_notes("sequence:5", shared, &request)).unwrap();
+    let roll = opened["member"].as_u64().unwrap() as u32;
+    const WINDOW: i64 = 900;
+    app.call(
+        &mut editing,
+        &serde_json::json!({"verb": "member", "member": roll, "call": {"verb": "sync", "window": WINDOW}}),
+    );
+    let ran = app.act(
+        &mut editing,
+        roll,
+        serde_json::json!({"verb": "open"}),
+        2,
+        None,
+    );
+    let transport = ran
+        .effects
+        .iter()
+        .find(|e| e["kind"] == "transport")
+        .and_then(|e| e["transport"].as_u64())
+        .expect("the roll took a transport");
+    assert_ne!(transport, 0, "not the multitrack's");
+
+    let play = serde_json::json!({"verb": "event", "addr": "/gui_event",
+        "args": [WINDOW, 1, 0, "play", 0]});
+    app.act(&mut editing, roll, play.clone(), 3, None);
+    assert_eq!(app.query(&mut editing, roll, "transport")["rolling"], true);
+    let left = blocks(&mut engine, &app_engine, &mut app, &mut editing, 24_000);
+    let heard = left.iter().fold(0.0f32, |a, b| a.max(b.abs()));
+    assert!(heard > 0.01, "the roll's notes are heard: {heard}");
+    assert_eq!(
+        app.query(&mut editing, multitrack, "transport")["rolling"],
+        false,
+        "the multitrack stands still"
+    );
+
+    // the space bar again stops it, and its notes are released
+    app.act(&mut editing, roll, play, 4, None);
+    assert_eq!(app.query(&mut editing, roll, "transport")["rolling"], false);
+    let _ = blocks(&mut engine, &app_engine, &mut app, &mut editing, 24_000);
+    let after = blocks(&mut engine, &app_engine, &mut app, &mut editing, 4_800);
+    let tail = after.iter().fold(0.0f32, |a, b| a.max(b.abs()));
+    assert!(tail < 1e-3, "nothing sounds once it stopped: {tail}");
+    app.forget(&mut editing, roll);
     let _ = std::fs::remove_dir_all(&folder);
 }
