@@ -1064,9 +1064,17 @@ mod tests {
         let layout =
             clausters_core::pcm::Layout::open(&out.to_string_lossy()).expect("a sound file");
         assert_eq!(layout.frames, 0);
+        let header = clausters_core::pcm::header(
+            clausters_core::pcm::Container::Wav,
+            1,
+            48_000.0,
+            clausters_core::pcm::Encoding::I16,
+            0,
+        )
+        .unwrap();
         assert_eq!(
             std::fs::metadata(&out).unwrap().len(),
-            44,
+            header.len() as u64,
             "a WAV header and nothing else"
         );
         // and an undo puts the take back
