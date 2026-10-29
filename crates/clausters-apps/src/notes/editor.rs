@@ -198,6 +198,19 @@ impl NotesEditor {
         self.snap
     }
 
+    /// **The window's actions as they read now**, by verb: `undo` and `redo`
+    /// as the context's history reads, and the snap switch.
+    #[must_use]
+    pub fn actions(
+        &self,
+        undo: bool,
+        redo: bool,
+    ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
+        crate::chrome::grid_actions(crate::chrome::App::Notes, false, undo, redo, &|verb| {
+            (verb == SNAP_VERB).then_some(self.snap)
+        })
+    }
+
     /// The sequence it edits.
     pub fn sequence(&self) -> &Shared {
         &self.sequence

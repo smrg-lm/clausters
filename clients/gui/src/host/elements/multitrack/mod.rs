@@ -505,6 +505,11 @@ impl Element for Multitrack {
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
+        // **How wide its takes are drawn**, which is the level their
+        // summaries are asked at: its axis, right of the headers. A front
+        // notes it for a picture drawn in a slot; a box drawn into the mesh
+        // has none, so it is noted here.
+        self.note_width((ctx.rect.w - ctx.indent).max(0.0));
         within(d, ctx.rect, |d| self.paint(d, ctx));
     }
     fn draw_live(&self, d: &mut Draw, ctx: &Ctx) {
@@ -586,6 +591,15 @@ impl Element for Multitrack {
             })
             .filter(|n| *n >= 0 && !self.listed.contains_key(n))
             .collect();
+        // **A take drawn from its file asks by its list**, the key the host
+        // named the list with: the disk answers it, as it answers a view's
+        // own list. A body the host has not named yet asks nothing.
+        takes.extend(
+            self.takes
+                .iter()
+                .filter(|(n, _)| self.listed.contains_key(n))
+                .filter_map(|(_, body)| body.source_buffer()),
+        );
         takes.sort_unstable();
         takes.dedup();
         // **A metered track asks for its buses**, which is what makes the
@@ -825,6 +839,16 @@ impl Samples for Multitrack {
         {
             self.pending
                 .insert(bufnum, (samples.clone(), (*channels).max(1)));
+        }
+        // **A list's summary goes to the body that named it**: a take drawn
+        // from its file is keyed by its source, and asked for by its list.
+        if let Some(body) = self
+            .takes
+            .iter_mut()
+            .find(|(n, body)| self.listed.contains_key(n) && body.source_buffer() == Some(bufnum))
+            .map(|(_, body)| body)
+        {
+            return body.bulk(data);
         }
         // **The unlabelled door**, because a body element asked for one source
         // and not for several: the plural ask is this widget's, and by the time

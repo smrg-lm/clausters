@@ -225,8 +225,12 @@ impl Host {
             }
         }
         // A new list for a take is told to the answerer before the view asks
-        // about it again.
-        if keys.iter().any(|k| k.as_str() == "segments") {
+        // about it again: a view's own (`segments`), or one of the takes a
+        // multitrack draws its boxes from (`lists`).
+        if keys
+            .iter()
+            .any(|k| matches!(k.as_str(), "segments" | "lists"))
+        {
             // its length too, so a view set in the same answer stands
             self.sync_lists();
         }

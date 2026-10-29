@@ -5076,6 +5076,18 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   regions) would cut both to the boxes. Take it when the graphics layer
   offers it on every backend the host draws with, the page included.
 
+- ⬜ **A window opens at the size it was last left at** *(asked 2026-10-29 by
+  the user, looking at the multitrack opening at its minimum)*. A window
+  opens at the size its def declares, and a redefinition keeps the size the
+  person gave it, but nothing survives the window: closed and opened again,
+  an editor is back at its declared size. Where that memory lives is the open
+  question. It is the host's by what it is about -- the geometry of a window
+  on a screen, which no application sees -- and keyed by what the window is,
+  which only the application can name: an application's kind (the audio
+  editor, the multitrack, a roll), a def's `name`, a client's own key. A
+  `window` prop naming that key, read and written by the host in its own
+  settings beside the key table, is the shape to weigh first.
+
 ## Found by use: the running list of fixes
 
 - ✅ **A focused multitrack's meters at rest cover its focus ring** *(found 2026-10-08 by the user in `editors/edit_multitrack` with tall tracks scrolled: the meters drew over the blue line round the multitrack, above and below, only while they showed no signal; fixed the same day)*. The ring is drawn with the picture and the live layer over it, since a window keeps its picture and a tick draws what moves; a meter column at rest is the height of its track, so where a track met the multitrack's top or bottom edge the column covered the ring. The live layer of a focused element now ends with the ring (`frame::draw_live_places`), so it is the last thing of the element in a tick as it is in a whole frame. Pinned by `the_focus_ring_is_drawn_over_the_live_layer`; `a_scrolled_stacks_meters_paint_inside_its_own_rect` and `a_tall_multitracks_meters_stay_inside_it` were written while looking for it and pin that the meters stay inside the multitrack.

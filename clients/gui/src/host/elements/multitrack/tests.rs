@@ -2650,3 +2650,35 @@ fn a_scrolled_stacks_meters_paint_inside_its_own_rect() {
         rect.y + rect.h
     );
 }
+
+/// **A take drawn from its file is asked for by its list**, the key the host
+/// named the list with, and what the disk answers reaches the body that named
+/// it -- never a body made for a server buffer of that number. A body the
+/// host has not named yet asks for nothing.
+#[test]
+fn a_listed_take_is_asked_for_by_its_list_and_its_summary_reaches_its_body() {
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["one", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "one", 0, 1000, 0, "", 1],
+            "lists": {"1": {"channels": 1, "sample_rate": 48000.0, "parts": [
+                {"path": "/nowhere.wav", "start": 0, "frames": 1000,
+                 "source_channels": 1, "source_frames": 1000, "source_rate": 48000.0}]}}}"#,
+    ));
+    assert!(mt.needs().takes.is_empty(), "unnamed, it asks for nothing");
+    for body in mt.secondary_samples() {
+        assert!(body.name_list(-7));
+    }
+    assert_eq!(mt.needs().takes, vec![-7], "asked for by its list");
+    mt.bulk_of(
+        -7,
+        Loaded::Raw {
+            samples: vec![0.25; 1000],
+            channels: 1,
+        },
+    );
+    assert_eq!(mt.takes.len(), 1, "no body made for a buffer -7");
+    assert!(
+        mt.takes[&1].sample_shape().is_some(),
+        "the take's own body holds what was read"
+    );
+}

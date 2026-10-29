@@ -1044,6 +1044,14 @@ fn defaults_and_unknown_type() {
         }
         _ => unreachable!(),
     }
+    // and a zero is a size nobody chose: the default too, not one pixel
+    let n = node(r#"{"type":"window","w":0,"h":0}"#);
+    match Widget::from_node(1, &n, &[]).unwrap().kind {
+        WidgetKind::Window { width, height, .. } => {
+            assert_eq!((width, height), DEFAULT_WINDOW)
+        }
+        _ => unreachable!(),
+    }
     match &w.children[0].kind {
         WidgetKind::Unknown(t) => assert_eq!(t, "no_such_widget"),
         other => panic!("expected unknown, got {other:?}"),

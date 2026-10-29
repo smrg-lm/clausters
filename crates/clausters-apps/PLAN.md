@@ -3539,6 +3539,17 @@ only for a choice with non-obvious context.
 
 Every entry carries a checkbox.
 
+- ⬜ **The roll and the score editor as applications of their own** *(the
+  user, 2026-10-29, after the eye pass over the multitrack on its
+  application)*. The audio editor and the multitrack run on the
+  application's thread, with its engine; a roll opened from a box runs
+  there too, as a notes member with a transport of its own, but a roll or
+  a score opened from a script, and the score a standalone host opens
+  (`--score`), still run where they did -- a client's context, the host's
+  own owner and its server. Porting both onto the application is what
+  would let a box drawn as its page open the score editor again (Found by
+  use, "A box drawn as its page opens its roll"). To weigh after `S23`.
+
 - ⬜ **An effect heard live before it is applied** *(the user, 2026-10-23,
   removing the gain envelope's preview)*. An effect that runs in real time
   can be heard on the take as it plays and then rendered into it, with
@@ -5746,6 +5757,20 @@ wrong.
   held; the application's editor answers no verb for the boxes the hand holds,
   so the handler has none in either client. The audio editor's handler marks
   through its application, which is the shape to follow.
+
+- ⬜ **A box drawn as its page opens its roll** *(found 2026-10-29 by
+  the user, the eye pass over the multitrack on its application)*. With the
+  boxes of notes drawn as scores, a double click on one opened the score
+  editor over its sequence while the multitrack was a client's; on the
+  application it opens the roll, since the application's thread holds no
+  score window. Waits on "The roll and the score editor as applications of
+  their own" (Future directions).
+
+- ⬜ **A page's multitrack draws no box as its page** *(found 2026-10-29,
+  the same pass)*. The application hands the multitrack an engraver the
+  first time its boxes are drawn as scores, made from the engraver the
+  native host links; the page's application build links none, so there
+  a box stays a roll. The page's engraver is the web client's, in the page.
 
 - ⬜ **An untitled multitrack's Save asks for nothing** *(found 2026-10-29,
   the same work)*. A multitrack handed over whole has no file, and Save from

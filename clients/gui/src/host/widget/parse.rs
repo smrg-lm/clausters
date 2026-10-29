@@ -99,12 +99,15 @@ pub(crate) fn freq_scale_from_str(s: &str) -> Option<FreqScale> {
     })
 }
 
-/// A non-negative integer dimension property, defaulted when absent.
+/// A window's dimension property, defaulted when absent. A zero is a size
+/// nobody chose -- a holder that passes along a size it was never given -- so
+/// it is the default too, not a window of one pixel.
 pub(super) fn dimension(props: &serde_json::Map<String, Value>, key: &str, default: u32) -> u32 {
     props
         .get(key)
         .and_then(Value::as_u64)
-        .map(|n| n.clamp(1, u32::MAX as u64) as u32)
+        .filter(|n| *n > 0)
+        .map(|n| n.min(u32::MAX as u64) as u32)
         .unwrap_or(default)
 }
 

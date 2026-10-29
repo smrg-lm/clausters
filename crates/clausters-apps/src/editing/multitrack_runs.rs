@@ -51,9 +51,17 @@ pub(super) struct Tracks {
     /// (`saveTo` on the open): `Some(None)` writes nowhere. Unsaid, it
     /// writes the session it opened.
     save_to: Option<Option<String>>,
+    /// The context's version when the session was last opened or written:
+    /// what a close asks about is whether it moved since.
+    saved: i64,
 }
 
 impl Tracks {
+    /// Whether a pass that is not looped stops where the contents end.
+    pub(super) fn stops_at_end(&self) -> bool {
+        self.playback.end() == clausters_editing::playback::End::Contents
+    }
+
     fn new(editing: &mut Editing) -> Option<Tracks> {
         let engine = editing.engine.as_mut()?;
         Some(Tracks {
@@ -64,6 +72,7 @@ impl Tracks {
             session: None,
             measuring: Vec::new(),
             save_to: None,
+            saved: editing.version,
         })
     }
 }
@@ -194,6 +203,7 @@ impl Editing {
             });
         }
         tracks.session = Some((session, path.to_string()));
+        tracks.saved = self.version;
         Ok(json!({"unresolved": unresolved}))
     }
 
@@ -268,6 +278,7 @@ impl Editing {
         let text = serde_json::to_string_pretty(&written).map_err(|e| e.to_string())?;
         clausters_core::files::write(&path, text).map_err(|e| format!("{path}: {e}"))?;
         tracks.session = Some((session, path.clone()));
+        tracks.saved = self.version;
         Ok(json!({"destination": path}))
     }
 
@@ -498,6 +509,12 @@ impl Editing {
         ids: &mut IdSpaces,
         ran: &mut Ran,
     ) -> Value {
+        // what a close asks about: whether anything moved since the session
+        // was last written
+        let unsaved = self.version != tracks.saved;
+        if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+            editor.set_unsaved(unsaved);
+        }
         let Some(turned) = self.event(member, event) else {
             return json!(false);
         };

@@ -74,9 +74,24 @@ pub(super) enum AppKind {
 }
 
 /// The widget roles a multitrack window is numbered with: the multitrack,
-/// its ruler and its transport row.
-pub(super) const MULTITRACK_ROLES: &[&str] =
-    &["widget", "ruler", "row", "rewind", "play", "stop", "clock"];
+/// its ruler, its transport row and the form a close asks in.
+pub(super) const MULTITRACK_ROLES: &[&str] = &[
+    "widget",
+    "ruler",
+    "row",
+    "rewind",
+    "play",
+    "stop",
+    "clock",
+    "close_stack",
+    "close_dialog",
+    "close_save",
+    "close_discard",
+    "close_cancel",
+];
+
+/// The size a multitrack window opens at, in logical pixels.
+const MULTITRACK_SIZE: (i64, i64) = (1000, 560);
 
 /// What the host asks of the application.
 #[derive(Debug)]
@@ -443,7 +458,8 @@ impl App {
             &mut self.editing,
             &json!({"verb": "openMultitrack", "key": key,
                 "multitrack": data.unwrap_or_else(|| json!({})),
-                "rate": rate, "title": title}),
+                "rate": rate, "title": title, "transport": true,
+                "w": MULTITRACK_SIZE.0, "h": MULTITRACK_SIZE.1}),
         );
         let member = opened["member"]
             .as_u64()
@@ -539,9 +555,20 @@ impl App {
     ) {
         let controls = json!({"row": ids["row"], "rewind": ids["rewind"], "play": ids["play"],
             "stop": ids["stop"], "clock": ids["clock"]});
+        let form = json!({"stack": ids["close_stack"], "dialog": ids["close_dialog"],
+            "save": ids["close_save"], "discard": ids["close_discard"],
+            "cancel": ids["close_cancel"]});
+        // **A window that saves its session asks before a close loses
+        // work**: one over a file, or told where it writes. An untitled one
+        // goes back to the script that handed it over, which keeps it.
+        let asks = match &save_to {
+            Some(to) => to.is_some(),
+            None => session.is_some(),
+        };
         self.member_call(
             member,
-            json!({"verb": "sync", "window": def_id, "controls": controls}),
+            json!({"verb": "sync", "window": def_id, "controls": controls,
+                "closeForm": form, "asks": asks}),
         );
         let mut action = match session {
             Some(path) => json!({"verb": "open", "session": path, "window": true}),
@@ -738,7 +765,16 @@ impl App {
     /// **A run said to the host**, with the drawing its effects need: a
     /// `publish` carrying the window's tree and a `resync` every widget's
     /// props, and the actions' readings when they moved.
-    fn said(&mut self, def_id: i32, ran: Ran, say: bool) {
+    fn said(
+        &mut self,
+        def_id: i32,
+        #[cfg_attr(not(feature = "score"), allow(unused_mut))] mut ran: Ran,
+        say: bool,
+    ) {
+        #[cfg(feature = "score")]
+        if self.engrave(def_id) {
+            ran.effects.push(json!({"kind": "resync"}));
+        }
         let mut effects = Vec::with_capacity(ran.effects.len());
         let mut notes = false;
         for mut effect in ran.effects {
@@ -791,6 +827,46 @@ impl App {
                 say,
             },
         );
+    }
+
+    /// **A multitrack window that draws its boxes of notes as pages is
+    /// handed an engraver**, the first time it does: a score of its own,
+    /// made here since the engraver is a library this build links. Answers
+    /// whether it was, and the window is drawn again.
+    #[cfg(feature = "score")]
+    fn engrave(&mut self, def_id: i32) -> bool {
+        use clausters_apps::editing::Member;
+        use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
+        let Some(member) = self
+            .windows
+            .get(&def_id)
+            .filter(|w| w.kind == AppKind::Multitrack)
+            .map(|w| w.member)
+        else {
+            return false;
+        };
+        let Some(Member::Multitrack(editor)) = self.editing.member_mut(member) else {
+            return false;
+        };
+        if editor.notes_view() != "score" || editor.engraves() {
+            return false;
+        }
+        let opened = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C"))
+            .map_err(|e| e.to_string())
+            .and_then(|blank| {
+                clausters_notation::open(&blank, &clausters_notation::EngraveOptions::default())
+                    .map_err(|e| e.to_string())
+            });
+        match opened {
+            Ok(score) => {
+                editor.bind_engraver(Arc::new(Mutex::new(score)));
+                true
+            }
+            Err(why) => {
+                super::diag::warn!("multitrack: no engraver for its pages: {why}");
+                false
+            }
+        }
     }
 
     /// The window's tree, drawn with the ids it was numbered with.

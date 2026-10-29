@@ -106,6 +106,14 @@ code that keeps it lives.
   state when they finish; a recreated binding receives a fresh state push,
   rather than the old gesture receipt. Undo/redo keeps this rule when files or view layouts change.
 
+- **A widget is corrected with its own props, and only its own.** When a
+  history step draws every widget of a window again, each one is answered
+  with what it draws: the multitrack with the multitrack, its ruler with its
+  cursor, a button of the transport row or of the close form with nothing.
+  A view's props set on a control are not ignored -- `weight` is a place prop
+  every widget takes -- so a toolbar answered as the multitrack grew to fill
+  the window.
+
 - **Four words, each its own question.** A **view** is one picture of an
   object on a lane (the waveform, the spectrogram). A **visualization layer** is
   a measure drawn inside one view, on that view's vertical (peak, RMS). An **edit layer** is a body a hand edits, superposed on a view in a

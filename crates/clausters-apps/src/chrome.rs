@@ -43,7 +43,7 @@
 
 use serde_json::{Value, json};
 
-use clausters_editing::verbs::{self, Verb};
+use clausters_editing::verbs::{self, ActionState, ActionTarget, Verb};
 
 /// Which application a chrome is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +62,8 @@ pub enum App {
 pub const TO_START: &str = "F0100";
 /// **On to the end**: the same, turned.
 pub const TO_END: &str = "F0101";
+/// **Snap to grid**: a horseshoe magnet, its poles up.
+pub const SNAP: &str = "F0102";
 
 /// The host's own symbols the tools use.
 pub(crate) const PLAY: &str = "\u{25B6}";
@@ -79,6 +81,9 @@ pub fn glyphs() -> Value {
     json!({
         TO_START: "M0 0L80 0L80 520L0 520Z M560 0L560 520L150 260Z",
         TO_END: "M480 0L560 0L560 520L480 520Z M0 0L410 260L0 520Z",
+        SNAP: "M0 400L0 280C0 125 125 0 280 0C435 0 560 125 560 280L560 400L400 400\
+               L400 280C400 214 346 160 280 160C214 160 160 214 160 280L160 400Z \
+               M0 450L160 450L160 560L0 560Z M400 450L560 450L560 560L400 560Z",
     })
 }
 
@@ -231,6 +236,38 @@ pub fn menu(app: App, saves: bool) -> Value {
     Value::Array(bar)
 }
 
+/// **The actions of a window over a grid** -- the multitrack's and the
+/// roll's -- as they read now: every verb of the window's and of `app`'s,
+/// a paste that adds (`mix`) aside, available but for a walk through a history
+/// that has nothing to walk over and a `save` that writes nowhere (`saves`);
+/// the snap switch, and whatever `checked` reads of the application's own
+/// switches and choices. A switch the host keeps (`loop`) is read where it
+/// is kept.
+pub(crate) fn grid_actions(
+    app: App,
+    saves: bool,
+    undo: bool,
+    redo: bool,
+    checked: &dyn Fn(&str) -> Option<bool>,
+) -> std::collections::BTreeMap<&'static str, ActionState> {
+    verbs::WINDOW
+        .iter()
+        .chain(scope(app))
+        .filter(|verb| verb.name != "mix")
+        .map(|verb| {
+            let mut state = ActionState::new(verb, ActionTarget::Window);
+            state.checked = checked(verb.name);
+            match verb.name {
+                "undo" if !undo => state.refuse("there is nothing to undo"),
+                "redo" if !redo => state.refuse("there is nothing to redo"),
+                "save" if !saves => state.refuse("this window writes no file"),
+                _ => {}
+            }
+            (verb.name, state)
+        })
+        .collect()
+}
+
 /// A tool: a flat button that performs `verb`, its face `symbol` drawn at
 /// twice the words' size, or the verb's words when it has none -- and its tip
 /// the verb's words either way.
@@ -258,13 +295,18 @@ fn transport(app: App) -> Vec<Value> {
     ]
 }
 
-/// **The edit tools** an application has beside the menu's.
+/// **The edit tools** an application has beside the menu's: the audio
+/// editor's clipboard, and where there is a grid the switch a hand's edits
+/// snap to it by. What has a key and a menu entry and no state to show
+/// (`split`, `join`, `quantize`) stays there.
 fn edits(app: App) -> Vec<Value> {
-    let verbs: &[&str] = match app {
-        App::Audio => &["cut", "copy", "paste", "delete"],
-        App::Multitrack | App::Notes => &["split", "join", "quantize"],
-    };
-    verbs.iter().map(|verb| tool(app, verb, None)).collect()
+    match app {
+        App::Audio => ["cut", "copy", "paste", "delete"]
+            .iter()
+            .map(|verb| tool(app, verb, None))
+            .collect(),
+        App::Multitrack | App::Notes => vec![tool(app, "snap", Some(&glyph(SNAP)))],
+    }
 }
 
 /// **The toolbar**, as a row: `lead` first (a transport of the

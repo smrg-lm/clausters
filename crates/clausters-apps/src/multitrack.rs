@@ -237,12 +237,18 @@ pub fn window(w: &Window<'_>) -> Value {
 /// Not only what a gesture touched: a correction is the answer to an edit that
 /// arrived too late or was refused, which is the one case where the host's
 /// whole picture of a widget is in doubt. The ruler's own state is its cursor
-/// and nothing else; every other id is answered as the multitrack.
+/// and nothing else, and the multitrack's is the multitrack's. **Any other id
+/// is answered with nothing**: a button of the transport row or the close
+/// form holds nothing a history step moves, and the multitrack's props set on
+/// it -- a `weight` above all -- would stretch it to fill the window.
 pub fn props(w: &Window<'_>, widget: i32) -> Map<String, Value> {
     if widget == w.ruler {
         let mut out = Map::new();
         out.insert("cursor".into(), json!(w.cursor_units()));
         return out;
+    }
+    if widget != w.widget {
+        return Map::new();
     }
     multitrack_props(w)
 }
@@ -488,7 +494,7 @@ mod tests {
         let names: Vec<&str> = tools.iter().filter_map(|c| c["name"].as_str()).collect();
         assert_eq!(names, [REWIND, PLAY, STOP, CLOCK]);
         let verbs: Vec<&str> = tools.iter().filter_map(|c| c["verb"].as_str()).collect();
-        assert_eq!(verbs, ["loop", "stop_at_end", "split", "join", "quantize"]);
+        assert_eq!(verbs, ["loop", "stop_at_end", "snap"]);
         assert!(
             bar.get("id").is_none() && tools[0].get("id").is_none(),
             "named, and numbered by whoever sends it"
@@ -577,6 +583,11 @@ mod tests {
             props["grid"],
             json!(crate::DEFAULT_GRID),
             "a grid in beats, read through the tempo map beside it"
+        );
+        let other = compose(Transport::Absent, None, |w| super::props(w, w.widget + 50));
+        assert!(
+            other.is_empty(),
+            "a widget that is neither the multitrack nor its ruler is answered with nothing"
         );
         let ruler = compose(Transport::Absent, None, |w| super::props(w, w.ruler));
         assert_eq!(

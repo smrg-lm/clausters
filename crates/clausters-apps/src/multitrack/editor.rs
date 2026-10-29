@@ -413,6 +413,41 @@ impl MultitrackEditor {
         self.pages.borrow_mut().clear();
     }
 
+    /// **The window's actions as they read now**, by verb: `undo` and `redo`
+    /// as the context's history reads, the snap switch, the automatic
+    /// crossfade, how a box of notes is drawn, and where a pass ends
+    /// (`stops_at_end`, the transport's, which its holder reads).
+    #[must_use]
+    pub fn actions(
+        &self,
+        undo: bool,
+        redo: bool,
+        stops_at_end: Option<bool>,
+    ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
+        let crossfade = self.multitrack().defaults.crossfade;
+        crate::chrome::grid_actions(
+            crate::chrome::App::Multitrack,
+            self.asks,
+            undo,
+            redo,
+            &|verb| match verb {
+                crate::notes::editor::SNAP_VERB => Some(self.snap),
+                CROSSFADE_VERB => Some(crossfade),
+                STOP_AT_END_VERB => stops_at_end,
+                NOTES_ROLL_VERB => Some(self.notes_view == ROLL),
+                NOTES_SCORE_VERB => Some(self.notes_view == SCORE),
+                _ => None,
+            },
+        )
+    }
+
+    /// Whether an engraver was handed over: what a holder that makes one only
+    /// when a box is first drawn as its page asks.
+    #[cfg(feature = "notation")]
+    pub fn engraves(&self) -> bool {
+        self.engraver.is_some()
+    }
+
     /// **The pages of the boxes of notes**, a box's name to its page with
     /// the time of each of its notes in the sequence's frames, which the box
     /// reads through its window -- or `None` where the boxes are drawn
@@ -548,9 +583,14 @@ impl MultitrackEditor {
     }
 
     /// The transport row's ids, learned after the window opened -- what a client
-    /// that numbers id-less widgets on the way out hands back.
+    /// that numbers id-less widgets on the way out hands back, or a host that
+    /// numbered them for the window it draws again: a row that was drawn
+    /// unnumbered is drawn with them from then on.
     pub fn set_controls(&mut self, ids: Option<TransportIds>) {
         self.controls = ids;
+        if let (Some(ids), Transport::Unnumbered) = (ids, self.transport) {
+            self.transport = Transport::Numbered(ids);
+        }
     }
 
     /// The transport row's ids, once they are known.
@@ -1695,7 +1735,9 @@ fn built(multitrack: super::Shared, request: New) -> MultitrackEditor {
 /// names the `verb` and carries its arguments:
 ///
 /// - `sync` -- `multitrack`, `sources`, `meters`, `cursor` (beats or `null`),
-///   `window`, `controls` (the transport row's ids), `grid` (beats, `0` for
+///   `window`, `controls` (the transport row's ids), `closeForm` (the close
+///   form's: `stack`, `dialog`, `save`, `discard`, `cancel`), `asks` (whether
+///   the window asks before a close loses work), `grid` (beats, `0` for
 ///   none), `snap` (the snap-to-grid switch): the state a caller holds,
 ///   handed over before the verbs that read it.
 /// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a box lands on, and
@@ -1747,6 +1789,22 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             }
             if request.get("controls").is_some() {
                 editor.set_controls(serde_json::from_value(get("controls")).ok());
+            }
+            if request.get("closeForm").is_some() {
+                let form = get("closeForm");
+                let id = |key: &str| form[key].as_i64().map(|n| n as i32);
+                editor.set_close_form((|| {
+                    Some(crate::closing::Ids {
+                        stack: id("stack")?,
+                        dialog: id("dialog")?,
+                        save: id("save")?,
+                        discard: id("discard")?,
+                        cancel: id("cancel")?,
+                    })
+                })());
+            }
+            if let Some(asks) = get("asks").as_bool() {
+                editor.set_asks_to_close(asks);
             }
             if let Some(grid) = get("grid").as_f64() {
                 editor.set_grid(grid);

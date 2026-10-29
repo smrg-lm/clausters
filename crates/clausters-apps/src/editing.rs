@@ -604,6 +604,14 @@ impl Editing {
                 let playing = self.audio_plays(member, editor.focused_file());
                 json!(editor.actions(member, seat.server, can_undo, can_redo, pending, playing))
             }
+            Member::Multitrack(editor) => {
+                let stops = self
+                    .tracks
+                    .get(&member)
+                    .map(multitrack_runs::Tracks::stops_at_end);
+                json!(editor.actions(can_undo, can_redo, stops))
+            }
+            Member::Notes(editor) => json!(editor.actions(can_undo, can_redo)),
             _ => json!({}),
         }
     }

@@ -1135,8 +1135,8 @@ like its zoom: setting it is no edit.
 
 **Snap to grid is a switch beside it**, on by default: with it off a drag, a
 paste and a split land where the hand puts them, and a quantize still moves
-onto the grid. G in the window and the View menu flip it, and so does
-`editor.snap_to_grid = False`.
+onto the grid. G in the window, the View menu and the toolbar's magnet flip
+it, the magnet drawn held while it is on, and so does `editor.snap_to_grid = False`.
 
 ### What the hand marked, and what it swept
 
