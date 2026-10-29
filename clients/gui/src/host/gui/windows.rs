@@ -423,6 +423,8 @@ impl App {
                 },
             );
         }
+        // an application's window is the application's to let go
+        self.host.closed_by_user(id);
         self.drop_window(id);
     }
 

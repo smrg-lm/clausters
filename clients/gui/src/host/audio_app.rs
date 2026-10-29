@@ -136,6 +136,10 @@ pub(super) enum ToApp {
     /// The window asked to close and goes: what sounded it stops, then it is
     /// forgotten.
     Close { def_id: i32 },
+    /// **The person closed the window**, which asked nobody first (Escape,
+    /// the close mark): the application is told as its own close tells it,
+    /// and says the window went, with what it left.
+    Closed { def_id: i32 },
     /// The window is gone: its renders are called off and its working
     /// folder removed.
     Forget { def_id: i32 },
@@ -374,6 +378,28 @@ impl App {
                     );
                 }
                 self.forget(def_id);
+            }
+            ToApp::Closed { def_id } => {
+                let Some(member) = self.windows.get(&def_id).map(|w| w.member) else {
+                    return;
+                };
+                let mut ran = self.app.act(
+                    &mut self.editing,
+                    member,
+                    json!({"verb": "closed"}),
+                    0,
+                    None,
+                );
+                // **The window is gone whatever the member said**: the host
+                // lets it go, and its opener is told, on this effect
+                let said = ran
+                    .effects
+                    .iter()
+                    .any(|e| matches!(e["kind"].as_str(), Some("closedWindow" | "closeWindow")));
+                if !said {
+                    ran.effects.push(json!({"kind": "closedWindow"}));
+                }
+                self.said(def_id, ran, false);
             }
             ToApp::Forget { def_id } => self.forget(def_id),
         }

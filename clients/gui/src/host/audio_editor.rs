@@ -368,6 +368,17 @@ impl Host {
             .is_some_and(|audio| !audio.windows.is_empty())
     }
 
+    /// **The person closed window `def_id`**, which asked its owner nothing
+    /// first (no `ask_close`: a roll, a multitrack with nowhere to save):
+    /// when an application holds it, the application is told, lets it go,
+    /// and its opener hears what it left. A front calls this for every
+    /// window it closes on the person's word.
+    pub fn closed_by_user(&mut self, def_id: i32) {
+        if self.owns_audio(def_id) {
+            let _ = self.audio_host().ask(ToApp::Closed { def_id });
+        }
+    }
+
     /// Whether window `def_id` is an audio editor this host owns.
     pub(crate) fn owns_audio(&self, def_id: i32) -> bool {
         self.audio
@@ -634,6 +645,8 @@ impl Host {
                 }
                 "closedWindow" => {
                     self.keep_last(def_id, &effect);
+                    // the window is gone from the screen: its def goes too
+                    self.free_own_window(def_id);
                     self.forget_audio(def_id);
                     if let Some(audio) = self.audio.as_mut() {
                         let _ = audio.ask(ToApp::Forget { def_id });
@@ -1073,6 +1086,25 @@ mod tests {
         let play = host.event_message(roll, 3, host.play_verb());
         assert!(host.deliver(roll, &play));
         until(&mut host, "the roll never stopped", |h| rolling(h) == false);
+        // **Closed by the person** (Escape, its close mark), it is let go,
+        // and the box opens it again
+        host.closed_by_user(roll);
+        until(&mut host, "the closed roll stayed", |h| {
+            !h.owns_audio(roll) && h.window_def(roll).is_none()
+        });
+        assert!(host.deliver(def_id, &open), "opened again");
+        let mut again = None;
+        until(&mut host, "the roll never opened again", |h| {
+            again = h.audio.as_ref().and_then(|audio| {
+                audio
+                    .windows
+                    .iter()
+                    .find(|(_, w)| matches!(w.kind, AppKind::Roll { source: 5, .. }))
+                    .map(|(id, _)| *id)
+            });
+            again.is_some_and(|again| h.window_def(again).is_some())
+        });
+        let roll = again.unwrap();
         host.close_audio(def_id);
         until(&mut host, "the roll stayed open", |h| {
             h.window_def(roll).is_none()
