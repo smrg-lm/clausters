@@ -8995,12 +8995,19 @@ module of its own.
   printed the paste's clipboard document whole; a long string is counted
   now.
 
-- ⬜ **A stopped audio editor window ticks thirty times a second for its
+- ✅ **A stopped audio editor window ticks thirty times a second for its
   playhead** *(found 2026-10-28, measuring the fix above natively)*.
   `activity()` over two seconds of a window that never played reads 61
   ticks with `demand: ['playhead']`; the lifecycle example says a stopped
   window ticks for nothing. Whether the demand is the play cursor's
   standing mark or a transport the editor reads is the first thing to see.
+  *Fixed 2026-10-28.* A transport the host has heard nothing of counts as
+  one that may move, and nothing reports an application's transport the
+  way a server reports its own, so the editor's playhead asked for the tick
+  for as long as the window was open. A window over an engine of its own
+  now reads whether each transport rolls where it reads the position (the
+  engine's `TransportPass::rolling`); a server's still go by what the
+  server reported.
 
 - ⬜ **What a score box of the multitrack left open** *(moved here
   2026-10-28 when `N9` closed; each for when it is met)*.

@@ -375,11 +375,19 @@ impl Host {
         if !super::live::tree_has_playhead(tree, self.timelines()) {
             return false;
         }
+        // A window over an engine of its own (an application's) reads
+        // whether each transport rolls where it reads the position; the
+        // server's are known from what it reported. Unreported, an
+        // application's stopped transport ticked its window thirty times a
+        // second for as long as it was open.
+        let own = self.source_of(def_id);
         self.device_drawn(def_id)
-            || self
-                .transports_drawn(def_id)
-                .into_iter()
-                .any(|t| self.transport_ticks(t))
+            || self.transports_drawn(def_id).into_iter().any(|t| {
+                match own.as_ref().and_then(|source| source.transport_reading(t)) {
+                    Some(reading) => reading.pass.rolling,
+                    None => self.transport_ticks(t),
+                }
+            })
     }
 
     /// **Why window `def_id`'s tree asks for the tick**, from what it holds:
@@ -593,6 +601,37 @@ mod editor_tests {
         for _ in 0..SETTLE_TICKS {
             host.settle_transports();
         }
+    }
+
+    /// **A window over an engine of its own ticks while its transport
+    /// rolls**, as that engine publishes it, and not while it stands:
+    /// nothing reports an application's transport to the host the way a
+    /// server reports its own.
+    #[test]
+    fn an_application_window_ticks_while_its_own_transport_rolls() {
+        use clausters_core::transport_pass::{TransportPass, TransportReading};
+        struct Engine(std::sync::Mutex<bool>);
+        impl crate::host::BusSource for Engine {
+            fn control(&self, _index: usize) -> f32 {
+                0.0
+            }
+            fn transport_reading(&self, _transport: usize) -> Option<TransportReading> {
+                Some(TransportReading {
+                    clock: 0,
+                    position: 0,
+                    pass: TransportPass {
+                        rolling: *self.0.lock().unwrap(),
+                        ..TransportPass::default()
+                    },
+                })
+            }
+        }
+        let mut host = editor_window();
+        let engine = std::sync::Arc::new(Engine(std::sync::Mutex::new(false)));
+        host.window_sources.insert(WINDOW, engine.clone());
+        assert!(host.tree_demand(WINDOW, true).is_empty(), "it stands");
+        *engine.0.lock().unwrap() = true;
+        assert_eq!(host.tree_demand(WINDOW, true), vec![Reason::Playhead]);
     }
 
     #[test]
