@@ -395,6 +395,18 @@ impl PlacedRead {
         self.channels
     }
 
+    /// **Frames `at..at + n` of channel `channel`**, read now on the
+    /// caller's thread: what a measure or a test reads of a track.
+    pub fn read(&self, at: u64, n: usize, channel: usize) -> Vec<f32> {
+        let mut files = Files {
+            open: Vec::new(),
+            span: Vec::new(),
+        };
+        let mut out = Vec::new();
+        self.render(at, n, channel, &mut out, &mut files);
+        out
+    }
+
     /// The regions that cross frames `a..b`, by index.
     fn crossing(&self, a: u64, b: u64) -> impl Iterator<Item = usize> + '_ {
         let low = a.saturating_sub(self.longest);
