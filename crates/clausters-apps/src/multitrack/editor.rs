@@ -654,11 +654,49 @@ impl MultitrackEditor {
     /// **What each take is on disk**: the files the application reads the
     /// tracks' regions from, by source.
     pub fn set_takes(&mut self, takes: HashMap<SourceId, clausters_document::parts::TakeFile>) {
+        // a take is drawn from its file, named by its own id
+        for (id, file) in &takes {
+            self.sources.insert(*id, id.0 as i64);
+            self.lengths.insert(*id, file.frames);
+        }
         self.takes = takes;
+    }
+
+    /// **The takes the window draws from their files**: each take's file and
+    /// its peaks, as the `segments` list a signal element draws, by the
+    /// number its boxes name it by; `None` while the application resolved
+    /// none.
+    pub fn lists(&self) -> Option<Value> {
+        if self.takes.is_empty() {
+            return None;
+        }
+        let lists: Map<String, Value> = self
+            .takes
+            .iter()
+            .map(|(id, file)| {
+                let list = json!({
+                    "channels": file.channels.max(1),
+                    "sample_rate": file.rate,
+                    "parts": [{
+                        "path": &*file.path,
+                        "start": 0,
+                        "frames": file.frames,
+                        "source_channels": file.channels,
+                        "source_frames": file.frames,
+                        "source_rate": file.rate,
+                        "peaks": file.peaks.as_deref(),
+                    }],
+                });
+                (id.0.to_string(), list)
+            })
+            .collect();
+        Some(Value::Object(lists))
     }
 
     /// One take's file, resolved again (its peaks measured).
     pub fn set_take(&mut self, source: SourceId, file: clausters_document::parts::TakeFile) {
+        self.sources.insert(source, source.0 as i64);
+        self.lengths.insert(source, file.frames);
         self.takes.insert(source, file);
     }
 
@@ -898,7 +936,10 @@ impl MultitrackEditor {
     pub fn window(&mut self, widget: i32, ruler: i32) -> Value {
         self.widget = Some(widget);
         self.ruler = Some(ruler);
-        let def = self.composed(widget, ruler, super::window);
+        let mut def = self.composed(widget, ruler, super::window);
+        if let Some(lists) = self.lists() {
+            set_on(&mut def, widget, "lists", &lists);
+        }
         self.remember_names();
         def
     }
@@ -937,6 +978,9 @@ impl MultitrackEditor {
                 .map_or((0.0, 0.0), |(a, b)| (a * self.rate, (b - a) * self.rate));
             props.insert("sel_start".into(), json!(start));
             props.insert("sel_len".into(), json!(len));
+            if let Some(lists) = self.lists() {
+                props.insert("lists".into(), lists);
+            }
         }
         props
     }
@@ -1510,6 +1554,23 @@ pub const KEYS: &str = clausters_editing::verbs::MULTITRACK_SCOPE;
 #[must_use]
 pub fn verbs() -> Value {
     clausters_editing::verbs::declaration(&[(KEYS, clausters_editing::verbs::MULTITRACK)])
+}
+
+/// Sets `key` on the node of `def` whose id is `widget`.
+fn set_on(def: &mut Value, widget: i32, key: &str, value: &Value) -> bool {
+    if def["id"].as_i64() == Some(i64::from(widget))
+        && let Some(map) = def.as_object_mut()
+    {
+        map.insert(key.into(), value.clone());
+        return true;
+    }
+    let children = def.get_mut("children").and_then(Value::as_array_mut);
+    for child in children.into_iter().flatten() {
+        if set_on(child, widget, key, value) {
+            return true;
+        }
+    }
+    false
 }
 
 /// **The editor's tables as one**: which buffer each source was read into, how

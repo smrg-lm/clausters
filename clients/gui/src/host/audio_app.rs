@@ -61,15 +61,35 @@ impl std::fmt::Debug for Reply {
     }
 }
 
+/// **Which application a window is**.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AppKind {
+    /// The audio editor, over a sound file.
+    Audio,
+    /// The multitrack editor, over a session.
+    Multitrack,
+}
+
+/// The widget roles a multitrack window is numbered with: the multitrack,
+/// its ruler and its transport row.
+pub(super) const MULTITRACK_ROLES: &[&str] =
+    &["widget", "ruler", "row", "rewind", "play", "stop", "clock"];
+
 /// What the host asks of the application.
 #[derive(Debug)]
 pub(super) enum ToApp {
-    /// Open the editor in window `def_id`, over the file at `path` or none.
+    /// Open an application in window `def_id`: the audio editor over the
+    /// file at `path`, the multitrack over the session at `path`, or either
+    /// over none.
     Open {
         def_id: i32,
+        kind: AppKind,
         key: String,
         title: String,
         path: Option<String>,
+        /// Where a multitrack's Save writes, when the host that opened it
+        /// said: `Some(None)` writes nowhere.
+        save_to: Option<Option<String>>,
         reply: Option<Reply>,
     },
     /// The window's widget ids, every dialog's included, which its tree is
@@ -137,6 +157,12 @@ pub(super) enum FromApp {
 /// One window, as the application holds it.
 struct Window {
     member: MemberId,
+    /// Which application it is.
+    kind: AppKind,
+    /// The session a multitrack window opens, once it is bound.
+    session: Option<String>,
+    /// Where its Save writes, when the host said.
+    save_to: Option<Option<String>>,
     /// The ids its tree is drawn with, once the host bound them.
     ids: Option<Value>,
     /// Every widget it numbered, which a history step draws again.
@@ -275,12 +301,19 @@ impl App {
         match ask {
             ToApp::Open {
                 def_id,
+                kind,
                 key,
                 title,
                 path,
+                save_to,
                 reply,
             } => {
-                let outcome = self.open(def_id, &key, &title, path.as_deref());
+                let outcome = match kind {
+                    AppKind::Audio => self.open(def_id, &key, &title, path.as_deref()),
+                    AppKind::Multitrack => {
+                        self.open_multitrack(def_id, &key, &title, path, save_to)
+                    }
+                };
                 self.out.send(
                     self.editing.said(),
                     FromApp::Opened {
@@ -360,6 +393,9 @@ impl App {
             def_id,
             Window {
                 member,
+                kind: AppKind::Audio,
+                session: None,
+                save_to: None,
                 ids: None,
                 widgets: Vec::new(),
                 _workspace: workspace,
@@ -370,15 +406,109 @@ impl App {
         Ok(dialogs)
     }
 
+    /// **The multitrack opened**, in its working folder, over no session
+    /// yet: the session at `path` is opened once the window is bound.
+    fn open_multitrack(
+        &mut self,
+        def_id: i32,
+        key: &str,
+        title: &str,
+        path: Option<String>,
+        save_to: Option<Option<String>>,
+    ) -> Result<Vec<String>, String> {
+        let workspace = clausters_core::workspace::Workspace::create("multitrack")
+            .map_err(|e| format!("the working folder: {e}"))?;
+        let rate = f64::from(
+            self.app
+                .engine()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .sample_rate(),
+        );
+        let opened = self.app.call(
+            &mut self.editing,
+            &json!({"verb": "openMultitrack", "key": key, "multitrack": {},
+                "rate": rate, "title": title}),
+        );
+        let member = opened["member"]
+            .as_u64()
+            .and_then(|m| MemberId::try_from(m).ok())
+            .ok_or_else(|| opened["error"].as_str().unwrap_or("not opened").to_string())?;
+        self.windows.insert(
+            def_id,
+            Window {
+                member,
+                kind: AppKind::Multitrack,
+                session: path,
+                save_to,
+                ids: None,
+                widgets: Vec::new(),
+                _workspace: workspace,
+                actions: None,
+                empty: false,
+            },
+        );
+        Ok(Vec::new())
+    }
+
+    /// **A multitrack window bound**: the editor told its window, its
+    /// transport row and its title, the window drawn, and the session opened
+    /// and sounded.
+    fn bind_multitrack(
+        &mut self,
+        def_id: i32,
+        member: MemberId,
+        ids: &Value,
+        session: Option<String>,
+        save_to: Option<Option<String>>,
+    ) {
+        let controls = json!({"row": ids["row"], "rewind": ids["rewind"], "play": ids["play"],
+            "stop": ids["stop"], "clock": ids["clock"]});
+        self.member_call(
+            member,
+            json!({"verb": "sync", "window": def_id, "controls": controls}),
+        );
+        let mut action = match session {
+            Some(path) => json!({"verb": "open", "session": path, "window": true}),
+            None => json!({"verb": "open", "window": true}),
+        };
+        if let Some(save_to) = save_to {
+            action["saveTo"] = json!(save_to);
+        }
+        let ran = self.app.act(&mut self.editing, member, action, 0, None);
+        let mut first = Ran {
+            member,
+            token: 0,
+            effects: vec![json!({"kind": "publish"})],
+            end: ran.end.clone(),
+        };
+        first.effects.extend(ran.effects);
+        first
+            .effects
+            .push(json!({"kind": "transport", "transport": 0}));
+        self.said(def_id, first, true);
+    }
+
     /// The window's ids bound: the window synced, drawn, and its file opened.
     fn bind(&mut self, def_id: i32, ids: Value, widgets: Vec<i32>, title: &str) {
-        let Some((member, empty)) = self.windows.get_mut(&def_id).map(|w| {
-            w.ids = Some(ids);
-            w.widgets = widgets;
-            (w.member, w.empty)
-        }) else {
+        let Some((member, empty, kind, session, save_to)) =
+            self.windows.get_mut(&def_id).map(|w| {
+                w.ids = Some(ids.clone());
+                w.widgets = widgets;
+                (
+                    w.member,
+                    w.empty,
+                    w.kind,
+                    w.session.take(),
+                    w.save_to.take(),
+                )
+            })
+        else {
             return;
         };
+        if kind == AppKind::Multitrack {
+            return self.bind_multitrack(def_id, member, &ids, session, save_to);
+        }
         self.member_call(
             member,
             json!({"verb": "sync", "window": def_id, "title": title}),

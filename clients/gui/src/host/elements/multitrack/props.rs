@@ -43,6 +43,30 @@ pub(super) fn take_body(bufnum: i32, view: Presentation) -> SignalElement {
     })
 }
 
+/// **The body a take drawn from its file is drawn through**: the signal
+/// element over `list` (a `segments` list, the take's file and its peaks),
+/// in the presentation the widget asked for. `None` for a list that does not
+/// read.
+pub(super) fn take_list_body(list: &Value, view: Presentation) -> Option<SignalElement> {
+    let mut props = Map::new();
+    props.insert("segments".into(), list.clone());
+    props.insert("view".into(), Value::from(view.name()));
+    crate::host::widget::signal_element(&props, &[]).ok()
+}
+
+/// The `lists` prop: each source's list, by the number its boxes name it by.
+pub(super) fn parse_lists(v: &Value) -> HashMap<i32, Value> {
+    let v = match v {
+        Value::String(text) => serde_json::from_str(text).unwrap_or(Value::Null),
+        other => other.clone(),
+    };
+    v.as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(n, list)| Some((n.parse().ok()?, list.clone())))
+        .collect()
+}
+
 pub(crate) fn build(
     props: &Map<String, Value>,
     _blobs: &[Vec<u8>],
@@ -87,6 +111,7 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
             .and_then(Presentation::parse)
             .unwrap_or(Presentation::Signal),
         takes: HashMap::new(),
+        listed: HashMap::new(),
         asked: std::collections::HashSet::new(),
         rolls: parse_notes(props)
             .into_iter()
@@ -104,6 +129,9 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
         block: Vec::new(),
         fading: None,
     };
+    if let Some(lists) = props.get("lists") {
+        made.set_lists(parse_lists(lists));
+    }
     made.state_heights();
     made.state_curve_heights();
     made
@@ -599,6 +627,11 @@ impl Multitrack {
             }
             "rates" => {
                 self.rates = parse_rates(&parse::as_array_props("rates", v));
+                true
+            }
+            // **The takes drawn from their files**, replaced whole
+            "lists" => {
+                self.set_lists(parse_lists(v));
                 true
             }
             // **The notes the boxes over a sequence draw**, replaced whole

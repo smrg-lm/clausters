@@ -19,7 +19,7 @@ use clausters_app_engine::AppEngine;
 use clausters_editing::conversation::Answer;
 use serde_json::{Value, json};
 
-use super::audio_app::{FromApp, MakeEngine, Reply, Said, ToApp, Wake, WakeSlot};
+use super::audio_app::{AppKind, FromApp, MakeEngine, Reply, Said, ToApp, Wake, WakeSlot};
 use super::*;
 
 /// The role an audio editor's widgets play, in the names the host's own
@@ -72,6 +72,8 @@ impl Drop for AudioHost {
 /// One audio editor's window, as the host holds it.
 #[derive(Debug)]
 struct AudioWindow {
+    /// Which application it is.
+    kind: AppKind,
     /// The structure its own widget ids are named under.
     structure: i64,
     title: String,
@@ -205,6 +207,55 @@ impl Host {
         title: &str,
         reply: Option<Reply>,
     ) -> Result<i32, String> {
+        self.open_app_for(AppKind::Audio, path, title, reply)
+    }
+
+    /// **Opens the multitrack editor** in a window of its own, over the
+    /// session at `path` or over an empty multitrack, and answers the
+    /// window's id: its session is opened, its takes' peaks read or
+    /// measured, and its tracks sounded on the application's engine.
+    pub fn open_multitrack(&mut self, path: Option<&str>, title: &str) -> Result<i32, String> {
+        self.open_app_for(AppKind::Multitrack, path, title, None)
+    }
+
+    /// [`Host::open_multitrack`], its Save writing to `save_to` and nowhere
+    /// without one: what a host started over a session (`--session`,
+    /// `--save-to`) opens.
+    pub fn open_multitrack_saving_to(
+        &mut self,
+        path: &str,
+        save_to: Option<&str>,
+        title: &str,
+    ) -> Result<i32, String> {
+        self.open_app_saving(
+            AppKind::Multitrack,
+            Some(path),
+            title,
+            None,
+            Some(save_to.map(str::to_string)),
+        )
+    }
+
+    /// An application of `kind` opened in a window of its own, answered to
+    /// `reply` once it opened, or failed.
+    pub(super) fn open_app_for(
+        &mut self,
+        kind: AppKind,
+        path: Option<&str>,
+        title: &str,
+        reply: Option<Reply>,
+    ) -> Result<i32, String> {
+        self.open_app_saving(kind, path, title, reply, None)
+    }
+
+    fn open_app_saving(
+        &mut self,
+        kind: AppKind,
+        path: Option<&str>,
+        title: &str,
+        reply: Option<Reply>,
+        save_to: Option<Option<String>>,
+    ) -> Result<i32, String> {
         let structure = {
             let audio = self.audio_host();
             audio.next_structure += 1;
@@ -221,6 +272,7 @@ impl Host {
         audio.windows.insert(
             def_id,
             AudioWindow {
+                kind,
                 structure,
                 title: title.to_string(),
                 takes: Vec::new(),
@@ -228,7 +280,9 @@ impl Host {
             },
         );
         let asked = audio.ask(ToApp::Open {
+            save_to,
             def_id,
+            kind,
             key: format!("audio:{structure}"),
             title: title.to_string(),
             path: path.map(str::to_string),
@@ -391,17 +445,21 @@ impl Host {
                 return answer(self, Err(("value".into(), why)));
             }
         };
-        let Some((structure, title)) = self
+        let Some((structure, title, kind)) = self
             .audio
             .as_ref()
             .and_then(|a| a.windows.get(&def_id))
-            .map(|w| (w.structure, w.title.clone()))
+            .map(|w| (w.structure, w.title.clone(), w.kind))
         else {
             return;
         };
         let mut ids = serde_json::Map::new();
         let mut widgets = Vec::new();
-        for role in ROLES.iter().map(|r| (*r).to_string()) {
+        let roles = match kind {
+            AppKind::Audio => ROLES,
+            AppKind::Multitrack => super::audio_app::MULTITRACK_ROLES,
+        };
+        for role in roles.iter().map(|r| (*r).to_string()) {
             let Some(id) = self.own_widget(structure, AUDIO, &role) else {
                 return answer(self, Err(("runtime".into(), "out of widget ids".into())));
             };
@@ -417,10 +475,13 @@ impl Host {
             widgets.push(id);
         }
         ids.insert("dialogs".into(), Value::Object(dialog_ids));
-        let takes = vec![
-            ids["widget"].as_i64().unwrap_or(0) as i32,
-            ids["lane"].as_i64().unwrap_or(0) as i32,
-        ];
+        let takes = match kind {
+            AppKind::Audio => vec![
+                ids["widget"].as_i64().unwrap_or(0) as i32,
+                ids["lane"].as_i64().unwrap_or(0) as i32,
+            ],
+            AppKind::Multitrack => Vec::new(),
+        };
         let Some(audio) = self.audio.as_mut() else {
             return;
         };
@@ -492,6 +553,10 @@ impl Host {
                             self.set_props(widget as i32, props, &mut fx);
                         }
                     }
+                }
+                "say" => {
+                    let why = effect["reason"].as_str().unwrap_or_default();
+                    self.say(def_id, status::Line::of_reason(None, why));
                 }
                 "clipboard" => {
                     let doc = effect["document"].as_str().unwrap_or_default();
@@ -699,6 +764,84 @@ mod tests {
     fn widget_of(host: &Host, def_id: i32) -> i32 {
         let audio = host.audio.as_ref().unwrap();
         audio.windows[&def_id].takes[0]
+    }
+
+    /// **The host opens the multitrack over a session in its folder**: the
+    /// window is drawn, its take is drawn from its file's peaks (measured
+    /// into the session's folder), the multitrack plays on the
+    /// application's engine, and it closes.
+    #[test]
+    fn the_host_owns_a_multitrack_opened_from_a_session() {
+        use clausters_document::multitrack::{
+            Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
+        };
+        use clausters_document::session::{Session, Source};
+        use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
+
+        let folder = std::env::temp_dir().join(format!("host-mt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::rename(take("mt", 24_000), folder.join("take.wav")).unwrap();
+        let content = Content::Window {
+            window: RegionWindow {
+                source: SourceRef {
+                    source: SourceId(1),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                },
+                start: 0.0,
+                duration: 0.5,
+            },
+            playrate: 1.0,
+            args: Opaque::none(),
+            looping: false,
+        };
+        let mut track = Track::new(NodeId(2), NodeId(3));
+        track.take_lanes[0] = TakeLane {
+            regions: vec![Region::new(
+                NodeId(4),
+                clausters_document::Second(0.0),
+                clausters_document::Second(0.5),
+                content,
+            )],
+            ..TakeLane::new(NodeId(3))
+        };
+        let session = Session::new(Document::empty())
+            .with_multitrack(Multitrack {
+                tracks: vec![track],
+                ..Multitrack::default()
+            })
+            .with_source(SourceId(1), Source::file("take.wav", Lifetime::Session));
+        let path = folder.join("song.json");
+        std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+
+        let mut host = host();
+        let def_id = host
+            .open_multitrack(Some(path.to_str().unwrap()), "song")
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let widget = host.own_widget_id(structure, AUDIO, "widget").unwrap();
+        // the take is drawn from its file, its peaks in the session's folder
+        until(&mut host, "the peaks never landed", |h| {
+            let props = ask(
+                h,
+                def_id,
+                json!({"member": {"verb": "props", "widget": widget}}),
+            );
+            props["lists"]["1"]["parts"][0]["peaks"].is_string()
+        });
+        assert!(folder.join("peaks").is_dir());
+        let played = ask(&mut host, def_id, json!({"do": {"verb": "play"}}));
+        assert!(played.get("raised").is_none(), "{played}");
+        let transport = ask(&mut host, def_id, json!({"query": "transport"}));
+        assert_eq!(transport["rolling"], true, "{transport}");
+        host.close_audio(def_id);
+        assert!(!host.owns_audio(def_id));
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     /// **The host opens the audio editor over a file and answers its

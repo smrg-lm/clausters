@@ -13,8 +13,8 @@
 //! The vocabulary is the audio editor's: the window's effects are `echo`
 //! (an answer to the window), `set`, `publish`, `resync` (every widget drawn
 //! again, after a history step), `closeWindow` and `closedWindow`; and
-//! `open` (a box of notes asked for its roll, `source`) and `save` (the
-//! close form's Save, for the holder to write the session).
+//! `open` (a box of notes asked for its roll, `source`) and `say` (a
+//! `reason` the window shows: a save that failed).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -47,6 +47,10 @@ pub(super) struct Tracks {
     session: Option<(clausters_document::session::Session, String)>,
     /// The peaks being measured, by take: where each is written.
     measuring: Vec<(clausters_document::SourceId, String)>,
+    /// **Where a Save with no path writes**, when the holder said
+    /// (`saveTo` on the open): `Some(None)` writes nowhere. Unsaid, it
+    /// writes the session it opened.
+    save_to: Option<Option<String>>,
 }
 
 impl Tracks {
@@ -59,6 +63,7 @@ impl Tracks {
             revision: 0,
             session: None,
             measuring: Vec::new(),
+            save_to: None,
         })
     }
 }
@@ -204,10 +209,14 @@ impl Editing {
         let Some(Member::Multitrack(editor)) = self.member(member) else {
             return Err("the member is not a multitrack".into());
         };
-        let path = match (path, tracks.session.as_ref()) {
-            (Some(path), _) => path.to_string(),
-            (None, Some((_, path))) => path.clone(),
-            (None, None) => return Err("the session has no file yet: save it as".into()),
+        let path = match (path, &tracks.save_to, tracks.session.as_ref()) {
+            (Some(path), _, _) => path.to_string(),
+            (None, Some(Some(path)), _) => path.clone(),
+            (None, Some(None), _) => {
+                return Err("this session is read-only: it was opened with nowhere to save".into());
+            }
+            (None, None, Some((_, path))) => path.clone(),
+            (None, None, None) => return Err("the session has no file yet: save it as".into()),
         };
         let mut session = tracks
             .session
@@ -261,6 +270,9 @@ impl Editing {
     ) -> Ran {
         let mut ran = Ran::default();
         let verb = action["verb"].as_str().unwrap_or_default();
+        if action.get("saveTo").is_some() {
+            tracks.save_to = Some(action["saveTo"].as_str().map(str::to_string));
+        }
         let result = match verb {
             "open" if action["session"].is_string() => {
                 let path = action["session"].as_str().unwrap_or_default().to_string();
@@ -457,8 +469,14 @@ impl Editing {
                 ran.effects.push(effect("echo", json!({"answer": settled})));
             }
         }
-        if outcome.save {
-            ran.effects.push(effect("save", json!({})));
+        // **The close form's Save** (or Ctrl+S): the session written where it
+        // saves, and a close only once it is -- a save that fails keeps the
+        // window, and says why
+        if outcome.save
+            && let Err(why) = self.save_session(member, tracks, None)
+        {
+            ran.effects.push(effect("say", json!({"reason": why})));
+            return json!(outcome.changed);
         }
         if outcome.close {
             self.close_tracks(member, tracks, ids);
@@ -553,6 +571,20 @@ impl Editing {
         let _ = tracks
             .playback
             .sync_fed(&multitrack, tracks.rate, &feeds, 1.0, ids);
+        // the meters the window reads, once their buses are made
+        let meters = tracks
+            .playback
+            .meters()
+            .into_iter()
+            .map(|(track, bus, channels)| crate::multitrack::Meter {
+                track,
+                bus,
+                channels,
+            })
+            .collect();
+        if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+            editor.set_meters(meters);
+        }
     }
 
     /// The multitrack's nodes and its tracks' readers, gone.

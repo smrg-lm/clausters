@@ -49,6 +49,7 @@ impl Host {
         };
         match app {
             "audio" => self.open_app_audio(seq, &options, from, effects),
+            "multitrack" => self.open_app_multitrack(seq, &options, from, effects),
             other => effects.push(refused(seq, format!("no application named {other:?}"))),
         }
     }
@@ -100,6 +101,44 @@ impl Host {
                 Err(("value".into(), message)),
             )));
         }
+    }
+
+    /// **The multitrack editor opened for a client**, over the session its
+    /// options name (`path`), or over none; or why not.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+    fn open_app_multitrack(
+        &mut self,
+        seq: i32,
+        options: &Value,
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let path = options["path"].as_str();
+        let title = options["title"].as_str().unwrap_or("Multitrack");
+        let reply = super::audio_app::Reply::Client(from, seq);
+        if let Err(message) = self.open_app_for(
+            super::audio_app::AppKind::Multitrack,
+            path,
+            title,
+            Some(reply),
+        ) {
+            effects.push(HostEffect::Reply(app_reply(
+                seq,
+                Err(("value".into(), message)),
+            )));
+        }
+    }
+
+    /// The applications' build is not this page's.
+    #[cfg(all(target_arch = "wasm32", not(feature = "apps")))]
+    fn open_app_multitrack(
+        &mut self,
+        seq: i32,
+        options: &Value,
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        self.open_app_audio(seq, options, from, effects)
     }
 
     /// The ordinary build of a page's host holds no application: the

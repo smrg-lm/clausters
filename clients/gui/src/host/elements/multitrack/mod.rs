@@ -306,6 +306,12 @@ pub struct Multitrack {
     /// a picture, not a second implementation of one: what changes between the
     /// standalone view and this is the axis it is handed, and nothing else.
     takes: HashMap<i32, SignalElement>,
+    /// **The takes drawn from their files' peaks**, by the number a box
+    /// names its source by: each one's list, as the `lists` prop said it.
+    /// Its body names the list ([`take_list_body`]) and asks for no buffer:
+    /// what it draws is read by the host's disk answerer, from the peaks the
+    /// application measured.
+    listed: HashMap<i32, Value>,
     /// **The takes already asked for**, by server buffer number.
     ///
     /// A front's per-repaint walk asks for what is new in here and nothing
@@ -386,6 +392,7 @@ impl Default for Multitrack {
             label: None,
             view: Presentation::Signal,
             takes: HashMap::new(),
+            listed: HashMap::new(),
             asked: HashSet::new(),
             rolls: HashMap::new(),
             notes_view: NotesView::default(),
@@ -577,7 +584,7 @@ impl Element for Multitrack {
                 Some(spans) => spans.iter().map(|s| s.source).collect::<Vec<_>>(),
                 None => vec![c.source],
             })
-            .filter(|n| *n >= 0)
+            .filter(|n| *n >= 0 && !self.listed.contains_key(n))
             .collect();
         takes.sort_unstable();
         takes.dedup();
@@ -780,6 +787,27 @@ impl Slotted for Multitrack {
     }
 }
 
+impl Multitrack {
+    /// **The takes its boxes draw from their files**, as `lists` says them:
+    /// a body made for each one new or changed, and one no longer named let
+    /// go.
+    pub(super) fn set_lists(&mut self, lists: HashMap<i32, Value>) {
+        let view = self.view;
+        for (source, list) in &lists {
+            if self.listed.get(source) == Some(list) {
+                continue;
+            }
+            if let Some(body) = props::take_list_body(list, view) {
+                self.takes.insert(*source, body);
+            }
+        }
+        for gone in self.listed.keys().filter(|n| !lists.contains_key(n)) {
+            self.takes.remove(gone);
+        }
+        self.listed = lists;
+    }
+}
+
 impl Samples for Multitrack {
     /// One of them arrived. Every box over it draws the same pyramid.
     ///
@@ -820,5 +848,16 @@ impl Samples for Multitrack {
 
     fn forget_take(&mut self, bufnum: i32) -> bool {
         self.asked.remove(&bufnum)
+    }
+
+    /// **The bodies drawn from their files' peaks**: each names a list,
+    /// which the host's disk answerer reads for it.
+    fn secondary_samples(&mut self) -> Vec<&mut dyn Samples> {
+        let listed = &self.listed;
+        self.takes
+            .iter_mut()
+            .filter(|(n, _)| listed.contains_key(n))
+            .map(|(_, body)| body as &mut dyn Samples)
+            .collect()
     }
 }
