@@ -1037,6 +1037,11 @@ pub(crate) trait Front {
                 let Some(bufnum) = el.source_buffer() else {
                     continue;
                 };
+                // Columns are asked of a list, which answers them; a server
+                // buffer's texture is analyzed from the samples it reads back.
+                if matches!(owed, Owed::Columns(_)) && el.segments().is_none() {
+                    continue;
+                }
                 // Columns are asked of the list, which knows its own shape.
                 let channels = match (owed, el.sample_shape()) {
                     (_, Some((channels, _))) => channels,

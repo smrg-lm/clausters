@@ -8762,7 +8762,7 @@ module of its own.
   analysis is this plan's Future directions, "A list's spectrogram kept beside
   its peaks".
 
-- ⬜ **A spectrogram of a server buffer may draw nothing in a host that
+- ✅ **A spectrogram of a server buffer may draw nothing in a host that
   cannot map it** *(found 2026-10-22 reading the path, closing the entry
   above; not yet seen on screen)*. Since every take is drawn from its summary
   in such a host (a page, a remote server), a `spectrogram` over a `buffer`
@@ -8779,6 +8779,14 @@ module of its own.
   starting at zero drawn from about a quarter of the take to past
   three quarters), so the window read back for the zoom is analyzed and
   placed as if it were another span. Both halves are the fix.
+  *Fixed 2026-10-28, checked in a page headless.* The zoom was not
+  misplaced: the run read back was analyzed with silence around it, so only
+  that run showed. A view that draws a texture over a summary now asks the
+  run around what it shows at any zoom (`frame::texture_owed`, at most
+  `TEXTURE_SPAN` frames about the view's middle), the run alone is analyzed
+  and drawn where it lies (`Stft::placed_at`), and a server buffer's texture
+  asks no columns, which only a list answers. `views/layers.html` draws the
+  whole sweep as it opens and keeps it aligned under a zoom.
 - ✅ **The audio editor's view of a take glitches under zoom and pan**
   *(found 2026-10-24, by eye on the audio editor the host owns,
   `clausters-gui --audio`)*. Zooming in makes the picture flicker; at the

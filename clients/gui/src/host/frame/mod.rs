@@ -845,6 +845,50 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
     }
 }
 
+/// The most frames a texture over a summary asks back at once: about
+/// forty seconds at 48 kHz. Wider, the run around the view's middle is
+/// analyzed, and the rest of the view waits for a zoom.
+pub(crate) const TEXTURE_SPAN: usize = 1 << 21;
+
+/// **The samples a texture over a summary owes the view `nav`**, or `None`
+/// when what it holds covers it.
+///
+/// A summary is peaks, and peaks are no spectrum: a view that cannot map
+/// its samples (a page, a remote server) drew its trace from the summary at
+/// any zoom and its spectrogram from nothing. So a view that draws a
+/// texture asks the run around what it shows whatever the zoom, as
+/// [`owed`] asks it only past the summary's bucket, and analyzes that run
+/// where it lies. A list asks its columns instead ([`columns_owed`]).
+pub(crate) fn texture_owed(view: &WaveformView, nav: &View, written: Option<u64>) -> Option<Owed> {
+    let data = view.data();
+    let total = data.total_samples();
+    if nav.len <= 0.0 || total == 0 {
+        return None;
+    }
+    // the view and `reach` frames past either edge, clamped to what is
+    // written, and no wider than [`TEXTURE_SPAN`] about the view's middle
+    let middle = (nav.start + nav.len * 0.5).max(0.0) as usize;
+    let span = |reach: f64| {
+        let a = ((nav.start - reach).floor().max(0.0) as usize).min(total);
+        let b = ((nav.start + nav.len + reach).ceil().max(0.0) as usize).clamp(a, total);
+        let (a, b) = if b - a > TEXTURE_SPAN {
+            let a = middle
+                .saturating_sub(TEXTURE_SPAN / 2)
+                .min(total.saturating_sub(TEXTURE_SPAN));
+            (a, (a + TEXTURE_SPAN).min(total))
+        } else {
+            (a, b)
+        };
+        (a, written.map_or(b, |w| b.min(w as usize).max(a)))
+    };
+    let near = span(nav.len * OWED_NEAR);
+    if near.1 <= near.0 || data.covers(near.0, near.1) {
+        return None;
+    }
+    let (a, b) = span(nav.len * OWED_REACH);
+    Some(Owed::Samples { a, b })
+}
+
 /// **The columns a texture of a span owes the view `nav`**, `width` pixels
 /// wide, or `None` when what it holds draws it: a transform of the whole
 /// signal never owes any.
@@ -3650,6 +3694,69 @@ mod tests {
             bucket,
         ));
         assert_eq!(owed(&owned, &close, 800.0, None), None);
+    }
+
+    /// **A texture over a summary asks its samples at any zoom**: zoomed
+    /// out, where the trace's summary answers, the spectrogram still has
+    /// nothing to analyze. What is held covers it once it lands, a view
+    /// past [`TEXTURE_SPAN`] asks that much about its middle and is covered
+    /// by it, and a view that owns its samples never asks.
+    #[test]
+    fn a_texture_over_a_summary_asks_its_samples_at_any_zoom() {
+        use crate::waveform::WaveformData;
+        let (bucket, frames) = (256usize, 256 * 4_000usize);
+        let summary = || {
+            WaveformData::with_multi_pyramid(clausters_core::peaks::MultiPyramid::empty(
+                frames, 1, bucket,
+            ))
+        };
+        let wide = View {
+            start: 0.0,
+            len: frames as f64,
+        };
+        let told = WaveformView::new(summary());
+        assert_eq!(owed(&told, &wide, 800.0, None), None, "the trace's answer");
+        assert_eq!(
+            texture_owed(&told, &wide, None),
+            Some(Owed::Samples { a: 0, b: frames }),
+            "the texture's: the whole take, which the view shows"
+        );
+        let mut data = summary();
+        assert!(data.set_window(0, 1, &vec![0.0; frames]));
+        assert_eq!(texture_owed(&WaveformView::new(data), &wide, None), None);
+
+        let long = 4 * TEXTURE_SPAN;
+        let all = View {
+            start: 0.0,
+            len: long as f64,
+        };
+        let told = WaveformView::new(WaveformData::with_multi_pyramid(
+            clausters_core::peaks::MultiPyramid::empty(long, 1, bucket),
+        ));
+        let middle = long / 2 - TEXTURE_SPAN / 2;
+        assert_eq!(
+            texture_owed(&told, &all, None),
+            Some(Owed::Samples {
+                a: middle,
+                b: middle + TEXTURE_SPAN
+            })
+        );
+        let mut data = WaveformData::with_multi_pyramid(
+            clausters_core::peaks::MultiPyramid::empty(long, 1, bucket),
+        );
+        assert!(data.set_window(middle, 1, &vec![0.0; TEXTURE_SPAN]));
+        assert_eq!(
+            texture_owed(&WaveformView::new(data), &all, None),
+            None,
+            "the run asked is the run that answers: nothing asked again"
+        );
+
+        let owned = WaveformView::new(WaveformData::from_interleaved(
+            &vec![0.0; frames],
+            1,
+            bucket,
+        ));
+        assert_eq!(texture_owed(&owned, &wide, None), None);
     }
 
     /// **A take being recorded is asked for what is behind its frontier.** The

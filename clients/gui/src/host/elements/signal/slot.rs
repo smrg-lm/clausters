@@ -90,7 +90,7 @@ impl SignalElement {
         if self.is_texture_view()
             && let Some((samples, channels)) = self.analyzable()
         {
-            fills.push(SlotFill::Texture(crate::host::frame::stft_channels(
+            let stfts = crate::host::frame::stft_channels(
                 crate::host::frame::deinterleave(&samples, channels),
                 (
                     self.spectral.fft_size,
@@ -98,7 +98,24 @@ impl SignalElement {
                     self.spectral.wintype,
                 ),
                 self.editor.sample_rate,
-            )));
+            );
+            // a run read back around the view is a span of the take, drawn
+            // where it is
+            let placed = self
+                .source
+                .data()
+                .and_then(|d| d.body.as_ref())
+                .and_then(|body| {
+                    body.window()
+                        .map(|(start, _)| (start, body.total_samples()))
+                });
+            fills.push(SlotFill::Texture(match placed {
+                Some((origin, total)) => stfts
+                    .into_iter()
+                    .map(|stft| stft.placed_at(origin, total))
+                    .collect(),
+                None => stfts,
+            }));
         }
         if !fills.is_empty() {
             self.slot_dirty = false;
@@ -124,7 +141,10 @@ impl SignalElement {
             return Some((data.samples.to_vec(), data.channels.max(1)));
         }
         let body = data.body.as_ref()?;
-        let samples = body.block(0, body.total_samples())?;
+        // a summary with a run read back under it has that run and nothing
+        // else: the rest would be analyzed as silence
+        let (start, frames) = body.window().unwrap_or((0, body.total_samples()));
+        let samples = body.block(start, frames)?;
         Some((samples, body.num_channels().max(1)))
     }
 }
@@ -178,6 +198,35 @@ mod tests {
         assert_eq!(stfts.len(), 1);
         assert_eq!(stfts[0].window_size(), 256);
         assert!(stfts[0].n_frames() > 1, "one column per hop of the samples");
+    }
+
+    /// **A run read back under a summary is analyzed alone, where it is**:
+    /// the texture is a span of the take from the run's first frame, not a
+    /// transform of the whole take with silence around the run.
+    #[test]
+    fn a_run_under_a_summary_is_analyzed_where_it_lies() {
+        let mut spectral = element(
+            r#"{"id":1,"type":"signal","view":"spectrogram","navigable":1,
+                "window_size":256,"hop":128,"buffer":3}"#,
+        );
+        let mut data = crate::waveform::WaveformData::with_multi_pyramid(
+            clausters_core::peaks::MultiPyramid::empty(48_000, 1, 256),
+        );
+        let run: Vec<f32> = (0..4_096).map(|k| (k as f32 * 0.1).sin()).collect();
+        assert!(data.set_window(20_000, 1, &run));
+        let data = std::sync::Arc::new(data);
+        assert!(spectral.take(crate::host::widget::element::Loaded::Peaks(data)));
+        spectral.slot_dirty = true;
+        let fills = spectral.fill();
+        let Some(SlotFill::Texture(stfts)) =
+            fills.iter().find(|f| matches!(f, SlotFill::Texture(_)))
+        else {
+            panic!("the texture is filled from the run: {}", fills.len())
+        };
+        assert_eq!(stfts[0].origin(), 20_000);
+        assert!(stfts[0].is_span());
+        assert_eq!(stfts[0].total_samples(), 48_000);
+        assert!(stfts[0].n_frames() * 128 <= 4_096 + 256, "the run alone");
     }
 
     #[test]

@@ -364,6 +364,18 @@ impl Stft {
         })
     }
 
+    /// **The same transform, as a span of a longer signal**: its first frame
+    /// starts at sample `origin` of a signal `total_samples` long. What a
+    /// run of samples read back from around the view becomes once analyzed,
+    /// so it is drawn where the run is rather than from the signal's start.
+    pub fn placed_at(mut self, origin: usize, total_samples: usize) -> Self {
+        self.origin = origin;
+        self.total_samples = total_samples;
+        self.span = true;
+        self.levels.clear();
+        self
+    }
+
     /// The same transform, its columns said to come from windows every
     /// `hop` of the shape `wintype` names.
     pub fn with_analysis(mut self, hop: usize, wintype: i32) -> Self {

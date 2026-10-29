@@ -657,8 +657,19 @@ pub(super) fn draw_timeline_meshes(
             // no grid would do. A view that can answer (mapped samples, a whole
             // owned buffer, a window or a detail grid already over this span)
             // leaves nothing.
-            slot.owed
-                .set(owed(&slot.view, &local, body.w as f64, item.written));
+            // a texture over a summary asks its samples at any zoom: peaks
+            // are no spectrum
+            let textured = look
+                .layers
+                .drawn()
+                .any(|layer| matches!(layer.paint, Paint::Spectrogram));
+            slot.owed.set(
+                owed(&slot.view, &local, body.w as f64, item.written).or_else(|| {
+                    textured
+                        .then(|| super::texture_owed(&slot.view, &local, item.written))
+                        .flatten()
+                }),
+            );
         }
         // The same note for a texture of a span, which holds the columns of
         // what was last looked at.

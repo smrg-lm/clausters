@@ -802,6 +802,15 @@ impl WaveformData {
     /// empty buffer) has only the peak pyramid, so every regime -- including the
     /// zoomed-in ones -- must render from it; reading the empty raw buffer would
     /// instead collapse the wave to a flat line (it "disappears" on zoom-in).
+    /// **The run of samples read back around the view**, as its first frame
+    /// and its length, when that is all the view holds of its samples.
+    pub fn window(&self) -> Option<(usize, usize)> {
+        match &self.channels.first()?.samples {
+            Samples::Window { start, data, .. } => Some((*start, data.len())),
+            _ => None,
+        }
+    }
+
     pub fn has_raw(&self) -> bool {
         self.channels.first().is_some_and(|c| !c.samples.is_empty())
     }

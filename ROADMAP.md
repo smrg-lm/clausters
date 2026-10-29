@@ -126,11 +126,9 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
-- ⬜ **A spectrogram of a server buffer may draw nothing in a host that
-  cannot map it** and **A stopped audio editor window ticks thirty times a
-  second for its playhead** *(`clients/gui/PLAN.md`, Found by use)*. The
-  first seen in a page, blank and, zoomed, misplaced; the second measured
-  closing the paste's blink.
+- ⬜ **A stopped audio editor window ticks thirty times a second for its
+  playhead** *(`clients/gui/PLAN.md`, Found by use)*. Measured closing the
+  paste's blink.
 
 - ⬜ **`edit(file, { stage })` opens the audio editor somewhere else**
   *(`clients/web/PLAN.md`, Found by use)*. Found writing the page test of
@@ -320,9 +318,7 @@ its plan; the plan is where its acceptance is read.
   Before `X25`, which should port this lifecycle.
   **Related:** found moving the editor onto files, and taken
   after `X32`: the apps plan's "A page decodes no compressed file when it
-  opens" (Found by use); to look at in a page before the audio editor's
-  eye pass: the GUI plan's "A spectrogram of a server buffer may draw nothing
-  in a host that cannot map it" (Found by use). With `X34`: the document
+  opens" (Found by use). With `X34`: the document
   plan's "A track is as wide as its widest region" (Future directions).
   After it: the apps plan's "Working on one channel of a take" (Future
   directions), the channel a paste lands from.
