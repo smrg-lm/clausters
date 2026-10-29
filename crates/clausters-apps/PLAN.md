@@ -3446,6 +3446,54 @@ over the opened file) carries over.
     (its window's open reads a sound file's header, its bind names the
     audio window's widgets): the multitrack's window is what tells how the
     two differ, so the thread is widened with it, in this milestone.
+  - ✅ **No vocabulary inside the process** *(2026-10-29)*. The first
+    pass left the coordinator calling the context and the editor by their
+    doors over values; now an action enters typed (`AudioAction`), the
+    editor's `Outcome` has typed fields, the operations answer a typed
+    `Protocol`/`Operated`, and what the application carries out of a run is
+    a `Said` apart from the window's effects. A clipboard lease is carried by
+    its number and let go.
+  - ✅ **A track read by the application** *(2026-10-29)*. A region's
+    reading is the core's (`clausters_core::regions`), a track's take the
+    document's (`multitrack::read`, a track as wide as its widest region),
+    and the engine's reader sums the regions of a track
+    (`app_engine::take::PlacedRead`), heard against the old clip reader to
+    1e-4.
+  - ✅ **The multitrack sounds on the application's engine**
+    *(2026-10-29)*. One feed reader per channel of a track (`mt.feed`), the
+    playback over any medium, an edit of the regions making no node; the
+    member driven by the application (`editing/multitrack_runs.rs`): open,
+    events, verbs, transport, save, close.
+  - ✅ **A session opens from its files** *(2026-10-29)*: headers read,
+    peaks kept in the session's `peaks/` and measured by a render when
+    missing, joins read as parts, a save writing paths inside the folder
+    relative to it.
+  - ✅ **The host holds the multitrack**, through the door
+    (`/gui_app_open multitrack`): its window numbered by its roles, a box
+    drawn from its take's file and peaks (the `lists` prop).
+  - ✅ **Measured** (`crates/clausters-app-engine/tests/acceptance.rs`,
+    release, by hand): four hour-long takes open in 1.3 ms against 18 ms to
+    read their peaks, the process grows 22 MB, and a comp of 240 quarter
+    seconds plays a minute with nothing starved, sample for sample.
+  - ⬜ **A box of notes plays in the application, and its roll opens
+    there.** An event lane is fed ahead of the transport by a server's
+    network loop (`src/osc/server/lanes.rs`); the application's engine has
+    none, so its medium ignores the lane ops and a box of notes is silent.
+    The feeder is to be shared with the engine an application holds; the
+    roll a double click asks for (the `open` effect) opens a notes member in
+    the same context, in a window of the application's.
+  - ⬜ **`--session` opens the application**, its Owner path, in-process
+    server and player deleted (`Host::open_multitrack_saving_to` is the
+    entry), once the notes play there.
+  - ⬜ **Tracks wider than stereo**: a track's take is read as wide as its
+    widest region, but its strip is written for one or two channels, so
+    `nodes::plan_fed` plays the first two; the matrix onto the master's
+    first channels is still to be built (`crates/clausters-document/PLAN.md`,
+    "A track is as wide as its widest region").
+  - ⬜ **The clients are its handler** (Python, then the port): `edit` over
+    a session opens the application, the script's `Multitrack` is a live
+    handle while it is open, the server path and its symbols go, with tests,
+    examples, both books, and a page that opens a session from its storage.
 
 ## Definition of done (per milestone)
 
