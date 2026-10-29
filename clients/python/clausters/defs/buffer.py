@@ -242,7 +242,7 @@ class Buffer:
         new node and a control message in the middle of playback.
 
         A join **owns no samples**, so every command that writes into it
-        refuses (`set_samples`, `fill`, `gain`, `reverse`, `read`), and so do
+        refuses (`set_samples`, `fill`, `read`), and so do
         the recording UGens: writing would mean writing through to whichever
         take a frame lands on, which is one edit becoming an edit of several.
         It takes nothing away -- a join is *replaced* rather than edited, which
@@ -538,10 +538,9 @@ class Buffer:
         """Write runs of one repeated value (``/buffer_fill``), each a
         ``(start, count, value)`` triple.
 
-        Indices are **flat and interleaved**, like `set_samples` and unlike the
-        editing verbs (`gain`, `reverse`), whose spans are frames -- this is the
-        writing family's member, not an editor's verb. Several runs ride in one
-        message, and a run past the end raises rather than being clamped."""
+        Indices are **flat and interleaved**, like `set_samples`'s. Several runs
+        ride in one message, and a run past the end raises rather than being
+        clamped."""
         flat = []
         for run in runs:
             start, count, value = run
@@ -549,12 +548,12 @@ class Buffer:
         self._edit("/buffer_fill", tuple(flat), wait, timeout)
 
     def _edit(self, addr: str, args: tuple, wait: bool, timeout):
-        """The shared body of the destructive edits: fire, or block on ``/done``.
+        """The shared body of a write: fire, or block on ``/done``.
 
-        They are async like every other write, and they **compose in flight** --
-        the server chains a batch of edits on one buffer, so several
-        ``wait=False`` edits in a row each build on the last rather than each on
-        the contents you started with."""
+        Writes are async, and they **compose in flight** -- the server chains a
+        batch of writes on one buffer, so several ``wait=False`` writes in a row
+        each build on the last rather than each on the contents you started
+        with."""
         srv = self._server()
         if self._scored() or not wait:
             srv.send_msg(addr, self.bufnum, *args)
@@ -563,64 +562,6 @@ class Buffer:
                                    expect=("/done", "/fail"))
         if raddr == "/fail":
             raise CommandError(f"{addr} {self.bufnum} failed: {rargs}")
-
-    def gain(self, factor: float, start: int = 0, frames: int = -1, *,
-             to: "float | None" = None, shape: int = 1, curve: float = 0.0,
-             wait: bool = True, timeout: "float | None" = None):
-        """Scale a span of this buffer (``/buffer_gain``) -- the destructive edit
-        an editor applies to a selection.
-
-        ``start`` and ``frames`` are **frames**, not flat sample indices: a
-        selection is a stretch of time across every channel, and every channel
-        of a frame is scaled alike, so a fade can never tilt a stereo image.
-        ``frames`` of -1 runs to the end.
-
-        One value is a constant gain; give ``to`` for a fade, which sweeps
-        ``factor`` to ``to`` along ``shape`` -- the same envelope shape numbers
-        `clausters.defs.Env` and the breakpoint editor speak, ``curve`` read
-        only by the custom-curvature shape (5). So a fade in is
-        ``gain(0.0, to=1.0)``, a fade out ``gain(1.0, to=0.0)``, and silence is
-        `silence`, which lands on exact zeros where a fade only tends to one.
-        """
-        to = factor if to is None else to
-        self._edit("/buffer_gain", (start, frames, float(factor), float(to),
-                                    int(shape), float(curve)), wait, timeout)
-
-    def fade(self, start: int = 0, frames: int = -1, *, out: bool = False,
-             shape: int = 1, curve: float = 0.0, wait: bool = True,
-             timeout: "float | None" = None):
-        """A fade in over a span, or out with ``out=True`` -- `gain`'s two
-        common cases, spelled the way they are asked for."""
-        self.gain(1.0 if out else 0.0, start, frames, to=0.0 if out else 1.0,
-                  shape=shape, curve=curve, wait=wait, timeout=timeout)
-
-    def silence(self, start: int = 0, frames: int = -1, *, wait: bool = True,
-                timeout: "float | None" = None):
-        """Silence a span, on exact zeros (``/buffer_gain`` with both ends at
-        0). `zero` is the same thing over the whole buffer."""
-        self.gain(0.0, start, frames, to=0.0, wait=wait, timeout=timeout)
-
-    def reverse(self, start: int = 0, frames: int = -1, *, wait: bool = True,
-                timeout: "float | None" = None):
-        """Reverse a span of this buffer in place (``/buffer_reverse``).
-
-        Frames are reversed, not samples: a stereo pair stays a stereo pair.
-        ``start`` and ``frames`` are frames, ``frames=-1`` to the end."""
-        self._edit("/buffer_reverse", (start, frames), wait, timeout)
-
-    def mix(self, source: "Buffer", start: int = 0, src_start: int = 0,
-            frames: int = -1, *, gain: float = 1.0, wait: bool = True,
-            timeout: "float | None" = None):
-        """Add frames of `source` into a span of this buffer (``/buffer_mix``)
-        -- a paste that adds rather than replaces.
-
-        ``frames`` frames of `source` from ``src_start`` are scaled by ``gain``
-        and added into this buffer from ``start``; every position is a frame.
-        ``frames=-1`` runs as far as both buffers allow. `source` may be a join,
-        read through its parts; a mono source is added on every channel of
-        this buffer, a source of another width channel by channel."""
-        self._edit("/buffer_mix", (start, source.bufnum, src_start, frames,
-                                   float(gain)), wait, timeout)
 
     def info(self, timeout: "float | None" = None) -> BufferInfo:
         """Ask the running server what it holds in this slot (``/buffer_query`` ->

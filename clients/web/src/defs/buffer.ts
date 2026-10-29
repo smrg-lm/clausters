@@ -153,7 +153,7 @@ export class Buffer {
      * and a control message in the middle of playback.
      *
      * A join **owns no samples**, so every command that writes into it refuses
-     * (`setSamples`, `fill`, `gain`, `reverse`, `read`), and so do the
+     * (`setSamples`, `fill`, `read`), and so do the
      * recording UGens: writing would mean writing through to whichever take a
      * frame lands on, which is one edit becoming an edit of several. It takes
      * nothing away -- a join is *replaced* rather than edited, which costs the
@@ -617,12 +617,12 @@ export class Buffer {
     }
 
     /**
-     * The shared body of the destructive edits: fire, or await `/done`.
+     * The shared body of a write: fire, or await `/done`.
      *
-     * They are async like every other write, and they **compose in flight** --
-     * the server chains a batch of edits on one buffer, so several
-     * `wait: false` edits in a row each build on the last rather than each on
-     * the contents you started with.
+     * Writes are async, and they **compose in flight** -- the server chains a
+     * batch of writes on one buffer, so several `wait: false` writes in a row
+     * each build on the last rather than each on the contents you started
+     * with.
      */
     private async edit(
         addr: string,
@@ -642,10 +642,8 @@ export class Buffer {
      * Writes runs of one repeated value (`/buffer_fill`), each a
      * `[start, count, value]` triple.
      *
-     * Indices are **flat and interleaved**, like {@link setSamples} and unlike
-     * the editing verbs ({@link gain}, {@link reverse}) whose spans are frames
-     * -- this is the writing family's member, not an editor's verb. Several runs
-     * ride in one message, and a run past the end throws rather than being
+     * Indices are **flat and interleaved**, like {@link setSamples}'s. Several
+     * runs ride in one message, and a run past the end throws rather than being
      * clamped.
      */
     async fill(
@@ -691,177 +689,6 @@ export class Buffer {
                 ["i", numFrames],
                 ["i", bufStart],
                 ...channels.map((c): MsgArg => ["i", Math.trunc(c)]),
-            ],
-            wait,
-            timeout,
-        );
-    }
-
-    /**
-     * Scales a span of this buffer (`/buffer_gain`) -- the destructive edit an
-     * editor applies to a selection.
-     *
-     * `start` and `frames` are **frames**, not flat sample indices: a selection
-     * is a stretch of time across every channel, and every channel of a frame
-     * is scaled alike, so a fade can never tilt a stereo image. `frames` of -1
-     * runs to the end.
-     *
-     * One value is a constant gain; give `to` for a fade, which sweeps
-     * `factor` to `to` along `shape` -- the same envelope shape numbers `Env`
-     * and the breakpoint editor speak, `curve` read only by the
-     * custom-curvature shape (5). So a fade in is `gain(0, { to: 1 })`, a fade
-     * out `gain(1, { to: 0 })`, and silence is {@link silence}, which lands on
-     * exact zeros where a fade only tends to one.
-     */
-    async gain(
-        factor: number,
-        {
-            start = 0,
-            frames = -1,
-            to,
-            shape = 1,
-            curve = 0,
-            wait = true,
-            timeout,
-        }: {
-            start?: number;
-            frames?: number;
-            to?: number;
-            shape?: number;
-            curve?: number;
-            wait?: boolean;
-            timeout?: number;
-        } = {},
-    ): Promise<void> {
-        await this.edit(
-            "/buffer_gain",
-            [
-                ["i", start],
-                ["i", frames],
-                ["f", factor],
-                ["f", to ?? factor],
-                ["i", shape],
-                ["f", curve],
-            ],
-            wait,
-            timeout,
-        );
-    }
-
-    /**
-     * A fade in over a span, or out with `out: true` -- {@link gain}'s two
-     * common cases, spelled the way they are asked for.
-     */
-    async fade({
-        start = 0,
-        frames = -1,
-        out = false,
-        shape = 1,
-        curve = 0,
-        wait = true,
-        timeout,
-    }: {
-        start?: number;
-        frames?: number;
-        out?: boolean;
-        shape?: number;
-        curve?: number;
-        wait?: boolean;
-        timeout?: number;
-    } = {}): Promise<void> {
-        await this.gain(out ? 1 : 0, {
-            start,
-            frames,
-            to: out ? 0 : 1,
-            shape,
-            curve,
-            wait,
-            timeout,
-        });
-    }
-
-    /**
-     * Silences a span, on exact zeros (`/buffer_gain` with both ends at 0).
-     * {@link zero} is the same thing over the whole buffer.
-     */
-    async silence({
-        start = 0,
-        frames = -1,
-        wait = true,
-        timeout,
-    }: {
-        start?: number;
-        frames?: number;
-        wait?: boolean;
-        timeout?: number;
-    } = {}): Promise<void> {
-        await this.gain(0, { start, frames, to: 0, wait, timeout });
-    }
-
-    /**
-     * Reverses a span of this buffer in place (`/buffer_reverse`).
-     *
-     * Frames are reversed, not samples: a stereo pair stays a stereo pair.
-     * `start` and `frames` are frames, `frames: -1` to the end.
-     */
-    async reverse({
-        start = 0,
-        frames = -1,
-        wait = true,
-        timeout,
-    }: {
-        start?: number;
-        frames?: number;
-        wait?: boolean;
-        timeout?: number;
-    } = {}): Promise<void> {
-        await this.edit(
-            "/buffer_reverse",
-            [
-                ["i", start],
-                ["i", frames],
-            ],
-            wait,
-            timeout,
-        );
-    }
-
-    /**
-     * Adds frames of `source` into a span of this buffer (`/buffer_mix`) -- a
-     * paste that adds rather than replaces.
-     *
-     * `frames` frames of `source` from `srcStart` are scaled by `gain` and
-     * added into this buffer from `start`; every position is a frame.
-     * `frames: -1` runs as far as both buffers allow. `source` may be a join,
-     * read through its parts; a mono source is added on every channel of
-     * this buffer, a source of another width channel by channel.
-     */
-    async mix(
-        source: Buffer,
-        {
-            start = 0,
-            srcStart = 0,
-            frames = -1,
-            gain = 1,
-            wait = true,
-            timeout,
-        }: {
-            start?: number;
-            srcStart?: number;
-            frames?: number;
-            gain?: number;
-            wait?: boolean;
-            timeout?: number;
-        } = {},
-    ): Promise<void> {
-        await this.edit(
-            "/buffer_mix",
-            [
-                ["i", start],
-                ["i", source.bufnum],
-                ["i", srcStart],
-                ["i", frames],
-                ["f", gain],
             ],
             wait,
             timeout,

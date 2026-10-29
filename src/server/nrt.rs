@@ -90,16 +90,6 @@ pub enum NrtJob {
         base: Arc<Buffer>,
         writes: Vec<SampleWrite>,
     },
-    /// `/buffer_gain` and `/buffer_reverse`: a destructive edit over a span of
-    /// the current contents, laid into a copy that replaces the buffer, like
-    /// every other write here. The arithmetic itself is
-    /// [`clausters_core::edit`], shared with every other process that edits
-    /// samples rather than reimplemented per caller.
-    ///
-    /// `base` is the parse's snapshot and is only a fallback, exactly as in
-    /// [`NrtJob::Set`]: a batch of edits on one buffer is submitted before any
-    /// of them completes, so the runner chains them (see [`NrtChain`]).
-    Edit { base: Arc<Buffer>, op: EditOp },
     /// `/buffer_fill`: runs of one repeated value, addressed flat like
     /// [`NrtJob::Set`] -- `(start, count, value)` each. Kept apart from `Set`
     /// rather than expanded into one: a fill says how *many* samples it writes
@@ -168,48 +158,6 @@ impl SampleWrite {
         match self.values.len() {
             0 => self.at,
             n => self.at + (n - 1) * self.stride + 1,
-        }
-    }
-}
-
-/// One destructive edit, parsed. The span is in **frames** -- a selection is a
-/// stretch of time across every channel, which is a different unit from the
-/// flat interleaved index `/buffer_set*` speaks.
-#[derive(Debug, Clone)]
-pub enum EditOp {
-    /// Scale by a factor sweeping `from` to `to` along an envelope shape:
-    /// constant gain, a fade either way, or silence.
-    Gain {
-        start: usize,
-        frames: usize,
-        from: f32,
-        to: f32,
-        shape: i32,
-        curve: f32,
-    },
-    /// Turn the span's frames around, channels untouched inside each frame.
-    Reverse { start: usize, frames: usize },
-    /// Add `frames` frames of `source` from `src_start`, scaled by `gain`.
-    /// The source is read when the job runs, so a write to it earlier in the
-    /// queue is what it reads.
-    Mix {
-        start: usize,
-        frames: usize,
-        source: Arc<Buffer>,
-        src_start: usize,
-        gain: f32,
-    },
-}
-
-impl EditOp {
-    /// The frames this edit touches, as `(start, frames)` -- what an in-place
-    /// write reads out and puts back, so the cost is the edit's rather than the
-    /// buffer's.
-    pub fn span(&self) -> (usize, usize) {
-        match self {
-            EditOp::Gain { start, frames, .. }
-            | EditOp::Reverse { start, frames }
-            | EditOp::Mix { start, frames, .. } => (*start, *frames),
         }
     }
 }
@@ -312,9 +260,6 @@ pub fn replaces(cmd: &str) -> bool {
             | "/buffer_setChannel"
             | "/buffer_setRangeChannel"
             | "/buffer_fill"
-            | "/buffer_gain"
-            | "/buffer_reverse"
-            | "/buffer_mix"
             | "/buffer_write"
     )
 }
@@ -348,10 +293,6 @@ impl NrtChain {
             NrtJob::Set { base, writes } if chained => NrtJob::Set {
                 base: self.0.get(&index).cloned().unwrap_or(base),
                 writes,
-            },
-            NrtJob::Edit { base, op } if chained => NrtJob::Edit {
-                base: self.0.get(&index).cloned().unwrap_or(base),
-                op,
             },
             NrtJob::Fill { base, fills } if chained => NrtJob::Fill {
                 base: self.0.get(&index).cloned().unwrap_or(base),
@@ -977,62 +918,6 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
                 last = last.max(write.end());
             }
             Ok(wrote_frames(first, last, channels))
-        }
-        NrtJob::Edit { base, op } => {
-            // The edit itself is the core's, so a fade sounds the same wherever
-            // it is applied -- and the core is pure over `&mut [f32]`, which is
-            // what decides the shape here: read the span out, apply, write the
-            // span back. What is copied is the **span**, not the buffer, so the
-            // cost is the edit's and a five-minute take is no dearer than a
-            // ten-second one.
-            let channels = base.channels();
-            let (span_start, span_frames) = op.span();
-            let start = span_start * channels;
-            let count = span_frames * channels;
-            let mut data: Vec<f32> = (start..(start + count).min(base.len()))
-                .map(|i| base.at(i))
-                .collect();
-            let out = match op {
-                EditOp::Gain {
-                    frames,
-                    from,
-                    to,
-                    shape,
-                    curve,
-                    ..
-                } => clausters_core::edit::gain(
-                    &mut data,
-                    channels,
-                    0,
-                    frames.min(span_frames),
-                    clausters_core::edit::Fade::from_to(from, to, shape, curve),
-                ),
-                EditOp::Reverse { frames, .. } => {
-                    clausters_core::edit::reverse(&mut data, channels, 0, frames.min(span_frames))
-                }
-                EditOp::Mix {
-                    frames,
-                    source,
-                    src_start,
-                    gain,
-                    ..
-                } => {
-                    let width = source.channels().max(1);
-                    let from: Vec<f32> = (0..frames)
-                        .flat_map(|f| (0..width).map(move |c| (f, c)))
-                        .map(|(f, c)| source.sample(src_start + f, c))
-                        .collect();
-                    clausters_core::edit::mix(&mut data, channels, 0, frames, &from, width, gain)
-                }
-            };
-            out.map_err(|e| e.to_string())?;
-            for (i, v) in data.iter().enumerate() {
-                base.set_at(start + i, *v);
-            }
-            Ok(NrtAction::Wrote {
-                start: span_start,
-                frames: span_frames,
-            })
         }
         NrtJob::Fill { base, fills } => {
             // In place, like every other write of a span. A fill says how many

@@ -190,7 +190,6 @@ impl OscServer {
             max_stream_buses: crate::osc::DEFAULT_MAX_STREAM_BUSES,
             max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
             client_slots: None,
-            offline: None,
         }
     }
 

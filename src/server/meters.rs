@@ -66,7 +66,7 @@ pub enum Role {
     /// the next packet.
     Net,
     /// The NRT job queue: reading and writing soundfiles, `/buffer_gen`, the
-    /// buffer-editing verbs.
+    /// writes into a buffer.
     Nrt,
     /// Compiling a FaustDef.
     Faust,

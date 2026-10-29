@@ -236,7 +236,7 @@ socket.</div>
         const peerEdit = async () => {
           const start = Math.round(takes[0].frames / 3);
           const frames = Math.round(takes[0].frames / 3);
-          await takes[0].silence({ start, frames });
+          await takes[0].fill([[start, frames, 0.0]]);   // a mono take: a frame is a sample
           takes[0].touch(0, start, frames);
           say(`another peer silenced frames ${start}..${start + frames} of `
             + "take 1 -- the lane re-summarizes that span and nothing else");

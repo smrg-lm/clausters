@@ -37,10 +37,9 @@ inside every period. <b>A single sample</b> by flat index is the touch-up form.
 is: a short read hands back less and says so, a short write would drop samples
 you believe you stored.
 
-<b>The edits the server does for you</b> -- <code>gain</code>,
-<code>fade</code>, <code>silence</code>, <code>reverse</code> -- say what the
-edit <i>is</i> and no samples cross the wire at all, which is the difference
-between editing a table and editing a five-minute take.</div>
+Editing a take -- minutes of audio, a selection faded or reversed -- is the
+audio editor's work, not a buffer's: <code>examples/editors/edit-audio.html</code>
+shows it.</div>
 
       <div class="row">
         <button id="boot">boot and read the table</button>
@@ -52,12 +51,11 @@ between editing a table and editing a five-minute take.</div>
     <!--
       The web sibling of clients/python/examples/buffers/buffer_edit.py, call
       for call: the scanning def, the generated table, the read, the three
-      writes as a routine on the session's clock, the refusal, and the four
-      server-side edits chained without waiting.
+      writes as a routine on the session's clock, and the refusal.
 
       The run is the script's `run()`, stage after stage on the script's own
       clock: the three client edits, six and a half seconds for them to play,
-      the refusal, the server's edits, eight seconds, and the read back. Where
+      and the refusal. Where
       the script sleeps on the main thread while the clock plays, the page
       awaits the same span -- which blocks nothing. The two buttons are the two
       things a hand does in the script too: run the cells that bring it up,
@@ -129,42 +127,6 @@ between editing a table and editing a five-minute take.</div>
         yield 0.5;
       }
 
-      function* editedByTheServer() {
-        const voice = new Synth("table_scan", { bufnum: buf.bufnum, freq: 440.0 }, { server });
-        yield 1.5;                                   // whatever the table holds now
-        // `wait: false` because a routine must never block the clock on a reply
-        // -- and because these chain on the server, each building on the last.
-        log("fade in");
-        buf.fade({ wait: false });
-        yield 1.5;
-        log("reversed, so the fade now dies instead");
-        buf.reverse({ wait: false });
-        yield 1.5;
-        log("first quarter silenced, on exact zeros");
-        buf.silence({ start: 0, frames: FRAMES / 4, wait: false });
-        yield 1.5;
-        log("and halved, all of it");
-        buf.gain(0.5, { wait: false });
-        yield 1.5;
-        voice.free();
-        yield 0.5;
-      }
-
-      /**
-       * Proof the server's own edits landed, read back once the routine is
-       * done -- a read is a round trip, so it belongs here and not inside the
-       * routine, which must never block the clock on a reply.
-       */
-      async function readBack() {
-        const after = await buf.getSamples();
-        const quarter = after.slice(0, FRAMES / 4);
-        const head = Math.max(...[...quarter].map(Math.abs));
-        const peak = Math.max(...[...after].map(Math.abs));
-        log(`after the server's edits: peak ${peak.toFixed(3)}, `
-          + `silenced quarter ${head.toFixed(3)}`);
-        buf.free();
-      }
-
       async function refusal() {
         const tail = await buf.getSamples({ start: FRAMES - 4, count: 100 });
         log(`a read past the end returned ${tail.length} samples, not 100`);
@@ -176,10 +138,7 @@ between editing a table and editing a five-minute take.</div>
         }
       }
 
-      /**
-       * Play the three versions, show what a write refuses, then the server's
-       * own edits.
-       */
+      /** Play the three versions, then show what a write refuses. */
       async function run() {
         $("run").disabled = true;
         // The clock has to be running for a routine to fire: playing one on a
@@ -190,9 +149,7 @@ between editing a table and editing a five-minute take.</div>
         // which runs *on* that clock.
         await sleep(6500);
         await refusal();
-        new Routine(editedByTheServer).play();
-        await sleep(8000);
-        await readBack();
+        buf.free();
       }
 
       $("boot").onclick = () => boot().catch((e) => log(`error: ${e}`));

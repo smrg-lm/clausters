@@ -2195,34 +2195,6 @@ fn a_write_leaves_what_a_recorder_wrote_while_it_was_queued() {
     );
 }
 
-/// The same for the editing verbs, whose span is the whole point: a gain over
-/// two frames leaves the rest of the take alone, including what arrived after
-/// the command was queued.
-#[test]
-fn an_edit_touches_its_span_and_nothing_else() {
-    let buffer = Arc::new(Buffer::new(vec![1.0; 8], 1, 8, SR as f64));
-    let mirror = mirror_of(buffer.clone());
-    let job = NrtJob::Edit {
-        base: buffer.clone(),
-        op: clausters::server::nrt::EditOp::Gain {
-            start: 2,
-            frames: 2,
-            from: 0.5,
-            to: 0.5,
-            shape: 1,
-            curve: 0.0,
-        },
-    };
-    buffer.set_at(7, 0.25);
-
-    let edited = wrote_in_place(run_nrt(job), &mirror);
-    assert_eq!(
-        edited.to_vec(),
-        &[1.0, 1.0, 0.5, 0.5, 1.0, 1.0, 1.0, 0.25][..],
-        "frames 2..4 halved, everything else as it was"
-    );
-}
-
 #[test]
 fn reading_from_bytes_matches_reading_from_the_path() {
     // The door a caller with no filesystem uses (a page reading through its

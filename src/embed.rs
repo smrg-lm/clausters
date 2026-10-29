@@ -570,9 +570,9 @@ impl ClaustersHeadless {
 /// `Clausters` below is the other door and the difference is the whole point:
 /// that one is a full real-time server, holding the machine's input and
 /// output. (Named rather than linked: it is behind the `realtime` feature, and
-/// a link would resolve only in the builds that compile it in.) This one holds nothing but computation. It performs the editing
-/// verbs, renders on demand ([`/buffer_render`](crate::server::nrtsession)),
-/// and -- given a `shm` path -- **owns the buffers**: every buffer it installs
+/// a link would resolve only in the builds that compile it in.) This one holds nothing but computation. It runs operations on
+/// demand ([`crate::server::nrtsession`]), and -- given a `shm` path --
+/// **owns the buffers**: every buffer it installs
 /// lives in a region beside the segment, where a peer draws it, a peer edits
 /// it, and a separate RT server plays it.
 ///

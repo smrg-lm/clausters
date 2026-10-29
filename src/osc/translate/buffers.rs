@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::osc::args::Args;
-use crate::server::nrt::{EditOp, SampleWrite};
+use crate::server::nrt::SampleWrite;
 
 /// Every `/buffer_*` command that is one NRT job: what [`parse_buffer_msg`]
 /// parses, plus `/buffer_gen` ([`parse_buffer_gen`]). The live server runs each
@@ -19,12 +19,9 @@ pub const BUFFER_JOBS: &[&str] = &[
     "/buffer_allocReadChannel",
     "/buffer_fill",
     "/buffer_free",
-    "/buffer_gain",
     "/buffer_gen",
-    "/buffer_mix",
     "/buffer_read",
     "/buffer_readChannel",
-    "/buffer_reverse",
     "/buffer_set",
     "/buffer_setChannel",
     "/buffer_setRange",
@@ -223,118 +220,6 @@ pub fn parse_buffer_msg(
                 },
             )
         }
-        // The destructive edits: a span of the current contents changed in
-        // place -- well, in a copy of it, like every other write here. The span
-        // is in **frames**, not flat samples: a selection is a stretch of time
-        // across every channel, and the arithmetic is `clausters_core::edit`,
-        // shared rather than reimplemented per caller.
-        "/buffer_gain" | "/buffer_reverse" => {
-            let Some(OscType::Int(index)) = args.first() else {
-                return Err("expected a buffer index".into());
-            };
-            let current = allocated(mirror, *index)?;
-            let mut tail = Args::after(args, 1);
-            let start = tail.opt_int()?.unwrap_or(0);
-            let frames = tail.opt_int()?.unwrap_or(-1);
-            if start < 0 {
-                return Err(format!("start frame must not be negative, got {start}"));
-            }
-            let start = start as usize;
-            // A negative count means "to the end", the reading commands'
-            // convention, so a whole-buffer edit needs no arithmetic client-side.
-            let frames = if frames < 0 {
-                current.frames().saturating_sub(start)
-            } else {
-                frames as usize
-            };
-            let op = if addr == "/buffer_reverse" {
-                EditOp::Reverse { start, frames }
-            } else {
-                let from = tail.float()?;
-                // One value is a constant gain: the common case says itself.
-                let to = tail.opt_float()?.unwrap_or(from);
-                EditOp::Gain {
-                    start,
-                    frames,
-                    from,
-                    to,
-                    shape: tail
-                        .opt_int()?
-                        .unwrap_or(clausters_core::envshape::SHAPE_LINEAR),
-                    curve: tail.opt_float()?.unwrap_or(0.0),
-                }
-            };
-            // Bounds are the core's to judge, but a failure here is a `/fail`
-            // the caller reads rather than a job that quietly did nothing, so
-            // the span is checked at parse time as `/buffer_setRange`'s is.
-            if start.saturating_add(frames) > current.frames() {
-                return Err(format!(
-                    "frame range {}..{} is past the end of buffer {index} ({} frames)",
-                    start,
-                    start + frames,
-                    current.frames()
-                ));
-            }
-            (*index, NrtJob::Edit { base: current, op })
-        }
-        // A mix: another buffer's frames added into a span of this one's --
-        // the paste that adds rather than replaces. The span is in frames, as
-        // the other edits' are, and a negative count runs as far as both
-        // buffers allow.
-        "/buffer_mix" => {
-            let (index, start, src, src_start) = match args {
-                [
-                    OscType::Int(index),
-                    OscType::Int(start),
-                    OscType::Int(src),
-                    OscType::Int(src_start),
-                    ..,
-                ] => (*index, *start, *src, *src_start),
-                _ => {
-                    return Err(
-                        "expected: bufnum, start, srcBufnum, srcStart [, frames, gain]".into(),
-                    );
-                }
-            };
-            let current = allocated(mirror, index)?;
-            let Some(source) = mirror_buffer(mirror, src) else {
-                return Err(format!("no source buffer allocated at {src}"));
-            };
-            readable(&source, src)?;
-            if start < 0 || src_start < 0 {
-                return Err("start frames must not be negative".into());
-            }
-            let (start, src_start) = (start as usize, src_start as usize);
-            let mut tail = Args::after(args, 4);
-            let frames = match tail.opt_int()?.unwrap_or(-1) {
-                n if n < 0 => current
-                    .frames()
-                    .saturating_sub(start)
-                    .min(source.frames().saturating_sub(src_start)),
-                n => n as usize,
-            };
-            if start.saturating_add(frames) > current.frames()
-                || src_start.saturating_add(frames) > source.frames()
-            {
-                return Err(format!(
-                    "{frames} frames do not fit: buffer {index} from {start}, buffer {src} from {src_start}"
-                ));
-            }
-            let gain = tail.opt_float()?.unwrap_or(1.0);
-            (
-                index,
-                NrtJob::Edit {
-                    base: current,
-                    op: EditOp::Mix {
-                        start,
-                        frames,
-                        source,
-                        src_start,
-                        gain,
-                    },
-                },
-            )
-        }
         // The write half of the read pair: `/buffer_set` takes (index, value)
         // pairs, `/buffer_setRange` takes (start, blob) runs -- bulk samples ride
         // as one little-endian f32 blob, the convention `/bus_tapStream.reply`
@@ -464,9 +349,7 @@ pub fn parse_buffer_msg(
     // changes -- it costs the list of parts and not the samples.
     let base = match &job {
         NrtJob::Read { current, .. } => Some(current),
-        NrtJob::Set { base, .. } | NrtJob::Edit { base, .. } | NrtJob::Fill { base, .. } => {
-            Some(base)
-        }
+        NrtJob::Set { base, .. } | NrtJob::Fill { base, .. } => Some(base),
         _ => None,
     };
     if base.is_some_and(|b| b.is_stitched()) {

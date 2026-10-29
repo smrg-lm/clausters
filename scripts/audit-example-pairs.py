@@ -686,7 +686,21 @@ def _js_on_container(tokens: list[tuple[int, str]], idx: int, containers: set[st
         return False
     j = idx - 2
     tok = tokens[j][1]
-    if tok in ("]", FILL):
+    if tok == "]":
+        # `items[0].fill(...)` is a call on an element, not on the list: the
+        # bracket closes an index when a name or a call stands before it
+        depth = 0
+        k = j
+        while k >= 0:
+            if tokens[k][1] in ")]}":
+                depth += 1
+            elif tokens[k][1] in "([{":
+                depth -= 1
+                if depth == 0:
+                    break
+            k -= 1
+        return not (k > 0 and (_is_ident(tokens[k - 1][1]) or tokens[k - 1][1] in ")]"))
+    if tok == FILL:
         return True
     if _is_ident(tok):
         return tok in containers

@@ -305,7 +305,6 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     }),
     ("/buffer_fill", OscServer::handle_buffer_cmd),
     ("/buffer_free", OscServer::handle_buffer_cmd),
-    ("/buffer_gain", OscServer::handle_buffer_cmd),
     ("/buffer_gen", |s, _, m, f| {
         s.handle_buffer_gen(Args::new(m), f)
     }),
@@ -315,7 +314,6 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/buffer_getRange", |s, _, m, f| {
         s.handle_buffer_get_range(Args::new(m), f)
     }),
-    ("/buffer_mix", OscServer::handle_buffer_cmd),
     ("/buffer_parts", |s, _, m, f| {
         s.handle_buffer_parts(Args::new(m), f)
     }),
@@ -327,10 +325,6 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     }),
     ("/buffer_read", OscServer::handle_buffer_cmd),
     ("/buffer_readChannel", OscServer::handle_buffer_cmd),
-    ("/buffer_render", |s, _, m, f| {
-        s.handle_buffer_render(Args::new(m), f)
-    }),
-    ("/buffer_reverse", OscServer::handle_buffer_cmd),
     ("/buffer_set", OscServer::handle_buffer_cmd),
     ("/buffer_setChannel", OscServer::handle_buffer_cmd),
     ("/buffer_setRange", OscServer::handle_buffer_cmd),
@@ -576,7 +570,7 @@ mod tests {
     /// The table is searched with `binary_search_by_key`, so an entry in the
     /// wrong place is not a style problem: the command becomes **unreachable**,
     /// answering `unknown command` while sitting right there in the list. A
-    /// misfiled `/buffer_gain` is what this test was written for, and nothing
+    /// misfiled command is what this test was written for, and nothing
     /// else would have caught it -- the row exists, the handler compiles, and
     /// only the lookup fails.
     #[test]

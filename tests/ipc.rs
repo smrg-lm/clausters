@@ -679,10 +679,10 @@ fn a_buffer_the_server_allocated_is_mapped_by_a_peer() {
 /// **Writes sent back to back land in the buffer that is read.**
 ///
 /// Sharing moves an installed buffer into a region, so the queue's record of
-/// what it last made is a copy nobody reads any more. A fill and two gains
-/// sent without waiting for each other's `/done` are writes in place into the
-/// one buffer the mirror holds, in queue order: none of them may land in that
-/// stale copy, which is what a gain table built this way used to lose.
+/// what it last made is a copy nobody reads any more. Three fills sent
+/// without waiting for each other's `/done` are writes in place into the one
+/// buffer the mirror holds, in queue order: none of them may land in that
+/// stale copy, which is what a table built this way used to lose.
 #[test]
 fn writes_in_place_sent_back_to_back_reach_a_shared_buffer() {
     let path = std::env::temp_dir().join(format!(
@@ -733,9 +733,9 @@ fn writes_in_place_sent_back_to_back_reach_a_shared_buffer() {
             break;
         }
     }
-    let gain = |start: i32, value: f32| {
+    let fill_at = |start: i32, value: f32| {
         encode(
-            "/buffer_gain",
+            "/buffer_fill",
             vec![
                 OscType::Int(2),
                 OscType::Int(start),
@@ -753,7 +753,7 @@ fn writes_in_place_sent_back_to_back_reach_a_shared_buffer() {
             OscType::Float(1.0),
         ],
     );
-    for bytes in [fill, gain(0, 0.2), gain(32, 0.5)] {
+    for bytes in [fill, fill_at(0, 0.2), fill_at(32, 0.5)] {
         assert!(client.push(0, &bytes));
     }
     let (_, mapped) = segment.map_buffer(&path, 2).expect("mapped");
@@ -766,7 +766,7 @@ fn writes_in_place_sent_back_to_back_reach_a_shared_buffer() {
     assert_eq!(
         (mapped.at(0), mapped.at(31), mapped.at(32), mapped.at(63)),
         (0.2, 0.2, 0.5, 0.5),
-        "the fill and both gains, in order, in the samples the peer maps"
+        "the three fills, in order, in the samples the peer maps"
     );
 
     let _ = std::fs::remove_file(&path);

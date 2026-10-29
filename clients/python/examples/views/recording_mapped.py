@@ -23,8 +23,9 @@ This is the same window with the same three things happening, on a host that
   all. The lane prints both numbers when it opens.
 - **A peer's edit** arrives as the span and nothing else (``/buffer_touch``):
   the samples under the host are already the new ones, so what it does is
-  re-summarize those buckets. Here the edit is the server's own verb over the
-  buffer (`clausters.Buffer.silence`), announced by this script; a local peer
+  re-summarize those buckets. Here the edit is a write the server makes into
+  the buffer (`clausters.Buffer.fill`, zeros over the span of a mono take),
+  announced by this script; a local peer
   that maps the region can equally store into the cells and announce the same
   span, which is what ``examples/shm_samples.py`` shows.
 
@@ -192,7 +193,7 @@ def peer_edit() -> None:
     """Silence the middle third of the first take, and say where."""
     start = takes[0].frames // 3
     frames = takes[0].frames // 3
-    takes[0].silence(start, frames)
+    takes[0].fill((start, frames, 0.0))   # a mono take: a frame is a sample
     takes[0].touch(0, start, frames)
     say(f"another peer silenced frames {start}..{start + frames} of take 1 -- "
         "the lane re-summarizes that span and nothing else")

@@ -10,10 +10,10 @@
 //! can be scheduled against a running `now`: the only thing that moves time is
 //! [`NrtSession::run`], and it moves exactly the frames it was asked for. Two
 //! tiers follow from that and conflating them is the mistake this module exists
-//! to prevent -- a **buffer-editing** command has no timeline in any sense
-//! (applying a gain to a span is not an event at an instant), while a **render**
-//! operation has one *internally*: a self-contained score starting at 0 and
-//! lasting the span. So determinism here is of **process, not of time**: the
+//! to prevent -- a **buffer** command has no timeline in any sense (writing a
+//! span is not an event at an instant), while a **render** operation has one
+//! *internally*: a self-contained score starting at 0 and lasting the span. So
+//! determinism here is of **process, not of time**: the
 //! same operation over the same samples yields the samples it would yield
 //! expressed in a score and rendered in batch, which is what `tests/nrt_session.rs`
 //! asserts sample for sample.
@@ -28,8 +28,7 @@
 //!
 //! **In this mode a pool buffer may be mutated in place** -- the immutability
 //! contract is a real-time rule, not a property of a buffer, and there is no
-//! audio thread here to race. Nothing in this module does that yet; it is what
-//! the editing verbs will use.
+//! audio thread here to race.
 //!
 //! No audio device is opened and none is needed: this builds and runs without
 //! the `realtime` feature.
@@ -203,9 +202,8 @@ impl NrtSession {
         let mut server = OscServer::headless(info, handle, 0.0);
         let seed = cfg.seed.unwrap_or_else(clausters_core::rng::entropy_seed);
         server.set_seed(seed);
-        // This driver owns the clock, so `/buffer_render` is legal here -- and
-        // only here.
-        server.enable_offline_renders();
+        // This driver owns the clock.
+        server.drive_offline();
         server
             .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
             .map_err(|e| e.to_string())?;
@@ -288,39 +286,10 @@ impl NrtSession {
     /// as not having.
     ///
     /// Returns true once a `/server_quit` has arrived.
-    ///
-    /// This is also where a queued `/buffer_render` is performed, because this
-    /// is the only place that holds both halves: the server parsed it and will
-    /// answer it, and the engine here is the one that has to run.
     pub fn settle(&mut self) -> bool {
         let quit = self.server.step();
         self.engine.drain();
-        while let Some(req) = self.server.take_offline_render() {
-            let outcome = self.perform_render(req.index, req.frames);
-            self.server.finish_offline_render(req, outcome);
-            // The install is a command like any other, so the engine has to
-            // take it before the next operation reads that buffer.
-            self.engine.drain();
-        }
         quit
-    }
-
-    /// Runs the graph for `frames` and installs the result in buffer `index` --
-    /// the body of `/buffer_render`, and reachable directly for a caller that
-    /// is already in Rust.
-    ///
-    /// What lands is `frames` frames of the first [`Self::channels`] output
-    /// buses, and it **replaces** what the index held rather than being laid
-    /// into it -- the operation's own length and width are what they are, and
-    /// fitting them into a shape allocated earlier would mean either truncating
-    /// a render or leaving half a buffer stale. The index must already be
-    /// allocated, which is the caller saying that slot is the one they mean.
-    pub fn perform_render(&mut self, index: usize, frames: u64) -> Result<(), String> {
-        let samples = self.run_to_vec(frames)?;
-        let channels = self.channels;
-        let buffer =
-            crate::dsp::buffer::Buffer::new(samples, channels, frames as usize, self.sample_rate);
-        self.server.install_buffer(index, Arc::new(buffer))
     }
 
     /// [`Self::settle`] up to `turns` times, stopping early once the ring is
