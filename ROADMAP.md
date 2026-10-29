@@ -136,7 +136,9 @@ already carry it.
   long one** and **A spectrogram of a server buffer may draw nothing in a
   host that cannot map it** *(`clients/gui/PLAN.md`, Found by use)*. The
   first found in `G44c`'s native eye pass; the second now seen in a page,
-  blank and, zoomed, misplaced.
+  blank and, zoomed, misplaced. With them, **The audio editor in a page:
+  the pointer lands off the picture, and the body draws a dark column and
+  stray ticks** (same list), which stopped the page half of that pass.
 
 - ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
