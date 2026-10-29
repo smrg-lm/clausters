@@ -352,11 +352,7 @@ impl Host {
 
     /// **A gesture on an audio editor's window**, handed to its application.
     pub(super) fn answer_audio(&mut self, def_id: i32, message: &OscMessage) -> bool {
-        let args: Vec<Value> = message
-            .args
-            .iter()
-            .map(document::multitrack::atom)
-            .collect();
+        let args: Vec<Value> = message.args.iter().map(document::atom).collect();
         let addr = message.addr.clone();
         self.audio_host()
             .ask(ToApp::Event { def_id, addr, args })

@@ -70,6 +70,7 @@ impl Host {
     /// out -- each by its place in the tree, under `structure` and `role`, so
     /// a window opened again keeps its numbers. The root keeps none: a
     /// GuiDef's id is the one its `/gui_def` names.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     pub(crate) fn number_own(&mut self, def: &mut serde_json::Value, structure: i64, role: &str) {
         let mut n = 0;
         let mut next = |_: &serde_json::Value| {
@@ -77,11 +78,6 @@ impl Host {
             self.own_widget(structure, role, &format!("free:{n}"))
         };
         number_children(def, &mut next);
-    }
-
-    /// Returns the id of one of the host's own widgets, by its name.
-    pub(crate) fn forget_own_widget(&mut self, structure: i64, role: &str, key: &str) {
-        self.widget_ids.forget(structure, role, key);
     }
 
     /// The id one of the host's own widgets has, when it has one.
@@ -156,7 +152,7 @@ impl Host {
             "/transport_query.reply" => self.on_transport_state(&msg.args),
             _ => {}
         }
-        self.multitrack_reply(from, msg);
+        self.steps_reply(from, msg);
     }
 }
 
@@ -182,6 +178,7 @@ fn shape_of(args: &[OscType]) -> Option<ServerShape> {
 
 /// **Numbers every widget under `def` that came with no id**, in the order
 /// the tree is written, by what `next` hands out; the root is left as it is.
+#[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
 pub(crate) fn number_children(
     def: &mut serde_json::Value,
     next: &mut dyn FnMut(&serde_json::Value) -> Option<i32>,

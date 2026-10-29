@@ -872,15 +872,6 @@ impl App {
         // window does -- and it must run before the repaint below.
         self.advance_edge_scroll(FRAME.as_secs_f64());
 
-        // **A multitrack's clock reads where the transport is**, for a host that
-        // edits one with nobody else in the process to write the label.
-        if let Some(position) = self.shm.as_deref().map(|bus| {
-            bus.transport_position(clausters_editing::apply::MULTITRACK_TRANSPORT as usize)
-        }) && let Some(effect) = self.host.tick_multitrack_clock(position)
-        {
-            self.apply(lp, super::PLACEHOLDER_ORIGIN, vec![effect]);
-        }
-
         // **What the last frame could not draw.** A view zoomed finer than its
         // summary leaves the span it was asked for on its slot; here that note
         // becomes a read of exactly that span, so a picture that cannot map

@@ -308,7 +308,7 @@ pub struct Multitrack {
     takes: HashMap<i32, SignalElement>,
     /// **The takes drawn from their files' peaks**, by the number a box
     /// names its source by: each one's list, as the `lists` prop said it.
-    /// Its body names the list ([`take_list_body`]) and asks for no buffer:
+    /// Its body names the list ([`props::take_list_body`]) and asks for no buffer:
     /// what it draws is read by the host's disk answerer, from the peaks the
     /// application measured.
     listed: HashMap<i32, Value>,

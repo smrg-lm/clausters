@@ -153,6 +153,8 @@ mod audio_app;
 mod audio_editor;
 mod clocks;
 mod define;
+#[cfg(test)]
+mod monitor_tests;
 #[cfg(feature = "notation")]
 mod score_editor;
 mod set;
@@ -160,8 +162,6 @@ mod takes;
 #[cfg(test)]
 mod tests;
 mod wire;
-#[cfg(test)]
-mod write_tests;
 
 // Booting a persisted bundle over the wire -- the ordering/encoding half of the
 // browser standalone path, platform-agnostic and natively unit-tested (the
@@ -1028,13 +1028,6 @@ pub struct Host {
     /// segment of the server this host is attached to: an application's
     /// window reads the engine the application holds.
     window_sources: HashMap<i32, Arc<dyn BusSource>>,
-    /// What the clock of a multitrack this host edits alone last read, so an
-    /// unchanged reading is not set again every frame.
-    pub(crate) clock_shown: Option<String>,
-    /// What this host told itself and asked of the playback, for the tests
-    /// that replay a client's recorded exchange against it.
-    #[cfg(test)]
-    pub(crate) exchange: instance::Exchange,
     /// The host's color roles -- one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
@@ -1183,9 +1176,6 @@ impl Host {
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             app_wake: Default::default(),
             window_sources: HashMap::new(),
-            clock_shown: None,
-            #[cfg(test)]
-            exchange: instance::Exchange::default(),
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             keys: keymap::Keymap::default(),
@@ -1490,6 +1480,7 @@ impl Host {
 
     /// **Window `child` depends on window `parent`**: it is closed when
     /// `parent` is, whichever way `parent` closes.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     pub(crate) fn depend(&mut self, child: i32, parent: i32) {
         let children = self.dependents.entry(parent).or_default();
         if !children.contains(&child) {

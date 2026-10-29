@@ -825,7 +825,7 @@ fn run_score(
     let mut host = Host::new();
     #[cfg(feature = "standalone")]
     // The player is held, not used: dropping it stops it with the window.
-    let (bus, _player) = attach_server(&mut host, &Default::default(), shm, player)?;
+    let (bus, _player) = attach_server(&mut host, shm, player)?;
     #[cfg(not(feature = "standalone"))]
     let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
     #[cfg(not(feature = "standalone"))]
@@ -834,7 +834,7 @@ fn run_score(
          does not play (rebuild with `--features standalone`)"
     );
     look.apply(&mut host);
-    host.owner = Some(Owner::new(clausters_document::Document::empty()));
+    host.owner = Some(Owner::new());
     let name = Path::new(path)
         .file_name()
         .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
@@ -850,30 +850,22 @@ fn run_score(
     gui::run(host, Arc::new(socket), bus, None, None)
 }
 
-/// **Gives a session host its two servers.** The arrangement this whole mode
-/// exists for, and the three roles it splits into.
+/// **Gives a score host its two servers.**
 ///
-/// - The **on-demand session**, in this process: it owns the samples. Every
-///   take is a region beside its segment, so this host draws them by mapping
-///   and edits them by storing, with nothing sent either way. It has no audio
-///   device and needs none -- it computes.
+/// - The **on-demand session**, in this process: the server the host's ids
+///   and clocks are read from. It has no audio device and needs none.
 /// - The **player**, another process (`clausters --shm <path>`): it holds the
 ///   machine's input and output, and it is therefore the only one that can
-///   record or make a sound. It attaches to the same segment, so it plays
-///   the very samples being edited; killing it takes no take with it, and
-///   the next one adopts what is there.
-/// - The **editor**, this host: it performs the actions. Which is why it owns
-///   the transport, allocates through the session and plays through the player.
+///   make a sound. It attaches to the same segment.
+/// - The **editor**, this host: it performs the actions, which is why it owns
+///   the transport and plays through the player.
 ///
-/// **A failed boot is not a failed session.** The document, its edits, its undo
-/// and its save need no server at all; what needs one is the sound and the
-/// picture of a take. So a machine with no audio device still opens the file,
-/// with the takes drawn as what they are -- a warning and an empty clip, which
-/// is the same honesty the unresolved sources get.
+/// **A failed boot is not a failed score.** Editing, undo and save need no
+/// server at all; what needs one is the sound. So a machine with no audio
+/// device still opens the file, and says why nothing plays.
 #[cfg(feature = "standalone")]
 fn attach_server(
     host: &mut Host,
-    load: &clausters_gui::host::document::sources::Load,
     shm: Option<String>,
     player: Option<String>,
 ) -> Result<Attached, String> {
@@ -882,67 +874,32 @@ fn attach_server(
         Ok(session) => session,
         Err(e) => {
             tracing::warn!(
-                "session: no on-demand server ({e}) -- the document opens and edits, but takes \
-                 will not draw or sound"
+                "no on-demand server ({e}) -- the score opens and edits, and does not play"
             );
             return Ok((None, None));
         }
     };
-    tracing::info!(
-        "session: samples at {} -- an on-demand server owns them, and a player attaches to them",
-        path.display()
-    );
 
-    // **The samples go to their owner, in the order they are made of.** A take
-    // is read into a buffer of the session, which puts it in a region beside
-    // the segment; from there the player maps it and this host draws it. A
-    // join is stitched from those buffers, so the crate's runner holds each
-    // stitch behind the reads it is over -- sent as one batch, the stitch
-    // arrived first and the join drew empty.
-    if !load.messages.is_empty() {
-        // **Waited for, not fired and forgotten.** A buffer read is
-        // asynchronous, and a clip's fetch starts the moment the tree reaches
-        // the host: without this the window would ask for the shape of a buffer
-        // that is still empty, once, and draw nothing forever.
-        drive_session(&session, load.steps());
-    }
-
-    // **The picture, from the memory the samples are in.** The same file the
-    // player attaches to: the segment for the clocks and the buses, the
-    // regions beside it for the samples.
+    // **The clocks, from the memory the server writes them in**: the same
+    // segment the player attaches to.
     #[cfg(unix)]
-    let bus = {
-        let (bus, buffers) = gui::open_shm_buffers(Some(path.display().to_string()));
-        match buffers {
-            Some(buffers) => {
-                host.set_shared_buffers(buffers);
-                // What the session did not say about its takes, the buffers
-                // now can: a join is bounded by it, and a save writes it down.
-                let learned = host.learn_take_lengths();
-                if learned > 0 {
-                    tracing::info!("session: learned the length of {learned} take(s)");
-                }
-            }
-            None => tracing::warn!("session: the buffers could not be mapped; takes will fetch"),
-        }
-        bus
-    };
+    let bus = gui::open_shm_buffers(Some(path.display().to_string())).0;
     #[cfg(not(unix))]
     let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
     if bus.is_none() {
-        tracing::warn!("session: no data plane -- the playhead will stand still");
+        tracing::warn!("no data plane -- the play cursor will stand still");
     }
 
-    // **The player**, given one: what sounds, records and moves the transport.
-    let owned = match attach_player(host, &path, player, &load.takes.bufnums()) {
+    // **The player**, given one: what sounds and moves the transport.
+    let owned = match attach_player(host, &path, player) {
         Ok(owned) => {
             host.set_owns_transport(true);
             owned
         }
         Err(e) => {
             tracing::warn!(
-                "session: no player ({e}) -- the document opens, draws and edits, and nothing \
-                 sounds. Start one yourself with `clausters --shm {}` and pass --server",
+                "no player ({e}) -- the score opens and edits, and nothing sounds. Start one \
+                 yourself with `clausters --shm {}` and pass --server",
                 path.display()
             );
             None
@@ -1033,18 +990,13 @@ fn spawn_player(segment: &Path) -> Result<(OwnedPlayer, String), String> {
     Ok((OwnedPlayer(child), format!("127.0.0.1:{port}")))
 }
 
-/// Attaches the player and hands it what it needs to sound a take: the
-/// monitor's def, its transport-bound group, and a `/buffer_attach` per take
-/// the session just read -- because the player maps the directory once, at
-/// startup, and these arrived after it.
-///
-/// Returns whether one was attached at all.
+/// Attaches the player, started here unless one was named, and answers the
+/// process when this host owns it.
 #[cfg(feature = "standalone")]
 fn attach_player(
     host: &mut Host,
     segment: &Path,
     player: Option<String>,
-    takes: &[i32],
 ) -> Result<Option<OwnedPlayer>, String> {
     // A player the user started is used as it is; with none named, the editor
     // starts one of its own -- it is an application, and an application does
@@ -1065,27 +1017,12 @@ fn attach_player(
         await_player(&leg)?;
     }
     tracing::info!(
-        "session: player at {} (it holds the devices; the samples stay at {})",
+        "player at {} (it holds the devices; the segment is at {})",
         leg.target(),
         segment.display()
     );
-    // **The takes, by number and not by sample.** A player maps the buffer
-    // directory when it starts, and these were read into it afterwards -- so it
-    // is pointed at them, which is the whole message: no blob, no copy, and
-    // the very cells this editor is about to draw.
-    for &bufnum in takes {
-        leg.send(OscMessage {
-            addr: "/buffer_attach".into(),
-            args: vec![OscType::Int(bufnum)],
-        })
-        .map_err(|e| e.to_string())?;
-    }
     host.set_player_link(ServerLink::Udp(leg));
     host.on_link_attached();
-    // No group is bound here. A multitrack makes the transport's group itself, as
-    // it does for every endpoint, and the take monitor's group goes inside it;
-    // a session of takes binds one the first time the monitor needs it
-    // (`Host::monitor_group`).
     Ok(owned)
 }
 
@@ -1145,61 +1082,6 @@ fn default_segment_path() -> String {
     dir.join(format!("clausters-editor-{}", std::process::id()))
         .display()
         .to_string()
-}
-
-/// Sends one message to the session that owns the samples.
-#[cfg(feature = "standalone")]
-fn send_session(session: &EmbedSession, msg: OscMessage) -> Result<(), String> {
-    let addr = msg.addr.clone();
-    let bytes = encode(&OscPacket::Message(msg)).map_err(|e| e.to_string())?;
-    if !session.send(&bytes) {
-        tracing::warn!("session: {addr} dropped (the session's command ring is full)");
-    }
-    Ok(())
-}
-
-/// **Carries a session's load out**, through the crate's runner: what may go out
-/// is sent, every reply is offered back, and a stitch leaves only once the
-/// reads it is over are done. Each refusal is reported in its own words.
-/// Bounded: a read that never answers costs a few seconds and a line, not a
-/// window that never opens.
-#[cfg(feature = "standalone")]
-fn drive_session(session: &EmbedSession, steps: Vec<clausters_editing::apply::Step>) {
-    use clausters_editing::run::{Reply, Runner, Server};
-    use std::time::{Duration, Instant};
-
-    let sources = steps.len() / 2;
-    let mut run = Runner::new();
-    run.push(Server::Samples, steps);
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let mut buf = vec![0u8; 65536];
-    loop {
-        for (_, message) in run.ready() {
-            if let Err(e) = send_session(session, message) {
-                tracing::warn!("session: {e}");
-            }
-        }
-        if run.is_idle() || Instant::now() >= deadline {
-            break;
-        }
-        let Some(len) = session.poll_into(&mut buf) else {
-            std::thread::sleep(Duration::from_millis(5));
-            continue;
-        };
-        let Ok(OscPacket::Message(msg)) = clausters_core::osc::decode_packet(&buf[..len]) else {
-            continue;
-        };
-        if let Reply::Refused(args) = run.reply(Server::Samples, &msg) {
-            tracing::warn!("session: a source did not load: {args:?}");
-        }
-    }
-    if run.is_idle() {
-        tracing::info!("session: {sources} source(s) loaded into buffers");
-    } else {
-        tracing::warn!(
-            "session: the sources had not all loaded after 10s -- what is missing will draw empty"
-        );
-    }
 }
 
 /// Boots a saved GuiDef as a self-contained app: an embedded audio server, the

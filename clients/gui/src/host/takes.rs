@@ -5,23 +5,6 @@
 use super::*;
 
 impl Host {
-    /// **Writes down how long each loaded take is**, off the mapped buffers'
-    /// directory, where the session did not say. Returns how many learned one;
-    /// nothing without an owner or a mapping.
-    #[cfg(unix)]
-    pub fn learn_take_lengths(&mut self) -> usize {
-        let Some(buffers) = self.shared_buffers.as_ref() else {
-            return 0;
-        };
-        let Some(owner) = self.owner.as_mut() else {
-            return 0;
-        };
-        owner.learn_lengths(|bufnum| {
-            let index = usize::try_from(bufnum).ok()?;
-            buffers.frames(index).map(|f| f as u64)
-        })
-    }
-
     /// **A buffer's samples were just made** (`/done /buffer_stitch bufnum`):
     /// every element that asked for that take forgets it, so the next walk
     /// asks again. Returns the windows that had one, for a front to redraw.
@@ -158,44 +141,6 @@ impl Host {
             buffers.len()
         );
         self.buffer_stream = (buffers, bucket);
-    }
-
-    /// **Says what was written, since the samples said nothing.**
-    ///
-    /// A stroke into mapped cells reaches no wire -- that is what mapping is
-    /// for -- so a second client holding a picture of the same take would never
-    /// find out. `/buffer_touch` is the span and not the samples: four
-    /// integers, which the servers broadcast to their `/server_notify` clients
-    /// as `/buffer_touched` for whoever cares to re-read. A page gets it too,
-    /// and a page is exactly who needs it: a browser cannot map a file, so a
-    /// message is the only way it can hear about an edit at all.
-    ///
-    /// Both legs are told when they differ, because each server has its own
-    /// clients and neither knows the other's.
-    #[cfg(unix)]
-    pub(super) fn announce_write(&self, bufnum: i32, channel: usize, start: u64, frames: usize) {
-        // the command counts in an int32: a span past it is not announced
-        // rather than announced somewhere else
-        let (Ok(start), Ok(frames)) = (i32::try_from(start), i32::try_from(frames)) else {
-            return diag::warn!("buffer {bufnum}: a write past 2^31 frames is not announced");
-        };
-        let msg = OscMessage {
-            addr: "/buffer_touch".into(),
-            args: vec![
-                OscType::Int(bufnum),
-                OscType::Int(channel as i32),
-                OscType::Int(start),
-                OscType::Int(frames),
-            ],
-        };
-        for link in [self.server.as_ref(), self.player.as_ref()]
-            .into_iter()
-            .flatten()
-        {
-            if let Err(e) = link.send(msg.clone()) {
-                diag::warn!("cannot announce the write of buffer {bufnum}: {e}");
-            }
-        }
     }
 }
 

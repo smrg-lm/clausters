@@ -175,11 +175,7 @@ impl Host {
             member,
             &Event {
                 addr: message.addr.clone(),
-                args: message
-                    .args
-                    .iter()
-                    .map(document::multitrack::atom)
-                    .collect(),
+                args: message.args.iter().map(document::atom).collect(),
             },
         ) else {
             return false;
@@ -473,7 +469,7 @@ mod tests {
     #[test]
     fn a_score_opens_in_its_editor_and_answers_its_gestures_here() {
         let mut host = Host::new();
-        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        host.owner = Some(Owner::new());
         let held = score();
         let def_id = host
             .open_score(held.clone(), "score", (960, 640), None)
@@ -520,7 +516,7 @@ mod tests {
     #[test]
     fn the_toolbar_and_the_menu_bar_are_answered_by_the_editor() {
         let mut host = Host::new();
-        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        host.owner = Some(Owner::new());
         let held = score();
         let def_id = host
             .open_score(held.clone(), "score", (960, 640), None)
@@ -589,7 +585,7 @@ mod tests {
     #[test]
     fn a_form_is_opened_by_the_bar_and_written_on_ok_in_this_window() {
         let mut host = Host::new();
-        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        host.owner = Some(Owner::new());
         let held = score();
         let def_id = host
             .open_score(held.clone(), "score", (960, 640), None)
@@ -628,7 +624,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let saved = dir.join("saved.mei");
         let mut host = Host::new();
-        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        host.owner = Some(Owner::new());
         let held = score();
         let def_id = host
             .open_score(held.clone(), "score", (960, 640), Some(saved.clone()))
@@ -683,7 +679,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let saved = dir.join("closed.mei");
         let mut host = Host::new();
-        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        host.owner = Some(Owner::new());
         let held = score();
         let def_id = host
             .open_score(held.clone(), "score", (960, 640), Some(saved.clone()))
@@ -770,7 +766,7 @@ mod tests {
                     }
                 };
                 addrs.push(message.addr);
-                host.multitrack_reply(crate::host::instance::Leg::Player, &reply);
+                host.steps_reply(crate::host::instance::Leg::Player, &reply);
             }
         }
         addrs
@@ -783,7 +779,7 @@ mod tests {
         host.set_player_link(crate::host::ServerLink::Udp(
             crate::host::ServerLeg::connect(player.local_addr().unwrap()).unwrap(),
         ));
-        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        host.owner = Some(Owner::new());
         let held = score();
         let def_id = host
             .open_score(held.clone(), "score", (960, 720), None)
@@ -802,7 +798,7 @@ mod tests {
     #[test]
     fn the_toolbars_loop_and_the_key_are_one_switch() {
         let mut host = Host::new();
-        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        host.owner = Some(Owner::new());
         let def_id = host
             .open_score(score(), "score", (960, 720), None)
             .expect("a window");
@@ -836,7 +832,7 @@ mod tests {
     #[test]
     fn the_score_exports_as_a_midi_file() {
         let mut host = Host::new();
-        host.owner = Some(Owner::new(clausters_document::Document::empty()));
+        host.owner = Some(Owner::new());
         let def_id = host
             .open_score(score(), "score", (960, 720), None)
             .expect("a window");

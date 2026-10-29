@@ -1,19 +1,10 @@
-//! **The destructive edit, end to end inside the host**: a stroke over a take's
-//! samples reaches the server's buffer and the picture of it at once, and the
-//! log takes it back.
-//!
-//! What is exercised here is the seam the milestone added -- [`Host::can_write`]
-//! refusing what the wire cannot carry, [`Host::write_buffer_samples`] sending and
-//! patching, and the inverse the hand supplies coming back through an undo. The
-//! hand itself (the drag that builds the payload) is tested in `gestures`, and
-//! the server's own `/buffer_setRange` in the server crate; this is where the
-//! three meet.
+//! **The take monitor, end to end inside the host**: a window drawing a
+//! take's samples plays them through the audio editor's nodes on a transport
+//! of its own, and the keys reach it.
 
 use super::*;
-use crate::host::document::Owner;
 use crate::host::widget::element::Loaded;
 use crate::waveform::WaveformData;
-use clausters_document::{Body, Document, Lifetime, Node, NodeId, Opaque, SourceRef};
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Duration;
 
@@ -33,13 +24,9 @@ fn from() -> ClientId {
     ClientId::Udp("127.0.0.1:9000".parse::<SocketAddr>().unwrap())
 }
 
-fn blob(values: &[f32]) -> OscType {
-    OscType::Blob(values.iter().flat_map(|v| v.to_le_bytes()).collect())
-}
-
 /// A host drawing `channels` interleaved channels of `frames` frames of
-/// silence out of server buffer 0, with a document behind it whose one node
-/// is that take, and a throwaway socket standing in for the audio server.
+/// silence out of server buffer 0, and a throwaway socket standing in for the
+/// audio server.
 fn take_host(channels: usize, frames: usize) -> (Host, UdpSocket) {
     let server = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
     server
@@ -55,8 +42,7 @@ fn take_host(channels: usize, frames: usize) -> (Host, UdpSocket) {
         }),
         from(),
     );
-    // The form the samples arrive in, which is the whole reason a write
-    // goes through the element: the navigable view keeps a pyramid.
+    // The form the samples arrive in: the navigable view keeps a pyramid.
     let samples = vec![0.0f32; frames * channels];
     let data = std::sync::Arc::new(WaveformData::from_interleaved(&samples, channels, 64));
     host.window_def_mut(1)
@@ -66,20 +52,6 @@ fn take_host(channels: usize, frames: usize) -> (Host, UdpSocket) {
         .then_some(())
         .expect("the element took the pyramid");
 
-    let mut owner = Owner::new(Document::new(Node::new(
-        NodeId(2),
-        Body::Vector {
-            source: SourceRef {
-                source: clausters_document::SourceId(1),
-                lifetime: Lifetime::Session,
-                generation: 0,
-                range: None,
-            },
-            config: Opaque::default(),
-        },
-    )));
-    owner.bind(50, NodeId(2));
-    host.owner = Some(owner);
     (host, server)
 }
 
@@ -158,68 +130,6 @@ fn received(server: &UdpSocket) -> Option<OscMessage> {
         OscPacket::Message(m) => Some(m),
         _ => None,
     }
-}
-
-/// What the widget's own picture holds at frame `i` -- read back through the
-/// same door the drawing gesture reads it through, so the test sees what the
-/// hand would.
-fn sample(host: &Host, i: usize) -> f32 {
-    sample_of(host, 50, i)
-}
-
-/// The same, for whichever of the two views is being asked.
-fn sample_of(host: &Host, widget: i32, i: usize) -> f32 {
-    sample_of_channel(host, widget, 0, i)
-}
-
-/// ...and of whichever channel.
-fn sample_of_channel(host: &Host, widget: i32, ch: usize, i: usize) -> f32 {
-    host.window_def(1)
-        .and_then(|t| t.find(widget))
-        .and_then(|w| {
-            std::iter::once(w)
-                .chain(w.children.iter())
-                .find_map(|w| w.kind.sample_value(ch, i))
-        })
-        .expect("samples")
-}
-
-#[test]
-fn a_stroke_reaches_the_buffer_and_the_picture_and_undo_puts_both_back() {
-    let (mut host, server) = take_host(1, 16);
-    let seq = host.outbox.borrow_mut().stamp(1, 50);
-    assert!(host.answer_own(
-        1,
-        50,
-        seq,
-        &[
-            OscType::String("draw".into()),
-            OscType::Int(0),
-            OscType::Long(4),
-            blob(&[0.5, -0.5, 0.25]),
-            blob(&[0.0, 0.0, 0.0]),
-        ]
-    ));
-
-    let msg = received(&server).expect("the take's buffer was written");
-    assert_eq!(msg.addr, "/buffer_setRangeChannel");
-    assert_eq!(msg.args[0], OscType::Int(0), "buffer 0");
-    assert_eq!(msg.args[1], OscType::Int(0), "channel 0");
-    assert_eq!(msg.args[2], OscType::Int(4), "at the frame the hand named");
-    assert_eq!(msg.args[3], blob(&[0.5, -0.5, 0.25]), "the run it drew");
-
-    assert_eq!(sample(&host, 4), 0.5, "and the picture holds the same run");
-    assert_eq!(sample(&host, 6), 0.25);
-    assert_eq!(sample(&host, 7), 0.0, "past the span, nothing moved");
-
-    // The document does not hold samples, so the undo restores them only
-    // because the payload carried the run it painted over.
-    let seq = host.outbox.borrow_mut().stamp(1, 1);
-    assert!(host.answer_own(1, 1, seq, &[OscType::String("undo".into())]));
-    let msg = received(&server).expect("the restore went to the server too");
-    assert_eq!(msg.addr, "/buffer_setRangeChannel");
-    assert_eq!(msg.args[3], blob(&[0.0, 0.0, 0.0]));
-    assert_eq!(sample(&host, 4), 0.0, "the picture went back with it");
 }
 
 /// **The monitor plays the samples the window is drawing** -- the same
@@ -707,93 +617,4 @@ fn a_set_of_looping_turns_the_loop_switch() {
     );
     set(&mut host, 0);
     assert!(!host.monitor_loops());
-}
-
-/// **One channel of a stereo take**, which is what the server's
-/// channel-addressed write is for: the span is frames of that channel on
-/// both sides of the seam, and the other channel is not mentioned.
-#[test]
-fn a_stereo_take_is_written_one_channel_at_a_time() {
-    let (mut host, server) = take_host(2, 16);
-    let seq = host.outbox.borrow_mut().stamp(1, 50);
-    assert!(host.answer_own(
-        1,
-        50,
-        seq,
-        &[
-            OscType::String("draw".into()),
-            OscType::Int(1), // the right channel
-            OscType::Long(4),
-            blob(&[0.5, -0.5]),
-            blob(&[0.0, 0.0]),
-        ]
-    ));
-    let msg = received(&server).expect("the take's buffer was written");
-    assert_eq!(msg.addr, "/buffer_setRangeChannel");
-    assert_eq!(msg.args[1], OscType::Int(1), "the channel the hand was on");
-    assert_eq!(msg.args[2], OscType::Int(4), "in frames of that channel");
-    assert_eq!(msg.args[3], blob(&[0.5, -0.5]));
-
-    assert_eq!(sample_of_channel(&host, 50, 1, 4), 0.5, "the picture too");
-    assert_eq!(
-        sample_of_channel(&host, 50, 0, 4),
-        0.0,
-        "and the other channel was not touched"
-    );
-
-    // The undo knows which channel it is putting back, because the channel
-    // travels in the intent rather than being assumed to be the first.
-    let seq = host.outbox.borrow_mut().stamp(1, 1);
-    assert!(host.answer_own(1, 1, seq, &[OscType::String("undo".into())]));
-    let msg = received(&server).expect("the restore went out");
-    assert_eq!(msg.args[1], OscType::Int(1), "to the same channel");
-    assert_eq!(sample_of_channel(&host, 50, 1, 4), 0.0);
-}
-
-/// A channel the take does not have is refused, the way the server
-/// refuses one the buffer does not have.
-#[test]
-fn a_channel_the_take_does_not_have_refuses_the_write() {
-    let (mut host, server) = take_host(1, 16);
-    let seq = host.outbox.borrow_mut().stamp(1, 50);
-    assert!(host.answer_own(
-        1,
-        50,
-        seq,
-        &[
-            OscType::String("draw".into()),
-            OscType::Int(1),
-            OscType::Long(4),
-            blob(&[0.5]),
-            blob(&[0.0]),
-        ]
-    ));
-    assert!(received(&server).is_none(), "nothing was written");
-    assert!(
-        !host.owner.as_ref().unwrap().can_undo(),
-        "and no edit entered the log"
-    );
-}
-
-/// A span that runs past the end of the take is refused for the same
-/// reason and by the same door: what the server holds and what the window
-/// draws must stay one thing.
-#[test]
-fn a_span_past_the_end_refuses_the_write() {
-    let (mut host, server) = take_host(1, 8);
-    let seq = host.outbox.borrow_mut().stamp(1, 50);
-    assert!(host.answer_own(
-        1,
-        50,
-        seq,
-        &[
-            OscType::String("draw".into()),
-            OscType::Int(0),
-            OscType::Long(6),
-            blob(&[0.5, 0.5, 0.5, 0.5]),
-            blob(&[0.0, 0.0, 0.0, 0.0]),
-        ]
-    ));
-    assert!(received(&server).is_none());
-    assert!(!host.owner.as_ref().unwrap().can_undo());
 }

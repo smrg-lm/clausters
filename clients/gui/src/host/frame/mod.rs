@@ -3393,9 +3393,7 @@ mod tests {
         let score = clausters_notation::open(&mei, &clausters_notation::EngraveOptions::default())
             .expect("engraved");
         let mut host = crate::host::Host::new();
-        host.owner = Some(crate::host::document::Owner::new(
-            clausters_document::Document::empty(),
-        ));
+        host.owner = Some(crate::host::document::Owner::new());
         let def = host
             .open_score(
                 std::sync::Arc::new(std::sync::Mutex::new(score)),
