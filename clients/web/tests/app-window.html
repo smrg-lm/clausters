@@ -5,6 +5,7 @@
     <title>clausters: an application's window in a page</title>
   </head>
   <body>
+    <div id="stage" style="width: 800px; height: 400px"></div>
     <pre id="log"></pre>
     <!--
       An application's window in a page (clients/web/test.sh, headless,
@@ -18,6 +19,9 @@
       Chrome skews a synthetic event's position under a forced display
       scale, so the press at a fractional density is checked with real input
       instead (a press at 1.25 used to land a fifth short of its mark).
+      Last, a second editor opened with a `stage` draws in that element, at
+      its box, and leaves no canvas of its own on the page (it used to open
+      below the page and leave the stage empty).
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
@@ -93,9 +97,28 @@
         }
         log(`pressed: ${t1.toFixed(3)} s and ${t2.toFixed(3)} s, a body of ${body.toFixed(0)} px`);
 
+        // **Opened into an element**: the window takes the element's box,
+        // and the canvas the host first gave it is gone from the page.
+        const stage = document.getElementById("stage");
+        const second = await write("app_window_staged.wav");
+        const counted = document.querySelectorAll("canvas").length;
+        const staged = await gui.edit(second, { title: "staged", stage });
+        await until(() => stage.querySelector("canvas") !== null, "the stage's canvas");
+        await sleep(500);
+        const inStage = stage.querySelector("canvas").getBoundingClientRect();
+        if (Math.abs(inStage.width - 800) > 1 || Math.abs(inStage.height - 400) > 1) {
+          throw new Error(`the staged window is ${inStage.width}x${inStage.height}, not the stage's 800x400`);
+        }
+        const now = document.querySelectorAll("canvas").length;
+        if (now !== counted + 1) {
+          throw new Error(`the staged window left ${now - counted} canvases on the page, not one`);
+        }
+        log(`staged: the window draws in its element, ${inStage.width}x${inStage.height}`);
+
         verdict("PASS: an application's window opened at its declared size and a press on " +
-          "it landed where it is drawn");
+          "it landed where it is drawn; one opened into an element drew there");
         await editor.close();
+        await staged.close();
       } catch (error) {
         verdict(`FAIL: ${error?.message ?? error}`);
       }

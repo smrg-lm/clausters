@@ -5147,7 +5147,7 @@ sound.
   request's layout is one module for both of its readers
   (`src/base/file-requests.ts`).
 
-- ⬜ **`edit(file, { stage })` opens the audio editor somewhere else**
+- ✅ **`edit(file, { stage })` opens the audio editor somewhere else**
   *(found 2026-10-28, writing `tests/app-window.html`)*. `EditOptions.stage`
   says the window's canvas takes the element's box, and the multitrack and
   the other editors honor it; the audio editor opens through `openApp`,
@@ -5156,3 +5156,7 @@ sound.
   draws outside it). Either the application's open attaches the stage's
   canvas to the window it opens, or the option says it is not for an
   application.
+  *Fixed 2026-10-28.* `openApp` takes the page's `element` as `open` does:
+  the window the host opened on a canvas of its own takes the element's
+  canvas and box, and the host removes the canvas it had appended.
+  `tests/app-window.html` opens one into a stage.

@@ -1046,14 +1046,39 @@ export class GuiHost {
      * answered by the application, in the host's process, and reach no
      * script; the script is told `/gui_closed` when it goes.
      *
+     * In a page, `element` is the box the window takes, as {@link GuiHost.open}'s
+     * is; with none, the window gets a canvas of its own at the size it
+     * declares.
+     *
      * Rejects with the error the host answered with (a `RangeError` for
      * options it cannot take), and with `ReplyTimeout` past `timeout`.
      */
-    async openApp(app: string, options: Record<string, unknown> = {}, timeout = 5.0): Promise<number> {
+    async openApp(
+        app: string,
+        options: Record<string, unknown> = {},
+        timeout = 5.0,
+        { element }: { element?: Stage | null } = {},
+    ): Promise<number> {
+        if (element != null && this.page === null) {
+            throw new Error(
+                "this host has windows of its own, not a document to mount " +
+                    "into -- an element is only meaningful for a host on this page",
+            );
+        }
         const answer = await this.app("/gui_app_open", [app, JSON.stringify(options)], timeout);
         const window = Number((answer as { window: number }).window);
         // open until its `/gui_closed`, as a window this client opened is
         this.opened.add(window);
+        // **The box it takes**: the host opened it on a canvas of its own,
+        // which the element's takes over, the way a view opened into an
+        // element draws there.
+        if (element != null && this.page !== null) {
+            const canvas = canvasIn(element);
+            if (!(element instanceof HTMLCanvasElement)) this.made.set(window, canvas);
+            this.page.attach(window, canvas);
+            this.fitted.get(window)?.();
+            this.fitted.set(window, this.page.fit(window, element, canvas));
+        }
         return window;
     }
 

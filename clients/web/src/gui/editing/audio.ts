@@ -23,7 +23,7 @@
 
 import { SoundFile } from "../../soundfile.ts";
 import { Segment } from "../../segments.ts";
-import type { GuiHost } from "../host.ts";
+import type { GuiHost, Stage } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
 
 /** The containers a part of a list reads in place. */
@@ -215,12 +215,12 @@ export class AudioEditor {
      * **Ask the host to open the editor**, on `host` or the ambient one, and
      * answer its window. An editor already open answers the window it has.
      */
-    async open(host?: GuiHost): Promise<WindowHandle> {
+    async open(host?: GuiHost, { stage }: { stage?: Stage | null } = {}): Promise<WindowHandle> {
         if (this.handle !== null) return this.handle;
         const resolved = host ?? (await (await import("../../plot.ts")).resolveHost());
         const options: Record<string, unknown> = { title: this.title };
         if (this.opening !== null) options.path = this.opening.path;
-        const window = await resolved.openApp("audio", options);
+        const window = await resolved.openApp("audio", options, 5.0, { element: stage });
         const { WindowHandle } = await import("../handle.ts");
         this.hostOf = resolved;
         this.handle = new WindowHandle(resolved, window, new Map());

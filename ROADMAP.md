@@ -126,10 +126,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.
 
-- ⬜ **`edit(file, { stage })` opens the audio editor somewhere else**
-  *(`clients/web/PLAN.md`, Found by use)*. Found writing the page test of
-  an application's own canvas.
-
 - ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare, and before `X34` only if it

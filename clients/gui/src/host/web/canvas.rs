@@ -327,6 +327,13 @@ impl WebApp {
         }
         if let Some(old) = self.canvases.remove(&def_id) {
             self.by_winit.remove(&old.window.id());
+            // a canvas this front appended goes with the slot; one the page
+            // handed over is the page's
+            if old.appended
+                && let Some(element) = old.window.canvas()
+            {
+                element.remove();
+            }
         }
         let appending = canvas.is_none();
         // **A canvas this front appends is the window's own**, as an OS

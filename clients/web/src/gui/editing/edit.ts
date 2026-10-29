@@ -301,7 +301,7 @@ async function audioEditor(file: SoundFile, options: EditOptions): Promise<Audio
     }
     const editor = new AudioEditor(file, { title: options.title, layers: options.layers });
     if (options.open !== false) {
-        await editor.open(options.host);
+        await editor.open(options.host, { stage: options.stage });
         openAudio.push(editor);
     }
     return editor;
