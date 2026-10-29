@@ -45,12 +45,17 @@ def test_render_bounces_a_bare_expression(tmp_path):
     assert filed.path == str(wav)
     assert filed.frames == kept.frames
     # A 32-bit float WAV, written by the server's writer like every other
-    # render's file: hound tags it WAVE_FORMAT_EXTENSIBLE (0xFFFE, whose
-    # subformat GUID opens with IEEE_FLOAT) rather than a bare format 3.
+    # render's file: tagged WAVE_FORMAT_EXTENSIBLE (0xFFFE, whose subformat
+    # GUID opens with IEEE_FLOAT) or a bare format 3. Its `fmt ` chunk is
+    # found by walking the chunks: a `JUNK` the size of an RF64 header comes
+    # before it.
     raw = wav.read_bytes()
     assert raw[:4] == b"RIFF" and raw[8:12] == b"WAVE"
-    fmt, chans, rate = struct.unpack("<HHI", raw[20:28])
-    bits = struct.unpack("<H", raw[34:36])[0]
+    at = 12
+    while raw[at:at + 4] != b"fmt ":
+        at += 8 + struct.unpack("<I", raw[at + 4:at + 8])[0]
+    fmt, chans, rate = struct.unpack("<HHI", raw[at + 8:at + 16])
+    bits = struct.unpack("<H", raw[at + 22:at + 24])[0]
     assert fmt in (3, 0xFFFE)
     assert (chans, rate, bits) == (1, int(SR), 32)
     # And it holds the take the in-memory render produced, sample for sample.
