@@ -38,6 +38,7 @@ use crate::bytes;
 
 pub mod compose;
 mod kept;
+pub mod measure;
 pub use kept::{Kept, SpanStats};
 
 const MAGIC: &[u8; 4] = b"CLPK";

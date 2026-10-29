@@ -6,9 +6,9 @@
 //! and the peaks of a file opened without them -- is an offline render that
 //! writes a new file, and the list then names it. Each function here answers
 //! the [`Step::Render`] that does one: a binary score for an offline server,
-//! and the file it is rendered into, with the peaks beside it written by a
-//! `PeaksOut` on the same signal. Nothing here does I/O; the endpoint renders
-//! the score on an offline instance of its own.
+//! and the file it is rendered into, whose peaks the endpoint measures as it
+//! writes them. Nothing here does I/O; the endpoint renders the score on an
+//! offline instance of its own.
 //!
 //! **How a score reads a list.** The list is stitched on the offline server
 //! (`/buffer_stitch` with parts over files) and read by one `TransportDiskIn`
@@ -223,13 +223,11 @@ impl Def {
         self.push(json!({"kind": kind, "inputs": [{"ugen": a}, {"ugen": b}]}))
     }
 
-    /// The channels out on buses `0..`, and their peaks into `peaks`.
-    fn finish(mut self, name: &str, channels: &[usize], peaks: &str) -> Value {
+    /// The channels out on buses `0..`.
+    fn finish(mut self, name: &str, channels: &[usize]) -> Value {
         for (bus, ugen) in channels.iter().enumerate() {
             self.push(json!({"kind": "Out", "inputs": [{"const": bus as f64}, {"ugen": ugen}]}));
         }
-        let inputs: Vec<Value> = channels.iter().map(|u| json!({"ugen": u})).collect();
-        self.push(json!({"kind": "PeaksOut", "inputs": inputs, "path": peaks}));
         json!({"name": name, "ugens": self.ugens})
     }
 }
@@ -276,46 +274,19 @@ fn render(
         channels: channels as usize,
         format: out.format.clone(),
         label: out.label.clone(),
+        peaks: out.peaks.clone(),
     })
 }
 
-/// **The peaks of a file opened without them**: the file read whole into a
-/// `PeaksOut`, the render's own output kept nowhere; its progress shown as
+/// **The peaks of a file opened without them**: the file read in blocks and
+/// measured by the endpoint, no render at all; its progress shown as
 /// `label`'s.
 pub fn measure(file: &SegmentPart, peaks: &str, label: &str) -> Step {
-    let list = List {
-        parts: vec![SegmentPart {
-            start: 0,
-            frames: file.source_frames,
-            fade_in: 0,
-            fade_out: 0,
-            fade_in_shape: Default::default(),
-            fade_out_shape: Default::default(),
-            channels: None,
-            ..file.clone()
-        }],
-        channels: file.source_channels,
-        rate: file.source_rate,
-    };
-    let mut def = Def::new();
-    let channels: Vec<usize> = (0..list.channels)
-        .map(|c| def.list_channel(LIST, c))
-        .collect();
-    let def = def.finish("ae.measure", &channels, peaks);
-    let out = Output {
-        path: String::new(),
+    Step::Measure {
+        path: file.path.clone(),
         peaks: peaks.into(),
-        format: "float".into(),
         label: label.into(),
-    };
-    render(
-        vec![stitch(LIST, &list)],
-        def,
-        list.frames(),
-        list.rate,
-        list.channels,
-        &out,
-    )
+    }
 }
 
 /// **A gain curve applied to the whole list**: each channel times the
@@ -331,7 +302,7 @@ pub fn gain(list: &List, curve: &[GainPoint], out: &Output) -> Step {
             def.binary("Mul", read, level)
         })
         .collect();
-    let def = def.finish("ae.gain_render", &channels, &out.peaks);
+    let def = def.finish("ae.gain_render", &channels);
     render(
         vec![stitch(LIST, list)],
         def,
@@ -436,7 +407,7 @@ pub fn reverse(list: &List, out: &Output) -> Step {
     let channels: Vec<usize> = (0..list.channels)
         .map(|c| def.block_channel(LIST, c, -1.0, last))
         .collect();
-    let def = def.finish("ae.reverse", &channels, &out.peaks);
+    let def = def.finish("ae.reverse", &channels);
     render(setup, def, frames, list.rate, list.channels, out)
 }
 
@@ -451,7 +422,7 @@ pub fn mix_lists(onto: &List, added: &List, out: &Output) -> Step {
             def.binary("Add", a, b)
         })
         .collect();
-    let def = def.finish("ae.mix", &channels, &out.peaks);
+    let def = def.finish("ae.mix", &channels);
     render(
         vec![stitch(LIST, onto), stitch(OTHER, added)],
         def,
@@ -474,7 +445,7 @@ pub fn mix_block(onto: &List, samples: &[f32], out: &Output) -> Step {
             def.binary("Add", a, b)
         })
         .collect();
-    let def = def.finish("ae.mix_block", &channels, &out.peaks);
+    let def = def.finish("ae.mix_block", &channels);
     let mut setup = vec![stitch(LIST, onto)];
     setup.extend(block(BLOCK, onto.channels, samples));
     render(setup, def, onto.frames(), onto.rate, onto.channels, out)
@@ -511,7 +482,7 @@ pub fn convert(list: &List, matrix: &ChannelMatrix, out: &Output) -> Step {
             sum.unwrap_or_else(|| def.scaled(read[0], 0.0))
         })
         .collect();
-    let def = def.finish("ae.convert", &channels, &out.peaks);
+    let def = def.finish("ae.convert", &channels);
     render(
         vec![stitch(LIST, list)],
         def,
@@ -530,7 +501,7 @@ pub fn block_file(samples: &[f32], channels: u32, rate: f64, out: &Output) -> St
     let read: Vec<usize> = (0..channels)
         .map(|c| def.block_channel(BLOCK, c, 1.0, 0.0))
         .collect();
-    let def = def.finish("ae.block", &read, &out.peaks);
+    let def = def.finish("ae.block", &read);
     render(
         block(BLOCK, channels, samples),
         def,
@@ -554,7 +525,7 @@ pub fn stroke(over: &List, drawn: u32, values: &[f32], out: &Output) -> Step {
             }
         })
         .collect();
-    let def = def.finish("ae.stroke", &channels, &out.peaks);
+    let def = def.finish("ae.stroke", &channels);
     let mut setup = vec![stitch(LIST, over)];
     setup.extend(block(BLOCK, 1, values));
     render(
@@ -572,27 +543,14 @@ pub fn stroke(over: &List, drawn: u32, values: &[f32], out: &Output) -> Step {
 pub fn consolidate(list: &List, out: &Output) -> Step {
     // **An empty list is a file of no frames**: a header, and nothing read.
     if list.parts.is_empty() {
-        let zeros: Vec<Value> = (0..list.channels).map(|_| json!({"const": 0.0})).collect();
-        let mut ugens = Vec::new();
-        if !out.peaks.is_empty() {
-            ugens.push(json!({"kind": "PeaksOut", "inputs": zeros, "path": out.peaks}));
-        }
-        let def = json!({"name": "ae.consolidate", "ugens": ugens});
+        let def = json!({"name": "ae.consolidate", "ugens": []});
         return render(Vec::new(), def, 0, list.rate, list.channels, out);
     }
     let mut def = Def::new();
     let channels: Vec<usize> = (0..list.channels)
         .map(|c| def.list_channel(LIST, c))
         .collect();
-    let def = if out.peaks.is_empty() {
-        let mut def = def;
-        for (bus, ugen) in channels.iter().enumerate() {
-            def.push(json!({"kind": "Out", "inputs": [{"const": bus as f64}, {"ugen": ugen}]}));
-        }
-        json!({"name": "ae.consolidate", "ugens": def.ugens})
-    } else {
-        def.finish("ae.consolidate", &channels, &out.peaks)
-    };
+    let def = def.finish("ae.consolidate", &channels);
     render(
         vec![stitch(LIST, list)],
         def,
@@ -612,14 +570,15 @@ pub fn decode(path: &str, channels: u32, frames: u64, rate: f64, out: &Output) -
     let read: Vec<usize> = (0..channels)
         .map(|c| def.push(json!({"kind": "DiskIn", "inputs": [{"const": c as f64}], "path": path})))
         .collect();
-    let def = def.finish("ae.decode", &read, &out.peaks);
+    let def = def.finish("ae.decode", &read);
     render(Vec::new(), def, frames.max(1), rate, channels, out)
 }
 
 /// **A file of silence**: what a new file is before anything is put in it.
 pub fn silence(frames: u64, channels: u32, rate: f64, out: &Output) -> Step {
-    let zeros: Vec<Value> = (0..channels).map(|_| json!({"const": 0.0})).collect();
-    let def = json!({"name": "ae.silence", "ugens": [
-        {"kind": "PeaksOut", "inputs": zeros, "path": out.peaks}]});
+    let ugens: Vec<Value> = (0..channels)
+        .map(|bus| json!({"kind": "Out", "inputs": [{"const": bus as f64}, {"const": 0.0}]}))
+        .collect();
+    let def = json!({"name": "ae.silence", "ugens": ugens});
     render(Vec::new(), def, frames.max(1), rate, channels, out)
 }

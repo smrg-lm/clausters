@@ -652,6 +652,20 @@ pub fn render_to_wav_while(
 /// What a render that was let go answers.
 pub const CALLED_OFF: &str = "called off";
 
+/// **A render driven to its end into `sink`, while `live` holds**: each run
+/// of frames handed to `sink` as it is made, `progress` told the frames done
+/// and the frames it comes to after each. What a caller that does more with
+/// the samples than write them (measures them as they go) drives.
+pub fn render_into_while(
+    score: &OscScore,
+    cfg: &RenderConfig,
+    live: &AtomicBool,
+    sink: impl FnMut(&[f32]) -> Result<(), String>,
+    progress: impl FnMut(u64, u64),
+) -> Result<RenderStats, String> {
+    drive(score, cfg, live, sink, progress)
+}
+
 /// **A render driven to its end** by the helpers above: a second of the
 /// score a run, `progress` told after each. In a page the render's file
 /// streams are served between two runs ([`page_streams`]), where natively

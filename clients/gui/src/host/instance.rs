@@ -106,7 +106,10 @@ impl Host {
             }
             if !matches!(
                 self.instance.run.awaiting(),
-                Some((_, Step::Render(_) | Step::Move { .. }))
+                Some((
+                    _,
+                    Step::Render(_) | Step::Measure { .. } | Step::Move { .. }
+                ))
             ) {
                 return;
             }

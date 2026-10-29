@@ -32,7 +32,7 @@ use super::stitch::{Part, Stitch};
 
 /// The base bucket every summary is kept at -- the grid a host's pyramid
 /// draws on (`DEFAULT_BASE_BUCKET` in the GUI host, 256 in both clients).
-pub const SUMMARY_BUCKET: usize = 256;
+pub const SUMMARY_BUCKET: usize = clausters_core::peaks::measure::SUMMARY_BUCKET;
 
 /// The summary and the write count it was last true for.
 pub struct Summary {

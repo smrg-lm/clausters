@@ -116,7 +116,7 @@ impl Editing {
             };
             let result = match wait {
                 Await::Steps(steps) => {
-                    let renders = steps.iter().any(|s| matches!(s, Step::Render(_)));
+                    let renders = steps.iter().any(|s| s.label().is_some());
                     if renders && !inline {
                         ran.render = Some(Render { run, steps });
                         return None;

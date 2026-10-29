@@ -67,6 +67,17 @@ pub enum Step {
     /// offline instance of its own (a `--nrt` process natively, a Worker in a
     /// page) and the queue is released when the file is written.
     Render(Render),
+    /// **Measure a file's peaks, and wait for it**: the summary of a file
+    /// opened without one, read in blocks by the endpoint and written beside
+    /// it with the core's measure (`clausters_core::peaks::measure`).
+    Measure {
+        /// The PCM file measured.
+        path: String,
+        /// Where its peaks are written, the spectral summary beside them.
+        peaks: String,
+        /// What it is for, as its progress is shown.
+        label: String,
+    },
     /// **Move a file, and wait for it**: what a save over a file a list
     /// reads does to keep the list's frames, the file it replaces moved out
     /// of the way and the new one moved where it was. The endpoint renames
@@ -80,6 +91,18 @@ pub enum Step {
     },
 }
 
+impl Step {
+    /// **What a step that takes a while is for**, as its progress is shown:
+    /// a render's or a measure's label; `None` for every other step.
+    pub fn label(&self) -> Option<&str> {
+        match self {
+            Step::Render(render) => Some(&render.label),
+            Step::Measure { label, .. } => Some(label),
+            _ => None,
+        }
+    }
+}
+
 /// **An offline render a step asks for**: the score, in the binary format
 /// `--nrt` reads, and the file it is rendered into.
 #[derive(Debug, Clone, PartialEq)]
@@ -87,10 +110,13 @@ pub struct Render {
     /// The binary score.
     pub score: Vec<u8>,
     /// The file the render's output is written to; its extension names the
-    /// container (a WAV, a W64 or an RF64). Empty for a render whose output
-    /// is kept nowhere, its work being what its synths write (a `PeaksOut`
-    /// measuring a file).
+    /// container (a WAV, a W64 or an RF64).
     pub path: String,
+    /// **Where what it writes is measured to**: the peaks of the output,
+    /// folded block by block as the render writes them
+    /// (`clausters_core::peaks::measure`), the spectral summary beside them.
+    /// Empty: not measured.
+    pub peaks: String,
     /// The render's sample rate.
     pub rate: f64,
     /// Its output channels.
@@ -744,9 +770,13 @@ pub fn steps_json(steps: &[Step]) -> Value {
                 }
                 Step::Sync(id) => json!({ "sync": id }),
                 Step::Move { from, to } => json!({"move": {"from": from, "to": to}}),
+                Step::Measure { path, peaks, label } => {
+                    json!({"measure": {"path": path, "peaks": peaks, "label": label}})
+                }
                 Step::Render(render) => json!({"render": {
                     "score": hex(&render.score),
                     "path": render.path,
+                    "peaks": render.peaks,
                     "rate": render.rate,
                     "channels": render.channels,
                     "format": render.format,
@@ -810,10 +840,29 @@ pub fn steps_from_json(steps: &Value) -> Vec<Step> {
                     to: moved.get("to")?.as_str()?.to_string(),
                 });
             }
+            if let Some(measured) = step.get("measure") {
+                let text = |key: &str| {
+                    measured
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string()
+                };
+                return Some(Step::Measure {
+                    path: measured.get("path")?.as_str()?.to_string(),
+                    peaks: measured.get("peaks")?.as_str()?.to_string(),
+                    label: text("label"),
+                });
+            }
             if let Some(render) = step.get("render") {
                 return Some(Step::Render(Render {
                     score: unhex(render.get("score")?.as_str()?)?,
                     path: render.get("path")?.as_str()?.to_string(),
+                    peaks: render
+                        .get("peaks")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
                     rate: render.get("rate")?.as_f64()?,
                     channels: render.get("channels")?.as_u64()? as usize,
                     format: render
@@ -915,6 +964,7 @@ mod tests {
                 Step::AwaitDone { command, .. } => format!("await {command}"),
                 Step::Sync(_) => "sync".into(),
                 Step::Render(r) => format!("render {}", r.path),
+                Step::Measure { peaks, .. } => format!("measure {peaks}"),
                 Step::Move { to, .. } => format!("move {to}"),
             })
             .collect()

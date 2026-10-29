@@ -91,6 +91,8 @@ fn walk(steps: &Value) -> Vec<String> {
                 "render".into()
             } else if step.get("move").is_some() {
                 "move".into()
+            } else if step.get("measure").is_some() {
+                "measure".into()
             } else {
                 "sync".into()
             }
@@ -120,16 +122,16 @@ fn event(editor: &mut AudioEditor, args: Value) -> Value {
     )
 }
 
-/// **Opening reads nothing of the file but its peaks, measured once**: a
-/// render of the file into its peaks in the working folder, which the
-/// window draws as a list over the file itself.
+/// **Opening reads nothing of the file but its peaks, measured once**: the
+/// file measured into its peaks in the working folder, no render at all,
+/// which the window draws as a list over the file itself.
 #[test]
 fn opening_measures_the_file_and_draws_its_list() {
     let mut editor = opened(1);
     let steps = open(&mut editor)["steps"].clone();
-    assert_eq!(walk(&steps), ["render"]);
-    let measured = &renders(&steps)[0];
-    assert_eq!(measured["path"], "", "the measure keeps no output");
+    assert_eq!(walk(&steps), ["measure"]);
+    let measured = &steps[0]["measure"];
+    assert_eq!(measured["path"], "/in/take3.wav", "the file itself");
     assert_eq!(
         measured["label"], "Open file",
         "shown as the open's progress"
@@ -180,7 +182,7 @@ fn a_compressed_file_is_decoded_into_the_working_folder() {
         .to_string(),
     )
     .unwrap();
-    assert_eq!(renders(&open(&mut wav)["steps"])[0]["path"], "");
+    assert_eq!(walk(&open(&mut wav)["steps"]), ["measure"]);
 }
 
 #[test]

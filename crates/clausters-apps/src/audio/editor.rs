@@ -1309,7 +1309,7 @@ impl AudioEditor {
     ///
     /// Nothing of the file is read but its header (the caller's, before the
     /// editor exists) and, once, its samples into its peaks, which are kept in
-    /// the working folder: a render of the file into a `PeaksOut`. A new file
+    /// the working folder: the file measured in blocks ([`Step::Measure`]). A new file
     /// is written as silence first.
     pub fn open(&mut self) -> Result<Value, String> {
         self.open_steps().map(|steps| steps_json(&steps))

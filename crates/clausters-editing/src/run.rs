@@ -93,7 +93,10 @@ impl Runner {
                 }
                 Some((
                     to,
-                    wait @ (Step::AwaitDone { .. } | Step::Render(_) | Step::Move { .. }),
+                    wait @ (Step::AwaitDone { .. }
+                    | Step::Render(_)
+                    | Step::Measure { .. }
+                    | Step::Move { .. }),
                 )) => self.awaiting = Some((to, wait)),
             }
         }
@@ -141,7 +144,10 @@ impl Runner {
     pub fn rendered(&mut self, failed: Option<String>) -> Reply {
         if !matches!(
             self.awaiting,
-            Some((_, Step::Render(_) | Step::Move { .. }))
+            Some((
+                _,
+                Step::Render(_) | Step::Measure { .. } | Step::Move { .. }
+            ))
         ) {
             return Reply::Unrelated;
         }
@@ -284,6 +290,7 @@ mod tests {
     #[test]
     fn a_render_holds_the_queue_until_the_endpoint_has_rendered() {
         let render = Step::Render(crate::apply::Render {
+            peaks: String::new(),
             score: vec![0, 1, 254, 255],
             path: "take.w64".into(),
             rate: 48_000.0,
@@ -326,6 +333,7 @@ mod tests {
         run.push(
             Server::Sound,
             [Step::Render(crate::apply::Render {
+                peaks: String::new(),
                 score: Vec::new(),
                 path: "x.wav".into(),
                 rate: 48_000.0,

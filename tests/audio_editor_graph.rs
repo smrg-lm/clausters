@@ -40,7 +40,7 @@ fn run(s: &mut NrtSession, steps: Vec<Step>) {
             Step::AwaitDone { .. } | Step::Sync(_) => {
                 s.settle_for(4);
             }
-            Step::Render(_) | Step::Move { .. } => {
+            Step::Render(_) | Step::Measure { .. } | Step::Move { .. } => {
                 panic!("the editor's graph renders and moves nothing")
             }
         }

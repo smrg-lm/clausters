@@ -306,11 +306,13 @@ fn file_id(editing: &Editing, member: MemberId) -> Option<i64> {
 fn rendered_files(steps: &[Step]) -> Vec<String> {
     let mut out = Vec::new();
     for step in steps {
-        if let Step::Render(render) = step
-            && !render.path.is_empty()
-        {
-            out.push(render.path.clone());
-            out.push(crate::audio::editor::peaks_beside(&render.path));
+        match step {
+            Step::Render(render) if !render.path.is_empty() => {
+                out.push(render.path.clone());
+                out.push(crate::audio::editor::peaks_beside(&render.path));
+            }
+            Step::Measure { peaks, .. } => out.push(peaks.clone()),
+            _ => {}
         }
     }
     out

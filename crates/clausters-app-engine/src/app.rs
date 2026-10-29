@@ -311,24 +311,24 @@ impl App {
         renders.push(Arc::clone(&live));
         // the window is told at once that a render runs, not a tenth of a
         // second into it
-        if let Some(Step::Render(job)) = steps.iter().find(|s| matches!(s, Step::Render(_))) {
+        if let Some(label) = steps.iter().find_map(Step::label) {
             let _ = tx.send(Note::Progress {
                 member,
-                label: job.label.clone(),
+                label: label.to_string(),
                 done: Some(0),
                 total: 1,
             });
         }
         let spawned = clausters_core::threads::spawn("audio-render", move || {
             let mut last = web_time::Instant::now();
-            let mut told = |job: &clausters_editing::apply::Render, done, total| {
+            let mut told = |label: &str, done, total| {
                 // at most ten times a second, so a long render costs the
                 // window nothing
                 if last.elapsed().as_millis() >= 100 {
                     last = web_time::Instant::now();
                     let _ = tx.send(Note::Progress {
                         member,
-                        label: job.label.clone(),
+                        label: label.to_string(),
                         done: Some(done),
                         total,
                     });

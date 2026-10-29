@@ -222,6 +222,7 @@ mod tests {
             Step::AwaitDone { command, .. } => format!("await {command}"),
             Step::Sync(_) => "sync".into(),
             Step::Render(r) => format!("render {}", r.path),
+            Step::Measure { peaks, .. } => format!("measure {peaks}"),
             Step::Move { to, .. } => format!("move {to}"),
         };
         let mono = write_steps(7, 1, &payload, 2);
