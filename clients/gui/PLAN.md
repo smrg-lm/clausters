@@ -4077,7 +4077,7 @@ Whatever symbols the model itself needs owe their rows either way
   entry declines where a note cannot go; and whatever the page allows is
   readable from the display list rather than guessed from a shape.
 
-- ⬜ **N9 — A score as a box of the multitrack.** *(Rewritten 2026-10-04 with
+- ✅ **N9 — A score as a box of the multitrack.** *(Rewritten 2026-10-04 with
   the user. It was written as "the score in the arrangement", and the
   arrangement it meant was `clausters.form`, frozen since; what it asks now is
   a box on the multitrack drawn as a score, the way a box of notes is drawn as
@@ -4166,8 +4166,10 @@ Whatever symbols the model itself needs owe their rows either way
     what is visible once the start has scrolled off -- as a roll's keyboard
     is -- so the staff can always be read *(the user, 2026-10-06)*.
 
-  **Built 2026-10-06, and not closed: it closes with the eye pass** over
-  `editors/edit_multitrack` (View, Notes as scores).
+  **Built 2026-10-06, closed 2026-10-28 with the eye pass** over
+  `editors/edit_multitrack` (View, Notes as scores): the user switched the
+  keys box to its page and back, zoomed it, grew its row and saw the staff
+  grow with it, and opened the score editor from it.
   - **The host** draws it: `notes_view` and `scores` on the `multitrack`
     widget, and `graphics::score::proportional` -- a `Warp` of the page's
     `x` with a zone around each note drawn as engraved, a glyph never
@@ -4188,17 +4190,8 @@ Whatever symbols the model itself needs owe their rows either way
     what decides that a note goes to another voice is what **sounds**, and
     four notes written a beat long, half a beat apart and let go early are
     one line of eighths, where they were two voices and their rests.
-  - **Left open**, each for when it is met:
-    - the standalone host binds no engraver to its multitrack, so there a
-      box of notes is a roll whatever the menu says;
-    - the box is read with the transcription's defaults, and nothing on the
-      multitrack states another meter, key or smallest value for it;
-    - a page is engraved whole when its sequence changes, and what that
-      costs for a sequence of thousands of notes is not measured;
-    - a rest has no id on the page, so it stands where the stretch between
-      its neighbours puts it rather than at its own time;
-    - the box's label and the meter over the first note share the box's top
-      left corner.
+  - **Left open**, each for when it is met: "What a score box of the
+    multitrack left open" (Found by use).
 
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
@@ -8983,3 +8976,16 @@ module of its own.
   two-second and a ten-minute stereo take. The other window, over another
   file, does not move. What blinks (the summary placed whole, a frame drawn
   with no picture between the old and the new) is the question.
+
+- ⬜ **What a score box of the multitrack left open** *(moved here
+  2026-10-28 when `N9` closed; each for when it is met)*.
+  - the standalone host binds no engraver to its multitrack, so there a
+    box of notes is a roll whatever the menu says;
+  - the box is read with the transcription's defaults, and nothing on the
+    multitrack states another meter, key or smallest value for it;
+  - a page is engraved whole when its sequence changes, and what that
+    costs for a sequence of thousands of notes is not measured;
+  - a rest has no id on the page, so it stands where the stretch between
+    its neighbours puts it rather than at its own time;
+  - the box's label and the meter over the first note share the box's top
+    left corner.

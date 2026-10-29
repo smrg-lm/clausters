@@ -3621,7 +3621,7 @@ Every entry carries a checkbox.
   **The steps:** the reading, bound in both clients as the score's
   constructor from a sequence; `edit(sequence, view="score")` with the edit
   written back as above; then `N9`. *(All of it done 2026-10-06; `N9` is
-  built and closes in its own plan with its eye pass. What each step left
+  built, and closed in its own plan with its eye pass on 2026-10-28. What each step left
   open is listed under it.)*
 
   - ✅ **The reading.** *(Done 2026-10-06.

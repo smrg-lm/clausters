@@ -218,10 +218,6 @@ a person saw it work.
   folds coming and going, the Hann pulses, the breath -- has not been heard in
   either. **Related:** the arc's measurements are in the plan.
 
-- ⬜ **Nobody has looked at a score box on the multitrack** *(`clients/gui/PLAN.md`,
-  `N9`)*. Built 2026-10-06 and not closed: it closes with the eye pass over
-  `editors/edit_multitrack`.
-
 - ⬜ **Nobody has looked at `views/segments`** *(`clients/gui/PLAN.md`,
   `G45`)*. The host draws a list of segments over files; the pair renders a
   swelling tone with its peaks and draws it whole and with its halves swapped.
@@ -244,19 +240,15 @@ its plan; the plan is where its acceptance is read.
   does not scale to a second process, and several effects per file need
   identity; a design first.
 
-- ⬜ **The `N` track's last two — a foreign score's layout, and a score as a
-  box of the multitrack**, `N7` and `N9` *(`clients/gui/PLAN.md`, "N track —
-  notation: the score model, and what is written on it")*. What a page lets a
-  hand do is answered: `N8` closed 2026-10-05 as the score editor's `X5.0`,
-  and `X5` built the rest of the hand on it. Neither of the two left is about
-  the hand, and `N7` is a **decision** before it is work.
-  **`N7`** — what opening somebody else's score should preserve, since the
-  reader stores an engraver's beams and page breaks as though a writer had
-  chosen them; no longer invisible, since the score editor opens a foreign
-  file, lays it out in runs at its page breaks and changes its rhythms.
-  **`N9`** — a score as a box of the multitrack, drawn the way a box of notes
-  is drawn as a piano roll; built, and what is left of it is the eye pass in
-  section 2 and what its entry lists as left open.
+- ⬜ **The `N` track's last one — a foreign score's layout**, `N7`
+  *(`clients/gui/PLAN.md`, "N track — notation: the score model, and what
+  is written on it")*. A **decision** before it is work: what opening
+  somebody else's score should preserve, since the reader stores an
+  engraver's beams and page breaks as though a writer had chosen them; no
+  longer invisible, since the score editor opens a foreign file, lays it
+  out in runs at its page breaks and changes its rhythms. What `N9` left
+  open is the same plan's "What a score box of the multitrack left open"
+  (Found by use).
 
 - ⬜ **The applications after the multitrack, `X2`-`X6`, the score editor
   continued, `X11`, and the multitrack continued, `X9`**
