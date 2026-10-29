@@ -15,6 +15,8 @@ use std::time::Duration;
 use crate::server::meters::{Meters, Role, Stamp, stamp};
 
 /// How long the I/O thread parks when its ring is full/empty before retrying.
+/// A page's readers rest instead (`dsp::disk_web`).
+#[cfg(not(target_arch = "wasm32"))]
 const PARK: Duration = Duration::from_millis(2);
 
 /// **How long a reader that is woken for its work parks**, as a safety net:
@@ -61,6 +63,7 @@ impl Turn {
     /// Closes the stretch, parks, and opens the next one. A park is cut short
     /// by an unpark, which is how a reader that follows the transport is
     /// woken for a refill.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn park(&mut self) {
         self.close();
         std::thread::park_timeout(PARK);
