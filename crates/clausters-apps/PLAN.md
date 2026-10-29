@@ -3498,10 +3498,20 @@ over the opened file) carries over.
     `nodes::plan_fed` plays the first two; the matrix onto the master's
     first channels is still to be built (`crates/clausters-document/PLAN.md`,
     "A track is as wide as its widest region").
-  - ⬜ **The clients are its handler** (Python, then the port): `edit` over
-    a session opens the application, the script's `Multitrack` is a live
-    handle while it is open, the server path and its symbols go, with tests,
-    examples, both books, and a page that opens a session from its storage.
+  - ✅ **A saved session opens in the application from both clients**
+    *(2026-10-29)*: `edit(session)` over a session that has a file, and
+    `SessionEditor` its handler, the same surface in both (the transport,
+    the window's verbs, `output`, `save`), tested against a host that
+    answers the door from a table.
+  - ⬜ **The rest of the clients' move**: the script's `Multitrack` a live
+    handle while the application has it open, `edit(multitrack)` an
+    untitled session over it, and then the server path and its symbols
+    removed (`server=`, `sources=`, `Session.load`, `editing_load` and the
+    playback doors only it used), with `docs/bindings.md`, the parity
+    tests and the ABI record; `edit_multitrack` and `load_multitrack`
+    rewritten over a session file and read side by side; and a page that
+    opens a session from its storage (`multitrack-editor.html?isolated`),
+    pre-checked in Firefox.
 
 ## Definition of done (per milestone)
 
