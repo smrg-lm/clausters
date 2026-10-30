@@ -866,6 +866,24 @@ mod tests {
         }
     }
 
+    /// **A meter beside a take keeps the width it asks for**, and the take
+    /// yields it: the audio editor's row of its picture (weighted) and its
+    /// level, as narrow a window as the editor opens in.
+    #[test]
+    fn a_meter_beside_a_take_keeps_its_natural_width() {
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"type":"layout","flow":"row","margin":0,"weight":1,"children":[
+                {"id":5,"type":"signal","view":"trace","data":[],"weight":1},
+                {"id":6,"type":"meter","bus":0,"rate":"control","scale":"db","channels":2}]}]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout(Rect::new(0.0, 0.0, 480.0, 300.0), &w, &m);
+        let meter = placed.iter().find(|p| p.widget.id == Some(6)).unwrap();
+        let natural = meter.widget.natural_size(&m, 1.0).0.unwrap();
+        assert_eq!(meter.rect.w, natural, "the meter is not cut");
+    }
+
     #[test]
     fn a_stack_places_only_the_page_its_index_names() {
         // Three pages, one shown: the hidden ones get no rectangle at all, so

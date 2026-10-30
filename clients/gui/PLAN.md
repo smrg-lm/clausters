@@ -8596,12 +8596,18 @@ module of its own.
   could drop the end labels where a row is short, or rule shared edges once.
 
 
-- ⬜ **The audio editor's meter is cut at the window's right edge** *(found
+- ✅ **The audio editor's meter is cut at the window's right edge** *(found
   2026-10-17, in the captures of the edit-audio example)*. The level reading
   at its foot shows as `-...` and the column has no room beside its ladder,
   with or without the file list. It predates the file list: the window's
   width does not leave the meter its natural size. The meter should keep
-  the width it asks for and the take's pane yield it.
+  the width it asks for and the take's pane yield it. **Fixed 2026-10-30:**
+  the row already gave the meter its natural width; the width was what fell
+  short. It counted one pad of the two its body is inset by and the
+  metric's ruler width rather than the strip its ladder draws, and left the
+  columns, which the reading is written over, too thin for it. It now asks
+  for both pads, the ladder's own strip and columns as wide as its widest
+  reading.
 
 - ✅ **Eight tracks bring the GUI's frame rate down, and the play cursor
   jitters** (2026-10-21, the user, native, in the audio editor's review).

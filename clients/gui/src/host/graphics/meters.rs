@@ -1505,6 +1505,18 @@ impl MeterAxis {
             MeterAxis::Linear { .. } => fmt(value),
         }
     }
+
+    /// **The readings that are widest on this axis**: the floor's, the
+    /// silence below it, and a plain range's two ends -- what a meter's
+    /// width has to hold for its reading to be read whole.
+    pub fn widest_readouts(self) -> Vec<String> {
+        match self {
+            MeterAxis::Decibels { floor_db } => {
+                vec!["-INF".to_string(), format!("{floor_db:.1}")]
+            }
+            MeterAxis::Linear { min, max } => vec![fmt(min), fmt(max)],
+        }
+    }
 }
 
 /// An amplitude in decibels below full scale; `-INF` reads as a very negative

@@ -458,10 +458,32 @@ impl Element for Meter {
         let column = (m.box_side * 0.5).max(3.0);
         let columns =
             self.channels as f32 * column + (self.channels.saturating_sub(1)) as f32 * m.divider_w;
-        let ladder = if self.ruler.is_some() { m.ruler_w } else { 0.0 };
+        // **The reading is written over the columns**, so the columns are
+        // as wide as it is: a pair of thin columns under a five-character
+        // number left it cut to `-...`.
+        let reading = if self.readout {
+            self.axis
+                .widest_readouts()
+                .iter()
+                .map(|text| crate::host::font::width(text, m.caption_scale))
+                .fold(0.0, f32::max)
+        } else {
+            0.0
+        };
+        let columns = columns.max(reading);
+        // The ladder the drawing takes (`meters::draw_meter_view`): the
+        // strip its labels want, read at a height tall enough to carry every
+        // label it can write, and only on a decibel axis.
+        let ladder = match (self.ruler, self.axis) {
+            (Some(_), MeterAxis::Decibels { floor_db }) => {
+                crate::host::ruler::db_strip_w(f64::from(floor_db), 4096.0, m)
+            }
+            _ => 0.0,
+        };
+        // The body is inset by a pad on each side (`body_rect`).
         (
             Some(crate::host::metrics::snap_px(
-                columns + ladder + m.pad,
+                columns + ladder + 2.0 * m.pad,
                 scale,
             )),
             None,
@@ -845,8 +867,9 @@ mod tests {
     #[test]
     fn a_meter_asks_for_a_narrow_column_and_no_height() {
         let m = Metrics::default();
-        let one = from_props(&props(r#"{"ruler":false}"#)).natural(&m, 1.0);
-        let two = from_props(&props(r#"{"channels":2,"ruler":false}"#)).natural(&m, 1.0);
+        let one = from_props(&props(r#"{"ruler":false,"readout":false}"#)).natural(&m, 1.0);
+        let two =
+            from_props(&props(r#"{"channels":2,"ruler":false,"readout":false}"#)).natural(&m, 1.0);
         let (Some(one_w), Some(two_w)) = (one.0, two.0) else {
             panic!("a meter states its width");
         };
@@ -856,8 +879,43 @@ mod tests {
         );
         assert!(one_w < m.header_w, "narrower than a name: {one_w}");
         assert!(two_w > one_w, "a second channel is a second column");
-        let ruled = from_props(&props("{}")).natural(&m, 1.0).0.unwrap();
+        let ruled = from_props(&props(r#"{"readout":false}"#))
+            .natural(&m, 1.0)
+            .0
+            .unwrap();
         assert!(ruled > one_w, "the ladder asks for its strip too");
+    }
+
+    /// **The reading fits over the columns it is written on**: a stereo
+    /// meter at its natural width, ladder and all, leaves the columns the
+    /// width of its widest reading, so the number is not cut to `-...`.
+    #[test]
+    fn a_meter_is_as_wide_as_its_reading() {
+        let m = Metrics::default();
+        let meter = from_props(&props(r#"{"channels":2,"scale":"db"}"#));
+        let width = meter.natural(&m, 1.0).0.unwrap();
+        let widest = meter
+            .axis
+            .widest_readouts()
+            .iter()
+            .map(|t| crate::host::font::width(t, m.caption_scale))
+            .fold(0.0, f32::max);
+        // What the drawing leaves the columns at that width: the body, less
+        // the ladder's strip.
+        let body = crate::host::graphics::controls::body_rect(
+            crate::host::layout::Rect::new(0.0, 0.0, width, 300.0),
+            false,
+            &m,
+        );
+        let MeterAxis::Decibels { floor_db } = meter.axis else {
+            panic!("a decibel meter");
+        };
+        let strip = crate::host::ruler::db_strip_w(f64::from(floor_db), body.h, &m);
+        assert!(
+            body.w - strip >= widest,
+            "columns of {} hold a reading of {widest}",
+            body.w - strip
+        );
     }
 
     /// The numbers are a prop: a strip of meters in a header carries no ladder
