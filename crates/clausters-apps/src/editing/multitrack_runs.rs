@@ -4,10 +4,10 @@
 //!
 //! The audio editor's coordinator ([`super::coordinator`]) runs its actions
 //! as runs that stop on what only the caller does, a render above all. A
-//! multitrack renders nothing: an edit moves where things are and never the
-//! samples they read, so every action here ends where it starts, and the one
-//! thing it hands the engine is each track's take ([`HeldTake`]), read by
-//! the application into the track's fed buffers. An edit of a track's
+//! multitrack edit moves where things are and never the samples they read.
+//! Session storage and source measurement wait on identified operations;
+//! other actions complete in this turn. Playback hands each track's take
+//! ([`HeldTake`]) to the engine, into the track's fed buffers. An edit of a track's
 //! regions hands the track's take over again and makes no node.
 //!
 //! The vocabulary is the audio editor's: the window's effects are `echo`
@@ -28,6 +28,7 @@ use clausters_editing::playback::{MultitrackPlayback, View};
 use serde_json::{Value, json};
 
 use super::held::{HeldList, HeldTake, PlacedList};
+use super::multitrack_action::{Action, Handle, HandleCall, Kind as ActionKind};
 use super::{Caller, Editing, Member, MemberId, Raised, Ran};
 use crate::multitrack::editor::{Kind, TransportVerb};
 use crate::turn::Event;
@@ -118,6 +119,10 @@ impl Editing {
         caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {
+        let action = match Action::read(action) {
+            Ok(action) => action,
+            Err(reason) => return refused("value", reason),
+        };
         self.select_member(member);
         let mut tracks = match self.tracks.remove(&member) {
             Some(tracks) => tracks,
@@ -126,7 +131,7 @@ impl Editing {
                 None => return refused("runtime", "the multitrack has no engine"),
             },
         };
-        let ran = self.multitrack_run(member, &mut tracks, action, caller, ids);
+        let ran = self.multitrack_run(member, &mut tracks, &action, caller, ids);
         self.tracks.insert(member, tracks);
         ran
     }
@@ -283,19 +288,19 @@ impl Editing {
         &mut self,
         member: MemberId,
         tracks: &mut Tracks,
-        action: &Value,
+        action: &Action,
         caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {
         let mut ran = Ran::default();
-        let verb = action["verb"].as_str().unwrap_or_default();
-        if action.get("saveTo").is_some() {
-            tracks.save_to = Some(action["saveTo"].as_str().map(str::to_string));
+        if let Some(save_to) = &action.save_to {
+            tracks.save_to = Some(save_to.clone());
         }
-        let result = match verb {
-            "open" if action["session"].is_string() => {
-                let path = action["session"].as_str().unwrap_or_default().to_string();
-                let opened = self.open_session(member, tracks, &path, caller, &mut ran);
+        let result = match &action.kind {
+            ActionKind::Open {
+                session: Some(path),
+            } => {
+                let opened = self.open_session(member, tracks, path, caller, &mut ran);
                 if opened.is_ok() {
                     self.sound(member, tracks, ids);
                     tracks.saved = self.multitrack_snapshot(member, tracks);
@@ -305,79 +310,68 @@ impl Editing {
                     answer
                 })
             }
-            "retry" => {
+            ActionKind::Retry => {
                 self.retry_multitrack(member, caller, ids, &mut ran);
                 if ran.end.is_none() {
                     ran.end = Some(Ok(Value::Null));
                 }
                 return ran;
             }
-            "save" => self.save_session(
+            ActionKind::Save { path } => self.save_session(
                 member,
                 tracks,
                 super::multitrack_operations::SaveTo {
-                    path: action["path"].as_str().map(str::to_string),
+                    path: path.clone(),
                     close: false,
-                    save_as: action["path"].is_string(),
+                    save_as: path.is_some(),
                 },
                 &mut ran,
             ),
-            "open" | "sound" => {
+            ActionKind::Open { session: None } | ActionKind::Sound => {
                 self.sound(member, tracks, ids);
-                if verb == "open" {
+                if matches!(action.kind, ActionKind::Open { .. }) {
                     tracks.saved = self.multitrack_snapshot(member, tracks);
                 }
                 Ok(json!({"transport": tracks.playback.transport()}))
             }
-            "event" => {
-                let event = Event {
-                    addr: action["addr"].as_str().unwrap_or_default().to_string(),
-                    args: action["args"].as_array().cloned().unwrap_or_default(),
-                };
-                Ok(self.multitrack_event(member, tracks, &event, caller, ids, &mut ran))
+            ActionKind::Event(event) => {
+                Ok(self.multitrack_event(member, tracks, event, caller, ids, &mut ran))
             }
-            "verb" => {
-                let call = action["call"].to_string();
+            ActionKind::Verb { call } => {
                 let version = self.version;
                 let answer = match self.member_mut(member) {
-                    Some(Member::Multitrack(editor)) => {
-                        let mut call: Value = serde_json::from_str(&call).unwrap_or_default();
-                        call["version"] = json!(version);
-                        crate::multitrack::editor::call_json(editor, &call.to_string())
-                    }
+                    Some(Member::Multitrack(editor)) => call.execute(editor, version),
                     _ => return refused("value", "the member is not a multitrack"),
                 };
                 self.sound(member, tracks, ids);
                 // what the window shows changed with it: drawn again
-                if matches!(action["call"]["verb"].as_str(), Some("sync" | "notesView")) {
+                if call.resyncs() {
                     ran.effects.push(effect("resync", json!({})));
                 }
-                Ok(serde_json::from_str(&answer).unwrap_or(Value::Null))
+                Ok(answer)
             }
             // **A script's play**: over its range, or -- with none -- a
             // paused pass goes on, and otherwise one starts at the position
             // cursor, as the space bar's does
-            "play" => {
-                let range = action["range"]
-                    .as_array()
-                    .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)));
+            ActionKind::Play { range, looping } => {
+                let range = range.map(|[from, to]| (from, to));
                 if range.is_none() && tracks.playback.paused() {
                     tracks.playback.resume();
                 } else {
                     let (_, cursor) = self.multitrack_view(member);
                     let view = tracks.view(range, cursor);
-                    tracks.playback.play(action["looping"] == true, view);
+                    tracks.playback.play(*looping, view);
                 }
                 Ok(Value::Null)
             }
-            "pause" => {
+            ActionKind::Pause => {
                 tracks.playback.pause();
                 Ok(Value::Null)
             }
             // a script's stop goes back to `mark`, which is the position
             // cursor from then on: a play with no range starts there
-            "stop" => {
-                let mark = action["mark"].as_f64().unwrap_or(0.0);
+            ActionKind::Stop { mark } => {
+                let mark = *mark;
                 if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
                     editor.set_cursor(Some(mark));
                 }
@@ -388,8 +382,8 @@ impl Editing {
             // **A script's locate places the position cursor**, where a play
             // with no range starts: the head goes there while it rolls, and a
             // stopped transport stands on it
-            "locate" => {
-                let at = action["at"].as_f64().unwrap_or(0.0);
+            ActionKind::Locate { at } => {
+                let at = *at;
                 if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
                     editor.set_cursor(Some(at));
                 }
@@ -401,10 +395,12 @@ impl Editing {
                 }
                 Ok(Value::Null)
             }
-            "playing" => Ok(json!(self.multitrack_rolling(tracks))),
-            "handle" => self.multitrack_handle(member, tracks, action, ids, &mut ran),
-            "undo" | "redo" => {
-                let direction = if verb == "undo" {
+            ActionKind::Playing => Ok(json!(self.multitrack_rolling(tracks))),
+            ActionKind::Handle(handle) => {
+                self.multitrack_handle(member, tracks, handle, ids, &mut ran)
+            }
+            ActionKind::Undo | ActionKind::Redo => {
+                let direction = if matches!(action.kind, ActionKind::Undo) {
                     clausters_document::history::Direction::Undo
                 } else {
                     clausters_document::history::Direction::Redo
@@ -428,20 +424,17 @@ impl Editing {
                 }
                 Ok(json!(applied))
             }
-            "close" | "closed" => {
+            ActionKind::Close | ActionKind::Closed => {
                 self.close_tracks(member, tracks, ids);
                 ran.effects.push(self.closing(
                     member,
-                    if verb == "closed" {
+                    if matches!(action.kind, ActionKind::Closed) {
                         "closedWindow"
                     } else {
                         "closeWindow"
                     },
                 ));
                 Ok(json!(false))
-            }
-            other => {
-                return refused("value", format!("no multitrack verb {other:?}"));
             }
         };
         if !ran.render.as_ref().is_some_and(|render| {
@@ -470,26 +463,32 @@ impl Editing {
         &mut self,
         member: MemberId,
         tracks: &mut Tracks,
-        action: &Value,
+        action: &Handle,
         ids: &mut IdSpaces,
         ran: &mut Ran,
     ) -> Result<Value, String> {
         use crate::turn::{Leg, Record};
-        use clausters_document::multitrack::handle;
+        use clausters_document::multitrack::{
+            edit::{MultitrackIntent, payload},
+            handle,
+        };
 
-        let call = &action["call"];
-        let label = action["label"].as_str().unwrap_or("edit").to_string();
+        let call = &action.call;
+        let label = action.label.clone();
         let Some(Member::Multitrack(editor)) = self.member(member) else {
             return Err("the member is not a multitrack".into());
         };
-        let leg = |forward: Value, backward: Value| Leg {
-            holds_forward: editor.joins_named(&forward),
-            holds_backward: editor.joins_named(&backward),
+        let leg = |forward: &MultitrackIntent, backward: &MultitrackIntent| Leg {
+            holds_forward: editor.joins_in_intent(forward),
+            holds_backward: editor.joins_in_intent(backward),
             key: String::new(),
-            forward: json!({ "edit": forward }),
-            backward,
+            forward: json!({ "edit": payload(forward).0 }),
+            backward: payload(backward).0,
         };
-        if matches!(call["verb"].as_str(), Some("apply" | "record")) {
+        if matches!(
+            call,
+            HandleCall::Record(_) | HandleCall::Request(handle::Request::Apply { .. })
+        ) {
             self.multitrack_runtime
                 .operations
                 .check_write(crate::application::operations::Target {
@@ -499,35 +498,42 @@ impl Editing {
                 })
                 .map_err(str::to_string)?;
         }
-        if call["verb"] == "record" {
-            let legs: Vec<Leg> = call["legs"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|l| leg(l["forward"].clone(), l["backward"].clone()))
+        if let HandleCall::Record(recorded) = call {
+            let legs: Vec<Leg> = recorded
+                .iter()
+                .map(|recorded| leg(&recorded.forward, &recorded.backward))
                 .collect();
             let taken = !legs.is_empty() && self.record(member, &Record { label, legs }, false);
             return Ok(json!(taken));
         }
-        let shared = editor.shared();
-        let request = call.to_string();
-        let answer: Value = {
-            let mut multitrack = shared.lock().unwrap_or_else(|e| e.into_inner());
-            serde_json::from_str(&handle::call_json(&mut multitrack, &request))
-                .unwrap_or(Value::Null)
+        let HandleCall::Request(request) = call else {
+            unreachable!()
         };
-        if let Some(error) = answer["error"].as_str() {
-            return Err(error.to_string());
-        }
-        if !handle::mutates(&request) || answer["applied"] != true {
-            return Ok(answer);
-        }
-        let entry = match (action["record"] != false, answer.get("current")) {
-            (true, Some(current)) => Some(Record {
-                label,
-                legs: vec![leg(call["intent"].clone(), current.clone())],
-            }),
-            _ => None,
+        let shared = editor.shared();
+        let (answer, entry) = {
+            let mut multitrack = shared.lock().unwrap_or_else(|e| e.into_inner());
+            let handle::Request::Apply { intent, inverse } = request else {
+                let answer = request.execute(&mut multitrack);
+                return if let Some(error) = answer["error"].as_str() {
+                    Err(error.to_string())
+                } else {
+                    Ok(answer)
+                };
+            };
+            let applied = handle::apply(&mut multitrack, intent, *inverse);
+            let entry = applied
+                .current
+                .as_ref()
+                .filter(|_| action.record)
+                .map(|current| Record {
+                    label,
+                    legs: vec![leg(intent, current)],
+                });
+            let answer = serde_json::to_value(&applied).unwrap_or(Value::Null);
+            if !applied.applied {
+                return Ok(answer);
+            }
+            (answer, entry)
         };
         let taken = entry.is_some_and(|record| self.record(member, &record, false));
         if !taken {

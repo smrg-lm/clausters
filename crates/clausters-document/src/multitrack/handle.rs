@@ -9,6 +9,7 @@
 //! is a [`MultitrackIntent`], so a change made through a handle is the same
 //! edit a gesture makes, and can be recorded and undone the same way.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::edit::{self, MultitrackIntent};
@@ -45,69 +46,141 @@ pub fn call_json(multitrack: &mut Multitrack, request: &str) -> String {
     let Ok(request) = serde_json::from_str::<Value>(request) else {
         return json!({"error": "the request is not JSON"}).to_string();
     };
-    let id = || request.get("id").and_then(Value::as_u64).map(NodeId);
-    let answer = match request.get("verb").and_then(Value::as_str) {
-        Some("state") => serde_json::to_value(&*multitrack).unwrap_or(Value::Null),
-        Some("ids") => json!({ "ids": ids(multitrack, &request) }),
-        Some("track") => id()
-            .and_then(|id| multitrack.track(id))
-            .map_or(Value::Null, |t| serde_json::to_value(t).unwrap_or(Value::Null)),
-        Some("takeLane") => id()
-            .and_then(|id| multitrack.take_lane(id))
-            .map_or(Value::Null, |(track, lane)| {
-                json!({"track": track.id, "takeLane": lane})
-            }),
-        Some("region") => id()
-            .and_then(|id| multitrack.locate(id))
-            .map_or(Value::Null, |(track, lane, region)| {
-                json!({"track": track.id, "takeLane": lane.id, "region": region})
-            }),
-        Some("automation") => id().map_or(Value::Null, |id| automation(multitrack, id)),
-        Some("marker") => id()
-            .and_then(|id| multitrack.markers.iter().find(|m| m.id == id))
-            .map_or(Value::Null, |m| serde_json::to_value(m).unwrap_or(Value::Null)),
-        Some("mint") => {
-            let count = request.get("count").and_then(Value::as_u64).unwrap_or(1);
-            let first = fresh(multitrack);
-            json!({ "ids": (first..first + count).collect::<Vec<_>>() })
-        }
-        Some("apply") => {
-            let intent = request.get("intent").cloned().unwrap_or(Value::Null);
-            let inverse = request
-                .get("inverse")
-                .and_then(Value::as_bool)
-                .unwrap_or(true);
-            match serde_json::from_value::<MultitrackIntent>(intent) {
-                Ok(intent) => {
-                    let current = inverse
-                        .then(|| edit::current(multitrack, &intent))
-                        .flatten();
-                    let outcome =
-                        edit::apply(multitrack, &intent, &Against::unstated(), &Rules::none());
-                    let mut answer = json!({ "applied": outcome.applied });
-                    if let Some(current) = current.filter(|_| outcome.applied) {
-                        answer["current"] = edit::payload(&current).0;
-                    }
-                    if let Some(reason) = outcome.reason {
-                        answer["reason"] = json!(reason);
-                    }
-                    answer
-                }
-                Err(error) => json!({ "error": error.to_string() }),
+    call_value(multitrack, &request).to_string()
+}
+
+/// A handle request decoded at the boundary, shared by every caller.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "verb", rename_all = "camelCase")]
+pub enum Request {
+    State,
+    Ids {
+        #[serde(flatten)]
+        container: Container,
+    },
+    Track {
+        id: Option<NodeId>,
+    },
+    TakeLane {
+        id: Option<NodeId>,
+    },
+    Region {
+        id: Option<NodeId>,
+    },
+    Automation {
+        id: Option<NodeId>,
+    },
+    Marker {
+        id: Option<NodeId>,
+    },
+    Mint {
+        #[serde(default = "one")]
+        count: u64,
+    },
+    Apply {
+        intent: Box<MultitrackIntent>,
+        #[serde(default = "yes")]
+        inverse: bool,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+/// The container whose ordered ids a handle reads.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "of", rename_all = "camelCase")]
+pub enum Container {
+    Tracks,
+    TakeLanes {
+        track: Option<NodeId>,
+    },
+    Regions {
+        #[serde(rename = "takeLane")]
+        take_lane: Option<NodeId>,
+    },
+    Automation {
+        track: Option<NodeId>,
+        region: Option<NodeId>,
+    },
+    Markers,
+    #[serde(other)]
+    Unknown,
+}
+
+fn one() -> u64 {
+    1
+}
+fn yes() -> bool {
+    true
+}
+
+/// The result of an edit, including its inverse when requested and applied.
+#[derive(Debug, Serialize)]
+pub struct Applied {
+    pub applied: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<MultitrackIntent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Apply a typed intent, reading its inverse before changing the multitrack.
+pub fn apply(multitrack: &mut Multitrack, intent: &MultitrackIntent, inverse: bool) -> Applied {
+    let current = inverse.then(|| edit::current(multitrack, intent)).flatten();
+    let outcome = edit::apply(multitrack, intent, &Against::unstated(), &Rules::none());
+    Applied {
+        applied: outcome.applied,
+        current: current.filter(|_| outcome.applied),
+        reason: outcome.reason,
+    }
+}
+
+impl Request {
+    /// Execute a decoded request. Mutating callers may use [`apply`] directly
+    /// to retain its typed result for history recording.
+    pub fn execute(&self, multitrack: &mut Multitrack) -> Value {
+        match self {
+            Self::State => serde_json::to_value(&*multitrack).unwrap_or(Value::Null),
+            Self::Ids { container } => json!({ "ids": container.ids(multitrack) }),
+            Self::Track { id } => id.and_then(|id| multitrack.track(id))
+                .map_or(Value::Null, |t| serde_json::to_value(t).unwrap_or(Value::Null)),
+            Self::TakeLane { id } => id.and_then(|id| multitrack.take_lane(id))
+                .map_or(Value::Null, |(track, lane)| json!({"track": track.id, "takeLane": lane})),
+            Self::Region { id } => id.and_then(|id| multitrack.locate(id))
+                .map_or(Value::Null, |(track, lane, region)| {
+                    json!({"track": track.id, "takeLane": lane.id, "region": region})
+                }),
+            Self::Automation { id } => id.map_or(Value::Null, |id| automation(multitrack, id)),
+            Self::Marker { id } => id.and_then(|id| multitrack.markers.iter().find(|m| m.id == id))
+                .map_or(Value::Null, |m| serde_json::to_value(m).unwrap_or(Value::Null)),
+            Self::Mint { count } => {
+                let first = fresh(multitrack);
+                json!({ "ids": (first..first + count).collect::<Vec<_>>() })
             }
+            Self::Apply { intent, inverse } => serde_json::to_value(apply(multitrack, intent, *inverse))
+                .unwrap_or(Value::Null),
+            Self::Unknown => json!({"error": "no such verb"}),
         }
-        _ => json!({"error": "no such verb"}),
-    };
-    answer.to_string()
+    }
+}
+
+/// Execute one decoded handle request, following [`call_json`]'s contract.
+pub fn call_value(multitrack: &mut Multitrack, request: &Value) -> Value {
+    match serde_json::from_value::<Request>(request.clone()) {
+        Ok(request) => request.execute(multitrack),
+        Err(error) => json!({"error": error.to_string()}),
+    }
 }
 
 /// Whether `request` changes the multitrack -- for a door that answers a
 /// sizing pass and has to leave nothing behind.
 pub fn mutates(request: &str) -> bool {
-    serde_json::from_str::<Value>(request)
-        .ok()
-        .and_then(|r| r.get("verb").and_then(Value::as_str).map(|v| v == "apply"))
-        .unwrap_or(false)
+    serde_json::from_str::<Value>(request).is_ok_and(|request| mutates_value(&request))
+}
+
+/// Whether a decoded handle request changes the multitrack.
+pub fn mutates_value(request: &Value) -> bool {
+    request.get("verb").and_then(Value::as_str) == Some("apply")
 }
 
 /// An id past everything the multitrack names -- [`picture::fresh_id`], and
@@ -119,28 +192,27 @@ fn fresh(multitrack: &Multitrack) -> u64 {
 
 /// The ids a container holds, in the order shown, or `None` when it is not
 /// there.
-fn ids(multitrack: &Multitrack, request: &Value) -> Option<Vec<u64>> {
-    let named = |key: &str| request.get(key).and_then(Value::as_u64).map(NodeId);
-    match request.get("of").and_then(Value::as_str)? {
-        "tracks" => Some(multitrack.tracks.iter().map(|t| t.id.0).collect()),
-        "takeLanes" => multitrack
-            .track(named("track")?)
-            .map(|t| t.take_lanes.iter().map(|l| l.id.0).collect()),
-        "regions" => multitrack
-            .take_lane(named("takeLane")?)
-            .map(|(_, l)| l.regions.iter().map(|r| r.id.0).collect()),
-        "automation" => {
-            if let Some(track) = named("track") {
-                return multitrack
-                    .track(track)
-                    .map(|t| t.automation.iter().map(|a| a.id.0).collect());
-            }
-            multitrack
-                .locate(named("region")?)
-                .map(|(_, _, r)| r.automation.iter().map(|a| a.id.0).collect())
+impl Container {
+    fn ids(&self, multitrack: &Multitrack) -> Option<Vec<u64>> {
+        match self {
+            Self::Tracks => Some(multitrack.tracks.iter().map(|t| t.id.0).collect()),
+            Self::TakeLanes { track } => multitrack
+                .track((*track)?)
+                .map(|t| t.take_lanes.iter().map(|l| l.id.0).collect()),
+            Self::Regions { take_lane } => multitrack
+                .take_lane((*take_lane)?)
+                .map(|(_, l)| l.regions.iter().map(|r| r.id.0).collect()),
+            Self::Automation {
+                track: Some(track), ..
+            } => multitrack
+                .track(*track)
+                .map(|t| t.automation.iter().map(|a| a.id.0).collect()),
+            Self::Automation { region, .. } => multitrack
+                .locate((*region)?)
+                .map(|(_, _, r)| r.automation.iter().map(|a| a.id.0).collect()),
+            Self::Markers => Some(multitrack.markers.iter().map(|m| m.id.0).collect()),
+            Self::Unknown => None,
         }
-        "markers" => Some(multitrack.markers.iter().map(|m| m.id.0).collect()),
-        _ => None,
     }
 }
 

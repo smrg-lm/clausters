@@ -315,9 +315,7 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
                 map.insert("version".into(), json!(editing.version));
             }
             let answer = match editing.member_mut(member) {
-                Some(Member::Multitrack(editor)) => {
-                    parsed(&multitrack::call_json(editor, &call.to_string()))
-                }
+                Some(Member::Multitrack(editor)) => multitrack::call_value(editor, &call),
                 Some(Member::Audio(editor)) => audio::call_value(editor, call),
                 Some(Member::Notes(editor)) => parsed(&notes::call_json(editor, &call.to_string())),
                 Some(Member::Points(editor)) => {

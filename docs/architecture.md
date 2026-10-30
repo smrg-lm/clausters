@@ -1555,7 +1555,12 @@ with `Editing`, after the application has retained contents and history.
 The multitrack supplies another real application to those services.
 `multitrack::operations` prepares typed session-open, measurement, save and
 history deltas. `editing::multitrack_operations` drives their runtime through
-the existing `Caller`, `start` and `land` doors. Each dispatched batch gets a
+the existing `Caller`, `start` and `land` doors. `multitrack_action` decodes
+client actions before choosing an editing order or starting work;
+`multitrack::calls::Call` and the document's `handle::Request` carry typed
+editor calls and handle intents within the process. Handle edits return their
+typed inverse to history recording; only the client reply is serialized.
+The JSON doors remain adapters for the C ABI and wasm. Each dispatched batch gets a
 distinct run id; duplicate landings cannot consume the next batch. A session
 binding changes before its sources are published, and a delta of an earlier
 binding cannot attach peaks or confirm a save on the replacement. Measurements

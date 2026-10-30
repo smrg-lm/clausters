@@ -2828,12 +2828,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     failure. Prove isolated builds with and without `notation`.
     - ✅ Extract common preparation and turn settlement before changing
       multitrack behavior; audio keeps its result shape and domain decisions.
-    - ⬜ Integrate typed multitrack operations, storage and history walks;
+    - ✅ Integrate typed multitrack operations, storage and history walks;
       retire the replaced routes after the real consumer passes.
       - ✅ Session open/measurement/save and history use their own typed
         runtime over the shared services; verify fault traces, storage
         read-back on disk/OPFS, and both client handlers.
-      - ⬜ Decode the remaining multitrack action and handle requests at the
+      - ✅ Decode the remaining multitrack action and handle requests at the
         boundary and replace internal JSON dispatch with typed calls.
 
   - ⬜ **The multitrack's file lifecycle.** Distinguish no session, a new

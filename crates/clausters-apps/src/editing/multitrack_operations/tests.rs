@@ -534,3 +534,75 @@ fn cancellation_drains_only_its_own_measurement_and_invalidation_retires_its_rep
             .busy(work.ticket.target)
     );
 }
+
+#[test]
+fn malformed_handle_input_is_refused_before_selecting_an_order_or_creating_playback() {
+    let mut f = Fixture::new();
+    let selected = f.editing.services.histories.selected();
+    let version = f.editing.version;
+    for action in [
+        json!({"verb":"handle", "call":{"verb":"apply", "intent":{"intent":"setmarker", "marker":7}}}),
+        json!({"verb":"handle", "call":{"verb":"record", "legs":[{"forward":{"intent":"setmarker", "marker":7,"at":2.0}}]}}),
+        json!({"verb":"play", "range":[0.0]}),
+    ] {
+        let ran = f
+            .editing
+            .start(f.member, &action, None, &mut f.disk, &mut f.ids);
+        assert!(matches!(ran.end, Some(Err(_))));
+        assert!(ran.effects.is_empty());
+        assert!(ran.render.is_none());
+        assert_eq!(f.editing.services.histories.selected(), selected);
+        assert_eq!(f.editing.version, version);
+        assert!(f.editing.tracks.is_empty());
+    }
+    assert!(!f.editing.can_undo());
+}
+
+#[test]
+fn typed_handle_edits_can_be_grouped_and_walked_as_one_entry() {
+    let mut f = Fixture::new();
+    let forward = json!({"intent":"setmarker", "marker":7, "at":2.0, "name":"cue"});
+    let edited = f.editing.start(
+        f.member,
+        &json!({"verb":"handle", "record":false,
+        "call":{"verb":"apply", "intent":forward}}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    let answer = edited.end.unwrap().unwrap();
+    assert_eq!(answer["applied"], true);
+    assert!(!f.editing.can_undo());
+    let recorded = f.editing.start(
+        f.member,
+        &json!({"verb":"handle", "label":"marker block",
+        "call":{"verb":"record", "legs":[{"forward":forward, "backward":answer["current"]}]}}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(recorded.end, Some(Ok(json!(true))));
+    for verb in ["undo", "redo"] {
+        let ran = f.editing.start(
+            f.member,
+            &json!({"verb":verb}),
+            None,
+            &mut f.disk,
+            &mut f.ids,
+        );
+        assert_eq!(ran.end, Some(Ok(json!(true))));
+        let queried = f.editing.start(
+            f.member,
+            &json!({"verb":"handle", "call":{"verb":"ids", "of":"markers"}}),
+            None,
+            &mut f.disk,
+            &mut f.ids,
+        );
+        assert_eq!(
+            queried.end,
+            Some(Ok(
+                json!({"ids": if verb == "undo" { vec![] } else { vec![7] }})
+            ))
+        );
+    }
+}

@@ -35,6 +35,7 @@ use clausters_editing::multitrack::{self as projection, Look};
 
 use crate::chrome::{self, App};
 
+pub mod calls;
 pub mod dialogs;
 pub mod editor;
 pub mod operations;

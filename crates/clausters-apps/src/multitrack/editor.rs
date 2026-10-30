@@ -42,7 +42,7 @@ use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::multitrack::{self as projection, Look};
 
 use super::{Meter, Transport, TransportIds, Window, dialogs};
-use crate::turn::{self, Converse, int, number};
+use crate::turn::{self, Converse, number};
 
 pub use crate::turn::{Event, Kind, Leg, Record};
 
@@ -842,8 +842,14 @@ impl MultitrackEditor {
     /// from a file, and outlives every edit over it.
     pub(crate) fn joins_named(&self, payload: &Value) -> Vec<u64> {
         clausters_document::multitrack::edit::intent_of(&Opaque(payload.clone()))
-            .map(|intent| intent.sources())
+            .map(|intent| self.joins_in_intent(&intent))
             .unwrap_or_default()
+    }
+
+    /// Joins held by a decoded intent, before it becomes a history payload.
+    pub(crate) fn joins_in_intent(&self, intent: &MultitrackIntent) -> Vec<u64> {
+        intent
+            .sources()
             .into_iter()
             .filter(|source| self.segments.contains_key(source))
             .map(|source| source.0)
@@ -1114,6 +1120,10 @@ impl MultitrackEditor {
     /// The position cursor, in seconds.
     pub fn cursor(&self) -> Option<f64> {
         self.cursor
+    }
+
+    pub(super) fn set_range(&mut self, span: Option<(f64, f64)>) {
+        self.range = span;
     }
 
     /// The time range a sweep left, `[start, end]` in seconds.
@@ -2045,11 +2055,6 @@ fn yes() -> bool {
     true
 }
 
-/// An [`Outcome`] as JSON.
-fn outcome(outcome: &Outcome) -> String {
-    serde_json::to_string(outcome).unwrap_or_else(|_| "{}".into())
-}
-
 /// An editor built from a JSON request, or `None` for one that names no multitrack.
 pub fn new_json(request: &str) -> Option<MultitrackEditor> {
     let parsed: New = serde_json::from_str(request).ok()?;
@@ -2112,116 +2117,16 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
     let Ok(request) = serde_json::from_str::<Value>(request) else {
         return "{}".into();
     };
-    let get = |key: &str| request.get(key).cloned().unwrap_or(Value::Null);
-    let version = get("version").as_i64().unwrap_or(0);
-    let answer = |a: Answer| serde_json::to_string(&a).unwrap_or_else(|_| "{}".into());
-    match request
-        .get("verb")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-    {
-        "sync" => {
-            if let Ok(multitrack) = serde_json::from_value::<Multitrack>(get("multitrack")) {
-                editor.set_multitrack(multitrack);
-            }
-            if request.get("sources").is_some() {
-                editor.set_sources(projection::table(&get("sources")));
-                editor.set_lengths(projection::lengths(&get("sources")));
-            }
-            if let Ok(meters) = serde_json::from_value::<Vec<Meter>>(get("meters")) {
-                editor.set_meters(meters);
-            }
-            if request.get("cursor").is_some() {
-                editor.set_cursor(get("cursor").as_f64());
-            }
-            if request.get("window").is_some() {
-                editor.set_window(get("window").as_i64().map(|w| w as i32));
-            }
-            if request.get("controls").is_some() {
-                editor.set_controls(serde_json::from_value(get("controls")).ok());
-            }
-            if request.get("closeForm").is_some() {
-                let form = get("closeForm");
-                let id = |key: &str| form[key].as_i64().map(|n| n as i32);
-                editor.set_close_form((|| {
-                    Some(crate::closing::Ids {
-                        stack: id("stack")?,
-                        dialog: id("dialog")?,
-                        save: id("save")?,
-                        discard: id("discard")?,
-                        cancel: id("cancel")?,
-                    })
-                })());
-            }
-            if let Some(asks) = get("asks").as_bool() {
-                editor.set_asks_to_close(asks);
-            }
-            if let Some(saves) = get("saves").as_bool() {
-                editor.set_saves(saves);
-            }
-            if let Some(ids) = get("dialogs").as_object() {
-                editor.set_dialogs(
-                    ids.iter()
-                        .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
-                        .collect(),
-                );
-            }
-            if let Some(grid) = get("grid").as_f64() {
-                editor.set_grid(grid);
-            }
-            if let Some(snap) = get("snap").as_bool() {
-                editor.set_snap(snap);
-            }
-            "{}".into()
-        }
-        "grid" => json!({ "grid": editor.grid(), "snap": editor.snap() }).to_string(),
-        "dialogs" => json!({ "dialogs": dialogs::names() }).to_string(),
-        "rewind" => outcome(&editor.rewind(version)),
-        "toggle" => outcome(&editor.toggle(version)),
-        "stop" => outcome(&editor.stop(version)),
-        "clock" => json!({ "text": editor.clock(number(&get("position"))) }).to_string(),
-        "window" => editor
-            .window(int(&get("widget")) as i32, int(&get("ruler")) as i32)
-            .to_string(),
-        "setWindow" => {
-            editor.set_window(get("window").as_i64().map(|w| w as i32));
-            "{}".into()
-        }
-        "props" => Value::Object(editor.props(int(&get("widget")) as i32)).to_string(),
-        "notes" => json!({ "placed": editor.placed_notes() }).to_string(),
-        "notesView" => {
-            let set = get("view")
-                .as_str()
-                .is_none_or(|view| editor.set_notes_view(view));
-            json!({ "view": editor.notes_view(), "set": set }).to_string()
-        }
-        "event" => {
-            let event = Event {
-                addr: get("addr").as_str().unwrap_or_default().to_string(),
-                args: get("args").as_array().cloned().unwrap_or_default(),
-            };
-            outcome(&editor.event(&event, version))
-        }
-        "apply" => {
-            serde_json::to_string(&editor.apply(&get("payload"))).unwrap_or_else(|_| "{}".into())
-        }
-        "resync" => answer(editor.resync_all(version)),
-        "span" => {
-            editor.range = get("span")
-                .as_array()
-                .and_then(|r| Some((r.first()?.as_f64()?, r.get(1)?.as_f64()?)))
-                .filter(|(a, b)| b > a);
-            "{}".into()
-        }
-        "settle" => answer(editor.settle(version)),
-        "announce" => answer(editor.announce(version)),
-        "acknowledge" => answer(editor.acknowledge(
-            int(&get("seq")),
-            version,
-            get("reason").as_str().map(str::to_string),
-        )),
-        _ => "{}".into(),
-    }
+    call_value(editor, &request).to_string()
+}
+
+/// Execute a decoded editor call using the same verbs as [`call_json`].
+pub fn call_value(editor: &mut MultitrackEditor, request: &Value) -> Value {
+    let call = super::calls::Call::read(request);
+    call.execute(
+        editor,
+        request.get("version").and_then(Value::as_i64).unwrap_or(0),
+    )
 }
 
 #[cfg(test)]
