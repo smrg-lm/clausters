@@ -291,6 +291,7 @@ mod tests {
     fn a_render_holds_the_queue_until_the_endpoint_has_rendered() {
         let render = Step::Render(crate::apply::Render {
             peaks: String::new(),
+            reads: Vec::new(),
             score: vec![0, 1, 254, 255],
             path: "take.w64".into(),
             rate: 48_000.0,
@@ -334,6 +335,7 @@ mod tests {
             Server::Sound,
             [Step::Render(crate::apply::Render {
                 peaks: String::new(),
+                reads: Vec::new(),
                 score: Vec::new(),
                 path: "x.wav".into(),
                 rate: 48_000.0,

@@ -91,6 +91,24 @@ pub enum Step {
     },
 }
 
+/// **A list a render reads**, fed by the endpoint's reader into one mono
+/// buffer per channel, from `buffer` on, which the score reads with a
+/// `TransportDiskIn` each (channel 0 of `buffer + c`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Read {
+    /// The first of its buffers.
+    pub buffer: i32,
+    /// Its parts, in the order they play.
+    pub parts: Vec<clausters_document::clipboard::SegmentPart>,
+    /// Its channels.
+    pub channels: u32,
+    /// The rate it is read at, the render's.
+    pub rate: f64,
+    /// Read from its last frame to its first: a reverse.
+    #[serde(default)]
+    pub backwards: bool,
+}
+
 impl Step {
     /// **What a step that takes a while is for**, as its progress is shown:
     /// a render's or a measure's label; `None` for every other step.
@@ -117,6 +135,9 @@ pub struct Render {
     /// (`clausters_core::peaks::measure`), the spectral summary beside them.
     /// Empty: not measured.
     pub peaks: String,
+    /// **The lists the score reads**, fed to it by the endpoint's own reader
+    /// of takes: the engine reads no file and no list.
+    pub reads: Vec<Read>,
     /// The render's sample rate.
     pub rate: f64,
     /// Its output channels.
@@ -777,6 +798,7 @@ pub fn steps_json(steps: &[Step]) -> Value {
                     "score": hex(&render.score),
                     "path": render.path,
                     "peaks": render.peaks,
+                    "reads": render.reads,
                     "rate": render.rate,
                     "channels": render.channels,
                     "format": render.format,
@@ -863,6 +885,11 @@ pub fn steps_from_json(steps: &Value) -> Vec<Step> {
                         .and_then(Value::as_str)
                         .unwrap_or_default()
                         .to_string(),
+                    reads: render
+                        .get("reads")
+                        .cloned()
+                        .and_then(|reads| serde_json::from_value(reads).ok())
+                        .unwrap_or_default(),
                     rate: render.get("rate")?.as_f64()?,
                     channels: render.get("channels")?.as_u64()? as usize,
                     format: render

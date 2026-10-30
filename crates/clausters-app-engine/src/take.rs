@@ -499,6 +499,9 @@ pub enum TakeRead {
     Parts(Arc<ReadList>),
     /// A multitrack's track.
     Placed(Arc<PlacedRead>),
+    /// **A take read from its last frame to its first**: what a reverse
+    /// renders, frame `at` of it being frame `frames - 1 - at` of the take.
+    Backwards(Arc<ReadList>),
 }
 
 impl From<Arc<ReadList>> for TakeRead {
@@ -517,7 +520,7 @@ impl TakeRead {
     /// How many frames it comes to.
     pub fn frames(&self) -> u64 {
         match self {
-            TakeRead::Parts(list) => list.frames(),
+            TakeRead::Parts(list) | TakeRead::Backwards(list) => list.frames(),
             TakeRead::Placed(list) => list.frames(),
         }
     }
@@ -525,7 +528,7 @@ impl TakeRead {
     /// How many channels it is.
     pub fn channels(&self) -> usize {
         match self {
-            TakeRead::Parts(list) => list.channels(),
+            TakeRead::Parts(list) | TakeRead::Backwards(list) => list.channels(),
             TakeRead::Placed(list) => list.channels(),
         }
     }
@@ -534,6 +537,14 @@ impl TakeRead {
         match self {
             TakeRead::Parts(list) => list.render(at, n, channel, out, files),
             TakeRead::Placed(list) => list.render(at, n, channel, out, files),
+            TakeRead::Backwards(list) => {
+                // the same frames read forwards, then turned around
+                let total = list.frames();
+                let end = total.saturating_sub(at);
+                let from = end.saturating_sub(n as u64);
+                list.render(from, (end - from) as usize, channel, out, files);
+                out.reverse();
+            }
         }
     }
 }

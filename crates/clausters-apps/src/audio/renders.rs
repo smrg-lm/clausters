@@ -10,9 +10,11 @@
 //! writes them. Nothing here does I/O; the endpoint renders the score on an
 //! offline instance of its own.
 //!
-//! **How a score reads a list.** The list is stitched on the offline server
-//! (`/buffer_stitch` with parts over files) and read by one `TransportDiskIn`
-//! per channel, on a transport the score binds to a group of its own and
+//! **How a score reads a list.** The engine reads no file and no list: the
+//! render names the lists it reads ([`Read`]) and the endpoint's own reader
+//! of takes feeds each into one buffer a channel, read by a `TransportDiskIn`
+//! each (a reverse is the list read from its end), on a transport the score
+//! binds to a group of its own and
 //! rolls from frame 0 (an offline score takes the transport commands the
 //! engine carries out itself). Offline the reader waits for what it reads, so
 //! the list is there from its first frame. The render runs at the list's
@@ -21,13 +23,14 @@
 use clausters_core::channel_matrix::ChannelMatrix;
 use clausters_core::osc::{OscMessage, OscPacket, OscType, bundle, encode, pack_timetag};
 use clausters_document::clipboard::SegmentPart;
-use clausters_editing::apply::{Render, Step, count_arg};
+use clausters_editing::apply::{Read, Render, Step, count_arg};
 use serde_json::{Value, json};
 
-/// The buffer a score stitches the list it reads into.
-const LIST: i32 = 1;
-/// The buffer a second list (a mix's) is stitched into.
-const OTHER: i32 = 2;
+/// The first of the buffers the list a score reads is fed into, one a
+/// channel.
+const LIST: i32 = 64;
+/// The first of a second list's (a mix's).
+const OTHER: i32 = 128;
 /// The buffer a block of samples the score carries is written into.
 const BLOCK: i32 = 3;
 /// The group the score's transport governs.
@@ -115,34 +118,16 @@ fn msg(addr: &str, args: Vec<OscType>) -> OscMessage {
     }
 }
 
-/// `/buffer_stitch` of `list` into buffer `index`, each part a span of its
-/// file with its fades and its whole channel map.
-fn stitch(index: i32, list: &List) -> OscMessage {
-    let mut args = vec![
-        OscType::Int(index),
-        OscType::Int(list.channels as i32),
-        OscType::Float(list.rate as f32),
-    ];
-    for part in &list.parts {
-        args.push(OscType::String(part.path.clone()));
-        args.push(count_arg(part.start));
-        args.push(count_arg(part.frames));
-        args.push(OscType::Int(part.fade_in as i32));
-        args.push(OscType::Int(part.fade_out as i32));
-        args.push(OscType::Int(part.fade_in_shape.shape));
-        args.push(OscType::Float(part.fade_in_shape.curve as f32));
-        args.push(OscType::Int(part.fade_out_shape.shape));
-        args.push(OscType::Float(part.fade_out_shape.curve as f32));
-        // Every part spells its whole map, by the rule every reader of a part
-        // uses.
-        let map = clausters_core::segments::channel_map(
-            part.channels.as_deref(),
-            part.source_channels as usize,
-            list.channels as usize,
-        );
-        args.extend(map.into_iter().map(OscType::Int));
+/// **`list`, read for the score by the endpoint**: fed into the buffers from
+/// `index` on, one a channel, forwards or `backwards`.
+fn fed(index: i32, list: &List, backwards: bool) -> Read {
+    Read {
+        buffer: index,
+        parts: list.parts.clone(),
+        channels: list.channels,
+        rate: list.rate,
+        backwards,
     }
-    msg("/buffer_stitch", args)
 }
 
 /// The transport rolled from frame 0, governing a group of the score's own.
@@ -199,10 +184,10 @@ impl Def {
         self.ugens.len() - 1
     }
 
-    /// One channel of the list in buffer `index`, at the transport.
+    /// One channel of the list fed from buffer `index` on, at the transport.
     fn list_channel(&mut self, index: i32, channel: u32) -> usize {
         self.push(json!({"kind": "TransportDiskIn", "inputs": [
-            {"const": index as f64}, {"const": channel as f64},
+            {"const": (index + channel as i32) as f64}, {"const": 0.0},
             {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]}))
     }
 
@@ -236,6 +221,7 @@ impl Def {
 /// synth freed at `frames`, the list's or block's setup before it.
 fn render(
     setup: Vec<OscMessage>,
+    reads: Vec<Read>,
     def: Value,
     frames: u64,
     rate: f64,
@@ -275,6 +261,7 @@ fn render(
         format: out.format.clone(),
         label: out.label.clone(),
         peaks: out.peaks.clone(),
+        reads,
     })
 }
 
@@ -304,7 +291,8 @@ pub fn gain(list: &List, curve: &[GainPoint], out: &Output) -> Step {
         .collect();
     let def = def.finish("ae.gain_render", &channels);
     render(
-        vec![stitch(LIST, list)],
+        Vec::new(),
+        vec![fed(LIST, list, false)],
         def,
         list.frames(),
         list.rate,
@@ -359,56 +347,20 @@ fn envelope(curve: &[GainPoint]) -> Vec<Value> {
 /// backwards would hold nothing (the root plan's "A list reader plays
 /// backwards").
 pub fn reverse(list: &List, out: &Output) -> Step {
-    let mut setup = Vec::new();
-    let mut pool = Vec::with_capacity(list.parts.len());
-    for (i, part) in list.parts.iter().enumerate() {
-        let index = 10 + i as i32;
-        // The frames of the file the part reads, at the file's own rate.
-        let ratio = part.source_rate / list.rate;
-        let read = ((part.frames as f64) * ratio).ceil() as u64;
-        setup.push(msg(
-            "/buffer_allocRead",
-            vec![
-                OscType::Int(index),
-                OscType::String(part.path.clone()),
-                count_arg(part.start),
-                count_arg(read.min(part.source_frames.saturating_sub(part.start))),
-            ],
-        ));
-        pool.push((index, part));
-    }
-    // The join over the buffers read, with the parts' fades and maps.
-    let mut args = vec![
-        OscType::Int(LIST),
-        OscType::Int(list.channels as i32),
-        OscType::Float(list.rate as f32),
-    ];
-    for (index, part) in &pool {
-        args.push(OscType::Int(*index));
-        args.push(OscType::Int(0));
-        args.push(count_arg(part.frames));
-        args.push(OscType::Int(part.fade_in as i32));
-        args.push(OscType::Int(part.fade_out as i32));
-        args.push(OscType::Int(part.fade_in_shape.shape));
-        args.push(OscType::Float(part.fade_in_shape.curve as f32));
-        args.push(OscType::Int(part.fade_out_shape.shape));
-        args.push(OscType::Float(part.fade_out_shape.curve as f32));
-        let map = clausters_core::segments::channel_map(
-            part.channels.as_deref(),
-            part.source_channels as usize,
-            list.channels as usize,
-        );
-        args.extend(map.into_iter().map(OscType::Int));
-    }
-    setup.push(msg("/buffer_stitch", args));
-    let frames = list.frames();
     let mut def = Def::new();
-    let last = frames.saturating_sub(1) as f64;
     let channels: Vec<usize> = (0..list.channels)
-        .map(|c| def.block_channel(LIST, c, -1.0, last))
+        .map(|c| def.list_channel(LIST, c))
         .collect();
     let def = def.finish("ae.reverse", &channels);
-    render(setup, def, frames, list.rate, list.channels, out)
+    render(
+        Vec::new(),
+        vec![fed(LIST, list, true)],
+        def,
+        list.frames(),
+        list.rate,
+        list.channels,
+        out,
+    )
 }
 
 /// **A list mixed into a span of another**: `onto`, the frames the mix
@@ -424,7 +376,8 @@ pub fn mix_lists(onto: &List, added: &List, out: &Output) -> Step {
         .collect();
     let def = def.finish("ae.mix", &channels);
     render(
-        vec![stitch(LIST, onto), stitch(OTHER, added)],
+        Vec::new(),
+        vec![fed(LIST, onto, false), fed(OTHER, added, false)],
         def,
         onto.frames(),
         onto.rate,
@@ -446,9 +399,15 @@ pub fn mix_block(onto: &List, samples: &[f32], out: &Output) -> Step {
         })
         .collect();
     let def = def.finish("ae.mix_block", &channels);
-    let mut setup = vec![stitch(LIST, onto)];
-    setup.extend(block(BLOCK, onto.channels, samples));
-    render(setup, def, onto.frames(), onto.rate, onto.channels, out)
+    render(
+        block(BLOCK, onto.channels, samples),
+        vec![fed(LIST, onto, false)],
+        def,
+        onto.frames(),
+        onto.rate,
+        onto.channels,
+        out,
+    )
 }
 
 /// **A list taken to another width through `matrix`**: each output channel
@@ -484,7 +443,8 @@ pub fn convert(list: &List, matrix: &ChannelMatrix, out: &Output) -> Step {
         .collect();
     let def = def.finish("ae.convert", &channels);
     render(
-        vec![stitch(LIST, list)],
+        Vec::new(),
+        vec![fed(LIST, list, false)],
         def,
         list.frames(),
         list.rate,
@@ -504,6 +464,7 @@ pub fn block_file(samples: &[f32], channels: u32, rate: f64, out: &Output) -> St
     let def = def.finish("ae.block", &read);
     render(
         block(BLOCK, channels, samples),
+        Vec::new(),
         def,
         frames,
         rate,
@@ -526,10 +487,9 @@ pub fn stroke(over: &List, drawn: u32, values: &[f32], out: &Output) -> Step {
         })
         .collect();
     let def = def.finish("ae.stroke", &channels);
-    let mut setup = vec![stitch(LIST, over)];
-    setup.extend(block(BLOCK, 1, values));
     render(
-        setup,
+        block(BLOCK, 1, values),
+        vec![fed(LIST, over, false)],
         def,
         values.len() as u64,
         over.rate,
@@ -544,7 +504,15 @@ pub fn consolidate(list: &List, out: &Output) -> Step {
     // **An empty list is a file of no frames**: a header, and nothing read.
     if list.parts.is_empty() {
         let def = json!({"name": "ae.consolidate", "ugens": []});
-        return render(Vec::new(), def, 0, list.rate, list.channels, out);
+        return render(
+            Vec::new(),
+            Vec::new(),
+            def,
+            0,
+            list.rate,
+            list.channels,
+            out,
+        );
     }
     let mut def = Def::new();
     let channels: Vec<usize> = (0..list.channels)
@@ -552,7 +520,8 @@ pub fn consolidate(list: &List, out: &Output) -> Step {
         .collect();
     let def = def.finish("ae.consolidate", &channels);
     render(
-        vec![stitch(LIST, list)],
+        Vec::new(),
+        vec![fed(LIST, list, false)],
         def,
         list.frames(),
         list.rate,
@@ -571,7 +540,15 @@ pub fn decode(path: &str, channels: u32, frames: u64, rate: f64, out: &Output) -
         .map(|c| def.push(json!({"kind": "DiskIn", "inputs": [{"const": c as f64}], "path": path})))
         .collect();
     let def = def.finish("ae.decode", &read);
-    render(Vec::new(), def, frames.max(1), rate, channels, out)
+    render(
+        Vec::new(),
+        Vec::new(),
+        def,
+        frames.max(1),
+        rate,
+        channels,
+        out,
+    )
 }
 
 /// **A file of silence**: what a new file is before anything is put in it.
@@ -580,5 +557,13 @@ pub fn silence(frames: u64, channels: u32, rate: f64, out: &Output) -> Step {
         .map(|bus| json!({"kind": "Out", "inputs": [{"const": bus as f64}, {"const": 0.0}]}))
         .collect();
     let def = json!({"name": "ae.silence", "ugens": ugens});
-    render(Vec::new(), def, frames.max(1), rate, channels, out)
+    render(
+        Vec::new(),
+        Vec::new(),
+        def,
+        frames.max(1),
+        rate,
+        channels,
+        out,
+    )
 }

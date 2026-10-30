@@ -14,6 +14,7 @@
 
 use clausters::server::render::{OscScore, RenderConfig, RenderStats, render_into_while};
 use clausters_editing::apply::{Render, Step};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// **Carries `steps` out in order**, telling `progress` how the renders go:
@@ -129,9 +130,14 @@ pub fn render_while(
     }
     let mut measure =
         (!job.peaks.is_empty()).then(|| clausters_core::peaks::measure::Measure::new(cfg.channels));
+    // **The lists it reads, read by this application**: each fed into its
+    // buffers by a take's reader, the one that feeds the engine it plays
+    // on, for as long as the render runs
+    let (_feeds, buffers) = fed(&job.reads)?;
     let stats = render_into_while(
         &score,
         &cfg,
+        buffers,
         live,
         |chunk: &[f32]| {
             if let Some(writer) = writer.as_mut() {
@@ -154,6 +160,45 @@ pub fn render_while(
             .map_err(|e| failed(&job.peaks, e))?;
     }
     Ok(stats)
+}
+
+/// **The readers of `reads`**, and the buffers they feed: one mono buffer
+/// per channel of each list, from its first buffer on.
+type Fed = (
+    Vec<crate::take::TakeFeed>,
+    Vec<(usize, Arc<clausters::dsp::buffer::Buffer>)>,
+);
+
+fn fed(reads: &[clausters_editing::apply::Read]) -> Result<Fed, String> {
+    let mut headers = crate::take::Headers::default();
+    let mut feeds = Vec::new();
+    let mut buffers = Vec::new();
+    for read in reads {
+        let channels = read.channels.max(1) as usize;
+        let list = Arc::new(crate::take::ReadList::of(
+            &read.parts,
+            channels,
+            read.rate,
+            &mut headers,
+        )?);
+        let frames = list.frames() as usize;
+        let feed = crate::take::TakeFeed::start(channels);
+        feed.set(if read.backwards {
+            crate::take::TakeRead::Backwards(list)
+        } else {
+            crate::take::TakeRead::Parts(list)
+        });
+        for c in 0..channels {
+            let Some(stream) = feed.stream(c) else {
+                continue;
+            };
+            let buffer =
+                clausters::dsp::buffer::Buffer::fed_by(Arc::clone(stream), 1, frames, read.rate);
+            buffers.push((read.buffer as usize + c, Arc::new(buffer)));
+        }
+        feeds.push(feed);
+    }
+    Ok((feeds, buffers))
 }
 
 /// **What a render that failed says**, read where a window has one line for
@@ -224,6 +269,7 @@ mod tests {
         let job = Render {
             score,
             peaks: String::new(),
+            reads: Vec::new(),
             path: path.clone(),
             rate: 48_000.0,
             channels: 2,
@@ -272,6 +318,7 @@ mod tests {
         let job = Render {
             score,
             peaks: peaks.clone(),
+            reads: Vec::new(),
             path: path.clone(),
             rate: 48_000.0,
             channels: 2,

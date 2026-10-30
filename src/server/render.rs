@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rosc::{OscMessage, OscPacket, OscTime, OscType};
 
+use crate::dsp::buffer::Buffer;
 use crate::dsp::{Limits, NUM_AUDIO_BUSES, ReplyKind};
 #[cfg(feature = "faust")]
 use crate::osc::translate::parse_def_send_faust;
@@ -409,6 +410,23 @@ impl OfflineRender {
         })
     }
 
+    /// **Puts `buffer` at `index` before the render runs**: a buffer the
+    /// caller made (one its own reader feeds) where the score names it, as
+    /// a completed `/buffer_alloc` would put one.
+    pub fn install(&mut self, index: usize, buffer: Arc<Buffer>) -> Result<(), String> {
+        let Some(slot) = self.r.translator.buffers.get_mut(index) else {
+            return Err(format!("no buffer index {index}"));
+        };
+        *slot = Some(Arc::clone(&buffer));
+        self.r
+            .handle
+            .send_batch(vec![Cmd::SetBuffer {
+                index,
+                buffer: Some(buffer),
+            }])
+            .map_err(|_| "the render's command queue is full".to_string())
+    }
+
     /// How many frames the render comes to.
     pub fn total_frames(&self) -> u64 {
         self.total
@@ -652,18 +670,21 @@ pub fn render_to_wav_while(
 /// What a render that was let go answers.
 pub const CALLED_OFF: &str = "called off";
 
-/// **A render driven to its end into `sink`, while `live` holds**: each run
+/// **A render driven to its end into `sink`, while `live` holds**, the
+/// `buffers` the caller made put where the score names them first: each run
 /// of frames handed to `sink` as it is made, `progress` told the frames done
 /// and the frames it comes to after each. What a caller that does more with
-/// the samples than write them (measures them as they go) drives.
+/// the samples than write them (measures them as they go), or that feeds a
+/// buffer the render reads, drives.
 pub fn render_into_while(
     score: &OscScore,
     cfg: &RenderConfig,
+    buffers: Vec<(usize, Arc<Buffer>)>,
     live: &AtomicBool,
     sink: impl FnMut(&[f32]) -> Result<(), String>,
     progress: impl FnMut(u64, u64),
 ) -> Result<RenderStats, String> {
-    drive(score, cfg, live, sink, progress)
+    drive_with(score, cfg, buffers, live, sink, progress)
 }
 
 /// **A render driven to its end** by the helpers above: a second of the
@@ -674,12 +695,27 @@ fn drive(
     score: &OscScore,
     cfg: &RenderConfig,
     live: &AtomicBool,
+    sink: impl FnMut(&[f32]) -> Result<(), String>,
+    progress: impl FnMut(u64, u64),
+) -> Result<RenderStats, String> {
+    drive_with(score, cfg, Vec::new(), live, sink, progress)
+}
+
+/// [`drive`], `buffers` installed first.
+fn drive_with(
+    score: &OscScore,
+    cfg: &RenderConfig,
+    buffers: Vec<(usize, Arc<Buffer>)>,
+    live: &AtomicBool,
     mut sink: impl FnMut(&[f32]) -> Result<(), String>,
     mut progress: impl FnMut(u64, u64),
 ) -> Result<RenderStats, String> {
     #[cfg(all(target_arch = "wasm32", feature = "synth"))]
     let mut served = page_streams::Served::install(cfg.sample_rate);
     let mut render = OfflineRender::new(score, cfg)?;
+    for (index, buffer) in buffers {
+        render.install(index, buffer)?;
+    }
     let run = cfg.sample_rate.max(1.0) as u64;
     // under what an output stream's ring holds between two drains
     #[cfg(all(target_arch = "wasm32", feature = "synth"))]
