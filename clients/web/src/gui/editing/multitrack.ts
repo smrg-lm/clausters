@@ -368,12 +368,20 @@ export class MultitrackEditor implements WindowOver {
         return true;
     }
 
-    /** Step the history back one edit ({@link MultitrackEditor.verb}). */
+    /**
+     * Ask the window to undo ({@link MultitrackEditor.verb}); whether the verb was sent.
+     * The result does not confirm completion. A script waiting for the history step
+     * awaits `multitrack.history.undo()`.
+     */
     undo(): boolean {
         return this.verb("undo");
     }
 
-    /** Step the history forward again ({@link MultitrackEditor.verb}). */
+    /**
+     * Ask the window to redo ({@link MultitrackEditor.verb}); whether the verb was sent.
+     * The result does not confirm completion. A script waiting for the history step
+     * awaits `multitrack.history.redo()`.
+     */
     redo(): boolean {
         return this.verb("redo");
     }

@@ -1064,12 +1064,31 @@ mod tests {
         assert_eq!(name(&mut host), "b");
         let history = ask(&mut host, def_id, json!({"query": "history"}));
         assert_eq!(history["canUndo"], true, "{history}");
-        ask(&mut host, def_id, json!({"do": {"verb": "undo"}}));
+        assert_eq!(
+            ask(&mut host, def_id, json!({"do": {"verb": "undo"}})),
+            true
+        );
         assert_eq!(
             name(&mut host),
             "a",
             "the window's undo takes the script's edit back"
         );
+        let history = ask(&mut host, def_id, json!({"query": "history"}));
+        assert_eq!(history["canUndo"], false, "{history}");
+        assert_eq!(history["canRedo"], true, "{history}");
+        assert_eq!(
+            ask(&mut host, def_id, json!({"do": {"verb": "redo"}})),
+            true
+        );
+        assert_eq!(name(&mut host), "b", "a confirmed redo reapplies the edit");
+        let history = ask(&mut host, def_id, json!({"query": "history"}));
+        assert_eq!(history["canUndo"], true, "{history}");
+        assert_eq!(history["canRedo"], false, "{history}");
+        assert_eq!(
+            ask(&mut host, def_id, json!({"do": {"verb": "undo"}})),
+            true
+        );
+        assert_eq!(name(&mut host), "a");
         let path = folder.join("untitled.json");
         let saved = ask(
             &mut host,

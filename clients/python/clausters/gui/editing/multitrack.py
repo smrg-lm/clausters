@@ -379,11 +379,19 @@ class MultitrackEditor(Marking):
         return True
 
     def undo(self) -> bool:
-        """Step the history back one edit (`verb`)."""
+        """Ask the window to undo (`verb`); whether the verb was sent.
+
+        The result does not confirm completion. A script waiting for the
+        history step uses `multitrack.history.undo()`.
+        """
         return self.verb("undo")
 
     def redo(self) -> bool:
-        """Step the history forward again (`verb`)."""
+        """Ask the window to redo (`verb`); whether the verb was sent.
+
+        The result does not confirm completion. A script waiting for the
+        history step uses `multitrack.history.redo()`.
+        """
         return self.verb("redo")
 
     def split(self) -> bool:
