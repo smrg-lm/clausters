@@ -24,7 +24,7 @@
     <main>
       <div id="note">The web twin of the Python client's
 <code>recording_mapped.py</code>: <b>three pictures of one engine's audio</b> --
-takes drawn while they record, a finished take too big to download, and one
+takes drawn while they record, a finished take read back whole, and one
 peer's edit landing in a lane.
 
 Every other way audio reaches a picture announces itself -- a client sends
@@ -115,7 +115,7 @@ socket.</div>
 
       const TAKES = 4;              // lanes recording at once
       const SECONDS = 8.0;          // how long each one runs
-      const LONG_SECONDS = 60.0;    // the take that is too big to download
+      const LONG_SECONDS = 60.0;    // the finished take, read back whole
       const RATE = 48000.0;
       // The navigation groups: one axis for the takes, one for the long take.
       const LANES = 1, LONG = 2;

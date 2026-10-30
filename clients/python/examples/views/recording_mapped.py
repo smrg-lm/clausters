@@ -2,8 +2,8 @@
 """The web page's window, natively -- and **nothing about the audio crosses the
 wire**.
 
-`clients/web/examples/recording.html` draws four takes as they record, a
-finished take too big to download, and one peer's edit landing in a lane. A
+`clients/web/examples/views/recording.html` draws four takes as they record,
+a finished take read back whole, and one peer's edit landing in a lane. A
 page can map nothing, so each of those three pictures is something it has to
 **ask the server for**: the overview of a recording as it is written
 (``/buffer_stream``), the samples of a take that stands still, read back and
