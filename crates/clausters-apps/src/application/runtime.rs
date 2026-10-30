@@ -188,6 +188,19 @@ pub enum Dispatch<C, O> {
     Response(Protocol),
 }
 
+/// A settled turn before the composition adds domain-specific results.
+/// Resource collection remains the composition's responsibility.
+pub struct Settled<O> {
+    /// Common completion or repair response.
+    pub protocol: Protocol,
+    /// Published domain result, only after commit or successful recovery.
+    pub outcome: Option<O>,
+    /// Recovery for a committed turn, addressed to its original endpoint.
+    pub recovery: Option<Batch>,
+    /// A repair has settled and its reserved ids can be returned.
+    pub returned: Option<(Ticket, Vec<i64>)>,
+}
+
 /// One application's typed work registry; it owns no resource graph.
 #[derive(Debug)]
 pub struct Runtime<C, O> {
@@ -208,6 +221,88 @@ impl<C, O> Default for Runtime<C, O> {
     }
 }
 impl<C, O> Runtime<C, O> {
+    /// Prepare a typed application command against the shared services.
+    pub fn prepare<A: Application<Commit = C, Outcome = O>>(
+        &mut self,
+        app: &A,
+        services: &mut Services,
+        command: A::Command,
+    ) -> Result<Ticket, String> {
+        let operation = app.prepare(command, services)?;
+        self.operations
+            .prepare(&mut services.resources, operation)
+            .map_err(str::to_string)
+    }
+
+    /// Confirm or refuse one turn through the same completion policy for
+    /// every application. Domain decoration happens after this decision.
+    pub fn settle_turn<A: Application<Commit = C, Outcome = O>>(
+        &mut self,
+        app: &mut A,
+        services: &mut Services,
+        finished: Finished<C>,
+        version: &mut i64,
+    ) -> Settled<O>
+    where
+        O: crate::turn::Turned,
+    {
+        let ticket = finished.ticket;
+        let failure = finished.result.clone();
+        let completion = self.finish_turn(app, services, finished, version);
+        if !completion.committed {
+            return Settled {
+                protocol: self.refuse_turn(
+                    ticket,
+                    failure,
+                    completion,
+                    &services.resources,
+                    *version,
+                ),
+                outcome: None,
+                recovery: None,
+                returned: None,
+            };
+        }
+        let recovery = Batch {
+            member: ticket.target.member,
+            server: ticket.target.server,
+            steps: if services.resources.valid(ticket.target.server) {
+                completion.recovery
+            } else {
+                Vec::new()
+            },
+        };
+        Settled {
+            protocol: Protocol {
+                complete: true,
+                committed: Some(true),
+                version: Some(*version),
+                ..Protocol::default()
+            },
+            outcome: Some(completion.outcome),
+            recovery: Some(recovery),
+            returned: None,
+        }
+    }
+
+    /// Publish a recovered refusal once, after its effects have settled.
+    pub fn repaired_turn(repair: Repair<O>, version: i64) -> Settled<O> {
+        let echo = repair.echo(version);
+        Settled {
+            protocol: Protocol {
+                complete: true,
+                committed: Some(false),
+                echo,
+                reason: Some(repair.reason),
+                version: Some(version),
+                ..Protocol::default()
+            },
+            outcome: Some(repair.outcome),
+            recovery: None,
+            returned: Some((repair.ticket, repair.returned)),
+        }
+    }
+
     /// Compose typed history plans without copying histories.
     pub fn prepare_walk(
         &mut self,

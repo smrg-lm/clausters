@@ -2803,6 +2803,114 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   adapters and configuration identified. A missing general capability
   extends the shared contract rather than introducing a private mechanism.
 
+
+  The port runs on the host applications of `X30`–`X34`; both clients are
+  handlers. Adapt an existing mechanism, add a real consumer, then remove
+  the replaced path. Preserve `docs/app-behavior.md`. The following parts
+  are separate review boundaries; this milestone stays open until their
+  automated and manual acceptance is complete.
+
+  - ⬜ **Common coordination, then the multitrack consumer.** Keep
+    non-generic `Services` and each application's `Runtime<Commit, Outcome>`.
+    Extract preparation, dispatch, confirmation, refusal, repair and release
+    from audio without moving its commands, deltas, playback or result
+    decoration. Reuse `Application`, `WalkHost` and `walks::finish`.
+    Decode JSON at the client door, use typed calls within the process.
+    Identify session opens and source measurements by operation and original
+    session; a late response cannot modify a replacement. Save through the
+    same confirmation protocol and a general storage operation over disk or
+    OPFS. Keep `Editing::start`, `land`, `query` and the application driver;
+    results go to their originating runtime, never to handler-owned policy.
+    **Acceptance:** unchanged audio traces/results; a real multitrack
+    operation over the same services with a distinct delta covers partial
+    failure, failed repair/retry, cancellation, duplicate completion and
+    invalidation. Undo/redo uses common coordination and preserves order on
+    failure. Prove isolated builds with and without `notation`.
+    - ✅ Extract common preparation and turn settlement before changing
+      multitrack behavior; audio keeps its result shape and domain decisions.
+    - ⬜ Integrate typed multitrack operations, storage and history walks;
+      retire the replaced routes after the real consumer passes.
+
+  - ⬜ **The multitrack's file lifecycle.** Distinguish no session, a new
+    session with no path, and a saved session; an empty multitrack is open.
+    Open without a session and keep chrome/forms after closing the last.
+    Content verbs refuse with `no file is open` without choosing another
+    history. Add New/Open/Close file through chrome and `Dialogs`, keeping
+    Save/Save as and read-only behavior. Change the one active binding
+    explicitly. A save confirms its captured content revision; subsequent
+    edits stay dirty and failure preserves path, contents and retry.
+    Save/discard/cancel follows retention: unbinding a window does not free
+    the client's object or retarget its handles. Preserve opening over a
+    supplied `Multitrack`, a session file and standalone.
+    **Acceptance:** empty open, New/Open, read/save failure, save-and-close
+    and last-session close on disk and OPFS; read saved sessions and source
+    references back. Run and review `edit_multitrack` and `load_multitrack`
+    in both clients before the next port.
+
+  - ⬜ **Roll review and points port.** Review roll actions, clipboard,
+    history, conversations, close and invalidation. Extend its existing host
+    application to share a sequence with a host-executed symbolic score.
+    Keep MIDI/Hz axes, view-local selection and supported playback targets;
+    shared contents/history do not merge transports or conversations.
+    Compose points with chrome, action definitions/readings and `Dialogs`
+    where required, editing the client's curve without adding file verbs.
+    Require only its capabilities: `sample_rate` does not require an engine,
+    device or playback. Use existing clipboard compatibility and explain
+    incompatibility without conversions.
+    **Acceptance:** two views share edits/history with independent selection
+    and conversations; close/reopen retains the object; points runs without
+    audio services. Run and review `edit_notes` and `edit_env` separately in
+    both clients before proceeding.
+
+  - ⬜ **Symbolic score: actions and execution.** Compose shared chrome
+    and action readings, preserving tools, palettes, keys and layout. Menu,
+    keyboard, tools and client calls use the same actions. Move coordination
+    and playback into the host application, reusing notes playback and
+    existing rules. Extend application doors; clients retain public verbs as
+    handlers. Register roll/page over one sequence in one `Editing` under one
+    structure identity. Reuse multitrack remote handles, preserving object
+    identity and the web client's documented asynchronous adaptation.
+    **Acceptance:** extend `a_roll_and_a_page_over_one_sequence_are_one_order`
+    for edits and undo/redo from both views, separate conversations, stale
+    events, close/reopen, and the host route through both handlers. Run and
+    review the `notation/score_editor` pair before the next part.
+
+  - ⬜ **Symbolic score: dialogs.** Move `forms::Spec` forms into
+    `forms::Dialogs`, removing duplicate open/value/accept/cancel state.
+    Preserve content, semantics, modality, focus, redraw restoration and
+    rejection of late answers. **Acceptance:** run and review the
+    `notation/score_editor` pair before the next part.
+
+  - ⬜ **Symbolic score: MEI files and standalone.** Distinguish no
+    document from a new symbolic score, with one active document per window.
+    Use common runtime open/save/checkpoint/close. Read or engraving failure
+    leaves the current document intact. Keep `load`/New object replacement
+    and history contracts; Close file explicitly unbinds. Save writes the
+    prepared revision and confirms it before a pending close proceeds.
+    Adapt standalone to the same application while preserving `Owner` data
+    and responsibilities; remove replaced coordination and playback from
+    clients and standalone. **Acceptance:** read back saved MEI and contents;
+    run and review the `notation/score_editor` pair in both clients.
+
+  - ⬜ **Cross-application verification and manual acceptance.** Exercise
+    delayed, failed and reordered service replies; assert contents, history
+    and resource retention as well as effects. Use existing activity and
+    playback instrumentation for stopped, hidden and closed windows, with no
+    client timers. Run affected suites, bindings/ASCII, fmt, warning-free
+    clippy, applicable matrices, wasm gates, docs, Python pyright and web
+    build before tests. Refresh native artifacts before manual review. Read
+    each Python/web example pair side by side, call by call; ordinary browser
+    acceptance is Chrome. Check two windows, time limits, vertical navigation,
+    selection, playback, saving and history. Each reviewed part commits its
+    endpoints, tests, docs and examples together; unresolved findings go at
+    the end of their owning plan with checkboxes. Close this milestone and
+    remove its ROADMAP entry only after every acceptance passes.
+
+  Out of scope: new notation operations, domain conversions, the roll's
+  pending recording, new session formats and persistent recovery. The second
+  real application is the multitrack; symbolic scores execute in the host
+  while preserving shared objects and views.
+
 - ⬜ **X26 - Use scoped services from simple GuiDef instances.** After
   `X25`, provide the lightweight instance context for synthesis panels
   without editor state. Before parameter undo, define its owner/baseline,
@@ -2966,9 +3074,9 @@ written; none is left open:
 turn comes before `X25`, which ports the audio editor's lifecycle to the other
 editors and should port this one.
 
-- ⬜ **X28 - The audio editor edits files on disk.** *(Its model is
-  revised by the second turn below, measured 2026-10-23: what it built that
-  the model keeps carries over to `X30` to `X32`.)* After `S21`, `S22`,
+- ⬜ **X28 - The audio editor edits files on disk.** *(Replaced by `X30`–`X32` for the application model and by `X25`
+  for the remaining lifecycle ports. Its concrete eye/ear acceptance below
+  remains pending; replacement does not mark it complete.)* After `S21`, `S22`,
   `O34` and `G45`. Opening a file reads its header and its peaks (measured
   once if it has none) and nothing else; every edit is a list; the clipboard
   holds segments; processing (gain, reverse, mix, a stroke,
@@ -3009,7 +3117,9 @@ editors and should port this one.
   and then applied (the eighth).*
 
 - ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
-  *(Taken over by `X34` in the second turn below.)*
+  *(Replaced by `X34` for track reading and by `X25` for session lifecycle.
+  The concrete native/page/standalone acceptance below remains pending;
+  replacement does not mark it complete.)*
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
   reading files into pool buffers and stitching joins in memory: a track
   plays its regions through the RT list reader, and a bounce or a freeze is an

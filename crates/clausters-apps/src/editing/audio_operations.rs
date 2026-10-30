@@ -164,19 +164,15 @@ impl Editing {
             version: self.version,
             seq,
         };
-        let operation = if let Some(object) = object {
+        let runtime = &mut self.audio_runtime;
+        let services = &mut self.services;
+        if let Some(object) = object {
             editor
-                .over_file(object, |editor| editor.prepare(request, &self.services))
-                .ok_or("the original operation object is closed")??
+                .over_file(object, |editor| runtime.prepare(editor, services, request))
+                .ok_or("the original operation object is closed")?
         } else {
-            editor.prepare(request, &self.services)?
-        };
-        let ticket = self
-            .audio_runtime
-            .operations
-            .prepare(&mut self.services.resources, operation)
-            .map_err(str::to_string)?;
-        Ok(ticket)
+            runtime.prepare(editor.as_ref(), services, request)
+        }
     }
 
     /// **A file added to audio member `member`**: `request` is the file's
@@ -339,22 +335,19 @@ impl Editing {
             Dispatch::Response(response) => Operated::protocol(response),
             Dispatch::Repaired(repair) => {
                 let freed = self.release();
-                let echo = repair.echo(self.version);
+                let settled = crate::application::runtime::Runtime::<
+                    audio::operations::Commit,
+                    audio::Outcome,
+                >::repaired_turn(repair, self.version);
+                let (ticket, buffers) = settled.returned.unwrap();
                 Operated {
-                    protocol: Protocol {
-                        complete: true,
-                        committed: Some(false),
-                        echo,
-                        reason: Some(repair.reason),
-                        version: Some(self.version),
-                        ..Protocol::default()
-                    },
+                    protocol: settled.protocol,
                     repaired: true,
-                    outcome: Some(repair.outcome),
+                    outcome: settled.outcome,
                     returned: Some(Returned {
-                        member: repair.ticket.target.member,
-                        server: repair.ticket.target.server,
-                        buffers: repair.returned,
+                        member: ticket.target.member,
+                        server: ticket.target.server,
+                        buffers,
                     }),
                     freed: Some(freed),
                     ..Operated::default()
@@ -377,28 +370,14 @@ impl Editing {
         let Member::Audio(editor) = &mut seat.member else {
             return Operated::error("the operation owner is absent");
         };
-        let ticket = finished.ticket;
-        let failure = finished.result.clone();
-        let completion = self.audio_runtime.finish_turn(
+        let settled = self.audio_runtime.settle_turn(
             editor.as_mut(),
             &mut self.services,
             finished,
             &mut self.version,
         );
-        if !completion.committed {
-            return Operated::protocol(self.audio_runtime.refuse_turn(
-                ticket,
-                failure,
-                completion,
-                &self.services.resources,
-                self.version,
-            ));
-        }
-        let mut outcome = completion.outcome;
-        let recovery = if self.services.resources.valid(target.server) {
-            completion.recovery
-        } else {
-            Vec::new()
+        let Some(mut outcome) = settled.outcome else {
+            return Operated::protocol(settled.protocol);
         };
         let destination = outcome.saved.clone().unwrap_or_else(|| {
             editor
@@ -414,19 +393,10 @@ impl Editing {
         }
         let freed = self.release();
         Operated {
-            protocol: Protocol {
-                complete: true,
-                committed: Some(completion.committed),
-                version: Some(self.version),
-                ..Protocol::default()
-            },
+            protocol: settled.protocol,
             destination: Some(destination),
             outcome: Some(outcome),
-            recovery: Some(Batch {
-                member: target.member,
-                server: target.server,
-                steps: recovery,
-            }),
+            recovery: settled.recovery,
             freed: Some(freed),
             ..Operated::default()
         }
