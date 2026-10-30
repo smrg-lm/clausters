@@ -168,7 +168,9 @@ it: no file behind it until the first `save(path)` names one. What comes back,
 `MultitrackEditor`, is its handler: `transport.play(start, end, { looping: true })`,
 `pause`, `stop(mark)`, `locate(at)`, `playing()`; `undo`, `redo`, `split`,
 `join`, `quantize`, `stopAtEnd`, `resetHeights`, `compactTracks` and any window
-verb by name (`verb`); `grid()`, `snapToGrid()` and `notesView()`, each with
+verb by name (`verb`); `selected()`, the boxes the hand holds as the
+multitrack's `Region` objects, `select(regions)` and `unselect()`, which are
+the window's and enter no history; `grid()`, `snapToGrid()` and `notesView()`, each with
 its setter (`setGrid`, ...); `output()`, each track's meter and the samples
 played as silence (`starved`); and `save(path)`, which writes the session as
 the edits have left it, every file inside its folder named relative to it.

@@ -13,7 +13,7 @@ import test from "node:test";
 
 import { MultitrackEditor, edit } from "../src/gui/editing/index.ts";
 import type { GuiHost } from "../src/gui/host.ts";
-import { Multitrack, Session as SavedSession } from "../src/multitrack.ts";
+import { Multitrack, Region, Session as SavedSession } from "../src/multitrack.ts";
 import { loadCore } from "../src/base/core.ts";
 
 await loadCore();
@@ -204,4 +204,22 @@ test("the grid is the window's", async () => {
     assert.equal(await editor.notesView(), "roll");
     await editor.setNotesView("score");
     assert.deepEqual(host.last(), { do: { verb: "verb", call: { verb: "notesView", view: "score" } } });
+});
+
+test("what the hand holds is the window's", async () => {
+    const host = new FakeHost({ selected: { selected: [] } });
+    const multitrack = new Multitrack();
+    const editor = await edit(multitrack, { host: host as unknown as GuiHost });
+    assert.deepEqual(await editor.selected(), []);
+    host.answers.selected = { selected: [7] };
+    const [region] = await editor.selected();
+    assert.ok(region instanceof Region && region.ident === 7);
+    assert.deepEqual(await editor.selected(), [region]);
+    assert.deepEqual(host.last(), { query: "selected" });
+    await editor.select([region!]);
+    assert.deepEqual(host.last(), { do: { verb: "select", regions: [7] } });
+    await editor.unselect();
+    assert.deepEqual(host.last(), { do: { verb: "select", regions: [] } });
+    host.closeWindow();
+    assert.deepEqual(await editor.selected(), [], "nothing is marked with no window open");
 });

@@ -80,6 +80,11 @@ struct AudioWindow {
     /// The widgets that draw the take, which a band and the loop switch are
     /// set on, once the window is bound.
     takes: Vec<i32>,
+    /// **The widget that keeps what the hand holds**, a multitrack's own
+    /// once it is bound: its boxes held are the window's, never the
+    /// application's, so a client's `selected` and `select` are answered
+    /// here ([`Host::multitrack_marks`]).
+    marks: Option<i32>,
     /// The client that opened it through the door, told when it goes.
     opener: Option<ClientId>,
     /// **What its application left it as**, when it closed: the
@@ -299,6 +304,7 @@ impl Host {
                 structure,
                 title: title.to_string(),
                 takes: Vec::new(),
+                marks: None,
                 opener,
                 last: None,
             },
@@ -405,6 +411,9 @@ impl Host {
         from: ClientId,
         effects: &mut Vec<HostEffect>,
     ) {
+        if let Some(answer) = self.multitrack_marks(def_id, call, effects) {
+            return effects.push(HostEffect::Reply(super::apps::app_reply(seq, Ok(answer))));
+        }
         let asked = self.audio_host().ask(ToApp::Call {
             def_id,
             call: call.clone(),
@@ -541,6 +550,9 @@ impl Host {
         };
         if let Some(window) = audio.windows.get_mut(&def_id) {
             window.takes = takes;
+            window.marks = (kind == AppKind::Multitrack)
+                .then(|| ids["widget"].as_i64().map(|id| id as i32))
+                .flatten();
         }
         let source = audio.source.clone();
         let _ = audio.ask(ToApp::Bind {
@@ -663,6 +675,55 @@ impl Host {
             self.set_props(def_id, vec![("actions".into(), actions)], &mut fx);
         }
         self.pending_effects.extend(fx);
+    }
+
+    /// **What the hand holds in multitrack window `def_id`**, for a client:
+    /// the query `selected` answers the boxes held, by their regions' ids,
+    /// in the order they are drawn; the action `select` holds the boxes of
+    /// `regions` in place of what was held, `[]` holding none. The window
+    /// keeps them, as a click or a marquee leaves them, and they enter no
+    /// history. `None` for any other call, or another window.
+    pub(super) fn multitrack_marks(
+        &mut self,
+        def_id: i32,
+        call: &Value,
+        effects: &mut Vec<HostEffect>,
+    ) -> Option<Value> {
+        let widget = self
+            .audio
+            .as_ref()?
+            .windows
+            .get(&def_id)
+            .filter(|w| w.kind == AppKind::Multitrack)?
+            .marks?;
+        if call["query"] == "selected" {
+            let held: Vec<Value> = self
+                .live_props(widget)
+                .get("selected")
+                .and_then(Value::as_str)
+                .and_then(|names| serde_json::from_str::<Vec<String>>(names).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|name| name.parse::<u64>().map_or(json!(name), |id| json!(id)))
+                .collect();
+            return Some(json!({ "selected": held }));
+        }
+        if call["do"]["verb"] == "select" {
+            let names: Vec<String> = call["do"]["regions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|region| match region {
+                    Value::String(name) => name.clone(),
+                    other => other.to_string(),
+                })
+                .collect();
+            let held = Value::from(json!(names).to_string());
+            self.set_props(widget, vec![("selected".into(), held)], effects);
+            effects.push(HostEffect::Redraw(def_id));
+            return Some(Value::Null);
+        }
+        None
     }
 
     /// The widgets of window `def_id` that draw its take.
@@ -914,6 +975,24 @@ mod tests {
             props["lists"]["1"]["parts"][0]["peaks"].is_string()
         });
         assert!(folder.join("peaks").is_dir());
+        // **what the hand holds is the window's**, read and set by a client
+        let mut fx = Vec::new();
+        let mut marks = |h: &mut Host, call: Value| h.multitrack_marks(def_id, &call, &mut fx);
+        assert_eq!(
+            marks(&mut host, json!({"query": "selected"})),
+            Some(json!({"selected": []}))
+        );
+        marks(&mut host, json!({"do": {"verb": "select", "regions": [4]}}));
+        assert_eq!(
+            marks(&mut host, json!({"query": "selected"})),
+            Some(json!({"selected": [4]}))
+        );
+        marks(&mut host, json!({"do": {"verb": "select", "regions": []}}));
+        assert_eq!(
+            marks(&mut host, json!({"query": "selected"})),
+            Some(json!({"selected": []}))
+        );
+        assert_eq!(marks(&mut host, json!({"query": "transport"})), None);
         let played = ask(&mut host, def_id, json!({"do": {"verb": "play"}}));
         assert!(played.get("raised").is_none(), "{played}");
         let transport = ask(&mut host, def_id, json!({"query": "transport"}));

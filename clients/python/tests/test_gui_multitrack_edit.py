@@ -13,7 +13,7 @@ import pytest
 from clausters import _native
 from clausters.gui import edit
 from clausters.gui.editing import MultitrackEditor
-from clausters.multitrack import Multitrack
+from clausters.multitrack import Multitrack, Region
 from clausters.multitrack import Session as SavedSession
 
 
@@ -185,3 +185,21 @@ def test_the_grid_is_the_windows():
     editor.notes_view = "score"
     assert host.calls[-1][2] == {"do": {"verb": "verb",
                                         "call": {"verb": "notesView", "view": "score"}}}
+
+
+def test_what_the_hand_holds_is_the_windows():
+    host = FakeHost({"selected": {"selected": []}})
+    multitrack = Multitrack()
+    editor = edit(multitrack, host=host)
+    assert editor.selected == []
+    host.answers["selected"] = {"selected": [7]}
+    region = editor.selected[0]
+    assert isinstance(region, Region) and region._id == 7
+    assert editor.selected == [region]
+    assert host.calls[-1][2] == {"query": "selected"}
+    editor.select([region])
+    assert host.calls[-1][2] == {"do": {"verb": "select", "regions": [region._id]}}
+    editor.unselect()
+    assert host.calls[-1][2] == {"do": {"verb": "select", "regions": []}}
+    host.close_window()
+    assert editor.selected == [], "nothing is marked with no window open"

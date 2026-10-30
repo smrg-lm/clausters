@@ -34,10 +34,11 @@
  * @module
  */
 
-import { Multitrack } from "../../multitrack.ts";
+import { Multitrack, Region } from "../../multitrack.ts";
 import type { Extra, WindowHistory, WindowOver } from "../../multitrack.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
+import { Marking, marking } from "./marking.ts";
 
 /** **The multitrack's transport**, as a script plays it: each verb one call to the application, in the multitrack's seconds. */
 export class MultitrackTransport {
@@ -119,6 +120,12 @@ interface Leg {
  * {@link Multitrack}, answers one, open. Each member is a call to the
  * application in the host's process, answered by it. A session with no file
  * is refused with a `RangeError`: save it first.
+ *
+ * **What is marked** (`selected`, `select`, `unselect`) is the boxes the hand
+ * holds -- a click, Alt+click or a marquee -- as the {@link Region} objects of
+ * the multitrack, in the order the boxes are drawn. The window's, not the
+ * multitrack's: it enters no history, and nothing is marked with no window
+ * open. (The time range a sweep leaves is the transport's.)
  */
 export class MultitrackEditor implements WindowOver {
     /** The window's title. */
@@ -439,6 +446,21 @@ export class MultitrackEditor implements WindowOver {
         }
     }
 
+    // ---- what the hand holds ----
+
+    /** The regions of the boxes the window holds. @internal */
+    async marked(): Promise<Region[]> {
+        if (this.closed) return [];
+        const held = ((await this.query("selected")).selected ?? []) as number[];
+        return held.map((region) => this.multitrack.viewOf(Region, Number(region)));
+    }
+
+    /** Holds the boxes of `regions` in the window. @internal */
+    async mark(regions: Iterable<Region> | null): Promise<void> {
+        if (this.closed) return;
+        await this.act("select", { regions: [...(regions ?? [])].map((region) => region.ident) });
+    }
+
     // ---- the transport, and what is heard ----
 
     /** **The multitrack's transport** ({@link MultitrackTransport}). */
@@ -471,6 +493,10 @@ export class MultitrackEditor implements WindowOver {
         return written;
     }
 }
+
+/** The marking surface, merged so `editor.selected()` types as its own. */
+export interface MultitrackEditor extends Marking<Region[], Iterable<Region>> {}
+marking(MultitrackEditor);
 
 /** Whether `structure` is a {@link Multitrack}. */
 export function isMultitrack(structure: unknown): structure is Multitrack {

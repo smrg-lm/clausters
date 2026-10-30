@@ -27,6 +27,8 @@ multitrack.
 
 import os
 
+from .marking import Marking
+
 
 class MultitrackTransport:
     """**The multitrack's transport**, as a script plays it: each verb one
@@ -161,13 +163,20 @@ class _Block:
         return False
 
 
-class MultitrackEditor:
+class MultitrackEditor(Marking):
     """**The multitrack the GUI host holds, and this script its handler.**
 
     `clausters.gui.edit` over a `clausters.multitrack.Session` that has a
     file, or over a `clausters.multitrack.Multitrack`, answers one, open.
     Each member is a call to the application in the host's process,
     answered by it.
+
+    **What is marked** (`selected`, `select`, `unselect`) is the boxes the
+    hand holds -- a click, Alt+click or a marquee -- as the
+    `clausters.multitrack.Region` objects of the multitrack, in the order
+    the boxes are drawn. The window's, not the multitrack's: it enters no
+    history, and nothing is marked with no window open. (The time range a
+    sweep leaves is the transport's.)
 
     Args:
         structure: what to open: a `clausters.multitrack.Session`, by the
@@ -450,6 +459,23 @@ class MultitrackEditor:
         if not self._editor({"verb": "notesView", "view": str(view)}).get("set"):
             raise ValueError(f"no notes view {view!r}: a box of notes is drawn "
                              "as a 'roll' or a 'score'")
+
+    # ---- what the hand holds ----
+
+    def _marked(self) -> list:
+        """The regions of the boxes the window holds."""
+        if self.closed:
+            return []
+        from ...multitrack import Region
+
+        held = self._query("selected").get("selected") or []
+        return [self._multitrack._view(Region, int(region)) for region in held]
+
+    def _mark(self, regions) -> None:
+        """Hold the boxes of ``regions`` in the window."""
+        if self.closed:
+            return
+        self._do("select", regions=[int(region._id) for region in regions or ()])
 
     # ---- the transport, and what is heard ----
 

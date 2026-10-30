@@ -83,7 +83,9 @@ it: no file behind it until the first `save(path)` names one. What comes back,
 `transport.play(start, end, looping=True)`, `pause`, `stop(mark)`,
 `locate(at)`, `playing`; `undo`, `redo`, `split`, `join`, `quantize`,
 `stop_at_end`, `reset_heights`, `compact_tracks` and any window verb by name
-(`verb`); `grid`, `snap_to_grid` and `notes_view`; `output`, each track's meter
+(`verb`); `selected`, the boxes the hand holds as the multitrack's `Region`
+objects, `select(regions)` and `unselect()`, which are the window's and enter
+no history; `grid`, `snap_to_grid` and `notes_view`; `output`, each track's meter
 and the samples played as silence (`starved`); and `save(path=None)`, which
 writes the session as the edits have left it, every file inside its folder
 named relative to it. **The script's multitrack is the window's while it is

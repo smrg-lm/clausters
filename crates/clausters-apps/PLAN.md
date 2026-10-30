@@ -5765,12 +5765,18 @@ wrong.
   holds one member. Releasing it once the history names it no more would
   add a walk over the history for the cost of one editor.
 
-- ⬜ **The multitrack's handler marks nothing** *(found 2026-10-29, moving
+- ✅ **The multitrack's handler marks nothing** *(found 2026-10-29, moving
   the clients onto the application)*. The clients' own multitrack editor had
   `selected`, `select` and `unselect` over the boxes, read off the picture it
   held; the application's editor answers no verb for the boxes the hand holds,
   so the handler has none in either client. The audio editor's handler marks
   through its application, which is the shape to follow.
+  **Fixed 2026-10-30.** The boxes held are the window's, as the old
+  editor's were, and the application never sees them: the host answers a
+  multitrack window's query `selected` (the regions' ids) and its action
+  `select` (`regions`) from the window's widget, before the call would
+  reach the application (`Host::multitrack_marks`). Both clients'
+  `MultitrackEditor` take the marking mixin again over those two calls.
 
 - ✅ **A box of samples is not the audio editor's view of its take** *(found
   2026-10-29 by the user, zooming into a box of the multitrack on its
