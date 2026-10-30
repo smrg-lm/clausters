@@ -119,7 +119,15 @@ fn discovery_isolated_compatible_and_cached_with_failure_diagnostics() {
     let before = Instant::now();
     let entries =
         runtime::scan(helper(), &[fixtures().into()], Duration::from_millis(300)).unwrap();
-    assert!(before.elapsed() < Duration::from_secs(3));
+    // The hanging fixture is cut at its 300 ms, so the scan ends; the bound
+    // only says it ends well short of a timeout that was not applied. It is
+    // loose because each file is a helper process of its own: a scan that
+    // takes about a second here took four on a loaded CI runner.
+    assert!(
+        before.elapsed() < Duration::from_secs(15),
+        "the scan took {:?}",
+        before.elapsed()
+    );
     let plugins: Vec<_> = entries
         .iter()
         .filter_map(|e| match e {
